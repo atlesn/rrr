@@ -6,6 +6,12 @@ Makefile.in
 /py-compile
 /test-driver
 /ylwrap
+Makefile
+*.o
+*.lo
+*.so
+.deps/
+src/vlogger
 
 # http://www.gnu.org/software/autoconf
 
@@ -23,6 +29,11 @@ Makefile.in
 /install-sh
 /missing
 /stamp-h1
+/config.log
+/config.h
+/config.status
+/libtool
+/m4
 
 # https://www.gnu.org/software/libtool/
 
