@@ -10,7 +10,10 @@ Makefile
 *.o
 *.lo
 *.so
+*.la
+*.lai
 .deps/
+.libs/
 src/vlogger
 
 # eclipse

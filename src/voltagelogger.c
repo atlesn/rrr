@@ -41,10 +41,14 @@ int main (int argc, const char *argv[]) {
 	}
 
 	const char *src_module_string = cmd_get_value(&cmd, "src_module");
+	const char *p_module_string = cmd_get_value(&cmd, "p_module");
 	const char *dst_module_string = cmd_get_value(&cmd, "dst_module");
 
 	if (src_module_string == NULL) {
 		src_module_string = "dummy";
+	}
+	if (p_module_string == NULL) {
+		p_module_string = "raw";
 	}
 	if (dst_module_string == NULL) {
 		dst_module_string = "stdout";
@@ -57,6 +61,13 @@ int main (int argc, const char *argv[]) {
 		ret = EXIT_FAILURE;
 	}
 
+	printf ("Using processor module '%s' for processing\n", p_module_string);
+
+	if (load_module(p_module_string) != 0) {
+		fprintf(stderr, "Error while loading module %s\n", p_module_string);
+		ret = EXIT_FAILURE;
+	}
+
 	printf ("Using destination module '%s' for output\n", dst_module_string);
 
 	if (load_module(dst_module_string) != 0) {
@@ -66,11 +77,18 @@ int main (int argc, const char *argv[]) {
 
 	struct module_data *source_module =
 			get_module(src_module_string, VL_MODULE_TYPE_SOURCE);
+	struct module_data *processor_module =
+			get_module(p_module_string, VL_MODULE_TYPE_PROCESSOR);
 	struct module_data *destination_module =
 			get_module(dst_module_string, VL_MODULE_TYPE_DESTINATION);
 
 	if (source_module == NULL) {
 		fprintf (stderr, "Module %s could not be used as source module\n", src_module_string);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	if (processor_module == NULL) {
+		fprintf (stderr, "Module %s could not be used as processor module\n", p_module_string);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -80,9 +98,12 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
+	processor_module->operations->set_sender(processor_module, source_module);
+	processor_module->operations->set_receiver(processor_module, destination_module);
+
 	ret = main_loop();
 
 	out:
-	unload_modules();
+	hard_unload_modules();
 	return ret;
 }

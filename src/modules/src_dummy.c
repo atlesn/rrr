@@ -38,17 +38,24 @@ static int module_destroy(struct module_data *data) {
 static int poll(struct module_data *data, struct reading *measurement) {
 	return 0;
 }
+static int module_do_work(struct module_data *data) {
+	return 0;
+}
 
 static struct module_operations module_operations = {
 		module_init,
 		module_destroy,
+		module_do_work,
 		poll,
+		NULL,
+		NULL,
 		NULL
 };
 
 static struct module_data module_data = {
 		"dummy",
 		VL_MODULE_TYPE_SOURCE,
+		VL_MODULE_STATE_NEW,
 		NULL,
 		&module_operations,
 		NULL

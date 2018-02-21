@@ -35,23 +35,32 @@ static int module_destroy(struct module_data *data) {
 	return 0;
 }
 
-static int print(struct module_data *data, struct reading *measurement) {
+static int print(struct module_data *module_data, struct output *output) {
+	return 0;
+}
+
+static int module_do_work(struct module_data *data) {
 	return 0;
 }
 
 static struct module_operations module_operations = {
 		module_init,
 		module_destroy,
+		module_do_work,
 		NULL,
-		print
+		print,
+		NULL,
+		NULL
 };
 
 static struct module_data module_data = {
 		"stdout",
 		VL_MODULE_TYPE_DESTINATION,
+		VL_MODULE_STATE_NEW,
 		NULL,
 		&module_operations,
-		NULL
+		NULL,
+		0
 };
 
 struct module_data *module_get_data() {
@@ -60,5 +69,4 @@ struct module_data *module_get_data() {
 
 __attribute__((constructor)) void load(void) {
 	module_data.operations = &module_operations;
-
 }

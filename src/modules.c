@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <semaphore.h>
 
 #include "modules.h"
 
@@ -50,12 +51,9 @@ static const char *library_paths[] = {
 		""
 };
 
-static int unregister_module(struct module_data *module_data) {
-	if (module_data->operations->module_destroy(module_data) != 0) {
-		fprintf (stderr, "Error while running destructor in module\n");
-	}
-	if (dlclose(module_data->dl_ptr) != 0) {
-		fprintf (stderr, "Error while unloading module: %s\n", dlerror());
+int count_module_users(struct module_data *module, int *result) {
+	if (sem_getvalue(&module->users, result) != 0) {
+		fprintf(stderr, "Could not get semaphore value: %s\n", strerror(errno));
 		return 1;
 	}
 	return 0;
@@ -88,19 +86,48 @@ struct module_data *get_module(const char *name, unsigned int type) {
 	return NULL;
 }
 
-int unload_modules() {
+int hard_unload_modules() {
 	int err = 0;
 	struct module_data *ptr = first_module;
 	first_module = NULL;
+
 	while (ptr != NULL) {
 		struct module_data *next = ptr->next;
 		ptr->next = NULL;
+		void *dl_ptr = ptr->dl_ptr;
+		ptr->state = VL_MODULE_STATE_INVALID;
+
 		char name[256];
 		sprintf(name, "%s", ptr->name);
-		if (unregister_module(ptr) != 0) {
-			fprintf(stderr, "Error while unloading source module %s\n", name);
+
+		int usercount;
+		count_module_users(ptr, &usercount);
+		if (usercount != 1) {
+			fprintf (stderr, "Warning: Usercount for module was not 1 at hard unload stage. Not unloading library.\n");
 			err = 1;
 		}
+
+		if (ptr->operations->module_destroy(ptr) != 0) {
+			fprintf (stderr, "Error while running destructor in module\n");
+		}
+
+		give_module(ptr);
+
+		if (sem_destroy(&ptr->users) != 0) {
+			fprintf (stderr, "Warning: Error while destroying usercount semaphore: %s\n", strerror(errno));
+		}
+
+#ifndef VL_MODULE_NO_DL_CLOSE
+		if (usercount == 1) {
+			if (dlclose(dl_ptr) != 0) {
+				fprintf (stderr, "Error while unloading module: %s\n", dlerror());
+				return 1;
+			}
+		}
+#else
+		fprintf(stderr, "Warning: Not unloading shared object due to configuration VL_MODULE_NO_DL_CLOSE\n");
+#endif
+
 		ptr = next;
 	}
 	return err;
@@ -141,6 +168,15 @@ int load_module(const char *name) {
 
 		struct module_data *data = module_get_data();
 		data->dl_ptr = handle;
+		sem_init(&data->users, 0, 0);
+
+		if (register_module(data) != 0) {
+			fprintf (stderr, "Error while registering module.\n");
+#ifndef VL_MODULE_NO_DL_CLOSE
+			dlclose(handle);
+#endif
+			break;
+		}
 
 		if (data->operations->module_init(data) != 0) {
 			fprintf (stderr, "Error while initializing module.\n");
@@ -148,11 +184,9 @@ int load_module(const char *name) {
 			break;
 		}
 
-		if (register_module(data) != 0) {
-			fprintf (stderr, "Error while registering module.\n");
-			dlclose(handle);
-			break;
-		}
+		take_module(data);
+
+		data->state = VL_MODULE_STATE_UP;
 
 		err = 0;
 		break;
