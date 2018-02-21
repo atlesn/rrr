@@ -13,6 +13,9 @@ Makefile
 .deps/
 src/vlogger
 
+# eclipse
+/Debug
+
 # http://www.gnu.org/software/autoconf
 
 /autom4te.cache
