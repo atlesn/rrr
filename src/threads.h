@@ -54,6 +54,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Initialize mutexes */
 void threads_init();
 
+void threads_free();
+
 struct vl_thread {
 	pthread_t thread;
 	uint64_t watchdog_time;

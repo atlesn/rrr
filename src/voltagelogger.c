@@ -111,6 +111,8 @@ int main (int argc, const char *argv[]) {
 	out_unload_source:
 	unload_module(source_module);
 
+	threads_free();
+
 	out:
 	return ret;
 }

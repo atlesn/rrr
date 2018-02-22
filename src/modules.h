@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULE_TYPE_DESTINATION 2
 #define VL_MODULE_TYPE_PROCESSOR 3
 
-#define VL_MODULE_NO_DL_CLOSE
+//#define VL_MODULE_NO_DL_CLOSE
 
 // TODO : Create processor modules
 
