@@ -26,46 +26,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../measurement.h"
 #include "src_dummy.h"
 
-static int module_init(struct module_data *data) {
-	printf ("Initialize dummy module\n");
+static void module_destroy(struct module_dynamic_data *data) {
+	free(data);
+}
+
+static int poll(struct module_dynamic_data *data, struct reading *measurement) {
 	return 0;
 }
 
-static int module_destroy(struct module_data *data) {
-	return 0;
-}
-
-static int poll(struct module_data *data, struct reading *measurement) {
-	return 0;
-}
-static int module_do_work(struct module_data *data) {
-	return 0;
+static void thread_entry(void *arg) {
 }
 
 static struct module_operations module_operations = {
-		module_init,
 		module_destroy,
-		module_do_work,
+		thread_entry,
 		poll,
 		NULL,
 		NULL,
 		NULL
 };
 
-static struct module_data module_data = {
-		"dummy",
-		VL_MODULE_TYPE_SOURCE,
-		VL_MODULE_STATE_NEW,
-		NULL,
-		&module_operations,
-		NULL
-};
+static const char *module_name = "dummy";
 
-struct module_data *module_get_data() {
-		return &module_data;
+struct module_dynamic_data *module_get_data() {
+		struct module_dynamic_data *data = malloc(sizeof(*data));
+		data->name = module_name;
+		data->type = VL_MODULE_TYPE_SOURCE;
+		data->operations = module_operations;
+		data->dl_ptr = NULL;
+		data->private_data = NULL;
+		return data;
 };
 
 __attribute__((constructor)) void load(void) {
-	module_data.operations = &module_operations;
-
 }

@@ -19,12 +19,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
-
-#include "threads.h"
 #include "modules.h"
+#include "threads.h"
 
-int start_read(struct module_dynamic_data *module) {
+void processor_master_loop(void *arg) {
+
+}
+
+int control_start_processor(struct module_data *module) {
+
 
 	return 0;
 }

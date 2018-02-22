@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULES_H
 
 #include <stdlib.h>
-#include <semaphore.h>
 #include <string.h>
 #include <error.h>
 
@@ -33,60 +32,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VL_MODULE_NO_DL_CLOSE
 
-#define VL_MODULE_STATE_NEW 1
-#define VL_MODULE_STATE_UP 2
-#define VL_MODULE_STATE_INVALID 3
-
 // TODO : Create processor modules
 
-struct module_data *_module_data;
+struct module_dynamic_data *_module_data;
 struct reading *_reading;
 struct output *_output;
 
 struct module_operations {
-	int (*module_init)(struct module_data *data);
-	int (*module_destroy)(struct module_data *data);
-	int (*module_do_work)(struct module_data *data);
+	void (*module_destroy)(struct module_dynamic_data *data);
+	void (*thread_entry)(void*);
 
 	/* Used by source modules */
-	int (*poll)(struct module_data *module_data, struct reading *reading);
+	int (*poll)(struct module_dynamic_data *module_data, struct reading *reading);
 
 	/* Used by output modules */
-	int (*print)(struct module_data *module_data, struct output *output);
+	int (*print)(struct module_dynamic_data *module_data, struct output *output);
 
 	/* Used by processor modules */
-	int (*set_receiver)(struct module_data *data, struct module_data *receiver);
-	int (*set_sender)(struct module_data *data, struct module_data *sender);
+	void (*set_receiver)(struct module_dynamic_data *data, struct module_dynamic_data *receiver);
+	void (*set_sender)(struct module_dynamic_data *data, struct module_dynamic_data *sender);
 };
 
-
-struct module_data {
+struct module_dynamic_data {
 	const char *name;
-	const unsigned int type;
-	int state;
+	unsigned int type;
+	struct module_operations operations;
 	void *dl_ptr;
-	const struct module_operations *operations;
-	struct module_data *next;
-	sem_t users;
-	void *private;
+	void *private_data;
 };
 
-static inline int take_module(struct module_data *module) {
-	return sem_post(&module->users);
-}
-
-static inline int give_module(struct module_data *module) {
-	return sem_trywait(&module->users);
-}
-
-static inline int wait_module(struct module_data *module) {
-	return sem_wait(&module->users);
-}
-
-int count_module_users(struct module_data *module, int *result);
-
-struct module_data *get_module(const char *name, unsigned int type);
-int load_module(const char *name);
-int hard_unload_modules();
+//struct module_data *get_module(const char *name, unsigned int type);
+struct module_dynamic_data *load_module(const char *name);
+void unload_module(struct module_dynamic_data *data);
 
 #endif

@@ -19,12 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
+#ifndef VL_CONTROL_H
+#define VL_CONTROL_H
 
-#include "threads.h"
-#include "modules.h"
 
-int start_read(struct module_dynamic_data *module) {
 
-	return 0;
-}
+#endif

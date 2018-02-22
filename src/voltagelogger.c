@@ -55,55 +55,62 @@ int main (int argc, const char *argv[]) {
 	}
 
 	printf ("Using source module '%s' for input\n", src_module_string);
-
-	if (load_module(src_module_string) != 0) {
-		fprintf(stderr, "Error while loading module %s\n", src_module_string);
-		ret = EXIT_FAILURE;
-	}
-
 	printf ("Using processor module '%s' for processing\n", p_module_string);
-
-	if (load_module(p_module_string) != 0) {
-		fprintf(stderr, "Error while loading module %s\n", p_module_string);
-		ret = EXIT_FAILURE;
-	}
-
 	printf ("Using destination module '%s' for output\n", dst_module_string);
 
-	if (load_module(dst_module_string) != 0) {
-		fprintf(stderr, "Error while loading module %s\n", dst_module_string);
+	struct module_dynamic_data *source_module = load_module(src_module_string);
+	if (source_module == NULL) {
+		fprintf (stderr, "Module %s could not be loaded\n", src_module_string);
 		ret = EXIT_FAILURE;
+		goto out;
 	}
 
-	struct module_data *source_module =
-			get_module(src_module_string, VL_MODULE_TYPE_SOURCE);
-	struct module_data *processor_module =
-			get_module(p_module_string, VL_MODULE_TYPE_PROCESSOR);
-	struct module_data *destination_module =
-			get_module(dst_module_string, VL_MODULE_TYPE_DESTINATION);
+	struct module_dynamic_data *processor_module = load_module(p_module_string);
+	if (processor_module == NULL) {
+		fprintf (stderr, "Module %s could not be loaded\n", p_module_string);
+		ret = EXIT_FAILURE;
+		goto out_unload_source;
+	}
 
-	if (source_module == NULL) {
+	struct module_dynamic_data *destination_module = load_module(dst_module_string);
+	if (destination_module == NULL) {
+		fprintf (stderr, "Module %s could not be loaded\n", dst_module_string);
+		ret = EXIT_FAILURE;
+		goto out_unload_processor;
+	}
+
+	if (source_module->type != VL_MODULE_TYPE_SOURCE) {
 		fprintf (stderr, "Module %s could not be used as source module\n", src_module_string);
 		ret = EXIT_FAILURE;
-		goto out;
 	}
-	if (processor_module == NULL) {
+	if (processor_module->type != VL_MODULE_TYPE_PROCESSOR) {
 		fprintf (stderr, "Module %s could not be used as processor module\n", p_module_string);
 		ret = EXIT_FAILURE;
-		goto out;
 	}
-	if (destination_module == NULL) {
+	if (destination_module->type != VL_MODULE_TYPE_DESTINATION) {
 		fprintf (stderr, "Module %s could not be used as destination module\n", dst_module_string);
 		ret = EXIT_FAILURE;
-		goto out;
+	}
+	if (ret != EXIT_SUCCESS) {
+		goto out_unload_all;
 	}
 
-	processor_module->operations->set_sender(processor_module, source_module);
-	processor_module->operations->set_receiver(processor_module, destination_module);
+	processor_module->operations.set_sender(processor_module, source_module);
+	processor_module->operations.set_receiver(processor_module, destination_module);
+
+	threads_init();
 
 	ret = main_loop();
 
+	out_unload_all:
+	unload_module(destination_module);
+
+	out_unload_processor:
+	unload_module(processor_module);
+
+	out_unload_source:
+	unload_module(source_module);
+
 	out:
-	hard_unload_modules();
 	return ret;
 }
