@@ -141,8 +141,7 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGINT, &action, NULL);
 
 	while (main_running) {
-		usleep (3000000);
-		break;
+		usleep (10000);
 	}
 
 	out_stop_threads:
