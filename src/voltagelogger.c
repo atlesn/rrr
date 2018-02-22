@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
 
 #include "modules.h"
 #include "threads.h"
@@ -28,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int main_loop() {
 	return 0;
+}
+
+static volatile int main_running = 1;
+
+void signal_interrupt (int s) {
+    main_running = 0;
 }
 
 int main (int argc, const char *argv[]) {
@@ -38,6 +46,7 @@ int main (int argc, const char *argv[]) {
 	if (cmd_parse(&cmd, argc, argv, CMD_CONFIG_NOCOMMAND) != 0) {
 		fprintf (stderr, "Error while parsing command line\n");
 		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	const char *src_module_string = cmd_get_value(&cmd, "src_module");
@@ -96,11 +105,48 @@ int main (int argc, const char *argv[]) {
 	}
 
 	processor_module->operations.set_sender(processor_module, source_module);
-	processor_module->operations.set_receiver(processor_module, destination_module);
+	destination_module->operations.set_sender(destination_module, processor_module);
 
 	threads_init();
 
-	ret = main_loop();
+	struct vl_thread *source_thread = thread_start (source_module->operations.thread_entry);
+	if (source_thread == NULL) {
+		fprintf (stderr, "Error while starting source thread\n");
+		ret = EXIT_FAILURE;
+		goto out_stop_threads;
+	}
+
+	struct vl_thread *processor_thread = thread_start (processor_module->operations.thread_entry);
+	if (processor_thread == NULL) {
+		fprintf (stderr, "Error while starting processor thread\n");
+		ret = EXIT_FAILURE;
+		goto out_stop_threads;
+	}
+
+	struct vl_thread *destination_thread = thread_start (destination_module->operations.thread_entry);
+	if (destination_thread == NULL) {
+		fprintf (stderr, "Error while starting output thread\n");
+		ret = EXIT_FAILURE;
+		goto out_stop_threads;
+	}
+
+	// TODO : join threads
+
+	struct sigaction action;
+
+	action.sa_handler = signal_interrupt;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGINT, &action, NULL);
+
+	while (main_running) {
+		usleep (3000000);
+		break;
+	}
+
+	out_stop_threads:
+	threads_stop();
 
 	out_unload_all:
 	unload_module(destination_module);
@@ -111,7 +157,7 @@ int main (int argc, const char *argv[]) {
 	out_unload_source:
 	unload_module(source_module);
 
-	threads_free();
+	threads_destroy();
 
 	out:
 	return ret;

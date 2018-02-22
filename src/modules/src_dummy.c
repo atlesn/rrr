@@ -34,14 +34,13 @@ static int poll(struct module_dynamic_data *data, struct reading *measurement) {
 	return 0;
 }
 
-static void thread_entry(void *arg) {
+static void *thread_entry(void *arg) {
 }
 
 static struct module_operations module_operations = {
 		module_destroy,
 		thread_entry,
 		poll,
-		NULL,
 		NULL,
 		NULL
 };

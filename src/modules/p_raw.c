@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../modules.h"
 #include "../measurement.h"
+#include "../threads.h"
 #include "p_raw.h"
 
 struct raw_private_data {
 	struct module_dynamic_data *sender;
-	struct module_dynamic_data *receiver;
 };
 
 static void module_destroy(struct module_dynamic_data *data) {
@@ -48,13 +48,21 @@ static void set_sender(struct module_dynamic_data *data, struct module_dynamic_d
 	private_data->sender = sender;
 }
 
-static void set_receiver(struct module_dynamic_data *data, struct module_dynamic_data *receiver) {
-	struct raw_private_data *private_data = (struct raw_private_data *) data->private_data;
+static void *thread_entry(void *arg) {
+	struct vl_thread *thread = arg;
 
-	private_data->receiver = receiver;
-}
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
-static void thread_entry(void *arg) {
+	while (thread_check_encourage_stop(thread) != 1) {
+		printf ("Thread %p tick\n", thread);
+		update_watchdog_time(thread);
+		usleep (5000);
+	}
+
+	printf ("Thread raw %p exiting\n", thread);
+
+	pthread_exit(0);
+	return NULL;
 }
 
 static struct module_operations module_operations = {
@@ -62,8 +70,7 @@ static struct module_operations module_operations = {
 		thread_entry,
 		NULL,
 		NULL,
-		set_sender,
-		set_receiver,
+		set_sender
 };
 
 static const char *module_name = "raw";
@@ -71,7 +78,6 @@ static const char *module_name = "raw";
 struct module_dynamic_data *module_get_data() {
 		struct raw_private_data *private_data = malloc(sizeof(*private_data));
 		private_data->sender = NULL;
-		private_data->receiver = NULL;
 
 		struct module_dynamic_data *data = malloc(sizeof(*data));
 		data->name = module_name;

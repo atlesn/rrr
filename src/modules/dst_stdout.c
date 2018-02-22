@@ -26,7 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../measurement.h"
 #include "src_dummy.h"
 
+struct stdout_private_data {
+	struct module_dynamic_data *sender;
+};
+
 static void module_destroy(struct module_dynamic_data *data) {
+	free (data->private_data);
 	free (data);
 }
 
@@ -34,7 +39,13 @@ static int print(struct module_dynamic_data *module_data, struct output *output)
 	return 0;
 }
 
-static void thread_entry(void *arg) {
+static void *thread_entry(void *arg) {
+}
+
+static void set_sender(struct module_dynamic_data *data, struct module_dynamic_data *sender) {
+	struct stdout_private_data *private_data = (struct stdout_private_data *) data->private_data;
+
+	private_data->sender = sender;
 }
 
 static struct module_operations module_operations = {
@@ -42,10 +53,8 @@ static struct module_operations module_operations = {
 		thread_entry,
 		NULL,
 		print,
-		NULL,
-		NULL
+		set_sender
 };
-
 
 static const char *module_name = "stdout";
 
@@ -55,7 +64,7 @@ struct module_dynamic_data *module_get_data() {
 		data->type = VL_MODULE_TYPE_DESTINATION;
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
-		data->private_data = NULL;
+		data->private_data = malloc(sizeof(struct stdout_private_data));
 		return data;
 };
 

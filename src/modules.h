@@ -40,7 +40,7 @@ struct output *_output;
 
 struct module_operations {
 	void (*module_destroy)(struct module_dynamic_data *data);
-	void (*thread_entry)(void*);
+	void *(*thread_entry)(void*);
 
 	/* Used by source modules */
 	int (*poll)(struct module_dynamic_data *module_data, struct reading *reading);
@@ -48,8 +48,7 @@ struct module_operations {
 	/* Used by output modules */
 	int (*print)(struct module_dynamic_data *module_data, struct output *output);
 
-	/* Used by processor modules */
-	void (*set_receiver)(struct module_dynamic_data *data, struct module_dynamic_data *receiver);
+	/* Used by processor and output modules */
 	void (*set_sender)(struct module_dynamic_data *data, struct module_dynamic_data *sender);
 };
 
