@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "modules.h"
-#include "threads.h"
+#include "lib/threads.h"
 #include "cmdlineparser/cmdline.h"
 
 int main_loop() {

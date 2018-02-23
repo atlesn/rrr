@@ -6,7 +6,7 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIRS([m4])
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile)
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile)
 AC_PROG_CC
 AC_PROG_INSTALL
 AC_OUTPUT

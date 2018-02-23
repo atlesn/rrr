@@ -1,3 +1,7 @@
+src/modules/.libs
+src/.libs
+src/lib/.libs
+
 # http://www.gnu.org/software/automake
 
 Makefile.in
@@ -15,6 +19,7 @@ Makefile
 .deps/
 .libs/
 src/vlogger
+*.lai
 
 # eclipse
 /Debug

@@ -24,14 +24,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 
-void fifo_buffer_destroy(struct fifo_buffer *buffer) {
+void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_lock (&buffer->mutex);
+	if (buffer->invalid) { pthread_mutex_unlock (&buffer->mutex); return; }
+	buffer->invalid = 1;
+	while (buffer->readers > 0 || buffer->writers > 0) {
+	}
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
-
+		struct fifo_buffer_entry *next = entry->next;
+		free (entry);
+		entry = next;
 	}
 	pthread_mutex_unlock (&buffer->mutex);
+}
+
+void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
+	free(buffer);
 }
 
 struct fifo_buffer *fifo_buffer_init() {

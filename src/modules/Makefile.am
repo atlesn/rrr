@@ -1,6 +1,6 @@
 lib_LTLIBRARIES = dummy.la stdout.la raw.la
 
-module_ldflags=-module -avoid-version -shared
+module_ldflags=-module -avoid-version -shared -L../lib -lvlogger 
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c

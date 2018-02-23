@@ -43,7 +43,7 @@ struct module_operations {
 	void *(*thread_entry)(void*);
 
 	/* Used by source modules */
-	int (*poll)(struct module_dynamic_data *module_data, struct reading *reading);
+	int (*poll)(struct module_dynamic_data *module_data, void (*callback)(void*));
 
 	/* Used by output modules */
 	int (*print)(struct module_dynamic_data *module_data, struct output *output);

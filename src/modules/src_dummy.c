@@ -21,7 +21,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+#include <inttypes.h>
+#include <unistd.h>
 
+#include "../lib/threads.h"
+#include "../lib/buffer.h"
 #include "../modules.h"
 #include "../measurement.h"
 #include "src_dummy.h"
@@ -30,11 +35,52 @@ static void module_destroy(struct module_dynamic_data *data) {
 	free(data);
 }
 
-static int poll(struct module_dynamic_data *data, struct reading *measurement) {
-	return 0;
+struct dummy_data {
+	struct fifo_buffer *buffer;
+};
+
+static int poll(struct module_dynamic_data *arg, void (*callback)(void*)) {
+	struct module_dynamic_data *module_data = (struct module_dynamic_data *) arg;
+	struct dummy_data *data = (struct dummy_data *) module_data->private_data;
+
+	return fifo_read_clear_forward(data->buffer, NULL, callback);
+}
+struct dummy_data *data_init() {
+	struct dummy_data *data = malloc(sizeof(*data));
+	data->buffer = fifo_buffer_init();
+	return data;
+}
+
+void data_cleanup(void *arg) {
+	struct dummy_data *data = (struct dummy_data *) arg;
+	fifo_buffer_invalidate(data->buffer);
+	fifo_buffer_destroy(data->buffer);
+	free(data);
 }
 
 static void *thread_entry(void *arg) {
+	struct module_dynamic_data *module_data = (struct module_dynamic_data *) arg;
+	struct dummy_data *data = data_init();
+
+	pthread_cleanup_push(data_cleanup, data);
+	module_data->private_data = data;
+
+	static const char *dummy_msg = "Dummy measurement of time";
+
+	while (1) {
+		uint64_t time = time_get_64();
+
+		struct reading *reading = reading_new(time, NULL, 0);
+		memcpy(reading->msg, dummy_msg, strlen(dummy_msg)+1);
+		reading->msg_size = strlen(dummy_msg) + 1;
+		usleep (500000); // 500 ms
+
+		fifo_buffer_write(data->buffer, reading);
+	}
+
+	pthread_cleanup_pop(1);
+
+	return NULL;
 }
 
 static struct module_operations module_operations = {

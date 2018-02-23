@@ -40,6 +40,7 @@ static int print(struct module_dynamic_data *module_data, struct output *output)
 }
 
 static void *thread_entry(void *arg) {
+	return NULL;
 }
 
 static void set_sender(struct module_dynamic_data *data, struct module_dynamic_data *sender) {

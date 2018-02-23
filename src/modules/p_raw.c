@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../modules.h"
 #include "../measurement.h"
-#include "../threads.h"
+#include "../lib/threads.h"
 #include "p_raw.h"
 
 struct raw_private_data {

@@ -37,6 +37,7 @@ struct fifo_buffer {
 	pthread_mutex_t mutex;
 	int readers;
 	int writers;
+	int invalid;
 };
 
 static inline void fifo_write_lock(struct fifo_buffer *buffer) {
@@ -88,12 +89,14 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
  * taking control of the start of the queue making it inaccessible to
  * others.
  */
-static inline void fifo_read_clear_forward (
+static inline int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
 		void (*callback)(void *data)
 ) {
+	int ret = 0;
 	fifo_write_lock(buffer);
+	if (buffer->invalid) { fifo_write_unlock(buffer); return 0; }
 
 	struct fifo_buffer_entry *current = buffer->gptr_first;
 	buffer->gptr_first = last_element->next;
@@ -104,6 +107,7 @@ static inline void fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
+		ret++;
 		callback(current->data);
 
 		free(current->data);
@@ -111,6 +115,8 @@ static inline void fifo_read_clear_forward (
 
 		current = next;
 	}
+
+	return ret;
 }
 
 /*
@@ -119,6 +125,7 @@ static inline void fifo_read_clear_forward (
  */
 static inline void fifo_read(struct fifo_buffer *buffer, void (*callback)(void *data)) {
 	fifo_read_lock(buffer);
+	if (buffer->invalid) { fifo_read_unlock(buffer); return; }
 
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
@@ -127,7 +134,6 @@ static inline void fifo_read(struct fifo_buffer *buffer, void (*callback)(void *
 	}
 
 	fifo_read_unlock(buffer);
-
 }
 /*
  * This writing method holds the lock for a minimum amount of time, only to
@@ -139,6 +145,7 @@ static inline void fifo_buffer_write(struct fifo_buffer *buffer, void *data) {
 	entry->data = data;
 
 	fifo_write_lock(buffer);
+	if (buffer->invalid) { free(entry->data); free(entry); fifo_write_unlock(buffer); return; }
 
 	if (buffer->gptr_last == NULL) {
 		buffer->gptr_last = entry;
@@ -152,7 +159,8 @@ static inline void fifo_buffer_write(struct fifo_buffer *buffer, void *data) {
 	fifo_write_unlock(buffer);
 }
 
-void fifo_buffer_destroy();
+void fifo_buffer_invalidate(struct fifo_buffer *buffer);
+void fifo_buffer_destroy(struct fifo_buffer *buffer);
 struct fifo_buffer *fifo_buffer_init();
 
 #endif
