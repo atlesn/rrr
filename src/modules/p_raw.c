@@ -35,59 +35,48 @@ struct raw_private_data {
 	struct module_dynamic_data *sender;
 };
 
-static void module_destroy(struct module_dynamic_data *data) {
-	printf ("Destroy raw module\n");
-
-	free(data->private_data);
-	free(data);
-}
-
-static void set_sender(struct module_dynamic_data *data, struct module_dynamic_data *sender) {
-	struct raw_private_data *private_data = (struct raw_private_data *) data->private_data;
-
-	private_data->sender = sender;
-}
-
 static void *thread_entry(void *arg) {
-	struct vl_thread *thread = arg;
+	struct module_thread_data *thread_data = arg;
 
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread_data->thread, VL_THREAD_STATE_RUNNING);
 
-	while (thread_check_encourage_stop(thread) != 1) {
-		printf ("Thread %p tick\n", thread);
-		update_watchdog_time(thread);
+	while (thread_check_encourage_stop(thread_data->thread) != 1) {
+		update_watchdog_time(thread_data->thread);
 		usleep (5000);
 	}
 
-	printf ("Thread raw %p exiting\n", thread);
+	printf ("Thread raw %p exiting\n", thread_data->thread);
 
 	pthread_exit(0);
 	return NULL;
 }
 
 static struct module_operations module_operations = {
-		module_destroy,
 		thread_entry,
 		NULL,
-		NULL,
-		set_sender
+		NULL
 };
 
 static const char *module_name = "raw";
 
-struct module_dynamic_data *module_get_data() {
-		struct raw_private_data *private_data = malloc(sizeof(*private_data));
-		private_data->sender = NULL;
-
-		struct module_dynamic_data *data = malloc(sizeof(*data));
-		data->name = module_name;
-		data->type = VL_MODULE_TYPE_PROCESSOR;
-		data->operations = module_operations;
-		data->dl_ptr = NULL;
-		data->private_data = private_data;
-		return data;
-};
-
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void load(struct module_dynamic_data *data) {
+	struct raw_private_data *private_data = malloc(sizeof(*private_data));
+	memset(private_data, '\0', sizeof(*private_data));
+	data->private_data = private_data;
+	data->name = module_name;
+	data->type = VL_MODULE_TYPE_PROCESSOR;
+	data->operations = module_operations;
+	data->dl_ptr = NULL;
+	data->private_data = NULL;
 }
 
+__attribute__((constructor)) void unload(struct module_dynamic_data *data) {
+	printf ("Destroy raw module\n");
+
+	free(data->private_data);
+}
+
+__attribute__((constructor)) void set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
+	struct raw_private_data *private_data = (struct raw_private_data *) data->private_data;
+	private_data->sender = sender;
+}

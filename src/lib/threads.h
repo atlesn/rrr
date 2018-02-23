@@ -71,6 +71,7 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+	void *private_arg;
 };
 
 static inline uint64_t time_get_64() {
@@ -175,6 +176,6 @@ static inline int thread_get_signal(struct vl_thread *thread) {
 	return signal;
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (void*));
+struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg);
 
 #endif

@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "modules.h"
-#include "lib/threads.h"
 #include "cmdlineparser/cmdline.h"
 
 int main_loop() {
@@ -104,26 +103,26 @@ int main (int argc, const char *argv[]) {
 		goto out_unload_all;
 	}
 
-	processor_module->operations.set_sender(processor_module, source_module);
-	destination_module->operations.set_sender(destination_module, processor_module);
+	module_set_sender(processor_module, source_module);
+	module_set_sender(destination_module, processor_module);
 
-	threads_init();
+	module_threads_init();
 
-	struct vl_thread *source_thread = thread_start (source_module->operations.thread_entry);
+	struct module_thread_data *source_thread = module_start_thread(source_module, NULL);
 	if (source_thread == NULL) {
 		fprintf (stderr, "Error while starting source thread\n");
 		ret = EXIT_FAILURE;
 		goto out_stop_threads;
 	}
 
-	struct vl_thread *processor_thread = thread_start (processor_module->operations.thread_entry);
+	struct module_thread_data *processor_thread = module_start_thread(processor_module, NULL);
 	if (processor_thread == NULL) {
 		fprintf (stderr, "Error while starting processor thread\n");
 		ret = EXIT_FAILURE;
 		goto out_stop_threads;
 	}
 
-	struct vl_thread *destination_thread = thread_start (destination_module->operations.thread_entry);
+	struct module_thread_data *destination_thread = module_start_thread(destination_module, NULL);
 	if (destination_thread == NULL) {
 		fprintf (stderr, "Error while starting output thread\n");
 		ret = EXIT_FAILURE;
@@ -145,7 +144,11 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out_stop_threads:
-	threads_stop();
+	module_threads_stop();
+
+	module_free_thread(source_thread);
+	module_free_thread(processor_thread);
+	module_free_thread(destination_thread);
 
 	out_unload_all:
 	unload_module(destination_module);
@@ -156,7 +159,7 @@ int main (int argc, const char *argv[]) {
 	out_unload_source:
 	unload_module(source_module);
 
-	threads_destroy();
+	module_threads_destroy();
 
 	out:
 	return ret;

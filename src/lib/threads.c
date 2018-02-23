@@ -102,8 +102,6 @@ void *thread_watchdog(void *arg) {
 		uint64_t nowtime = time_get_64();
 		uint64_t prevtime = get_watchdog_time(thread);
 
-		printf ("Watchdog thread %p prevtime %" PRIu64 " nowtime %" PRIu64 "\n", thread, prevtime, nowtime);
-
 		// We or others might try to kill the thread
 		if (thread_check_kill_signal(thread)) {
 				break;
@@ -198,7 +196,7 @@ void threads_destroy() {
 }
 
 
-struct vl_thread *thread_start (void *(*start_routine) (void*)) {
+struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg) {
 	struct vl_thread *thread;
 	struct vl_thread *watchdog_thread;
 
@@ -215,6 +213,7 @@ struct vl_thread *thread_start (void *(*start_routine) (void*)) {
 		return NULL;
 	}
 
+	thread->private_arg = arg;
 	thread->watchdog_time = 0;
 	thread->signal = 0;
 	pthread_mutex_init(&thread->mutex, NULL);

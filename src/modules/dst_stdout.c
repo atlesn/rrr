@@ -30,11 +30,6 @@ struct stdout_private_data {
 	struct module_dynamic_data *sender;
 };
 
-static void module_destroy(struct module_dynamic_data *data) {
-	free (data->private_data);
-	free (data);
-}
-
 static int print(struct module_dynamic_data *module_data, struct output *output) {
 	return 0;
 }
@@ -43,31 +38,29 @@ static void *thread_entry(void *arg) {
 	return NULL;
 }
 
-static void set_sender(struct module_dynamic_data *data, struct module_dynamic_data *sender) {
-	struct stdout_private_data *private_data = (struct stdout_private_data *) data->private_data;
-
-	private_data->sender = sender;
-}
-
 static struct module_operations module_operations = {
-		module_destroy,
 		thread_entry,
 		NULL,
-		print,
-		set_sender
+		print
 };
 
 static const char *module_name = "stdout";
 
-struct module_dynamic_data *module_get_data() {
-		struct module_dynamic_data *data = malloc(sizeof(*data));
-		data->name = module_name;
-		data->type = VL_MODULE_TYPE_DESTINATION;
-		data->operations = module_operations;
-		data->dl_ptr = NULL;
-		data->private_data = malloc(sizeof(struct stdout_private_data));
-		return data;
-};
-
-__attribute__((constructor)) void load(void) {
+__attribute__((constructor)) void load(struct module_dynamic_data *data) {
+	data->name = module_name;
+	data->type = VL_MODULE_TYPE_DESTINATION;
+	data->operations = module_operations;
+	data->dl_ptr = NULL;
+	data->private_data = malloc(sizeof(struct stdout_private_data));
 }
+
+__attribute__((constructor)) void unload(struct module_dynamic_data *data) {
+	free(data->private_data);
+}
+
+__attribute__((constructor)) void set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
+	struct stdout_private_data *private_data = (struct stdout_private_data *) data->private_data;
+	private_data->sender = sender;
+}
+
+

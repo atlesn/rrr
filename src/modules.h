@@ -38,19 +38,19 @@ struct module_dynamic_data *_module_data;
 struct reading *_reading;
 struct output *_output;
 
+static struct module_thread_data *data_;
+
 struct module_operations {
-	void (*module_destroy)(struct module_dynamic_data *data);
 	void *(*thread_entry)(void*);
 
 	/* Used by source modules */
-	int (*poll)(struct module_dynamic_data *module_data, void (*callback)(void*));
+	int (*poll)(struct module_thread_data *data, void (*callback)(void*));
 
 	/* Used by output modules */
-	int (*print)(struct module_dynamic_data *module_data, struct output *output);
+	int (*print)(struct module_thread_data *data, struct output *output);
 
-	/* Used by processor and output modules */
-	void (*set_sender)(struct module_dynamic_data *data, struct module_dynamic_data *sender);
 };
+
 
 struct module_dynamic_data {
 	const char *name;
@@ -58,9 +58,19 @@ struct module_dynamic_data {
 	struct module_operations operations;
 	void *dl_ptr;
 	void *private_data;
+	void (*unload)(struct module_dynamic_data *data);
 };
 
-//struct module_data *get_module(const char *name, unsigned int type);
+struct module_thread_data {
+	struct vl_thread *thread;
+	void *private_data;
+};
+void module_threads_init();
+void module_threads_stop();
+void module_threads_destroy();
+void module_set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender);
+void module_free_thread(struct module_thread_data *module);
+struct module_thread_data *module_start_thread(struct module_dynamic_data *module, void *private_data);
 struct module_dynamic_data *load_module(const char *name);
 void unload_module(struct module_dynamic_data *data);
 

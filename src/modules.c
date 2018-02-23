@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <dlfcn.h>
 #include <sys/types.h>
@@ -26,9 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <semaphore.h>
 
 #include "modules.h"
+#include "lib/threads.h"
 
 #ifndef VL_MODULE_PATH
 #define VL_MODULE_PATH "./modules/"
@@ -49,6 +50,45 @@ static const char *library_paths[] = {
 		""
 };
 
+void module_threads_init() {
+	threads_init();
+}
+
+void module_threads_stop() {
+	threads_stop();
+}
+
+void module_threads_destroy() {
+	threads_destroy();
+}
+
+void module_set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
+	void (*set_sender)(struct module_dynamic_data *data) = dlsym(data->dl_ptr, "set_sender");
+	if (set_sender == NULL) {
+		fprintf (stderr, "Cannot set sender for this module (%s), function not found\n", data->name);
+		exit (EXIT_FAILURE);
+	}
+}
+
+void module_free_thread(struct module_thread_data *module) {
+	free(module);
+}
+
+struct module_thread_data *module_start_thread(struct module_dynamic_data *module, void *private_data) {
+	struct module_thread_data *data = malloc(sizeof(*data));
+
+	data->thread = thread_start (module->operations.thread_entry, private_data);
+	data->private_data = private_data;
+
+	if (data->thread == NULL) {
+		fprintf (stderr, "Error while starting thread for module %s\n", module->name);
+		free(data);
+		return NULL;
+	}
+
+	return data;
+}
+
 void unload_module(struct module_dynamic_data *ptr) {
 	int err = 0;
 
@@ -57,7 +97,7 @@ void unload_module(struct module_dynamic_data *ptr) {
 	char name[256];
 	sprintf(name, "%s", ptr->name);
 
-	ptr->operations.module_destroy(ptr);
+	ptr->unload(ptr);
 
 
 #ifndef VL_MODULE_NO_DL_CLOSE
@@ -92,15 +132,20 @@ struct module_dynamic_data *load_module(const char *name) {
 			continue;
 		}
 
-		struct module_dynamic_data *(*module_get_data)(void) = dlsym(handle, "module_get_data");
-		if (module_get_data == NULL) {
-			fprintf (stderr, "Problem with module, could not find module_get_data-symbol: %s\n", dlerror());
+		void (*load)(void*) = dlsym(handle, "load");
+		void (*unload)(void*) = dlsym(handle, "unload");
+
+		if (load == NULL || unload == NULL) {
 			dlclose(handle);
-			break;
+			fprintf (stderr, "Module %s missing load/unload functions\n", path);
+			continue;
 		}
 
-		struct module_dynamic_data *data = module_get_data();
+		struct module_dynamic_data *data = malloc(sizeof(*data));
 		data->dl_ptr = handle;
+		data->unload = unload;
+
+		load(data);
 
 		return data;
 
