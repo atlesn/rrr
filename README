@@ -1,0 +1,30 @@
+# README FOR VOLTAGE LOGGER
+## ABOUT
+
+Voltage logger is designed to read data from sensors and logging it in a threaded and
+buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
+routed between custom modules by having "senders" specified for some of them, instructing
+them who to read from. Reader modules should have a buffer which they write to
+independently from the readers. A buffer implementation is included.
+
+## USAGE
+
+Two test modules are provided, `dummy` and `raw`. Dummy is a sender module who writes
+messages to a buffer at fixed intervals. The raw  simply reads from the buffer, clears it,
+and dumps the data on the screen.
+
+To start the program with these to modules with `raw` reading from `dummy`, run:
+
+`vlogger module=raw,dummy`
+
+To start the program with `raw` reading from two modules:
+
+`vlogger module=raw,custom1,custom2`
+
+To start a chain with three modules `custom1->raw->custom2`:
+
+`vlogger module=raw,custom1 module=custom2,raw`
+
+## CONTACT
+
+github.com/atlesn/voltagelogger
