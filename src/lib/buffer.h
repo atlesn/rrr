@@ -91,7 +91,8 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
  * taking control of the start of the queue making it inaccessible to
  * others.
  */
-static inline int fifo_read_clear_forward (
+//static inline int fifo_read_clear_forward (
+static int __attribute__ ((noinline))  fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
 		void (*callback)(void *callback_data, char *data, unsigned long int size),
@@ -99,7 +100,10 @@ static inline int fifo_read_clear_forward (
 ) {
 	int ret = 0;
 	fifo_write_lock(buffer);
-	if (buffer->invalid) { fifo_write_unlock(buffer); return 0; }
+	if (buffer->invalid) {
+		printf ("Buffer was invalid\n");
+		fifo_write_unlock(buffer); return -1;
+	}
 
 	struct fifo_buffer_entry *current = buffer->gptr_first;
 	struct fifo_buffer_entry *stop = NULL;
@@ -181,6 +185,6 @@ static inline void fifo_buffer_write(struct fifo_buffer *buffer, char *data, uns
 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 void fifo_buffer_destroy(struct fifo_buffer *buffer);
-struct fifo_buffer *fifo_buffer_init();
+void fifo_buffer_init(struct fifo_buffer *buffer);
 
 #endif

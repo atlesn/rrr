@@ -28,9 +28,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "lib/threads.h"
 
+#define VL_MODULE_PRIVATE_MEMORY_SIZE 1024
+
 #define VL_MODULE_TYPE_SOURCE 1
-#define VL_MODULE_TYPE_DESTINATION 2
 #define VL_MODULE_TYPE_PROCESSOR 3
+
+#define VL_POLL_RESULT_ERR -1
+#define VL_POLL_RESULT_OK 1
+#define VL_POLL_EMPTY_RESULT_OK 0
+
 
 //#define VL_MODULE_NO_DL_CLOSE
 
@@ -67,6 +73,7 @@ struct module_thread_data {
 	struct module_thread_data *sender;
 	struct module_dynamic_data *module;
 	void *private_data;
+	char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE];
 };
 
 struct module_thread_init_data {

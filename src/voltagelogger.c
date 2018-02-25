@@ -37,96 +37,180 @@ void signal_interrupt (int s) {
     main_running = 0;
 }
 
+struct module_metadata {
+	struct module_dynamic_data *module;
+	struct module_thread_data *thread_data;
+	struct module_metadata *sender;
+};
+
+struct module_metadata modules[CMD_ARGUMENT_MAX];
+
+void module_free_all_threads() {
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		if (modules[i].module == NULL) {
+			break;
+		}
+		module_free_thread(modules[i].thread_data);
+	}
+}
+
+void unload_all_modules() {
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		if (modules[i].module == NULL) {
+			break;
+		}
+		unload_module(modules[i].module);
+	}
+}
+
+struct module_metadata *save_module(struct module_dynamic_data *module) {
+	printf ("Saving module %s\n", module->name);
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		if (modules[i].module == NULL) {
+			modules[i].module = module;
+			return &modules[i];
+		}
+	}
+	fprintf (stderr, "Too many different modules defind, max is %i\n", CMD_ARGUMENT_MAX);
+	exit(EXIT_FAILURE);
+}
+
+struct module_metadata *find_or_load_module(const char *name) {
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		struct module_dynamic_data *module = modules[i].module;
+		if (module != NULL && strcmp(module->name, name) == 0) {
+			return &modules[i];
+		}
+	}
+
+	struct module_dynamic_data *module = load_module(name);
+	if (module == NULL) {
+		fprintf (stderr, "Module %s could not be loaded\n", name);
+		return NULL;
+	}
+
+	return save_module(module);
+}
+
+struct module_metadata *find_module(const char *name) {
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		struct module_dynamic_data *module = modules[i].module;
+		if (module != NULL && strcmp(module->name, name) == 0) {
+			return &modules[i];
+		}
+	}
+	return NULL;
+}
 int main (int argc, const char *argv[]) {
 	struct cmd_data cmd;
 
 	int ret = EXIT_SUCCESS;
 
-	if (cmd_parse(&cmd, argc, argv, CMD_CONFIG_NOCOMMAND) != 0) {
+	if (cmd_parse(&cmd, argc, argv, CMD_CONFIG_NOCOMMAND|CMD_CONFIG_SPLIT_COMMA) != 0) {
 		fprintf (stderr, "Error while parsing command line\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	const char *src_module_string = cmd_get_value(&cmd, "src_module");
-	const char *p_module_string = cmd_get_value(&cmd, "p_module");
-	const char *dst_module_string = cmd_get_value(&cmd, "dst_module");
-
-	if (src_module_string == NULL) {
-		src_module_string = "dummy";
-	}
-	if (p_module_string == NULL) {
-		p_module_string = "raw";
-	}
-	if (dst_module_string == NULL) {
-		dst_module_string = "stdout";
-	}
-
-	printf ("Using source module '%s' for input\n", src_module_string);
-	printf ("Using processor module '%s' for processing\n", p_module_string);
-	printf ("Using destination module '%s' for output\n", dst_module_string);
-
-	struct module_dynamic_data *source_module = load_module(src_module_string);
-	if (source_module == NULL) {
-		fprintf (stderr, "Module %s could not be loaded\n", src_module_string);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	struct module_dynamic_data *processor_module = load_module(p_module_string);
-	if (processor_module == NULL) {
-		fprintf (stderr, "Module %s could not be loaded\n", p_module_string);
-		ret = EXIT_FAILURE;
-		goto out_unload_source;
-	}
-
-	struct module_dynamic_data *destination_module = load_module(dst_module_string);
-	if (destination_module == NULL) {
-		fprintf (stderr, "Module %s could not be loaded\n", dst_module_string);
-		ret = EXIT_FAILURE;
-		goto out_unload_processor;
-	}
-
-	if (source_module->type != VL_MODULE_TYPE_SOURCE) {
-		fprintf (stderr, "Module %s could not be used as source module\n", src_module_string);
-		ret = EXIT_FAILURE;
-	}
-	if (processor_module->type != VL_MODULE_TYPE_PROCESSOR) {
-		fprintf (stderr, "Module %s could not be used as processor module\n", p_module_string);
-		ret = EXIT_FAILURE;
-	}
-	if (destination_module->type != VL_MODULE_TYPE_DESTINATION) {
-		fprintf (stderr, "Module %s could not be used as destination module\n", dst_module_string);
-		ret = EXIT_FAILURE;
-	}
-	if (ret != EXIT_SUCCESS) {
-		goto out_unload_all;
-	}
+	memset(modules, '\0', sizeof(modules));
 
 	module_threads_init();
 
-	struct module_thread_init_data source_init = {source_module, NULL};
-	struct module_thread_data *source_thread = module_start_thread(&source_init);
-	if (source_thread == NULL) {
-		fprintf (stderr, "Error while starting source thread\n");
-		ret = EXIT_FAILURE;
-		goto out_stop_threads;
+	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		const char *module_string = cmd_get_subvalue(&cmd, "module", i, 0);
+		const char *sender_string = cmd_get_subvalue(&cmd, "module", i, 1);
+
+		if (module_string == NULL || *module_string == '\0') {
+			break;
+		}
+
+		printf ("Loading module '%s' with sender argument '%s'\n", module_string, sender_string);
+		struct module_metadata *module = find_or_load_module(module_string);
+		if (module->module == NULL) {
+			fprintf (stderr, "Module %s could not be loaded\n", module_string);
+			ret = EXIT_FAILURE;
+			goto out_unload_all;
+		}
+
+		if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
+			if (*sender_string == '\0') {
+				fprintf (stderr, "Sender module must be specified for processor module %s\n", module_string);
+				ret = EXIT_FAILURE;
+				goto out_unload_all;
+			}
+
+			printf ("Loading sender module '%s' (if not already loaded)\n", sender_string);
+			struct module_metadata *module_sender = find_or_load_module(sender_string);
+			if (module->module == NULL) {
+				fprintf (stderr, "Module %s could not be loaded\n", sender_string);
+				ret = EXIT_FAILURE;
+				goto out_unload_all;
+			}
+
+			if (module_sender == module) {
+				fprintf (stderr, "Module %s set with itself as sender\n", sender_string);
+				ret = EXIT_FAILURE;
+				goto out_unload_all;
+			}
+			module->sender = module_sender;
+		}
+		else if (module->module->type == VL_MODULE_TYPE_SOURCE) {
+			if (*sender_string != '\0') {
+				fprintf (stderr, "Sender module cannot be specified for source module %s\n", module_string);
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+		}
+		else {
+			fprintf (stderr, "Unknown module type for %s: %i\n", module_string, module->module->type);
+		}
 	}
 
-	struct module_thread_init_data processor_init = {processor_module, source_thread};
-	struct module_thread_data *processor_thread = module_start_thread(&processor_init);
-	if (processor_thread == NULL) {
-		fprintf (stderr, "Error while starting processor thread\n");
-		ret = EXIT_FAILURE;
-		goto out_stop_threads;
-	}
 
-	struct module_thread_init_data destination_init = {destination_module, processor_thread};
-	struct module_thread_data *destination_thread = module_start_thread(&destination_init);
-	if (destination_thread == NULL) {
-		fprintf (stderr, "Error while starting output thread\n");
-		ret = EXIT_FAILURE;
-		goto out_stop_threads;
+	// Start threads, loop many times untill they are loaded in correct order
+	int rounds_nothing_loaded = 0;
+	while (1) {
+		int not_loaded_this_round = 0;
+		for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+			struct module_metadata *meta = &modules[i];
+			if (meta->module == NULL) {
+				// End of array
+				break;
+			}
+			if (meta->thread_data != NULL) {
+				// Already loaded
+				continue;
+			}
+			struct module_metadata *sender_meta = NULL;
+			if (meta->sender == NULL || meta->sender->thread_data != NULL) {
+				// We have no sender to specify and can be loaded first, or the
+				// sender has already been loaded hence we can load now.
+				struct module_thread_init_data init_data = {
+					meta->module, (meta->sender == NULL ? NULL : meta->sender->thread_data)
+				};
+
+				printf ("Starting thread for module %s\n", meta->module->name);
+
+				meta->thread_data = module_start_thread(&init_data);
+				if (meta->thread_data == NULL) {
+					fprintf (stderr, "Error when starting thread for module %s\n", meta->module->name);
+					ret = EXIT_FAILURE;
+					goto out_stop_threads;
+				}
+				continue;
+			}
+			not_loaded_this_round++;
+		}
+		if (not_loaded_this_round == 0) {
+			break;
+		}
+		else {
+			if (rounds_nothing_loaded++ > 0) {
+				fprintf (stderr, "Impossible module sender structure detected, cannot continue.\n");
+				ret = EXIT_FAILURE;
+				goto out_stop_threads;
+			}
+		}
 	}
 
 	// TODO : join threads
@@ -140,25 +224,18 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGINT, &action, NULL);
 
 	while (main_running) {
-		usleep (20000000);
+		usleep (200000000);
 		break;
 	}
 
+	printf ("Main loop finished\n");
+
 	out_stop_threads:
 	module_threads_stop();
-
-	module_free_thread(source_thread);
-	module_free_thread(processor_thread);
-	module_free_thread(destination_thread);
+	module_free_all_threads();
 
 	out_unload_all:
-	unload_module(destination_module);
-
-	out_unload_processor:
-	unload_module(processor_module);
-
-	out_unload_source:
-	unload_module(source_module);
+	unload_all_modules();
 
 	module_threads_destroy();
 

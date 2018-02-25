@@ -63,7 +63,7 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->name = module_name;
-	data->type = VL_MODULE_TYPE_DESTINATION;
+	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 	data->private_data = malloc(sizeof(struct stdout_private_data));

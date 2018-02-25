@@ -51,6 +51,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Thread has been asked to stop, set by watchdog */
 #define VL_THREAD_STATE_ENCOURAGE_STOP 4
 
+/* Thread has to do a few cleanup operations before stopping */
+#define VL_THREAD_STATE_STOPPING 5
+
 // Milliseconds
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
 #define VL_THREAD_WATCHDOG_KILLTIME_LIMIT 1000
@@ -71,6 +74,7 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+	char thread_private_memory[];
 };
 
 struct vl_thread_start_data {
@@ -140,6 +144,8 @@ static inline uint64_t get_watchdog_time(struct vl_thread *thread) {
 static void thread_set_state(struct vl_thread *thread, int state) {
 	thread_lock(thread);
 
+	printf ("Thread %p set state %i\n", thread, state);
+
 	if (state == VL_THREAD_STATE_STARTING) {
 		fprintf (stderr, "Attempted to set STARTING state of thread outside reserve_thread function\n");
 		exit (EXIT_FAILURE);
@@ -156,12 +162,15 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 		fprintf (stderr, "Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
 		goto nosetting;
 	}
-	if (state == VL_THREAD_STATE_STOPPED && thread->state != VL_THREAD_STATE_ENCOURAGE_STOP) {
-		fprintf (stderr, "Warning: Attempted to set STOPPED state of thread while it was not in ENCOURAGE STOP state\n");
+	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING)) {
+		fprintf (stderr, "Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
+		goto nosetting;
+	}
+	if (state == VL_THREAD_STATE_STOPPED && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_STOPPING)) {
+		fprintf (stderr, "Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
 		goto nosetting;
 	}
 
-	printf ("Thread %p set state %i\n", thread, state);
 
 	thread->state = state;
 

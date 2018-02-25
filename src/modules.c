@@ -62,6 +62,9 @@ void module_threads_destroy() {
 }
 
 void module_free_thread(struct module_thread_data *module) {
+	if (module == NULL) {
+		return;
+	}
 	free(module);
 }
 

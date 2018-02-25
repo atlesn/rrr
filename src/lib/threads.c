@@ -105,10 +105,15 @@ void *thread_watchdog(void *arg) {
 
 		// We or others might try to kill the thread
 		if (thread_check_kill_signal(thread)) {
-				break;
+			fprintf (stderr, "Thread %p received kill signal\n", thread);
+			break;
+		}
+		if (thread_get_state(thread) != VL_THREAD_STATE_RUNNING) {
+			fprintf (stderr, "Thread %p state was no longed RUNNING\n", thread);
+			break;
 		}
 		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {
-			fprintf (stderr, "Thread froze, attempting to kill\n");
+			fprintf (stderr, "Thread %p froze, attempting to kill\n", thread);
 			thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
 			break;
 		}
@@ -116,13 +121,17 @@ void *thread_watchdog(void *arg) {
 		usleep (50000); // 50 ms
 	}
 
+	if (thread_get_state(thread) == VL_THREAD_STATE_STOPPED || thread_get_state(thread) == VL_THREAD_STATE_STOPPING) {
+		// Thread has stopped by itself
+		goto out_nostop;
+	}
+
 	thread_set_state(thread, VL_THREAD_STATE_ENCOURAGE_STOP);
 
+	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
 	uint64_t prevtime = time_get_64();
-	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-		//printf ("Thread %p state before killing hard: %i\n", thread, thread_get_state(thread));
+	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED && thread_get_state(thread) != VL_THREAD_STATE_STOPPING) {
 		uint64_t nowtime = time_get_64();
-
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			pthread_cancel(thread->thread);
 			fprintf (stderr, "Thread %p not responding to kill. Killing it harder.\n", thread);
@@ -132,6 +141,18 @@ void *thread_watchdog(void *arg) {
 		usleep (10000); // 10 ms
 	}
 
+	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
+	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
+		uint64_t nowtime = time_get_64();
+		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
+			pthread_cancel(thread->thread);
+			fprintf (stderr, "Thread %p not responding to kill. Killing it harder.\n", thread);
+			break;
+		}
+		usleep (10000); // 10 ms
+	}
+
+	out_nostop:
 	printf ("Thread %p state after stopping: %i\n", thread, thread_get_state(thread));
 
 	pthread_exit(0);
@@ -149,6 +170,7 @@ static void *start_routine_intermediate(void *arg) {
 	pthread_cleanup_push(thread_cleanup, start_data);
 	start_data->start_routine(start_data);
 	pthread_cleanup_pop(1);
+	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPED);
 	return NULL;
 }
 
@@ -165,6 +187,7 @@ void thread_wait_state(struct vl_thread *thread, int state) {
 }
 */
 void threads_stop() {
+	printf ("Stopping all threads\n");
 	pthread_mutex_lock(&threads_mutex);
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
 		if (threads[i]->is_watchdog) {
@@ -172,6 +195,7 @@ void threads_stop() {
 		}
 		thread_lock(threads[i]);
 		if (threads[i]->state == VL_THREAD_STATE_RUNNING) {
+			printf ("Setting kill signal thread %p\n", threads[i]);
 			threads[i]->signal = VL_THREAD_SIGNAL_KILL;
 		}
 		thread_unlock(threads[i]);

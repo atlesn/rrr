@@ -28,12 +28,19 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_lock (&buffer->mutex);
 	if (buffer->invalid) { pthread_mutex_unlock (&buffer->mutex); return; }
 	buffer->invalid = 1;
+	pthread_mutex_unlock (&buffer->mutex);
+
+	pthread_mutex_lock (&buffer->mutex);
+	printf ("Buffer waiting for %i readers and %i writers before invalidate\n", buffer->readers, buffer->writers);
 	while (buffer->readers > 0 || buffer->writers > 0) {
 	}
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
 		printf ("Free buffer entry %p data %p\n", entry, entry->data);
+
+		printf ("Buffer free entry %p with data %p\n", entry, entry->data);
+
 		free (entry->data);
 		free (entry);
 		entry = next;
@@ -43,12 +50,10 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
-	free(buffer);
+	printf ("Buffer destroy buffer struct %p\n", buffer);
 }
 
-struct fifo_buffer *fifo_buffer_init() {
-	struct fifo_buffer *buffer = malloc(sizeof(*buffer));
+void fifo_buffer_init(struct fifo_buffer *buffer) {
 	memset (buffer, '\0', sizeof(*buffer));
 	pthread_mutex_init (&buffer->mutex, NULL);
-	return buffer;
 }

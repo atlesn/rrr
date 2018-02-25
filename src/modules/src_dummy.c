@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "src_dummy.h"
 
 struct dummy_data {
-	struct fifo_buffer *buffer;
+	struct fifo_buffer buffer;
 };
 
 static int poll (
@@ -41,28 +41,47 @@ static int poll (
 		struct module_thread_data *caller_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_read_clear_forward(dummy_data->buffer, NULL, callback, caller_data);
+	int res = fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
+	printf ("Poll result was: %i\n", res);
+	if (res == 0) {
+		return VL_POLL_EMPTY_RESULT_OK;
+	}
+	else if (res >= 1) {
+		return VL_POLL_RESULT_OK;
+	}
+	else {
+		return VL_POLL_RESULT_ERR;
+	}
 }
 
-struct dummy_data *data_init() {
-	struct dummy_data *data = malloc(sizeof(*data));
-	data->buffer = fifo_buffer_init();
+struct dummy_data *data_init(struct module_thread_data *module_thread_data) {
+	// Use special memory region provided in module_thread_data which we don't have to free
+	struct dummy_data *data = (struct dummy_data *) module_thread_data->private_memory;
+	memset(data, '\0', sizeof(*data));
+	fifo_buffer_init(&data->buffer);
 	return data;
 }
 
 void data_cleanup(void *arg) {
+	// Make sure all readers have left and invalidate buffer
 	struct dummy_data *data = (struct dummy_data *) arg;
-	fifo_buffer_invalidate(data->buffer);
-	fifo_buffer_destroy(data->buffer);
-	free(data);
+	fifo_buffer_invalidate(&data->buffer);
+	fifo_buffer_destroy(&data->buffer);
+}
+
+void dummy_set_stopping(void *arg) {
+	struct vl_thread *thread = arg;
+	// This must be done to stop readers from accessing us
+	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
 }
 
 static void *thread_entry(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	struct dummy_data *data = data_init();
+	struct dummy_data *data = data_init(thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(dummy_set_stopping, start_data->thread);
 	thread_data->private_data = data;
 
 	static const char *dummy_msg = "Dummy measurement of time";
@@ -77,12 +96,15 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 		struct reading *reading = reading_new(time, NULL, 0);
 		memcpy(reading->msg, dummy_msg, strlen(dummy_msg)+1);
 		reading->msg_size = strlen(dummy_msg) + 1;
-		fifo_buffer_write(data->buffer, (char*)reading, sizeof(*reading));
+		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
-		usleep (5000); // 500 ms
+		usleep (250000); // 250 ms
 
 	}
 
+	printf ("Dummy received encourage stop\n");
+
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

@@ -66,11 +66,16 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 		update_watchdog_time(thread_data->thread);
 
 		printf ("Raw polling data\n");
-		poll(sender_data, poll_callback, thread_data);
+		int res = poll(sender_data, poll_callback, thread_data);
+		if (!(res >= 0)) {
+			printf ("Raw module received error from poll function\n");
+			break;
+		}
 
-		usleep (50000);
+		usleep (1249000); // 1249 ms
 	}
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPING);
 	printf ("Thread raw %p exiting\n", thread_data->thread);
 
 	out:
