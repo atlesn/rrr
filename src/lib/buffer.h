@@ -25,9 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 struct fifo_buffer_entry {
-	void *data;
+	char *data;
+	unsigned long int size;
 	struct fifo_buffer_entry *next;
 };
 
@@ -92,25 +94,39 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 static inline int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(void *data)
+		void (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
 ) {
 	int ret = 0;
 	fifo_write_lock(buffer);
 	if (buffer->invalid) { fifo_write_unlock(buffer); return 0; }
 
 	struct fifo_buffer_entry *current = buffer->gptr_first;
-	buffer->gptr_first = last_element->next;
+	struct fifo_buffer_entry *stop = NULL;
+
+	if (last_element != NULL) {
+		buffer->gptr_first = last_element->next;
+		stop = last_element->next;
+		if (stop == NULL) {
+			buffer->gptr_last = NULL;
+		}
+	}
+	else {
+		buffer->gptr_first = NULL;
+		buffer->gptr_last = NULL;
+	}
 
 	fifo_write_unlock(buffer);
 
-	struct fifo_buffer_entry *stop = last_element->next;
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
 		ret++;
-		callback(current->data);
 
-		free(current->data);
+		printf ("Read buffer entry %p, give away data %p\n", current, current->data);
+
+		callback(callback_data, current->data, current->size);
+
 		free(current);
 
 		current = next;
@@ -123,13 +139,13 @@ static inline int fifo_read_clear_forward (
  * This reading method blocks writers but allow other readers to traverse at the
  * same time.
  */
-static inline void fifo_read(struct fifo_buffer *buffer, void (*callback)(void *data)) {
+static inline void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)) {
 	fifo_read_lock(buffer);
 	if (buffer->invalid) { fifo_read_unlock(buffer); return; }
 
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
-		callback(first->data);
+		callback(first->data, first->size);
 		first = first->next;
 	}
 
@@ -139,12 +155,14 @@ static inline void fifo_read(struct fifo_buffer *buffer, void (*callback)(void *
  * This writing method holds the lock for a minimum amount of time, only to
  * update the pointers to the end.
  */
-static inline void fifo_buffer_write(struct fifo_buffer *buffer, void *data) {
+static inline void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int size) {
 	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	memset (entry, '\0', sizeof(*entry));
 	entry->data = data;
+	entry->size = size;
 
 	fifo_write_lock(buffer);
+
 	if (buffer->invalid) { free(entry->data); free(entry); fifo_write_unlock(buffer); return; }
 
 	if (buffer->gptr_last == NULL) {
@@ -155,6 +173,8 @@ static inline void fifo_buffer_write(struct fifo_buffer *buffer, void *data) {
 		buffer->gptr_last->next = entry;
 		buffer->gptr_last = entry;
 	}
+
+	printf ("New buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }

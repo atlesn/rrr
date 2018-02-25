@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <error.h>
 
+#include "lib/threads.h"
+
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_DESTINATION 2
 #define VL_MODULE_TYPE_PROCESSOR 3
@@ -34,23 +36,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // TODO : Create processor modules
 
-struct module_dynamic_data *_module_data;
-struct reading *_reading;
-struct output *_output;
+struct module_dynamic_data;
+struct reading;
 
-static struct module_thread_data *data_;
+struct vl_thread_start_data;
+struct module_thread_data;
 
 struct module_operations {
-	void *(*thread_entry)(void*);
+	void *(*thread_entry)(struct vl_thread_start_data *);
 
 	/* Used by source modules */
-	int (*poll)(struct module_thread_data *data, void (*callback)(void*));
+	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 
 	/* Used by output modules */
-	int (*print)(struct module_thread_data *data, struct output *output);
+	int (*print)(struct module_thread_data *data);
 
 };
-
 
 struct module_dynamic_data {
 	const char *name;
@@ -63,14 +64,21 @@ struct module_dynamic_data {
 
 struct module_thread_data {
 	struct vl_thread *thread;
+	struct module_thread_data *sender;
+	struct module_dynamic_data *module;
 	void *private_data;
 };
+
+struct module_thread_init_data {
+	struct module_dynamic_data *module;
+	struct module_thread_data *sender;
+};
+
 void module_threads_init();
 void module_threads_stop();
 void module_threads_destroy();
-void module_set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender);
 void module_free_thread(struct module_thread_data *module);
-struct module_thread_data *module_start_thread(struct module_dynamic_data *module, void *private_data);
+struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data);
 struct module_dynamic_data *load_module(const char *name);
 void unload_module(struct module_dynamic_data *data);
 

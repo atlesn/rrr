@@ -49,7 +49,6 @@ static const char *library_paths[] = {
 		"./",
 		""
 };
-
 void module_threads_init() {
 	threads_init();
 }
@@ -62,26 +61,20 @@ void module_threads_destroy() {
 	threads_destroy();
 }
 
-void module_set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
-	void (*set_sender)(struct module_dynamic_data *data) = dlsym(data->dl_ptr, "set_sender");
-	if (set_sender == NULL) {
-		fprintf (stderr, "Cannot set sender for this module (%s), function not found\n", data->name);
-		exit (EXIT_FAILURE);
-	}
-}
-
 void module_free_thread(struct module_thread_data *module) {
 	free(module);
 }
 
-struct module_thread_data *module_start_thread(struct module_dynamic_data *module, void *private_data) {
+struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data) {
 	struct module_thread_data *data = malloc(sizeof(*data));
+	memset(data, '\0', sizeof(*data));
 
-	data->thread = thread_start (module->operations.thread_entry, private_data);
-	data->private_data = private_data;
+	data->module = init_data->module;
+	data->sender = init_data->sender;
+	data->thread = thread_start (data->module->operations.thread_entry, data);
 
 	if (data->thread == NULL) {
-		fprintf (stderr, "Error while starting thread for module %s\n", module->name);
+		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
 		free(data);
 		return NULL;
 	}
@@ -94,11 +87,9 @@ void unload_module(struct module_dynamic_data *ptr) {
 
 	void *dl_ptr = ptr->dl_ptr;
 
-	char name[256];
-	sprintf(name, "%s", ptr->name);
-
 	ptr->unload(ptr);
 
+	free(ptr);
 
 #ifndef VL_MODULE_NO_DL_CLOSE
 	if (dlclose(dl_ptr) != 0) {
@@ -132,24 +123,22 @@ struct module_dynamic_data *load_module(const char *name) {
 			continue;
 		}
 
-		void (*load)(void*) = dlsym(handle, "load");
-		void (*unload)(void*) = dlsym(handle, "unload");
+		void (*init)(struct module_dynamic_data *data) = dlsym(handle, "init");
+		void (*unload)(struct module_dynamic_data *data) = dlsym(handle, "unload");
 
-		if (load == NULL || unload == NULL) {
+		if (init == NULL || unload == NULL) {
 			dlclose(handle);
-			fprintf (stderr, "Module %s missing load/unload functions\n", path);
+			fprintf (stderr, "Module %s missing init/unload functions\n", path);
 			continue;
 		}
 
 		struct module_dynamic_data *data = malloc(sizeof(*data));
+
+		init(data);
 		data->dl_ptr = handle;
 		data->unload = unload;
 
-		load(data);
-
 		return data;
-
-		break;
 	}
 
 	return NULL;

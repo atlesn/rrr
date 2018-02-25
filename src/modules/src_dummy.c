@@ -35,9 +35,13 @@ struct dummy_data {
 	struct fifo_buffer *buffer;
 };
 
-static int poll(struct module_thread_data *module_data, void (*callback)(void*)) {
-	struct dummy_data *data = (struct dummy_data *) module_data->private_data;
-	return fifo_read_clear_forward(data->buffer, NULL, callback);
+static int poll (
+		struct module_thread_data *data,
+		void (*callback)(void *caller_data, char *data, unsigned long int size),
+		struct module_thread_data *caller_data
+) {
+	struct dummy_data *dummy_data = data->private_data;
+	return fifo_read_clear_forward(dummy_data->buffer, NULL, callback, caller_data);
 }
 
 struct dummy_data *data_init() {
@@ -53,14 +57,17 @@ void data_cleanup(void *arg) {
 	free(data);
 }
 
-static void *thread_entry(void *arg) {
-	struct module_thread_data *thread_data = arg;
+static void *thread_entry(struct vl_thread_start_data *start_data) {
+	struct module_thread_data *thread_data = start_data->private_arg;
+	thread_data->thread = start_data->thread;
 	struct dummy_data *data = data_init();
 
 	pthread_cleanup_push(data_cleanup, data);
 	thread_data->private_data = data;
 
 	static const char *dummy_msg = "Dummy measurement of time";
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
@@ -70,16 +77,14 @@ static void *thread_entry(void *arg) {
 		struct reading *reading = reading_new(time, NULL, 0);
 		memcpy(reading->msg, dummy_msg, strlen(dummy_msg)+1);
 		reading->msg_size = strlen(dummy_msg) + 1;
-		fifo_buffer_write(data->buffer, reading);
+		fifo_buffer_write(data->buffer, (char*)reading, sizeof(*reading));
 
-		usleep (500000); // 500 ms
+		usleep (5000); // 500 ms
 
 	}
 
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
-
-	return NULL;
 }
 
 static struct module_operations module_operations = {
@@ -91,7 +96,10 @@ static struct module_operations module_operations = {
 static const char *module_name = "dummy";
 
 
-__attribute__((constructor)) void load(struct module_dynamic_data *data) {
+__attribute__((constructor)) void load() {
+}
+
+void init(struct module_dynamic_data *data) {
 		data->name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
@@ -99,7 +107,7 @@ __attribute__((constructor)) void load(struct module_dynamic_data *data) {
 		data->private_data = NULL;
 }
 
-__attribute__((constructor)) void unload(struct module_dynamic_data *data) {
+void unload(struct module_dynamic_data *data) {
 }
 
 

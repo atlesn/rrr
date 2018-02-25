@@ -71,8 +71,23 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+};
+
+struct vl_thread_start_data {
+	void *(*start_routine) (struct vl_thread_start_data *);
+	struct vl_thread *thread;
 	void *private_arg;
 };
+
+static inline void thread_lock(struct vl_thread *thread) {
+	//printf ("Thread %p lock\n", thread);
+	pthread_mutex_lock(&thread->mutex);
+}
+
+static inline void thread_unlock(struct vl_thread *thread) {
+//	printf ("Thread %p unlock\n", thread);
+	pthread_mutex_unlock(&thread->mutex);
+}
 
 static inline uint64_t time_get_64() {
 	struct timeval tv;
@@ -91,9 +106,9 @@ static inline uint64_t time_get_64() {
 /* Watchdog checks if thread should be killed */
 static inline int thread_check_kill_signal(struct vl_thread *thread) {
 	int signal;
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	signal = thread->signal;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 	return signal == VL_THREAD_SIGNAL_KILL;
 }
 
@@ -101,29 +116,29 @@ static inline int thread_check_kill_signal(struct vl_thread *thread) {
  * set by watchdog after it detects kill signal. */
 static inline int thread_check_encourage_stop(struct vl_thread *thread) {
 	int state;
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	state = thread->state;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 	return state == VL_THREAD_STATE_ENCOURAGE_STOP;
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
 static inline void update_watchdog_time(struct vl_thread *thread) {
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	thread->watchdog_time = time_get_64();
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 }
 
 static inline uint64_t get_watchdog_time(struct vl_thread *thread) {
 	uint64_t ret;
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	ret = thread->watchdog_time;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 	return ret;
 }
 
 static void thread_set_state(struct vl_thread *thread, int state) {
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 
 	if (state == VL_THREAD_STATE_STARTING) {
 		fprintf (stderr, "Attempted to set STARTING state of thread outside reserve_thread function\n");
@@ -151,31 +166,32 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 	thread->state = state;
 
 	nosetting:
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 }
 
 static inline void thread_set_signal(struct vl_thread *thread, int signal) {
-	pthread_mutex_lock(&thread->mutex);
+	printf ("Thread %p set signal %d\n", thread, signal);
+	thread_lock(thread);
 	thread->signal = signal;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);
 }
 
 static inline int thread_get_state(struct vl_thread *thread) {
 	int state;
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	state = thread->state;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 	return state;
 }
 
 static inline int thread_get_signal(struct vl_thread *thread) {
 	int signal;
-	pthread_mutex_lock(&thread->mutex);
+	thread_lock(thread);
 	signal = thread->signal;
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);;
 	return signal;
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg);
+struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg);
 
 #endif

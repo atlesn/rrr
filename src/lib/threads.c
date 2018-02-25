@@ -38,6 +38,8 @@ static pthread_mutex_t threads_mutex = PTHREAD_MUTEX_INITIALIZER;
 void threads_init() {
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
 		threads[i] = malloc(sizeof(struct vl_thread));
+		printf ("Thread %d\n", i);
+		printf ("Initialize thread %p\n", threads[i]);
 		memset(threads[i], '\0', sizeof(struct vl_thread));
 		pthread_mutex_init(&threads[i]->mutex, NULL);
 	}
@@ -48,7 +50,7 @@ void free_thread(struct vl_thread *thread) {
 
 	int thread_found = 0;
 	for (int i = 0; i < VL_THREADS_MAX && thread_found == 0; i++) {
-		pthread_mutex_lock(&threads[i]->mutex);
+		thread_lock(threads[i]);
 		if (threads[i] == thread) {
 			thread_found = 1;
 			if (threads[i]->state != VL_THREAD_STATE_STOPPED) {
@@ -57,7 +59,7 @@ void free_thread(struct vl_thread *thread) {
 			}
 			threads[i]->state = VL_THREAD_STATE_FREE;
 		}
-		pthread_mutex_unlock(&threads[i]->mutex);
+		thread_unlock(threads[i]);
 	}
 
 	if (thread_found != 1) {
@@ -79,13 +81,13 @@ static struct vl_thread *reserve_thread() {
 			fprintf (stderr, "Warning: Found NULL entry while reserving thread\n");
 			continue;
 		}
-		pthread_mutex_lock(&threads[i]->mutex);
+		thread_lock(threads[i]);
 		if (threads[i]->state == VL_THREAD_STATE_FREE) {
 			threads[i]->state = VL_THREAD_STATE_STOPPED;
 			ret = threads[i];
 			thread_found = 1;
 		}
-		pthread_mutex_unlock(&threads[i]->mutex);
+		thread_unlock(threads[i]);
 	}
 
 	pthread_mutex_unlock(&threads_mutex);
@@ -95,7 +97,6 @@ static struct vl_thread *reserve_thread() {
 
 void *thread_watchdog(void *arg) {
 	struct vl_thread *thread = arg;
-
 	usleep (500000);
 
 	while (1) {
@@ -119,10 +120,11 @@ void *thread_watchdog(void *arg) {
 
 	uint64_t prevtime = time_get_64();
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-		printf ("Thread %p state before killing hard: %i\n", thread, thread_get_state(thread));
+		//printf ("Thread %p state before killing hard: %i\n", thread, thread_get_state(thread));
 		uint64_t nowtime = time_get_64();
 
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
+			pthread_cancel(thread->thread);
 			fprintf (stderr, "Thread %p not responding to kill. Killing it harder.\n", thread);
 			break;
 		}
@@ -130,18 +132,14 @@ void *thread_watchdog(void *arg) {
 		usleep (10000); // 10 ms
 	}
 
-	pthread_cancel(thread->thread);
+	printf ("Thread %p state after stopping: %i\n", thread, thread_get_state(thread));
+
 	pthread_exit(0);
 }
 
-struct vl_thread_start_data {
-	void *(*start_routine) (void*);
-	void *arg;
-};
-
 void thread_cleanup(void *arg) {
 	struct vl_thread_start_data *start_data = arg;
-	struct vl_thread *thread = start_data->arg;
+	struct vl_thread *thread = start_data->thread;
 	thread_set_state(thread, VL_THREAD_STATE_STOPPED);
 	free(start_data);
 }
@@ -149,7 +147,7 @@ void thread_cleanup(void *arg) {
 static void *start_routine_intermediate(void *arg) {
 	struct vl_thread_start_data *start_data = arg;
 	pthread_cleanup_push(thread_cleanup, start_data);
-	start_data->start_routine(start_data->arg);
+	start_data->start_routine(start_data);
 	pthread_cleanup_pop(1);
 	return NULL;
 }
@@ -169,19 +167,29 @@ void thread_wait_state(struct vl_thread *thread, int state) {
 void threads_stop() {
 	pthread_mutex_lock(&threads_mutex);
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
-		pthread_detach(threads[i]->thread);
 		if (threads[i]->is_watchdog) {
 			continue;
 		}
-		pthread_mutex_lock(&threads[i]->mutex);
+		thread_lock(threads[i]);
 		if (threads[i]->state == VL_THREAD_STATE_RUNNING) {
 			threads[i]->signal = VL_THREAD_SIGNAL_KILL;
 		}
-		pthread_mutex_unlock(&threads[i]->mutex);
+		thread_unlock(threads[i]);
 	}
 
 	// Wait for watchdogs to change state of thread
-	usleep (VL_THREAD_WATCHDOG_KILLTIME_LIMIT*1000*2);
+	//usleep (VL_THREAD_WATCHDOG_KILLTIME_LIMIT*1000*2);
+
+	// Join with the watchdogs. The other threads might be in hung up state.
+	for (int i = 0; i < VL_THREADS_MAX; i++) {
+		if (threads[i]->is_watchdog) {
+			void *ret;
+			pthread_join(threads[i]->thread, &ret);
+		}
+		else {
+			pthread_detach(threads[i]->thread);
+		}
+	}
 
 	// Don't unlock, destroy does that
 }
@@ -196,7 +204,7 @@ void threads_destroy() {
 }
 
 
-struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg) {
+struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg) {
 	struct vl_thread *thread;
 	struct vl_thread *watchdog_thread;
 
@@ -213,16 +221,16 @@ struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg) {
 		return NULL;
 	}
 
-	thread->private_arg = arg;
 	thread->watchdog_time = 0;
 	thread->signal = 0;
-	pthread_mutex_init(&thread->mutex, NULL);
-	pthread_mutex_lock(&thread->mutex);
+
+	thread_lock(thread);
 
 	// The thread frees *start_data with a pthread cleanup function
 	struct vl_thread_start_data *start_data  = malloc(sizeof(*start_data));
-	start_data->arg = thread;
+	start_data->private_arg = arg;
 	start_data->start_routine = start_routine;
+	start_data->thread = thread;
 
 	thread->state = VL_THREAD_STATE_STARTING;
 
@@ -244,12 +252,12 @@ struct vl_thread *thread_start (void *(*start_routine) (void*), void *arg) {
 
 	watchdog_thread->is_watchdog = 1;
 
-	printf ("Thread %p Watchdog %p", thread, watchdog_thread);
+	printf ("Thread %p Watchdog %p\n", thread, watchdog_thread);
 
 	nowatchdog:
 
 	// Thread tries to set a signal first and therefore can't proceed untill we unlock
-	pthread_mutex_unlock(&thread->mutex);
+	thread_unlock(thread);
 
 	return (err == 0 ? thread : NULL);
 }

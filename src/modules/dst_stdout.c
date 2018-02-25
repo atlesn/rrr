@@ -21,7 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
+#include "../lib/threads.h"
 #include "../modules.h"
 #include "../measurement.h"
 #include "src_dummy.h"
@@ -30,12 +32,22 @@ struct stdout_private_data {
 	struct module_dynamic_data *sender;
 };
 
-static int print(struct module_dynamic_data *module_data, struct output *output) {
+static int print(struct module_thread_data *thread_data) {
 	return 0;
 }
 
-static void *thread_entry(void *arg) {
-	return NULL;
+static void *thread_entry(struct vl_thread_start_data *start_data) {
+	struct module_thread_data *thread_data = start_data->private_arg;
+	thread_data->thread = start_data->thread;
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+	while (thread_check_encourage_stop(thread_data->thread) != 1) {
+		update_watchdog_time(thread_data->thread);
+		usleep (50000);
+	}
+
+	pthread_exit(0);
 }
 
 static struct module_operations module_operations = {
@@ -46,7 +58,10 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "stdout";
 
-__attribute__((constructor)) void load(struct module_dynamic_data *data) {
+__attribute__((constructor)) void load() {
+}
+
+void init(struct module_dynamic_data *data) {
 	data->name = module_name;
 	data->type = VL_MODULE_TYPE_DESTINATION;
 	data->operations = module_operations;
@@ -54,11 +69,11 @@ __attribute__((constructor)) void load(struct module_dynamic_data *data) {
 	data->private_data = malloc(sizeof(struct stdout_private_data));
 }
 
-__attribute__((constructor)) void unload(struct module_dynamic_data *data) {
+void unload(struct module_dynamic_data *data) {
 	free(data->private_data);
 }
 
-__attribute__((constructor)) void set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
+void set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
 	struct stdout_private_data *private_data = (struct stdout_private_data *) data->private_data;
 	private_data->sender = sender;
 }

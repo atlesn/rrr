@@ -33,6 +33,8 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
+		printf ("Free buffer entry %p data %p\n", entry, entry->data);
+		free (entry->data);
 		free (entry);
 		entry = next;
 	}

@@ -103,26 +103,26 @@ int main (int argc, const char *argv[]) {
 		goto out_unload_all;
 	}
 
-	module_set_sender(processor_module, source_module);
-	module_set_sender(destination_module, processor_module);
-
 	module_threads_init();
 
-	struct module_thread_data *source_thread = module_start_thread(source_module, NULL);
+	struct module_thread_init_data source_init = {source_module, NULL};
+	struct module_thread_data *source_thread = module_start_thread(&source_init);
 	if (source_thread == NULL) {
 		fprintf (stderr, "Error while starting source thread\n");
 		ret = EXIT_FAILURE;
 		goto out_stop_threads;
 	}
 
-	struct module_thread_data *processor_thread = module_start_thread(processor_module, NULL);
+	struct module_thread_init_data processor_init = {processor_module, source_thread};
+	struct module_thread_data *processor_thread = module_start_thread(&processor_init);
 	if (processor_thread == NULL) {
 		fprintf (stderr, "Error while starting processor thread\n");
 		ret = EXIT_FAILURE;
 		goto out_stop_threads;
 	}
 
-	struct module_thread_data *destination_thread = module_start_thread(destination_module, NULL);
+	struct module_thread_init_data destination_init = {destination_module, processor_thread};
+	struct module_thread_data *destination_thread = module_start_thread(&destination_init);
 	if (destination_thread == NULL) {
 		fprintf (stderr, "Error while starting output thread\n");
 		ret = EXIT_FAILURE;
@@ -140,7 +140,8 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGINT, &action, NULL);
 
 	while (main_running) {
-		usleep (10000);
+		usleep (20000000);
+		break;
 	}
 
 	out_stop_threads:

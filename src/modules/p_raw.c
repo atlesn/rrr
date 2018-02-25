@@ -31,52 +31,73 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "p_raw.h"
 
-struct raw_private_data {
-	struct module_dynamic_data *sender;
-};
 
-static void *thread_entry(void *arg) {
-	struct module_thread_data *thread_data = arg;
+void poll_callback(void *caller_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = caller_data;
+	struct reading *reading = (struct reading *) data;
+	printf ("Result from buffer: %s size %lu\n", reading->msg, size);
+	free(data);
+}
 
-	thread_set_state(thread_data->thread, VL_THREAD_STATE_RUNNING);
+
+static void *thread_entry(struct vl_thread_start_data *start_data) {
+	struct module_thread_data *thread_data = start_data->private_arg;
+	thread_data->thread = start_data->thread;
+	struct module_thread_data *sender_data = thread_data->sender;
+	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data) = NULL;
+	poll = sender_data->module->operations.poll;
+
+
+	printf ("Raw started thread %p\n", thread_data);
+	if (sender_data == NULL) {
+		fprintf (stderr, "Error: Sender was not set for raw processor module\n");
+		pthread_exit(0);
+	}
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+	while (thread_get_state(sender_data->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
+		update_watchdog_time(thread_data->thread);
+		printf ("Raw: Waiting for source thread to become ready\n");
+		usleep (5000);
+	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
-		usleep (5000);
+
+		printf ("Raw polling data\n");
+		poll(sender_data, poll_callback, thread_data);
+
+		usleep (50000);
 	}
 
 	printf ("Thread raw %p exiting\n", thread_data->thread);
 
+	out:
 	pthread_exit(0);
-	return NULL;
 }
 
 static struct module_operations module_operations = {
 		thread_entry,
+		NULL,
 		NULL,
 		NULL
 };
 
 static const char *module_name = "raw";
 
-__attribute__((constructor)) void load(struct module_dynamic_data *data) {
-	struct raw_private_data *private_data = malloc(sizeof(*private_data));
-	memset(private_data, '\0', sizeof(*private_data));
-	data->private_data = private_data;
+__attribute__((constructor)) void load() {
+}
+
+void init(struct module_dynamic_data *data) {
+	data->private_data = NULL;
 	data->name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->private_data = NULL;
 }
 
-__attribute__((constructor)) void unload(struct module_dynamic_data *data) {
+void unload(struct module_dynamic_data *data) {
 	printf ("Destroy raw module\n");
-
-	free(data->private_data);
 }
 
-__attribute__((constructor)) void set_sender (struct module_dynamic_data *data, struct module_dynamic_data *sender) {
-	struct raw_private_data *private_data = (struct raw_private_data *) data->private_data;
-	private_data->sender = sender;
-}
