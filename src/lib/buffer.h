@@ -91,8 +91,7 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
  * taking control of the start of the queue making it inaccessible to
  * others.
  */
-//static inline int fifo_read_clear_forward (
-static int __attribute__ ((noinline))  fifo_read_clear_forward (
+static inline int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
 		void (*callback)(void *callback_data, char *data, unsigned long int size),
