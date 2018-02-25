@@ -37,12 +37,6 @@ void signal_interrupt (int s) {
     main_running = 0;
 }
 
-struct module_metadata {
-	struct module_dynamic_data *module;
-	struct module_thread_data *thread_data;
-	struct module_metadata *sender;
-};
-
 struct module_metadata modules[CMD_ARGUMENT_MAX];
 
 void module_free_all_threads() {
@@ -118,13 +112,22 @@ int main (int argc, const char *argv[]) {
 
 	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		const char *module_string = cmd_get_subvalue(&cmd, "module", i, 0);
-		const char *sender_string = cmd_get_subvalue(&cmd, "module", i, 1);
+
+		const char *sender_strings[VL_MODULE_MAX_SENDERS];
+		int senders_count = 0;
+		for (unsigned long int j = 1; j < VL_MODULE_MAX_SENDERS; j++) {
+			const char *sender_string = cmd_get_subvalue(&cmd, "module", i, j);
+			if (sender_string == NULL || *sender_string == '\0') {
+				break;
+			}
+			sender_strings[senders_count++] = cmd_get_subvalue(&cmd, "module", i, j);
+		}
 
 		if (module_string == NULL || *module_string == '\0') {
 			break;
 		}
 
-		printf ("Loading module '%s' with sender argument '%s'\n", module_string, sender_string);
+		printf ("Loading module '%s'\n", module_string);
 		struct module_metadata *module = find_or_load_module(module_string);
 		if (module->module == NULL) {
 			fprintf (stderr, "Module %s could not be loaded\n", module_string);
@@ -133,29 +136,31 @@ int main (int argc, const char *argv[]) {
 		}
 
 		if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
-			if (*sender_string == '\0') {
+			if (senders_count == 0) {
 				fprintf (stderr, "Sender module must be specified for processor module %s\n", module_string);
 				ret = EXIT_FAILURE;
 				goto out_unload_all;
 			}
 
-			printf ("Loading sender module '%s' (if not already loaded)\n", sender_string);
-			struct module_metadata *module_sender = find_or_load_module(sender_string);
-			if (module->module == NULL) {
-				fprintf (stderr, "Module %s could not be loaded\n", sender_string);
-				ret = EXIT_FAILURE;
-				goto out_unload_all;
-			}
+			for (unsigned long int j = 0; j < senders_count; j++) {
+				printf ("Loading sender module '%s' (if not already loaded)\n", sender_strings[j]);
+				struct module_metadata *module_sender = find_or_load_module(sender_strings[j]);
+				if (module->module == NULL) {
+					fprintf (stderr, "Module %s could not be loaded\n", sender_strings[j]);
+					ret = EXIT_FAILURE;
+					goto out_unload_all;
+				}
 
-			if (module_sender == module) {
-				fprintf (stderr, "Module %s set with itself as sender\n", sender_string);
-				ret = EXIT_FAILURE;
-				goto out_unload_all;
+				if (module_sender == module) {
+					fprintf (stderr, "Module %s set with itself as sender\n", sender_strings[j]);
+					ret = EXIT_FAILURE;
+					goto out_unload_all;
+				}
+				module->senders[module->senders_count++] = module_sender;
 			}
-			module->sender = module_sender;
 		}
 		else if (module->module->type == VL_MODULE_TYPE_SOURCE) {
-			if (*sender_string != '\0') {
+			if (senders_count != 0) {
 				fprintf (stderr, "Sender module cannot be specified for source module %s\n", module_string);
 				ret = EXIT_FAILURE;
 				goto out;
@@ -182,24 +187,33 @@ int main (int argc, const char *argv[]) {
 				continue;
 			}
 			struct module_metadata *sender_meta = NULL;
-			if (meta->sender == NULL || meta->sender->thread_data != NULL) {
-				// We have no sender to specify and can be loaded first, or the
-				// sender has already been loaded hence we can load now.
-				struct module_thread_init_data init_data = {
-					meta->module, (meta->sender == NULL ? NULL : meta->sender->thread_data)
-				};
 
-				printf ("Starting thread for module %s\n", meta->module->name);
-
-				meta->thread_data = module_start_thread(&init_data);
-				if (meta->thread_data == NULL) {
-					fprintf (stderr, "Error when starting thread for module %s\n", meta->module->name);
-					ret = EXIT_FAILURE;
-					goto out_stop_threads;
+			for (int j = 0; j < meta->senders_count; j++) {
+				if (meta->senders[j]->thread_data == NULL) {
+					not_loaded_this_round++;
+					goto dont_load;
 				}
-				continue;
 			}
-			not_loaded_this_round++;
+
+			// We have no sender to specify and can be loaded first, or the
+			// sender has already been loaded hence we can load now.
+			struct module_thread_init_data init_data;
+			init_data.module = meta->module;
+			memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
+			init_data.senders_count = meta->senders_count;
+
+			printf ("Starting thread for module %s\n", meta->module->name);
+
+			meta->thread_data = module_start_thread(&init_data);
+
+			printf ("Thread data was %p\n", meta->thread_data);
+			if (meta->thread_data == NULL) {
+				fprintf (stderr, "Error when starting thread for module %s\n", meta->module->name);
+				ret = EXIT_FAILURE;
+				goto out_stop_threads;
+			}
+			dont_load:
+			continue;
 		}
 		if (not_loaded_this_round == 0) {
 			break;

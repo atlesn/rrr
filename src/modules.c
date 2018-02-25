@@ -73,7 +73,11 @@ struct module_thread_data *module_start_thread(struct module_thread_init_data *i
 	memset(data, '\0', sizeof(*data));
 
 	data->module = init_data->module;
-	data->sender = init_data->sender;
+	for (int i = 0; i < init_data->senders_count; i++) {
+		data->senders[i] = init_data->senders[i]->thread_data;
+		printf ("Assigned sender module %p,%p\n", data->senders[i], init_data->senders[i]->thread_data);
+	}
+	data->senders_count = init_data->senders_count;
 	data->thread = thread_start (data->module->operations.thread_entry, data);
 
 	if (data->thread == NULL) {

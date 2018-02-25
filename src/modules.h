@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_POLL_RESULT_OK 1
 #define VL_POLL_EMPTY_RESULT_OK 0
 
+#define VL_MODULE_MAX_SENDERS 8
 
 //#define VL_MODULE_NO_DL_CLOSE
 
@@ -70,7 +71,8 @@ struct module_dynamic_data {
 
 struct module_thread_data {
 	struct vl_thread *thread;
-	struct module_thread_data *sender;
+	struct module_thread_data *senders[VL_MODULE_MAX_SENDERS];
+	unsigned long int senders_count;
 	struct module_dynamic_data *module;
 	void *private_data;
 	char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE];
@@ -78,7 +80,15 @@ struct module_thread_data {
 
 struct module_thread_init_data {
 	struct module_dynamic_data *module;
-	struct module_thread_data *sender;
+	struct module_metadata *senders[VL_MODULE_MAX_SENDERS];
+	unsigned long int senders_count;
+};
+
+struct module_metadata {
+	struct module_dynamic_data *module;
+	struct module_thread_data *thread_data;
+	struct module_metadata *senders[VL_MODULE_MAX_SENDERS];
+	unsigned long int senders_count;
 };
 
 void module_threads_init();

@@ -66,7 +66,8 @@ void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct dummy_data *data = (struct dummy_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
-	fifo_buffer_destroy(&data->buffer);
+	// Don't destroy mutex, threads might still try to use it
+	//fifo_buffer_destroy(&data->buffer);
 }
 
 void dummy_set_stopping(void *arg) {
@@ -79,6 +80,8 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	struct dummy_data *data = data_init(thread_data);
+
+	printf ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(dummy_set_stopping, start_data->thread);

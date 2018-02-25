@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "p_raw.h"
 
+// Should not be smaller than module max
+#define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
@@ -43,35 +45,56 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 static void *thread_entry(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	struct module_thread_data *sender_data = thread_data->sender;
-	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data) = NULL;
-	poll = sender_data->module->operations.poll;
+	unsigned long int senders_count = thread_data->senders_count;
 
+	printf ("Raw thread data is %p\n", thread_data);
+
+	if (senders_count > VL_RAW_MAX_SENDERS) {
+		fprintf (stderr, "Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
+		pthread_exit(0);
+	}
+
+	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+
+	for (int i = 0; i < senders_count; i++) {
+		printf ("Raw: found sender %p\n", thread_data->senders[i]);
+		poll[i] = thread_data->senders[i]->module->operations.poll;
+	}
 
 	printf ("Raw started thread %p\n", thread_data);
-	if (sender_data == NULL) {
+	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for raw processor module\n");
 		pthread_exit(0);
 	}
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	while (thread_get_state(sender_data->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
-		printf ("Raw: Waiting for source thread to become ready\n");
-		usleep (5000);
+	for (int i = 0; i < senders_count; i++) {
+		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
+			update_watchdog_time(thread_data->thread);
+			printf ("Raw: Waiting for source thread to become ready\n");
+			usleep (5000);
+		}
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
+		int err = 0;
+
 		printf ("Raw polling data\n");
-		int res = poll(sender_data, poll_callback, thread_data);
-		if (!(res >= 0)) {
-			printf ("Raw module received error from poll function\n");
-			break;
+		for (int i = 0; i < senders_count; i++) {
+			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
+			if (!(res >= 0)) {
+				printf ("Raw module received error from poll function\n");
+				err = 1;
+				break;
+			}
 		}
 
+		if (err != 0) {
+			break;
+		}
 		usleep (1249000); // 1249 ms
 	}
 
