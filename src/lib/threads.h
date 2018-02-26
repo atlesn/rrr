@@ -27,9 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/time.h>
 #include <errno.h>
 
+#include "vl_time.h"
 
 #define VL_THREADS_MAX 32
 
@@ -91,20 +91,6 @@ static inline void thread_lock(struct vl_thread *thread) {
 static inline void thread_unlock(struct vl_thread *thread) {
 //	printf ("Thread %p unlock\n", thread);
 	pthread_mutex_unlock(&thread->mutex);
-}
-
-static inline uint64_t time_get_64() {
-	struct timeval tv;
-	double time_tmp;
-
-	if (gettimeofday(&tv, NULL) != 0) {
-		fprintf (stderr, "Error while getting time, cannot recover from this: %s\n", strerror(errno));
-		exit (EXIT_FAILURE);
-	}
-
-	time_tmp = (tv.tv_sec * 1000000.0) + (tv.tv_usec);
-
-	return time_tmp;
 }
 
 /* Watchdog checks if thread should be killed */
@@ -199,6 +185,11 @@ static inline int thread_get_signal(struct vl_thread *thread) {
 	signal = thread->signal;
 	thread_unlock(thread);;
 	return signal;
+}
+
+static inline void thread_set_stopping(void *arg) {
+	struct vl_thread *thread = arg;
+	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
 }
 
 struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg);

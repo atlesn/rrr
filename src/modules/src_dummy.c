@@ -25,15 +25,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 
+#include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../modules.h"
-#include "../measurement.h"
+#include "../lib/measurement.h"
 #include "src_dummy.h"
 
 struct dummy_data {
 	struct fifo_buffer buffer;
 };
+
+static int poll_delete (
+		struct module_thread_data *data,
+		void (*callback)(void *caller_data, char *data, unsigned long int size),
+		struct module_thread_data *caller_data
+) {
+	struct dummy_data *dummy_data = data->private_data;
+	int res = fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
+	printf ("Poll result was: %i\n", res);
+	if (res == 0) {
+		return VL_POLL_EMPTY_RESULT_OK;
+	}
+	else if (res >= 1) {
+		return VL_POLL_RESULT_OK;
+	}
+	else {
+		return VL_POLL_RESULT_ERR;
+	}
+}
 
 static int poll (
 		struct module_thread_data *data,
@@ -41,7 +61,7 @@ static int poll (
 		struct module_thread_data *caller_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
-	int res = fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
+	int res = fifo_read_forward(&dummy_data->buffer, NULL, callback, caller_data);
 	printf ("Poll result was: %i\n", res);
 	if (res == 0) {
 		return VL_POLL_EMPTY_RESULT_OK;
@@ -70,13 +90,7 @@ void data_cleanup(void *arg) {
 	//fifo_buffer_destroy(&data->buffer);
 }
 
-void dummy_set_stopping(void *arg) {
-	struct vl_thread *thread = arg;
-	// This must be done to stop readers from accessing us
-	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
-}
-
-static void *thread_entry(struct vl_thread_start_data *start_data) {
+static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	struct dummy_data *data = data_init(thread_data);
@@ -84,7 +98,7 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 	printf ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(dummy_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	thread_data->private_data = data;
 
 	static const char *dummy_msg = "Dummy measurement of time";
@@ -96,9 +110,8 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 
 		uint64_t time = time_get_64();
 
-		struct reading *reading = reading_new(time, NULL, 0);
-		memcpy(reading->msg, dummy_msg, strlen(dummy_msg)+1);
-		reading->msg_size = strlen(dummy_msg) + 1;
+		struct vl_reading *reading = reading_new(time, time, dummy_msg, strlen(dummy_msg)+1);
+
 		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
 		usleep (250000); // 250 ms
@@ -113,9 +126,10 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 }
 
 static struct module_operations module_operations = {
-		thread_entry,
+		thread_entry_dummy,
 		poll,
-		NULL
+		NULL,
+		poll_delete
 };
 
 static const char *module_name = "dummy";

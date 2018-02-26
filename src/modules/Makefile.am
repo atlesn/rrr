@@ -1,4 +1,4 @@
-lib_LTLIBRARIES = dummy.la stdout.la raw.la
+lib_LTLIBRARIES = dummy.la stdout.la raw.la averager.la
 
 module_ldflags=-module -avoid-version -shared -L../lib -lvlogger 
 
@@ -10,5 +10,8 @@ stdout_la_SOURCES = dst_stdout.c
 
 raw_la_LDFLAGS = ${module_ldflags}
 raw_la_SOURCES = p_raw.c
+
+averager_la_LDFLAGS = ${module_ldflags}
+averager_la_SOURCES = p_averager.c
 
 libdir=${exec_prefix}/lib/voltagelogger

@@ -29,41 +29,82 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../modules.h"
 #include "../lib/measurement.h"
 #include "../lib/threads.h"
-#include "p_raw.h"
+#include "../lib/buffer.h"
+
+struct averager_data {
+	struct fifo_buffer input_buffer;
+	struct fifo_buffer output_buffer;
+};
 
 // Should not be smaller than module max
-#define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
+#define VL_AVERAGER_MAX_SENDERS VL_MODULE_MAX_SENDERS
+
+// In seconds, keep x seconds of readings in the buffer
+#define VL_AVERAGER_TIMESPAN 15
+
+// Create an average/max/min-reading every x seconds
+#define VL_AVERAGER_INTERVAL 10
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
 	struct vl_reading *reading = (struct vl_reading *) data;
+
+	struct averager_data *averager_data = thread_data->private_data;
+	struct fifo_buffer *input_buffer = &averager_data->input_buffer;
+
+	fifo_buffer_write_ordered(input_buffer, reading->message.timestamp_from, data, size);
+
 	printf ("Result from buffer: %s size %lu\n", reading->message.data, size);
-	free(data);
+}
+
+struct averager_data *data_init(struct module_thread_data *module_thread_data) {
+	// Use special memory region provided in module_thread_data which we don't have to free
+	struct averager_data *data = (struct averager_data *) module_thread_data->private_memory;
+	memset(data, '\0', sizeof(*data));
+	fifo_buffer_init(&data->input_buffer);
+	fifo_buffer_init(&data->output_buffer);
+	return data;
+}
+
+void data_cleanup(void *arg) {
+	// Make sure all readers have left and invalidate buffer
+	struct averager_data *data = (struct averager_data *) arg;
+	fifo_buffer_invalidate(&data->input_buffer);
+	fifo_buffer_invalidate(&data->output_buffer);
+	// Don't destroy mutex, threads might still try to use it
+	//fifo_buffer_destroy(&data->buffer);
 }
 
 
-static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
+
+static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	unsigned long int senders_count = thread_data->senders_count;
 
-	printf ("Raw thread data is %p\n", thread_data);
+	struct averager_data *data = data_init(thread_data);
 
-	if (senders_count > VL_RAW_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
+	printf ("Averager  thread data is %p\n", thread_data);
+
+	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	thread_data->private_data = data;
+
+	if (senders_count > VL_AVERAGER_MAX_SENDERS) {
+		fprintf (stderr, "Too many senders for averager module, max is %i\n", VL_AVERAGER_MAX_SENDERS);
 		pthread_exit(0);
 	}
 
-	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll[VL_AVERAGER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("Raw: found sender %p\n", thread_data->senders[i]);
+		printf ("Averager: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 	}
 
-	printf ("Raw started thread %p\n", thread_data);
+	printf ("Averager started thread %p\n", thread_data);
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for raw processor module\n");
+		fprintf (stderr, "Error: Sender was not set for averager processor module\n");
 		pthread_exit(0);
 	}
 
@@ -72,7 +113,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	for (int i = 0; i < senders_count; i++) {
 		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
 			update_watchdog_time(thread_data->thread);
-			printf ("Raw: Waiting for source thread to become ready\n");
+			printf ("Averager: Waiting for source thread to become ready\n");
 			usleep (5000);
 		}
 	}
@@ -82,11 +123,11 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		printf ("Raw polling data\n");
+		printf ("Averager polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
 			if (!(res >= 0)) {
-				printf ("Raw module received error from poll function\n");
+				printf ("Averager module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -99,20 +140,23 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	}
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPING);
-	printf ("Thread raw %p exiting\n", thread_data->thread);
+	printf ("Thread averager %p exiting\n", thread_data->thread);
 
 	out:
+
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
 static struct module_operations module_operations = {
-		thread_entry_raw,
+		thread_entry_averager,
 		NULL,
 		NULL,
 		NULL
 };
 
-static const char *module_name = "raw";
+static const char *module_name = "averager";
 
 __attribute__((constructor)) void load() {
 }
@@ -126,6 +170,6 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy raw module\n");
+	printf ("Destroy averager module\n");
 }
 

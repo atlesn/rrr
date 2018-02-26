@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/threads.h"
 #include "../modules.h"
-#include "../measurement.h"
+#include "../lib/measurement.h"
 #include "src_dummy.h"
 
 struct stdout_private_data {
@@ -36,7 +36,7 @@ static int print(struct module_thread_data *thread_data) {
 	return 0;
 }
 
-static void *thread_entry(struct vl_thread_start_data *start_data) {
+static void *thread_entry_stdout(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 
@@ -51,9 +51,10 @@ static void *thread_entry(struct vl_thread_start_data *start_data) {
 }
 
 static struct module_operations module_operations = {
-		thread_entry,
+		thread_entry_stdout,
 		NULL,
-		print
+		print,
+		NULL
 };
 
 static const char *module_name = "stdout";

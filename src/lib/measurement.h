@@ -22,40 +22,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef VL_MEASUREMENT_H
 #define VL_MEASUREMENT_H
 
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-#define VL_READING_MSG_SIZE 128
+#include "../lib/messages.h"
 
-struct reading {
+struct vl_reading {
 	uint64_t reading_millis;
-	char msg[128];
-	unsigned long int msg_size;
+	struct vl_message message;
 };
 
-struct average {
+struct vl_average {
 
 };
 
-static inline struct reading *reading_new(uint64_t reading_millis, const char *msg, unsigned long int msg_size) {
-	if (msg_size > VL_READING_MSG_SIZE) {
-		fprintf (stderr, "Bug: Too long message for measurement\n");
-		exit (EXIT_FAILURE);
-	}
+struct vl_reading *reading_new(
+		uint64_t reading_millis,
+		uint64_t time,
+		const char *msg,
+		unsigned long int msg_size
+);
 
-	struct reading *res = malloc(sizeof(*res));
-	res->reading_millis = reading_millis;
-	res->msg[0] = '\0';
-
-	if (msg_size > 0) {
-		memcpy(res->msg, msg, msg_size);
-		res->msg_size = msg_size;
-	}
-
-	return res;
-}
-
-static inline void reading_free(struct reading *reading) {
+static inline void reading_free(struct vl_reading *reading) {
 	free(reading);
 }
 

@@ -49,14 +49,12 @@ struct reading;
 struct vl_thread_start_data;
 struct module_thread_data;
 
+// Try not to put functions with equal arguments next to each other
 struct module_operations {
 	void *(*thread_entry)(struct vl_thread_start_data *);
-
-	/* Used by source modules */
 	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
-
-	/* Used by output modules */
 	int (*print)(struct module_thread_data *data);
+	int (*poll_delete)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 
 };
 

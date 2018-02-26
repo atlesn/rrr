@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "threads.h"
+#include "vl_time.h"
 
 
 static struct vl_thread *threads[VL_THREADS_MAX];
