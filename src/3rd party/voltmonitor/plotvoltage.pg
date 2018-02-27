@@ -1,0 +1,46 @@
+#!/usr/bin/gnuplot
+
+# voltage monitor and plotter for single channel USBVoltmeter from
+#    http://digital-measure.com
+
+# Copyright (C) April 2015 by Frank Lassowski (flassowski@gmx.de)
+
+# This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+reset
+set terminal png size 800,600
+
+set xdata time
+
+set timefmt "%d/%m/%Y-%H:%M:%S"
+set format x "%H:%M"
+
+set format y "%1.0fV"
+set yrange [21:30]
+
+set title "PV batteries voltage"
+
+set grid
+
+set style data lines
+set linestyle 1 lw 2
+
+# example for plotting every 10th point
+# plot "<cat" every 10 using 1:2 title "voltage"
+
+plot 	21.6 notitle, \
+        22.6 notitle, \
+        28.8 notitle, \
+        29.5 notitle, \
+	"<cat" u 1:2 title "voltage" ls 1 lt rgb "green"
