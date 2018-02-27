@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 
 struct vl_reading {
-	uint64_t reading_millis;
+	unsigned int reading_millis;
 	struct vl_message message;
 };
 

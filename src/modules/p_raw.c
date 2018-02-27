@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 #include "../modules.h"
 #include "../lib/measurement.h"
@@ -37,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
 	struct vl_reading *reading = (struct vl_reading *) data;
-	printf ("Result from buffer: %s size %lu\n", reading->message.data, size);
+	printf ("Result from buffer: %s measurement %u size %lu\n", reading->message.data, reading->reading_millis, size);
 	free(data);
 }
 

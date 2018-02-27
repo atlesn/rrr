@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "../modules.h"
 #include "../lib/measurement.h"
@@ -45,6 +46,7 @@ struct averager_data {
 // Create an average/max/min-reading every x seconds
 #define VL_AVERAGER_INTERVAL 10
 
+
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
 	struct vl_reading *reading = (struct vl_reading *) data;
@@ -54,7 +56,41 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 
 	fifo_buffer_write_ordered(input_buffer, reading->message.timestamp_from, data, size);
 
-	printf ("Result from buffer: %s size %lu\n", reading->message.data, size);
+	printf ("Result from buffer: %s size %lu measurement %u\n", reading->message.data, size, reading->reading_millis);
+}
+
+void averager_maintain_buffer(struct averager_data *data) {
+	uint64_t timespan_useconds = VL_AVERAGER_TIMESPAN * 1000000;
+	uint64_t time_now = time_get_64();
+
+	fifo_clear_order_lt(&data->input_buffer, time_now - timespan_useconds);
+}
+
+struct averager_calculation {
+	unsigned long int max;
+	unsigned long int min;
+	unsigned long int sum;
+	unsigned long int entries;
+	struct averager_data *data;
+};
+
+void averager_callback(void *callback_data, char *data, unsigned long int size) {
+	struct averager_calculation *calculation = callback_data;
+	struct vl_reading *reading = (struct vl_reading *) data;
+	calculation->entries++;
+	calculation->sum += reading->reading_millis;
+	if (reading->reading_millis < calculation->min) {
+		calculation->min = reading->reading_millis;
+	}
+	if (reading->reading_millis > calculation->max) {
+		calculation->max = reading->reading_millis;
+	}
+}
+
+void averager_calculate_average(struct averager_data *data) {
+	struct averager_calculation calculation = {0, ULONG_MAX, 0, 0, data};
+	fifo_read_forward(&data->input_buffer, NULL, averager_callback, &calculation);
+	printf ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", calculation.sum/calculation.entries, calculation.max, calculation.min, calculation.entries);
 }
 
 struct averager_data *data_init(struct module_thread_data *module_thread_data) {
@@ -74,7 +110,6 @@ void data_cleanup(void *arg) {
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }
-
 
 
 static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
@@ -118,12 +153,20 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		}
 	}
 
+	uint64_t previous_average_time = time_get_64();
+	uint64_t average_interval_useconds = VL_AVERAGER_INTERVAL * 1000000;
+
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		int err = 0;
+		printf ("Averager maintaining data\n");
+
+		averager_maintain_buffer(data);
 
 		printf ("Averager polling data\n");
+
+		int err = 0;
+
 		for (int i = 0; i < senders_count; i++) {
 			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
 			if (!(res >= 0)) {
@@ -136,10 +179,17 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
+
+		uint64_t current_time = time_get_64();
+		if (previous_average_time + average_interval_useconds < current_time) {
+			printf ("Averager calculating average\n");
+			averager_calculate_average(data);
+			previous_average_time = current_time;
+		}
+
 		usleep (1249000); // 1249 ms
 	}
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPING);
 	printf ("Thread averager %p exiting\n", thread_data->thread);
 
 	out:

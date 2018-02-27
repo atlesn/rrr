@@ -70,6 +70,29 @@ static inline void fifo_write_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+static inline void fifo_read_to_write_lock(struct fifo_buffer *buffer) {
+	int ok = 0;
+	while (ok != 3) {
+		pthread_mutex_lock(&buffer->mutex);
+
+		buffer->readers--;
+
+		if (buffer->writers == 0) {
+			ok = 1;
+		}
+		if (ok == 1) {
+			buffer->writers = 1;
+			ok = 2;
+		}
+		if (ok == 2) {
+			if (buffer->readers == 0) {
+				ok = 3;
+			}
+		}
+		pthread_mutex_unlock(&buffer->mutex);
+	}
+}
+
 static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
 	while (!ok) {
@@ -88,6 +111,10 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+int fifo_clear_order_lt (
+		struct fifo_buffer *buffer,
+		uint64_t order_min
+);
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,

@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,10 +27,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <errno.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "threads.h"
 #include "vl_time.h"
 
+// Decleare here instead of #define _GNU_SOURCE
+int pthread_tryjoin_np(pthread_t thread, void **retval);
 
 static struct vl_thread *threads[VL_THREADS_MAX];
 static pthread_mutex_t threads_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -148,6 +150,18 @@ void *thread_watchdog(void *arg) {
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			pthread_cancel(thread->thread);
 			fprintf (stderr, "Thread %p not responding to kill. Killing it harder.\n", thread);
+			usleep (100000); // 100ms
+			void *retval;
+			if (pthread_tryjoin_np(thread->thread, &retval) != 0) {
+				fprintf (stderr, "Thread %p dies slowly, waiting a bit more.\n", thread);
+				usleep (2000000); // 2000ms
+				if (pthread_tryjoin_np(thread->thread, &retval) != 0) {
+					fprintf (stderr, "Thread %p don't seem to want to let go. Ignoring it and tagging as ghost.\n", thread);
+					thread->is_ghost = 1;
+					break;
+				}
+			}
+			fprintf (stderr, "Thread %p finished.\n", thread);
 			break;
 		}
 		usleep (10000); // 10 ms
@@ -164,9 +178,16 @@ void thread_cleanup(void *arg) {
 	struct vl_thread *thread = start_data->thread;
 	thread_set_state(thread, VL_THREAD_STATE_STOPPED);
 	free(start_data);
+
+	// Check if we have died slowly and need to clean something up
+	// from our parent which has abandoned us
+	if (thread->is_ghost && thread->ghost_cleanup_pointer != NULL) {
+		fprintf (stderr, "Thread waking up after being ghost, cleaning up for parent.");
+		free(thread->ghost_cleanup_pointer);
+	}
 }
 
-static void *start_routine_intermediate(void *arg) {
+void *start_routine_intermediate(void *arg) {
 	struct vl_thread_start_data *start_data = arg;
 	pthread_cleanup_push(thread_cleanup, start_data);
 	start_data->start_routine(start_data);
@@ -221,7 +242,21 @@ void threads_stop() {
 
 void threads_destroy() {
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
+		struct vl_thread *thread = threads[i];
+
+		thread_lock(thread);
+		if (thread->is_ghost == 1) {
+			// Move pointer to thread, we expect it to clean up if it dies
+			fprintf(stderr, "Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
+			thread->ghost_cleanup_pointer = thread;
+			thread_unlock(thread);
+			goto nofree;
+		}
+
+		thread_unlock(thread);
 		free(threads[i]);
+
+		nofree:
 		threads[i] = NULL;
 	}
 	pthread_mutex_unlock(&threads_mutex);

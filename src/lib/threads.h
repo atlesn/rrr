@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Milliseconds
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
-#define VL_THREAD_WATCHDOG_KILLTIME_LIMIT 1000
+#define VL_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
 
 /* Initialize mutexes */
 void threads_init();
@@ -74,6 +74,15 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+
+	// Set when we tried to cancel a thread but we couldn't join
+	int is_ghost;
+
+	// Main thread may set this value if a thread doesn't respond and
+	// we wish to forget about it. If the thread awakes, it will run
+	// it's cleanup procedure and free this pointer
+	void *ghost_cleanup_pointer;
+
 	char thread_private_memory[];
 };
 
@@ -156,7 +165,6 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 		fprintf (stderr, "Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
 		goto nosetting;
 	}
-
 
 	thread->state = state;
 

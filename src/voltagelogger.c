@@ -44,6 +44,7 @@ void module_free_all_threads() {
 		if (modules[i].module == NULL) {
 			break;
 		}
+
 		module_free_thread(modules[i].thread_data);
 	}
 }
@@ -249,9 +250,10 @@ int main (int argc, const char *argv[]) {
 	module_free_all_threads();
 
 	out_unload_all:
-	unload_all_modules();
 
 	module_threads_destroy();
+	unload_all_modules();
+
 
 	out:
 	return ret;

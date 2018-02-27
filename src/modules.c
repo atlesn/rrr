@@ -61,11 +61,12 @@ void module_threads_destroy() {
 	threads_destroy();
 }
 
-void module_free_thread(struct module_thread_data *module) {
-	if (module == NULL) {
+void module_free_thread(struct module_thread_data *data) {
+	if (data == NULL) {
 		return;
 	}
-	free(module);
+
+	free(data);
 }
 
 struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data) {

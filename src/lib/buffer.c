@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <pthread.h>
+#include <inttypes.h>
 
 #include "buffer.h"
 
@@ -37,9 +38,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		printf ("Free buffer entry %p data %p\n", entry, entry->data);
-
-		printf ("Buffer free entry %p with data %p\n", entry, entry->data);
+		printf ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
 		free (entry->data);
 		free (entry);
@@ -56,6 +55,58 @@ void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 void fifo_buffer_init(struct fifo_buffer *buffer) {
 	memset (buffer, '\0', sizeof(*buffer));
 	pthread_mutex_init (&buffer->mutex, NULL);
+}
+
+int fifo_clear_order_lt (
+		struct fifo_buffer *buffer,
+		uint64_t order_min
+) {
+	fifo_read_lock(buffer);
+
+	struct fifo_buffer_entry *entry;
+	struct fifo_buffer_entry *clear_end = NULL;
+	for (entry = buffer->gptr_first; entry != NULL; entry = entry->next){
+		if (entry->order < order_min) {
+			// All entries up to here are to be cleared
+			clear_end = entry;
+		}
+		else {
+			break;
+		}
+	}
+
+	if (clear_end) {
+		// Change to write lock and cut the part we're clearing out. Release the lock
+		// and free the data.
+		fifo_read_to_write_lock(buffer);
+
+		struct fifo_buffer_entry *clear_start = buffer->gptr_first;
+		struct fifo_buffer_entry *clear_stop = clear_end->next;
+		buffer->gptr_first = clear_end->next;
+
+		if (clear_end->next == NULL) {
+			// We are clearing the whole buffer
+			buffer->gptr_last = NULL;
+			buffer->gptr_first = NULL;
+		}
+
+		fifo_write_unlock(buffer);
+
+		struct fifo_buffer_entry *next;
+		for (entry = clear_start; entry != clear_stop; entry = next) {
+			next = entry->next;
+
+			printf ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+
+			free(entry->data);
+			free(entry);
+		}
+
+		return 0;
+	}
+
+	fifo_read_unlock(buffer);
+	return 0;
 }
 
 /*
@@ -191,7 +242,6 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 	fifo_write_unlock(buffer);
 }
 
-
 void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size) {
 	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	memset (entry, '\0', sizeof(*entry));
@@ -202,6 +252,8 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	fifo_write_lock(buffer);
 
 	struct fifo_buffer_entry *pos = buffer->gptr_first;
+
+	// Check if buffer is empty
 	if (pos == NULL) {
 		buffer->gptr_first = entry;
 		buffer->gptr_last = entry;
@@ -209,20 +261,36 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 		goto out;
 	}
 
-	while (pos != NULL) {
-		if (pos->order >= order) {
-			if (pos == buffer->gptr_first) {
-				buffer->gptr_first = entry;
-			}
-			entry->next = pos;
-			goto out;
-		}
-		pos = pos->next;
+	// Quick check to see if we're bigger than last element
+	if (buffer->gptr_last->order < order) {
+		// Insert at end
+		buffer->gptr_last->next = entry;
+		buffer->gptr_last = entry;
+		entry->next = NULL;
+		goto out;
 	}
 
-	buffer->gptr_last->next = entry;
-	buffer->gptr_last = entry;
-	entry->next = NULL;
+	struct fifo_buffer_entry *prev = NULL;
+	for (; pos != NULL && pos->order < order; pos = pos->next) {
+		prev = pos;
+	}
+
+	if (pos == NULL) {
+		// Insert at end (we check this at the beginning, but still...)
+		buffer->gptr_last->next = entry;
+		buffer->gptr_last = entry;
+		entry->next = NULL;
+	}
+	else if (prev != NULL) {
+		// Insert in the middle
+		prev->next = entry;
+		entry->next = pos;
+	}
+	else {
+		// Insert front
+		entry->next = buffer->gptr_first;
+		buffer->gptr_first = entry;
+	}
 
 	out:
 	printf ("New ordered buffer entry %p data %p\n", entry, entry->data);
