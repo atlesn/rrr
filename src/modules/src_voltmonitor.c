@@ -46,6 +46,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../modules.h"
+#include "../lib/messages.h"
 #include "../lib/measurement.h"
 
 #define VL_VOLTMONITOR_CHANNEL 1
@@ -356,18 +357,20 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
+		uint64_t time = time_get_64();
 		int millivolts;
 		if (usb_read_voltage(data, VL_VOLTMONITOR_CHANNEL, &millivolts) != 0) {
 			fprintf (stderr, "voltmonitor: Voltage reading failed\n");
+			struct vl_message *reading = reading_new_info(time, "Voltmonitor: problems with USB-device");
+			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+
 			usleep (1000000); // 1000 ms
 			usb_find_busses();
 			usb_find_devices();
 			continue;
 		}
-		uint64_t time = time_get_64();
 
-		struct vl_reading *reading = reading_new(abs(millivolts), time, voltmonitor_msg, strlen(voltmonitor_msg)+1);
-
+		struct vl_message *reading = reading_new(abs(millivolts), time);
 		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
 		usleep (250000); // 250 ms

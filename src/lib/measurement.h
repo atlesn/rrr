@@ -25,26 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "../lib/messages.h"
+#include "messages.h"
 
-struct vl_reading {
-	unsigned int reading_millis;
-	struct vl_message message;
-};
-
-struct vl_average {
-
-};
-
-struct vl_reading *reading_new(
+struct vl_message *reading_new (
 		uint64_t reading_millis,
-		uint64_t time,
-		const char *msg,
-		unsigned long int msg_size
+		uint64_t time
 );
 
-static inline void reading_free(struct vl_reading *reading) {
-	free(reading);
-}
+struct vl_message *reading_new_info (
+		uint64_t time,
+		const char *msg_terminated
+);
 
 #endif

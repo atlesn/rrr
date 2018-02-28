@@ -144,6 +144,8 @@ void *thread_watchdog(void *arg) {
 		usleep (10000); // 10 ms
 	}
 
+	fprintf (stderr, "Detected exit of thread %p.\n", thread);
+
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();

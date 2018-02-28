@@ -39,6 +39,19 @@ void signal_interrupt (int s) {
 
 struct module_metadata modules[CMD_ARGUMENT_MAX];
 
+int module_check_threads_stopped() {
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		if (modules[i].module == NULL) {
+			break;
+		}
+
+		if (thread_get_state(modules[i].thread_data->thread) == VL_THREAD_STATE_STOPPED) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 void module_free_all_threads() {
 	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		if (modules[i].module == NULL) {
@@ -239,8 +252,11 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGINT, &action, NULL);
 
 	while (main_running) {
-		usleep (200000000);
-		break;
+		usleep (1000000);
+		if (module_check_threads_stopped() == 0) {
+			printf ("One or more threads have finished. Exiting.\n");
+			break;
+		}
 	}
 
 	printf ("Main loop finished\n");

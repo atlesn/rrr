@@ -73,13 +73,14 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 }
 
 int init_message (
-		unsigned long int type,
-		unsigned long int class,
-		uint64_t timestamp_from,
-		uint64_t timestamp_to,
-		const char *data,
-		unsigned long int data_size,
-		struct vl_message *result
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	const char *data,
+	unsigned long int data_size,
+	struct vl_message *result
 ) {
 	memset(result, '\0', sizeof(*result));
 
@@ -87,6 +88,7 @@ int init_message (
 	result->class = class;
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
+	result->data_numeric = data_numeric;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {

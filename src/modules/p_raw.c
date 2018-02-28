@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
-	struct vl_reading *reading = (struct vl_reading *) data;
-	printf ("Result from buffer: %s measurement %u size %lu\n", reading->message.data, reading->reading_millis, size);
+	struct vl_message *reading = (struct vl_message *) data;
+	printf ("Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 	free(data);
 }
 
@@ -50,25 +50,34 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	printf ("Raw thread data is %p\n", thread_data);
 
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+
 	if (senders_count > VL_RAW_MAX_SENDERS) {
 		fprintf (stderr, "Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
-		pthread_exit(0);
+		goto out_message;
 	}
 
 	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
 	for (int i = 0; i < senders_count; i++) {
 		printf ("Raw: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+
+		if (poll[i] == NULL) {
+			fprintf (stderr, "Raw cannot use this sender, lacking poll delete function.\n");
+			goto out_message;
+		}
 	}
 
 	printf ("Raw started thread %p\n", thread_data);
 	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for raw processor module\n");
-		pthread_exit(0);
+		goto out_message;
 	}
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	for (int i = 0; i < senders_count; i++) {
 		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -99,10 +108,11 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 		usleep (1249000); // 1249 ms
 	}
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPING);
+	out_message:
 	printf ("Thread raw %p exiting\n", thread_data->thread);
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 

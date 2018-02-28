@@ -110,7 +110,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 		uint64_t time = time_get_64();
 
-		struct vl_reading *reading = reading_new(time, time, dummy_msg, strlen(dummy_msg)+1);
+		struct vl_message *reading = reading_new(time, time);
 
 		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 

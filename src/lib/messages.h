@@ -36,22 +36,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MSG_TMP_SIZE 64
 
+#define MSG_IS_MSG(message)			(message->type == MSG_TYPE_MSG)
+
+#define MSG_IS_POINT(message)		(message->class == MSG_CLASS_POINT)
+#define MSG_IS_INFO(message)		(message->class == MSG_CLASS_INFO)
+
+#define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
+#define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
+
 struct vl_message {
 	unsigned long int type;
 	unsigned long int class;
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
+	uint64_t data_numeric;
 	unsigned long int length;
 	char data[MSG_DATA_MAX_LENGTH];
 };
 int init_message (
-		unsigned long int type,
-		unsigned long int class,
-		uint64_t timestamp_from,
-		uint64_t timestamp_to,
-		const char *data,
-		unsigned long int data_size,
-		struct vl_message *result
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	const char *data,
+	unsigned long int data_size,
+	struct vl_message *result
 );
 int parse_message(const char *msg, unsigned long int size, struct vl_message *result);
 

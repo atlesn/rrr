@@ -26,11 +26,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <limits.h>
+#include <inttypes.h>
 
 #include "../modules.h"
 #include "../lib/measurement.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
+#include "../lib/messages.h"
 
 struct averager_data {
 	struct fifo_buffer input_buffer;
@@ -49,14 +51,25 @@ struct averager_data {
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
-	struct vl_reading *reading = (struct vl_reading *) data;
+	struct vl_message *message = (struct vl_message *) data;
 
 	struct averager_data *averager_data = thread_data->private_data;
-	struct fifo_buffer *input_buffer = &averager_data->input_buffer;
 
-	fifo_buffer_write_ordered(input_buffer, reading->message.timestamp_from, data, size);
+	// We route info messages directly to output and store point measurements in input buffer
+	if (MSG_IS_MSG_POINT(message)) {
+		fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
 
-	printf ("Result from buffer: %s size %lu measurement %u\n", reading->message.data, size, reading->reading_millis);
+		printf ("Averager: %s size %lu measurement %" PRIu64 "\n", message->data, size, message->data_numeric);
+	}
+	else if (MSG_IS_MSG_INFO(message)) {
+		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
+
+		printf ("Averager: size %lu information '%s'\n", size, message->data);
+	}
+	else {
+		fprintf (stderr, "Averager: Unknown message type from sender. Discarding.\n");
+		free(message);
+	}
 }
 
 void averager_maintain_buffer(struct averager_data *data) {
@@ -67,30 +80,90 @@ void averager_maintain_buffer(struct averager_data *data) {
 }
 
 struct averager_calculation {
+	struct averager_data *data;
 	unsigned long int max;
 	unsigned long int min;
 	unsigned long int sum;
 	unsigned long int entries;
-	struct averager_data *data;
+
+	uint64_t timestamp_from;
+	uint64_t timestamp_to;
+	uint64_t timestamp_max;
+	uint64_t timestamp_min;
 };
 
 void averager_callback(void *callback_data, char *data, unsigned long int size) {
 	struct averager_calculation *calculation = callback_data;
-	struct vl_reading *reading = (struct vl_reading *) data;
-	calculation->entries++;
-	calculation->sum += reading->reading_millis;
-	if (reading->reading_millis < calculation->min) {
-		calculation->min = reading->reading_millis;
+	struct vl_message *message = (struct vl_message *) data;
+
+	if (!MSG_IS_MSG_POINT(message)) {
+		printf ("Averager: Ignoring a message which is not point measurement\n");
+		return;
 	}
-	if (reading->reading_millis > calculation->max) {
-		calculation->max = reading->reading_millis;
+
+	calculation->entries++;
+	calculation->sum += message->data_numeric;
+	if (message->data_numeric > calculation->max) {
+		calculation->max = message->data_numeric;
+		calculation->timestamp_max = message->timestamp_from;
+	}
+	if (message->data_numeric < calculation->min) {
+		calculation->min = message->data_numeric;
+		calculation->timestamp_min = message->timestamp_from;
+	}
+	if (message->timestamp_from < calculation->timestamp_from) {
+		calculation->timestamp_from = message->timestamp_from;
+	}
+	if (message->timestamp_to > calculation->timestamp_to) {
+		calculation->timestamp_to = message->timestamp_to;
 	}
 }
 
+void averager_spawn_message (
+	struct averager_data *data,
+	int class,
+	uint64_t time_from,
+	uint64_t time_to,
+	uint64_t measurement
+) {
+	struct vl_message *message = malloc(sizeof(*message));
+
+	char buf[64];
+	sprintf(buf, "%" PRIu64, measurement);
+
+	if (init_message (
+			MSG_TYPE_MSG,
+			class,
+			time_from,
+			time_to,
+			measurement,
+			buf,
+			strlen(buf)+1,
+			message
+	) != 0) {
+		free(message);
+		fprintf (stderr, "Bug: Could not initialize message\n");
+		exit (EXIT_FAILURE);
+	}
+
+	fifo_buffer_write_ordered(&data->output_buffer, time_from, (char*) message, sizeof(*message));
+}
+
 void averager_calculate_average(struct averager_data *data) {
-	struct averager_calculation calculation = {0, ULONG_MAX, 0, 0, data};
+	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
 	fifo_read_forward(&data->input_buffer, NULL, averager_callback, &calculation);
-	printf ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", calculation.sum/calculation.entries, calculation.max, calculation.min, calculation.entries);
+
+	if (calculation.entries == 0) {
+		printf ("Averager: No entries, not averaging\n");
+		return;
+	}
+
+	unsigned long int average = calculation.sum/calculation.entries;
+	printf ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
+
+	averager_spawn_message(data, MSG_CLASS_AVG, calculation.timestamp_from, calculation.timestamp_to, average);
+	averager_spawn_message(data, MSG_CLASS_MAX, calculation.timestamp_max, calculation.timestamp_max, calculation.max);
+	averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_min, calculation.min);
 }
 
 struct averager_data *data_init(struct module_thread_data *module_thread_data) {
@@ -125,9 +198,11 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	thread_data->private_data = data;
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
 	if (senders_count > VL_AVERAGER_MAX_SENDERS) {
 		fprintf (stderr, "Too many senders for averager module, max is %i\n", VL_AVERAGER_MAX_SENDERS);
-		pthread_exit(0);
+		goto out_message;
 	}
 
 	int (*poll[VL_AVERAGER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
@@ -135,15 +210,18 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	for (int i = 0; i < senders_count; i++) {
 		printf ("Averager: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+
+		if (poll[i] == NULL) {
+			fprintf (stderr, "Averager cannot use this sender, lacking poll delete function.\n");
+			goto out_message;
+		}
 	}
 
 	printf ("Averager started thread %p\n", thread_data);
 	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for averager processor module\n");
-		pthread_exit(0);
+		goto out_message;
 	}
-
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	for (int i = 0; i < senders_count; i++) {
 		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -189,6 +267,8 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 		usleep (1249000); // 1249 ms
 	}
+
+	out_message:
 
 	printf ("Thread averager %p exiting\n", thread_data->thread);
 
