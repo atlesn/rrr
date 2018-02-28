@@ -19,22 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef VL_MEASUREMENT_H
-#define VL_MEASUREMENT_H
+#ifndef BDL_CRC32_H
+#define BDL_CRC32_H
 
 #include <stdint.h>
-#include <stdlib.h>
 
-#include "messages.h"
-
-struct vl_message *reading_new (
-		uint64_t reading_millis,
-		uint64_t time
-);
-
-struct vl_message *reading_new_info (
-		uint64_t time,
-		const char *msg_terminated
-);
+uint32_t crc32buf (const char *buf, int len);
+int crc32cmp (const char *buf, int len, uint32_t crc32);
 
 #endif

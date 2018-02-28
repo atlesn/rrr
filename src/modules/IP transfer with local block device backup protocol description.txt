@@ -1,26 +1,24 @@
 == Voltage Meter <-> Averager
--> BINARY MEASUREMENT 
-
-MSG:{POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+-> MSG:{POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
 == Averager <-> Flow Controller
 -> MSG:{AVG|MAX|MIN|POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
-== Flow Controller <-> IP server
+== Flow Controller <-> IP client
 Keep sending every 60s untill ACK
 -> MSG:{AVG|MAX|MIN|POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
-Server has written the data. Delete from buffer (ignore Block Device).	
+Client has written the data to server. Delete from buffer (ignore Block Device).	
 <- MSG_ACK:{AVG|MAX|MIN|POINT|INFO}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}
 
 == Flow Controller <-> Block Device Controller
 Keep sending every 60s untill ACK
 -> MSG:{AVG|MAX|MIN|POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
-When getting ACK from IP server, tag entries on block device
+When getting ACK from IP client, tag entries on block device
 -> MSG_TAG:{AVG|MAX|MIN|POINT|INFO}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}
 
-Block device has written the data. Delete from buffer if ACK from IP server	
+Block device has written the data. Delete from buffer if ACK from IP client	
 <- MSG_ACK:{AVG|MAX|MIN|POINT|INFO}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}
 
 Upon initialization, block device reads stored data which is not tagged as done

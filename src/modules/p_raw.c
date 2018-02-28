@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../modules.h"
-#include "../lib/measurement.h"
+#include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "p_raw.h"
 
@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = caller_data;
 	struct vl_message *reading = (struct vl_message *) data;
-	printf ("Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	printf ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 	free(data);
 }
 
@@ -52,6 +52,8 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
 	if (senders_count > VL_RAW_MAX_SENDERS) {
 		fprintf (stderr, "Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
 		goto out_message;
@@ -59,8 +61,6 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 
-
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("Raw: found sender %p\n", thread_data->senders[i]);

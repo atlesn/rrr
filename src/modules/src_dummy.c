@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../modules.h"
-#include "../lib/measurement.h"
+#include "../lib/messages.h"
 #include "src_dummy.h"
 
 struct dummy_data {
@@ -110,11 +110,11 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 		uint64_t time = time_get_64();
 
-		struct vl_message *reading = reading_new(time, time);
+		struct vl_message *reading = message_new_reading(time, time);
 
 		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
-		usleep (250000); // 250 ms
+		usleep (750000); // 750 ms
 
 	}
 

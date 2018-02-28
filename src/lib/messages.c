@@ -23,8 +23,63 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "messages.h"
+#include "crc32.h"
+
+// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+
+struct vl_message *message_new_reading (
+		uint64_t reading_millis,
+		uint64_t time
+) {
+	struct vl_message *res = malloc(sizeof(*res));
+
+	char buf[64];
+	sprintf (buf, "%" PRIu64, reading_millis);
+
+	if (init_message (
+			MSG_TYPE_MSG,
+			MSG_CLASS_POINT,
+			time,
+			time,
+			reading_millis,
+			buf,
+			strlen(buf),
+			res
+	) != 0) {
+		free(res);
+		fprintf (stderr, "Bug: Could not initialize message\n");
+		exit (EXIT_FAILURE);
+	}
+
+	return res;
+}
+
+struct vl_message *message_new_info (
+		uint64_t time,
+		const char *msg_terminated
+) {
+	struct vl_message *res = malloc(sizeof(*res));
+
+	if (init_message (
+			MSG_TYPE_MSG,
+			MSG_CLASS_INFO,
+			time,
+			time,
+			0,
+			msg_terminated,
+			strlen(msg_terminated),
+			res
+	) != 0) {
+		free(res);
+		fprintf (stderr, "Bug: Could not initialize info message\n");
+		exit (EXIT_FAILURE);
+	}
+
+	return res;
+}
 
 int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
 	unsigned long int search_length = strlen(search);
@@ -36,7 +91,9 @@ int find_string(const char *str, unsigned long int size, const char *search, con
 	if (strncmp(str, search, search_length) != 0) {
 		return 1;
 	}
-	*result = str + size + 1;
+
+	*result = str + strlen(search) + 1;
+
 	return 0;
 }
 
@@ -98,6 +155,7 @@ int init_message (
 
 	result->length = data_size;
 	memcpy (result->data, data, data_size);
+	result->data[data_size+1] = '\0';
 
 	return 0;
 }
@@ -107,14 +165,14 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	const char *pos = msg;
 	const char *end = msg + size;
 
-	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string(pos, end - pos, "MSG", &pos) == 0) {
+	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
 		result->type = MSG_TYPE_MSG;
 	}
-	else if (find_string(pos, end - pos, "MSG_ACK", &pos) == 0) {
+	else if (find_string(pos, end - pos, MSG_TYPE_ACK_STRING, &pos) == 0) {
 		result->type = MSG_TYPE_ACK;
 	}
-	else if (find_string(pos, end - pos, "MSG_TAG", &pos) == 0) {
+	else if (find_string(pos, end - pos, MSG_TYPE_TAG_STRING, &pos) == 0) {
 		result->type = MSG_TYPE_TAG;
 	}
 	else {
@@ -122,26 +180,32 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		return 1;
 	}
 
-	// {AVG|MAX|MIN|POINT|INFO}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string (pos, end - pos, "AVG", &pos) == 0) {
+	// {AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	if (find_string (pos, end - pos, MSG_CLASS_AVG_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_AVG;
 	}
-	else if (find_string (pos, end - pos, "MAX", &pos) == 0) {
+	else if (find_string (pos, end - pos, MSG_CLASS_MAX_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_MAX;
 	}
-	else if (find_string (pos, end - pos, "MIN", &pos) == 0) {
+	else if (find_string (pos, end - pos, MSG_CLASS_MIN_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_MIN;
 	}
-	else if (find_string (pos, end - pos, "AVG", &pos) == 0) {
-		result->class = MSG_CLASS_AVG;
+	else if (find_string (pos, end - pos, MSG_CLASS_POINT_STRING, &pos) == 0) {
+		result->class = MSG_CLASS_POINT;
 	}
-	else if (find_string (pos, end - pos, "INFO", &pos) == 0) {
+	else if (find_string (pos, end - pos, MSG_CLASS_INFO_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_INFO;
 	}
 	else {
 		fprintf (stderr, "Unknown message class\n");
 		return 1;
 	}
+	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	uint64_t crc32_tmp;
+	if (find_number(pos, end-pos, &pos, &crc32_tmp) != 0) {
+		return 1;
+	}
+	result->crc32 = crc32_tmp;
 
 	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_number(pos, end-pos, &pos, &result->length) != 0) {
@@ -160,17 +224,99 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 
 	// {DATA}
 	unsigned long int data_length = size - (pos - msg);
-	if (data_length > MSG_DATA_MAX_LENGTH) {
+	if (result->length > MSG_DATA_MAX_LENGTH) {
 		fprintf (stderr, "Message data size was too long\n");
 		return 1;
 	}
+	/* Ignore this, just accept what's there if it's enough
 	if (result->length != data_length) {
 		fprintf (stderr, "Message reported data length did not match actual length\n");
 		return 1;
 	}
+	*/
 
-	result->length = data_length;
-	memcpy(result->data, pos, data_length);
+	memcpy(result->data, pos, result->length);
 
 	return 0;
+}
+
+int message_to_string (
+	struct vl_message *message,
+	char *target,
+	unsigned long int target_size
+) {
+	if (target_size < MSG_STRING_MAX_LENGTH) {
+		fprintf (stderr, "Message target size was too small when converting to string\n");
+		return 1;
+	}
+
+	const char *type;
+	switch (message->type) {
+	case MSG_TYPE_MSG:
+		type = MSG_TYPE_MSG_STRING;
+		break;
+	case MSG_TYPE_ACK:
+		type = MSG_TYPE_ACK_STRING;
+		break;
+	case MSG_TYPE_TAG:
+		type = MSG_TYPE_TAG_STRING;
+		break;
+	default:
+		fprintf (stderr, "Unknown type %lu in message while converting to string\n", message->type);
+		return 1;
+	}
+
+	const char *class;
+	switch (message->class) {
+	case MSG_CLASS_POINT:
+		class = MSG_CLASS_POINT_STRING;
+		break;
+	case MSG_CLASS_AVG:
+		class = MSG_CLASS_AVG_STRING;
+		break;
+	case MSG_CLASS_MAX:
+		class = MSG_CLASS_MAX_STRING;
+		break;
+	case MSG_CLASS_MIN:
+		class = MSG_CLASS_MIN_STRING;
+		break;
+	case MSG_CLASS_INFO:
+		class = MSG_CLASS_INFO_STRING;
+		break;
+	default:
+		fprintf (stderr, "Unknown class %lu in message while converting to string\n", message->class);
+		return 1;
+	}
+
+	sprintf(target, "%s:%s:%" PRIu32 ":%lu:%" PRIu64 ":%" PRIu64 ":",
+			type, class,
+			message->crc32,
+			message->length,
+			message->timestamp_from,
+			message->timestamp_to
+	);
+
+	int length = strlen(target);
+	memcpy(target + length, message->data, message->length);
+	target[length + message->length + 1] = '\0';
+
+	return 0;
+}
+
+void message_checksum (
+	struct vl_message *message
+) {
+	message->crc32 = 0;
+	uint32_t result = crc32buf((char *) message, sizeof(*message));
+	message->crc32 = result;
+}
+
+int message_checksum_check (
+	struct vl_message *message
+) {
+	uint32_t checksum = message->crc32;
+	message->crc32 = 0;
+	int res = crc32cmp((char *) message, sizeof(*message), checksum);
+	message->crc32 = checksum;
+	return (res == 0 ? 0 : 1);
 }

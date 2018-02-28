@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/threads.h"
 #include "../modules.h"
-#include "../lib/measurement.h"
+#include "../lib/messages.h"
 #include "src_dummy.h"
 
 struct stdout_private_data {
