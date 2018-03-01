@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
+#include "../lib/cmdlineparser/cmdline.h"
 
 // Should not be smaller than module max
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -46,6 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
+	const char *ip_server;
+	const char *ip_port;
 };
 
 // Poll request from other modules
@@ -108,8 +111,10 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 }
 
 void send_packets(struct ipclient_data *data) {
-	const char* hostname = VL_IPCLIENT_SERVER_NAME;
-	const char* portname = VL_IPCLIENT_SERVER_PORT;
+	const char* hostname = data->ip_server;
+	const char* portname = data->ip_port;
+
+	printf ("ipclient: Send to %s:%s\n", hostname, portname);
 
 	struct addrinfo hints;
 	memset(&hints,0,sizeof(hints));
@@ -171,6 +176,23 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->receive_buffer);
 }
 
+static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
+	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
+	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
+
+	data->ip_server = VL_IPCLIENT_SERVER_NAME;
+	data->ip_port = VL_IPCLIENT_SERVER_PORT;
+
+	if (ip_server != NULL) {
+		data->ip_server = ip_server;
+	}
+	if (ip_port != NULL) {
+		data->ip_port = ip_port;
+	}
+
+	return 0;
+}
+
 static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
@@ -180,6 +202,8 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	printf ("ipclient thread data is %p\n", thread_data);
 
 	init_data(data);
+
+	parse_cmd(data, start_data->cmd);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);

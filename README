@@ -37,6 +37,9 @@ A module can also be specified on its own:
 
 Specifiy channel (1 or 2) and/or calibration (factor which scales input).
 
+### ipclient (Send UDP packets to server)
+`vlogger module=ipclient,dummy ipclient_server=10.0.2.2 ipclient_server_port=5555`
+
 
 ## CONTACT
 
