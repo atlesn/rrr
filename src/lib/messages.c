@@ -264,7 +264,7 @@ int message_to_string (
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		fprintf (stderr, "Unknown type %lu in message while converting to string\n", message->type);
+		fprintf (stderr, "Unknown type %" PRIu32 " in message while converting to string\n", message->type);
 		return 1;
 	}
 
@@ -286,11 +286,11 @@ int message_to_string (
 		class = MSG_CLASS_INFO_STRING;
 		break;
 	default:
-		fprintf (stderr, "Unknown class %lu in message while converting to string\n", message->class);
+		fprintf (stderr, "Unknown class %" PRIu32 " in message while converting to string\n", message->class);
 		return 1;
 	}
 
-	sprintf(target, "%s:%s:%" PRIu32 ":%lu:%" PRIu64 ":%" PRIu64 ":",
+	sprintf(target, "%s:%s:%" PRIu32 ":%" PRIu32 ":%" PRIu64 ":%" PRIu64 ":",
 			type, class,
 			message->crc32,
 			message->length,
