@@ -93,7 +93,7 @@ struct module_metadata *find_or_load_module(const char *name) {
 
 	struct module_dynamic_data *module = load_module(name);
 	if (module == NULL) {
-		fprintf (stderr, "Module %s could not be loaded\n", name);
+		fprintf (stderr, "Module %s could not be loaded (in find_or_load)\n", name);
 		return NULL;
 	}
 
@@ -143,8 +143,8 @@ int main (int argc, const char *argv[]) {
 
 		printf ("Loading module '%s'\n", module_string);
 		struct module_metadata *module = find_or_load_module(module_string);
-		if (module->module == NULL) {
-			fprintf (stderr, "Module %s could not be loaded\n", module_string);
+		if (module == NULL || module->module == NULL) {
+			fprintf (stderr, "Module %s could not be loaded A\n", module_string);
 			ret = EXIT_FAILURE;
 			goto out_unload_all;
 		}
@@ -159,13 +159,13 @@ int main (int argc, const char *argv[]) {
 			for (unsigned long int j = 0; j < senders_count; j++) {
 				printf ("Loading sender module '%s' (if not already loaded)\n", sender_strings[j]);
 				struct module_metadata *module_sender = find_or_load_module(sender_strings[j]);
-				if (module->module == NULL) {
-					fprintf (stderr, "Module %s could not be loaded\n", sender_strings[j]);
+				if (module_sender == NULL) {
+					fprintf (stderr, "Module %s could not be loaded B\n", sender_strings[j]);
 					ret = EXIT_FAILURE;
 					goto out_unload_all;
 				}
 
-				if (module_sender == module) {
+				if (module_sender == module || module_sender->module == NULL) {
 					fprintf (stderr, "Module %s set with itself as sender\n", sender_strings[j]);
 					ret = EXIT_FAILURE;
 					goto out_unload_all;

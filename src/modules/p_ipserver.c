@@ -78,8 +78,8 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
 	struct ipserver_buffer_entry *entry = realloc(message, sizeof(*entry));
-	entry->addr = 0;
-	entry->addr_len = 0;
+	memset (&entry->addr, '\0', sizeof(entry->addr));
+	memset (&entry->addr_len, '\0', sizeof(entry->addr_len));
 
 	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
 
@@ -98,7 +98,7 @@ void process_entries_callback(void *caller_data, char *data, unsigned long int s
 	// contains the IP-address of the sender.
 	entry->message.type = MSG_TYPE_TAG;
 
-	fifo_buffer_write(&private_data->send_buffer, entry, sizeof(*entry));
+	fifo_buffer_write(&private_data->send_buffer, (char*) entry, sizeof(*entry));
 }
 
 int process_entries(struct ipserver_data *data) {
@@ -173,7 +173,7 @@ int receive_packets(struct ipserver_data *data) {
 			continue;
 		}
 		else {
-			printf ("Ipserver received OK message with data '%s'\n", entry->message->data);
+			printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
 			entry->addr = src_addr;
 			entry->addr_len = src_addr_len;
 			fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
