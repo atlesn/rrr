@@ -87,6 +87,14 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 
 	struct vl_message *message_err;
 
+	// HEX dumper
+	message->crc32 = 0;
+	message->data_numeric = 0;
+	for (int i = 0; i < sizeof(*message); i++) {
+		unsigned char *buf = (unsigned char *) message;
+		printf("%x-", *(buf + i));
+	}
+
 	message_checksum(message);
 
 	if (message_to_string (message, buf+1, MSG_STRING_MAX_LENGTH) != 0) {
@@ -96,6 +104,7 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 
 	printf ("ipclient sending packet '%s'\n", buf+1);
 
+	printf("\n");
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
 		message_err = message_new_info(time_get_64(), "ipclient: Error while sending packet to server");
 		goto spawn_error;
