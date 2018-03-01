@@ -42,8 +42,8 @@ static pthread_mutex_t threads_mutex = PTHREAD_MUTEX_INITIALIZER;
 void threads_init() {
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
 		threads[i] = malloc(sizeof(struct vl_thread));
-		printf ("Thread %d\n", i);
-		printf ("Initialize thread %p\n", threads[i]);
+		//printf ("Thread %d\n", i);
+		//printf ("Initialize thread %p\n", threads[i]);
 		memset(threads[i], '\0', sizeof(struct vl_thread));
 		pthread_mutex_init(&threads[i]->mutex, NULL);
 	}

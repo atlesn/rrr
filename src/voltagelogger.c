@@ -187,6 +187,7 @@ int main (int argc, const char *argv[]) {
 
 
 	// Start threads, loop many times untill they are loaded in correct order
+	int threads_total = 0;
 	int rounds_nothing_loaded = 0;
 	while (1) {
 		int not_loaded_this_round = 0;
@@ -226,6 +227,9 @@ int main (int argc, const char *argv[]) {
 				ret = EXIT_FAILURE;
 				goto out_stop_threads;
 			}
+
+			threads_total++;
+
 			dont_load:
 			continue;
 		}
@@ -239,6 +243,11 @@ int main (int argc, const char *argv[]) {
 				goto out_stop_threads;
 			}
 		}
+	}
+
+	if (threads_total == 0) {
+		printf ("No modules started, exiting\n");
+		goto out_stop_threads;
 	}
 
 	// TODO : join threads
