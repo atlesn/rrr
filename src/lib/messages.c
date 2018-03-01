@@ -201,16 +201,17 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		return 1;
 	}
 	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	uint64_t crc32_tmp;
-	if (find_number(pos, end-pos, &pos, &crc32_tmp) != 0) {
+	uint64_t tmp;
+	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
 		return 1;
 	}
-	result->crc32 = crc32_tmp;
+	result->crc32 = tmp;
 
 	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_number(pos, end-pos, &pos, &result->length) != 0) {
+	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
 		return 1;
 	}
+	result->length = tmp;
 
 	// {TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_number(pos, end-pos, &pos, &result->timestamp_from) != 0) {
