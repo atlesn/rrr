@@ -59,8 +59,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 struct vl_message {
-	unsigned long int type;
-	unsigned long int class;
+	uint32_t type;
+	uint32_t class;
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
 	uint64_t data_numeric;
@@ -68,7 +68,7 @@ struct vl_message {
 	// Used by ipclient and ipserver for network transfer
 	uint32_t crc32;
 
-	unsigned long int length;
+	uint32_t length;
 	char data[MSG_DATA_MAX_LENGTH+2];
 };
 

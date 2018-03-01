@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <endian.h>
 
 #include "messages.h"
 #include "crc32.h"
@@ -307,17 +308,56 @@ int message_to_string (
 void message_checksum (
 	struct vl_message *message
 ) {
+	message->type = htole32(message->class);
+	message->class = htole32(message->class);
+	message->timestamp_from = htole64(message->timestamp_from);
+	message->timestamp_to = htole64(message->timestamp_to);
+	message->data_numeric = htole64(message->data_numeric);
+	message->length = htole32(message->length);
+
 	message->crc32 = 0;
+
 	uint32_t result = crc32buf((char *) message, sizeof(*message));
+
+	message->type = le32toh(message->class);
+	message->class = le32toh(message->class);
+	message->timestamp_from = le64toh(message->timestamp_from);
+	message->timestamp_to = le64toh(message->timestamp_to);
+	message->data_numeric = le64toh(message->data_numeric);
+	message->length = le32toh(message->length);
+
 	message->crc32 = result;
 }
 
 int message_checksum_check (
 	struct vl_message *message
 ) {
+	// HEX dumper
+	for (int i = 0; i < sizeof(*message); i++) {
+		unsigned char *buf = (unsigned char *) message;
+		printf("%x-", *(buf+i));
+	}
+	printf("\n");
+
+	message->type = htole32(message->class);
+	message->class = htole32(message->class);
+	message->timestamp_from = htole64(message->timestamp_from);
+	message->timestamp_to = htole64(message->timestamp_to);
+	message->data_numeric = htole64(message->data_numeric);
+	message->length = htole32(message->length);
+
 	uint32_t checksum = message->crc32;
 	message->crc32 = 0;
+
 	int res = crc32cmp((char *) message, sizeof(*message), checksum);
+
+	message->type = le32toh(message->class);
+	message->class = le32toh(message->class);
+	message->timestamp_from = le64toh(message->timestamp_from);
+	message->timestamp_to = le64toh(message->timestamp_to);
+	message->data_numeric = le64toh(message->data_numeric);
+	message->length = le32toh(message->length);
+
 	message->crc32 = checksum;
 	return (res == 0 ? 0 : 1);
 }

@@ -69,6 +69,12 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	fifo_buffer_write(&private_data->send_buffer, data, size);
 }
 
+void spawn_error(struct ipserver_data *data, const char *buf) {
+	struct vl_message *message = message_new_info(time_get_64(), buf);
+	fifo_buffer_write(&data->receive_buffer, (char*)message, sizeof(*message));
+	fprintf (stderr, "%s", message->data);
+}
+
 int receive_packets(struct ipserver_data *data) {
 	struct sockaddr_storage src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
@@ -81,43 +87,40 @@ int receive_packets(struct ipserver_data *data) {
 
 	char buffer[MSG_STRING_MAX_LENGTH];
 
-	int ret = 0;
-
 	while (1) {
 		int res = poll(&fds, 1, 500);
 		if (res == -1) {
 			sprintf (errbuf, "ipserver: Error from poll when reading data from network: %s\n", strerror(errno));
-			ret = 1; // Reset network
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			return 1;
 		}
 		else if (!(fds.revents & POLLIN)) {
+			printf ("ipserver: no data\n");
 			break;
 		}
 
+		printf ("ipserver: reading data\n");
+
 		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
 		ssize_t count = recvfrom(data->fd, buffer, MSG_STRING_MAX_LENGTH, 0, (struct sockaddr*) &src_addr, &src_addr_len);
-		/* HEX dumper
-		 * for (int i = 0; i < count; i++) {
-			unsigned char buf = *(buffer + i);
-			printf("%x-", buf);
-		}
-		printf("\n");*/
 
 		if (count == -1) {
 			sprintf (errbuf, "ipserver: Error from recvfrom when reading data from network: %s\n", strerror(errno));
-			ret = 1; // Reset network
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			return 1;
 		}
 
 		if (count < 10) {
 			sprintf (errbuf, "ipserver: Received short packet from network\n");
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			continue;
 		}
 
 		char *start = buffer;
 		if (*start != '\0') {
 			sprintf (errbuf, "ipserver: Datagram received from network did not start with zero\n");
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			continue;
 		}
 
 		start++;
@@ -127,13 +130,15 @@ int receive_packets(struct ipserver_data *data) {
 		if (parse_message(start, count, message) != 0) {
 			sprintf (errbuf, "ipserver: Received invalid message\n");
 			free (message);
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			continue;
 		}
 
 		if (message_checksum_check(message) != 0) {
 			sprintf (errbuf, "ipserver: Message checksum was invalid for '%s'\n", start);
 			free (message);
-			goto out_spawn_error;
+			spawn_error(data, errbuf);
+			continue;
 		}
 		else {
 			printf ("Ipserver received OK message with data '%s'\n", message->data);
@@ -141,15 +146,7 @@ int receive_packets(struct ipserver_data *data) {
 		}
 	}
 
-	return ret;
-
-	struct vl_message *message;
-
-	out_spawn_error:
-	message = message_new_info(time_get_64(), errbuf);
-	fifo_buffer_write(&data->receive_buffer, (char*)message, sizeof(*message));
-	fprintf (stderr, "%s", (char*)message);
-	return ret;
+	return 0;
 }
 
 void init_data(struct ipserver_data *data) {
