@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "vl_time.h"
+#include "cmdlineparser/cmdline.h"
 
 #define VL_THREADS_MAX 32
 
@@ -90,6 +91,7 @@ struct vl_thread_start_data {
 	void *(*start_routine) (struct vl_thread_start_data *);
 	struct vl_thread *thread;
 	void *private_arg;
+	struct cmd_data *cmd;
 };
 
 static inline void thread_lock(struct vl_thread *thread) {
@@ -200,6 +202,6 @@ static inline void thread_set_stopping(void *arg) {
 	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg);
+struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd);
 
 #endif

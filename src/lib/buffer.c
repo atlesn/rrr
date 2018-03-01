@@ -149,7 +149,7 @@ int fifo_read_clear_forward (
 
 		ret++;
 
-		printf ("Read buffer entry %p, give away data %p\n", current, current->data);
+		//printf ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		callback(callback_data, current->data, current->size);
 
@@ -186,7 +186,7 @@ int fifo_read_forward (
 
 		ret++;
 
-		printf ("Read buffer entry %p, preserve data %p\n", current, current->data);
+		//printf ("Read buffer entry %p, preserve data %p\n", current, current->data);
 
 		callback(callback_data, current->data, current->size);
 
@@ -237,7 +237,7 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last = entry;
 	}
 
-	printf ("New buffer entry %p data %p\n", entry, entry->data);
+	//printf ("New buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }
@@ -293,7 +293,7 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	}
 
 	out:
-	printf ("New ordered buffer entry %p data %p\n", entry, entry->data);
+	//printf ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }

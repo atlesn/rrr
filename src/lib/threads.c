@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
+#include "cmdlineparser/cmdline.h"
 #include "threads.h"
 #include "vl_time.h"
 
@@ -266,7 +267,7 @@ void threads_destroy() {
 }
 
 
-struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg) {
+struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd) {
 	struct vl_thread *thread;
 	struct vl_thread *watchdog_thread;
 
@@ -293,6 +294,7 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 	start_data->private_arg = arg;
 	start_data->start_routine = start_routine;
 	start_data->thread = thread;
+	start_data->cmd = cmd;
 
 	thread->state = VL_THREAD_STATE_STARTING;
 

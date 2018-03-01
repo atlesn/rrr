@@ -42,7 +42,6 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 	free(data);
 }
 
-
 static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;

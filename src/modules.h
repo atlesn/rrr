@@ -55,7 +55,6 @@ struct module_operations {
 	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
 	int (*print)(struct module_thread_data *data);
 	int (*poll_delete)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
-
 };
 
 struct module_dynamic_data {
@@ -93,7 +92,7 @@ void module_threads_init();
 void module_threads_stop();
 void module_threads_destroy();
 void module_free_thread(struct module_thread_data *module);
-struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data);
+struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data, struct cmd_data *cmd);
 struct module_dynamic_data *load_module(const char *name);
 void unload_module(struct module_dynamic_data *data);
 

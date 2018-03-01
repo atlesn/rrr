@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "modules.h"
-#include "cmdlineparser/cmdline.h"
+#include "lib/cmdlineparser/cmdline.h"
 
 int main_loop() {
 	return 0;
@@ -218,7 +218,7 @@ int main (int argc, const char *argv[]) {
 
 			printf ("Starting thread for module %s\n", meta->module->name);
 
-			meta->thread_data = module_start_thread(&init_data);
+			meta->thread_data = module_start_thread(&init_data, &cmd);
 
 			printf ("Thread data was %p\n", meta->thread_data);
 			if (meta->thread_data == NULL) {

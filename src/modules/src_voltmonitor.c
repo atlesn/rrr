@@ -47,9 +47,9 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/buffer.h"
 #include "../modules.h"
 #include "../lib/messages.h"
+#include "../lib/cmdlineparser/cmdline.h"
 
 #define VL_VOLTMONITOR_CHANNEL 1
-
 
 // From libusb
 void usb_free_dev(struct usb_device *dev);
@@ -63,6 +63,7 @@ struct voltmonitor_data {
 	struct usb_bus *usb_first_bus;
 
 	float usb_calibration;
+	int usb_channel;
 };
 
 
@@ -115,7 +116,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 			}
 		}
 	}
-	
+
 	if ( ! founddev ) {
 		fprintf (stderr, "voltmonitor: USB dev not found\n");
 		goto err_out;
@@ -127,7 +128,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 		fprintf (stderr, "voltmonitor: USB open failed\n");
 		goto err_out;
 	}
-	
+
 	char drivername[64] ;
 	if ( usb_get_driver_np ( h, 0, drivername, sizeof(drivername) ) == 0 ) {
 //		printf ( "driver: %s\n", drivername );
@@ -141,7 +142,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 			}
 		}
 	}
-	
+
 	if ( usb_claim_interface ( h, 0 ) ) {
 		fprintf (stderr, "voltmonitor: USB claim failed\n");
 		goto err_close_device;
@@ -164,7 +165,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 		fprintf (stderr, "voltmonitor: USB read failed\n");
 		goto err_close_device;
 	}
-	
+
 	int subtype = inbuf[6];
 	int unitversion = inbuf[5];
 
@@ -183,7 +184,6 @@ static int usb_connect(struct voltmonitor_data *data) {
 	}
 
 	data->usb_handle = h;
-    data->usb_calibration = 1.124 + ( ( (float)( ((unsigned int)inbuf[8] << 8) + inbuf[7] ) ) - 30000.0 ) * 0.00001;
 	data->usb_device = founddev;
 
 	return 0;
@@ -196,11 +196,16 @@ static int usb_connect(struct voltmonitor_data *data) {
 	return 1;
 }
 
-static int usb_read_voltage(struct voltmonitor_data *data, unsigned int channel, int *millivolts) {
-	if (channel > 1) {
-		fprintf (stderr, "voltmonitor: Channel must be 0 or 1, got %u\n", channel);
+static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
+	if (data->usb_channel > 2 || data->usb_channel < 1) {
+		fprintf (stderr, "voltmonitor: Channel must be 1 or 2, got %i\n", data->usb_channel);
 		exit(EXIT_FAILURE);
 	}
+
+	printf ("Read voltage channel %i calibration %f\n", data->usb_channel, data->usb_calibration);
+
+	unsigned int channel = data->usb_channel - 1;
+
 	if (data->usb_handle == NULL) {
 		if (usb_connect(data) != 0) {
 			fprintf (stderr, "voltmonitor: USB-device connect failed\n");
@@ -232,12 +237,12 @@ static int usb_read_voltage(struct voltmonitor_data *data, unsigned int channel,
 			fprintf (stderr, "voltmonitor: USB parse failed, 0x37 not found\n");
 			goto err_close_device;
 		}
-/*
+
 	for (int j = 0; j < 64; j++) {
 		printf ("%02x ", inbuf[j]);
 	}
 	printf ("\n");
-*/
+
 	unsigned int channel_add = (channel == 0 ? 0 : 4);
 
 	unsigned char negative_1 = ( inbuf[1 + channel_add] & 0x20 ) ? 0 : 1;
@@ -263,7 +268,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, unsigned int channel,
 
 	*millivolts = value_1 * 1000;
 
-	printf ("%04f - %d\n", value_1, *millivolts);
+	printf ("VOLTMONITOR: %04f - %d\n", value_1, *millivolts);
 
 	return 0;
 
@@ -277,7 +282,6 @@ static int usb_read_voltage(struct voltmonitor_data *data, unsigned int channel,
 
 	return 1;
 }
-
 
 static int poll_delete (
 		struct module_thread_data *data,
@@ -333,12 +337,48 @@ void data_cleanup(void *arg) {
 	//fifo_buffer_destroy(&data->buffer);
 }
 
+static int cmd_parser(struct voltmonitor_data *data, struct cmd_data *cmd) {
+	const char *vm_calibration = cmd_get_value(cmd, "vm_calibration", 0);
+	const char *vm_channel = cmd_get_value(cmd, "vm_channel", 0);
+
+	float calibration = 1.124;
+	int channel = 1;
+
+	if (vm_calibration != NULL) {
+		if (cmd_convert_float(cmd, vm_calibration, &calibration) != 0) {
+			fprintf (stderr, "Syntax error in vm_calibration parameter, could not understand the number '%s'\n", vm_calibration);
+			return 1;
+		}
+	}
+	if (vm_channel != NULL) {
+		if (cmd_convert_integer_10(cmd, vm_channel, &channel) != 0) {
+			fprintf (stderr, "Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
+			return 1;
+		}
+		if (channel != 1 && channel != 2) {
+			fprintf(stderr, "vm_channel must be 1 or 2");
+			return 1;
+		}
+	}
+
+	data->usb_calibration = calibration;
+	data->usb_channel = channel;
+
+	return 0;
+}
+
 static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
+
 	struct voltmonitor_data *data = data_init(thread_data);
 
 	printf ("voltmonitor thread data is %p\n", thread_data);
+
+	if (cmd_parser(data, start_data->cmd) != 0) {
+		thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+		pthread_exit(0);
+	}
 
 	usb_init();
 	usb_find_busses();
@@ -358,7 +398,7 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 		uint64_t time = time_get_64();
 		int millivolts;
-		if (usb_read_voltage(data, VL_VOLTMONITOR_CHANNEL, &millivolts) != 0) {
+		if (usb_read_voltage(data, &millivolts) != 0) {
 			fprintf (stderr, "voltmonitor: Voltage reading failed\n");
 			struct vl_message *reading = message_new_info(time, "Voltmonitor: problems with USB-device");
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
@@ -392,7 +432,6 @@ static struct module_operations module_operations = {
 };
 
 static const char *module_name = "voltmonitor";
-
 
 __attribute__((constructor)) void load() {
 }

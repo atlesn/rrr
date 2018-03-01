@@ -29,6 +29,15 @@ A module can also be specified on its own:
 
 `vlogger module=custom3`
 
+## MODULE SPECIFIC ARGUMENTS
+
+### voltmonitor (USB voltmeter driver)
+
+`vlogger module=voltmonitor,raw vm_calibration=1.020 vm_channel=2`
+
+Specifiy channel (1 or 2) and/or calibration (factor which scales input).
+
+
 ## CONTACT
 
 github.com/atlesn/voltagelogger

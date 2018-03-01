@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 
+#include "lib/cmdlineparser/cmdline.h"
 #include "modules.h"
 #include "lib/threads.h"
 
@@ -69,7 +70,7 @@ void module_free_thread(struct module_thread_data *data) {
 	free(data);
 }
 
-struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data) {
+struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data, struct cmd_data *cmd) {
 	struct module_thread_data *data = malloc(sizeof(*data));
 	memset(data, '\0', sizeof(*data));
 
@@ -78,14 +79,16 @@ struct module_thread_data *module_start_thread(struct module_thread_init_data *i
 		data->senders[i] = init_data->senders[i]->thread_data;
 		printf ("Assigned sender module %p,%p\n", data->senders[i], init_data->senders[i]->thread_data);
 	}
+
 	data->senders_count = init_data->senders_count;
-	data->thread = thread_start (data->module->operations.thread_entry, data);
+	data->thread = thread_start (data->module->operations.thread_entry, data, cmd);
 
 	if (data->thread == NULL) {
 		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
 		free(data);
 		return NULL;
 	}
+
 
 	return data;
 }
