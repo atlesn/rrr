@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct averager_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
-	struct fifo_buffer output_buffer_ipclient;
 };
 
 // Should not be smaller than module max
@@ -57,10 +56,6 @@ int averager_poll_delete (
 ) {
 	struct averager_data *data = thread_data->private_data;
 
-	if (strcmp(caller_data->module->name, "ipclient") == 0) {
-		return fifo_read_clear_forward(&data->output_buffer_ipclient, NULL, callback, caller_data);
-	}
-
 	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
@@ -71,10 +66,6 @@ int averager_poll (
 	struct module_thread_data *caller_data
 ) {
 	struct averager_data *data = thread_data->private_data;
-
-	if (strcmp(caller_data->module->name, "ipclient") == 0) {
-		return fifo_read_forward(&data->output_buffer_ipclient, NULL, callback, caller_data);
-	}
 
 	return fifo_read_forward(&data->output_buffer, NULL, callback, caller_data);
 }
@@ -93,7 +84,7 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 		printf ("Averager: %s size %lu measurement %" PRIu64 "\n", message->data, size, message->data_numeric);
 	}
 	else if (MSG_IS_MSG_INFO(message)) {
-		fifo_buffer_write_ordered(&averager_data->output_buffer_ipclient, message->timestamp_from, data, size);
+		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 
 		printf ("Averager: size %lu information '%s'\n", size, message->data);
 	}
@@ -177,7 +168,7 @@ void averager_spawn_message (
 		exit (EXIT_FAILURE);
 	}
 
-	fifo_buffer_write_ordered(&data->output_buffer_ipclient, time_from, (char*) message, sizeof(*message));
+	fifo_buffer_write_ordered(&data->output_buffer, time_from, (char*) message, sizeof(*message));
 }
 
 void averager_calculate_average(struct averager_data *data) {
@@ -207,7 +198,6 @@ struct averager_data *data_init(struct module_thread_data *module_thread_data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->input_buffer);
 	fifo_buffer_init(&data->output_buffer);
-	fifo_buffer_init(&data->output_buffer_ipclient);
 	return data;
 }
 
@@ -216,7 +206,6 @@ void data_cleanup(void *arg) {
 	struct averager_data *data = (struct averager_data *) arg;
 	fifo_buffer_invalidate(&data->input_buffer);
 	fifo_buffer_invalidate(&data->output_buffer);
-	fifo_buffer_invalidate(&data->output_buffer_ipclient);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }

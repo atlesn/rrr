@@ -49,6 +49,12 @@ struct ipserver_data {
 	int fd;
 };
 
+struct ipserver_buffer_entry {
+	struct vl_message message; // Must be first, we do dangerous casts :)
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+};
+
 // Poll request from other modules
 int ipserver_poll_delete (
 	struct module_thread_data *thread_data,
@@ -71,8 +77,32 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 
 void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
-	fifo_buffer_write(&data->receive_buffer, (char*)message, sizeof(*message));
+	struct ipserver_buffer_entry *entry = realloc(message, sizeof(*entry));
+	entry->addr = 0;
+	entry->addr_len = 0;
+
+	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
+
 	fprintf (stderr, "%s", message->data);
+}
+
+void process_entries_callback(void *caller_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = caller_data;
+	struct ipserver_data *private_data = thread_data->private_data;
+	struct ipserver_buffer_entry *entry = (struct ipserver_buffer_entry *) data;
+
+	// TODO : Do MySQL-stuff here
+
+	// Generate acknowledgement message, tag it as finished and stored safely
+	// We can re-use the message, just flip the type. The entry already
+	// contains the IP-address of the sender.
+	entry->message.type = MSG_TYPE_TAG;
+
+	fifo_buffer_write(&private_data->send_buffer, entry, sizeof(*entry));
+}
+
+int process_entries(struct ipserver_data *data) {
+	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, data);
 }
 
 int receive_packets(struct ipserver_data *data) {
@@ -126,23 +156,27 @@ int receive_packets(struct ipserver_data *data) {
 		start++;
 		count--;
 
-		struct vl_message *message = malloc(sizeof(*message));
-		if (parse_message(start, count, message) != 0) {
+		struct ipserver_buffer_entry *entry = malloc(sizeof(*entry));
+		memset(entry, '\0', sizeof(*entry));
+
+		if (parse_message(start, count, &entry->message) != 0) {
 			sprintf (errbuf, "ipserver: Received invalid message\n");
-			free (message);
+			free (entry);
 			spawn_error(data, errbuf);
 			continue;
 		}
 
-		if (message_checksum_check(message) != 0) {
+		if (message_checksum_check(&entry->message) != 0) {
 			sprintf (errbuf, "ipserver: Message checksum was invalid for '%s'\n", start);
-			free (message);
+			free (entry);
 			spawn_error(data, errbuf);
 			continue;
 		}
 		else {
-			printf ("Ipserver received OK message with data '%s'\n", message->data);
-			fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
+			printf ("Ipserver received OK message with data '%s'\n", entry->message->data);
+			entry->addr = src_addr;
+			entry->addr_len = src_addr_len;
+			fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
 		}
 	}
 
@@ -279,6 +313,9 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 			usleep (1249000); // 1249 ms
 			goto network_restart;
 		}
+
+		printf ("ipserver processing data\n");
+		process_entries(data);
 
 		if (err != 0) {
 			break;

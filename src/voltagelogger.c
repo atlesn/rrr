@@ -237,7 +237,8 @@ int main (int argc, const char *argv[]) {
 			break;
 		}
 		else {
-			if (rounds_nothing_loaded++ > 0) {
+			if (rounds_nothing_loaded++ > 2) {
+				// TODO: IS 2 CORRECT??? Make a better algorithm. Also, if we quit here some threads actually proceed as normal.
 				fprintf (stderr, "Impossible module sender structure detected, cannot continue.\n");
 				ret = EXIT_FAILURE;
 				goto out_stop_threads;
@@ -250,9 +251,9 @@ int main (int argc, const char *argv[]) {
 		goto out_stop_threads;
 	}
 
-	// TODO : join threads
-
 	struct sigaction action;
+
+	// TODO : remove signal handler when we quit to force exit
 
 	action.sa_handler = signal_interrupt;
 	sigemptyset (&action.sa_mask);
