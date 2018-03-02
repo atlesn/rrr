@@ -339,7 +339,7 @@ int message_checksum_check (
 	}
 	printf("\n");
 
-	message->type = htole32(message->class);
+	message->type = htole32(message->type);
 	message->class = htole32(message->class);
 	message->timestamp_from = htole64(message->timestamp_from);
 	message->timestamp_to = htole64(message->timestamp_to);
@@ -351,7 +351,7 @@ int message_checksum_check (
 
 	int res = crc32cmp((char *) message, sizeof(*message), checksum);
 
-	message->type = le32toh(message->class);
+	message->type = le32toh(message->type);
 	message->class = le32toh(message->class);
 	message->timestamp_from = le64toh(message->timestamp_from);
 	message->timestamp_to = le64toh(message->timestamp_to);
