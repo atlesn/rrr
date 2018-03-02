@@ -51,6 +51,7 @@ struct ipclient_data {
 	struct fifo_buffer receive_buffer;
 	const char *ip_server;
 	const char *ip_port;
+	struct ip_data ip;
 };
 
 // Poll request from other modules
@@ -77,6 +78,7 @@ struct send_packet_info {
 	struct ipclient_data *data;
 	int fd;
 	struct addrinfo *res;
+	int error;
 };
 
 void send_packet_callback(void *caller_data, char *data, unsigned long int size) {
@@ -87,26 +89,16 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
 	buf[0] = '\0'; // Network messages must start and end with zero
 
-	struct vl_message *message_err;
-
 	if (message_prepare_for_network (message, buf, MSG_STRING_MAX_LENGTH) != 0) {
 		return;
 	}
 
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
-		message_err = message_new_info(time_get_64(), "ipclient: Error while sending packet to server\n");
-		goto spawn_error;
+		fprintf(stderr, "ipclient: Error while sending packet to server\n");
+		info->error = 1;
 	}
 
 	// DO NOT FREE MESSAGE
-
-	return;
-
-	spawn_error:
-	fifo_buffer_write(&info->data->receive_buffer, (char*) message_err, sizeof(*message_err));
-	fprintf (stderr, "%s", message_err->data);
-
-	return;
 }
 
 void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
@@ -116,11 +108,11 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	fifo_buffer_write(&data->receive_buffer, (char*) &entry->message, sizeof(entry->message));
 }
 
-void receive_packets(struct ipclient_data *data, struct send_packet_info *info) {
-	ip_receive_packets(info->fd, receive_packets_callback, data);
+int receive_packets(struct ipclient_data *data) {
+	return ip_receive_packets(data->ip.fd, receive_packets_callback, data);
 }
 
-void send_receive_packets(struct ipclient_data *data) {
+int send_packets(struct ipclient_data *data) {
 	const char* hostname = data->ip_server;
 	const char* portname = data->ip_port;
 
@@ -139,38 +131,24 @@ void send_receive_packets(struct ipclient_data *data) {
 	struct addrinfo* res = NULL;
 	int err = getaddrinfo(hostname,portname,&hints,&res);
 	if (err != 0) {
-		sprintf(errbuf, "ipclient: Could not get address info of server %s port %s: %s", hostname, portname, gai_strerror(err));
-		goto out_spawn_error;
+		fprintf(stderr, "ipclient: Could not get address info of server %s port %s: %s", hostname, portname, gai_strerror(err));
+		goto out_error_nofree;
 	}
 
-	int fd = socket(res->ai_family,res->ai_socktype,res->ai_protocol);
-	if (fd == -1) {
-		sprintf (errbuf, "ipclient: Could not create socket: %s", strerror(errno));
-		goto out_spawn_error_freeaddrinfo;
-	}
+	struct send_packet_info info;
+	info.data = data;
+	info.fd = data->ip.fd;
+	info.res = res;
+	info.error = 0;
 
-	struct send_packet_info *info = malloc(sizeof(*info));
-	info->data = data;
-	info->fd = fd;
-	info->res = res;
+	fifo_read_forward(&data->send_buffer, NULL, send_packet_callback, &info);
 
-	fifo_read_forward(&data->send_buffer, NULL, send_packet_callback, info);
-
-	// Check for replies
-	receive_packets(data, info);
-
-	close(fd);
-	free(info);
-	freeaddrinfo(res);
-	return;
-
-	out_spawn_error_freeaddrinfo:
 	freeaddrinfo(res);
 
-	out_spawn_error:
-	message = message_new_info(time_get_64(), errbuf);
-	fifo_buffer_write(&data->receive_buffer, (char*)message, sizeof(*message));
-	fprintf (stderr, "%s", (char*)message);
+	return info.error;
+
+	out_error_nofree:
+	return 1;
 }
 
 void init_data(struct ipclient_data *data) {
@@ -218,6 +196,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 	parse_cmd(data, start_data->cmd);
 
+	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -229,7 +208,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	}
 
 	int (*poll[VL_IPCLIENT_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
-
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipclient: found sender %p\n", thread_data->senders[i]);
@@ -256,6 +234,10 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		}
 	}
 
+	network_restart:
+	ip_network_cleanup(&data->ip);
+	ip_network_start(&data->ip);
+
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
@@ -272,7 +254,16 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		}
 
 		printf ("ipclient sending data\n");
-		send_receive_packets(data);
+		if (send_packets(data) != 0) {
+			usleep (1249000); // 1249 ms
+			goto network_restart;
+		}
+
+		printf ("ipclient receiving data\n");
+		if (receive_packets(data) != 0) {
+			usleep (1249000); // 1249 ms
+			goto network_restart;
+		}
 
 		if (err != 0) {
 			break;
@@ -284,6 +275,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	printf ("Thread ipclient %p exiting\n", thread_data->thread);
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

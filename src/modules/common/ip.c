@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
 
 #include "ip.h"
 #include "../../lib/messages.h"
@@ -54,7 +56,7 @@ int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, v
 		ssize_t count = recvfrom(fd, buffer, MSG_STRING_MAX_LENGTH, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {
-			fprintf (stderr, "Error from recvfrom when reading data from network: %s\n", strerror(errno));
+			fprintf (stderr, "Error from recvfrom when reading d <sys/socket.h>ata from network: %s\n", strerror(errno));
 			return 1;
 		}
 
@@ -95,4 +97,43 @@ int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, v
 	}
 
 	return 0;
+}
+
+void ip_network_cleanup (void *arg) {
+	struct ip_data *data = arg;
+	if (data->fd != 0) {
+		close(data->fd);
+		data->fd = 0;
+	}
+}
+
+int ip_network_start (struct ip_data *data) {
+	char errbuf[256];
+
+	int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (fd == -1) {
+		fprintf (stderr, "Could not create socket: %s", strerror(errno));
+		goto out_error;
+	}
+
+	struct sockaddr_in si;
+	memset(&si, '\0', sizeof(si));
+	si.sin_family = AF_INET;
+	si.sin_port = htons(VL_IP_DEFAULT_PORT );
+    si.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
+		fprintf (stderr, "Could not bind to port %d: %s", VL_IP_DEFAULT_PORT, strerror(errno));
+		goto out_close_socket;
+	}
+
+	data->fd = fd;
+
+	return 0;
+
+	out_close_socket:
+	close(fd);
+
+	out_error:
+	return 1;
 }

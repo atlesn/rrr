@@ -23,10 +23,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../lib/messages.h"
 
+#define VL_IP_DEFAULT_PORT 5555
+
 struct ip_buffer_entry {
 	struct vl_message message; // Must be first, we do dangerous casts :)
 	struct sockaddr addr;
 	socklen_t addr_len;
 };
 
+struct ip_data {
+	int fd;
+};
+
 int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *ip, void *arg), void *arg);
+void ip_network_cleanup (void *arg);
+int ip_network_start (struct ip_data *data);

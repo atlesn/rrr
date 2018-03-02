@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipserver_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
-	int fd;
+	struct ip_data ip;
 };
 
 // Poll request from other modules
@@ -115,7 +115,7 @@ void send_replies_callback(void *caller_data, char *data, unsigned long int size
 	}
 
 	printf ("ipserver: send reply %s\n", buf);
-	if (sendto(private_data->fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
+	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
 		goto spawn_error;
@@ -151,7 +151,7 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 }
 
 int receive_packets(struct ipserver_data *data) {
-	return ip_receive_packets(data->fd, receive_packets_callback, data);
+	return ip_receive_packets(data->ip.fd, receive_packets_callback, data);
 }
 
 void init_data(struct ipserver_data *data) {
@@ -170,48 +170,6 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->receive_buffer);
 }
 
-void ipserver_network_cleanup (void *arg) {
-	struct ipserver_data *data = arg;
-	if (data->fd != 0) {
-		close(data->fd);
-	}
-}
-
-void ipserver_network_start (struct ipserver_data *data) {
-	char errbuf[256];
-
-	int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (fd == -1) {
-		sprintf (errbuf, "ipserver: Could not create socket: %s", strerror(errno));
-		goto out_spawn_error;
-	}
-
-	struct sockaddr_in si;
-	memset(&si, '\0', sizeof(si));
-	si.sin_family = AF_INET;
-	si.sin_port = htons(VL_IPSERVER_SERVER_PORT);
-    si.sin_addr.s_addr = htonl(INADDR_ANY);
-
-	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		sprintf (errbuf, "ipserver: Could not bind to port %d: %s", VL_IPSERVER_SERVER_PORT, strerror(errno));
-		goto out_spawn_error_close_socket;
-	}
-
-	data->fd = fd;
-
-	return;
-
-	out_spawn_error_close_socket:
-	close(fd);
-
-	struct vl_message *message;
-
-	out_spawn_error:
-	message = message_new_info(time_get_64(), errbuf);
-	fifo_buffer_write(&data->receive_buffer, (char*)message, sizeof(*message));
-	fprintf (stderr, "%s", (char*)message);
-}
-
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
@@ -222,7 +180,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 	init_data(data);
 
-	pthread_cleanup_push(ipserver_network_cleanup, data);
+	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -261,8 +219,8 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	}
 
 	network_restart:
-	ipserver_network_cleanup(data);
-	ipserver_network_start(data);
+	ip_network_cleanup(&data->ip);
+	ip_network_start(&data->ip);
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
