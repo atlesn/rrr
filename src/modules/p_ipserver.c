@@ -88,8 +88,7 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 }
 
 void process_entries_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = caller_data;
-	struct ipserver_data *private_data = thread_data->private_data;
+	struct ipserver_data *private_data = caller_data;
 	struct ipserver_buffer_entry *entry = (struct ipserver_buffer_entry *) data;
 
 	// TODO : Do MySQL-stuff here
@@ -103,12 +102,15 @@ void process_entries_callback(void *caller_data, char *data, unsigned long int s
 }
 
 int process_entries(struct ipserver_data *data) {
+	printf ("Process entries buffer %p\n", &data->receive_buffer);
 	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, data);
 }
 
 int receive_packets(struct ipserver_data *data) {
 	struct sockaddr_storage src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
+
+	printf ("Receive packets buffer %p\n", &data->receive_buffer);
 
 	char errbuf[256];
 
