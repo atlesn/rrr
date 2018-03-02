@@ -18,10 +18,10 @@ averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags}
-ipclient_la_SOURCES = p_ipclient.c
+ipclient_la_SOURCES = p_ipclient.c common/ip.c
 
 ipserver_la_LDFLAGS = ${module_ldflags}
-ipserver_la_SOURCES = p_ipserver.c
+ipserver_la_SOURCES = p_ipserver.c common/ip.c
 
 blockdev_la_LDFLAGS = ${module_ldflags} -lbdl
 blockdev_la_SOURCES = p_blockdev.c

@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
+#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -47,12 +48,6 @@ struct ipserver_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
 	int fd;
-};
-
-struct ipserver_buffer_entry {
-	struct vl_message message; // Must be first, we do dangerous casts :)
-	struct sockaddr_storage addr;
-	socklen_t addr_len;
 };
 
 // Poll request from other modules
@@ -77,7 +72,7 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 
 void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
-	struct ipserver_buffer_entry *entry = malloc(sizeof(*entry));
+	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
 	memcpy(&entry->message, message, sizeof(*message));
 	free(message);
@@ -89,7 +84,7 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 
 void process_entries_callback(void *caller_data, char *data, unsigned long int size) {
 	struct ipserver_data *private_data = caller_data;
-	struct ipserver_buffer_entry *entry = (struct ipserver_buffer_entry *) data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
 	// TODO : Do MySQL-stuff here
 
@@ -102,88 +97,61 @@ void process_entries_callback(void *caller_data, char *data, unsigned long int s
 }
 
 int process_entries(struct ipserver_data *data) {
-	printf ("Process entries buffer %p\n", &data->receive_buffer);
 	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, data);
 }
 
-int receive_packets(struct ipserver_data *data) {
-	struct sockaddr_storage src_addr;
-	socklen_t src_addr_len = sizeof(src_addr);
+void send_replies_callback(void *caller_data, char *data, unsigned long int size) {
+	struct ipserver_data *private_data = caller_data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
-	printf ("Receive packets buffer %p\n", &data->receive_buffer);
+	char buf[MSG_STRING_MAX_LENGTH];
+	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
+	buf[0] = '\0'; // Network messages must start and end with zero
 
-	char errbuf[256];
+	struct vl_message *message_err;
 
-	struct pollfd fds;
-	fds.fd = data->fd;
-	fds.events = POLLIN;
-
-	char buffer[MSG_STRING_MAX_LENGTH];
-
-	while (1) {
-		int res = poll(&fds, 1, 500);
-		if (res == -1) {
-			sprintf (errbuf, "ipserver: Error from poll when reading data from network: %s\n", strerror(errno));
-			spawn_error(data, errbuf);
-			return 1;
-		}
-		else if (!(fds.revents & POLLIN)) {
-			printf ("ipserver: no data\n");
-			break;
-		}
-
-		printf ("ipserver: reading data\n");
-
-		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
-		ssize_t count = recvfrom(data->fd, buffer, MSG_STRING_MAX_LENGTH, 0, (struct sockaddr*) &src_addr, &src_addr_len);
-
-		if (count == -1) {
-			sprintf (errbuf, "ipserver: Error from recvfrom when reading data from network: %s\n", strerror(errno));
-			spawn_error(data, errbuf);
-			return 1;
-		}
-
-		if (count < 10) {
-			sprintf (errbuf, "ipserver: Received short packet from network\n");
-			spawn_error(data, errbuf);
-			continue;
-		}
-
-		char *start = buffer;
-		if (*start != '\0') {
-			sprintf (errbuf, "ipserver: Datagram received from network did not start with zero\n");
-			spawn_error(data, errbuf);
-			continue;
-		}
-
-		start++;
-		count--;
-
-		struct ipserver_buffer_entry *entry = malloc(sizeof(*entry));
-		memset(entry, '\0', sizeof(*entry));
-
-		if (parse_message(start, count, &entry->message) != 0) {
-			sprintf (errbuf, "ipserver: Received invalid message\n");
-			free (entry);
-			spawn_error(data, errbuf);
-			continue;
-		}
-
-		if (message_checksum_check(&entry->message) != 0) {
-			sprintf (errbuf, "ipserver: Message checksum was invalid for '%s'\n", start);
-			free (entry);
-			spawn_error(data, errbuf);
-			continue;
-		}
-		else {
-			printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
-			entry->addr = src_addr;
-			entry->addr_len = src_addr_len;
-			fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
-		}
+	if (message_prepare_for_network (&entry->message, buf, MSG_STRING_MAX_LENGTH) != 0) {
+		return;
 	}
 
-	return 0;
+	printf ("ipserver: send reply %s\n", buf);
+	if (sendto(private_data->fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
+		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
+		fifo_buffer_write(&private_data->send_buffer, data, size);
+		goto spawn_error;
+	}
+
+	free(data);
+
+	return;
+
+	spawn_error:
+	fifo_buffer_write(&private_data->receive_buffer, (char*) message_err, sizeof(*message_err));
+	fprintf (stderr, "%s", message_err->data);
+
+	return;
+}
+
+int send_replies(struct ipserver_data *data) {
+	return fifo_read_clear_forward(&data->send_buffer, NULL, send_replies_callback, data);
+}
+
+void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
+	struct ipserver_data *data = arg;
+
+	printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
+
+	fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
+
+	// Generate ACK reply
+	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
+	memcpy(ack, entry, sizeof(*ack));
+	entry->message.type = MSG_TYPE_ACK;
+	fifo_buffer_write(&data->send_buffer, (char*) ack, sizeof(*ack));
+}
+
+int receive_packets(struct ipserver_data *data) {
+	return ip_receive_packets(data->fd, receive_packets_callback, data);
 }
 
 void init_data(struct ipserver_data *data) {
@@ -319,6 +287,9 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 		printf ("ipserver processing data\n");
 		process_entries(data);
+
+		printf ("ipserver sending replies\n");
+		send_replies(data);
 
 		if (err != 0) {
 			break;

@@ -126,10 +126,10 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 }
 
 static struct module_operations module_operations = {
-		thread_entry_dummy,
-		poll,
-		NULL,
-		poll_delete
+	thread_entry_dummy,
+	poll,
+	NULL,
+	poll_delete
 };
 
 static const char *module_name = "dummy";

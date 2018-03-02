@@ -361,3 +361,28 @@ int message_checksum_check (
 	message->crc32 = checksum;
 	return (res == 0 ? 0 : 1);
 }
+
+int message_prepare_for_network (
+	struct vl_message *message, char *buf, unsigned long buf_size
+) {
+
+	message->crc32 = 0;
+	message->data_numeric = 0;
+
+	/*
+	for (int i = 0; i < sizeof(*message); i++) {
+		unsigned char *buf = (unsigned char *) message;
+		printf("%x-", *(buf + i));
+	}
+	printf("\n");
+	*/
+
+	message_checksum(message);
+
+	if (message_to_string (message, buf+1, buf_size) != 0) {
+		fprintf (stderr, "ipclient: Error while converting message to string\n");
+		return 1;
+	}
+
+	return 0;
+}

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <poll.h>
 
 #include "../modules.h"
 #include "../lib/messages.h"
@@ -38,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/cmdlineparser/cmdline.h"
+#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -87,29 +89,16 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 
 	struct vl_message *message_err;
 
-	// HEX dumper
-	message->crc32 = 0;
-	message->data_numeric = 0;
-	for (int i = 0; i < sizeof(*message); i++) {
-		unsigned char *buf = (unsigned char *) message;
-		printf("%x-", *(buf + i));
-	}
-	printf("\n");
-
-	message_checksum(message);
-
-	if (message_to_string (message, buf+1, MSG_STRING_MAX_LENGTH) != 0) {
-		message_err = message_new_info(time_get_64(), "ipclient: Error while converting message to string\n");
-		goto spawn_error;
+	if (message_prepare_for_network (message, buf, MSG_STRING_MAX_LENGTH) != 0) {
+		return;
 	}
 
-	printf ("ipclient sending packet '%s'\n", buf+1);
-
-	printf("\n");
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
 		message_err = message_new_info(time_get_64(), "ipclient: Error while sending packet to server\n");
 		goto spawn_error;
 	}
+
+	// DO NOT FREE MESSAGE
 
 	return;
 
@@ -120,7 +109,18 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 	return;
 }
 
-void send_packets(struct ipclient_data *data) {
+void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
+	struct ipclient_data *data = arg;
+
+	printf ("ipclient: Received packet from server: %s\n", entry->message.data);
+	fifo_buffer_write(&data->receive_buffer, (char*) &entry->message, sizeof(entry->message));
+}
+
+void receive_packets(struct ipclient_data *data, struct send_packet_info *info) {
+	ip_receive_packets(info->fd, receive_packets_callback, data);
+}
+
+void send_receive_packets(struct ipclient_data *data) {
 	const char* hostname = data->ip_server;
 	const char* portname = data->ip_port;
 
@@ -155,6 +155,9 @@ void send_packets(struct ipclient_data *data) {
 	info->res = res;
 
 	fifo_read_forward(&data->send_buffer, NULL, send_packet_callback, info);
+
+	// Check for replies
+	receive_packets(data, info);
 
 	close(fd);
 	free(info);
@@ -269,7 +272,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		}
 
 		printf ("ipclient sending data\n");
-		send_packets(data);
+		send_receive_packets(data);
 
 		if (err != 0) {
 			break;

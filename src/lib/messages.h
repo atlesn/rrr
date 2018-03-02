@@ -106,5 +106,8 @@ void message_checksum (
 int message_checksum_check (
 	struct vl_message *message
 );
+int message_prepare_for_network (
+	struct vl_message *message, char *buf, unsigned long buf_size
+);
 
 #endif
