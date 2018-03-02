@@ -101,11 +101,43 @@ void send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	// DO NOT FREE MESSAGE
 }
 
+int receive_packets_search_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
+	struct ipclient_data *ipclient_data = callback_data->source;
+	struct vl_message *message_to_match = callback_data->private_data;
+	struct vl_message *checked_entry = (struct vl_message *) data;
+
+	if (	message_to_match->class == checked_entry->class &&
+			message_to_match->timestamp_from == checked_entry->timestamp_from &&
+			message_to_match->timestamp_to == checked_entry->timestamp_to &&
+			message_to_match->length == checked_entry->length
+	) {
+		printf ("Ipclient received ACK for message %s\n", checked_entry->data);
+		free(checked_entry);
+		return FIFO_SEARCH_GIVE;
+	}
+
+	return FIFO_SEARCH_KEEP;
+}
+
 void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct ipclient_data *data = arg;
+	struct vl_message *message = &entry->message;
 
 	printf ("ipclient: Received packet from server: %s\n", entry->message.data);
-	fifo_buffer_write(&data->receive_buffer, (char*) &entry->message, sizeof(entry->message));
+
+	// First, check if package is an ACK from the server in case we should delete
+	// the original message from our send queue. If not, we let some other module
+	// pick the packet up.
+	if (MSG_IS_ACK(message)) {
+		printf ("ipclient: Packet is ACK\n");
+		struct fifo_callback_args callback_args;
+		callback_args.source = data;
+		callback_args.private_data = message;
+		fifo_search_clear(&data->send_buffer, receive_packets_search_callback, &callback_args);
+	}
+	else {
+		fifo_buffer_write(&data->receive_buffer, (char*) &entry->message, sizeof(entry->message));
+	}
 }
 
 int receive_packets(struct ipclient_data *data) {
@@ -195,13 +227,15 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	printf ("ipclient thread data is %p\n", thread_data);
 
 	init_data(data);
+	pthread_cleanup_push(data_cleanup, data);
 
 	parse_cmd(data, start_data->cmd);
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
-	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_IPCLIENT_MAX_SENDERS) {
@@ -235,15 +269,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-
-	for (int i = 0; i < senders_count; i++) {
-		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
-			update_watchdog_time(thread_data->thread);
-			printf ("ipclient: Waiting for source thread to become ready\n");
-			usleep (5000);
-		}
-	}
-
 	network_restart:
 	ip_network_cleanup(&data->ip);
 	ip_network_start(&data->ip);
@@ -265,12 +290,14 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		}
 
 		printf ("ipclient sending data\n");
+		update_watchdog_time(thread_data->thread);
 		if (send_packets(data) != 0) {
 			usleep (1249000); // 1249 ms
 			goto network_restart;
 		}
 
 		printf ("ipclient receiving data\n");
+		update_watchdog_time(thread_data->thread);
 		if (receive_packets(data) != 0) {
 			usleep (1249000); // 1249 ms
 			goto network_restart;

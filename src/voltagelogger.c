@@ -187,68 +187,53 @@ int main (int argc, const char *argv[]) {
 	}
 
 
-	// Start threads, loop many times untill they are loaded in correct order
-	int threads_total = 0;
-	int rounds_nothing_loaded = 0;
-	while (1) {
-		int not_loaded_this_round = 0;
-		for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-			struct module_metadata *meta = &modules[i];
-			if (meta->module == NULL) {
-				// End of array
-				break;
-			}
-			if (meta->thread_data != NULL) {
-				// Already loaded
-				continue;
-			}
-			struct module_metadata *sender_meta = NULL;
+	// Init threads
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		struct module_metadata *meta = &modules[i];
 
-			for (int j = 0; j < meta->senders_count; j++) {
-				if (meta->senders[j]->thread_data == NULL) {
-					not_loaded_this_round++;
-					goto dont_load;
-				}
-			}
-
-			// We have no sender to specify and can be loaded first, or the
-			// sender has already been loaded hence we can load now.
-			struct module_thread_init_data init_data;
-			init_data.module = meta->module;
-			memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
-			init_data.senders_count = meta->senders_count;
-
-			printf ("Starting thread for module %s\n", meta->module->name);
-
-			meta->thread_data = module_start_thread(&init_data, &cmd);
-
-			printf ("Thread data was %p\n", meta->thread_data);
-			if (meta->thread_data == NULL) {
-				fprintf (stderr, "Error when starting thread for module %s\n", meta->module->name);
-				ret = EXIT_FAILURE;
-				goto out_stop_threads;
-			}
-
-			threads_total++;
-
-			dont_load:
-			continue;
-		}
-		if (not_loaded_this_round == 0) {
+		if (meta->module == NULL) {
 			break;
 		}
-		else {
-			if (rounds_nothing_loaded++ > 2) {
-				// TODO: IS 2 CORRECT??? Make a better algorithm. Also, if we quit here some threads actually proceed as normal.
-				fprintf (stderr, "Impossible module sender structure detected, cannot continue.\n");
-				ret = EXIT_FAILURE;
-				goto out_stop_threads;
-			}
+
+		struct module_thread_init_data init_data;
+		init_data.module = meta->module;
+		memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
+		init_data.senders_count = meta->senders_count;
+
+		printf ("Initializing %s\n", meta->module->name);
+
+		meta->thread_data = module_init_thread(&init_data);
+	}
+
+	// Start threads
+	int threads_total = 0;
+	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+		struct module_metadata *meta = &modules[i];
+
+		if (meta->module == NULL) {
+			break;
 		}
+
+		for (int j = 0; j < meta->senders_count; j++) {
+			meta->thread_data->senders[j] = meta->senders[j]->thread_data;
+		}
+
+		if (module_start_thread(meta->thread_data, &cmd) != 0) {
+			fprintf (stderr, "Error when starting thread for module %s\n", meta->module->name);
+			ret = EXIT_FAILURE;
+			goto out_stop_threads;
+		}
+
+		threads_total++;
 	}
 
 	if (threads_total == 0) {
 		printf ("No modules started, exiting\n");
+		goto out_stop_threads;
+	}
+
+	if (thread_start_all_after_initialized() != 0) {
+		fprintf (stderr, "Error while waiting for threads to initialize\n");
 		goto out_stop_threads;
 	}
 

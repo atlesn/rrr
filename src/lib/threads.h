@@ -34,8 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VL_THREADS_MAX 32
 
+/* Tell a thread to start after initializing */
+#define VL_THREAD_SIGNAL_START 1
+
 /* Tell a thread to cancel */
-#define VL_THREAD_SIGNAL_KILL 9
+#define VL_THREAD_SIGNAL_KILL 2
 
 /* Can only be set in thread control */
 #define VL_THREAD_STATE_FREE 0
@@ -43,17 +46,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Set by the thread after we reserved it and by thread cleanup */
 #define VL_THREAD_STATE_STOPPED 1
 
-/* Set after the thread is ready to start */
-#define VL_THREAD_STATE_STARTING 2
+/* Set after the thread is initializing */
+#define VL_THREAD_STATE_INIT 2
+
+/* Set after the thread is finished with initializing and is waiting for start signal */
+#define VL_THREAD_STATE_INITIALIZED 3
 
 /* Set by the thread itself when started */
-#define VL_THREAD_STATE_RUNNING 3
+#define VL_THREAD_STATE_RUNNING 4
 
 /* Thread has been asked to stop, set by watchdog */
-#define VL_THREAD_STATE_ENCOURAGE_STOP 4
+#define VL_THREAD_STATE_ENCOURAGE_STOP 5
 
 /* Thread has to do a few cleanup operations before stopping */
-#define VL_THREAD_STATE_STOPPING 5
+#define VL_THREAD_STATE_STOPPING 6
 
 // Milliseconds
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
@@ -68,6 +74,8 @@ void threads_stop();
 /* Free resources - RUN STOP FIRST */
 void threads_destroy();
 
+#define VL_THREAD_NAME_MAX_LENGTH 64
+
 struct vl_thread {
 	pthread_t thread;
 	uint64_t watchdog_time;
@@ -75,6 +83,7 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+	char name[VL_THREAD_NAME_MAX_LENGTH];
 
 	// Set when we tried to cancel a thread but we couldn't join
 	int is_ghost;
@@ -100,7 +109,7 @@ static inline void thread_lock(struct vl_thread *thread) {
 }
 
 static inline void thread_unlock(struct vl_thread *thread) {
-//	printf ("Thread %p unlock\n", thread);
+	//printf ("Thread %p unlock\n", thread);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
@@ -141,9 +150,9 @@ static inline uint64_t get_watchdog_time(struct vl_thread *thread) {
 static void thread_set_state(struct vl_thread *thread, int state) {
 	thread_lock(thread);
 
-	printf ("Thread %p set state %i\n", thread, state);
+	printf ("Thread %s set state %i\n", thread->name, state);
 
-	if (state == VL_THREAD_STATE_STARTING) {
+	if (state == VL_THREAD_STATE_INIT) {
 		fprintf (stderr, "Attempted to set STARTING state of thread outside reserve_thread function\n");
 		exit (EXIT_FAILURE);
 	}
@@ -151,15 +160,15 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 		fprintf (stderr, "Attempted to set FREE state of thread outside reserve_thread function\n");
 		exit (EXIT_FAILURE);
 	}
-	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_STARTING) {
-		fprintf (stderr, "Attempted to set RUNNING state of thread while it was not in STARTING state\n");
+	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INITIALIZED) {
+		fprintf (stderr, "Attempted to set RUNNING state of thread while it was not in INITIALIZED state\n");
 		exit (EXIT_FAILURE);
 	}
 	if (state == VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING) {
 		fprintf (stderr, "Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
 		goto nosetting;
 	}
-	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING)) {
+	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INIT)) {
 		fprintf (stderr, "Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
 		goto nosetting;
 	}
@@ -175,7 +184,7 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 }
 
 static inline void thread_set_signal(struct vl_thread *thread, int signal) {
-	printf ("Thread %p set signal %d\n", thread, signal);
+	printf ("Thread %s set signal %d\n", thread->name, signal);
 	thread_lock(thread);
 	thread->signal = signal;
 	thread_unlock(thread);
@@ -197,11 +206,24 @@ static inline int thread_get_signal(struct vl_thread *thread) {
 	return signal;
 }
 
+static inline void thread_signal_wait(struct vl_thread *thread, int signal) {
+	while (1) {
+		thread_lock(thread);
+		int signal_test = thread->signal;
+		thread_unlock(thread);
+		if (signal_test == signal) {
+			break;
+		}
+		usleep (100000); // 100ms
+	}
+}
+
 static inline void thread_set_stopping(void *arg) {
 	struct vl_thread *thread = arg;
 	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd);
+struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd, const char *name);
+int thread_start_all_after_initialized();
 
 #endif

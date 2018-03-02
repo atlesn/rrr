@@ -116,6 +116,8 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_CONTROLLER_MAX_SENDERS) {
@@ -147,15 +149,6 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for controller processor module\n");
 		goto out_message;
-	}
-
-
-	for (int i = 0; i < senders_count; i++) {
-		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
-			update_watchdog_time(thread_data->thread);
-			printf ("controller: Waiting for source thread to become ready\n");
-			usleep (5000);
-		}
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {

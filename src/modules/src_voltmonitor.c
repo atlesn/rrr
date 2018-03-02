@@ -372,26 +372,29 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	thread_data->thread = start_data->thread;
 
 	struct voltmonitor_data *data = data_init(thread_data);
+	thread_data->private_data = data;
+
+	pthread_cleanup_push(data_cleanup, data);
 
 	printf ("voltmonitor thread data is %p\n", thread_data);
 
 	if (cmd_parser(data, start_data->cmd) != 0) {
-		thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 		pthread_exit(0);
 	}
+
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	usb_init();
 	usb_find_busses();
 	usb_find_devices();
 
 	pthread_cleanup_push(usb_cleanup, data);
-	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
-	thread_data->private_data = data;
 
 	static const char *voltmonitor_msg = "voltmonitor measurement";
-
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);

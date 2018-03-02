@@ -91,7 +91,8 @@ void module_threads_init();
 void module_threads_stop();
 void module_threads_destroy();
 void module_free_thread(struct module_thread_data *module);
-struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data, struct cmd_data *cmd);
+struct module_thread_data *module_init_thread(struct module_thread_init_data *init_data);
+int module_start_thread(struct module_thread_data *data, struct cmd_data *cmd);
 struct module_dynamic_data *load_module(const char *name);
 void unload_module(struct module_dynamic_data *data);
 

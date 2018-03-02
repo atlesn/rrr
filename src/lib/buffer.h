@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdint.h>
 
+
 struct fifo_callback_args {
 	void *source;
 	void *private_data;
@@ -98,6 +99,13 @@ static inline void fifo_read_to_write_lock(struct fifo_buffer *buffer) {
 	}
 }
 
+static inline void fifo_write_to_read_lock(struct fifo_buffer *buffer) {
+	pthread_mutex_lock(&buffer->mutex);
+	buffer->readers++;
+	buffer->writers--;
+	pthread_mutex_unlock(&buffer->mutex);
+}
+
 static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
 	while (!ok) {
@@ -116,6 +124,16 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+#define FIFO_SEARCH_ERR		-1
+#define FIFO_SEARCH_KEEP	0
+#define FIFO_SEARCH_GIVE	(1 << 0)
+#define FIFO_SEARCH_STOP	(1 << 1)
+
+int fifo_search_clear (
+	struct fifo_buffer *buffer,
+	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+	struct fifo_callback_args *callback_data
+);
 int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,
 		uint64_t order_min

@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_TMP_SIZE 64
 
 #define MSG_IS_MSG(message)			(message->type == MSG_TYPE_MSG)
+#define MSG_IS_ACK(message)			(message->type == MSG_TYPE_ACK)
 
 #define MSG_IS_POINT(message)		(message->class == MSG_CLASS_POINT)
 #define MSG_IS_INFO(message)		(message->class == MSG_CLASS_INFO)

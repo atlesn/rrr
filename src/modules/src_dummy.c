@@ -102,6 +102,8 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 	static const char *dummy_msg = "Dummy measurement of time";
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
