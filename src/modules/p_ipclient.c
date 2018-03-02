@@ -58,7 +58,7 @@ struct ipclient_data {
 int ipclient_poll_delete (
 	struct module_thread_data *thread_data,
 	void (*callback)(void *caller_data, char *data, unsigned long int size),
-	struct module_thread_data *caller_data
+	struct module_poll_data *caller_data
 ) {
 	struct ipclient_data *data = thread_data->private_data;
 
@@ -207,7 +207,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_IPCLIENT_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll[VL_IPCLIENT_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipclient: found sender %p\n", thread_data->senders[i]);
@@ -245,7 +245,8 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 		printf ("ipclient polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
+			struct module_poll_data poll_data = {thread_data, NULL};
+			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("ipclient module received error from poll function\n");
 				err = 1;

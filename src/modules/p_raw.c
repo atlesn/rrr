@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "p_raw.h"
 
 // Should not be smaller than module max
 #define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -58,7 +57,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
 
 
 	for (int i = 0; i < senders_count; i++) {
@@ -93,7 +92,8 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 		printf ("Raw polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
+			struct module_poll_data poll_data = {thread_data, NULL};
+			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("Raw module received error from poll function\n");
 				err = 1;

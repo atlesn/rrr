@@ -386,3 +386,9 @@ int message_prepare_for_network (
 
 	return 0;
 }
+
+struct vl_message *message_duplicate(struct vl_message *message) {
+	struct vl_message *ret = malloc(sizeof(*ret));
+	memcpy(ret, message, sizeof(*ret));
+	return ret;
+}

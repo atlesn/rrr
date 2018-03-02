@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../modules.h"
 #include "../lib/messages.h"
-#include "src_dummy.h"
 
 struct dummy_data {
 	struct fifo_buffer buffer;
@@ -39,7 +38,7 @@ struct dummy_data {
 static int poll_delete (
 		struct module_thread_data *data,
 		void (*callback)(void *caller_data, char *data, unsigned long int size),
-		struct module_thread_data *caller_data
+		struct module_poll_data *caller_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
 	int res = fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
@@ -58,10 +57,10 @@ static int poll_delete (
 static int poll (
 		struct module_thread_data *data,
 		void (*callback)(void *caller_data, char *data, unsigned long int size),
-		struct module_thread_data *caller_data
+		struct module_poll_data *poll_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
-	int res = fifo_read_forward(&dummy_data->buffer, NULL, callback, caller_data);
+	int res = fifo_read_forward(&dummy_data->buffer, NULL, callback, poll_data);
 	printf ("Poll result was: %i\n", res);
 	if (res == 0) {
 		return VL_POLL_EMPTY_RESULT_OK;

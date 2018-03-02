@@ -54,7 +54,7 @@ struct ipserver_data {
 int ipserver_poll_delete (
 	struct module_thread_data *thread_data,
 	void (*callback)(void *caller_data, char *data, unsigned long int size),
-	struct module_thread_data *caller_data
+	struct module_poll_data *caller_data
 ) {
 	struct ipserver_data *data = thread_data->private_data;
 
@@ -191,7 +191,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_IPSERVER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll[VL_IPSERVER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipserver: found sender %p\n", thread_data->senders[i]);
@@ -229,6 +229,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 /*		printf ("ipserver polling data\n");
 		for (int i = 0; i < senders_count; i++) {
+			struct module_poll_data poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
 			if (!(res >= 0)) {
 				printf ("ipserver module received error from poll function\n");

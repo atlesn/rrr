@@ -153,7 +153,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
 
 
 	for (int i = 0; i < senders_count; i++) {
@@ -188,7 +188,8 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		printf ("blockdev polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
+			struct module_poll_data poll_data = {thread_data, NULL};
+			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("blockdev module received error from poll function\n");
 				err = 1;

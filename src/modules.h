@@ -48,13 +48,14 @@ struct reading;
 
 struct vl_thread_start_data;
 struct module_thread_data;
+struct module_poll_data;
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
 	void *(*thread_entry)(struct vl_thread_start_data *);
-	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *poll_data);
 	int (*print)(struct module_thread_data *data);
-	int (*poll_delete)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_thread_data *caller_data);
+	int (*poll_delete)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *poll_data);
 };
 
 struct module_dynamic_data {
@@ -64,6 +65,11 @@ struct module_dynamic_data {
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(struct module_dynamic_data *data);
+};
+
+struct module_poll_data {
+	struct module_thread_data *source; // Keep on top, some functions cast void* directly to module_thread_data
+	void *private_data;
 };
 
 struct module_thread_data {
