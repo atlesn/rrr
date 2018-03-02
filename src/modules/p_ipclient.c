@@ -94,11 +94,12 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 		unsigned char *buf = (unsigned char *) message;
 		printf("%x-", *(buf + i));
 	}
+	printf("\n");
 
 	message_checksum(message);
 
 	if (message_to_string (message, buf+1, MSG_STRING_MAX_LENGTH) != 0) {
-		message_err = message_new_info(time_get_64(), "ipclient: Error while converting message to string");
+		message_err = message_new_info(time_get_64(), "ipclient: Error while converting message to string\n");
 		goto spawn_error;
 	}
 
@@ -106,7 +107,7 @@ void send_packet_callback(void *caller_data, char *data, unsigned long int size)
 
 	printf("\n");
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
-		message_err = message_new_info(time_get_64(), "ipclient: Error while sending packet to server");
+		message_err = message_new_info(time_get_64(), "ipclient: Error while sending packet to server\n");
 		goto spawn_error;
 	}
 
