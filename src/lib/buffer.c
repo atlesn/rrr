@@ -117,8 +117,8 @@ int fifo_clear_order_lt (
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(void *callback_data, char *data, unsigned long int size),
-		void *callback_data
+		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
 ) {
 	int ret = 0;
 	fifo_write_lock(buffer);
@@ -168,8 +168,8 @@ int fifo_read_clear_forward (
 int fifo_read_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(void *callback_data, char *data, unsigned long int size),
-		void *callback_data
+		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
 ) {
 	int ret = 0;
 	fifo_read_lock(buffer);

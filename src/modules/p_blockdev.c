@@ -69,8 +69,8 @@ void data_cleanup (void *arg) {
 	}
 }
 
-void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = caller_data;
+void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = poll_data->source;
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct vl_message *reading = (struct vl_message *) data;
@@ -85,8 +85,8 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 		uint64_t appdata, uint64_t timestamp, unsigned long int faketimestamp
 );
  */
-void write_callback(void *caller_data, char *data, unsigned long int size) {
-	struct blockdev_data *blockdev_data = caller_data;
+void write_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct blockdev_data *blockdev_data = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
 	int err = bdl_write_block (
@@ -123,7 +123,8 @@ void write_callback(void *caller_data, char *data, unsigned long int size) {
 }
 
 int write_to_device(struct blockdev_data *data) {
-	fifo_read_clear_forward(&data->input_buffer, NULL, write_callback, data);
+	struct fifo_callback_args poll_data = {NULL, data};
+	fifo_read_clear_forward(&data->input_buffer, NULL, write_callback, &poll_data);
 
 	return 0;
 }
@@ -153,7 +154,15 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
+	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(
+			struct module_thread_data *data,
+			void (*callback)(
+					struct fifo_callback_args *poll_data,
+					char *data,
+					unsigned long int size
+			),
+			struct fifo_callback_args *caller_data
+	);
 
 
 	for (int i = 0; i < senders_count; i++) {
@@ -188,7 +197,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		printf ("blockdev polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct module_poll_data poll_data = {thread_data, NULL};
+			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("blockdev module received error from poll function\n");

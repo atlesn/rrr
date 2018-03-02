@@ -37,8 +37,8 @@ struct dummy_data {
 
 static int poll_delete (
 		struct module_thread_data *data,
-		void (*callback)(void *caller_data, char *data, unsigned long int size),
-		struct module_poll_data *caller_data
+		void (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
+		struct fifo_callback_args *caller_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
 	int res = fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
@@ -56,8 +56,8 @@ static int poll_delete (
 
 static int poll (
 		struct module_thread_data *data,
-		void (*callback)(void *caller_data, char *data, unsigned long int size),
-		struct module_poll_data *poll_data
+		void (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
+		struct fifo_callback_args *poll_data
 ) {
 	struct dummy_data *dummy_data = data->private_data;
 	int res = fifo_read_forward(&dummy_data->buffer, NULL, callback, poll_data);

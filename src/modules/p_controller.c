@@ -42,29 +42,29 @@ struct controller_data {
 
 int poll_delete (
 	struct module_thread_data *data,
-	void (*callback)(void *caller_data, char *data, unsigned long int size),
-	struct module_poll_data *poll_data
+	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	struct fifo_callback_args *poll_data
 ) {
 	struct controller_data *controller_data = data->private_data;
+	struct module_thread_data *source = poll_data->source;
 
-	if (strcmp (poll_data->source->module->name, "ipclient") == 0) {
+	if (strcmp (source->module->name, "ipclient") == 0) {
 		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data->source);
 	}
-	else if (strcmp (poll_data->source->module->name, "blockdev") == 0) {
+	else if (strcmp (source->module->name, "blockdev") == 0) {
 		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data->source);
 	}
 	else {
-		fprintf (stderr, "controller: No output buffer defined for module %s\n", poll_data->source->module->name);
+		fprintf (stderr, "controller: No output buffer defined for module %s\n", source->module->name);
 		return 1;
 	}
 
 	return 0;
 }
 
-void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_poll_data *poll_data = caller_data;
-	struct controller_data *controller_data = poll_data->private_data;
-	struct module_thread_data *source = poll_data->source;
+void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
+	struct controller_data *controller_data = caller_data->private_data;
+	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
 	printf ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n", message->data, message->data_numeric, size);
@@ -123,7 +123,15 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_CONTROLLER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
+	int (*poll[VL_CONTROLLER_MAX_SENDERS])(
+			struct module_thread_data *data,
+			void (*callback)(
+					struct fifo_callback_args *caller_data,
+					char *data,
+					unsigned long int size
+			),
+			struct fifo_callback_args *caller_data
+	);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("controller: found sender %p\n", thread_data->senders[i]);
@@ -157,7 +165,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 		printf ("controller polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct module_poll_data poll_data = {thread_data, data};
+			struct fifo_callback_args poll_data = {thread_data, data};
 
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {

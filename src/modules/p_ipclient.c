@@ -57,16 +57,16 @@ struct ipclient_data {
 // Poll request from other modules
 int ipclient_poll_delete (
 	struct module_thread_data *thread_data,
-	void (*callback)(void *caller_data, char *data, unsigned long int size),
-	struct module_poll_data *caller_data
+	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	struct fifo_callback_args *caller_data
 ) {
 	struct ipclient_data *data = thread_data->private_data;
 
 	return fifo_read_clear_forward(&data->receive_buffer, NULL, callback, caller_data);
 }
 
-void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = caller_data;
+void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 	printf ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
@@ -81,8 +81,8 @@ struct send_packet_info {
 	int error;
 };
 
-void send_packet_callback(void *caller_data, char *data, unsigned long int size) {
-	struct send_packet_info *info = caller_data;
+void send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct send_packet_info *info = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
 	char buf[MSG_STRING_MAX_LENGTH];
@@ -109,6 +109,7 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 }
 
 int receive_packets(struct ipclient_data *data) {
+	struct fifo_callback_args poll_data = {NULL, data};
 	return ip_receive_packets(data->ip.fd, receive_packets_callback, data);
 }
 
@@ -141,7 +142,8 @@ int send_packets(struct ipclient_data *data) {
 	info.res = res;
 	info.error = 0;
 
-	fifo_read_forward(&data->send_buffer, NULL, send_packet_callback, &info);
+	struct fifo_callback_args poll_data = {NULL, &info};
+	fifo_read_forward(&data->send_buffer, NULL, send_packet_callback, &poll_data);
 
 	freeaddrinfo(res);
 
@@ -207,7 +209,15 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_IPCLIENT_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
+	int (*poll[VL_IPCLIENT_MAX_SENDERS])(
+			struct module_thread_data *data,
+			void (*callback)(
+					struct fifo_callback_args *caller_data,
+					char *data,
+					unsigned long int size
+			),
+			struct fifo_callback_args *caller_data
+	);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipclient: found sender %p\n", thread_data->senders[i]);
@@ -245,7 +255,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 		printf ("ipclient polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct module_poll_data poll_data = {thread_data, NULL};
+			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("ipclient module received error from poll function\n");

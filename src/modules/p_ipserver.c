@@ -53,8 +53,8 @@ struct ipserver_data {
 // Poll request from other modules
 int ipserver_poll_delete (
 	struct module_thread_data *thread_data,
-	void (*callback)(void *caller_data, char *data, unsigned long int size),
-	struct module_poll_data *caller_data
+	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	struct fifo_callback_args *caller_data
 ) {
 	struct ipserver_data *data = thread_data->private_data;
 
@@ -62,7 +62,8 @@ int ipserver_poll_delete (
 }
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = caller_data;
+	struct fifo_callback_args *poll_data = caller_data;
+	struct module_thread_data *thread_data = poll_data->source;
 	struct ipserver_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 	printf ("ipserver: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
@@ -82,8 +83,8 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 	fprintf (stderr, "%s", message->data);
 }
 
-void process_entries_callback(void *caller_data, char *data, unsigned long int size) {
-	struct ipserver_data *private_data = caller_data;
+void process_entries_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
 	// TODO : Do MySQL-stuff here
@@ -97,11 +98,12 @@ void process_entries_callback(void *caller_data, char *data, unsigned long int s
 }
 
 int process_entries(struct ipserver_data *data) {
-	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, data);
+	struct fifo_callback_args poll_data = {NULL, data};
+	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, &poll_data);
 }
 
-void send_replies_callback(void *caller_data, char *data, unsigned long int size) {
-	struct ipserver_data *private_data = caller_data;
+void send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
 	char buf[MSG_STRING_MAX_LENGTH];
@@ -133,7 +135,8 @@ void send_replies_callback(void *caller_data, char *data, unsigned long int size
 }
 
 int send_replies(struct ipserver_data *data) {
-	return fifo_read_clear_forward(&data->send_buffer, NULL, send_replies_callback, data);
+	struct fifo_callback_args poll_data = {NULL, data};
+	return fifo_read_clear_forward(&data->send_buffer, NULL, send_replies_callback, &poll_data);
 }
 
 void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
@@ -191,7 +194,15 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_IPSERVER_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
+	int (*poll[VL_IPSERVER_MAX_SENDERS])(
+			struct module_thread_data *data,
+			void (*callback)(
+					struct fifo_callback_args *caller_data,
+					char *data,
+					unsigned long int size
+			),
+			struct fifo_callback_args *caller_data
+	);
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipserver: found sender %p\n", thread_data->senders[i]);
@@ -229,7 +240,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 /*		printf ("ipserver polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct module_poll_data poll_data = {thread_data, NULL};
+			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
 			if (!(res >= 0)) {
 				printf ("ipserver module received error from poll function\n");

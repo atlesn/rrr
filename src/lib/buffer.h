@@ -28,6 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdint.h>
 
+struct fifo_callback_args {
+	void *source;
+	void *private_data;
+};
+
 struct fifo_buffer_entry {
 	char *data;
 	unsigned long int size;
@@ -118,14 +123,14 @@ int fifo_clear_order_lt (
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(void *callback_data, char *data, unsigned long int size),
-		void *callback_data
+		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
 );
 int fifo_read_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(void *callback_data, char *data, unsigned long int size),
-		void *callback_data
+		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
 );
 
 void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size));

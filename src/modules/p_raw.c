@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/buffer.h"
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -34,8 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Should not be smaller than module max
 #define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
 
-void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = caller_data;
+void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *reading = (struct vl_message *) data;
 	printf ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 	free(data);
@@ -57,7 +58,15 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	int (*poll[VL_RAW_MAX_SENDERS])(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *caller_data);
+	int (*poll[VL_RAW_MAX_SENDERS])(
+			struct module_thread_data *data,
+			void (*callback)(
+					struct fifo_callback_args *poll_data,
+					char *data,
+					unsigned long int size
+			),
+			struct fifo_callback_args *caller_data
+	);
 
 
 	for (int i = 0; i < senders_count; i++) {
@@ -92,7 +101,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 		printf ("Raw polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct module_poll_data poll_data = {thread_data, NULL};
+			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("Raw module received error from poll function\n");

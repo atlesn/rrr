@@ -41,21 +41,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define VL_MODULE_NO_DL_CLOSE
 
-// TODO : Create processor modules
-
 struct module_dynamic_data;
 struct reading;
 
 struct vl_thread_start_data;
 struct module_thread_data;
-struct module_poll_data;
+struct fifo_callback_args;
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
 	void *(*thread_entry)(struct vl_thread_start_data *);
-	int (*poll)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *poll_data);
+	int (*poll)(struct module_thread_data *data, void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
 	int (*print)(struct module_thread_data *data);
-	int (*poll_delete)(struct module_thread_data *data, void (*callback)(void *caller_data, char *data, unsigned long int size), struct module_poll_data *poll_data);
+	int (*poll_delete)(struct module_thread_data *data, void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
 };
 
 struct module_dynamic_data {
@@ -65,11 +63,6 @@ struct module_dynamic_data {
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(struct module_dynamic_data *data);
-};
-
-struct module_poll_data {
-	struct module_thread_data *source; // Keep on top, some functions cast void* directly to module_thread_data
-	void *private_data;
 };
 
 struct module_thread_data {
