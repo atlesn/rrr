@@ -8,5 +8,6 @@ AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile)
 AC_PROG_CC
+AC_PROG_CC_STDC
 AC_PROG_INSTALL
 AC_OUTPUT
