@@ -1,7 +1,19 @@
 src/modules/.libs
 src/.libs
 src/lib/.libs
+src/modules/common/.dirstamp
 
+# debian
+debian/autoconf.after
+debian/autoconf.before
+debian/autoreconf.after
+debian/autoreconf.before
+debian/voltage-logger.*
+debian/voltage-logger/*
+debian/debhelper-build-stamp
+debian/files
+debian/.debhelper/
+debian/tmp/
 # http://www.gnu.org/software/automake
 
 Makefile.in
