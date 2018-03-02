@@ -109,6 +109,7 @@ struct module_metadata *find_module(const char *name) {
 	}
 	return NULL;
 }
+
 int main (int argc, const char *argv[]) {
 	struct cmd_data cmd;
 

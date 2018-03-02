@@ -77,9 +77,10 @@ void poll_callback(void *caller_data, char *data, unsigned long int size) {
 
 void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
-	struct ipserver_buffer_entry *entry = realloc(message, sizeof(*entry));
-	memset (&entry->addr, '\0', sizeof(entry->addr));
-	memset (&entry->addr_len, '\0', sizeof(entry->addr_len));
+	struct ipserver_buffer_entry *entry = malloc(sizeof(*entry));
+	memset(entry, '\0', sizeof(*entry));
+	memcpy(&entry->message, message, sizeof(*message));
+	free(message);
 
 	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
 
