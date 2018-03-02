@@ -149,7 +149,7 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	// Generate ACK reply
 	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
 	memcpy(ack, entry, sizeof(*ack));
-	entry->message.type = MSG_TYPE_ACK;
+	ack->message.type = MSG_TYPE_ACK;
 	fifo_buffer_write(&data->send_buffer, (char*) ack, sizeof(*ack));
 }
 
