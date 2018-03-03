@@ -119,7 +119,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 		return 1;
 	}
 
-	printf ("ipserver: send reply %s\n", buf);
+	printf ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message->timestamp_from);
 	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
@@ -245,22 +245,18 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 			}
 		}*/
 
-		printf ("ipserver receiving data\n");
 		if (receive_packets(data) != 0) {
-			usleep (1249000); // 1249 ms
+			usleep (1000000); // 1249 ms
 			goto network_restart;
 		}
 
-		printf ("ipserver processing data\n");
 		process_entries(data);
-
-		printf ("ipserver sending replies\n");
 		send_replies(data);
 
 		if (err != 0) {
 			break;
 		}
-		usleep (1249000); // 1249 ms
+		usleep (10000); // 100 ms
 	}
 
 	out_message:

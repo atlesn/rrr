@@ -93,12 +93,11 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		printf ("Raw polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("Raw module received error from poll function\n");
+				fprintf (stderr, "Raw module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -107,7 +106,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-		usleep (1249000); // 1249 ms
+		usleep (100000); // 100 ms
 	}
 
 	out_message:

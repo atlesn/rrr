@@ -269,11 +269,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		printf ("Averager maintaining data\n");
-
 		averager_maintain_buffer(data);
-
-		printf ("Averager polling data\n");
 
 		int err = 0;
 
@@ -281,7 +277,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("Averager module received error from poll function\n");
+				fprintf (stderr, "Averager module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -293,12 +289,11 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 		uint64_t current_time = time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
-			printf ("Averager calculating average\n");
 			averager_calculate_average(data);
 			previous_average_time = current_time;
 		}
 
-		usleep (1249000); // 1249 ms
+		usleep (1000000); // 1000 ms
 	}
 
 	out_message:

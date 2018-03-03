@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <bdl/bdl.h>
 #include <inttypes.h>
+#include <bdl/bdl.h>
 
 #include "../modules.h"
 #include "../lib/messages.h"
@@ -35,6 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Should not be smaller than module max
 #define VL_BLOCKDEV_MAX_SENDERS VL_MODULE_MAX_SENDERS
+
+// Tag entries when new and when saved externally
+#define VL_BLOCKDEV_TAG_NEW		(1<<0)
+#define VL_BLOCKDEV_TAG_SAVED	(1<<1)
 
 struct blockdev_data {
 	const char *device_path;
@@ -93,55 +97,152 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	return 0;
 }
-/*
- * int bdl_write_block (
-		struct bdl_session *session,
-		const char *data, unsigned long int data_length,
-		uint64_t appdata, uint64_t timestamp, unsigned long int faketimestamp
-);
- */
+
+struct update_test_data {
+	struct vl_message *message;
+};
+
+struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t application_data, uint64_t data_length, const char *data) {
+	struct update_test_data *update_test_data = arg;
+	struct bdl_update_info update_info;
+	memset(&update_info, '\0', sizeof(update_info));
+
+	const struct vl_message *message = (const struct vl_message *) data;
+
+	if (
+			(application_data & VL_BLOCKDEV_TAG_SAVED) != 0 ||
+			timestamp != update_test_data->message->timestamp_from ||
+			data_length != update_test_data->message->length ||
+			memcmp(message->data, update_test_data->message->data, data_length) != 0
+	) {
+		update_info.do_update = 0;
+		goto out;
+	}
+
+	printf ("blockdev: Updating appdata for entry\n");
+
+	update_info.do_update = 1;
+	update_info.new_appdata |= VL_BLOCKDEV_TAG_SAVED;
+
+	out:
+	return update_info;
+}
+
 int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct blockdev_data *blockdev_data = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
-	int err = bdl_write_block (
+	int err;
+
+	if (message->type == MSG_TYPE_TAG) {
+		// TODO : Maybe store some ACKs first in a buffer and run the update only once
+		struct update_test_data update_test_data;
+		update_test_data.message = message;
+
+		int result;
+
+		// Match only NEW entries
+		err = bdl_read_update_application_data (
+			&blockdev_data->device_session,
+			message->timestamp_from,
+			VL_BLOCKDEV_TAG_NEW,
+			update_test, &update_test_data,
+			&result
+		);
+
+		printf ("blockdev: Result from bld_update_application_data: %i\n", result);
+	}
+	else {
+		err = bdl_write_block (
 			&blockdev_data->device_session,
 			data, size,
-			0, message->timestamp_to, 10
-	);
+			VL_BLOCKDEV_TAG_NEW, message->timestamp_to, 10
+		);
+	}
 
 	if (err == BDL_WRITE_ERR_TIMESTAMP) {
 		printf ("blockdev: Some entry with a higher timestamp has been written, discard this entry.\n");
 		free(data);
-		return 1;
+		blockdev_data->do_bdl_reset = 1;
+		return FIFO_SEARCH_GIVE;
 	}
 	else if (err == BDL_WRITE_ERR_SIZE) {
 		printf ("blockdev: Blocks on the device are not big enough to fit our data.\n");
-		free(data);
-		return 1;
+		blockdev_data->do_bdl_reset = 1;
+		return FIFO_SEARCH_ERR;
 	}
 	else if (err != 0) {
-		// In an error condition we still have to handle the data held
-		free(data);
-		// in the buffer read_clear_forward-function, and we simply
-		// put it back in the buffer.
-		if (err == 1) {
-			fprintf (stderr, "blockdev: Could not write data to device, putting it back in the buffer\n");
-			fifo_buffer_write_ordered(&blockdev_data->input_buffer, message->timestamp_to, data, size);
-			return 1;
-		}
+		fprintf (stderr, "blockdev: Could not write data to device (error %i), leaving it in the buffer\n", err);
+		blockdev_data->do_bdl_reset = 1;
+		return FIFO_SEARCH_ERR;
 	}
 
 	printf ("blockdev: Data was written to device successfully\n");
 
 	free(data);
-
-	return 0;
+	return FIFO_SEARCH_GIVE;
 }
 
 int write_to_device(struct blockdev_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
-	fifo_read_clear_forward(&data->input_buffer, NULL, write_callback, &poll_data);
+	fifo_search(&data->input_buffer, write_callback, &poll_data);
+
+	return 0;
+}
+
+struct get_new_entries_data {
+	struct blockdev_data *blockdev_data;
+	int entries_counter;
+};
+
+struct bdl_update_info get_new_entries_callback(void *arg, uint64_t timestamp, uint64_t application_data, uint64_t data_length, const char *data) {
+	struct get_new_entries_data *callback_data = arg;
+	struct blockdev_data *blockdev_data = callback_data->blockdev_data;
+
+	struct bdl_update_info ret;
+	if (data_length != sizeof(struct vl_message)) {
+		fprintf (stderr,
+			"blockdev: Warning: Entry size in entry from device did not match expected length (%" PRIu64 ") vs (%lu). Tagging it as saved.",
+			data_length, sizeof(struct vl_message)
+		);
+
+		ret.do_update = 1;
+		ret.new_appdata = VL_BLOCKDEV_TAG_SAVED;
+
+		goto out;
+	}
+
+	struct vl_message *message = malloc(sizeof(*message));
+	memcpy(message, data, sizeof(*message));
+	fifo_buffer_write(&blockdev_data->output_buffer, (char*)message, sizeof(*message));
+
+	callback_data->entries_counter++;
+	ret.do_update = 0;
+	ret.new_appdata = 0;
+
+	out:
+	return ret;
+}
+
+
+int get_new_entries(struct module_thread_data *thread_data) {
+	struct blockdev_data *blockdev_data = thread_data->private_data;
+
+	struct get_new_entries_data callback_data;
+	callback_data.blockdev_data = blockdev_data;
+	callback_data.entries_counter = 0;
+
+	// TODO : Possibly have a minimum time for this search
+	// Match only NEW entries
+	int result;
+	int err = bdl_read_update_application_data (
+		&blockdev_data->device_session,
+		0, VL_BLOCKDEV_TAG_NEW,
+		get_new_entries_callback, &callback_data,
+		&result
+	);
+
+	printf ("blockdev: Read %i entries with NEW state from device\n", callback_data.entries_counter);
 
 	return 0;
 }
@@ -165,6 +266,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	printf ("blockdev thread data is %p\n", thread_data);
+
 
 	if (senders_count > VL_BLOCKDEV_MAX_SENDERS) {
 		fprintf (stderr, "Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
@@ -193,6 +295,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	}
 
 	printf ("blockdev started thread %p\n", thread_data);
+
 	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for blockdev processor module\n");
 		goto out_message;
@@ -203,7 +306,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		printf ("blockdev polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
@@ -214,7 +316,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 			}
 		}
 
-		printf ("blockdev writing data to device\n");
 		if (data->do_bdl_reset == 1) {
 			while (data->device_session.usercount > 0) {
 				bdl_close_session(&data->device_session);
@@ -227,6 +328,10 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 				fprintf (stderr, "blockdev: Could not open block device %s\n", data->device_path);
 				goto sleep;
 			}
+
+			// Get entries from device which are not tagged as saved in remote database
+			printf ("blockdev: Reading NEW entries from device\n");
+			get_new_entries(thread_data);
 		}
 
 		write_to_device(data);
@@ -236,7 +341,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		}
 
 		sleep:
-		usleep (1249000); // 1249 ms
+		usleep (100000); // 100 ms
 	}
 
 	out_message:

@@ -99,6 +99,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		return FIFO_SEARCH_KEEP;
 	}
 
+	printf("ipclient sent packet timestamp from %" PRIu64 "\n", message->timestamp_from);
+
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
 		fprintf(stderr, "ipclient: Error while sending packet to server\n");
 		return FIFO_SEARCH_ERR;
@@ -123,14 +125,19 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 	struct vl_message *message_to_match = callback_data->private_data;
 	struct vl_message *checked_entry = (struct vl_message *) data;
 
+	printf ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, checked_entry->class);
+	printf ("ipclient: match timestamp from %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_from, checked_entry->timestamp_from);
+	printf ("ipclient: match timestamp to %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_to, checked_entry->timestamp_to);
+	printf ("ipclient: match length %" PRIu32 " vs %" PRIu32 "\n", message_to_match->length, checked_entry->length);
+
 	if (	message_to_match->class == checked_entry->class &&
 			message_to_match->timestamp_from == checked_entry->timestamp_from &&
 			message_to_match->timestamp_to == checked_entry->timestamp_to &&
 			message_to_match->length == checked_entry->length
 	) {
-		printf ("Ipclient received ACK for message %s\n", checked_entry->data);
+		printf ("ipclient received ACK for message %s\n", checked_entry->data);
 		free(checked_entry);
-		return FIFO_SEARCH_GIVE;
+		return FIFO_SEARCH_GIVE | FIFO_SEARCH_STOP;
 	}
 
 	return FIFO_SEARCH_KEEP;
@@ -151,9 +158,13 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 		callback_args.source = data;
 		callback_args.private_data = message;
 		fifo_search(&data->send_buffer, receive_packets_search_callback, &callback_args);
+		free(entry);
 	}
 	else {
-		fifo_buffer_write(&data->receive_buffer, (char*) &entry->message, sizeof(entry->message));
+		struct vl_message *message = malloc(sizeof(*message));
+		memcpy (message, &entry->message, sizeof(*message));
+		free (entry);
+		fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
 	}
 }
 
@@ -302,30 +313,28 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("ipclient module received error from poll function\n");
+				fprintf (stderr, "ipclient module received error from poll function\n");
 				err = 1;
 				break;
 			}
 		}
 
-		printf ("ipclient sending data\n");
 		update_watchdog_time(thread_data->thread);
 		if (send_packets(thread_data) != 0) {
-			usleep (1249000); // 1249 ms
+			usleep (1000000); // 1000 ms
 			goto network_restart;
 		}
 
-		printf ("ipclient receiving data\n");
 		update_watchdog_time(thread_data->thread);
 		if (receive_packets(data) != 0) {
-			usleep (1249000); // 1249 ms
+			usleep (1000000); // 1000 ms
 			goto network_restart;
 		}
 
 		if (err != 0) {
 			break;
 		}
-		usleep (250000); // 250 ms
+		usleep (100000); // 100 ms
 	}
 
 	out_message:

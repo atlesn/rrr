@@ -100,6 +100,7 @@ int fifo_search (
 				prev->next = entry->next;
 			}
 			free(entry); // Don't free data, callback takes care of it
+			entry = NULL;
 			fifo_write_to_read_lock(buffer);
 			did_something = 1;
 		}
