@@ -39,9 +39,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct blockdev_data {
 	const char *device_path;
 	struct fifo_buffer input_buffer;
+	struct fifo_buffer output_buffer;
 	struct bdl_session device_session;
 	int do_bdl_reset;
 };
+
+int poll_delete (
+	struct module_thread_data *data,
+	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	struct fifo_callback_args *poll_data
+) {
+	struct blockdev_data *blockdev_data = data->private_data;
+	return fifo_read_clear_forward(&blockdev_data->output_buffer, NULL, callback, poll_data);
+}
+
 
 int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	memset(data, '\0', sizeof(*data));
@@ -56,6 +67,7 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	}
 
 	fifo_buffer_init(&data->input_buffer);
+	fifo_buffer_init(&data->output_buffer);
 
 	return 0;
 }
@@ -63,6 +75,7 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 void data_cleanup (void *arg) {
 	struct blockdev_data *blockdev_data = arg;
 	fifo_buffer_invalidate(&blockdev_data->input_buffer);
+	fifo_buffer_invalidate(&blockdev_data->output_buffer);
 
 	while (blockdev_data->device_session.usercount > 0) {
 		bdl_close_session(&blockdev_data->device_session);
@@ -235,7 +248,7 @@ static struct module_operations module_operations = {
 		thread_entry_blockdev,
 		NULL,
 		NULL,
-		NULL
+		poll_delete
 };
 
 static const char *module_name = "blockdev";
