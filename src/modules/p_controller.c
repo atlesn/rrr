@@ -48,10 +48,10 @@ int poll_delete (
 	struct module_thread_data *source = poll_data->source;
 
 	if (strcmp (source->module->name, "ipclient") == 0) {
-		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data->source);
+		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data);
 	}
 	else if (strcmp (source->module->name, "blockdev") == 0) {
-		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data->source);
+		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data);
 	}
 	else {
 		fprintf (stderr, "controller: No output buffer defined for module %s\n", source->module->name);
@@ -79,7 +79,7 @@ void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned 
 		(strcmp (source->module->name, "voltmonitor") == 0) ||
 		(strcmp (source->module->name, "dummy") == 0)
 	) {
-		void *data_2 = message_duplicate(message);
+		void *data_2 = message_duplicate(message); // Remember to copy message!
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 		fifo_buffer_write(&controller_data->to_blockdev, data_2, size);
 	}
@@ -135,11 +135,11 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("controller: found sender %p\n", thread_data->senders[i]);
+		printf ("controller: found sender %s\n", thread_data->senders[i]->thread->name);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "controller cannot use this sender, lacking poll delete function.\n");
+			fprintf (stderr, "controller cannot use sender %s, lacking poll delete function.\n", thread_data->senders[i]->thread->name);
 			goto out_message;
 		}
 	}
