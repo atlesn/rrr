@@ -95,6 +95,8 @@ int process_entries_callback(struct fifo_callback_args *poll_data, char *data, u
 	// contains the IP-address of the sender.
 	entry->message.type = MSG_TYPE_TAG;
 
+	printf ("ipserver: Generate TAG message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+
 	fifo_buffer_write(&private_data->send_buffer, (char*) entry, sizeof(*entry));
 
 	return 0;
@@ -119,7 +121,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 		return 1;
 	}
 
-	printf ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message->timestamp_from);
+	printf ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
@@ -150,6 +152,7 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
 
 	// Generate ACK reply
+	printf ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
 	memcpy(ack, entry, sizeof(*ack));
 	ack->message.type = MSG_TYPE_ACK;
