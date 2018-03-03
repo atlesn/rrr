@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -158,7 +157,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 		printf ("controller polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, data};
+			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
 
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
