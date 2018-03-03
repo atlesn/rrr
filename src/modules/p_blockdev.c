@@ -46,7 +46,7 @@ struct blockdev_data {
 
 int poll_delete (
 	struct module_thread_data *data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *poll_data
 ) {
 	struct blockdev_data *blockdev_data = data->private_data;
@@ -82,7 +82,7 @@ void data_cleanup (void *arg) {
 	}
 }
 
-void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
@@ -90,6 +90,8 @@ void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	printf ("blockdev: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write_ordered(&blockdev_data->input_buffer, reading->timestamp_to, data, size);
+
+	return 0;
 }
 /*
  * int bdl_write_block (
@@ -98,7 +100,7 @@ void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 		uint64_t appdata, uint64_t timestamp, unsigned long int faketimestamp
 );
  */
-void write_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct blockdev_data *blockdev_data = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
@@ -111,12 +113,12 @@ void write_callback(struct fifo_callback_args *poll_data, char *data, unsigned l
 	if (err == BDL_WRITE_ERR_TIMESTAMP) {
 		printf ("blockdev: Some entry with a higher timestamp has been written, discard this entry.\n");
 		free(data);
-		return;
+		return 1;
 	}
 	else if (err == BDL_WRITE_ERR_SIZE) {
 		printf ("blockdev: Blocks on the device are not big enough to fit our data.\n");
 		free(data);
-		return;
+		return 1;
 	}
 	else if (err != 0) {
 		// In an error condition we still have to handle the data held
@@ -126,13 +128,15 @@ void write_callback(struct fifo_callback_args *poll_data, char *data, unsigned l
 		if (err == 1) {
 			fprintf (stderr, "blockdev: Could not write data to device, putting it back in the buffer\n");
 			fifo_buffer_write_ordered(&blockdev_data->input_buffer, message->timestamp_to, data, size);
-			return;
+			return 1;
 		}
 	}
 
 	printf ("blockdev: Data was written to device successfully\n");
 
 	free(data);
+
+	return 0;
 }
 
 int write_to_device(struct blockdev_data *data) {
@@ -169,7 +173,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *poll_data,
 					char *data,
 					unsigned long int size

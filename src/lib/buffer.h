@@ -124,12 +124,34 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+/*
+ * With fifo_read_clear_forward, the callback function MUST
+ * handle ALL entries as we cannot add elements back in this
+ * case, the callback function may simply write them back
+ * using one of the write functions as no locks are active
+ * when the callback function is run.
+ *
+ * For fifo_search the lock is active when the callback function
+ * is run, and the callback MUST NOT attempt to write to the same buffer
+ * as this causes a deadlock.
+ *
+ * Callbacks of fifo_search may return these values to control when
+ * to stop or when to delete entries (values can be ORed except for
+ * the error value). Functions return 0 on success and 1 on error. If
+ * the callback of fifo_search returns FIFO_SEARCH_ERR, the search
+ * is stopped and fifo_search returns 1.
+ *
+ * To count elements, a counter may be placed in a custom struct pointed
+ * to by the fifo_callback_data struct, and the callback has to do the
+ * counting.
+ */
+
 #define FIFO_SEARCH_ERR		-1
 #define FIFO_SEARCH_KEEP	0
-#define FIFO_SEARCH_GIVE	(1 << 0)
 #define FIFO_SEARCH_STOP	(1 << 1)
+#define FIFO_SEARCH_GIVE	(1 << 2)
 
-int fifo_search_clear (
+int fifo_search (
 	struct fifo_buffer *buffer,
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 	struct fifo_callback_args *callback_data
@@ -141,13 +163,7 @@ int fifo_clear_order_lt (
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct fifo_callback_args *callback_data
-);
-int fifo_read_forward (
-		struct fifo_buffer *buffer,
-		struct fifo_buffer_entry *last_element,
-		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 		struct fifo_callback_args *callback_data
 );
 

@@ -41,7 +41,7 @@ struct controller_data {
 
 int poll_delete (
 	struct module_thread_data *data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *poll_data
 ) {
 	struct controller_data *controller_data = data->private_data;
@@ -126,7 +126,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_CONTROLLER_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *caller_data,
 					char *data,
 					unsigned long int size

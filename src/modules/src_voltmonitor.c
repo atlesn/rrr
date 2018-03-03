@@ -282,40 +282,20 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 static int poll_delete (
 		struct module_thread_data *data,
-		void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	int res = fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
-	printf ("Poll result was: %i\n", res);
-	if (res == 0) {
-		return VL_POLL_EMPTY_RESULT_OK;
-	}
-	else if (res >= 1) {
-		return VL_POLL_RESULT_OK;
-	}
-	else {
-		return VL_POLL_RESULT_ERR;
-	}
+	return  fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
 }
 
 static int poll (
 		struct module_thread_data *data,
-		void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	int res = fifo_read_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
-	printf ("Poll result was: %i\n", res);
-	if (res == 0) {
-		return VL_POLL_EMPTY_RESULT_OK;
-	}
-	else if (res >= 1) {
-		return VL_POLL_RESULT_OK;
-	}
-	else {
-		return VL_POLL_RESULT_ERR;
-	}
+	return fifo_search(&voltmonitor_data->buffer, callback, caller_data);
 }
 
 struct voltmonitor_data *data_init(struct module_thread_data *module_thread_data) {

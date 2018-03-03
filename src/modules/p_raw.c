@@ -35,11 +35,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Should not be smaller than module max
 #define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
 
-void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *reading = (struct vl_message *) data;
 	printf ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 	free(data);
+	return 0;
 }
 
 static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
@@ -62,7 +63,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_RAW_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *poll_data,
 					char *data,
 					unsigned long int size

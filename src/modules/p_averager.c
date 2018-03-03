@@ -51,7 +51,7 @@ struct averager_data {
 // Poll of our output buffer from other modules
 int averager_poll_delete (
 	struct module_thread_data *thread_data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
 	struct averager_data *data = thread_data->private_data;
@@ -62,16 +62,16 @@ int averager_poll_delete (
 // Poll of our output buffer from other modules
 int averager_poll (
 	struct module_thread_data *thread_data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
 	struct averager_data *data = thread_data->private_data;
 
-	return fifo_read_forward(&data->output_buffer, NULL, callback, caller_data);
+	return fifo_search(&data->output_buffer, callback, caller_data);
 }
 
 // Messages when from polling sender comes in here
-void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
@@ -92,6 +92,8 @@ void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 		fprintf (stderr, "Averager: Unknown message type from sender. Discarding.\n");
 		free(message);
 	}
+
+	return 0;
 }
 
 void averager_maintain_buffer(struct averager_data *data) {
@@ -114,13 +116,13 @@ struct averager_calculation {
 	uint64_t timestamp_min;
 };
 
-void averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct averager_calculation *calculation = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
 	if (!MSG_IS_MSG_POINT(message)) {
 		printf ("Averager: Ignoring a message which is not point measurement\n");
-		return;
+		return FIFO_SEARCH_KEEP;
 	}
 
 	calculation->entries++;
@@ -139,6 +141,8 @@ void averager_callback(struct fifo_callback_args *poll_data, char *data, unsigne
 	if (message->timestamp_to > calculation->timestamp_to) {
 		calculation->timestamp_to = message->timestamp_to;
 	}
+
+	return FIFO_SEARCH_KEEP;
 }
 
 void averager_spawn_message (
@@ -174,7 +178,7 @@ void averager_spawn_message (
 void averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
 	struct fifo_callback_args poll_data = {NULL, &calculation};
-	fifo_read_forward(&data->input_buffer, NULL, averager_callback, &poll_data);
+	fifo_search(&data->input_buffer, averager_callback, &poll_data);
 
 	if (calculation.entries == 0) {
 		printf ("Averager: No entries, not averaging\n");
@@ -235,7 +239,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_AVERAGER_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *caller_data,
 					char *data,
 					unsigned long int size
