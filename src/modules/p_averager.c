@@ -75,7 +75,7 @@ void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
-	struct averager_data *averager_data = thread_data->private_data;
+	struct averager_data *averager_data = poll_data->private_data;
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
@@ -274,7 +274,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		int err = 0;
 
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data->senders[i], NULL};
+			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("Averager module received error from poll function\n");

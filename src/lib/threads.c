@@ -33,6 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "vl_time.h"
 
+//#define VL_THREAD_NO_WATCHDOGS
+
 // Decleare here instead of #define _GNU_SOURCE
 int pthread_tryjoin_np(pthread_t thread, void **retval);
 
@@ -385,6 +387,7 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 		goto nowatchdog;
 	}
 
+#ifndef VL_THREAD_NO_WATCHDOGS
 	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
 	watchdog_data->watchdog_thread = watchdog_thread;
 	watchdog_data->watched_thread = thread;
@@ -401,7 +404,7 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 	watchdog_thread->is_watchdog = 1;
 
 	printf ("Thread %p Watchdog %p\n", thread, watchdog_thread);
-
+#endif
 	nowatchdog:
 
 	// Thread tries to set a signal first and therefore can't proceed untill we unlock
