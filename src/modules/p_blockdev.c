@@ -136,18 +136,18 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	struct blockdev_data *data = (struct blockdev_data *) thread_data->private_memory;
 	thread_data->private_data = data;
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
-
+	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
 	if (data_init_parse_cmd(data, start_data->cmd) != 0) {
 		pthread_exit(0);
 	}
 
-	pthread_cleanup_push(data_cleanup, data);
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	printf ("blockdev thread data is %p\n", thread_data);
-
 
 	if (senders_count > VL_BLOCKDEV_MAX_SENDERS) {
 		fprintf (stderr, "Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
@@ -179,15 +179,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	if (senders_count == 0) {
 		fprintf (stderr, "Error: Sender was not set for blockdev processor module\n");
 		goto out_message;
-	}
-
-
-	for (int i = 0; i < senders_count; i++) {
-		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
-			update_watchdog_time(thread_data->thread);
-			printf ("blockdev: Waiting for source thread to become ready\n");
-			usleep (5000);
-		}
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {

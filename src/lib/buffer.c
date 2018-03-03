@@ -57,6 +57,54 @@ void fifo_buffer_init(struct fifo_buffer *buffer) {
 	pthread_mutex_init (&buffer->mutex, NULL);
 }
 
+// Callback returns 0 if we should delete the packet and 1 if not
+int fifo_search_clear (
+	struct fifo_buffer *buffer,
+	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+	struct fifo_callback_args *callback_data
+) {
+	fifo_read_lock(buffer);
+
+	int err = 0;
+
+	struct fifo_buffer_entry *entry;
+	struct fifo_buffer_entry *next;
+	struct fifo_buffer_entry *prev = NULL;
+	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
+		next = entry->next;
+
+		int actions = callback(callback_data, entry->data, entry->size);
+
+		if (actions == FIFO_SEARCH_ERR) {
+			err = 1;
+			break;
+		}
+		if ((actions & FIFO_SEARCH_GIVE) != 0) {
+			fifo_read_to_write_lock(buffer);
+			if (entry == buffer->gptr_first) {
+				buffer->gptr_first = entry->next;
+			}
+			if (entry == buffer->gptr_last) {
+				buffer->gptr_last = prev;
+			}
+			if (prev != NULL) {
+				prev->next = entry->next;
+			}
+			free(entry); // Don't free data, callback takes care of it
+			fifo_write_to_read_lock(buffer);
+		}
+		if ((actions & FIFO_SEARCH_STOP) != 0) {
+			break;
+		}
+
+		prev = entry;
+	}
+
+	fifo_read_unlock(buffer);
+
+	return err;
+}
+
 int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,
 		uint64_t order_min

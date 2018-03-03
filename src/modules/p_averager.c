@@ -75,7 +75,7 @@ void poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
-	struct averager_data *averager_data = thread_data->private_data;
+	struct averager_data *averager_data = poll_data->private_data;
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
@@ -216,15 +216,16 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	unsigned long int senders_count = thread_data->senders_count;
-
 	struct averager_data *data = data_init(thread_data);
+	thread_data->private_data = data;
 
 	printf ("Averager  thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
-	thread_data->private_data = data;
 
+	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_AVERAGER_MAX_SENDERS) {
@@ -258,14 +259,6 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	for (int i = 0; i < senders_count; i++) {
-		while (thread_get_state(thread_data->senders[i]->thread) != VL_THREAD_STATE_RUNNING && thread_check_encourage_stop(thread_data->thread) != 1) {
-			update_watchdog_time(thread_data->thread);
-			printf ("Averager: Waiting for source thread to become ready\n");
-			usleep (5000);
-		}
-	}
-
 	uint64_t previous_average_time = time_get_64();
 	uint64_t average_interval_useconds = VL_AVERAGER_INTERVAL * 1000000;
 
@@ -281,7 +274,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		int err = 0;
 
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data->senders[i], NULL};
+			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("Averager module received error from poll function\n");

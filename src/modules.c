@@ -70,27 +70,28 @@ void module_free_thread(struct module_thread_data *data) {
 	free(data);
 }
 
-struct module_thread_data *module_start_thread(struct module_thread_init_data *init_data, struct cmd_data *cmd) {
+struct module_thread_data *module_init_thread(struct module_thread_init_data *init_data) {
+	printf ("Init thread %s\n", init_data->module->name);
 	struct module_thread_data *data = malloc(sizeof(*data));
 	memset(data, '\0', sizeof(*data));
 
 	data->module = init_data->module;
-	for (int i = 0; i < init_data->senders_count; i++) {
-		data->senders[i] = init_data->senders[i]->thread_data;
-		printf ("Assigned sender module %p,%p\n", data->senders[i], init_data->senders[i]->thread_data);
-	}
-
 	data->senders_count = init_data->senders_count;
-	data->thread = thread_start (data->module->operations.thread_entry, data, cmd);
+
+	return data;
+}
+
+int module_start_thread(struct module_thread_data *data, struct cmd_data *cmd) {
+	printf ("Starting thread %s\n", data->module->name);
+	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
 
 	if (data->thread == NULL) {
 		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
 		free(data);
-		return NULL;
+		return 1;
 	}
 
-
-	return data;
+	return 0;
 }
 
 void unload_module(struct module_dynamic_data *ptr) {
