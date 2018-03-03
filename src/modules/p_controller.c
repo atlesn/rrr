@@ -61,7 +61,7 @@ int poll_delete (
 	return 0;
 }
 
-void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
+int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
 	struct controller_data *controller_data = caller_data->private_data;
 	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
@@ -87,6 +87,8 @@ void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned 
 		fprintf (stderr, "controller: Don't know where to route messages from %s\n", source->module->name);
 		free(data);
 	}
+
+	return 0;
 }
 
 void data_init(struct controller_data *data) {

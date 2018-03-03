@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_SERVER_NAME "localhost"
 #define VL_IPCLIENT_SERVER_PORT "5555"
 #define VL_IPCLIENT_SEND_RATE 20 // Time between sending packets, milliseconds
-#define VL_IPCLIENT_BURST_LIMIT 3 // Number of packets to send before we switch to reading
+#define VL_IPCLIENT_BURST_LIMIT 10 // Number of packets to send before we switch to reading
 
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
@@ -105,6 +105,11 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	}
 
 	info->packet_counter++;
+
+	if (info->packet_counter == VL_IPCLIENT_BURST_LIMIT) {
+		printf ("ipclient burst limit reached, switching to reading\n");
+		return FIFO_SEARCH_STOP;
+	}
 
 	update_watchdog_time(thread_data->thread);
 	usleep (VL_IPCLIENT_SEND_RATE * 1000);
@@ -188,6 +193,8 @@ int send_packets(struct module_thread_data *thread_data) {
 
 	struct fifo_callback_args poll_data = {thread_data, &info};
 	err = fifo_search(&data->send_buffer, send_packet_callback, &poll_data);
+
+	printf ("ipclient sent %i packets\n", info.packet_counter);
 
 	freeaddrinfo(res);
 
@@ -318,7 +325,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-		usleep (1249000); // 1249 ms
+		usleep (250000); // 250 ms
 	}
 
 	out_message:

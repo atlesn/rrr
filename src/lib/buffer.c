@@ -78,6 +78,7 @@ int fifo_search (
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
 		next = entry->next;
 
+		int did_something = 0;
 		int actions = callback(callback_data, entry->data, entry->size);
 
 		if (actions == FIFO_SEARCH_KEEP) { // Just a 0
@@ -100,12 +101,13 @@ int fifo_search (
 			}
 			free(entry); // Don't free data, callback takes care of it
 			fifo_write_to_read_lock(buffer);
+			did_something = 1;
 		}
 		if ((actions & FIFO_SEARCH_STOP) != 0) {
 			break;
 		}
-		else {
-			fprintf (stderr, "Unkown return value %i to fifo_search\n", actions);
+		else if (did_something == 0) {
+			fprintf (stderr, "Bug: Unkown return value %i to fifo_search\n", actions);
 			exit (EXIT_FAILURE);
 		}
 
