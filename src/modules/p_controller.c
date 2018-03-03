@@ -72,7 +72,14 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 	}
 	else if (strcmp (source->module->name, "ipclient") == 0) {
-		fifo_buffer_write(&controller_data->to_blockdev, data, size);
+		if (message->type == MSG_TYPE_TAG) {
+			fifo_buffer_write(&controller_data->to_blockdev, data, size);
+		}
+		else {
+			// Discard everything else as trash
+			fprintf (stderr, "controller: Warning: Discarding message from ipclient timestamp %" PRIu64 "\n", message->timestamp_from);
+			free(message);
+		}
 	}
 	else if (
 		(strcmp (source->module->name, "averager") == 0) ||
