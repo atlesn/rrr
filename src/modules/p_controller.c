@@ -41,7 +41,7 @@ struct controller_data {
 
 int poll_delete (
 	struct module_thread_data *data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *poll_data
 ) {
 	struct controller_data *controller_data = data->private_data;
@@ -61,7 +61,7 @@ int poll_delete (
 	return 0;
 }
 
-void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
+int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
 	struct controller_data *controller_data = caller_data->private_data;
 	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
@@ -87,6 +87,8 @@ void poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned 
 		fprintf (stderr, "controller: Don't know where to route messages from %s\n", source->module->name);
 		free(data);
 	}
+
+	return 0;
 }
 
 void data_init(struct controller_data *data) {
@@ -126,7 +128,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_CONTROLLER_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *caller_data,
 					char *data,
 					unsigned long int size
@@ -155,13 +157,12 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		printf ("controller polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
 
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("controller module received error from poll function\n");
+				fprintf (stderr, "controller module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -170,7 +171,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-		usleep (1249000); // 1249 ms
+		usleep (100000); // 100 ms
 	}
 
 	out_message:

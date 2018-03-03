@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "lib/cmdlineparser/cmdline.h"
 
+#define VL_NO_MODULE_UNLOAD
+
 int main_loop() {
 	return 0;
 }
@@ -264,7 +266,10 @@ int main (int argc, const char *argv[]) {
 	out_unload_all:
 
 	module_threads_destroy();
+
+#ifndef VL_NO_MODULE_UNLOAD
 	unload_all_modules();
+#endif
 
 
 	out:

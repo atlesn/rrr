@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
 #define VL_IPSERVER_SERVER_PORT 5555
+#define VL_IPSERVER_RATE_LIMIT 20 // Time between sending packets, milliseconds
 
 struct ipserver_data {
 	struct fifo_buffer send_buffer;
@@ -53,7 +54,7 @@ struct ipserver_data {
 // Poll request from other modules
 int ipserver_poll_delete (
 	struct module_thread_data *thread_data,
-	void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
 	struct ipserver_data *data = thread_data->private_data;
@@ -83,7 +84,7 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 	fprintf (stderr, "%s", message->data);
 }
 
-void process_entries_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int process_entries_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
@@ -95,6 +96,8 @@ void process_entries_callback(struct fifo_callback_args *poll_data, char *data, 
 	entry->message.type = MSG_TYPE_TAG;
 
 	fifo_buffer_write(&private_data->send_buffer, (char*) entry, sizeof(*entry));
+
+	return 0;
 }
 
 int process_entries(struct ipserver_data *data) {
@@ -102,7 +105,7 @@ int process_entries(struct ipserver_data *data) {
 	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, &poll_data);
 }
 
-void send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
@@ -113,10 +116,10 @@ void send_replies_callback(struct fifo_callback_args *poll_data, char *data, uns
 	struct vl_message *message_err;
 
 	if (message_prepare_for_network (&entry->message, buf, MSG_STRING_MAX_LENGTH) != 0) {
-		return;
+		return 1;
 	}
 
-	printf ("ipserver: send reply %s\n", buf);
+	printf ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message->timestamp_from);
 	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
@@ -125,13 +128,13 @@ void send_replies_callback(struct fifo_callback_args *poll_data, char *data, uns
 
 	free(data);
 
-	return;
+	return 0;
 
 	spawn_error:
 	fifo_buffer_write(&private_data->receive_buffer, (char*) message_err, sizeof(*message_err));
 	fprintf (stderr, "%s", message_err->data);
 
-	return;
+	return 1;
 }
 
 int send_replies(struct ipserver_data *data) {
@@ -198,7 +201,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 	int (*poll[VL_IPSERVER_MAX_SENDERS])(
 			struct module_thread_data *data,
-			void (*callback)(
+			int (*callback)(
 					struct fifo_callback_args *caller_data,
 					char *data,
 					unsigned long int size
@@ -242,22 +245,18 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 			}
 		}*/
 
-		printf ("ipserver receiving data\n");
 		if (receive_packets(data) != 0) {
-			usleep (1249000); // 1249 ms
+			usleep (1000000); // 1249 ms
 			goto network_restart;
 		}
 
-		printf ("ipserver processing data\n");
 		process_entries(data);
-
-		printf ("ipserver sending replies\n");
 		send_replies(data);
 
 		if (err != 0) {
 			break;
 		}
-		usleep (1249000); // 1249 ms
+		usleep (10000); // 100 ms
 	}
 
 	out_message:

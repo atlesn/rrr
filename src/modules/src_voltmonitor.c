@@ -49,12 +49,6 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/messages.h"
 #include "../lib/cmdlineparser/cmdline.h"
 
-#define VL_VOLTMONITOR_CHANNEL 1
-
-// From libusb
-void usb_free_dev(struct usb_device *dev);
-void usb_free_bus(struct usb_bus *bus);
-
 struct voltmonitor_data {
 	struct fifo_buffer buffer;
 	usb_dev_handle *usb_handle;
@@ -288,40 +282,20 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 static int poll_delete (
 		struct module_thread_data *data,
-		void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	int res = fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
-	printf ("Poll result was: %i\n", res);
-	if (res == 0) {
-		return VL_POLL_EMPTY_RESULT_OK;
-	}
-	else if (res >= 1) {
-		return VL_POLL_RESULT_OK;
-	}
-	else {
-		return VL_POLL_RESULT_ERR;
-	}
+	return  fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
 }
 
 static int poll (
 		struct module_thread_data *data,
-		void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	int res = fifo_read_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
-	printf ("Poll result was: %i\n", res);
-	if (res == 0) {
-		return VL_POLL_EMPTY_RESULT_OK;
-	}
-	else if (res >= 1) {
-		return VL_POLL_RESULT_OK;
-	}
-	else {
-		return VL_POLL_RESULT_ERR;
-	}
+	return fifo_search(&voltmonitor_data->buffer, callback, caller_data);
 }
 
 struct voltmonitor_data *data_init(struct module_thread_data *module_thread_data) {
@@ -381,15 +355,15 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 	printf ("voltmonitor thread data is %p\n", thread_data);
 
-	if (cmd_parser(data, start_data->cmd) != 0) {
-		pthread_exit(0);
-	}
-
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+	if (cmd_parser(data, start_data->cmd) != 0) {
+		pthread_exit(0);
+	}
 
 	usb_init();
 

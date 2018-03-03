@@ -33,9 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_PROCESSOR 3
 
-#define VL_POLL_RESULT_ERR -1
+/*#define VL_POLL_RESULT_ERR -1
 #define VL_POLL_RESULT_OK 1
-#define VL_POLL_EMPTY_RESULT_OK 0
+#define VL_POLL_EMPTY_RESULT_OK 0*/
 
 #define VL_MODULE_MAX_SENDERS 8
 
@@ -51,9 +51,9 @@ struct fifo_callback_args;
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
 	void *(*thread_entry)(struct vl_thread_start_data *);
-	int (*poll)(struct module_thread_data *data, void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
+	int (*poll)(struct module_thread_data *data, int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
 	int (*print)(struct module_thread_data *data);
-	int (*poll_delete)(struct module_thread_data *data, void (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
+	int (*poll_delete)(struct module_thread_data *data, int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
 };
 
 struct module_dynamic_data {

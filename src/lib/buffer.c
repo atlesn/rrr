@@ -57,8 +57,13 @@ void fifo_buffer_init(struct fifo_buffer *buffer) {
 	pthread_mutex_init (&buffer->mutex, NULL);
 }
 
-// Callback returns 0 if we should delete the packet and 1 if not
-int fifo_search_clear (
+/*
+ * Search entries and act according to the return value of the callback function. We
+ * can delete entries or stop looping. See buffer.h . The callback function is expected
+ * to take control of the memory of an entry which fifo_search deletes, if not
+ * it will be leaked.
+ */
+int fifo_search (
 	struct fifo_buffer *buffer,
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 	struct fifo_callback_args *callback_data
@@ -73,8 +78,12 @@ int fifo_search_clear (
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
 		next = entry->next;
 
+		int did_something = 0;
 		int actions = callback(callback_data, entry->data, entry->size);
 
+		if (actions == FIFO_SEARCH_KEEP) { // Just a 0
+			goto keep;
+		}
 		if (actions == FIFO_SEARCH_ERR) {
 			err = 1;
 			break;
@@ -91,12 +100,19 @@ int fifo_search_clear (
 				prev->next = entry->next;
 			}
 			free(entry); // Don't free data, callback takes care of it
+			entry = NULL;
 			fifo_write_to_read_lock(buffer);
+			did_something = 1;
 		}
 		if ((actions & FIFO_SEARCH_STOP) != 0) {
 			break;
 		}
+		else if (did_something == 0) {
+			fprintf (stderr, "Bug: Unkown return value %i to fifo_search\n", actions);
+			exit (EXIT_FAILURE);
+		}
 
+		keep:
 		prev = entry;
 	}
 
@@ -165,7 +181,7 @@ int fifo_clear_order_lt (
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 		struct fifo_callback_args *callback_data
 ) {
 	int ret = 0;
@@ -195,53 +211,15 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		ret++;
-
 		//printf ("Read buffer entry %p, give away data %p\n", current, current->data);
 
-		callback(callback_data, current->data, current->size);
+		int ret_tmp = callback(callback_data, current->data, current->size);
+		ret = ret != 0 ? 1 : (ret_tmp != 0 ? 1 : 0);
 
 		free(current);
 
 		current = next;
 	}
-
-	return ret;
-}
-
-/*
- * This reading method holds a read lock througout the
- * reading process
- */
-int fifo_read_forward (
-		struct fifo_buffer *buffer,
-		struct fifo_buffer_entry *last_element,
-		void (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct fifo_callback_args *callback_data
-) {
-	int ret = 0;
-	fifo_read_lock(buffer);
-	if (buffer->invalid) {
-		printf ("Buffer was invalid\n");
-		fifo_read_unlock(buffer); return -1;
-	}
-
-	struct fifo_buffer_entry *current = buffer->gptr_first;
-	struct fifo_buffer_entry *stop = last_element;
-
-	while (current != stop) {
-		struct fifo_buffer_entry *next = current->next;
-
-		ret++;
-
-		//printf ("Read buffer entry %p, preserve data %p\n", current, current->data);
-
-		callback(callback_data, current->data, current->size);
-
-		current = next;
-	}
-
-	fifo_read_unlock(buffer);
 
 	return ret;
 }
