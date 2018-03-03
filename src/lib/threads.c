@@ -56,9 +56,12 @@ int thread_start_all_after_initialized() {
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
 		struct vl_thread *thread = threads[i];
 		int was_initialized = 0;
+		if (thread->is_watchdog == 1) {
+			continue;
+		}
 		for (int j = 0; j < 100; j++)  {
 			int state = thread_get_state(thread);
-			printf ("State of thread %p name %s: %i\n", thread, thread->name, state);
+			//printf ("State of thread %p name %s: %i\n", thread, thread->name, state);
 			if (	state == VL_THREAD_STATE_FREE ||
 					state == VL_THREAD_STATE_INITIALIZED ||
 					state == VL_THREAD_STATE_STOPPED ||
@@ -83,7 +86,9 @@ int thread_start_all_after_initialized() {
 	/* Signal all threads to proceed */
 	for (int i = 0; i < VL_THREADS_MAX; i++) {
 		struct vl_thread *thread = threads[i];
-		thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+		if (thread_get_state(thread) == VL_THREAD_STATE_INITIALIZED && thread->is_watchdog != 1) {
+			thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+		}
 	}
 
 	pthread_mutex_unlock(&threads_mutex);
@@ -140,11 +145,25 @@ static struct vl_thread *reserve_thread() {
 	return ret;
 }
 
-void *thread_watchdog(void *arg) {
-	struct vl_thread *thread = arg;
+struct watchdog_data {
+	struct vl_thread *watchdog_thread;
+	struct vl_thread *watched_thread;
+};
+
+void *thread_watchdog_entry(void *arg) {
+	// COPY AND FREE !!!!
+	struct watchdog_data data = *((struct watchdog_data *)arg);
+	free(arg);
+
+	struct vl_thread *thread = data.watched_thread;
+	struct vl_thread *self_thread = data.watchdog_thread;
+
 	usleep (500000);
 
 	update_watchdog_time(thread);
+
+	thread_set_state(self_thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(self_thread, VL_THREAD_STATE_RUNNING);
 
 	while (1) {
 		uint64_t nowtime = time_get_64();
@@ -191,6 +210,7 @@ void *thread_watchdog(void *arg) {
 
 	fprintf (stderr, "Detected exit of thread %p.\n", thread);
 
+
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
@@ -215,6 +235,11 @@ void *thread_watchdog(void *arg) {
 	}
 
 	out_nostop:
+
+	thread_set_state(self_thread, VL_THREAD_STATE_ENCOURAGE_STOP);
+	thread_set_state(self_thread, VL_THREAD_STATE_STOPPING);
+	thread_set_state(self_thread, VL_THREAD_STATE_STOPPED);
+
 	printf ("Thread %s state after stopping: %i\n", thread->name, thread_get_state(thread));
 
 	pthread_exit(0);
@@ -360,7 +385,13 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 		goto nowatchdog;
 	}
 
-	err = pthread_create(&watchdog_thread->thread, NULL, thread_watchdog, thread);
+	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
+	watchdog_data->watchdog_thread = watchdog_thread;
+	watchdog_data->watched_thread = thread;
+
+	sprintf (watchdog_thread->name, "watchdog");
+
+	err = pthread_create(&watchdog_thread->thread, NULL, thread_watchdog_entry, watchdog_data);
 	if (err != 0) {
 		fprintf (stderr, "Error while starting watchdog thread: %s\n", strerror(err));
 		err = 1;

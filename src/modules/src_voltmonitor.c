@@ -60,10 +60,10 @@ struct voltmonitor_data {
 	usb_dev_handle *usb_handle;
 	struct usb_device *usb_device;
 
-	struct usb_bus *usb_first_bus;
-
 	float usb_calibration;
 	int usb_channel;
+
+	pthread_mutex_t cleanup_lock;
 };
 
 
@@ -77,7 +77,7 @@ static void usb_cleanup(void *arg) {
 	if (data->usb_device != NULL) {
 		data->usb_device = NULL;
 	}
-	if (data->usb_first_bus != NULL) {
+	/*if (data->usb_first_bus != NULL) {
 		struct usb_bus *next_bus = NULL;
 		struct usb_bus *bus = data->usb_first_bus;
 		for ( bus = data->usb_first_bus ; bus ; bus = next_bus ) {
@@ -93,18 +93,21 @@ static void usb_cleanup(void *arg) {
 			usb_free_bus(bus);
 		}
 		data->usb_first_bus = NULL;
-	}
+	}*/
 
 	return;
 }
 
 static int usb_connect(struct voltmonitor_data *data) {
-	struct usb_bus *bus;
 	struct usb_device *founddev = NULL;
 
+	usb_find_busses();
+	usb_find_devices();
+
 	struct usb_bus *next_bus = NULL;
-	data->usb_first_bus = usb_get_busses();
-	for ( bus = data->usb_first_bus ; bus ; bus = next_bus ) {
+	struct usb_bus *bus = usb_get_busses();
+
+	for ( ; bus ; bus = next_bus ) {
 		struct usb_device *dev;
 		next_bus = bus->next;
 
@@ -389,8 +392,6 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	usb_init();
-	usb_find_busses();
-	usb_find_devices();
 
 	pthread_cleanup_push(usb_cleanup, data);
 
@@ -407,8 +408,6 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
 			usleep (1000000); // 1000 ms
-			usb_find_busses();
-			usb_find_devices();
 			continue;
 		}
 
