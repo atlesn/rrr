@@ -196,6 +196,12 @@ void averager_calculate_average(struct averager_data *data) {
 
 	if (calculation.entries == 0) {
 		printf ("Averager: No entries, not averaging\n");
+
+		// There might be some info messages to pick up
+		pthread_mutex_lock(&data->average_ready_lock);
+		data->average_is_ready = 1;
+		pthread_mutex_unlock(&data->average_ready_lock);
+
 		return;
 	}
 

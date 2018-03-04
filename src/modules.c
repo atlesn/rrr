@@ -81,6 +81,23 @@ struct module_thread_data *module_init_thread(struct module_thread_init_data *in
 	return data;
 }
 
+int module_restart_thread(struct module_thread_data *data, struct cmd_data *cmd) {
+	printf ("Restarting thread %s\n", data->module->name);
+	if (data->thread != NULL) {
+		free(data->thread);
+	}
+
+	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
+
+	if (data->thread == NULL) {
+		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
+		free(data);
+		return 1;
+	}
+
+	return 0;
+}
+
 int module_start_thread(struct module_thread_data *data, struct cmd_data *cmd) {
 	printf ("Starting thread %s\n", data->module->name);
 	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);

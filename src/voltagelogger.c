@@ -125,7 +125,6 @@ int main (int argc, const char *argv[]) {
 
 	memset(modules, '\0', sizeof(modules));
 
-	module_threads_init();
 
 	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		const char *module_string = cmd_get_subvalue(&cmd, "module", i, 0);
@@ -188,6 +187,9 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
+	threads_restart:
+
+	module_threads_init();
 
 	// Init threads
 	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
@@ -252,8 +254,11 @@ int main (int argc, const char *argv[]) {
 	while (main_running) {
 		usleep (1000000);
 		if (module_check_threads_stopped() == 0) {
-			printf ("One or more threads have finished. Exiting.\n");
-			break;
+			printf ("One or more threads have finished. Restart.\n");
+			module_threads_stop();
+			module_free_all_threads();
+			module_threads_destroy();
+			goto threads_restart;
 		}
 	}
 

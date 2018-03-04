@@ -334,6 +334,8 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
+		printf ("blockdev polling\n");
+
 		int err = 0;
 
 		for (int i = 0; i < senders_count; i++) {
@@ -347,6 +349,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		}
 
 		if (data->do_bdl_reset == 1) {
+			printf ("blockdev close session\n");
 			while (data->device_session.usercount > 0) {
 				bdl_close_session(&data->device_session);
 			}
@@ -354,7 +357,8 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		}
 
 		if (data->device_session.usercount == 0) {
-			if (bdl_start_session(&data->device_session, data->device_path) != 0) {
+			printf ("blockdev start session\n");
+			if (bdl_start_session(&data->device_session, data->device_path, 1) != 0) { // 1 == no memorymapping
 				fprintf (stderr, "blockdev: Could not open block device %s\n", data->device_path);
 				goto sleep;
 			}
@@ -364,6 +368,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 			get_new_entries(thread_data);
 		}
 
+		printf ("blockdev write\n");
 		write_to_device(data);
 
 		if (err != 0) {

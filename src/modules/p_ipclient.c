@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
 #define VL_IPCLIENT_SERVER_NAME "localhost"
 #define VL_IPCLIENT_SERVER_PORT "5555"
-#define VL_IPCLIENT_SEND_RATE 200 // Time between sending packets, milliseconds
+#define VL_IPCLIENT_SEND_RATE 50 // Time between sending packets, milliseconds
 #define VL_IPCLIENT_BURST_LIMIT 20 // Number of packets to send before we switch to reading
 #define VL_IPCLIENT_SEND_INTERVAL 10000 // Milliseconds before resending a packet
 
@@ -409,7 +409,11 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	printf ("ipclient restarting network\n");
 	stop_receive_thread(thread_data);
 	ip_network_cleanup(&data->ip);
-	ip_network_start(&data->ip);
+	if (ip_network_start(&data->ip) != 0) {
+		update_watchdog_time(thread_data->thread);
+		usleep (1000000);
+		goto network_restart;
+	}
 	if (start_receive_thread(thread_data) != 0) {
 		fprintf (stderr, "Could not start ipclient receive thread\n");
 		pthread_exit(0);
