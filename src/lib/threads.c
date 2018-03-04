@@ -221,10 +221,10 @@ void *thread_watchdog_entry(void *arg) {
 			fprintf (stderr, "Thread %s not responding to kill. Killing it harder.\n", thread->name);
 			usleep (100000); // 100ms
 			void *retval;
-			if (pthread_tryjoin_np(thread->thread, &retval) != 0) {
+			if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 				fprintf (stderr, "Thread %s dies slowly, waiting a bit more.\n", thread->name);
 				usleep (2000000); // 2000ms
-				if (pthread_tryjoin_np(thread->thread, &retval) != 0) {
+				if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 					fprintf (stderr, "Thread %s doesn't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name);
 					thread->is_ghost = 1;
 					break;
@@ -306,9 +306,6 @@ void threads_stop() {
 			void *ret;
 			pthread_join(threads[i]->thread, &ret);
 		}
-		else {
-			pthread_detach(threads[i]->thread);
-		}
 	}
 
 	// Don't unlock, destroy does that
@@ -386,6 +383,8 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 		free(start_data);
 		goto nowatchdog;
 	}
+
+	pthread_detach(threads->thread);
 
 #ifndef VL_THREAD_NO_WATCHDOGS
 	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
