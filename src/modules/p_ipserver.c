@@ -144,8 +144,16 @@ int send_replies(struct ipserver_data *data) {
 	return fifo_read_clear_forward(&data->send_buffer, NULL, send_replies_callback, &poll_data);
 }
 
-void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
-	struct ipserver_data *data = arg;
+struct receive_packets_data {
+	struct ipserver_data *data;
+	int counter;
+};
+
+int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
+	struct receive_packets_data *callback_data = arg;
+	struct ipserver_data *data = callback_data->data;
+
+	callback_data->counter++;
 
 	printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
 
@@ -157,10 +165,15 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	memcpy(ack, entry, sizeof(*ack));
 	ack->message.type = MSG_TYPE_ACK;
 	fifo_buffer_write(&data->send_buffer, (char*) ack, sizeof(*ack));
+
+	return (callback_data->counter == 5 ? VL_IP_RECEIVE_STOP : VL_IP_RECEIVE_OK);
 }
 
 int receive_packets(struct ipserver_data *data) {
-	return ip_receive_packets(data->ip.fd, receive_packets_callback, data);
+	struct receive_packets_data callback_data;
+	callback_data.data = data;
+	callback_data.counter = 0;
+	return ip_receive_packets(data->ip.fd, receive_packets_callback, &callback_data);
 }
 
 void init_data(struct ipserver_data *data) {
@@ -259,7 +272,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-		usleep (10000); // 100 ms
+		usleep (5000); // 50 ms
 	}
 
 	out_message:

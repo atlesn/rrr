@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VL_IP_DEFAULT_PORT 5555
 
+#define VL_IP_RECEIVE_OK 0
+#define VL_IP_RECEIVE_ERR 1
+#define VL_IP_RECEIVE_STOP 2
+
 struct ip_buffer_entry {
 	struct vl_message message; // Must be first, we do dangerous casts :)
 	struct sockaddr addr;
@@ -37,6 +41,6 @@ struct ip_data {
 	int fd;
 };
 
-int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *ip, void *arg), void *arg);
+int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *ip, void *arg), void *arg);
 void ip_network_cleanup (void *arg);
 int ip_network_start (struct ip_data *data);

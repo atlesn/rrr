@@ -178,7 +178,7 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 	return FIFO_SEARCH_KEEP;
 }
 
-void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
+int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct ipclient_data *data = arg;
 	struct vl_message *message = &entry->message;
 
@@ -201,6 +201,8 @@ void receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 		free (entry);
 		fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
 	}
+
+	return VL_IP_RECEIVE_OK;
 }
 
 int receive_packets(struct ipclient_data *data) {
