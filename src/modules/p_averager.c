@@ -341,7 +341,8 @@ static struct module_operations module_operations = {
 		thread_entry_averager,
 		averager_poll,
 		NULL,
-		averager_poll_delete
+		averager_poll_delete,
+		NULL
 };
 
 static const char *module_name = "averager";

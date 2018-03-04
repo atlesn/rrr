@@ -464,7 +464,8 @@ static struct module_operations module_operations = {
 		thread_entry_ipclient,
 		NULL,
 		NULL,
-		ipclient_poll_delete
+		ipclient_poll_delete,
+		NULL
 };
 
 static const char *module_name = "ipclient";

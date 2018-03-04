@@ -1,5 +1,5 @@
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la
 
 module_ldflags=-module -avoid-version -shared -L../lib -lvlogger
 
@@ -26,5 +26,8 @@ blockdev_la_SOURCES = p_blockdev.c
 
 controller_la_LDFLAGS = ${module_ldflags}
 controller_la_SOURCES = p_controller.c
+
+mysql_la_LDFLAGS = ${module_ldflags} -lmysqlclient
+mysql_la_SOURCES = p_mysql.c
 
 libdir=${exec_prefix}/lib/voltagelogger

@@ -27,11 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "lib/cmdlineparser/cmdline.h"
 
+// Used so that debugger output at program exit can show function names
+// on the stack correctly
 #define VL_NO_MODULE_UNLOAD
-
-int main_loop() {
-	return 0;
-}
 
 static volatile int main_running = 1;
 

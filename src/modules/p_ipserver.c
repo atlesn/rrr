@@ -48,18 +48,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipserver_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
+	struct fifo_buffer output_buffer;
 	struct ip_data ip;
 };
 
 // Poll request from other modules
-int ipserver_poll_delete (
+int ipserver_poll_delete_ip (
 	struct module_thread_data *thread_data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
 	struct ipserver_data *data = thread_data->private_data;
 
-	return fifo_read_clear_forward(&data->receive_buffer, NULL, callback, caller_data);
+	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
 void poll_callback(void *caller_data, char *data, unsigned long int size) {
@@ -88,16 +89,7 @@ int process_entries_callback(struct fifo_callback_args *poll_data, char *data, u
 	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
-	// TODO : Do MySQL-stuff here
-
-	// Generate acknowledgement message, tag it as finished and stored safely
-	// We can re-use the message, just flip the type. The entry already
-	// contains the IP-address of the sender.
-	entry->message.type = MSG_TYPE_TAG;
-
-	printf ("ipserver: Generate TAG message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
-
-	fifo_buffer_write(&private_data->send_buffer, (char*) entry, sizeof(*entry));
+	fifo_buffer_write(&private_data->output_buffer, (char*) entry, sizeof(*entry));
 
 	return 0;
 }
@@ -157,7 +149,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
 
-	fifo_buffer_write(&data->receive_buffer, (char*) entry, sizeof(*entry));
+	fifo_buffer_write(&data->output_buffer, (char*) entry, sizeof(*entry));
 
 	// Generate ACK reply
 	printf ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
@@ -184,12 +176,14 @@ void init_data(struct ipserver_data *data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->send_buffer);
 	fifo_buffer_init(&data->receive_buffer);
+	fifo_buffer_init(&data->output_buffer);
 }
 
 void data_cleanup(void *arg) {
 	struct ipserver_data *data = arg;
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
+	fifo_buffer_invalidate(&data->output_buffer);
 }
 
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
@@ -227,10 +221,10 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 	for (int i = 0; i < senders_count; i++) {
 		printf ("ipserver: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "ipserver cannot use this sender, lacking poll delete function.\n");
+			fprintf (stderr, "ipserver cannot use this sender, lacking poll_delete_ip function.\n");
 			goto out_message;
 		}
 	}
@@ -289,7 +283,8 @@ static struct module_operations module_operations = {
 		thread_entry_ipserver,
 		NULL,
 		NULL,
-		ipserver_poll_delete
+		NULL,
+		ipserver_poll_delete_ip
 };
 
 static const char *module_name = "ipserver";

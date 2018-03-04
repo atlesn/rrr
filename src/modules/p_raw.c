@@ -121,6 +121,7 @@ static struct module_operations module_operations = {
 		thread_entry_raw,
 		NULL,
 		NULL,
+		NULL,
 		NULL
 };
 

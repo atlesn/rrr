@@ -93,7 +93,8 @@ struct vl_thread {
 	// it's cleanup procedure and free this pointer
 	void *ghost_cleanup_pointer;
 
-	char thread_private_memory[];
+// TODO : Probably don't need this
+//	char thread_private_memory[];
 };
 
 struct vl_thread_start_data {

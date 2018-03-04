@@ -392,7 +392,8 @@ static struct module_operations module_operations = {
 		thread_entry_blockdev,
 		NULL,
 		NULL,
-		poll_delete
+		poll_delete,
+		NULL
 };
 
 static const char *module_name = "blockdev";
