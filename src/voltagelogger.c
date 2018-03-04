@@ -45,7 +45,7 @@ int module_check_threads_stopped() {
 			break;
 		}
 
-		if (thread_get_state(modules[i].thread_data->thread) == VL_THREAD_STATE_STOPPED) {
+		if (thread_get_state(modules[i].thread_data->thread) == VL_THREAD_STATE_STOPPED || modules[i].thread_data->thread->is_ghost == 1) {
 			return 0;
 		}
 	}
