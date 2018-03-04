@@ -63,14 +63,15 @@ int ipserver_poll_delete_ip (
 	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
-void poll_callback(void *caller_data, char *data, unsigned long int size) {
-	struct fifo_callback_args *poll_data = caller_data;
+int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipserver_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 	printf ("ipserver: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&private_data->send_buffer, data, size);
+
+	return 0;
 }
 
 void spawn_error(struct ipserver_data *data, const char *buf) {
@@ -244,16 +245,16 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-/*		printf ("ipserver polling data\n");
+		printf ("ipserver polling data\n");
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, thread_data);
+			struct fifo_callback_args poll_data = {thread_data, data};
+			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				printf ("ipserver module received error from poll function\n");
 				err = 1;
 				break;
 			}
-		}*/
+		}
 
 		if (receive_packets(data) != 0) {
 			usleep (1000000); // 1000 ms

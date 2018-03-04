@@ -218,27 +218,38 @@ int mysql_poll_delete_ip (
 
 int process_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct mysql_data *mysql_data = callback_data->private_data;
+	struct module_thread_data *thread_data = callback_data->source;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+
+	update_watchdog_time(thread_data->thread);
 
 	int err = 0;
 
-	if (mysql_save (mysql_data, entry) != 0) {
+	printf ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+
+	if (0) {// || mysql_save (mysql_data, entry) != 0) {
 		// Put back in buffer
+		printf ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
 		err = 1;
 	}
 	else {
-		// Free or something
-		free(data);
+		// Tag message as saved to sender
+		struct vl_message *message = &entry->message;
+		printf ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
+		message->type = MSG_TYPE_TAG;
+		fifo_buffer_write(&mysql_data->output_buffer, data, size);
 	}
 
 	return err;
 }
 
-int process_entries (struct mysql_data *data) {
+int process_entries (struct module_thread_data *thread_data) {
+	struct mysql_data *data = thread_data->private_data;
 	struct fifo_callback_args poll_data;
+
 	poll_data.private_data = data;
-	poll_data.source = NULL;
+	poll_data.source = thread_data;
 
 	if (connect_to_mysql(data) != 0) {
 		return 1;
@@ -326,7 +337,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			}
 		}
 
-		process_entries(data);
+		process_entries(thread_data);
 
 		if (data->mysql_connected != 1) {
 			// Sleep a little longer if we can't connect to the server
