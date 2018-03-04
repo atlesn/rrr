@@ -92,6 +92,10 @@ int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, v
 			continue;
 		}
 		else {
+			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
+				printf ("%02x-", entry->message.data[i]);
+			}
+			printf ("\n");
 			callback(entry, arg);
 		}
 	}
