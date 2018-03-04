@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <sys/socket.h>
+#include <stdint.h>
 
 #include "../../lib/messages.h"
 
@@ -29,6 +30,7 @@ struct ip_buffer_entry {
 	struct vl_message message; // Must be first, we do dangerous casts :)
 	struct sockaddr addr;
 	socklen_t addr_len;
+	uint64_t time;
 };
 
 struct ip_data {

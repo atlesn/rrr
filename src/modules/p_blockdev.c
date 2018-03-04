@@ -109,12 +109,30 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 
 	const struct vl_message *message = (const struct vl_message *) data;
 
+/*	printf ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
+
+	printf ("blockdev update_test: Timestamp: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
+			timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
+
+	printf ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
+			data_length, update_test_data->message->length, message->length);
+
+	for (int j = 0; j < update_test_data->message->length; j++) {
+		printf ("%02x-", update_test_data->message->data[j]);
+	}
+	printf ("\n");
+	for (int j = 0; j < message->length; j++) {
+		printf ("%02x-", message->data[j]);
+	}
+	printf ("\n");*/
+
 	if (
-			(application_data & VL_BLOCKDEV_TAG_SAVED) != 0 ||
-			timestamp != update_test_data->message->timestamp_from ||
-			data_length != update_test_data->message->length ||
-			memcmp(message->data, update_test_data->message->data, data_length) != 0
+			(application_data & VL_BLOCKDEV_TAG_SAVED) == 1 ||
+			message->timestamp_from != update_test_data->message->timestamp_from ||
+			message->length != update_test_data->message->length ||
+			memcmp(message->data, update_test_data->message->data, message->length) != 0
 	) {
+		// TODO : escape from loop when entry found
 		update_info.do_update = 0;
 		goto out;
 	}

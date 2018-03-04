@@ -257,6 +257,8 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
+	signal(SIGINT, SIG_DFL);
+
 	printf ("Main loop finished\n");
 
 	out_stop_threads:

@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_SERVER_PORT "5555"
 #define VL_IPCLIENT_SEND_RATE 20 // Time between sending packets, milliseconds
 #define VL_IPCLIENT_BURST_LIMIT 10 // Number of packets to send before we switch to reading
+#define VL_IPCLIENT_SEND_INTERVAL 10000 // Milliseconds before resending a packet
 
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
@@ -71,9 +72,15 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
+
 	printf ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
-	fifo_buffer_write(&private_data->send_buffer, data, size);
+	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	memset(entry, '\0', sizeof(*entry));
+	memcpy(&entry->message, reading, sizeof(entry->message));
+	free(data);
+
+	fifo_buffer_write(&private_data->send_buffer, (char*)entry, sizeof(*entry));
 
 	return 0;
 }
@@ -89,7 +96,18 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct send_packet_info *info = poll_data->private_data;
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *ipclient_data = thread_data->private_data;
-	struct vl_message *message = (struct vl_message *) data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+	struct vl_message *message = &entry->message;
+
+	uint64_t time_now = time_get_64();
+
+	// Check if we sent this packet recently
+	if (entry->time + VL_IPCLIENT_SEND_INTERVAL * 1000 > time_now) {
+		printf ("ipclient: Not sending packet with timestamp %" PRIu64", it was sent recently\n", message->timestamp_from);
+		return FIFO_SEARCH_KEEP;
+	}
+
+	entry->time = time_now;
 
 	char buf[MSG_STRING_MAX_LENGTH];
 	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
@@ -99,7 +117,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		return FIFO_SEARCH_KEEP;
 	}
 
-	printf("ipclient sent packet timestamp from %" PRIu64 "\n", message->timestamp_from);
+	printf("ipclient sent packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf+1);
 
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
 		fprintf(stderr, "ipclient: Error while sending packet to server\n");
@@ -123,19 +141,20 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 int receive_packets_search_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct ipclient_data *ipclient_data = callback_data->source;
 	struct vl_message *message_to_match = callback_data->private_data;
-	struct vl_message *checked_entry = (struct vl_message *) data;
+	struct ip_buffer_entry *checked_entry = (struct ip_buffer_entry *) data;
+	struct vl_message *message = &checked_entry->message;
 
-	printf ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, checked_entry->class);
-	printf ("ipclient: match timestamp from %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_from, checked_entry->timestamp_from);
-	printf ("ipclient: match timestamp to %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_to, checked_entry->timestamp_to);
-	printf ("ipclient: match length %" PRIu32 " vs %" PRIu32 "\n", message_to_match->length, checked_entry->length);
+	printf ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, message->class);
+	printf ("ipclient: match timestamp from %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_from, message->timestamp_from);
+	printf ("ipclient: match timestamp to %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_to, message->timestamp_to);
+	printf ("ipclient: match length %" PRIu32 " vs %" PRIu32 "\n", message_to_match->length, message->length);
 
-	if (	message_to_match->class == checked_entry->class &&
-			message_to_match->timestamp_from == checked_entry->timestamp_from &&
-			message_to_match->timestamp_to == checked_entry->timestamp_to &&
-			message_to_match->length == checked_entry->length
+	if (	message_to_match->class == message->class &&
+			message_to_match->timestamp_from == message->timestamp_from &&
+			message_to_match->timestamp_to == message->timestamp_to &&
+			message_to_match->length == message->length
 	) {
-		printf ("ipclient received ACK for message %s\n", checked_entry->data);
+		printf ("ipclient received ACK for message with timestamp %" PRIu64 "\n", message->timestamp_from);
 		free(checked_entry);
 		return FIFO_SEARCH_GIVE | FIFO_SEARCH_STOP;
 	}
@@ -300,6 +319,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	}
 
 	network_restart:
+	printf ("ipclient restarting network\n");
 	ip_network_cleanup(&data->ip);
 	ip_network_start(&data->ip);
 
