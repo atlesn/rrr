@@ -140,15 +140,15 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 			message->class != update_test_data->message->class ||
 			memcmp(message->data, update_test_data->message->data, message->length) != 0
 	) {
-		// TODO : escape from loop when entry found
 		update_info.do_update = 0;
-		update_info.do_break = 1;
+		update_info.do_break = 0;
 		goto out;
 	}
 
 	printf ("blockdev: Updating appdata for entry\n");
 
 	update_info.do_update = 1;
+	update_info.do_break = 1;
 	update_info.new_appdata |= VL_BLOCKDEV_TAG_SAVED;
 
 	out:
