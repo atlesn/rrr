@@ -95,10 +95,10 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 			continue;
 		}
 		else {
-			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
+/*			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
 				printf ("%02x-", entry->message.data[i]);
 			}
-			printf ("\n");
+			printf ("\n");*/
 			int res = callback(entry, arg);
 			if (res == VL_IP_RECEIVE_STOP) {
 				break;

@@ -245,7 +245,6 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		printf ("ipserver polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, data};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
