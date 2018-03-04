@@ -142,6 +142,7 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 	) {
 		// TODO : escape from loop when entry found
 		update_info.do_update = 0;
+		update_info.do_break = 1;
 		goto out;
 	}
 
