@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mysql/mysql.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #include "common/ip.h"
 #include "../lib/buffer.h"
@@ -230,6 +231,15 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 
 	struct vl_message *message = &entry->message;
 
+	/* Attempt to make an integer value if possible */
+	unsigned long long int value = message->data_numeric;
+	if (value == 0 && message->length > 0) {
+		char *pos;
+		value = strtoull(message->data, &pos, 10);
+		if (errno == ERANGE || pos == message->data) {
+			value = 0;
+		}
+	}
 
 	// TODO : We are not very careful with int sizes here
 
