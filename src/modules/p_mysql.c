@@ -273,7 +273,7 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 	bind[4].is_unsigned = 1;
 
 	// Value
-	bind[5].buffer = &message->data_numeric;
+	bind[5].buffer = &value;
 	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[5].is_unsigned = 1;
 
