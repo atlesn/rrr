@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct averager_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
+
+	// Set this to 1 when others may read from our buffer
+	int average_is_ready;
+	pthread_mutex_t average_ready_lock;
 };
 
 // Should not be smaller than module max
@@ -56,7 +60,15 @@ int averager_poll_delete (
 ) {
 	struct averager_data *data = thread_data->private_data;
 
-	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
+	pthread_mutex_lock(&data->average_ready_lock);
+	if (data->average_is_ready == 1) {
+		data->average_is_ready = 0;
+		pthread_mutex_unlock(&data->average_ready_lock);
+		return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
+	}
+	pthread_mutex_unlock(&data->average_ready_lock);
+
+	return 0;
 }
 
 // Poll of our output buffer from other modules
@@ -76,6 +88,8 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct vl_message *message = (struct vl_message *) data;
 
 	struct averager_data *averager_data = poll_data->private_data;
+
+	// TODO : If we get an info message, the average measurements may get lost due to them having lower timestamps
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
@@ -172,7 +186,7 @@ void averager_spawn_message (
 		exit (EXIT_FAILURE);
 	}
 
-	fifo_buffer_write_ordered(&data->output_buffer, time_from, (char*) message, sizeof(*message));
+	fifo_buffer_write_ordered(&data->output_buffer, time_to, (char*) message, sizeof(*message));
 }
 
 void averager_calculate_average(struct averager_data *data) {
@@ -188,9 +202,18 @@ void averager_calculate_average(struct averager_data *data) {
 	unsigned long int average = calculation.sum/calculation.entries;
 	printf ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
 
+
+	pthread_mutex_lock(&data->average_ready_lock);
+
+	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
+	// without newer timestamps getting written before older ones.
 	averager_spawn_message(data, MSG_CLASS_AVG, calculation.timestamp_from, calculation.timestamp_to, average);
-	averager_spawn_message(data, MSG_CLASS_MAX, calculation.timestamp_max, calculation.timestamp_max, calculation.max);
-	averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_min, calculation.min);
+	averager_spawn_message(data, MSG_CLASS_MAX, calculation.timestamp_max, calculation.timestamp_to+1, calculation.max);
+	averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_to+2, calculation.min);
+
+	data->average_is_ready = 1;
+
+	pthread_mutex_unlock(&data->average_ready_lock);
 }
 
 struct averager_data *data_init(struct module_thread_data *module_thread_data) {
@@ -203,6 +226,7 @@ struct averager_data *data_init(struct module_thread_data *module_thread_data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->input_buffer);
 	fifo_buffer_init(&data->output_buffer);
+	pthread_mutex_init(&data->average_ready_lock, NULL);
 	return data;
 }
 

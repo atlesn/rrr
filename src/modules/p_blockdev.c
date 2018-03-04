@@ -91,7 +91,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct vl_message *reading = (struct vl_message *) data;
-	printf ("blockdev: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	printf ("blockdev: Result from buffer: %s timestamp to %" PRIu64 " size %lu\n", reading->data, reading->timestamp_to, size);
 
 	fifo_buffer_write_ordered(&blockdev_data->input_buffer, reading->timestamp_to, data, size);
 
@@ -109,10 +109,16 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 
 	const struct vl_message *message = (const struct vl_message *) data;
 
-/*	printf ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
+	printf ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
 
-	printf ("blockdev update_test: Timestamp: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
+	printf ("blockdev update_test: Timestamp from: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
 			timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
+
+	printf ("blockdev update_test: Timestamp to: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
+			timestamp, update_test_data->message->timestamp_to, message->timestamp_to);
+
+	printf ("blockdev update_test: Class: %" PRIu32 " vs %" PRIu32 "\n",
+			update_test_data->message->class, message->class);
 
 	printf ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
 			data_length, update_test_data->message->length, message->length);
@@ -124,12 +130,14 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 	for (int j = 0; j < message->length; j++) {
 		printf ("%02x-", message->data[j]);
 	}
-	printf ("\n");*/
+	printf ("\n");
 
 	if (
 			(application_data & VL_BLOCKDEV_TAG_SAVED) == 1 ||
 			message->timestamp_from != update_test_data->message->timestamp_from ||
+			message->timestamp_to != update_test_data->message->timestamp_to ||
 			message->length != update_test_data->message->length ||
+			message->class != update_test_data->message->class ||
 			memcmp(message->data, update_test_data->message->data, message->length) != 0
 	) {
 		// TODO : escape from loop when entry found
@@ -162,13 +170,18 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 		// Match only NEW entries
 		err = bdl_read_update_application_data (
 			&blockdev_data->device_session,
-			message->timestamp_from,
+			message->timestamp_to,
 			VL_BLOCKDEV_TAG_NEW,
 			update_test, &update_test_data,
 			&result
 		);
 
 		printf ("blockdev: Result from bld_update_application_data: %i\n", result);
+
+		if (result > 1) {
+			fprintf (stderr, "blockdev: Error: Updated more than 1 entry\n");
+			pthread_exit(0);
+		}
 	}
 	else {
 		err = bdl_write_block (
@@ -181,7 +194,6 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	if (err == BDL_WRITE_ERR_TIMESTAMP) {
 		printf ("blockdev: Some entry with a higher timestamp has been written, discard this entry.\n");
 		free(data);
-		blockdev_data->do_bdl_reset = 1;
 		return FIFO_SEARCH_GIVE;
 	}
 	else if (err == BDL_WRITE_ERR_SIZE) {

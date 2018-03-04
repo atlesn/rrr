@@ -76,12 +76,11 @@ static inline void fifo_write_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+// TODO : These locking methods are unfair, fix if it matters
 static inline void fifo_read_to_write_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
 	while (ok != 3) {
 		pthread_mutex_lock(&buffer->mutex);
-
-		buffer->readers--;
 
 		if (buffer->writers == 0) {
 			ok = 1;
@@ -91,7 +90,9 @@ static inline void fifo_read_to_write_lock(struct fifo_buffer *buffer) {
 			ok = 2;
 		}
 		if (ok == 2) {
-			if (buffer->readers == 0) {
+			// When readers reach one, only we are left holding read lock
+			if (buffer->readers == 1) {
+				buffer->readers--;
 				ok = 3;
 			}
 		}

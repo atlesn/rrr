@@ -43,16 +43,19 @@ int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, v
 	char buffer[MSG_STRING_MAX_LENGTH];
 
 	while (1) {
-		int res = poll(&fds, 1, 500);
+//		printf ("ip polling data\n");
+		int res = poll(&fds, 1, 10);
 		if (res == -1) {
 			fprintf (stderr, "Error from poll when reading data from network: %s\n", strerror(errno));
 			return 1;
 		}
 		else if (!(fds.revents & POLLIN)) {
+//			printf ("ip no data available\n");
 			break;
 		}
 
 		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
+//		printf ("ip receiving data\n");
 		ssize_t count = recvfrom(fd, buffer, MSG_STRING_MAX_LENGTH, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {
