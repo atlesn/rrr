@@ -384,7 +384,7 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 		goto nowatchdog;
 	}
 
-	pthread_detach(threads->thread);
+	pthread_detach(thread->thread);
 
 #ifndef VL_THREAD_NO_WATCHDOGS
 	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
