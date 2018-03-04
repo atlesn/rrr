@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "../../lib/messages.h"
 
-int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, void *arg), void *arg) {
+int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, void *arg), void *arg) {
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
 	char errbuf[256];
@@ -99,7 +99,13 @@ int ip_receive_packets(int fd, void (*callback)(struct ip_buffer_entry *entry, v
 				printf ("%02x-", entry->message.data[i]);
 			}
 			printf ("\n");
-			callback(entry, arg);
+			int res = callback(entry, arg);
+			if (res == VL_IP_RECEIVE_STOP) {
+				break;
+			}
+			else if (res == VL_IP_RECEIVE_ERR) {
+				return 1;
+			}
 		}
 	}
 
