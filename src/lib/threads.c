@@ -225,7 +225,7 @@ void *thread_watchdog_entry(void *arg) {
 				fprintf (stderr, "Thread %s dies slowly, waiting a bit more.\n", thread->name);
 				usleep (2000000); // 2000ms
 				if (pthread_tryjoin_np(thread->thread, &retval) != 0) {
-					fprintf (stderr, "Thread %s don't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name);
+					fprintf (stderr, "Thread %s doesn't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name);
 					thread->is_ghost = 1;
 					break;
 				}
