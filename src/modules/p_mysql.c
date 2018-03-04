@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <inttypes.h>
 #include <mysql/mysql.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "common/ip.h"
 #include "../lib/buffer.h"
@@ -186,13 +188,6 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	return 0;
 }
 
-int mysql_save(struct mysql_data *data, struct ip_buffer_entry *entry) {
-	if (data->mysql_connected != 1) {
-		return 1;
-	}
-	return 1;
-}
-
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
@@ -216,9 +211,94 @@ int mysql_poll_delete_ip (
 	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
+struct process_entries_data {
+	struct mysql_data *data;
+	MYSQL_STMT *stmt;
+};
+
+int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+	if (data->data->mysql_connected != 1) {
+		return 1;
+	}
+
+	struct sockaddr_in *ipv4_in = (struct sockaddr_in*) &entry->addr;
+
+	// TODO : not thread safe
+	char *ipv4_string_tmp = inet_ntoa(ipv4_in->sin_addr);
+	char ipv4_string[strlen(ipv4_string_tmp)+1];
+	sprintf(ipv4_string, "%s", ipv4_string_tmp);
+
+	struct vl_message *message = &entry->message;
+
+
+	// TODO : We are not very careful with int sizes here
+
+	MYSQL_BIND bind[8];
+	memset(bind, '\0', sizeof(bind));
+
+	// Timestamp
+	bind[0].buffer = &message->timestamp_to;
+	bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[0].is_unsigned = 1;
+
+	// Source
+	unsigned long source_length = strlen(ipv4_string);
+	bind[1].buffer = ipv4_string;
+	bind[1].length = &source_length;
+	bind[1].buffer_type = MYSQL_TYPE_STRING;
+
+	// Class
+	bind[2].buffer = &message->class;
+	bind[2].buffer_type = MYSQL_TYPE_LONG;
+	bind[2].is_unsigned = 1;
+
+	// Time from
+	bind[3].buffer = &message->timestamp_from;
+	bind[3].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[3].is_unsigned = 1;
+
+	// Time to
+	bind[4].buffer = &message->timestamp_to;
+	bind[4].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[4].is_unsigned = 1;
+
+	// Value
+	bind[5].buffer = &message->data_numeric;
+	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[5].is_unsigned = 1;
+
+	// Message
+	unsigned long message_length = message->length;
+	bind[6].buffer = message->data;
+	bind[6].length = &message_length;
+	bind[6].buffer_type = MYSQL_TYPE_STRING;
+
+	// Message length
+	bind[7].buffer = &message->length;
+	bind[7].buffer_type = MYSQL_TYPE_LONG;
+	bind[7].is_unsigned = 1;
+
+	if (mysql_stmt_bind_param(data->stmt, bind) != 0) {
+		fprintf(stderr, "mysql: Failed to bind values to statement: Error: %s\n",
+				mysql_error(&data->data->mysql));
+		return 1;
+	}
+
+	if (mysql_stmt_execute(data->stmt) != 0) {
+		fprintf(stderr, "mysql: Failed to execute statement: Error: %s\n",
+				mysql_error(&data->data->mysql));
+		return 1;
+	}
+
+	printf ("mysql: Statement executed sucessfully\n");
+
+	return 0;
+}
+
 int process_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	struct mysql_data *mysql_data = callback_data->private_data;
+	struct process_entries_data *process_data = callback_data->private_data;
 	struct module_thread_data *thread_data = callback_data->source;
+	struct mysql_data *mysql_data = process_data->data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
 	update_watchdog_time(thread_data->thread);
@@ -227,7 +307,7 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	printf ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 
-	if (0) {// || mysql_save (mysql_data, entry) != 0) {
+	if (mysql_save (process_data, entry) != 0) {
 		// Put back in buffer
 		printf ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
@@ -244,24 +324,54 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	return err;
 }
 
+void close_mysql_stmt(void *arg) {
+	mysql_stmt_close(arg);
+}
+
 int process_entries (struct module_thread_data *thread_data) {
 	struct mysql_data *data = thread_data->private_data;
 	struct fifo_callback_args poll_data;
-
-	poll_data.private_data = data;
-	poll_data.source = thread_data;
 
 	if (connect_to_mysql(data) != 0) {
 		return 1;
 	}
 
-	int ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data);
+	int ret;
 
+	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
+
+	pthread_cleanup_push(close_mysql_stmt, stmt);
+
+	struct process_entries_data process_data;
+
+	process_data.data = data;
+	process_data.stmt = stmt;
+
+	poll_data.private_data = &process_data;
+	poll_data.source = thread_data;
+
+	const char *query_base = "REPLACE INTO `%s` " \
+			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
+			"VALUES (?,?,?,?,?,?,?,?)";
+
+	char query[strlen(query_base) + strlen(data->mysql_table) + 1];
+	sprintf(query, query_base, data->mysql_table);
+
+	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
+		fprintf(stderr, "mysql: Failed to prepare statement: Error: %s\n",
+				mysql_error(&data->mysql));
+		mysql_disconnect(data);
+		goto out;
+	}
+
+	ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data);
 	if (ret != 0) {
 		fprintf (stderr, "mysql: Error when saving entries to database\n");
 		mysql_disconnect(data);
 	}
 
+	out:
+	pthread_cleanup_pop(1);
 	return ret;
 }
 

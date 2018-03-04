@@ -35,9 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define VL_THREAD_NO_WATCHDOGS
 
-// Decleare here instead of #define _GNU_SOURCE
-int pthread_tryjoin_np(pthread_t thread, void **retval);
-
 static struct vl_thread *threads[VL_THREADS_MAX];
 static pthread_mutex_t threads_mutex = PTHREAD_MUTEX_INITIALIZER;
 
