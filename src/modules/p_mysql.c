@@ -61,6 +61,7 @@ struct mysql_data {
 //	const char *mysql_uri;
 	const char *mysql_db;
 	const char *mysql_table;
+	int no_tagging;
 };
 
 void data_init(struct mysql_data *data) {
@@ -137,6 +138,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	const char *mysql_password = NULL;
 	const char *mysql_db = NULL;
 	const char *mysql_table = NULL;
+	const char *mysql_no_tagging = NULL;
 //	const char *mysql_uri = NULL;
 
 	const char *tmp;
@@ -164,6 +166,9 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	if ((tmp = cmd_get_value(cmd, "mysql_table", 0)) != NULL ) {
 		mysql_table = tmp;
 	}
+	if ((tmp = cmd_get_value(cmd, "mysql_no_tagging", 0)) != NULL ) {
+		mysql_no_tagging = tmp;
+	}
 
 /*	if ((tmp = cmd_get_value(cmd, "mysql_uri", 0)) != NULL) {
 		VL_DEBUG_MSG_1 ("mysql: Using URI for connecting to server\n");
@@ -177,6 +182,16 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	if (mysql_table == NULL || mysql_db == NULL) {
 		VL_MSG_ERR ("mysql_db or mysql_table not correctly set.\n");
 		return 1;
+	}
+
+	data->no_tagging = 0;
+	if (mysql_no_tagging != NULL) {
+		int yesno;
+		if (!cmdline_check_yesno(cmd, mysql_no_tagging, &yesno) != 0) {
+			VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging ('%s'), please specify 'yes' or 'no'\n", mysql_no_tagging);
+			return 1;
+		}
+		data->no_tagging = yesno;
 	}
 
 	data->mysql_server = mysql_server;
