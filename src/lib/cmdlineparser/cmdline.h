@@ -68,6 +68,8 @@ const char *cmd_get_last_argument	(struct cmd_data *data);
 const char *cmd_get_value			(struct cmd_data *data, const char *key, unsigned long int index);
 const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, unsigned long int index, unsigned long int subindex);
 
+int cmdline_check_yesno				(struct cmd_data *data, const char *string, int *result);
+
 int cmd_check_all_args_used			(struct cmd_data *data);
 
 #endif

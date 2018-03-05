@@ -302,3 +302,18 @@ int cmd_match(struct cmd_data *data, const char *test) {
 	return strcmp(data->command, test) == 0;
 }
 
+int cmdline_check_yesno (struct cmd_data *data, const char *string, int *result) {
+	*result = 0;
+
+	if (*string == 'y' || *string == 'Y' || *string == '1') {
+		*result = 1;
+	}
+	else if (*string == 'n' || *string == 'N' || *string == '0') {
+		*result = 0;
+	}
+	else {
+		return 1;
+	}
+
+	return 0;
+}

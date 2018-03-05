@@ -40,6 +40,38 @@ Specifiy channel (1 or 2) and/or calibration (factor which scales input).
 ### ipclient (Send UDP packets to server)
 `vlogger module=ipclient,dummy ipclient_server=10.0.2.2 ipclient_server_port=5555`
 
+### blockdev (log messages to block device or file)
+`vlogger module=blockdev,dummy device_path=DEVICE always_tag_saved={yes|no}`
+
+Specify block device or file to log entries, this storage must first be initialized
+using Block Device Logger command line application.
+
+Messages stored on the device will be re-read into memory on start-up untill they are
+tagged as saved. The mysql-module can generate such tag messages, or one can specify
+always_tag_saved=yes, in which all messages are tagged immediately when first stored.
+
+### mysql (store messages to database)
+Mysql reads data from ipserver and stores to a database. mysql generates TAG messages
+which can be processed by the blockdev module, these are sent back to the originating
+IP address.
+
+`vlogger module=mysql,ipserver module=ipserver,mysql [mysql_host=HOST] [mysql_port=PORT] mysql_user=USER mysql_password=PASSWORD mysql_db=DATABASE mysql_table=TABLE`
+
+A table can should this, but it may have additional columns:
+
+	CREATE TABLE `entries` (
+		`timestamp` bigint(20) UNSIGNED NOT NULL,
+		`source` varchar(50) NOT NULL,
+		`class` tinyint(3) UNSIGNED NOT NULL,
+		`time_from` bigint(20) UNSIGNED NOT NULL,
+		`time_to` bigint(20) UNSIGNED NOT NULL,
+		`value` bigint(20) NOT NULL,
+		`message` varchar(255) NOT NULL,
+		`message_length` int(10) UNSIGNED NOT NULL
+	) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+The `source` is the IP address of the sender. The first three columns should be defined
+as `PRIMARY KEY` or a `UNIQUE` key to prevent duplicates.
 
 ## CONTACT
 

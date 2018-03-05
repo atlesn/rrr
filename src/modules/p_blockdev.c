@@ -47,6 +47,7 @@ struct blockdev_data {
 	struct fifo_buffer output_buffer;
 	struct bdl_session device_session;
 	int do_bdl_reset;
+	int always_tag_saved;
 };
 
 int poll_delete (
@@ -69,6 +70,16 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	if (data->device_path == NULL) {
 		VL_MSG_ERR ("blockdev: Device must be specified (device_path=DEVICE)\n");
 		return 1;
+	}
+
+	const char *always_tag_saved = cmd_get_value(cmd, "blockdev_always_tag", 0);
+	if (always_tag_saved != NULL) {
+		int yesno;
+		if (!cmdline_check_yesno(cmd, always_tag_saved, &yesno) != 0) {
+			VL_MSG_ERR ("blockdev: Could not understand argument blockdev_always_tag ('%s'), please specify 'yes' or 'no'\n", always_tag_saved);
+			return 1;
+		}
+		data->always_tag_saved = yesno;
 	}
 
 	fifo_buffer_init(&data->input_buffer);
@@ -186,7 +197,7 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 		err = bdl_write_block (
 			&blockdev_data->device_session,
 			data, size,
-			VL_BLOCKDEV_TAG_NEW, message->timestamp_to, 10
+			(blockdev_data->always_tag_saved == 1 ? VL_BLOCKDEV_TAG_SAVED : VL_BLOCKDEV_TAG_NEW), message->timestamp_to, 10
 		);
 	}
 
