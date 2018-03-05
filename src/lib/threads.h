@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "vl_time.h"
 #include "cmdlineparser/cmdline.h"
+#include "../global.h"
 
 #define VL_THREADS_MAX 32
 
@@ -105,12 +106,12 @@ struct vl_thread_start_data {
 };
 
 static inline void thread_lock(struct vl_thread *thread) {
-	//printf ("Thread %p lock\n", thread);
+	VL_DEBUG_MSG_3 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void thread_unlock(struct vl_thread *thread) {
-	//printf ("Thread %p unlock\n", thread);
+	VL_DEBUG_MSG_3 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
@@ -151,30 +152,30 @@ static inline uint64_t get_watchdog_time(struct vl_thread *thread) {
 static void thread_set_state(struct vl_thread *thread, int state) {
 	thread_lock(thread);
 
-	printf ("Thread %s set state %i\n", thread->name, state);
+	VL_DEBUG_MSG_4 ("Thread %s set state %i\n", thread->name, state);
 
 	if (state == VL_THREAD_STATE_INIT) {
-		fprintf (stderr, "Attempted to set STARTING state of thread outside reserve_thread function\n");
+		VL_MSG_ERR ("Attempted to set STARTING state of thread outside reserve_thread function\n");
 		exit (EXIT_FAILURE);
 	}
 	if (state == VL_THREAD_STATE_FREE) {
-		fprintf (stderr, "Attempted to set FREE state of thread outside reserve_thread function\n");
+		VL_MSG_ERR ("Attempted to set FREE state of thread outside reserve_thread function\n");
 		exit (EXIT_FAILURE);
 	}
 	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INITIALIZED) {
-		fprintf (stderr, "Attempted to set RUNNING state of thread while it was not in INITIALIZED state\n");
+		VL_MSG_ERR ("Attempted to set RUNNING state of thread while it was not in INITIALIZED state\n");
 		exit (EXIT_FAILURE);
 	}
 	if (state == VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING) {
-		fprintf (stderr, "Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
+		VL_MSG_ERR ("Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
 		goto nosetting;
 	}
 	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INIT)) {
-		fprintf (stderr, "Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
+		VL_MSG_ERR ("Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
 		goto nosetting;
 	}
 	if (state == VL_THREAD_STATE_STOPPED && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_STOPPING)) {
-		fprintf (stderr, "Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
+		VL_MSG_ERR ("Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
 		goto nosetting;
 	}
 
@@ -185,7 +186,7 @@ static void thread_set_state(struct vl_thread *thread, int state) {
 }
 
 static inline void thread_set_signal(struct vl_thread *thread, int signal) {
-	printf ("Thread %s set signal %d\n", thread->name, signal);
+	VL_DEBUG_MSG_4 ("Thread %s set signal %d\n", thread->name, signal);
 	thread_lock(thread);
 	thread->signal = signal;
 	thread_unlock(thread);

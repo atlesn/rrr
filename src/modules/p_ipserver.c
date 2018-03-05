@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "common/ip.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -67,7 +68,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipserver_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
-	printf ("ipserver: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("ipserver: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&private_data->send_buffer, data, size);
 
@@ -83,7 +84,7 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 
 	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
 
-	fprintf (stderr, "%s", message->data);
+	VL_MSG_ERR ("%s", message->data);
 }
 
 int process_entries_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -114,7 +115,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 		return 1;
 	}
 
-	printf ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_2 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
@@ -127,7 +128,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 
 	spawn_error:
 	fifo_buffer_write(&private_data->receive_buffer, (char*) message_err, sizeof(*message_err));
-	fprintf (stderr, "%s", message_err->data);
+	VL_MSG_ERR ("%s", message_err->data);
 
 	return 1;
 }
@@ -148,12 +149,12 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	callback_data->counter++;
 
-	printf ("Ipserver received OK message with data '%s'\n", entry->message.data);
+	VL_DEBUG_MSG_2 ("Ipserver received OK message with data '%s'\n", entry->message.data);
 
 	fifo_buffer_write(&data->output_buffer, (char*) entry, sizeof(*entry));
 
 	// Generate ACK reply
-	printf ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_2 ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
 	memcpy(ack, entry, sizeof(*ack));
 	ack->message.type = MSG_TYPE_ACK;
@@ -171,7 +172,7 @@ int receive_packets(struct ipserver_data *data) {
 
 void init_data(struct ipserver_data *data) {
 	if (sizeof(*data) > VL_MODULE_PRIVATE_MEMORY_SIZE) {
-		fprintf (stderr, "ipserver: Module thread private memory area too small\n");
+		VL_MSG_ERR ("ipserver: Module thread private memory area too small\n");
 		exit(EXIT_FAILURE);
 	}
 	memset(data, '\0', sizeof(*data));
@@ -193,7 +194,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	unsigned long int senders_count = thread_data->senders_count;
 	struct ipserver_data* data = thread_data->private_data = thread_data->private_memory;
 
-	printf ("ipserver thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("ipserver thread data is %p\n", thread_data);
 
 	init_data(data);
 
@@ -206,7 +207,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_IPSERVER_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for ipserver module, max is %i\n", VL_IPSERVER_MAX_SENDERS);
+		VL_MSG_ERR ("Too many senders for ipserver module, max is %i\n", VL_IPSERVER_MAX_SENDERS);
 		goto out_message;
 	}
 
@@ -221,18 +222,18 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("ipserver: found sender %p\n", thread_data->senders[i]);
+		VL_DEBUG_MSG_1 ("ipserver: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "ipserver cannot use this sender, lacking poll_delete_ip function.\n");
+			VL_MSG_ERR ("ipserver cannot use this sender, lacking poll_delete_ip function.\n");
 			goto out_message;
 		}
 	}
 
-	printf ("ipserver started thread %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("ipserver started thread %p\n", thread_data);
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for ipserver processor module\n");
+		VL_MSG_ERR ("Error: Sender was not set for ipserver processor module\n");
 		goto out_message;
 	}
 
@@ -249,7 +250,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, data};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("ipserver module received error from poll function\n");
+				VL_MSG_ERR ("ipserver module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -270,7 +271,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	printf ("Thread ipserver %p exiting\n", thread_data->thread);
+	VL_DEBUG_MSG_1 ("Thread ipserver %p exiting\n", thread_data->thread);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -301,6 +302,6 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy ipserver module\n");
+	VL_DEBUG_MSG_1 ("Destroy ipserver module\n");
 }
 

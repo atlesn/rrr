@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/cmdlineparser/cmdline.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_BLOCKDEV_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -66,7 +67,7 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	data->device_path = device_path;
 
 	if (data->device_path == NULL) {
-		fprintf (stderr, "blockdev: Device must be specified (device_path=DEVICE)\n");
+		VL_MSG_ERR ("blockdev: Device must be specified (device_path=DEVICE)\n");
 		return 1;
 	}
 
@@ -91,7 +92,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct vl_message *reading = (struct vl_message *) data;
-	printf ("blockdev: Result from buffer: %s timestamp to %" PRIu64 " size %lu\n", reading->data, reading->timestamp_to, size);
+	VL_DEBUG_MSG_2 ("blockdev: Result from buffer: %s timestamp to %" PRIu64 " size %lu\n", reading->data, reading->timestamp_to, size);
 
 	fifo_buffer_write_ordered(&blockdev_data->input_buffer, reading->timestamp_to, data, size);
 
@@ -109,29 +110,26 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 
 	const struct vl_message *message = (const struct vl_message *) data;
 
-	printf ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
+		VL_DEBUG_MSG ("blockdev update_test: Timestamp from: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
+				timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
+		VL_DEBUG_MSG ("blockdev update_test: Timestamp to: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
+				timestamp, update_test_data->message->timestamp_to, message->timestamp_to);
+		VL_DEBUG_MSG ("blockdev update_test: Class: %" PRIu32 " vs %" PRIu32 "\n",
+				update_test_data->message->class, message->class);
+		VL_DEBUG_MSG ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
+				data_length, update_test_data->message->length, message->length);
 
-	printf ("blockdev update_test: Timestamp from: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
-			timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
-
-	printf ("blockdev update_test: Timestamp to: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
-			timestamp, update_test_data->message->timestamp_to, message->timestamp_to);
-
-	printf ("blockdev update_test: Class: %" PRIu32 " vs %" PRIu32 "\n",
-			update_test_data->message->class, message->class);
-
-	printf ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
-			data_length, update_test_data->message->length, message->length);
-
-	for (int j = 0; j < update_test_data->message->length; j++) {
-		printf ("%02x-", update_test_data->message->data[j]);
+		for (int j = 0; j < update_test_data->message->length; j++) {
+			VL_DEBUG_MSG ("%02x-", update_test_data->message->data[j]);
+		}
+		VL_DEBUG_MSG ("\n");
+		for (int j = 0; j < message->length; j++) {
+			VL_DEBUG_MSG ("%02x-", message->data[j]);
+		}
+		VL_DEBUG_MSG ("\n");
 	}
-	printf ("\n");
-	for (int j = 0; j < message->length; j++) {
-		printf ("%02x-", message->data[j]);
-	}
-	printf ("\n");
-
 	if (
 			(application_data & VL_BLOCKDEV_TAG_SAVED) == 1 ||
 			message->timestamp_from != update_test_data->message->timestamp_from ||
@@ -145,7 +143,7 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 		goto out;
 	}
 
-	printf ("blockdev: Updating appdata for entry\n");
+	VL_DEBUG_MSG_2 ("blockdev: Updating appdata for entry\n");
 
 	update_info.do_update = 1;
 	update_info.do_break = 1;
@@ -177,10 +175,10 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 			&result
 		);
 
-		printf ("blockdev: Result from bld_update_application_data: %i\n", result);
+		VL_DEBUG_MSG_2 ("blockdev: Result from bld_update_application_data: %i\n", result);
 
 		if (result > 1) {
-			fprintf (stderr, "blockdev: Error: Updated more than 1 entry\n");
+			VL_MSG_ERR ("blockdev: Error: Updated more than 1 entry\n");
 			pthread_exit(0);
 		}
 	}
@@ -193,22 +191,22 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	}
 
 	if (err == BDL_WRITE_ERR_TIMESTAMP) {
-		printf ("blockdev: Some entry with a higher timestamp has been written, discard this entry.\n");
+		VL_MSG_ERR ("blockdev: Some entry with a higher timestamp has been written, discard this entry.\n");
 		free(data);
 		return FIFO_SEARCH_GIVE;
 	}
 	else if (err == BDL_WRITE_ERR_SIZE) {
-		printf ("blockdev: Blocks on the device are not big enough to fit our data.\n");
+		VL_MSG_ERR ("blockdev: Blocks on the device are not big enough to fit our data.\n");
 		blockdev_data->do_bdl_reset = 1;
 		return FIFO_SEARCH_ERR;
 	}
 	else if (err != 0) {
-		fprintf (stderr, "blockdev: Could not write data to device (error %i), leaving it in the buffer\n", err);
+		VL_MSG_ERR ("blockdev: Could not write data to device (error %i), leaving it in the buffer\n", err);
 		blockdev_data->do_bdl_reset = 1;
 		return FIFO_SEARCH_ERR;
 	}
 
-	printf ("blockdev: Data was written to device successfully\n");
+	VL_DEBUG_MSG_2 ("blockdev: Data was written to device successfully\n");
 
 	free(data);
 	return FIFO_SEARCH_GIVE;
@@ -232,8 +230,7 @@ struct bdl_update_info get_new_entries_callback(void *arg, uint64_t timestamp, u
 
 	struct bdl_update_info ret;
 	if (data_length != sizeof(struct vl_message)) {
-		fprintf (stderr,
-			"blockdev: Warning: Entry size in entry from device did not match expected length (%" PRIu64 ") vs (%lu). Tagging it as saved.",
+		VL_MSG_ERR ("blockdev: Warning: Entry size in entry from device did not match expected length (%" PRIu64 ") vs (%lu). Tagging it as saved.",
 			data_length, sizeof(struct vl_message)
 		);
 
@@ -273,7 +270,7 @@ int get_new_entries(struct module_thread_data *thread_data) {
 		&result
 	);
 
-	printf ("blockdev: Read %i entries with NEW state from device\n", callback_data.entries_counter);
+	VL_DEBUG_MSG_1 ("blockdev: Read %i entries with NEW state from device\n", callback_data.entries_counter);
 
 	return 0;
 }
@@ -296,11 +293,11 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	printf ("blockdev thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("blockdev thread data is %p\n", thread_data);
 
 
 	if (senders_count > VL_BLOCKDEV_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
+		VL_MSG_ERR ("Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
 		goto out_message;
 	}
 
@@ -316,26 +313,26 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("blockdev: found sender %p\n", thread_data->senders[i]);
+		VL_DEBUG_MSG_1 ("blockdev: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "blockdev cannot use this sender, lacking poll delete function.\n");
+			VL_MSG_ERR ("blockdev cannot use this sender, lacking poll delete function.\n");
 			goto out_message;
 		}
 	}
 
-	printf ("blockdev started thread %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("blockdev started thread %p\n", thread_data);
 
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for blockdev processor module\n");
+		VL_MSG_ERR ("Error: Sender was not set for blockdev processor module\n");
 		goto out_message;
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		printf ("blockdev polling\n");
+		VL_DEBUG_MSG_5 ("blockdev polling\n");
 
 		int err = 0;
 
@@ -343,14 +340,14 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				printf ("blockdev module received error from poll function\n");
+				VL_MSG_ERR ("blockdev module received error from poll function\n");
 				err = 1;
 				break;
 			}
 		}
 
 		if (data->do_bdl_reset == 1) {
-			printf ("blockdev close session\n");
+			VL_DEBUG_MSG_2 ("blockdev close session\n");
 			while (data->device_session.usercount > 0) {
 				bdl_close_session(&data->device_session);
 			}
@@ -358,18 +355,18 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		}
 
 		if (data->device_session.usercount == 0) {
-			printf ("blockdev start session\n");
+			VL_DEBUG_MSG_2 ("blockdev start session\n");
 			if (bdl_start_session(&data->device_session, data->device_path, 1) != 0) { // 1 == no memorymapping
-				fprintf (stderr, "blockdev: Could not open block device %s\n", data->device_path);
+				VL_MSG_ERR ("blockdev: Could not open block device %s\n", data->device_path);
 				goto sleep;
 			}
 
 			// Get entries from device which are not tagged as saved in remote database
-			printf ("blockdev: Reading NEW entries from device\n");
+			VL_DEBUG_MSG_1 ("blockdev: Reading NEW entries from device\n");
 			get_new_entries(thread_data);
 		}
 
-		printf ("blockdev write\n");
+		VL_DEBUG_MSG_5 ("blockdev write\n");
 		write_to_device(data);
 
 		if (err != 0) {
@@ -381,7 +378,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	printf ("Thread blockdev %p exiting\n", thread_data->thread);
+	VL_DEBUG_MSG_1 ("Thread blockdev %p exiting\n", thread_data->thread);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -411,6 +408,6 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy blockdev module\n");
+	VL_DEBUG_MSG_1 ("Destroy blockdev module\n");
 }
 

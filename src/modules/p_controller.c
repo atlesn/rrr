@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_CONTROLLER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -54,7 +55,7 @@ int poll_delete (
 		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data);
 	}
 	else {
-		fprintf (stderr, "controller: No output buffer defined for module %s\n", source->module->name);
+		VL_MSG_ERR ("controller: No output buffer defined for module %s\n", source->module->name);
 		return 1;
 	}
 
@@ -66,7 +67,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
-	printf ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n", message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n", message->data, message->data_numeric, size);
 
 	if (strcmp (source->module->name, "blockdev") == 0) {
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
@@ -77,7 +78,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		}
 		else {
 			// Discard everything else as trash
-			fprintf (stderr, "controller: Warning: Discarding message from ipclient timestamp %" PRIu64 "\n", message->timestamp_from);
+			VL_MSG_ERR ("controller: Warning: Discarding message from ipclient timestamp %" PRIu64 "\n", message->timestamp_from);
 			free(message);
 		}
 	}
@@ -91,7 +92,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		fifo_buffer_write(&controller_data->to_blockdev, data_2, size);
 	}
 	else {
-		fprintf (stderr, "controller: Don't know where to route messages from %s\n", source->module->name);
+		VL_MSG_ERR ("controller: Don't know where to route messages from %s\n", source->module->name);
 		free(data);
 	}
 
@@ -117,7 +118,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	struct controller_data *data = (struct controller_data *) thread_data->private_memory;
 	thread_data->private_data = data;
 
-	printf ("controller thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("controller thread data is %p\n", thread_data);
 
 	data_init(data);
 
@@ -129,7 +130,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_CONTROLLER_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for controller module, max is %i\n", VL_CONTROLLER_MAX_SENDERS);
+		VL_MSG_ERR ("Too many senders for controller module, max is %i\n", VL_CONTROLLER_MAX_SENDERS);
 		goto out_message;
 	}
 
@@ -144,18 +145,18 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("controller: found sender %s\n", thread_data->senders[i]->thread->name);
+		VL_DEBUG_MSG_1 ("controller: found sender %s\n", thread_data->senders[i]->thread->name);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "controller cannot use sender %s, lacking poll delete function.\n", thread_data->senders[i]->thread->name);
+			VL_MSG_ERR ("controller cannot use sender %s, lacking poll delete function.\n", thread_data->senders[i]->thread->name);
 			goto out_message;
 		}
 	}
 
-	printf ("controller started thread %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("controller started thread %p\n", thread_data);
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for controller processor module\n");
+		VL_MSG_ERR ("Error: Sender was not set for controller processor module\n");
 		goto out_message;
 	}
 
@@ -169,7 +170,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				fprintf (stderr, "controller module received error from poll function\n");
+				VL_MSG_ERR ("controller module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -182,7 +183,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	printf ("Thread controller %p exiting\n", thread_data->thread);
+	VL_DEBUG_MSG_1 ("Thread controller %p exiting\n", thread_data->thread);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -212,6 +213,6 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy controller module\n");
+	VL_DEBUG_MSG_1 ("Destroy controller module\n");
 }
 

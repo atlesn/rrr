@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -38,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct vl_message *reading = (struct vl_message *) data;
-	printf ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 	free(data);
 	return 0;
 }
@@ -48,7 +49,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	thread_data->thread = start_data->thread;
 	unsigned long int senders_count = thread_data->senders_count;
 
-	printf ("Raw thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -57,7 +58,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
 	if (senders_count > VL_RAW_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
+		VL_MSG_ERR ("Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
 		goto out_message;
 	}
 
@@ -73,18 +74,18 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("Raw: found sender %p\n", thread_data->senders[i]);
+		VL_DEBUG_MSG_1 ("Raw: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "Raw cannot use this sender, lacking poll delete function.\n");
+			VL_MSG_ERR ("Raw cannot use this sender, lacking poll delete function.\n");
 			goto out_message;
 		}
 	}
 
-	printf ("Raw started thread %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("Raw started thread %p\n", thread_data);
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for raw processor module\n");
+		VL_MSG_ERR ("Error: Sender was not set for raw processor module\n");
 		goto out_message;
 	}
 
@@ -97,7 +98,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				fprintf (stderr, "Raw module received error from poll function\n");
+				VL_MSG_ERR ("Raw module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -110,7 +111,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	printf ("Thread raw %p exiting\n", thread_data->thread);
+	VL_DEBUG_MSG_1 ("Thread raw %p exiting\n", thread_data->thread);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -139,6 +140,6 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy raw module\n");
+	VL_DEBUG_MSG_1 ("Destroy raw module\n");
 }
 

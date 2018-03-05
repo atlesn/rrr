@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "buffer.h"
+#include "../global.h"
 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_lock (&buffer->mutex);
@@ -32,13 +33,13 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock (&buffer->mutex);
 
 	pthread_mutex_lock (&buffer->mutex);
-	printf ("Buffer waiting for %i readers and %i writers before invalidate\n", buffer->readers, buffer->writers);
+	VL_DEBUG_MSG_1 ("Buffer waiting for %i readers and %i writers before invalidate\n", buffer->readers, buffer->writers);
 	while (buffer->readers > 0 || buffer->writers > 0) {
 	}
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		printf ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+		VL_DEBUG_MSG_2 ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
 		free (entry->data);
 		free (entry);
@@ -49,7 +50,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
-	printf ("Buffer destroy buffer struct %p\n", buffer);
+	VL_DEBUG_MSG_2 ("Buffer destroy buffer struct %p\n", buffer);
 }
 
 void fifo_buffer_init(struct fifo_buffer *buffer) {
@@ -110,7 +111,7 @@ int fifo_search (
 			break;
 		}
 		else if (did_something == 0) {
-			fprintf (stderr, "Bug: Unkown return value %i to fifo_search\n", actions);
+			VL_MSG_ERR ("Bug: Unkown return value %i to fifo_search\n", actions);
 			exit (EXIT_FAILURE);
 		}
 
@@ -162,7 +163,7 @@ int fifo_clear_order_lt (
 		for (entry = clear_start; entry != clear_stop; entry = next) {
 			next = entry->next;
 
-			printf ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+			VL_DEBUG_MSG_3 ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
 			free(entry->data);
 			free(entry);
@@ -189,7 +190,7 @@ int fifo_read_clear_forward (
 	int ret = 0;
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
-		printf ("Buffer was invalid\n");
+		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
 		fifo_write_unlock(buffer); return -1;
 	}
 
@@ -213,7 +214,7 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		//printf ("Read buffer entry %p, give away data %p\n", current, current->data);
+		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		ret = ret != 0 ? 1 : (ret_tmp != 0 ? 1 : 0);
@@ -265,7 +266,7 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last = entry;
 	}
 
-	//printf ("New buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_3 ("New buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }
@@ -321,7 +322,7 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	}
 
 	out:
-	//printf ("New ordered buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_3 ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }

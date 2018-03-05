@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "modules.h"
 #include "lib/threads.h"
+#include "global.h"
 
 #ifndef VL_MODULE_PATH
 #define VL_MODULE_PATH "./modules/"
@@ -50,6 +51,7 @@ static const char *library_paths[] = {
 		"./",
 		""
 };
+
 void module_threads_init() {
 	threads_init();
 }
@@ -71,7 +73,7 @@ void module_free_thread(struct module_thread_data *data) {
 }
 
 struct module_thread_data *module_init_thread(struct module_thread_init_data *init_data) {
-	printf ("Init thread %s\n", init_data->module->name);
+	VL_DEBUG_MSG_1 ("Init thread %s\n", init_data->module->name);
 	struct module_thread_data *data = malloc(sizeof(*data));
 	memset(data, '\0', sizeof(*data));
 
@@ -82,7 +84,7 @@ struct module_thread_data *module_init_thread(struct module_thread_init_data *in
 }
 
 int module_restart_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	printf ("Restarting thread %s\n", data->module->name);
+	VL_DEBUG_MSG_1 ("Restarting thread %s\n", data->module->name);
 	if (data->thread != NULL) {
 		free(data->thread);
 	}
@@ -90,7 +92,7 @@ int module_restart_thread(struct module_thread_data *data, struct cmd_data *cmd)
 	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
 
 	if (data->thread == NULL) {
-		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
+		VL_MSG_ERR ("Error while starting thread for module %s\n", data->module->name);
 		free(data);
 		return 1;
 	}
@@ -99,11 +101,11 @@ int module_restart_thread(struct module_thread_data *data, struct cmd_data *cmd)
 }
 
 int module_start_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	printf ("Starting thread %s\n", data->module->name);
+	VL_DEBUG_MSG_1 ("Starting thread %s\n", data->module->name);
 	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
 
 	if (data->thread == NULL) {
-		fprintf (stderr, "Error while starting thread for module %s\n", data->module->name);
+		VL_MSG_ERR ("Error while starting thread for module %s\n", data->module->name);
 		free(data);
 		return 1;
 	}
@@ -122,10 +124,10 @@ void unload_module(struct module_dynamic_data *ptr) {
 
 #ifndef VL_MODULE_NO_DL_CLOSE
 	if (dlclose(dl_ptr) != 0) {
-		fprintf (stderr, "Warning: Error while unloading module: %s\n", dlerror());
+		VL_MSG_ERR ("Warning: Error while unloading module: %s\n", dlerror());
 	}
 #else
-	fprintf(stderr, "Warning: Not unloading shared object due to configuration VL_MODULE_NO_DL_CLOSE\n");
+	VL_MSG_ERR ("Warning: Not unloading shared object due to configuration VL_MODULE_NO_DL_CLOSE\n");
 #endif
 }
 
@@ -141,14 +143,14 @@ struct module_dynamic_data *load_module(const char *name) {
 			if (errno == ENOENT) {
 				continue;
 			}
-			fprintf (stderr, "Could not stat %s while loading module: %s\n", path, strerror(errno));
+			VL_MSG_ERR ("Could not stat %s while loading module: %s\n", path, strerror(errno));
 			continue;
 		}
 
 		void *handle = dlopen(path, RTLD_LAZY);
 
 		if (handle == NULL) {
-			fprintf (stderr, "Error while opening module %s: %s\n", path, dlerror());
+			VL_MSG_ERR ("Error while opening module %s: %s\n", path, dlerror());
 			continue;
 		}
 
@@ -157,7 +159,7 @@ struct module_dynamic_data *load_module(const char *name) {
 
 		if (init == NULL || unload == NULL) {
 			dlclose(handle);
-			fprintf (stderr, "Module %s missing init/unload functions\n", path);
+			VL_MSG_ERR ("Module %s missing init/unload functions\n", path);
 			continue;
 		}
 

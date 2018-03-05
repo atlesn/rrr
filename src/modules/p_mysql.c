@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_MYSQL_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -86,7 +87,7 @@ int connect_to_mysql(struct mysql_data *data) {
 	if (data->mysql_connected != 1) {
 		void *ptr = mysql_init(&data->mysql);
 		if (ptr == NULL) {
-			fprintf (stderr, "Could not initialize MySQL\n");
+			VL_MSG_ERR ("Could not initialize MySQL\n");
 			return 1;
 		}
 
@@ -102,7 +103,7 @@ int connect_to_mysql(struct mysql_data *data) {
 		);
 
 		if (ret == NULL) {
-			fprintf(stderr, "mysql: Failed to connect to database: Error: %s\n",
+			VL_MSG_ERR ("mysql: Failed to connect to database: Error: %s\n",
 					mysql_error(&data->mysql));
 			return 1;
 		}
@@ -147,7 +148,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	int port = -1;
 	if ((tmp = cmd_get_value(cmd, "mysql_port", 0)) != NULL) {
 		if (cmd_convert_integer_10(cmd, tmp, &port) != 0 || port < 0) {
-			fprintf (stderr, "Syntax error in mysql_port argument\n");
+			VL_MSG_ERR ("Syntax error in mysql_port argument\n");
 			return 1;
 		}
 	}
@@ -165,16 +166,16 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	}
 
 /*	if ((tmp = cmd_get_value(cmd, "mysql_uri", 0)) != NULL) {
-		printf ("mysql: Using URI for connecting to server\n");
+		VL_DEBUG_MSG_1 ("mysql: Using URI for connecting to server\n");
 		mysql_uri = tmp;
 	}
 	else*/ if (mysql_user == NULL || mysql_password == NULL) {
-		fprintf (stderr, "mysql_user or mysql_password not correctly set.\n");
+		VL_MSG_ERR ("mysql_user or mysql_password not correctly set.\n");
 		return 1;
 	}
 
 	if (mysql_table == NULL || mysql_db == NULL) {
-		fprintf (stderr, "mysql_db or mysql_table not correctly set.\n");
+		VL_MSG_ERR ("mysql_db or mysql_table not correctly set.\n");
 		return 1;
 	}
 
@@ -194,7 +195,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	printf ("mysql: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("mysql: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, data, size);
 
@@ -289,18 +290,18 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 	bind[7].is_unsigned = 1;
 
 	if (mysql_stmt_bind_param(data->stmt, bind) != 0) {
-		fprintf(stderr, "mysql: Failed to bind values to statement: Error: %s\n",
+		VL_MSG_ERR ("mysql: Failed to bind values to statement: Error: %s\n",
 				mysql_error(&data->data->mysql));
 		return 1;
 	}
 
 	if (mysql_stmt_execute(data->stmt) != 0) {
-		fprintf(stderr, "mysql: Failed to execute statement: Error: %s\n",
+		VL_MSG_ERR ("mysql: Failed to execute statement: Error: %s\n",
 				mysql_error(&data->data->mysql));
 		return 1;
 	}
 
-	printf ("mysql: Statement executed sucessfully\n");
+	VL_DEBUG_MSG_2 ("mysql: Statement executed sucessfully\n");
 
 	return 0;
 }
@@ -315,18 +316,18 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	int err = 0;
 
-	printf ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_2 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 
 	if (mysql_save (process_data, entry) != 0) {
 		// Put back in buffer
-		printf ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
+		VL_DEBUG_MSG_2 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
 		err = 1;
 	}
 	else {
 		// Tag message as saved to sender
 		struct vl_message *message = &entry->message;
-		printf ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
+		VL_DEBUG_MSG_2 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
 		fifo_buffer_write(&mysql_data->output_buffer, data, size);
 	}
@@ -368,7 +369,7 @@ int process_entries (struct module_thread_data *thread_data) {
 	sprintf(query, query_base, data->mysql_table);
 
 	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
-		fprintf(stderr, "mysql: Failed to prepare statement: Error: %s\n",
+		VL_MSG_ERR ("mysql: Failed to prepare statement: Error: %s\n",
 				mysql_error(&data->mysql));
 		mysql_disconnect(data);
 		goto out;
@@ -376,7 +377,7 @@ int process_entries (struct module_thread_data *thread_data) {
 
 	ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data);
 	if (ret != 0) {
-		fprintf (stderr, "mysql: Error when saving entries to database\n");
+		VL_MSG_ERR ("mysql: Error when saving entries to database\n");
 		mysql_disconnect(data);
 	}
 
@@ -391,7 +392,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	unsigned long int senders_count = thread_data->senders_count;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
-	printf ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	data_init(data);
 
@@ -412,7 +413,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	}
 
 	if (senders_count > VL_MYSQL_MAX_SENDERS) {
-		fprintf (stderr, "Too many senders for mysql module, max is %i\n", VL_MYSQL_MAX_SENDERS);
+		VL_MSG_ERR ("Too many senders for mysql module, max is %i\n", VL_MYSQL_MAX_SENDERS);
 		goto out_message;
 	}
 
@@ -427,18 +428,18 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		printf ("mysql: found sender %p\n", thread_data->senders[i]);
+		VL_DEBUG_MSG_1 ("mysql: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
 
 		if (poll[i] == NULL) {
-			fprintf (stderr, "mysql cannot use this sender, lacking poll_delete_ip function.\n");
+			VL_MSG_ERR ("mysql cannot use this sender, lacking poll_delete_ip function.\n");
 			goto out_message;
 		}
 	}
 
-	printf ("mysql started thread %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("mysql started thread %p\n", thread_data);
 	if (senders_count == 0) {
-		fprintf (stderr, "Error: Sender was not set for mysql processor module\n");
+		VL_MSG_ERR ("Error: Sender was not set for mysql processor module\n");
 		goto out_message;
 	}
 
@@ -451,7 +452,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
 			if (!(res >= 0)) {
-				fprintf (stderr, "mysql module received error from poll function\n");
+				VL_MSG_ERR ("mysql module received error from poll function\n");
 				err = 1;
 				break;
 			}
@@ -471,7 +472,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	printf ("Thread mysql %p exiting\n", thread_data->thread);
+	VL_DEBUG_MSG_1 ("Thread mysql %p exiting\n", thread_data->thread);
 
 	out:
 	pthread_cleanup_pop(1);
@@ -504,7 +505,7 @@ void init(struct module_dynamic_data *data) {
 }
 
 void unload(struct module_dynamic_data *data) {
-	printf ("Destroy mysql module\n");
+	VL_DEBUG_MSG_1 ("Destroy mysql module\n");
 	mysql_library_end();
 }
 

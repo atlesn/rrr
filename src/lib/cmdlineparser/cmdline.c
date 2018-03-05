@@ -198,7 +198,7 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 			comma_pos = end;
 		}
 		unsigned long int length = comma_pos - pos;
-		printf ("Found comma or end length %lu\n", length);
+
 		memcpy(pair->sub_values[sub_value_counter], pos, length);
 		pair->sub_values[sub_value_counter][length] = '\0';
 

@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "ip.h"
 #include "../../lib/messages.h"
+#include "../global.h"
 
 int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, void *arg), void *arg) {
 	struct sockaddr src_addr;
@@ -43,34 +44,34 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 	char buffer[MSG_STRING_MAX_LENGTH];
 
 	while (1) {
-//		printf ("ip polling data\n");
+		VL_DEBUG_MSG_5 ("ip polling data\n");
 		int res = poll(&fds, 1, 10);
 		if (res == -1) {
-			fprintf (stderr, "Error from poll when reading data from network: %s\n", strerror(errno));
+			VL_MSG_ERR ("Error from poll when reading data from network: %s\n", strerror(errno));
 			return 1;
 		}
 		else if (!(fds.revents & POLLIN)) {
-//			printf ("ip no data available\n");
+			VL_DEBUG_MSG_5 ("ip no data available\n");
 			break;
 		}
 
 		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
-//		printf ("ip receiving data\n");
+		VL_DEBUG_MSG_2 ("ip receiving data\n");
 		ssize_t count = recvfrom(fd, buffer, MSG_STRING_MAX_LENGTH, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {
-			fprintf (stderr, "Error from recvfrom when reading d <sys/socket.h>ata from network: %s\n", strerror(errno));
+			VL_MSG_ERR ("Error from recvfrom when reading d <sys/socket.h>ata from network: %s\n", strerror(errno));
 			return 1;
 		}
 
 		if (count < 10) {
-			fprintf (stderr, "Received short packet from network\n");
+			VL_MSG_ERR ("Received short packet from network\n");
 			continue;
 		}
 
 		char *start = buffer;
 		if (*start != '\0') {
-			fprintf (stderr, "Datagram received from network did not start with zero\n");
+			VL_MSG_ERR ("Datagram received from network did not start with zero\n");
 			continue;
 		}
 
@@ -84,21 +85,23 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 		entry->addr_len = src_addr_len;
 
 		if (parse_message(start, count, &entry->message) != 0) {
-			fprintf (stderr, "Received invalid message\n");
+			VL_MSG_ERR ("Received invalid message\n");
 			free (entry);
 			continue;
 		}
 
 		if (message_checksum_check(&entry->message) != 0) {
-			fprintf (stderr, "Message checksum was invalid for '%s'\n", start);
+			VL_MSG_ERR ("Message checksum was invalid for '%s'\n", start);
 			free (entry);
 			continue;
 		}
 		else {
-/*			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
-				printf ("%02x-", entry->message.data[i]);
+			if (VL_DEBUGLEVEL_3) {
+				for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
+					VL_DEBUG_MSG ("%02x-", entry->message.data[i]);
+				}
+				VL_DEBUG_MSG ("\n");
 			}
-			printf ("\n");*/
 			int res = callback(entry, arg);
 			if (res == VL_IP_RECEIVE_STOP) {
 				break;
@@ -125,7 +128,7 @@ int ip_network_start (struct ip_data *data) {
 
 	int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (fd == -1) {
-		fprintf (stderr, "Could not create socket: %s", strerror(errno));
+		VL_MSG_ERR ("Could not create socket: %s", strerror(errno));
 		goto out_error;
 	}
 
@@ -136,7 +139,7 @@ int ip_network_start (struct ip_data *data) {
     si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		fprintf (stderr, "Could not bind to port %d: %s", VL_IP_DEFAULT_PORT, strerror(errno));
+		VL_MSG_ERR ("Could not bind to port %d: %s", VL_IP_DEFAULT_PORT, strerror(errno));
 		goto out_close_socket;
 	}
 

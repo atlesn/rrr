@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "messages.h"
 #include "crc32.h"
+#include "../global.h"
 
 // {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
@@ -51,7 +52,7 @@ struct vl_message *message_new_reading (
 			res
 	) != 0) {
 		free(res);
-		fprintf (stderr, "Bug: Could not initialize message\n");
+		VL_MSG_ERR ("Bug: Could not initialize message\n");
 		exit (EXIT_FAILURE);
 	}
 
@@ -75,7 +76,7 @@ struct vl_message *message_new_info (
 			res
 	) != 0) {
 		free(res);
-		fprintf (stderr, "Bug: Could not initialize info message\n");
+		VL_MSG_ERR ("Bug: Could not initialize info message\n");
 		exit (EXIT_FAILURE);
 	}
 
@@ -86,7 +87,7 @@ int find_string(const char *str, unsigned long int size, const char *search, con
 	unsigned long int search_length = strlen(search);
 
 	if (search_length > size) {
-		fprintf (stderr, "Message was to short\n");
+		VL_MSG_ERR ("Message was to short\n");
 		return 1;
 	}
 	if (strncmp(str, search, search_length) != 0) {
@@ -101,18 +102,18 @@ int find_string(const char *str, unsigned long int size, const char *search, con
 int find_number(const char *str, unsigned long int size, const char **end, uint64_t *result) {
 	*end = memchr(str, ':', size);
 	if (*end == NULL) {
-		fprintf (stderr, "Missing delimeter in message while searching for number\n");
+		VL_MSG_ERR ("Missing delimeter in message while searching for number\n");
 		return 1;
 	}
 
 	if (*end == str) {
-		fprintf (stderr, "Missing number argument in message\n");
+		VL_MSG_ERR ("Missing number argument in message\n");
 		return 1;
 	}
 
 	char tmp[MSG_TMP_SIZE];
 	if (*end - str + 1 > MSG_TMP_SIZE) {
-		fprintf (stderr, "Too long argument while searching for number in message\n");
+		VL_MSG_ERR ("Too long argument while searching for number in message\n");
 		return 1;
 	}
 
@@ -122,7 +123,7 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 	char *endptr;
 	*result = strtoull(tmp, &endptr, 10);
 	if (*endptr != '\0') {
-		fprintf (stderr, "Invalid characters in number argument of message\n");
+		VL_MSG_ERR ("Invalid characters in number argument of message\n");
 		return 1;
 	}
 
@@ -150,7 +151,7 @@ int init_message (
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
-		fprintf (stderr, "Message length was too long\n");
+		VL_MSG_ERR ("Message length was too long\n");
 		return 1;
 	}
 
@@ -177,7 +178,7 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		result->type = MSG_TYPE_TAG;
 	}
 	else {
-		fprintf (stderr, "Unknown message type\n");
+		VL_MSG_ERR ("Unknown message type\n");
 		return 1;
 	}
 
@@ -198,7 +199,7 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		result->class = MSG_CLASS_INFO;
 	}
 	else {
-		fprintf (stderr, "Unknown message class\n");
+		VL_MSG_ERR ("Unknown message class\n");
 		return 1;
 	}
 	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
@@ -227,12 +228,12 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	// {DATA}
 	unsigned long int data_length = size - (pos - msg);
 	if (result->length > MSG_DATA_MAX_LENGTH) {
-		fprintf (stderr, "Message data size was too long\n");
+		VL_MSG_ERR ("Message data size was too long\n");
 		return 1;
 	}
 	/* Ignore this, just accept what's there if it's enough
 	if (result->length != data_length) {
-		fprintf (stderr, "Message reported data length did not match actual length\n");
+		VL_MSG_ERR ("Message reported data length did not match actual length\n");
 		return 1;
 	}
 	*/
@@ -248,7 +249,7 @@ int message_to_string (
 	unsigned long int target_size
 ) {
 	if (target_size < MSG_STRING_MAX_LENGTH) {
-		fprintf (stderr, "Message target size was too small when converting to string\n");
+		VL_MSG_ERR ("Message target size was too small when converting to string\n");
 		return 1;
 	}
 
@@ -264,7 +265,7 @@ int message_to_string (
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		fprintf (stderr, "Unknown type %" PRIu32 " in message while converting to string\n", message->type);
+		VL_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
 		return 1;
 	}
 
@@ -286,7 +287,7 @@ int message_to_string (
 		class = MSG_CLASS_INFO_STRING;
 		break;
 	default:
-		fprintf (stderr, "Unknown class %" PRIu32 " in message while converting to string\n", message->class);
+		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
 		return 1;
 	}
 
@@ -335,9 +336,9 @@ int message_checksum_check (
 	// HEX dumper
 	for (int i = 0; i < sizeof(*message); i++) {
 		unsigned char *buf = (unsigned char *) message;
-		printf("%x-", *(buf+i));
+		VL_DEBUG_MSG_3("%x-", *(buf+i));
 	}
-	printf("\n");
+	VL_DEBUG_MSG_3("\n");
 
 	message->type = htole32(message->type);
 	message->class = htole32(message->class);
@@ -369,18 +370,18 @@ int message_prepare_for_network (
 	message->crc32 = 0;
 	message->data_numeric = 0;
 
-	/*
-	for (int i = 0; i < sizeof(*message); i++) {
-		unsigned char *buf = (unsigned char *) message;
-		printf("%x-", *(buf + i));
+	if (VL_DEBUGLEVEL_3) {
+		for (int i = 0; i < sizeof(*message); i++) {
+			unsigned char *buf = (unsigned char *) message;
+			VL_DEBUG_MSG("%x-", *(buf + i));
+		}
+		VL_DEBUG_MSG("\n");
 	}
-	printf("\n");
-	*/
 
 	message_checksum(message);
 
 	if (message_to_string (message, buf+1, buf_size) != 0) {
-		fprintf (stderr, "ipclient: Error while converting message to string\n");
+		VL_MSG_ERR ("ipclient: Error while converting message to string\n");
 		return 1;
 	}
 

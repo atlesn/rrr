@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../modules.h"
 #include "../lib/messages.h"
+#include "../global.h"
 
 struct dummy_data {
 	struct fifo_buffer buffer;
@@ -74,7 +75,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	thread_data->thread = start_data->thread;
 	struct dummy_data *data = data_init(thread_data);
 
-	printf ("Dummy thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -99,7 +100,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 	}
 
-	printf ("Dummy received encourage stop\n");
+	VL_DEBUG_MSG_1 ("Dummy received encourage stop\n");
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
