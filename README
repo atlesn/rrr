@@ -94,13 +94,13 @@ Coordinate messages between averager, blockdev and ipclient.
 
 This will create a network like this:
 
-+-------------+    +----------+    +------------+     +----------+
-| voltmonitor | => | averager | => |            | <=> | blockdev |
-+-------------+    +----------+    |            |     +----------+
-                                   | controller |
-                                   |            |     +----------+
-                                   |            | <=> | ipclient |
-                                   +------------+     +----------+
+	+-------------+    +----------+    +------------+     +----------+
+	| voltmonitor | => | averager | => |            | <=> | blockdev |
+	+-------------+    +----------+    |            |     +----------+
+	                                   | controller |
+	                                   |            |     +----------+
+	                                   |            | <=> | ipclient |
+	                                   +------------+     +----------+
 
 - All messages from `averager` are sent both to `blockdev` and `ipclient`
 - All messages from `blockdev` are sent to `ipclient`
