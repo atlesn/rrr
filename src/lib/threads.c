@@ -218,11 +218,12 @@ void *thread_watchdog_entry(void *arg) {
 		if (!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)) {
 			VL_DEBUG_MSG_1("Thread %s/%p won't initialize, maybe we have to force it to quit\n", thread->name, thread);
 		}
-		else {
-			VL_DEBUG_MSG_1("Thread %s/%p set start signal\n", thread->name, thread);
-			thread_set_signal(thread, VL_THREAD_SIGNAL_START);
-			usleep (50000); // 50 ms
-		}
+	}
+
+	if (thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)) {
+		VL_DEBUG_MSG_1("Thread %s/%p was in INITIALIZED state, set start signal\n", thread->name, thread);
+		thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+		usleep (500000); // 500 ms
 	}
 
 	if (thread_get_state(thread) != VL_THREAD_STATE_RUNNING) {
