@@ -123,7 +123,7 @@ can generate messages which we also send back.
 
 `vlogger module=mysql,ipserver module=ipserver,mysql`
 
-### controller (oordinate messages between averager, blockdev and ipclient)
+### controller (coordinate messages between averager, blockdev and ipclient)
 
 The intention of this module is to store messages locally untill they are recevied and stored by a remote
 server, even in case of a power failure.
@@ -132,13 +132,14 @@ server, even in case of a power failure.
 
 This will create a network like this:
 
-	                                   +------------+     +----------+
-	                                   |            | <=> | blockdev |
-	+-------------+    +----------+    |            |     +----------+
-	| voltmonitor | => | averager | => | controller |
-	+-------------+    +----------+    |            |     +----------+
-	                                   |            | <=> | ipclient |
-	                                   +------------+     +----------+
+                                   Local host                             |           Remote host 
+	                                   +------------+     +----------+    | (see ipserver/mysql paragraphs)
+	                                   |            | <=> | blockdev |    |
+	+-------------+    +----------+    |            |     +----------+    |
+	| voltmonitor | => | averager | => | controller |                     |
+	+-------------+    +----------+    |            |     +----------+    |    +----------+     +-------+
+	                                   |            | <=> | ipclient | <=====> | ipserver | <=> | mysql |
+	                                   +------------+     +----------+    |    +----------+     +-------+
 
 - All messages from `averager` are sent both to `blockdev` and `ipclient`
 - All messages from `blockdev` are sent to `ipclient`
