@@ -5,15 +5,11 @@ Voltage logger is designed to read data from sensors and logging it in a threade
 buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
 routed between custom modules by having "senders" specified for some of them, instructing
 them who to read from. Source modules should have a buffer which they write to
-independently from their readers. A buffer implementation is included.
+independently from their readers.
 
 ## USAGE
 
-Two test modules are provided, `dummy` and `raw`. Dummy is a source module who writes
-messages to a buffer at fixed intervals. The `raw` module simply reads from the buffer,
-clears it and dumps the data on the screen.
-
-To start the program with these to modules with `raw` reading from `dummy`, run:
+To start the program with module `raw` reading from `voltmonitor`, run:
 
 `vlogger module=raw,voltmonitor`
 
@@ -29,51 +25,6 @@ A module can also be specified on its own:
 
 `vlogger module=custom_module`
 
-## INTERNAL MESSAGE TYPES
-
-An internal message contains some metadata and a class specifier which tells us what kind of
-information and/or value it stores.
-* Metadata for a message:
-  * `Timestamp from` and `Timestamp to`
-    Specifies the duration of the message. The timestamps can be equal if a message has no
-    timespan.
-    * `MSG`
-  * `Class`
-    The message class which describes what kind of information it stores:
-    * `POINT`: Measurement at one time instance
-    * `AVG`, `MIN`, `MAX`: Average, minimum or maximum measurement over a timespan. In the case
-      of `MIN` or `MAX`, the actual time of the minimum or maximum measurement is store in
-      `Timestamp to`. `Timestamp from` contains the end time of the measurement timestamp, and
-      the start time can be found by checking the from-timestamp of the previous measurement.
-    * `INFO`: Usally information in text, for instance to log error conditions.
-  * `Data`
-    Textual representation of the data in the message
-  * `Numeric value`
-    Messages containing measurements store these both in text format and binary format to make
-    them easier to process. When sent over network, this numeric representation may be lost, but
-    it can be restored from the text field.
-* Types of messages
-  * `MSG`: An actual message with a measurement or information
-  * `ACK`: Acknowledgement of packet recieval when it is sent over network.
-  * `TAG`: These messages usually inform that a message has been safely stored remotely.
-`ACK` and `TAG` messages contain the full original message (maybe except for the numeric value)
-making modules able to match them with the original message.
-
-## DEBUG LEVELS
-
-The current debug level is common for all modules and specified like this:
-
-`vlogger debuglevel=3`
-
-`debuglevel` is a sum of one or more of these values, or zero. It is also possible to specify `all`:
-* `0` - Only errors are printed
-* `1` - Information about starting/stopping of modules (low rate)
-* `2` - Running information from modules, they tell what they do on different steps (rate depends on traffic)
-* `4` - Hex printing of messages and other data debugging (high rate)
-* `8` - Debug locking and thread states (very high rate)
-* `16` - Alive messages from some modules also when they are idle (very high rate)
-
-For instance `debuglevel=3` means that debug level `1` and `2` is activated.
 
 ## MODULES
 
@@ -179,6 +130,52 @@ This will create a network like this:
 
 This setup will save messages to `blockdev` and keep on sending them through `ipclient` untill a final
 `TAG` message is received.
+
+## DEBUG LEVELS
+
+The current debug level is common for all modules and specified like this:
+
+`vlogger debuglevel=3`
+
+`debuglevel` is a sum of one or more of these values, or zero. It is also possible to specify `all`:
+* `0` - Only errors are printed
+* `1` - Information about starting/stopping of modules (low rate)
+* `2` - Running information from modules, they tell what they do on different steps (rate depends on traffic)
+* `4` - Hex printing of messages and other data debugging (high rate)
+* `8` - Debug locking and thread states (very high rate)
+* `16` - Alive messages from some modules also when they are idle (very high rate)
+
+For instance `debuglevel=3` means that debug level `1` and `2` is activated.
+
+## INTERNAL MESSAGE TYPES
+
+An internal message contains some metadata and a class specifier which tells us what kind of
+information and/or value it stores.
+* Metadata for a message:
+  * `Timestamp from` and `Timestamp to`
+    Specifies the duration of the message. The timestamps can be equal if a message has no
+    timespan.
+    * `MSG`
+  * `Class`
+    The message class which describes what kind of information it stores:
+    * `POINT`: Measurement at one time instance
+    * `AVG`, `MIN`, `MAX`: Average, minimum or maximum measurement over a timespan. In the case
+      of `MIN` or `MAX`, the actual time of the minimum or maximum measurement is store in
+      `Timestamp to`. `Timestamp from` contains the end time of the measurement timestamp, and
+      the start time can be found by checking the from-timestamp of the previous measurement.
+    * `INFO`: Usally information in text, for instance to log error conditions.
+  * `Data`
+    Textual representation of the data in the message
+  * `Numeric value`
+    Messages containing measurements store these both in text format and binary format to make
+    them easier to process. When sent over network, this numeric representation may be lost, but
+    it can be restored from the text field.
+* Types of messages
+  * `MSG`: An actual message with a measurement or information
+  * `ACK`: Acknowledgement of packet recieval when it is sent over network.
+  * `TAG`: These messages usually inform that a message has been safely stored remotely.
+`ACK` and `TAG` messages contain the full original message (maybe except for the numeric value)
+making modules able to match them with the original message.
 
 ## CUSTOM MODULES
 
