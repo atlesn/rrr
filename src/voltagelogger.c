@@ -32,16 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // on the stack correctly
 //#define VL_NO_MODULE_UNLOAD
 
-static volatile int main_running = 1;
 static struct module_metadata modules[CMD_ARGUMENT_MAX];
-
-void signal_interrupt (int s) {
-    main_running = 0;
-
-	signal(SIGTERM, SIG_DFL);
-	signal(SIGINT, SIG_DFL);
-	signal(SIGUSR1, SIG_DFL);
-}
 
 int module_check_threads_stopped() {
 	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
@@ -276,6 +267,16 @@ int main_start_threads(
 	}
 
 	return 0;
+}
+
+static volatile int main_running = 1;
+
+void signal_interrupt (int s) {
+    main_running = 0;
+
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGUSR1, SIG_DFL);
 }
 
 int main (int argc, const char *argv[]) {
