@@ -205,12 +205,32 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	return 0;
 }
 
-int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct module_thread_data *thread_data = poll_data->source;
+	struct mysql_data *mysql_data = thread_data->private_data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+	struct vl_message *reading = &entry->message;
+
+	VL_DEBUG_MSG_2 ("mysql: Result from buffer (ip): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+
+	fifo_buffer_write(&mysql_data->input_buffer, data, size);
+
+	return 0;
+}
+
+int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct module_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_2 ("mysql: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	// Convert message to IP buffer entry
+	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	memset(entry, '\0', sizeof(*entry));
+	memcpy(&entry->message, reading, sizeof(entry->message));
+	free (reading);
+	reading = &entry->message;
+
+	VL_DEBUG_MSG_2 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, data, size);
 
@@ -432,6 +452,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+
 	int (*poll[VL_MYSQL_MAX_SENDERS])(
 			struct module_thread_data *data,
 			int (*callback)(
@@ -442,12 +463,24 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args *caller_data
 	);
 
+#define POLL_TYPE_IP 1
+#define POLL_TYPE_LOCAL 2
+
+	int poll_types[VL_MYSQL_MAX_SENDERS];
+
 	for (int i = 0; i < senders_count; i++) {
 		VL_DEBUG_MSG_1 ("mysql: found sender %p\n", thread_data->senders[i]);
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+		poll_types[i] = POLL_TYPE_IP;
 
 		if (poll[i] == NULL) {
-			VL_MSG_ERR ("mysql cannot use this sender, lacking poll_delete_ip function.\n");
+			poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+			poll_types[i] = POLL_TYPE_LOCAL;
+		}
+
+		if (poll[i] == NULL) {
+			VL_MSG_ERR ("mysql cannot use sender '%s', lacking poll_delete_ip and poll_delete function.\n",
+					thread_data->senders[i]->module->name);
 			goto out_message;
 		}
 	}
@@ -465,7 +498,17 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res;
+			if (poll_types[i] == POLL_TYPE_IP) {
+				res = poll[i](thread_data->senders[i], poll_callback_ip, &poll_data);
+			}
+			else if (poll_types[i] == POLL_TYPE_LOCAL) {
+				res = poll[i](thread_data->senders[i], poll_callback_local, &poll_data);
+			}
+			else {
+				VL_MSG_ERR("mysql: Bug: Unknown poll type %i\n", poll_types[i]);
+				exit (EXIT_FAILURE);
+			}
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("mysql module received error from poll function\n");
 				err = 1;
