@@ -61,7 +61,7 @@ int thread_start_all_after_initialized() {
 		}
 		for (int j = 0; j < 100; j++)  {
 			int state = thread_get_state(thread);
-			VL_DEBUG_MSG_1 ("State of thread %p name %s: %i\n", thread, thread->name, state);
+			VL_DEBUG_MSG_1 ("Wait for thread[%i] %p name %s, state is now %i\n", i, thread, thread->name, state);
 			if (	state == VL_THREAD_STATE_FREE ||
 					state == VL_THREAD_STATE_INITIALIZED ||
 					state == VL_THREAD_STATE_STOPPED ||
@@ -158,7 +158,13 @@ void *thread_watchdog_entry(void *arg) {
 	struct vl_thread *thread = data.watched_thread;
 	struct vl_thread *self_thread = data.watchdog_thread;
 
-	usleep (500000);
+	VL_DEBUG_MSG_1 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
+
+	// Wait one second in case main thread does stuff
+	usleep(1000000);
+
+	VL_DEBUG_MSG_1 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
+
 
 	update_watchdog_time(thread);
 
@@ -171,16 +177,19 @@ void *thread_watchdog_entry(void *arg) {
 
 		// We or others might try to kill the thread
 		if (thread_check_kill_signal(thread)) {
-			VL_DEBUG_MSG_1 ("Thread %s received kill signal\n", thread->name);
+			VL_DEBUG_MSG_1 ("Thread %s/%p received kill signal\n", thread->name, thread);
 			break;
 		}
-		int state = thread_get_state(thread);
-		if (state != VL_THREAD_STATE_RUNNING && state != VL_THREAD_STATE_INIT && state != VL_THREAD_STATE_INITIALIZED) {
-			VL_DEBUG_MSG_1 ("Thread %s state was no longed RUNNING\n", thread->name);
+
+		if (	!thread_check_state(thread, VL_THREAD_STATE_RUNNING) &&
+				!thread_check_state(thread, VL_THREAD_STATE_INIT) &&
+				!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)
+		) {
+			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longed RUNNING\n", thread->name, thread);
 			break;
 		}
 		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {
-			VL_MSG_ERR ("Thread %s froze, attempting to kill\n", thread->name);
+			VL_MSG_ERR ("Thread %s/%p froze, attempting to kill\n", thread->name, thread);
 			thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
 			break;
 		}
@@ -188,12 +197,39 @@ void *thread_watchdog_entry(void *arg) {
 		usleep (50000); // 50 ms
 	}
 
-	if (thread_get_state(thread) == VL_THREAD_STATE_STOPPED || thread_get_state(thread) == VL_THREAD_STATE_STOPPING) {
+	if (	thread_check_state(thread, VL_THREAD_STATE_STOPPED) ||
+			thread_check_state(thread, VL_THREAD_STATE_STOPPING)
+	) {
 		// Thread has stopped by itself
 		goto out_nostop;
 	}
 
-	thread_set_state(thread, VL_THREAD_STATE_ENCOURAGE_STOP);
+	// If thread is about to start, wait a bit. If main thread hasn't completed with the
+	// INIT / INITIALIZED / START-sequence, we attempt to do that now.
+
+	if (thread_check_state(thread, VL_THREAD_STATE_INIT)) {
+		VL_DEBUG_MSG_1("Thread %s/%p wasn't finished starting, wait for it to initialize\n", thread->name, thread);
+		int limit = 10;
+		while (!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED) && limit > 0) {
+			VL_DEBUG_MSG_1("Thread %s/%p wasn't finished starting, wait for it to initialize (try %i)\n", thread->name, thread, limit);
+			usleep (50000); // 50 ms (x 10)
+			limit--;
+		}
+		if (!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)) {
+			VL_DEBUG_MSG_1("Thread %s/%p won't initialize, maybe we have to force it to quit\n", thread->name, thread);
+		}
+		else {
+			VL_DEBUG_MSG_1("Thread %s/%p set start signal\n", thread->name, thread);
+			thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+			usleep (50000); // 50 ms
+		}
+	}
+
+	if (thread_get_state(thread) != VL_THREAD_STATE_RUNNING) {
+		VL_MSG_ERR("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit.\n", thread->name, thread);
+	}
+
+	thread_set_state_hard(thread, VL_THREAD_STATE_ENCOURAGE_STOP);
 
 	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
 	uint64_t prevtime = time_get_64();
@@ -201,14 +237,14 @@ void *thread_watchdog_entry(void *arg) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			pthread_cancel(thread->thread);
-			VL_MSG_ERR ("Thread %s not responding to kill. Killing it harder.\n", thread->name);
+			VL_MSG_ERR ("Thread %s/%p not responding to kill. Killing it harder.\n", thread->name, thread);
 			break;
 		}
 
 		usleep (10000); // 10 ms
 	}
 
-	VL_DEBUG_MSG_1 ("Detected exit of thread %p.\n", thread);
+	VL_DEBUG_MSG_1 ("Detected exit of thread %s/%p.\n", thread->name, thread);
 
 
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
@@ -216,19 +252,19 @@ void *thread_watchdog_entry(void *arg) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			pthread_cancel(thread->thread);
-			VL_MSG_ERR ("Thread %s not responding to kill. Killing it harder.\n", thread->name);
+			VL_MSG_ERR ("Thread %s/%p not responding to kill. Killing it harder.\n", thread->name, thread);
 			usleep (100000); // 100ms
 			void *retval;
 			if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-				VL_MSG_ERR ("Thread %s dies slowly, waiting a bit more.\n", thread->name);
+				VL_MSG_ERR ("Thread %s/%p dies slowly, waiting a bit more.\n", thread->name, thread);
 				usleep (2000000); // 2000ms
 				if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-					VL_MSG_ERR ("Thread %s doesn't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name);
+					VL_MSG_ERR ("Thread %s/%p doesn't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name, thread);
 					thread->is_ghost = 1;
 					break;
 				}
 			}
-			VL_DEBUG_MSG_1 ("Thread %s finished.\n", thread->name);
+			VL_DEBUG_MSG_1 ("Thread %s/%p finished.\n", thread->name, thread);
 			break;
 		}
 		usleep (10000); // 10 ms
@@ -240,7 +276,7 @@ void *thread_watchdog_entry(void *arg) {
 	thread_set_state(self_thread, VL_THREAD_STATE_STOPPING);
 	thread_set_state(self_thread, VL_THREAD_STATE_STOPPED);
 
-	VL_DEBUG_MSG_1 ("Thread %s state after stopping: %i\n", thread->name, thread_get_state(thread));
+	VL_DEBUG_MSG_1 ("Thread %s/%p state after stopping: %i\n", thread->name, thread, thread_get_state(thread));
 
 	pthread_exit(0);
 }
@@ -288,8 +324,11 @@ void threads_stop() {
 			continue;
 		}
 		thread_lock(threads[i]);
-		if (threads[i]->state == VL_THREAD_STATE_RUNNING) {
-			VL_DEBUG_MSG_1 ("Setting kill signal thread %p\n", threads[i]);
+		if (	threads[i]->state == VL_THREAD_STATE_RUNNING ||
+				threads[i]->state == VL_THREAD_STATE_INIT ||
+				threads[i]->state == VL_THREAD_STATE_INITIALIZED
+		) {
+			VL_DEBUG_MSG_1 ("Setting kill signal thread %s/%p\n", threads[i]->name, threads[i]);
 			threads[i]->signal = VL_THREAD_SIGNAL_KILL;
 		}
 		thread_unlock(threads[i]);
@@ -332,6 +371,49 @@ void threads_destroy() {
 	pthread_mutex_destroy(&threads_mutex);
 }
 
+void thread_set_state_hard(struct vl_thread *thread, int state) {
+	thread_lock(thread);
+
+	VL_DEBUG_MSG_4 ("Thread %s set state hard to %i, state was %i\n", thread->name, state, thread->state);
+	thread->state = state;
+
+	thread_unlock(thread);
+}
+void thread_set_state(struct vl_thread *thread, int state) {
+	thread_lock(thread);
+
+	VL_DEBUG_MSG_4 ("Thread %s set state %i\n", thread->name, state);
+
+	if (state == VL_THREAD_STATE_INIT) {
+		VL_MSG_ERR ("Attempted to set STARTING state of thread outside reserve_thread function\n");
+		exit (EXIT_FAILURE);
+	}
+	if (state == VL_THREAD_STATE_FREE) {
+		VL_MSG_ERR ("Attempted to set FREE state of thread outside reserve_thread function\n");
+		exit (EXIT_FAILURE);
+	}
+	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INITIALIZED) {
+		VL_MSG_ERR ("Attempted to set RUNNING state of thread while it was not in INITIALIZED state\n");
+		exit (EXIT_FAILURE);
+	}
+	if (state == VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING) {
+		VL_MSG_ERR ("Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
+		goto nosetting;
+	}
+	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INIT)) {
+		VL_MSG_ERR ("Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
+		goto nosetting;
+	}
+	if (state == VL_THREAD_STATE_STOPPED && (thread->state != VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_STOPPING)) {
+		VL_MSG_ERR ("Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
+		goto nosetting;
+	}
+
+	thread->state = state;
+
+	nosetting:
+	thread_unlock(thread);;
+}
 
 struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd, const char *name) {
 	struct vl_thread *thread;

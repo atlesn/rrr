@@ -94,6 +94,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 		struct vl_message *reading = message_new_reading(time, time);
 
+		VL_DEBUG_MSG_2("dummy: writing data\n");
 		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
 		usleep (750000); // 750 ms

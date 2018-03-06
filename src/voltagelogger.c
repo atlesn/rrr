@@ -125,9 +125,11 @@ int main (int argc, const char *argv[]) {
 	int debuglevel = 0;
 	const char *debuglevel_string = cmd_get_value(&cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
-
-		if (cmd_convert_integer_10(&cmd, debuglevel_string, &debuglevel) != 0) {
-			VL_MSG_ERR ("Could not understand debuglevel argument '%s'\n", debuglevel_string);
+		if (strcmp(debuglevel_string, "all") == 0) {
+			debuglevel = __VL_DEBUGLEVEL_ALL;
+		}
+		else if (cmd_convert_integer_10(&cmd, debuglevel_string, &debuglevel) != 0) {
+			VL_MSG_ERR ("Could not understand debuglevel argument '%s', use a number or 'all'\n", debuglevel_string);
 			ret = EXIT_FAILURE;
 			goto out;
 		}
@@ -166,14 +168,14 @@ int main (int argc, const char *argv[]) {
 		if (module == NULL || module->module == NULL) {
 			VL_MSG_ERR ("Module %s could not be loaded A\n", module_string);
 			ret = EXIT_FAILURE;
-			goto out_unload_all;
+			goto out_unload_modules;
 		}
 
 		if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
 			if (senders_count == 0) {
 				VL_MSG_ERR ("Sender module must be specified for processor module %s\n", module_string);
 				ret = EXIT_FAILURE;
-				goto out_unload_all;
+				goto out_unload_modules;
 			}
 
 			for (unsigned long int j = 0; j < senders_count; j++) {
@@ -182,13 +184,13 @@ int main (int argc, const char *argv[]) {
 				if (module_sender == NULL) {
 					VL_MSG_ERR ("Module %s could not be loaded B\n", sender_strings[j]);
 					ret = EXIT_FAILURE;
-					goto out_unload_all;
+					goto out_unload_modules;
 				}
 
 				if (module_sender == module || module_sender->module == NULL) {
 					VL_MSG_ERR ("Module %s set with itself as sender\n", sender_strings[j]);
 					ret = EXIT_FAILURE;
-					goto out_unload_all;
+					goto out_unload_modules;
 				}
 				module->senders[module->senders_count++] = module_sender;
 			}
@@ -268,29 +270,40 @@ int main (int argc, const char *argv[]) {
 	action.sa_flags = 0;
 
 	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
 
 	while (main_running) {
 		usleep (1000000);
+
 		if (module_check_threads_stopped() == 0) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
 			module_threads_stop();
 			module_free_all_threads();
 			module_threads_destroy();
-			goto threads_restart;
+			if (main_running) {
+				goto threads_restart;
+			}
+			else {
+				goto out_unload_modules;
+			}
 		}
 	}
 
 	signal(SIGINT, SIG_DFL);
+	signal(SIGUSR1, SIG_DFL);
 
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
 	module_threads_stop();
+
 	module_free_all_threads();
 
-	out_unload_all:
+	out_destroy_threads:
 
 	module_threads_destroy();
+
+	out_unload_modules:
 
 #ifndef VL_NO_MODULE_UNLOAD
 	unload_all_modules();
