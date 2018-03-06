@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
+#include "../lib/cmdlineparser/cmdline.h"
 #include "../global.h"
 
 struct averager_data {
@@ -42,16 +43,19 @@ struct averager_data {
 	// Set this to 1 when others may read from our buffer
 	int average_is_ready;
 	pthread_mutex_t average_ready_lock;
+	int preserve_point_measurements;
+	unsigned int timespan;
+	unsigned int interval;
 };
 
 // Should not be smaller than module max
 #define VL_AVERAGER_MAX_SENDERS VL_MODULE_MAX_SENDERS
 
 // In seconds, keep x seconds of readings in the buffer
-#define VL_AVERAGER_TIMESPAN 15
+#define VL_DEFAULT_AVERAGER_TIMESPAN 15
 
 // Create an average/max/min-reading every x seconds
-#define VL_AVERAGER_INTERVAL 10
+#define VL_DEFAULT_AVERAGER_INTERVAL 10
 
 // Poll of our output buffer from other modules
 int averager_poll_delete (
@@ -95,6 +99,12 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
 		fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
+		if (averager_data->preserve_point_measurements == 1) {
+			struct vl_message *dup_message = message_duplicate(message);
+			fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from,
+				(char*) dup_message, sizeof(*dup_message)
+			);
+		}
 
 		VL_DEBUG_MSG_2 ("Averager: %s size %lu measurement %" PRIu64 "\n", message->data, size, message->data_numeric);
 	}
@@ -112,7 +122,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 }
 
 void averager_maintain_buffer(struct averager_data *data) {
-	uint64_t timespan_useconds = VL_AVERAGER_TIMESPAN * 1000000;
+	uint64_t timespan_useconds = data->timespan * 1000000;
 	uint64_t time_now = time_get_64();
 
 	fifo_clear_order_lt(&data->input_buffer, time_now - timespan_useconds);
@@ -246,6 +256,50 @@ void data_cleanup(void *arg) {
 	//fifo_buffer_destroy(&data->buffer);
 }
 
+int parse_cmd (struct averager_data *data, struct cmd_data *cmd) {
+	memset(data, '\0', sizeof(*data));
+
+	const char *device_path = cmd_get_value(cmd, "device_path", 0);
+
+	data->preserve_point_measurements = 0;
+	data->timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
+	data->interval = VL_DEFAULT_AVERAGER_INTERVAL;
+
+	const char *preserve_point_measurements = cmd_get_value(cmd, "avg_preserve_points", 0);
+	const char *timespan = cmd_get_value(cmd, "avg_timespan", 0);
+	const char *interval = cmd_get_value(cmd, "avg_interval", 0);
+
+	if (preserve_point_measurements != NULL) {
+		int yesno;
+		if (cmdline_check_yesno(cmd, preserve_point_measurements, &yesno) != 0) {
+			VL_MSG_ERR ("averager: Could not understand argument avg_preserver_points ('%s'), " \
+					"please specify 'yes' or 'no'\n", preserve_point_measurements);
+			return 1;
+		}
+		data->preserve_point_measurements = yesno;
+	}
+
+	int tmp = 0;
+	if (timespan != NULL) {
+		if (cmd_convert_integer_10(cmd, timespan, &tmp) != 0 || tmp < 1) {
+			VL_MSG_ERR("averager: Could not understand avg_timespan argument %s, please use a numeric value > 0\n", timespan);
+			data->timespan = tmp;
+			return 1;
+		}
+		data->timespan = tmp;
+	}
+	if (interval != NULL) {
+		if (cmd_convert_integer_10(cmd, interval, &tmp) != 0 || tmp < 1) {
+			VL_MSG_ERR("averager: Could not understand avg_interval argument %s, please use a numeric value > 0\n", interval);
+			data->interval = tmp;
+			return 1;
+		}
+		data->interval = tmp;
+	}
+
+	return 0;
+}
+
 
 static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
@@ -267,6 +321,13 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		VL_MSG_ERR ("Too many senders for averager module, max is %i\n", VL_AVERAGER_MAX_SENDERS);
 		goto out_message;
 	}
+
+	if (parse_cmd(data, start_data->cmd) != 0) {
+		goto out_message;
+	}
+
+	VL_DEBUG_MSG_1 ("Avarager: Interval: %u, Timespan: %u, Preserve points: %i\n",
+			data->interval, data->timespan, data->preserve_point_measurements);
 
 	int (*poll[VL_AVERAGER_MAX_SENDERS])(
 			struct module_thread_data *data,
@@ -295,7 +356,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	}
 
 	uint64_t previous_average_time = time_get_64();
-	uint64_t average_interval_useconds = VL_AVERAGER_INTERVAL * 1000000;
+	uint64_t average_interval_useconds = data->interval * 1000000;
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);

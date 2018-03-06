@@ -75,7 +75,7 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	const char *always_tag_saved = cmd_get_value(cmd, "blockdev_always_tag", 0);
 	if (always_tag_saved != NULL) {
 		int yesno;
-		if (!cmdline_check_yesno(cmd, always_tag_saved, &yesno) != 0) {
+		if (cmdline_check_yesno(cmd, always_tag_saved, &yesno) != 0) {
 			VL_MSG_ERR ("blockdev: Could not understand argument blockdev_always_tag ('%s'), please specify 'yes' or 'no'\n", always_tag_saved);
 			return 1;
 		}

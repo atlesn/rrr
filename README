@@ -69,11 +69,15 @@ Specifiy channel (1 or 2) and/or calibration (factor which scales input).
 
 ### averager (create averages from voltmonitor)
 
-`vlogger module=averager,voltmonitor module=raw,averager`
+`vlogger module=averager,voltmonitor module=raw,averager [avg_preserve_points={yes|no}] [avg_timespan=SECONDS] [avg_interval=SECONDS]`
 
-Create MAX/MIN/AVG measurements every 10 seconds with input from voltmonitor.
+Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 
-### ipclient (Send UDP packets to server)
+- `avg_timespan`: How long period to make an average from, default is 15
+- `avg_interval`: How often to make an average, default is 10
+- `avg_preserve_points`: Preserve individual measurements and pass to next module, default is no
+	
+### ipclient (Send UDP packets to server and wait for ACK)
 `vlogger module=ipclient,dummy ipclient_server=10.0.2.2 ipclient_server_port=5555`
 
 ### blockdev (log messages to block device or file)
@@ -109,7 +113,8 @@ A table can should this, but it may have additional columns:
 	) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 The `source` is the IP address of the sender. The first three columns should be defined
-as `PRIMARY KEY` or a `UNIQUE` key to prevent duplicates.
+as `PRIMARY KEY` or a `UNIQUE` key to prevent duplicates. Voltage logger uses `REPLACE INTO` to
+place data into the table.
 
 ### ipserver (receive messages from ipclient)
 `ipserver` listens for messages from `ipclient` on port 5555 and passes them on to the next module (only mysql
@@ -127,20 +132,20 @@ server, even in case of a power failure.
 
 This will create a network like this:
 
-	+-------------+    +----------+    +------------+     +----------+
-	| voltmonitor | => | averager | => |            | <=> | blockdev |
+	                                   +------------+     +----------+
+	                                   |            | <=> | blockdev |
 	+-------------+    +----------+    |            |     +----------+
-	                                   | controller |
-	                                   |            |     +----------+
+	| voltmonitor | => | averager | => | controller |
+	+-------------+    +----------+    |            |     +----------+
 	                                   |            | <=> | ipclient |
 	                                   +------------+     +----------+
 
 - All messages from `averager` are sent both to `blockdev` and `ipclient`
 - All messages from `blockdev` are sent to `ipclient`
-- TAG messages from `ipclient` are sent to `blockdev`
+- `TAG` messages from `ipclient` are sent to `blockdev`
 
 This setup will save messages to `blockdev` and keep on sending them through `ipclient` untill a final
-TAG message is received.
+`TAG` message is received.
 
 ## CONTACT
 
