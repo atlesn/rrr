@@ -269,6 +269,7 @@ int main (int argc, const char *argv[]) {
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
 
+	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
@@ -289,6 +290,7 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
+	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGUSR1, SIG_DFL);
 
