@@ -168,12 +168,12 @@ int fifo_read_clear_forward (
 		struct fifo_callback_args *callback_data
 );
 
-void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size));
+//void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
 void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int size);
 void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size);
 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
-void fifo_buffer_destroy(struct fifo_buffer *buffer);
+// void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 void fifo_buffer_init(struct fifo_buffer *buffer);
 
 #endif
