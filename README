@@ -69,9 +69,9 @@ The current debug level is common for all modules and specified like this:
 * `0` - Only errors are printed
 * `1` - Information about starting/stopping of modules (low rate)
 * `2` - Running information from modules, they tell what they do on different steps (rate depends on traffic)
-* `3` - Hex printing of messages and other data debugging (high rate)
-* `4` - Debug locking and thread states (very high rate)
-* `5` - Alive messages from some modules also when they are idle (very high rate)
+* `4` - Hex printing of messages and other data debugging (high rate)
+* `8` - Debug locking and thread states (very high rate)
+* `16` - Alive messages from some modules also when they are idle (very high rate)
 
 For instance `debuglevel=3` means that debug level `1` and `2` is activated.
 
