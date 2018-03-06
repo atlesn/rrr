@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define VL_NO_MODULE_UNLOAD
 
 static volatile int main_running = 1;
+static struct module_metadata modules[CMD_ARGUMENT_MAX];
 
 void signal_interrupt (int s) {
     main_running = 0;
@@ -41,8 +42,6 @@ void signal_interrupt (int s) {
 	signal(SIGINT, SIG_DFL);
 	signal(SIGUSR1, SIG_DFL);
 }
-
-struct module_metadata modules[CMD_ARGUMENT_MAX];
 
 int module_check_threads_stopped() {
 	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
@@ -115,118 +114,118 @@ struct module_metadata *find_module(const char *name) {
 	return NULL;
 }
 
-int main (int argc, const char *argv[]) {
-	struct cmd_data cmd;
-
-	int ret = EXIT_SUCCESS;
-
-	// TODO : remove signal handler when we quit to force exit
-
-	struct sigaction action;
-	action.sa_handler = signal_interrupt;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
-
-	if (cmd_parse(&cmd, argc, argv, CMD_CONFIG_NOCOMMAND|CMD_CONFIG_SPLIT_COMMA) != 0) {
-		VL_MSG_ERR ("Error while parsing command line\n");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	int debuglevel = 0;
-	const char *debuglevel_string = cmd_get_value(&cmd, "debuglevel", 0);
-	if (debuglevel_string != NULL) {
-		if (strcmp(debuglevel_string, "all") == 0) {
-			debuglevel = __VL_DEBUGLEVEL_ALL;
-		}
-		else if (cmd_convert_integer_10(&cmd, debuglevel_string, &debuglevel) != 0) {
-			VL_MSG_ERR ("Could not understand debuglevel argument '%s', use a number or 'all'\n", debuglevel_string);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-		if (debuglevel < 0 || debuglevel > __VL_DEBUGLEVEL_ALL) {
-			VL_MSG_ERR ("Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n", __VL_DEBUGLEVEL_ALL, debuglevel);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-	}
-
-	vl_init_global_config(debuglevel);
-
-	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
-
+int main_parse_cmd_modules(struct cmd_data *cmd) {
 	memset(modules, '\0', sizeof(modules));
 
 	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		const char *module_string = cmd_get_subvalue(&cmd, "module", i, 0);
+		const char *module_string = cmd_get_subvalue(cmd, "module", i, 0);
 
 		const char *sender_strings[VL_MODULE_MAX_SENDERS];
 		int senders_count = 0;
 		for (unsigned long int j = 1; j < VL_MODULE_MAX_SENDERS; j++) {
-			const char *sender_string = cmd_get_subvalue(&cmd, "module", i, j);
+			const char *sender_string = cmd_get_subvalue(cmd, "module", i, j);
 			if (sender_string == NULL || *sender_string == '\0') {
 				break;
 			}
-			sender_strings[senders_count++] = cmd_get_subvalue(&cmd, "module", i, j);
+			sender_strings[senders_count++] =
+					cmd_get_subvalue(cmd, "module", i, j);
 		}
 
 		if (module_string == NULL || *module_string == '\0') {
 			break;
 		}
 
-		VL_DEBUG_MSG_1 ("Loading module '%s'\n", module_string);
+		VL_DEBUG_MSG_1("Loading module '%s'\n", module_string);
 		struct module_metadata *module = find_or_load_module(module_string);
 		if (module == NULL || module->module == NULL) {
-			VL_MSG_ERR ("Module %s could not be loaded A\n", module_string);
-			ret = EXIT_FAILURE;
-			goto out_unload_modules;
+			VL_MSG_ERR("Module %s could not be loaded A\n", module_string);
+			return EXIT_FAILURE;
 		}
 
 		if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
 			if (senders_count == 0) {
-				VL_MSG_ERR ("Sender module must be specified for processor module %s\n", module_string);
-				ret = EXIT_FAILURE;
-				goto out_unload_modules;
+				VL_MSG_ERR("Sender module must be specified for processor module %s\n",
+						module_string);
+				return EXIT_FAILURE;
 			}
 
 			for (unsigned long int j = 0; j < senders_count; j++) {
-				VL_DEBUG_MSG_1 ("Loading sender module '%s' (if not already loaded)\n", sender_strings[j]);
-				struct module_metadata *module_sender = find_or_load_module(sender_strings[j]);
+				VL_DEBUG_MSG_1("Loading sender module '%s' (if not already loaded)\n",
+						sender_strings[j]
+				);
+
+				struct module_metadata *module_sender =
+						find_or_load_module(sender_strings[j]);
+
 				if (module_sender == NULL) {
-					VL_MSG_ERR ("Module %s could not be loaded B\n", sender_strings[j]);
-					ret = EXIT_FAILURE;
-					goto out_unload_modules;
+					VL_MSG_ERR("Module %s could not be loaded B\n",
+							sender_strings[j]);
+					return EXIT_FAILURE;
 				}
 
 				if (module_sender == module || module_sender->module == NULL) {
-					VL_MSG_ERR ("Module %s set with itself as sender\n", sender_strings[j]);
-					ret = EXIT_FAILURE;
-					goto out_unload_modules;
+					VL_MSG_ERR("Module %s set with itself as sender\n",
+							sender_strings[j]);
+					return EXIT_FAILURE;
 				}
+
 				module->senders[module->senders_count++] = module_sender;
 			}
 		}
 		else if (module->module->type == VL_MODULE_TYPE_SOURCE) {
 			if (senders_count != 0) {
-				VL_MSG_ERR ("Sender module cannot be specified for source module %s\n", module_string);
-				ret = EXIT_FAILURE;
-				goto out;
+				VL_MSG_ERR("Sender module cannot be specified for source module %s\n",
+						module_string);
+				return EXIT_FAILURE;
 			}
 		}
 		else {
-			VL_MSG_ERR ("Unknown module type for %s: %i\n", module_string, module->module->type);
+			VL_MSG_ERR ("Unknown module type for %s: %i\n",
+					module_string, module->module->type
+			);
 		}
 	}
 
-	threads_restart:
+	return 0;
+}
 
+int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd) {
+	if (cmd_parse(cmd, argc, argv, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
+		VL_MSG_ERR("Error while parsing command line\n");
+		return EXIT_FAILURE;
+	}
+
+	int debuglevel = 0;
+	const char* debuglevel_string = cmd_get_value(&*cmd, "debuglevel", 0);
+	if (debuglevel_string != NULL) {
+		if (strcmp(debuglevel_string, "all") == 0) {
+			debuglevel = __VL_DEBUGLEVEL_ALL;
+		}
+		else if (cmd_convert_integer_10(cmd, debuglevel_string, &debuglevel) != 0) {
+			VL_MSG_ERR(
+					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
+					debuglevel_string);
+			return EXIT_FAILURE;
+		}
+		if (debuglevel < 0 || debuglevel > __VL_DEBUGLEVEL_ALL) {
+			VL_MSG_ERR(
+					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
+					__VL_DEBUGLEVEL_ALL, debuglevel);
+			return EXIT_FAILURE;
+		}
+	}
+
+	vl_init_global_config(debuglevel);
+	return 0;
+}
+
+int main_start_threads(
+		struct module_metadata modules[CMD_ARGUMENT_MAX],
+		struct cmd_data* cmd
+) {
+	// Initialzie module thread data
 	module_threads_init();
 
-	// Init threads
 	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		struct module_metadata *meta = &modules[i];
 
@@ -239,7 +238,7 @@ int main (int argc, const char *argv[]) {
 		memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
 		init_data.senders_count = meta->senders_count;
 
-		VL_DEBUG_MSG_1 ("Initializing %s\n", meta->module->name);
+		VL_DEBUG_MSG_1("Initializing %s\n", meta->module->name);
 
 		meta->thread_data = module_init_thread(&init_data);
 	}
@@ -257,22 +256,56 @@ int main (int argc, const char *argv[]) {
 			meta->thread_data->senders[j] = meta->senders[j]->thread_data;
 		}
 
-		if (module_start_thread(meta->thread_data, &cmd) != 0) {
-			VL_MSG_ERR ("Error when starting thread for module %s\n", meta->module->name);
-			ret = EXIT_FAILURE;
-			goto out_stop_threads;
+		if (module_start_thread(meta->thread_data, cmd) != 0) {
+			VL_MSG_ERR("Error when starting thread for module %s\n",
+					meta->module->name);
+			return EXIT_FAILURE;
 		}
 
 		threads_total++;
 	}
 
 	if (threads_total == 0) {
-		VL_DEBUG_MSG_1 ("No modules started, exiting\n");
-		goto out_stop_threads;
+		VL_DEBUG_MSG_1("No modules started, exiting\n");
+		return EXIT_FAILURE;
 	}
 
 	if (thread_start_all_after_initialized() != 0) {
-		VL_MSG_ERR ("Error while waiting for threads to initialize\n");
+		VL_MSG_ERR("Error while waiting for threads to initialize\n");
+		return EXIT_FAILURE;
+	}
+
+	return 0;
+}
+
+int main (int argc, const char *argv[]) {
+	struct cmd_data cmd;
+
+	int ret = EXIT_SUCCESS;
+
+	struct sigaction action;
+	action.sa_handler = signal_interrupt;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
+
+	if ((ret = main_parse_cmd_arguments(argc, argv, &cmd)) != 0) {
+		goto out;
+	}
+
+	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
+
+	if ((ret = main_parse_cmd_modules(&cmd)) != 0) {
+		goto out_unload_modules;
+	}
+
+	threads_restart:
+
+	// Initialzie module thread data
+	if ((ret = main_start_threads(modules, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -281,9 +314,11 @@ int main (int argc, const char *argv[]) {
 
 		if (module_check_threads_stopped() == 0) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
+
 			module_threads_stop();
 			module_free_all_threads();
 			module_threads_destroy();
+
 			if (main_running) {
 				goto threads_restart;
 			}
@@ -300,20 +335,16 @@ int main (int argc, const char *argv[]) {
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
-	module_threads_stop();
-
-	module_free_all_threads();
+		module_threads_stop();
+		module_free_all_threads();
 
 	out_destroy_threads:
-
-	module_threads_destroy();
+		module_threads_destroy();
 
 	out_unload_modules:
-
 #ifndef VL_NO_MODULE_UNLOAD
-	unload_all_modules();
+		unload_all_modules();
 #endif
-
 
 	out:
 	return ret;

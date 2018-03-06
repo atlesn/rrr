@@ -301,7 +301,7 @@ take care of the data.
 The buffer doesn't care about the type of data it stores, make sure that the data is casted to the same type in the reader as the writer puts in.
 The `size` arguments may be used to check if a type is correct or not. 
 
-See `buffer.h` for function syntax, and look in existing modules for examples on usage.
+See `buffer.h` for function syntax, and look in existing modules for examples on usage. The locking functions should not be called.
 
 #### `fifo_read_clear_forward`
 This function clears the whole buffer and passes each entry one by one to a callback function. The callback
@@ -315,8 +315,6 @@ All return values from the callback function are ignored, but if one or more cal
 
 All entries are read from and removed from the buffer untill the entry pointed to by `last_element` is reached. If this is NULL, all entries are
 processed.  
-
-The locking functions should not be called.
 
 #### `fifo_search`
 This function passes all elements from a buffer to a callback function untill it returns `FIFO_SEARCH_STOP` or `FIFO_SEARCH_ERR`. If it receives
