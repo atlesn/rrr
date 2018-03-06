@@ -232,7 +232,7 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 
 	VL_DEBUG_MSG_2 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
-	fifo_buffer_write(&mysql_data->input_buffer, data, size);
+	fifo_buffer_write(&mysql_data->input_buffer, (char*) entry, sizeof(*entry));
 
 	return 0;
 }
