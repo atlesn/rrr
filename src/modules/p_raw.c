@@ -78,7 +78,10 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			VL_MSG_ERR ("Raw cannot use this sender, lacking poll delete function.\n");
+			poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+			if (poll[i] == NULL) {
+				VL_MSG_ERR ("Raw cannot use sender %s, lacking poll_delete or poll_delete_ip function.\n", thread_data->senders[i]->thread->name);
+			}
 			goto out_message;
 		}
 	}
