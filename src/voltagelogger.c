@@ -36,6 +36,10 @@ static volatile int main_running = 1;
 
 void signal_interrupt (int s) {
     main_running = 0;
+
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGUSR1, SIG_DFL);
 }
 
 struct module_metadata modules[CMD_ARGUMENT_MAX];
@@ -115,6 +119,17 @@ int main (int argc, const char *argv[]) {
 	struct cmd_data cmd;
 
 	int ret = EXIT_SUCCESS;
+
+	// TODO : remove signal handler when we quit to force exit
+
+	struct sigaction action;
+	action.sa_handler = signal_interrupt;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
 
 	if (cmd_parse(&cmd, argc, argv, CMD_CONFIG_NOCOMMAND|CMD_CONFIG_SPLIT_COMMA) != 0) {
 		VL_MSG_ERR ("Error while parsing command line\n");
@@ -260,18 +275,6 @@ int main (int argc, const char *argv[]) {
 		VL_MSG_ERR ("Error while waiting for threads to initialize\n");
 		goto out_stop_threads;
 	}
-
-	struct sigaction action;
-
-	// TODO : remove signal handler when we quit to force exit
-
-	action.sa_handler = signal_interrupt;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
 
 	while (main_running) {
 		usleep (1000000);
