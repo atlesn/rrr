@@ -161,9 +161,9 @@ server, even in case of a power failure.
 
 This will create a network like this:
 
-                                   Local host                             |           Remote host 
---------------------------------------------------------------------------|-----------------------------------
-                                                                          |
+	                               Local host                             |           Remote host 
+	----------------------------------------------------------------------|-----------------------------------
+	                                                                      |
 	                                   +------------+     +----------+    | (see ipserver/mysql paragraphs)
 	                                   |            | <=> | blockdev |    |
 	+-------------+    +----------+    |            |     +----------+    |
@@ -171,7 +171,7 @@ This will create a network like this:
 	+-------------+    +----------+    |            |     +----------+    |    +----------+     +-------+
 	                                   |            | <=> | ipclient | <=====> | ipserver | <=> | mysql |
 	                                   +------------+     +----------+    |    +----------+     +-------+
---------------------------------------------------------------------------|-----------------------------------
+	----------------------------------------------------------------------|-----------------------------------
 
 - All messages from `averager` are sent both to `blockdev` and `ipclient`
 - All messages from `blockdev` are sent to `ipclient`
@@ -330,7 +330,7 @@ Puts data in the buffer ordered by the `order` argument.
 
 #### `fifo_clear_order_lt`
 Clears the beginning of a buffer up to the first entry which has an order value equal to or greater than the `order_min` argument. It is most
-reasonable to only use ordered writes before using this function 
+reasonable to only use ordered writes before using this function. No callback function is needed.
 
 ## CONTACT
 
