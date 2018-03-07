@@ -109,12 +109,12 @@ struct vl_thread_start_data {
 };
 
 static inline void thread_lock(struct vl_thread *thread) {
-	VL_DEBUG_MSG_3 ("Thread %s lock\n", thread->name);
+	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void thread_unlock(struct vl_thread *thread) {
-	VL_DEBUG_MSG_3 ("Thread %s unlock\n", thread->name);
+	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 

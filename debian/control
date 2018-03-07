@@ -2,12 +2,11 @@ Source: voltage-logger
 Section: main
 Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
-Build-Depends: debhelper (>= 9), dh-autoreconf, build-essential, libusb-dev, libblock-device-logger-dev, libmysqlclient-dev | libmariadbclient-dev-compat
+Build-Depends: debhelper (>= 9), dh-autoreconf, build-essential, libusb-dev, libblock-device-logger-dev, libmysqlclient-dev | libmariadbclient-dev-compat, libssl-dev
 Standards-Version: 3.9.8
 Homepage: https://github.com/atlesn/voltagelogger
 
 Package: voltage-logger
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Suggests: voltage-logger-modules
 Description: Read entries from a digital meter and log them to files or send over the network.

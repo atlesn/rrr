@@ -15,7 +15,7 @@ raw_la_SOURCES = p_raw.c
 averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
 
-ipclient_la_LDFLAGS = ${module_ldflags}
+ipclient_la_LDFLAGS = ${module_ldflags} 
 ipclient_la_SOURCES = p_ipclient.c common/ip.c
 
 ipserver_la_LDFLAGS = ${module_ldflags}
