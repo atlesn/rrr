@@ -147,15 +147,14 @@ The current debug level is common for all modules and specified like this:
 
 For instance `debuglevel=3` means that debug level `1` and `2` is activated.
 
-## INTERNAL MESSAGE TYPES
+## MESSAGES
 
-An internal message contains some metadata and a class specifier which tells us what kind of
+A message contains some metadata and a class specifier which tells us what kind of
 information and/or value it stores.
 * Metadata for a message:
   * `Timestamp from` and `Timestamp to`
     Specifies the duration of the message. The timestamps can be equal if a message has no
     timespan.
-    * `MSG`
   * `Class`
     The message class which describes what kind of information it stores:
     * `POINT`: Measurement at one time instance
