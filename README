@@ -147,15 +147,14 @@ The current debug level is common for all modules and specified like this:
 
 For instance `debuglevel=3` means that debug level `1` and `2` is activated.
 
-## INTERNAL MESSAGE TYPES
+## MESSAGES
 
-An internal message contains some metadata and a class specifier which tells us what kind of
+A message contains some metadata and a class specifier which tells us what kind of
 information and/or value it stores.
 * Metadata for a message:
   * `Timestamp from` and `Timestamp to`
     Specifies the duration of the message. The timestamps can be equal if a message has no
     timespan.
-    * `MSG`
   * `Class`
     The message class which describes what kind of information it stores:
     * `POINT`: Measurement at one time instance
@@ -196,7 +195,7 @@ After a module is copied, replace all instances of the old name inside the file 
 All modules must provide an `init()` function which is used to provide information to Voltage Logger about which functions
 the module provides, its name and type. This can usually be left alone, just change the static `module_name` value to change
 the informational name of the module. The `type` field, however, provides information about wether we expect a sender to
-be specified or if we only is a source module (see `dummy` module vs `raw`);
+be specified or if we only are a source module (see `dummy` module vs `raw`);
 
 The `module_operations` struct provides pointers to our internal functions which other modules call. All values except the first
 may be `NULL`. Reading modules should check wether a function really is available (not null) of senders before use, and be careful
@@ -219,6 +218,9 @@ Since most poll functions use buffers, they require a `fifo_callback_args` struc
 - `private_data` : Used if another pointer is needed to arrive in the callback function
 
 If you need more functions, add them to the struct in `modules.h` and make sure to set the new values to `NULL` in all modules.
+
+When a module object is loaded, the `load()` function is run, and on exit the `unload()` function. These may be used to
+initialize libraries before any threads start, for instance the MySQL client library.
 
 ### Thread state convention
 
