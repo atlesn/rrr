@@ -38,8 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
-#include "common/ip.h"
 #include "../global.h"
+#include "../lib/module_crypt.h"
+#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -51,6 +52,8 @@ struct ipserver_data {
 	struct fifo_buffer receive_buffer;
 	struct fifo_buffer output_buffer;
 	struct ip_data ip;
+	const char *crypt_file;
+	struct module_crypt_data crypt_data;
 };
 
 // Poll request from other modules
@@ -143,6 +146,7 @@ struct receive_packets_data {
 	int counter;
 };
 
+
 int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct receive_packets_data *callback_data = arg;
 	struct ipserver_data *data = callback_data->data;
@@ -167,7 +171,12 @@ int receive_packets(struct ipserver_data *data) {
 	struct receive_packets_data callback_data;
 	callback_data.data = data;
 	callback_data.counter = 0;
-	return ip_receive_packets(data->ip.fd, receive_packets_callback, &callback_data);
+	return ip_receive_packets (
+		data->ip.fd,
+		&data->crypt_data,
+		receive_packets_callback,
+		&callback_data
+	);
 }
 
 void init_data(struct ipserver_data *data) {
@@ -188,6 +197,29 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->output_buffer);
 }
 
+// TODO : Provide more configuration arguments
+static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
+//	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
+//	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
+	const char *crypt_file = cmd_get_value(cmd, "ipserver_crypt_file", 0);
+
+//	data->ip_server = VL_IPCLIENT_SERVER_NAME;
+//	data->ip_port = VL_IPCLIENT_SERVER_PORT;
+	data->crypt_file = NULL;
+
+/*	if (ip_server != NULL) {
+		data->ip_server = ip_server;
+	}
+	if (ip_port != NULL) {
+		data->ip_port = ip_port;
+	}*/
+	if (crypt_file != NULL) {
+		data->crypt_file = crypt_file;
+	}
+
+	return 0;
+}
+
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
@@ -197,10 +229,12 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("ipserver thread data is %p\n", thread_data);
 
 	init_data(data);
+	parse_cmd(data, start_data->cmd);
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -234,6 +268,13 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("ipserver started thread %p\n", thread_data);
 	if (senders_count == 0) {
 		VL_MSG_ERR ("Error: Sender was not set for ipserver processor module\n");
+		goto out_message;
+	}
+
+	if (	data->crypt_file != NULL &&
+			module_crypt_data_init(&data->crypt_data, data->crypt_file) != 0
+	) {
+		VL_MSG_ERR("ipserver: Cannot continue without crypt library\n");
 		goto out_message;
 	}
 
@@ -274,6 +315,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("Thread ipserver %p exiting\n", thread_data->thread);
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

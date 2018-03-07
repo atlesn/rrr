@@ -31,18 +31,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <poll.h>
 
 #include "../modules.h"
-#include "../lib/crypt.h"
+#include "../lib/module_crypt.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "common/ip.h"
 #include "../global.h"
+#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -63,7 +62,7 @@ struct ipclient_data {
 	pthread_mutex_t network_lock;
 	int receive_thread_died;
 	int receive_thread_started;
-	struct vl_crypt *crypt;
+	struct module_crypt_data crypt_data;
 };
 
 void init_data(struct ipclient_data *data) {
@@ -83,48 +82,10 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->receive_buffer);
 }
 
-int init_crypt(struct ipclient_data *data) {
-	int err = 0;
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
-	vl_crypt_global_lock();
-
-	if (data->crypt_file == NULL) {
-		err = 1;
-		goto out;
-	}
-
-	if ((data->crypt = vl_crypt_new()) == NULL) {
-		VL_MSG_ERR("ipclient: Error when initializing cryptography\n");
-		err = 1;
-		goto out;
-	}
-
-	if (vl_crypt_load_key(data->crypt, data->crypt_file) != 0) {
-		VL_MSG_ERR("ipclient: Could not load crypt file\n");
-		err = 1;
-		goto out;
-	}
-
-	out:
-	pthread_cleanup_pop(1);
-	return err;
-}
-
-void cleanup_crypt(void *arg) {
-	vl_crypt_global_lock();
-
-	struct ipclient_data *data = arg;
-	if (data->crypt != NULL) {
-		vl_crypt_free(data->crypt);
-	}
-
-	vl_crypt_global_unlock(NULL);
-}
-
 static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *crypt_file = cmd_get_value(cmd, "ipclient_crypt_file", 0);
+	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
 
 	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 	data->ip_port = VL_IPCLIENT_SERVER_PORT;
@@ -171,59 +132,8 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	return 0;
 }
 
-struct send_packet_info {
-	struct ipclient_data *data;
-	int fd;
-	struct addrinfo *res;
-	int packet_counter;
-};
-
-/*
- * We provide output ending with \0
- */
-int encrypt_message (
-		struct ipclient_data* ipclient_data,
-		char *buf, unsigned int buf_length, unsigned int buf_size
-) {
-	int ret = 0;
-
-	char *cipher_string = NULL;
-	vl_crypt_global_lock();
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
-
-	int cipher_length;
-	if (vl_crypt_aes256 (
-			ipclient_data->crypt,
-			buf, buf_length,
-			(void*) &cipher_string, &cipher_length
-	) != 0) {
-		VL_MSG_ERR("ipclient: Error while encrypting packet before sending\n");
-		ret = FIFO_SEARCH_ERR;
-		goto crypt_out;
-	}
-
-	pthread_cleanup_push(free, cipher_string);
-
-	VL_DEBUG_MSG_2("ipclient encrypting message using key %s IV %s\n", ipclient_data->crypt->key, ipclient_data->crypt->iv);
-
-	const unsigned int message_total_length =
-			cipher_length + 1 + strlen(ipclient_data->crypt->iv) + 1;
-
-	if (message_total_length + 1 > buf_size) {
-		VL_MSG_ERR("ipclient: Bug: Encrypted message was too big to send\n");
-		exit(EXIT_FAILURE);
-	}
-
-	sprintf(buf, "%s:%s", ipclient_data->crypt->iv, cipher_string);
-
-	crypt_out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	return ret;
-}
-
 int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct send_packet_info *info = poll_data->private_data;
+	struct ip_send_packet_info *info = poll_data->private_data;
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *ipclient_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
@@ -239,31 +149,11 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	entry->time = time_now;
 
-	char buf[MSG_STRING_MAX_LENGTH];
-	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
-	buf[0] = '\0'; // Network messages must start and end with zero
-
-	if (message_prepare_for_network (message, buf, MSG_STRING_MAX_LENGTH) != 0) {
-		return FIFO_SEARCH_KEEP;
-	}
-
-	VL_DEBUG_MSG_2("ipclient sent packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf+1);
-
-	if (	ipclient_data->crypt != NULL &&
-			encrypt_message(ipclient_data, buf+1, strlen(buf+1), sizeof(buf)-1 // Remember that buf starts with zero
+	if (ip_send_packet(
+			message,
+			&ipclient_data->crypt_data,
+			info
 	) != 0) {
-		return FIFO_SEARCH_ERR;
-	}
-
-	if (buf[0] != 0) {
-		VL_MSG_ERR("ipclient: Start of send buffer was not zero\n");
-		exit (EXIT_FAILURE);
-	}
-
-	VL_DEBUG_MSG_3("ipclient: Final message to send: %s\n", buf+1);
-
-	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr, info->res->ai_addrlen) == -1) {
-		VL_MSG_ERR ("ipclient: Error while sending packet to server\n");
 		return FIFO_SEARCH_ERR;
 	}
 
@@ -336,7 +226,12 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
-	return ip_receive_packets(data->ip.fd, receive_packets_callback, data);
+	return ip_receive_packets(
+			data->ip.fd,
+			&data->crypt_data,
+			receive_packets_callback,
+			data
+	);
 }
 
 int send_packets(struct module_thread_data *thread_data) {
@@ -363,7 +258,7 @@ int send_packets(struct module_thread_data *thread_data) {
 		goto out_error_nofree;
 	}
 
-	struct send_packet_info info;
+	struct ip_send_packet_info info;
 	info.fd = data->ip.fd;
 	info.res = res;
 	info.packet_counter = 0;
@@ -476,7 +371,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
-	pthread_cleanup_push(cleanup_crypt, data);
+	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -513,7 +408,9 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (init_crypt(data) != 0) {
+	if (	data->crypt_file != NULL &&
+			module_crypt_data_init(&data->crypt_data, data->crypt_file) != 0
+	) {
 		VL_MSG_ERR("ipclient: Cannot continue without crypt library\n");
 		goto out_message;
 	}

@@ -19,10 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef VL_CRYPT_H
+#define VL_CRYPT_H
+
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
 #include "../global.h"
+
+/*
+ * These functions should not be used directly.
+ * Use src/modules/crypt.*-functions instead for thread-safety.
+ */
 
 struct vl_crypt {
 	EVP_PKEY *evp_key;
@@ -39,8 +47,15 @@ void vl_crypt_global_unlock(void *ret);
 struct vl_crypt *vl_crypt_new();
 void vl_crypt_free(struct vl_crypt *crypt);
 int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename);
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string);
 int vl_crypt_aes256 (
 		struct vl_crypt *crypt,
 		const void *source, unsigned int source_length,
 		void **target, unsigned int *target_length
 );
+int vl_decrypt_aes256 (struct vl_crypt *crypt,
+		const void *source, unsigned int source_length,
+		void **target, unsigned int *target_length
+);
+
+#endif

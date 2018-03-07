@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../../lib/messages.h"
+#include "../../lib/module_crypt.h"
 
 #define VL_IP_DEFAULT_PORT 5555
 
@@ -37,10 +38,27 @@ struct ip_buffer_entry {
 	uint64_t time;
 };
 
+struct ip_send_packet_info {
+	struct ipclient_data *data;
+	int fd;
+	struct addrinfo *res;
+	int packet_counter;
+};
+
 struct ip_data {
 	int fd;
 };
 
-int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *ip, void *arg), void *arg);
+int ip_receive_packets (
+		int fd,
+		struct module_crypt_data *crypt_data,
+		int (*callback)(struct ip_buffer_entry *ip, void *arg),
+		void *arg
+);
+int ip_send_packet (
+		struct vl_message* message,
+		struct module_crypt_data *crypt_data,
+		struct ip_send_packet_info* info
+);
 void ip_network_cleanup (void *arg);
 int ip_network_start (struct ip_data *data);

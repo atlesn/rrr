@@ -27,25 +27,48 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <pthread.h>
 
 #include "vl_time.h"
 #include "crypt.h"
 #include "../global.h"
 
-static volatile int is_locked = 0;
+static int global_dynlockid = 0;
+static int is_locked = 0;
 
-/* No functions may be used without this being called first */
+/*
+ * This must only be called from main thread when NO OTHER threads are running.
+ * It will reset the locking of OpenSSL in case we killed a thread which held
+ * a lock.
+ */
+void vl_crypt_initialize_locks() {
+	if (global_dynlockid != 0) {
+		CRYPTO_destroy_dynlockid(global_dynlockid);
+	}
+	global_dynlockid = CRYPTO_get_new_dynlockid();
+	is_locked = 0;
+}
+
+/*
+ * Threads must this lock whenever using functions below which contain
+ * VL_CRYPT_CHECK_LOCKED(). If the thread crashes, it
+ * is not a big problem not to unlock, but we should use pthread cleanup stack
+ * to minimize the delay when the other threads should exit so that we don't have
+ * to kill them due to the lock not being available.
+ */
 void vl_crypt_global_lock() {
-	CRYPTO_w_lock(CRYPTO_LOCK_DYNLOCK);
+	CRYPTO_w_lock(global_dynlockid);
 	is_locked = 1;
 }
 
-/* This should be added to pthread cleanup stack */
-void vl_crypt_global_unlock(void *ret) {
+void vl_crypt_global_unlock(void *arg) {
 	is_locked = 0;
-	CRYPTO_w_unlock(CRYPTO_LOCK_DYNLOCK);
+	CRYPTO_w_unlock(global_dynlockid);
 }
 
+/*
+ * Crash if we forget to lock
+ */
 #define VL_CRYPT_CHECK_LOCKED() \
 	do {if (is_locked != 1) { VL_MSG_ERR("Bug: Crypto functions were not locked\n"); exit (EXIT_FAILURE); }}while(0)
 
@@ -92,9 +115,69 @@ void bin_to_string(const unsigned char *src, unsigned int src_length, unsigned c
     	sprintf(dst + i * 2, "%02x", src[i]);
     }
 
-    dst[dst_length-1] = '\0';
+    dst[src_length * 2] = '\0';
 }
 
+int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned char *dst, unsigned int dst_length) {
+	if (dst_length < src_length / 2) {
+    	VL_MSG_ERR("Bug: bin_to_string: Crypt string buffer too small (%u < %u)\n", dst_length, src_length / 2);
+    	exit(EXIT_FAILURE);
+	}
+
+	unsigned int step_size = sizeof(unsigned long int) * 2;
+	unsigned char step[step_size+1];
+	step[step_size] = '\0';
+
+	int i = 0;
+    for (i = 0; i < src_length; i += step_size) {
+    	memcpy(step, src + i, step_size);
+    	char *end;
+    	unsigned long int tmp = strtoul(step, &end, 16);
+
+    	if (*end != '\0') {
+    		VL_MSG_ERR("crypt string_to_bin: Invalid charaters found in input stream, should be a-f0-9 only\n");
+    		return 1;
+    	}
+    	VL_DEBUG_MSG_3 ("Writing from source %u to dst %i\n", i, i / 2);
+
+#if __WORDSIZE == 64
+    	tmp = htobe64(tmp);
+#else
+    	tmp = htobe32(tmp);
+#endif
+
+    	memcpy (dst + i / 2, &tmp, sizeof(tmp));
+    }
+
+    int leftover = i - src_length;
+    if (leftover < step_size) {
+    	i -= leftover;
+    }
+
+    step_size = sizeof(unsigned char) * 2;
+    step[step_size] = '\0';
+
+    /* If input is not dividable by sizeof(unsigned long int), process byte by byte */
+    for (; i < src_length; i += step_size) {
+    	memcpy(step, src + i, step_size);
+    	char *end;
+    	unsigned long int tmp = strtoul(step, &end, 16);
+    	if (*end != '\0') {
+    		VL_MSG_ERR("crypt string_to_bin: Invalid charaters found in input stream, should be a-f0-9 only\n");
+    		return 1;
+    	}
+    	char tmp_c = (tmp & 0xff);
+    	VL_DEBUG_MSG_3 ("Writing from source %u to dst %i\n", i, i / 2);
+    	memcpy(dst + i / 2, &tmp_c, sizeof(tmp_c));
+    }
+
+    return 0;
+}
+
+/*
+ * The key generated is too big for AES 256, but we might want other crypt
+ * functions in the future.
+ */
 int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename) {
 	VL_CRYPT_CHECK_LOCKED();
 
@@ -161,6 +244,8 @@ int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename) {
 }
 
 int vl_crypt_generate_iv(struct vl_crypt *crypt) {
+	VL_CRYPT_CHECK_LOCKED();
+
 	SHA256_CTX ctx;
 	SHA256_Init(&ctx);
 
@@ -181,7 +266,87 @@ int vl_crypt_generate_iv(struct vl_crypt *crypt) {
 	return 0;
 }
 
-// TODO : This may possible leak if we pthread_cancel in the middle
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string) {
+	if (sizeof(crypt->iv_bin) < strlen(iv_string) / 2) {
+		VL_MSG_ERR("IV string was too long\n");
+		return 1;
+	}
+
+    VL_DEBUG_MSG_3("IV converting string to bin: %s\n", iv_string);
+
+	if (string_to_bin(iv_string, strlen(iv_string), crypt->iv_bin, sizeof(crypt->iv_bin)) != 0) {
+		VL_MSG_ERR("Could not convert IV hex string to binary\n");
+		return 1;
+	}
+
+    bin_to_string(crypt->iv_bin, sizeof(crypt->iv_bin), crypt->iv, sizeof(crypt->iv));
+
+    VL_DEBUG_MSG_3("IV after converting bin->string: %s\n", crypt->iv);
+
+	return 0;
+}
+
+int vl_decrypt_aes256 (struct vl_crypt *crypt,
+		const void *source, unsigned int source_length,
+		void **target, unsigned int *target_length
+) {
+	VL_CRYPT_CHECK_LOCKED();
+
+	if (crypt->ctx != NULL) {
+		  EVP_CIPHER_CTX_free(crypt->ctx);
+	}
+
+	if (!(crypt->ctx = EVP_CIPHER_CTX_new())) {
+		goto error;
+	}
+
+	if (EVP_DecryptInit_ex(crypt->ctx, EVP_aes_256_cbc(), NULL, crypt->key_bin, crypt->iv_bin) != 1)  {
+		goto error_free;
+	}
+
+	void *tmp = malloc(source_length / 2 + 1);
+	void *ret = malloc(source_length * 2);
+	int len = 0;
+	int total_length = 0;
+
+	if (string_to_bin(source, source_length, tmp, source_length / 2 + 1) != 0) {
+		VL_MSG_ERR("crypt: Error while converting string to binary data\n");
+		goto error_free_target;
+	}
+
+	if (EVP_DecryptUpdate(crypt->ctx, ret, &len, tmp, source_length / 2) != 1) {
+		goto error_free_target;
+	}
+	total_length += len;
+
+	if(EVP_DecryptFinal_ex(crypt->ctx, ret + len, &len) != 1) {
+		goto error_free_target;
+	}
+	total_length += len;
+
+	success:
+		*target_length = total_length;
+		*target = ret;
+		free(tmp);
+		EVP_CIPHER_CTX_free(crypt->ctx);
+		crypt->ctx = NULL;
+		return 0;
+
+	error_free_target:
+		free(ret);
+		free(tmp);
+
+	error_free:
+		EVP_CIPHER_CTX_free(crypt->ctx);
+		crypt->ctx = NULL;
+
+	error:
+		VL_MSG_ERR("OpenSSL error message: \n\t");
+		ERR_print_errors_fp(stderr);
+
+	return 1;
+}
+
 int vl_crypt_aes256 (
 		struct vl_crypt *crypt,
 		const void *source, unsigned int source_length,
@@ -246,7 +411,7 @@ int vl_crypt_aes256 (
 		*target_length = strlen(ret);
 		free(tmp);
 		EVP_CIPHER_CTX_free(crypt->ctx);
-		crypt->ctx = 0;
+		crypt->ctx = NULL;
 		return 0;
 
 	error_free_target:

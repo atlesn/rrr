@@ -27,12 +27,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <inttypes.h>
+#include <sys/types.h>
+#include <netdb.h>
 
 #include "ip.h"
 #include "../../lib/messages.h"
+#include "../../lib/module_crypt.h"
 #include "../global.h"
 
-int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, void *arg), void *arg) {
+int ip_receive_packets(
+		int fd,
+		struct module_crypt_data *crypt_data,
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		void *arg
+) {
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
 	char errbuf[256];
@@ -76,7 +85,7 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 		}
 
 		start++;
-		count--;
+		unsigned int input_length = count - 1;
 
 		struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 		memset(entry, '\0', sizeof(*entry));
@@ -84,7 +93,23 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 		entry->addr = src_addr;
 		entry->addr_len = src_addr_len;
 
-		if (parse_message(start, count, &entry->message) != 0) {
+		if (crypt_data->crypt != NULL) {
+			char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
+			if (*end != '\0') {
+				VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
+				return 1;
+			}
+
+			input_length = end - start;
+
+			VL_DEBUG_MSG_3("ip decrypting message %s\n", start);
+			if (module_decrypt_message(crypt_data, start, &input_length, MSG_STRING_MAX_LENGTH - 1) != 0) {
+				VL_MSG_ERR("Error returned from module decrypt function\n");
+				return 1;
+			}
+		}
+
+		if (parse_message(start, input_length, &entry->message) != 0) {
 			VL_MSG_ERR ("Received invalid message\n");
 			free (entry);
 			continue;
@@ -110,6 +135,43 @@ int ip_receive_packets(int fd, int (*callback)(struct ip_buffer_entry *entry, vo
 				return 1;
 			}
 		}
+	}
+
+	return 0;
+}
+
+int ip_send_packet (
+		struct vl_message* message,
+		struct module_crypt_data *crypt_data,
+		struct ip_send_packet_info *info
+) {
+	char buf[MSG_STRING_MAX_LENGTH];
+	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
+	buf[0] = '\0'; // Network messages must start and end with zero
+	if (message_prepare_for_network(message, buf, MSG_STRING_MAX_LENGTH) != 0) {
+		//return FIFO_SEARCH_KEEP;
+	}
+
+	VL_DEBUG_MSG_2 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf + 1);
+
+	if (crypt_data->crypt != NULL && module_encrypt_message (
+			crypt_data,
+			buf + 1, strlen(buf + 1), // Remember that buf starts with zero
+			sizeof(buf)
+	) != 0) {
+		return 1;
+	}
+
+	if (buf[0] != 0) {
+		VL_MSG_ERR("ip: Start of send buffer was not zero\n");
+		exit(EXIT_FAILURE);
+	}
+
+	VL_DEBUG_MSG_3("ip: Final message to send: %s\n", buf + 1);
+
+	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
+		VL_MSG_ERR("ip: Error while sending packet to server\n");
+		return 1;
 	}
 
 	return 0;
