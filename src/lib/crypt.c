@@ -37,11 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 static int is_locked = 0;
-#ifdef VL_HAVE_OLD_OPENSSL_LOCK
-	static int global_dynlockid = 0;
-#else
-	static CRYPTO_RWLOCK *crypto_write_lock = NULL;
-#endif
+static pthread_mutex_t openssl_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * This must only be called from main thread when NO OTHER threads are running.
@@ -49,40 +45,14 @@ static int is_locked = 0;
  * a lock.
  */
 void vl_crypt_initialize_locks() {
-#ifdef VL_HAVE_OLD_OPENSSL_LOCK
-	VL_DEBUG_MSG_3("Initialize crypt lock, old lock was %i\n", global_dynlockid);
-	if (global_dynlockid != 0) {
-		CRYPTO_destroy_dynlockid(global_dynlockid);
-	}
-	global_dynlockid = CRYPTO_get_new_dynlockid();
-	VL_DEBUG_MSG_3("Initialize crypt lock, new lock is %i\n", global_dynlockid);
-#else
-	VL_DEBUG_MSG_3("Initialize crypt lock, old lock was %p\n", crypto_write_lock);
-	if (crypto_write_lock != NULL) {
-		 CRYPTO_THREAD_lock_free(crypto_write_lock);
-	}
-	crypto_write_lock = CRYPTO_THREAD_lock_new();
-	VL_DEBUG_MSG_3("Initialize crypt lock, new lock is %p\n", crypto_write_lock);
-#endif
-
-	is_locked = 0;
+	VL_DEBUG_MSG_3("Initialize crypt lock\n");
+	pthread_mutex_init(&openssl_lock, NULL);
 }
 
 void vl_crypt_free_locks() {
-#ifdef VL_HAVE_OLD_OPENSSL_LOCK
-	VL_DEBUG_MSG_3("Free crypt lock %i\n", global_dynlockid);
-	if (global_dynlockid != 0) {
-		CRYPTO_destroy_dynlockid(global_dynlockid);
-		global_dynlockid = 0;
-	}
-#else
-	VL_DEBUG_MSG_3("Free crypt lock %p\n", crypto_write_lock);
-	if (crypto_write_lock != NULL) {
-		 CRYPTO_THREAD_lock_free(crypto_write_lock);
-		 crypto_write_lock = NULL;
-	}
-#endif
+	VL_DEBUG_MSG_3("Free crypt lock\n");
 }
+
 /*
  * Threads must this lock whenever using functions below which contain
  * VL_CRYPT_CHECK_LOCKED(). If the thread crashes, it
@@ -91,41 +61,22 @@ void vl_crypt_free_locks() {
  * to kill them due to the lock not being available.
  */
 int vl_crypt_global_lock() {
-
-#ifdef VL_HAVE_OLD_OPENSSL_LOCK
-	VL_DEBUG_MSG_3("Crypt write lock %i\n", global_dynlockid);
-	CRYPTO_w_lock(global_dynlockid);
-#else
-	VL_DEBUG_MSG_3("Crypt write lock %p\n", crypto_write_lock);
-	int err;
-    if ((err = CRYPTO_THREAD_write_lock(crypto_write_lock)) != 1) {
-    	VL_MSG_ERR("Crypt write lock %p error: %i\n", crypto_write_lock, err);
-		ERR_print_errors_fp(stderr);
-    	return 1;
-    }
-#endif
-
+	VL_DEBUG_MSG_3("Lock crypt lock\n");
+	if (pthread_mutex_lock(&openssl_lock) != 0) {
+		return 1;
+	}
 	is_locked = 1;
 	return 0;
 }
 
 void vl_crypt_global_unlock(void *arg) {
+	VL_DEBUG_MSG_3("Unlock crypt lock\n");
 	if (is_locked == 0) {
 		VL_MSG_ERR("Bug: Crypt unlock was called without lock being held\n");
 		exit(EXIT_FAILURE);
 	}
+	pthread_mutex_unlock(&openssl_lock);
 	is_locked = 0;
-
-#ifdef VL_HAVE_OLD_OPENSSL_LOCK
-	VL_DEBUG_MSG_3("Crypt write unlock %i\n", global_dynlockid);
-	CRYPTO_w_unlock(global_dynlockid);
-#else
-	VL_DEBUG_MSG_3("Crypt write unlock %p\n", crypto_write_lock);
-    if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
-    	VL_MSG_ERR("Warning: Error message returned from OpenSSL write unlock:\n\t");
-		ERR_print_errors_fp(stderr);
-    }
-#endif
 }
 
 /*
