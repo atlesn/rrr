@@ -39,7 +39,6 @@ struct vl_crypt {
 	unsigned char iv_bin[SHA256_DIGEST_LENGTH];
 	unsigned char iv[SHA256_DIGEST_LENGTH * 2 + 1];
 	EVP_CIPHER_CTX *ctx;
-	int random_seed;
 };
 
 void vl_crypt_global_lock();

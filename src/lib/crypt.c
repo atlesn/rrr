@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
+#include <openssl/rand.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -81,12 +82,6 @@ struct vl_crypt *vl_crypt_new() {
 	if ((ret->evp_key = EVP_PKEY_new()) == NULL) {
 		free(ret);
 		return NULL;
-	}
-
-	uint64_t time = time_get_64();
-	ret->random_seed = time & 0xffffffff;
-	if (sizeof(ret->random_seed) == 8) {
-		ret->random_seed = time & 0xffffffffffffffff;
 	}
 
 	return ret;
@@ -246,20 +241,16 @@ int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename) {
 int vl_crypt_generate_iv(struct vl_crypt *crypt) {
 	VL_CRYPT_CHECK_LOCKED();
 
-	SHA256_CTX ctx;
-	SHA256_Init(&ctx);
-
-	for (int i = 0; i < sizeof(crypt->iv_bin); i++) {
-		int buf = rand_r(&crypt->random_seed);
-		SHA256_Update(&ctx, &buf, sizeof(buf));
+	if (RAND_bytes (crypt->iv_bin, sizeof(crypt->iv_bin)) != 1) {
+		VL_MSG_ERR("Error while generating random bytes for IV. OpenSSL error message: \n\t");
+		ERR_print_errors_fp(stderr);
+		return 1;
 	}
 
     if (sizeof (crypt->iv_bin) < SHA256_DIGEST_LENGTH) {
     	VL_MSG_ERR("Bug: Crypt IV key binary buffer too small\n");
     	exit(EXIT_FAILURE);
     }
-
-    SHA256_Final(crypt->iv_bin, &ctx);
 
     bin_to_string(crypt->iv_bin, sizeof(crypt->iv_bin), crypt->iv, sizeof(crypt->iv));
 
