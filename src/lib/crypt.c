@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <openssl/err.h>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -30,12 +31,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 
+#include "../../config.h"
 #include "vl_time.h"
 #include "crypt.h"
 #include "../global.h"
 
-static int global_dynlockid = 0;
-static int is_locked = 0;
+#ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	static int global_dynlockid = 0;
+	static int is_locked = 0;
+#else
+	static CRYPTO_RWLOCK *crypto_write_lock = NULL;
+#endif
 
 /*
  * This must only be called from main thread when NO OTHER threads are running.
@@ -43,13 +49,32 @@ static int is_locked = 0;
  * a lock.
  */
 void vl_crypt_initialize_locks() {
+#ifdef VL_HAVE_OLD_OPENSSL_LOCK
 	if (global_dynlockid != 0) {
 		CRYPTO_destroy_dynlockid(global_dynlockid);
 	}
 	global_dynlockid = CRYPTO_get_new_dynlockid();
+#else
+	if (crypto_write_lock != NULL) {
+		 CRYPTO_THREAD_lock_free(crypto_write_lock);
+	}
+	crypto_write_lock = CRYPTO_THREAD_lock_new();
+#endif
+
 	is_locked = 0;
 }
 
+void vl_crypt_free_locks() {
+#ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	if (global_dynlockid != 0) {
+		CRYPTO_destroy_dynlockid(global_dynlockid);
+	}
+#else
+	if (crypto_write_lock != NULL) {
+		 CRYPTO_THREAD_lock_free(crypto_write_lock);
+	}
+#endif
+}
 /*
  * Threads must this lock whenever using functions below which contain
  * VL_CRYPT_CHECK_LOCKED(). If the thread crashes, it
@@ -57,14 +82,31 @@ void vl_crypt_initialize_locks() {
  * to minimize the delay when the other threads should exit so that we don't have
  * to kill them due to the lock not being available.
  */
-void vl_crypt_global_lock() {
+int vl_crypt_global_lock() {
+
+#ifdef VL_HAVE_OLD_OPENSSL_LOCK
 	CRYPTO_w_lock(global_dynlockid);
+#else
+    if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
+    	return 1;
+    }
+#endif
+
 	is_locked = 1;
+	return 0;
 }
 
 void vl_crypt_global_unlock(void *arg) {
 	is_locked = 0;
+
+#ifdef VL_HAVE_OLD_OPENSSL_LOCK
 	CRYPTO_w_unlock(global_dynlockid);
+#else
+    if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
+    	VL_MSG_ERR("Warning: Error message returned from OpenSSL write unlock:\n\t");
+		ERR_print_errors_fp(stderr);
+    }
+#endif
 }
 
 /*

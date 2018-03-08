@@ -33,7 +33,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int module_crypt_data_init(struct module_crypt_data *crypt_data, const char *file) {
 	int ret = 0;
 
-	vl_crypt_global_lock();
+	if (vl_crypt_global_lock() != 0) {
+		VL_MSG_ERR("Could not obtain OpenSSL lock\n");
+		return 1;
+	}
 	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
 
 	crypt_data->crypt = vl_crypt_new();
@@ -61,14 +64,18 @@ void module_crypt_data_cleanup(void *arg) {
 		return;
 	}
 
-	vl_crypt_global_lock();
+	int do_unlock = 1;
+	if (vl_crypt_global_lock() != 0) {
+		VL_MSG_ERR("Warning: Could not obtain OpenSSL lock while cleaning up crypt data\n");
+		do_unlock = 0;
+	}
 	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
 
 	vl_crypt_free(crypt_data->crypt);
 
 	crypt_data->crypt = NULL;
 
-	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(do_unlock);
 }
 
 int module_encrypt_message (
@@ -82,7 +89,10 @@ int module_encrypt_message (
 	unsigned int cipher_length = 0;
 	void *cipher_string = NULL;
 
-	vl_crypt_global_lock();
+	if (vl_crypt_global_lock() != 0) {
+		VL_MSG_ERR("Could not obtain OpenSSL lock while encrypting message\n");
+		return 1;
+	}
 	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
 	if (vl_crypt_aes256 (
 			crypt,
@@ -128,7 +138,10 @@ int module_decrypt_message (
 	unsigned int decrypted_string_length = 0;
 	void *decrypted_string = NULL;
 
-	vl_crypt_global_lock();
+	if (vl_crypt_global_lock() != 0) {
+		VL_MSG_ERR("Could not obtain OpenSSL lock while decrypting message\n");
+		return 1;
+	}
 	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
 
 	char *colon = memchr(buf, ':', *buf_length);

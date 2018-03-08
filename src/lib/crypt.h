@@ -41,7 +41,9 @@ struct vl_crypt {
 	EVP_CIPHER_CTX *ctx;
 };
 
-void vl_crypt_global_lock();
+void vl_crypt_initialize_locks();
+void vl_crypt_free_locks();
+int vl_crypt_global_lock();
 void vl_crypt_global_unlock(void *ret);
 struct vl_crypt *vl_crypt_new();
 void vl_crypt_free(struct vl_crypt *crypt);

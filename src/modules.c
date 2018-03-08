@@ -29,9 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "lib/cmdlineparser/cmdline.h"
-#include "modules.h"
+#include "lib/crypt.h"
 #include "lib/threads.h"
 #include "global.h"
+#include "modules.h"
 
 #ifndef VL_MODULE_PATH
 #define VL_MODULE_PATH "./modules/"
@@ -53,6 +54,7 @@ static const char *library_paths[] = {
 };
 
 void module_threads_init() {
+	vl_crypt_initialize_locks();
 	threads_init();
 }
 
@@ -62,6 +64,7 @@ void module_threads_stop() {
 
 void module_threads_destroy() {
 	threads_destroy();
+	vl_crypt_free_locks();
 }
 
 void module_free_thread(struct module_thread_data *data) {
