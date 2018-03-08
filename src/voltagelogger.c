@@ -311,7 +311,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	while (main_running) {
-		usleep (1000000);
+		usleep (100000);
 
 		if (module_check_threads_stopped() == 0) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
