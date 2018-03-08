@@ -34,7 +34,7 @@ extern struct vl_global_config global_config;
  * 1 - Info about loading and closing of modules and threads (low rate)
  * 2 - Runtime information in modules, they tell what they do at (high rate)
  * 3 - Hex prints and other data debugging are printed (high rate)
- * 4 - Debug locking and thread states (very high rate)
+ * 4 - Debug locking, thread states and buffers (very high rate)
  * 5 - Alive-messages from some threads to see if they freeze (very high rate)
  */
 

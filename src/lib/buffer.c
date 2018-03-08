@@ -39,7 +39,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		VL_DEBUG_MSG_2 ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+		VL_DEBUG_MSG_4 ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
 		free (entry->data);
 		free (entry);
@@ -50,7 +50,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
-	VL_DEBUG_MSG_2 ("Buffer destroy buffer struct %p\n", buffer);
+	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
 }
 
 void fifo_buffer_init(struct fifo_buffer *buffer) {
@@ -163,7 +163,7 @@ int fifo_clear_order_lt (
 		for (entry = clear_start; entry != clear_stop; entry = next) {
 			next = entry->next;
 
-			VL_DEBUG_MSG_3 ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+			VL_DEBUG_MSG_4 ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
 			free(entry->data);
 			free(entry);
@@ -214,7 +214,7 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
+		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		ret = ret != 0 ? 1 : (ret_tmp != 0 ? 1 : 0);
@@ -266,7 +266,7 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last = entry;
 	}
 
-	VL_DEBUG_MSG_3 ("New buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }
@@ -322,7 +322,7 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	}
 
 	out:
-	VL_DEBUG_MSG_3 ("New ordered buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	fifo_write_unlock(buffer);
 }
