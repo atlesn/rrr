@@ -211,7 +211,7 @@ int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned 
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 	struct vl_message *reading = &entry->message;
 
-	VL_DEBUG_MSG_2 ("mysql: Result from buffer (ip): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("mysql: Result from buffer (ip): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, data, size);
 
@@ -230,7 +230,7 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	free (reading);
 	reading = &entry->message;
 
-	VL_DEBUG_MSG_2 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, (char*) entry, sizeof(*entry));
 
@@ -266,6 +266,9 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 	sprintf(ipv4_string, "%s", ipv4_string_tmp);
 
 	struct vl_message *message = &entry->message;
+
+	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
+			message->type, message->timestamp_to);
 
 	/* Attempt to make an integer value if possible */
 	unsigned long long int value = message->data_numeric;
@@ -336,8 +339,6 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 		return 1;
 	}
 
-	VL_DEBUG_MSG_3 ("mysql: Statement executed sucessfully\n");
-
 	return 0;
 }
 
@@ -362,7 +363,7 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	else {
 		// Tag message as saved to sender
 		struct vl_message *message = &entry->message;
-		VL_DEBUG_MSG_2 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
+		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
 		fifo_buffer_write(&mysql_data->output_buffer, data, size);
 	}

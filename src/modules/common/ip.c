@@ -122,7 +122,8 @@ int ip_receive_packets(
 		}
 
 		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
-		VL_DEBUG_MSG_2 ("ip receiving data\n");
+
+		VL_DEBUG_MSG_3 ("ip receiving data\n");
 		ssize_t count = recvfrom(fd, buffer, MSG_STRING_MAX_LENGTH, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {

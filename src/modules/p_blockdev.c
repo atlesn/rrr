@@ -103,7 +103,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("blockdev: Result from buffer: %s timestamp to %" PRIu64 " size %lu\n", reading->data, reading->timestamp_to, size);
+	VL_DEBUG_MSG_3 ("blockdev: Result from buffer: %s timestamp to %" PRIu64 " size %lu\n", reading->data, reading->timestamp_to, size);
 
 	fifo_buffer_write_ordered(&blockdev_data->input_buffer, reading->timestamp_to, data, size);
 
@@ -154,7 +154,7 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 		goto out;
 	}
 
-	VL_DEBUG_MSG_2 ("blockdev: Updating appdata for entry\n");
+	VL_DEBUG_MSG_2 ("blockdev: Updating appdata for entry with timestamp %" PRIu64 "\n", update_test_data->message->timestamp_to);
 
 	update_info.do_update = 1;
 	update_info.do_break = 1;
@@ -186,10 +186,8 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 			&result
 		);
 
-		VL_DEBUG_MSG_2 ("blockdev: Result from bld_update_application_data: %i\n", result);
-
 		if (result > 1) {
-			VL_MSG_ERR ("blockdev: Error: Updated more than 1 entry\n");
+			VL_MSG_ERR ("blockdev: Bug: Updated more than 1 entry\n");
 			pthread_exit(0);
 		}
 	}
@@ -217,7 +215,7 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 		return FIFO_SEARCH_ERR;
 	}
 
-	VL_DEBUG_MSG_2 ("blockdev: Data was written to device successfully\n");
+	VL_DEBUG_MSG_3 ("blockdev: Data was written to device successfully\n");
 
 	free(data);
 	return FIFO_SEARCH_GIVE;

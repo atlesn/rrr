@@ -204,13 +204,13 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct ipclient_data *data = arg;
 	struct vl_message *message = &entry->message;
 
-	VL_DEBUG_MSG_2 ("ipclient: Received packet from server: %s\n", entry->message.data);
+	VL_DEBUG_MSG_3 ("ipclient: Received packet from server type %" PRIu32 " with timestamp %" PRIu64 "\n",
+			entry->message.type, entry->message.timestamp_to);
 
 	// First, check if package is an ACK from the server in case we should delete
 	// the original message from our send queue. If not, we let some other module
 	// pick the packet up.
 	if (MSG_IS_ACK(message)) {
-		VL_DEBUG_MSG_2 ("ipclient: Packet is ACK\n");
 		struct fifo_callback_args callback_args;
 		callback_args.source = data;
 		callback_args.private_data = message;
