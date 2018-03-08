@@ -145,7 +145,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	// Check if we sent this packet recently
 	if (entry->time + VL_IPCLIENT_SEND_INTERVAL * 1000 > time_now) {
-		VL_DEBUG_MSG_2 ("ipclient: Not sending packet with timestamp %" PRIu64", it was sent recently\n", message->timestamp_from);
+		VL_DEBUG_MSG_3 ("ipclient: Not sending packet with timestamp %" PRIu64", it was sent recently\n", message->timestamp_from);
 		return FIFO_SEARCH_KEEP;
 	}
 
