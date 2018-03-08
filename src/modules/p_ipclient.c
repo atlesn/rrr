@@ -299,9 +299,9 @@ static void *thread_ipclient_receive(void *arg) {
 		pthread_cleanup_push(ipclient_receive_thread_cleanup_unlock_network, arg);
 		update_watchdog_time(thread_data->thread);
 
+		// TODO : Handle bad errors->exit and nice errors->continue
 		if (receive_packets(data) != 0) {
 			VL_MSG_ERR ("Error while receiving packets in ipclient receive thread\n");
-			pthread_exit(0);
 		}
 
 		pthread_cleanup_pop(1);
