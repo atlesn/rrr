@@ -298,7 +298,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		}
 
 		if (receive_packets(data) != 0) {
-			usleep (1000000); // 1000 ms
+			usleep (5000); // 50 ms
 			goto network_restart;
 		}
 
