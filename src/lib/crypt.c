@@ -36,9 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "crypt.h"
 #include "../global.h"
 
+static int is_locked = 0;
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
 	static int global_dynlockid = 0;
-	static int is_locked = 0;
 #else
 	static CRYPTO_RWLOCK *crypto_write_lock = NULL;
 #endif
