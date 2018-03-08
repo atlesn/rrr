@@ -122,7 +122,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_2 ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
