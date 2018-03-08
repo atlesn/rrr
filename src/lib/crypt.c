@@ -68,10 +68,12 @@ void vl_crypt_free_locks() {
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
 	if (global_dynlockid != 0) {
 		CRYPTO_destroy_dynlockid(global_dynlockid);
+		global_dynlockid = 0;
 	}
 #else
 	if (crypto_write_lock != NULL) {
 		 CRYPTO_THREAD_lock_free(crypto_write_lock);
+		 crypto_write_lock = NULL;
 	}
 #endif
 }
