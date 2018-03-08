@@ -128,7 +128,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 		return 1;
 	}
 
-	VL_DEBUG_MSG_2 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 
 	if (ip_send_packet(
 			&entry->message,
@@ -169,7 +169,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	callback_data->counter++;
 
-	VL_DEBUG_MSG_2 ("Ipserver received OK message with data '%s'\n", entry->message.data);
+	VL_DEBUG_MSG_3 ("Ipserver received OK message with data '%s'\n", entry->message.data);
 
 	fifo_buffer_write(&data->output_buffer, (char*) entry, sizeof(*entry));
 

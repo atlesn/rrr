@@ -106,7 +106,7 @@ int module_encrypt_message (
 
 	pthread_cleanup_push(free, cipher_string);
 
-	VL_DEBUG_MSG_2("encrypting message using key %s\n\tIV %s\n", crypt->key, crypt->iv);
+	VL_DEBUG_MSG_3("encrypting message using key %s\n\tIV %s\n", crypt->key, crypt->iv);
 
 	const unsigned int message_total_length =
 			cipher_length + 1 + strlen(crypt->iv) + 1;
@@ -170,7 +170,7 @@ int module_decrypt_message (
 		goto crypt_out;
 	}
 
-	VL_DEBUG_MSG_2("decrypting\n\t- message %s\n\t- using key %s\n\t- IV %s\n", ciphertext_string, crypt->key, crypt->iv);
+	VL_DEBUG_MSG_3("decrypting\n\t- message %s\n\t- using key %s\n\t- IV %s\n", ciphertext_string, crypt->key, crypt->iv);
 
 	if (vl_decrypt_aes256 (
 			crypt,
@@ -184,7 +184,7 @@ int module_decrypt_message (
 
 	pthread_cleanup_push(free, decrypted_string);
 
-	VL_DEBUG_MSG_2("decrypting message using key %s IV %s\n", crypt->key, crypt->iv);
+	VL_DEBUG_MSG_3("decrypting message using key %s IV %s\n", crypt->key, crypt->iv);
 
 	if (decrypted_string_length + 1 > buf_size) {
 		VL_MSG_ERR("Could not fit decrypted message in buffer (possible bug)\n");

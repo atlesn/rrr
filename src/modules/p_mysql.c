@@ -336,7 +336,7 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 		return 1;
 	}
 
-	VL_DEBUG_MSG_2 ("mysql: Statement executed sucessfully\n");
+	VL_DEBUG_MSG_3 ("mysql: Statement executed sucessfully\n");
 
 	return 0;
 }
@@ -351,11 +351,11 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	int err = 0;
 
-	VL_DEBUG_MSG_2 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 
 	if (mysql_save (process_data, entry) != 0) {
 		// Put back in buffer
-		VL_DEBUG_MSG_2 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
+		VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
 		err = 1;
 	}
