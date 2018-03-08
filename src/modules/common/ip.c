@@ -30,17 +30,74 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <sys/types.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "ip.h"
-#include "../../lib/messages.h"
-#include "../../lib/module_crypt.h"
 #include "../global.h"
+#include "../../lib/messages.h"
+#include "../../lib/vl_time.h"
+#include "../../lib/module_crypt.h"
+
+void ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
+	stats->period = period;
+	stats->name = name;
+	stats->type = type;
+	pthread_mutex_init(&stats->lock, NULL);
+}
+
+void ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
+	memset(stats, '\0', sizeof(*stats));
+	ip_stats_init(&stats->send, period, "send", name);
+	ip_stats_init(&stats->receive, period, "receive", name);
+}
+
+int ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {
+	int ret = VL_IP_STATS_UPDATE_OK;
+
+	if (pthread_mutex_lock(&stats->lock) != 0) {
+		return VL_IP_STATS_UPDATE_ERR;
+	}
+
+	stats->packets += packets;
+	stats->bytes += bytes;
+
+	if (stats->time_from == 0) {
+		stats->time_from = time_get_64();
+	}
+	else if (stats->time_from + stats->period * 1000000 < time_get_64()) {
+		ret = VL_IP_STATS_UPDATE_READY;
+	}
+
+	pthread_mutex_unlock(&stats->lock);
+	return ret;
+}
+
+int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
+	int ret = VL_IP_STATS_UPDATE_OK;
+
+	if (pthread_mutex_lock(&stats->lock) != 0) {
+		return VL_IP_STATS_UPDATE_ERR;
+	}
+
+	VL_DEBUG_MSG_2("IP stats for %s %s: %lu packets/s %lu bytes/s, period is %u\n",
+			stats->name, stats->type, stats->packets/stats->period, stats->bytes/stats->period, stats->period);
+
+	if (do_reset) {
+		stats->time_from = 0;
+		stats->packets = 0;
+		stats->bytes = 0;
+	}
+
+	pthread_mutex_unlock(&stats->lock);
+	return ret;
+}
 
 int ip_receive_packets(
 		int fd,
 		struct module_crypt_data *crypt_data,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
-		void *arg
+		void *arg,
+		struct ip_stats *stats
 ) {
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
@@ -136,6 +193,21 @@ int ip_receive_packets(
 			else if (res == VL_IP_RECEIVE_ERR) {
 				return 1;
 			}
+
+			if (stats != NULL) {
+				int res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
+				if (res == VL_IP_STATS_UPDATE_ERR) {
+					VL_MSG_ERR("ip: Error returned from stats update function\n");
+					return 1;
+				}
+				if (res == VL_IP_STATS_UPDATE_READY) {
+					if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
+						VL_MSG_ERR("ip: Error returned from stats print function\n");
+						return 1;
+					}
+				}
+			}
+
 		}
 	}
 
@@ -145,7 +217,8 @@ int ip_receive_packets(
 int ip_send_packet (
 		struct vl_message* message,
 		struct module_crypt_data *crypt_data,
-		struct ip_send_packet_info *info
+		struct ip_send_packet_info *info,
+		struct ip_stats *stats
 ) {
 	char buf[MSG_STRING_MAX_LENGTH];
 	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
@@ -154,7 +227,7 @@ int ip_send_packet (
 		//return FIFO_SEARCH_KEEP;
 	}
 
-	VL_DEBUG_MSG_2 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf + 1);
+	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf + 1);
 
 	if (crypt_data->crypt != NULL && module_encrypt_message (
 			crypt_data,
@@ -174,6 +247,20 @@ int ip_send_packet (
 	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
 		VL_MSG_ERR("ip: Error while sending packet to server\n");
 		return 1;
+	}
+
+	if (stats != NULL) {
+		int res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
+		if (res == VL_IP_STATS_UPDATE_ERR) {
+			VL_MSG_ERR("ip: Error returned from stats update function\n");
+			return 1;
+		}
+		if (res == VL_IP_STATS_UPDATE_READY) {
+			if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
+				VL_MSG_ERR("ip: Error returned from stats print function\n");
+				return 1;
+			}
+		}
 	}
 
 	return 0;

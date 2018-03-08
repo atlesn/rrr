@@ -63,6 +63,7 @@ struct ipclient_data {
 	int receive_thread_died;
 	int receive_thread_started;
 	struct module_crypt_data crypt_data;
+	struct ip_stats_twoway stats;
 };
 
 void init_data(struct ipclient_data *data) {
@@ -74,6 +75,7 @@ void init_data(struct ipclient_data *data) {
 	fifo_buffer_init(&data->send_buffer);
 	fifo_buffer_init(&data->receive_buffer);
 	pthread_mutex_init(&data->network_lock, NULL);
+	ip_stats_init_twoway(&data->stats, VL_IP_STATS_DEFAULT_PERIOD, "ipclient");
 }
 
 void data_cleanup(void *arg) {
@@ -152,7 +154,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	if (ip_send_packet(
 			message,
 			&ipclient_data->crypt_data,
-			info
+			info,
+			VL_DEBUGLEVEL_2 ? &ipclient_data->stats.send : NULL
 	) != 0) {
 		return FIFO_SEARCH_ERR;
 	}
@@ -230,7 +233,8 @@ int receive_packets(struct ipclient_data *data) {
 			data->ip.fd,
 			&data->crypt_data,
 			receive_packets_callback,
-			data
+			data,
+			VL_DEBUGLEVEL_2 ? &data->stats.receive : NULL
 	);
 }
 

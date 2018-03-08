@@ -54,6 +54,7 @@ struct ipserver_data {
 	struct ip_data ip;
 	const char *crypt_file;
 	struct module_crypt_data crypt_data;
+	struct ip_stats_twoway stats;
 };
 
 // Poll request from other modules
@@ -132,7 +133,8 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	if (ip_send_packet(
 			&entry->message,
 			&private_data->crypt_data,
-			&info
+			&info,
+			VL_DEBUGLEVEL_2 ? &private_data->stats.send : NULL
 	) != 0) {
 		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to client\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
@@ -189,7 +191,8 @@ int receive_packets(struct ipserver_data *data) {
 		data->ip.fd,
 		&data->crypt_data,
 		receive_packets_callback,
-		&callback_data
+		&callback_data,
+		VL_DEBUGLEVEL_2 ? &data->stats.receive : NULL
 	);
 }
 
@@ -202,6 +205,7 @@ void init_data(struct ipserver_data *data) {
 	fifo_buffer_init(&data->send_buffer);
 	fifo_buffer_init(&data->receive_buffer);
 	fifo_buffer_init(&data->output_buffer);
+	ip_stats_init_twoway(&data->stats, VL_IP_STATS_DEFAULT_PERIOD, "ipserver");
 }
 
 void data_cleanup(void *arg) {
