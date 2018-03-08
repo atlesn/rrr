@@ -45,12 +45,12 @@ static pthread_mutex_t openssl_lock = PTHREAD_MUTEX_INITIALIZER;
  * a lock.
  */
 void vl_crypt_initialize_locks() {
-	VL_DEBUG_MSG_3("Initialize crypt lock\n");
+	VL_DEBUG_MSG_4("Initialize crypt lock\n");
 	pthread_mutex_init(&openssl_lock, NULL);
 }
 
 void vl_crypt_free_locks() {
-	VL_DEBUG_MSG_3("Free crypt lock\n");
+	VL_DEBUG_MSG_4("Free crypt lock\n");
 }
 
 /*
@@ -61,7 +61,7 @@ void vl_crypt_free_locks() {
  * to kill them due to the lock not being available.
  */
 int vl_crypt_global_lock() {
-	VL_DEBUG_MSG_3("Lock crypt lock\n");
+	VL_DEBUG_MSG_4("Lock crypt lock\n");
 	if (pthread_mutex_lock(&openssl_lock) != 0) {
 		return 1;
 	}
@@ -70,7 +70,7 @@ int vl_crypt_global_lock() {
 }
 
 void vl_crypt_global_unlock(void *arg) {
-	VL_DEBUG_MSG_3("Unlock crypt lock\n");
+	VL_DEBUG_MSG_4("Unlock crypt lock\n");
 	if (is_locked == 0) {
 		VL_MSG_ERR("Bug: Crypt unlock was called without lock being held\n");
 		exit(EXIT_FAILURE);
@@ -145,7 +145,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
     		VL_MSG_ERR("crypt string_to_bin: Invalid charaters found in input stream, should be a-f0-9 only\n");
     		return 1;
     	}
-    	VL_DEBUG_MSG_3 ("Writing from source %u to dst %i\n", i, i / 2);
+    	VL_DEBUG_MSG_4 ("Writing from source %u to dst %i\n", i, i / 2);
 
 #if __WORDSIZE == 64
     	tmp = htobe64(tmp);
@@ -174,7 +174,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
     		return 1;
     	}
     	char tmp_c = (tmp & 0xff);
-    	VL_DEBUG_MSG_3 ("Writing from source %u to dst %i\n", i, i / 2);
+    	VL_DEBUG_MSG_4 ("Writing from source %u to dst %i\n", i, i / 2);
     	memcpy(dst + i / 2, &tmp_c, sizeof(tmp_c));
     }
 
@@ -370,9 +370,9 @@ int vl_crypt_aes256 (
 		goto out;
 	}
 
-	VL_DEBUG_MSG_2("Crypt using IV: %s\n", crypt->iv);
-	VL_DEBUG_MSG_2("Crypt using key: %s\n", crypt->key);
-	VL_DEBUG_MSG_2("Crypt source length is: %u\n", source_length);
+	VL_DEBUG_MSG_3("Crypt using IV: %s\n", crypt->iv);
+	VL_DEBUG_MSG_3("Crypt using key: %s\n", crypt->key);
+	VL_DEBUG_MSG_3("Crypt source length is: %u\n", source_length);
 
 	if (crypt->ctx != NULL) {
 		  EVP_CIPHER_CTX_free(crypt->ctx);
