@@ -97,7 +97,10 @@ int vl_crypt_global_lock() {
 	CRYPTO_w_lock(global_dynlockid);
 #else
 	VL_DEBUG_MSG_3("Crypt write lock %p\n", crypto_write_lock);
-    if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
+	int err;
+    if ((err = CRYPTO_THREAD_write_lock(crypto_write_lock)) != 1) {
+    	VL_MSG_ERR("Crypt write lock %p error: %i\n", crypto_write_lock, err);
+		ERR_print_errors_fp(stderr);
     	return 1;
     }
 #endif
@@ -107,6 +110,10 @@ int vl_crypt_global_lock() {
 }
 
 void vl_crypt_global_unlock(void *arg) {
+	if (is_locked == 0) {
+		VL_MSG_ERR("Bug: Crypt unlock was called without lock being held\n");
+		exit(EXIT_FAILURE);
+	}
 	is_locked = 0;
 
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
