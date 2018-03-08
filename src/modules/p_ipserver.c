@@ -201,7 +201,7 @@ void data_cleanup(void *arg) {
 static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
 //	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 //	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *crypt_file = cmd_get_value(cmd, "ipserver_crypt_file", 0);
+	const char *crypt_file = cmd_get_value(cmd, "ipserver_keyfile", 0);
 
 //	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 //	data->ip_port = VL_IPCLIENT_SERVER_PORT;
