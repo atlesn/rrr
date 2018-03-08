@@ -39,7 +39,7 @@ struct ip_buffer_entry {
 };
 
 struct ip_send_packet_info {
-	struct ipclient_data *data;
+	void *data;
 	int fd;
 	struct addrinfo *res;
 	int packet_counter;

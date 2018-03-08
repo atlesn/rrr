@@ -112,6 +112,15 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
 	buf[0] = '\0'; // Network messages must start and end with zero
 
+	struct addrinfo res;
+	res.ai_addr = &entry->addr;
+	res.ai_addrlen = entry->addr_len;
+
+	struct ip_send_packet_info info;
+	info.fd = private_data->ip.fd;
+	info.packet_counter = 0;
+	info.res = &res;
+
 	struct vl_message *message_err;
 
 	if (message_prepare_for_network (&entry->message, buf, MSG_STRING_MAX_LENGTH) != 0) {
@@ -119,8 +128,13 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	}
 
 	VL_DEBUG_MSG_2 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
-	if (sendto(private_data->ip.fd, buf, MSG_STRING_MAX_LENGTH, 0, &entry->addr, entry->addr_len) == -1) {
-		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to server\n");
+
+	if (ip_send_packet(
+			&entry->message,
+			&private_data->crypt_data,
+			&info
+	) != 0) {
+		message_err = message_new_info(time_get_64(), "ipserver: Error while sending packet to client\n");
 		fifo_buffer_write(&private_data->send_buffer, data, size);
 		goto spawn_error;
 	}
