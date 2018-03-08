@@ -97,6 +97,7 @@ int ip_receive_packets(
 			char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
 			if (*end != '\0') {
 				VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
+				free (entry);
 				return 1;
 			}
 
@@ -105,6 +106,7 @@ int ip_receive_packets(
 			VL_DEBUG_MSG_3("ip decrypting message %s\n", start);
 			if (module_decrypt_message(crypt_data, start, &input_length, MSG_STRING_MAX_LENGTH - 1) != 0) {
 				VL_MSG_ERR("Error returned from module decrypt function\n");
+				free (entry);
 				return 1;
 			}
 		}
