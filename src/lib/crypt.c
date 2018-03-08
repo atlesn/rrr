@@ -50,15 +50,19 @@ static int is_locked = 0;
  */
 void vl_crypt_initialize_locks() {
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	VL_DEBUG_MSG_3("Initialize crypt lock, old lock was %i\n", global_dynlockid);
 	if (global_dynlockid != 0) {
 		CRYPTO_destroy_dynlockid(global_dynlockid);
 	}
 	global_dynlockid = CRYPTO_get_new_dynlockid();
+	VL_DEBUG_MSG_3("Initialize crypt lock, new lock is %i\n", global_dynlockid);
 #else
+	VL_DEBUG_MSG_3("Initialize crypt lock, old lock was %p\n", crypto_write_lock);
 	if (crypto_write_lock != NULL) {
 		 CRYPTO_THREAD_lock_free(crypto_write_lock);
 	}
 	crypto_write_lock = CRYPTO_THREAD_lock_new();
+	VL_DEBUG_MSG_3("Initialize crypt lock, new lock is %p\n", crypto_write_lock);
 #endif
 
 	is_locked = 0;
@@ -66,11 +70,13 @@ void vl_crypt_initialize_locks() {
 
 void vl_crypt_free_locks() {
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	VL_DEBUG_MSG_3("Free crypt lock %i\n", global_dynlockid);
 	if (global_dynlockid != 0) {
 		CRYPTO_destroy_dynlockid(global_dynlockid);
 		global_dynlockid = 0;
 	}
 #else
+	VL_DEBUG_MSG_3("Free crypt lock %p\n", crypto_write_lock);
 	if (crypto_write_lock != NULL) {
 		 CRYPTO_THREAD_lock_free(crypto_write_lock);
 		 crypto_write_lock = NULL;
@@ -87,8 +93,10 @@ void vl_crypt_free_locks() {
 int vl_crypt_global_lock() {
 
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	VL_DEBUG_MSG_3("Crypt write lock %i\n", global_dynlockid);
 	CRYPTO_w_lock(global_dynlockid);
 #else
+	VL_DEBUG_MSG_3("Crypt write lock %p\n", crypto_write_lock);
     if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
     	return 1;
     }
@@ -102,8 +110,10 @@ void vl_crypt_global_unlock(void *arg) {
 	is_locked = 0;
 
 #ifdef VL_HAVE_OLD_OPENSSL_LOCK
+	VL_DEBUG_MSG_3("Crypt write unlock %i\n", global_dynlockid);
 	CRYPTO_w_unlock(global_dynlockid);
 #else
+	VL_DEBUG_MSG_3("Crypt write unlock %p\n", crypto_write_lock);
     if (CRYPTO_THREAD_write_lock(crypto_write_lock) != 1) {
     	VL_MSG_ERR("Warning: Error message returned from OpenSSL write unlock:\n\t");
 		ERR_print_errors_fp(stderr);
