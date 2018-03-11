@@ -82,6 +82,7 @@ int fifo_search (
 	struct fifo_buffer_entry *next;
 	struct fifo_buffer_entry *prev = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
+		VL_DEBUG_MSG_4("Buffer %p search loop entry %p next %p prev %p\n", buffer, entry, entry->next, prev);
 		next = entry->next;
 
 		int did_something = 0;
@@ -108,6 +109,7 @@ int fifo_search (
 			if ((actions & FIFO_SEARCH_FREE) != 0) {
 				free(entry->data);
 			}
+			VL_DEBUG_MSG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
 			free(entry);
 
 			entry = NULL;
