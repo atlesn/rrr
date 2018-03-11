@@ -64,6 +64,7 @@ struct ipclient_data {
 	int receive_thread_started;
 	struct module_crypt_data crypt_data;
 	struct ip_stats_twoway stats;
+	int no_ack;
 };
 
 void init_data(struct ipclient_data *data) {
@@ -88,6 +89,7 @@ static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
 	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
+	const char *no_ack = cmd_get_value(cmd, "ipclient_no_ack", 0);
 
 	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 	data->ip_port = VL_IPCLIENT_SERVER_PORT;
@@ -101,6 +103,15 @@ static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	}
 	if (crypt_file != NULL) {
 		data->crypt_file = crypt_file;
+	}
+
+	if (no_ack != NULL) {
+		int yesno;
+		if (cmdline_check_yesno(cmd, no_ack, &yesno) != 0) {
+			VL_MSG_ERR ("ipclient: Could not understand argument no_ack ('%s'), please specify 'yes' or 'no'\n", no_ack);
+			return 1;
+		}
+		data->no_ack = yesno;
 	}
 
 	return 0;
@@ -170,8 +181,12 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	update_watchdog_time(thread_data->thread);
 	usleep (VL_IPCLIENT_SEND_RATE * 1000);
 
-	// DO NOT FREE MESSAGE
-	return FIFO_SEARCH_KEEP;
+	if (ipclient_data->no_ack == 1) {
+		return FIFO_SEARCH_GIVE | FIFO_SEARCH_FREE;
+	}
+	else {
+		return FIFO_SEARCH_KEEP;
+	}
 }
 
 int receive_packets_search_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
@@ -193,8 +208,7 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 			message_to_match->length == message->length
 	) {
 		VL_DEBUG_MSG_2 ("ipclient received ACK for message with timestamp %" PRIu64 "\n", message->timestamp_from);
-		free(checked_entry);
-		return FIFO_SEARCH_GIVE | FIFO_SEARCH_STOP;
+		return FIFO_SEARCH_GIVE | FIFO_SEARCH_FREE | FIFO_SEARCH_STOP;
 	}
 
 	return FIFO_SEARCH_KEEP;
@@ -211,10 +225,15 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	// the original message from our send queue. If not, we let some other module
 	// pick the packet up.
 	if (MSG_IS_ACK(message)) {
-		struct fifo_callback_args callback_args;
-		callback_args.source = data;
-		callback_args.private_data = message;
-		fifo_search(&data->send_buffer, receive_packets_search_callback, &callback_args);
+		if (data->no_ack == 1) {
+			VL_DEBUG_MSG_3 ("ipclient: Message was ACK but it is disabled, ignoring\n");
+		}
+		else {
+			struct fifo_callback_args callback_args;
+			callback_args.source = data;
+			callback_args.private_data = message;
+			fifo_search(&data->send_buffer, receive_packets_search_callback, &callback_args);
+		}
 		free(entry);
 	}
 	else {
@@ -321,6 +340,7 @@ void stop_receive_thread(void *arg) {
 	struct ipclient_data* data = thread_data->private_data;
 	if (data->receive_thread_started == 1 && data->receive_thread_died != 1) {
 		void *ret;
+		pthread_detach(data->receive_thread);
 		pthread_cancel(data->receive_thread);
 		int maxrounds = 4;
 		while (data->receive_thread_died != 1) {
@@ -330,10 +350,6 @@ void stop_receive_thread(void *arg) {
 				VL_MSG_ERR ("Could not join with ipclient receive thread\n");
 				break;
 			}
-		}
-		int res = pthread_tryjoin_np(data->receive_thread, &ret);
-		if (res != 0) {
-			VL_MSG_ERR ("Could not joing with ipclient receive thread: %s\n", strerror(res));
 		}
 		VL_DEBUG_MSG_1 ("ipclient joined with receive thread successfully\n");
 	}

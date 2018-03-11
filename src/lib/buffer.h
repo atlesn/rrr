@@ -27,7 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 
+#include "../global.h"
+
+#define FIFO_SPIN_DELAY 50 // milliseconds
 
 struct fifo_callback_args {
 	void *source;
@@ -45,82 +49,80 @@ struct fifo_buffer {
 	struct fifo_buffer_entry *gptr_first;
 	struct fifo_buffer_entry *gptr_last;
 	pthread_mutex_t mutex;
+	pthread_mutex_t write_mutex;
 	int readers;
 	int writers;
+	int writer_waiting;
 	int invalid;
 };
 
+// TODO : These locking methods are unfair, fix if it matters
 static inline void fifo_write_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
-	while (ok != 3) {
-		pthread_mutex_lock(&buffer->mutex);
-		if (buffer->writers == 0) {
-			ok = 1;
-		}
-		if (ok == 1) {
-			buffer->writers = 1;
-			ok = 2;
-		}
-		if (ok == 2) {
-			if (buffer->readers == 0) {
-				ok = 3;
+	while (ok != 2) {
+		if (ok == 0) {
+			VL_DEBUG_MSG_4("Buffer %p write lock wait for write mutex\n", buffer);
+			pthread_mutex_lock(&buffer->write_mutex);
+			VL_DEBUG_MSG_4("Buffer %p write lock wait for writer waiting %i\n", buffer, buffer->writer_waiting);
+			if (buffer->writer_waiting == 0) {
+				buffer->writer_waiting = 1;
+				ok = 1;
 			}
+			VL_DEBUG_MSG_4("Buffer %p write lock unlock write mutex\n", buffer);
+			pthread_mutex_unlock(&buffer->write_mutex);
 		}
-		pthread_mutex_unlock(&buffer->mutex);
+
+		if (ok == 1) {
+			pthread_mutex_lock(&buffer->mutex);
+			VL_DEBUG_MSG_4("Buffer %p write lock wait for %i readers %i writers\n", buffer, buffer->readers, buffer->writers);
+			if (buffer->readers == 0 && buffer->writers == 0) {
+				VL_DEBUG_MSG_4("Buffer %p write lock obtained\n", buffer);
+				buffer->writers = 1;
+				ok = 2;
+			}
+			else {
+				usleep(FIFO_SPIN_DELAY*1000);
+			}
+			pthread_mutex_unlock(&buffer->mutex);
+		}
+		else {
+			usleep(FIFO_SPIN_DELAY*1000);
+		}
 	}
+
+	VL_DEBUG_MSG_4("Buffer %p write lock wait for write mutex end\n", buffer);
+	pthread_mutex_lock(&buffer->write_mutex);
+	buffer->writer_waiting = 0;
+	VL_DEBUG_MSG_4("Buffer %p write lock unlock write mutex end\n", buffer);
+	pthread_mutex_unlock(&buffer->write_mutex);
 }
 
 static inline void fifo_write_unlock(struct fifo_buffer *buffer) {
-	pthread_mutex_lock(&buffer->mutex);
+	VL_DEBUG_MSG_4("Buffer %p write unlock\n", buffer);
 	buffer->writers = 0;
-	pthread_mutex_unlock(&buffer->mutex);
-}
-
-// TODO : These locking methods are unfair, fix if it matters
-static inline void fifo_read_to_write_lock(struct fifo_buffer *buffer) {
-	int ok = 0;
-	while (ok != 3) {
-		pthread_mutex_lock(&buffer->mutex);
-
-		if (buffer->writers == 0) {
-			ok = 1;
-		}
-		if (ok == 1) {
-			buffer->writers = 1;
-			ok = 2;
-		}
-		if (ok == 2) {
-			// When readers reach one, only we are left holding read lock
-			if (buffer->readers == 1) {
-				buffer->readers--;
-				ok = 3;
-			}
-		}
-		pthread_mutex_unlock(&buffer->mutex);
-	}
-}
-
-static inline void fifo_write_to_read_lock(struct fifo_buffer *buffer) {
-	pthread_mutex_lock(&buffer->mutex);
-	buffer->readers++;
-	buffer->writers--;
-	pthread_mutex_unlock(&buffer->mutex);
 }
 
 static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
 	while (!ok) {
+		VL_DEBUG_MSG_4("Buffer %p read lock wait for mutex\n", buffer);
 		pthread_mutex_lock(&buffer->mutex);
-		if (buffer->writers == 0) {
+		if (buffer->writers == 0 && buffer->writer_waiting == 0) {
+			VL_DEBUG_MSG_4("Buffer %p read lock pass 1\n", buffer);
 			buffer->readers++;
 			ok = 1;
+		}
+		else {
+			usleep(FIFO_SPIN_DELAY*1000);
 		}
 		pthread_mutex_unlock(&buffer->mutex);
 	}
 }
 
 static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
+	VL_DEBUG_MSG_4("Buffer %p read unlock wait for mutex\n", buffer);
 	pthread_mutex_lock(&buffer->mutex);
+	VL_DEBUG_MSG_4("Buffer %p read unlock\n", buffer);
 	buffer->readers--;
 	pthread_mutex_unlock(&buffer->mutex);
 }
@@ -151,6 +153,7 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 #define FIFO_SEARCH_KEEP	0
 #define FIFO_SEARCH_STOP	(1 << 1)
 #define FIFO_SEARCH_GIVE	(1 << 2)
+#define FIFO_SEARCH_FREE	(1 << 3)
 
 int fifo_search (
 	struct fifo_buffer *buffer,

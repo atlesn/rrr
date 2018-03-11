@@ -33,43 +33,48 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock (&buffer->mutex);
 
 	pthread_mutex_lock (&buffer->mutex);
-	VL_DEBUG_MSG_1 ("Buffer waiting for %i readers and %i writers before invalidate\n", buffer->readers, buffer->writers);
+	VL_DEBUG_MSG_1 ("Buffer %p waiting for %i readers and %i writers before invalidate\n", buffer, buffer->readers, buffer->writers);
 	while (buffer->readers > 0 || buffer->writers > 0) {
 	}
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
+	int freed_counter = 0;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		VL_DEBUG_MSG_4 ("Buffer free entry %p with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
+		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		free (entry->data);
 		free (entry);
+		freed_counter++;
 		entry = next;
 	}
+	VL_DEBUG_MSG_1 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 	pthread_mutex_unlock (&buffer->mutex);
 }
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
+	pthread_mutex_destroy (&buffer->write_mutex);
 	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
 }
 
 void fifo_buffer_init(struct fifo_buffer *buffer) {
 	memset (buffer, '\0', sizeof(*buffer));
 	pthread_mutex_init (&buffer->mutex, NULL);
+	pthread_mutex_init (&buffer->write_mutex, NULL);
 }
 
 /*
  * Search entries and act according to the return value of the callback function. We
  * can delete entries or stop looping. See buffer.h . The callback function is expected
  * to take control of the memory of an entry which fifo_search deletes, if not
- * it will be leaked.
+ * it will be leaked unless the callback tells us to free the data using FIFO_SEARCH_FREE.
  */
 int fifo_search (
 	struct fifo_buffer *buffer,
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 	struct fifo_callback_args *callback_data
 ) {
-	fifo_read_lock(buffer);
+	fifo_write_lock(buffer);
 
 	int err = 0;
 
@@ -90,7 +95,6 @@ int fifo_search (
 			break;
 		}
 		if ((actions & FIFO_SEARCH_GIVE) != 0) {
-			fifo_read_to_write_lock(buffer);
 			if (entry == buffer->gptr_first) {
 				buffer->gptr_first = entry->next;
 			}
@@ -101,10 +105,12 @@ int fifo_search (
 				prev->next = entry->next;
 			}
 
-			free(entry); // Don't free data, callback takes care of it
+			if ((actions & FIFO_SEARCH_FREE) != 0) {
+				free(entry->data);
+			}
+			free(entry);
 
 			entry = NULL;
-			fifo_write_to_read_lock(buffer);
 			did_something = 1;
 		}
 		if ((actions & FIFO_SEARCH_STOP) != 0) {
@@ -119,7 +125,7 @@ int fifo_search (
 		prev = entry;
 	}
 
-	fifo_read_unlock(buffer);
+	fifo_write_unlock(buffer);
 
 	return err;
 }
@@ -128,7 +134,7 @@ int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,
 		uint64_t order_min
 ) {
-	fifo_read_lock(buffer);
+	fifo_write_lock(buffer);
 
 	struct fifo_buffer_entry *entry;
 	struct fifo_buffer_entry *clear_end = NULL;
@@ -143,10 +149,6 @@ int fifo_clear_order_lt (
 	}
 
 	if (clear_end) {
-		// Change to write lock and cut the part we're clearing out. Release the lock
-		// and free the data.
-		fifo_read_to_write_lock(buffer);
-
 		struct fifo_buffer_entry *clear_start = buffer->gptr_first;
 		struct fifo_buffer_entry *clear_stop = clear_end->next;
 		buffer->gptr_first = clear_end->next;
@@ -156,8 +158,6 @@ int fifo_clear_order_lt (
 			buffer->gptr_last = NULL;
 			buffer->gptr_first = NULL;
 		}
-
-		fifo_write_unlock(buffer);
 
 		struct fifo_buffer_entry *next;
 		for (entry = clear_start; entry != clear_stop; entry = next) {
@@ -172,7 +172,7 @@ int fifo_clear_order_lt (
 		return 0;
 	}
 
-	fifo_read_unlock(buffer);
+	fifo_write_unlock(buffer);
 	return 0;
 }
 

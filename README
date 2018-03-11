@@ -58,7 +58,15 @@ Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 - `avg_preserve_points`: Preserve individual measurements and pass to next module, default is no
 	
 ### ipclient (Send UDP packets to server and wait for ACK)
-`vlogger module=ipclient,dummy ipclient_server=10.0.2.2 ipclient_server_port=5555`
+`vlogger module=ipclient,dummy [ipclient_server=10.0.2.2] [ipclient_server_port=5555] [ipclient_keyfile=FILE] [ipclient_noack={yes|no}]`
+
+Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
+is received, we continue try sending the messages. The server is expected to also run Voltage Logger, but with
+the ipserver module listening for packets.
+
+If `ipclient_noack` is `yes`, we do not wait for `ACK`, but send packets only once.
+
+If `ipclient_keyfile` is specified, we use this key to encrypt/decrypt packets. `ipserver` must also use the same key.
 
 ### blockdev (log messages to block device or file)
 `vlogger module=blockdev,voltmonitor device_path=DEVICE always_tag_saved={yes|no}`
@@ -101,7 +109,9 @@ place data into the table.
 is compatible). We send ACK messages back for every message received. Downstream modules (usually mysql)
 can generate messages which we also send back.
 
-`vlogger module=mysql,ipserver module=ipserver,mysql`
+`vlogger module=mysql,ipserver module=ipserver,mysql [ipserver_keyfile=KEYFILE]`
+
+If `ipserver_keyfile` is specified, we use this key to encrypt/decrypt packets. `ipclient` must also use the same key.
 
 ### controller (coordinate messages between averager, blockdev and ipclient)
 
