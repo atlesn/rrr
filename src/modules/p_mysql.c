@@ -271,59 +271,63 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 			message->type, message->timestamp_to);
 
 	/* Attempt to make an integer value if possible */
-	unsigned long long int value = message->data_numeric;
-	if (value == 0 && message->length > 0) {
+	unsigned long long int intermediate_value = message->data_numeric;
+	if (intermediate_value == 0 && message->length > 0) {
 		char *pos;
-		value = strtoull(message->data, &pos, 10);
+		intermediate_value = strtoull(message->data, &pos, 10);
 		if (errno == ERANGE || pos == message->data) {
-			value = 0;
+			intermediate_value = 0;
 		}
 	}
-
-	// TODO : We are not very careful with int sizes here
 
 	MYSQL_BIND bind[8];
 	memset(bind, '\0', sizeof(bind));
 
+	// The sizes of these ints are checked by autoconf at compile time
+	unsigned long long int intermediate_timestamp_to = message->timestamp_to;
+	unsigned long long int intermediate_timestamp_from = message->timestamp_from;
+	unsigned long int intermediate_class = message->class;
+	unsigned long int intermediate_length_1 = message->length;
+	unsigned long int intermediate_length_2 = message->length;
+	unsigned long int intermediate_source_length = strlen(ipv4_string);
+
 	// Timestamp
-	bind[0].buffer = &message->timestamp_to;
+	bind[0].buffer = &intermediate_timestamp_to;
 	bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[0].is_unsigned = 1;
 
 	// Source
-	unsigned long source_length = strlen(ipv4_string);
 	bind[1].buffer = ipv4_string;
-	bind[1].length = &source_length;
+	bind[1].length = &intermediate_source_length;
 	bind[1].buffer_type = MYSQL_TYPE_STRING;
 
 	// Class
-	bind[2].buffer = &message->class;
+	bind[2].buffer = &intermediate_class;
 	bind[2].buffer_type = MYSQL_TYPE_LONG;
 	bind[2].is_unsigned = 1;
 
 	// Time from
-	bind[3].buffer = &message->timestamp_from;
+	bind[3].buffer = &intermediate_timestamp_from;
 	bind[3].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[3].is_unsigned = 1;
 
 	// Time to
-	bind[4].buffer = &message->timestamp_to;
+	bind[4].buffer = &intermediate_timestamp_to;
 	bind[4].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[4].is_unsigned = 1;
 
 	// Value
-	bind[5].buffer = &value;
+	bind[5].buffer = &intermediate_value;
 	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[5].is_unsigned = 1;
 
 	// Message
-	unsigned long message_length = message->length;
 	bind[6].buffer = message->data;
-	bind[6].length = &message_length;
+	bind[6].length = &intermediate_length_1;
 	bind[6].buffer_type = MYSQL_TYPE_STRING;
 
 	// Message length
-	bind[7].buffer = &message->length;
+	bind[7].buffer = &intermediate_length_2;
 	bind[7].buffer_type = MYSQL_TYPE_LONG;
 	bind[7].is_unsigned = 1;
 

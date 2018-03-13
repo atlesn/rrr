@@ -1,7 +1,20 @@
+if VL_WITH_MYSQL
+mysql = mysql.la
+endif
+
+#MYSQL_CFLAGS='-I/usr/include/mysql '
+#MYSQL_CONFIG='/usr/bin/mysql_config'
+#MYSQL_LDFLAGS='-L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl'
+
+
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la mysql.la
+	ipclient.la ipserver.la blockdev.la controller.la ${mysql}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lvlogger
+
+mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
+mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
+mysql_la_SOURCES = p_mysql.c
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c
@@ -26,8 +39,5 @@ blockdev_la_SOURCES = p_blockdev.c
 
 controller_la_LDFLAGS = ${module_ldflags}
 controller_la_SOURCES = p_controller.c
-
-mysql_la_LDFLAGS = ${module_ldflags} -lmysqlclient
-mysql_la_SOURCES = p_mysql.c
 
 libdir=${exec_prefix}/lib/voltagelogger
