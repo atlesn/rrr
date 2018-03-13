@@ -23,7 +23,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../../lib/messages.h"
+
+#ifdef VL_WITH_OPENSSL
 #include "../../lib/module_crypt.h"
+#endif
 
 #define VL_IP_DEFAULT_PORT 5555
 
@@ -86,14 +89,18 @@ int ip_stats_print_reset(
 
 int ip_receive_packets (
 		int fd,
+#ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
+#endif
 		int (*callback)(struct ip_buffer_entry *ip, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
 int ip_send_packet (
 		struct vl_message* message,
+#ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
+#endif
 		struct ip_send_packet_info* info,
 		struct ip_stats *stats
 );

@@ -33,13 +33,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <poll.h>
 
+#ifdef VL_WITH_OPENSSL
+#include "../lib/module_crypt.h"
+#endif
+
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../global.h"
-#include "../lib/module_crypt.h"
 #include "common/ip.h"
 
 // Should not be smaller than module max
@@ -52,8 +55,10 @@ struct ipserver_data {
 	struct fifo_buffer receive_buffer;
 	struct fifo_buffer output_buffer;
 	struct ip_data ip;
+#ifdef VL_WITH_OPENSSL
 	const char *crypt_file;
 	struct module_crypt_data crypt_data;
+#endif
 	struct ip_stats_twoway stats;
 };
 
@@ -132,7 +137,9 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 
 	if (ip_send_packet(
 			&entry->message,
+#ifdef VL_WITH_OPENSSL
 			&private_data->crypt_data,
+#endif
 			&info,
 			VL_DEBUGLEVEL_2 ? &private_data->stats.send : NULL
 	) != 0) {
@@ -189,7 +196,9 @@ int receive_packets(struct ipserver_data *data) {
 	callback_data.counter = 0;
 	return ip_receive_packets (
 		data->ip.fd,
+#ifdef VL_WITH_OPENSSL
 		&data->crypt_data,
+#endif
 		receive_packets_callback,
 		&callback_data,
 		VL_DEBUGLEVEL_2 ? &data->stats.receive : NULL
@@ -219,11 +228,16 @@ void data_cleanup(void *arg) {
 static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
 //	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 //	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
+#ifdef VL_WITH_OPENSSL
 	const char *crypt_file = cmd_get_value(cmd, "ipserver_keyfile", 0);
+	data->crypt_file = NULL;
+	if (crypt_file != NULL) {
+		data->crypt_file = crypt_file;
+	}
+#endif
 
 //	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 //	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-	data->crypt_file = NULL;
 
 /*	if (ip_server != NULL) {
 		data->ip_server = ip_server;
@@ -231,9 +245,6 @@ static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
 	if (ip_port != NULL) {
 		data->ip_port = ip_port;
 	}*/
-	if (crypt_file != NULL) {
-		data->crypt_file = crypt_file;
-	}
 
 	return 0;
 }
@@ -252,7 +263,9 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+#ifdef VL_WITH_OPENSSL
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
+#endif
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -289,12 +302,14 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+#ifdef VL_WITH_OPENSSL
 	if (	data->crypt_file != NULL &&
 			module_crypt_data_init(&data->crypt_data, data->crypt_file) != 0
 	) {
 		VL_MSG_ERR("ipserver: Cannot continue without crypt library\n");
 		goto out_message;
 	}
+#endif
 
 	network_restart:
 	ip_network_cleanup(&data->ip);
@@ -333,7 +348,9 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("Thread ipserver %p exiting\n", thread_data->thread);
 
 	out:
+#ifdef VL_WITH_OPENSSL
 	pthread_cleanup_pop(1);
+#endif
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

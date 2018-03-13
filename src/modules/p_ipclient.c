@@ -19,8 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#define _GNU_SOURCE // for pthread_tryjoin_np
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,8 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <poll.h>
 
-#include "../modules.h"
+#ifdef VL_WITH_OPENSSL
 #include "../lib/module_crypt.h"
+#endif
+
+#include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -56,13 +57,15 @@ struct ipclient_data {
 	struct fifo_buffer receive_buffer;
 	const char *ip_server;
 	const char *ip_port;
+#ifdef VL_WITH_OPENSSL
 	const char *crypt_file;
+	struct module_crypt_data crypt_data;
+#endif
 	struct ip_data ip;
 	pthread_t receive_thread;
 	pthread_mutex_t network_lock;
 	int receive_thread_died;
 	int receive_thread_started;
-	struct module_crypt_data crypt_data;
 	struct ip_stats_twoway stats;
 	int no_ack;
 };
@@ -88,12 +91,10 @@ void data_cleanup(void *arg) {
 static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
 	const char *no_ack = cmd_get_value(cmd, "ipclient_no_ack", 0);
 
 	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-	data->crypt_file = NULL;
 
 	if (ip_server != NULL) {
 		data->ip_server = ip_server;
@@ -101,9 +102,14 @@ static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	if (ip_port != NULL) {
 		data->ip_port = ip_port;
 	}
+
+#ifdef VL_WITH_OPENSSL
+	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
+	data->crypt_file = NULL;
 	if (crypt_file != NULL) {
 		data->crypt_file = crypt_file;
 	}
+#endif
 
 	if (no_ack != NULL) {
 		int yesno;
@@ -164,7 +170,9 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	if (ip_send_packet(
 			message,
+#ifdef VL_WITH_OPENSSL
 			&ipclient_data->crypt_data,
+#endif
 			info,
 			VL_DEBUGLEVEL_2 ? &ipclient_data->stats.send : NULL
 	) != 0) {
@@ -250,7 +258,9 @@ int receive_packets(struct ipclient_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
 	return ip_receive_packets(
 			data->ip.fd,
+#ifdef VL_WITH_OPENSSL
 			&data->crypt_data,
+#endif
 			receive_packets_callback,
 			data,
 			VL_DEBUGLEVEL_2 ? &data->stats.receive : NULL
@@ -391,7 +401,9 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
+#ifdef VL_WITH_OPENSSL
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
+#endif
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -428,12 +440,14 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+#ifdef VL_WITH_OPENSSL
 	if (	data->crypt_file != NULL &&
 			module_crypt_data_init(&data->crypt_data, data->crypt_file) != 0
 	) {
 		VL_MSG_ERR("ipclient: Cannot continue without crypt library\n");
 		goto out_message;
 	}
+#endif
 
 	network_restart:
 	VL_DEBUG_MSG_2 ("ipclient restarting network\n");
@@ -481,7 +495,9 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
 	out:
+#ifdef VL_WITH_OPENSSL
 	pthread_cleanup_pop(1);
+#endif
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

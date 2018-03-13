@@ -8,8 +8,9 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
 AC_ARG_WITH([mysql], [AS_HELP_STRING([--without-mysql], [Disable the MySQL module])], [], [with_mysql=yes])
+AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [], [with_encryption=yes])
 
-AC_CHECK_HEADERS([usb.h pthread.h openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+AC_CHECK_HEADERS([usb.h pthread.h])
 
 AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
@@ -23,6 +24,19 @@ AC_PROG_CC_STDC
 AC_PROG_INSTALL
 
 AC_SUBST(AM_CFLAGS)
+
+AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
+AC_MSG_CHECKING([Checking encryption usage])
+AS_IF([test "x$with_encryption" = xno], [
+	AC_MSG_RESULT([Not compiling with encryption])
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([VL_WITH_OPENSSL], [1], [Enable encryption in network modules])
+	AX_CHECK_OPENSSL([], [
+		AC_MSG_ERROR([Cannot compile with encrypion, missing OpenSSL])
+	])
+	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+])
 
 AM_CONDITIONAL([VL_WITH_MYSQL], [test "x$with_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])

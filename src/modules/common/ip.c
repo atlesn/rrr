@@ -32,11 +32,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 #include <pthread.h>
 
+#ifdef VL_WITH_OPENSSL
+#include "../../lib/module_crypt.h"
+#endif
+
 #include "ip.h"
 #include "../global.h"
 #include "../../lib/messages.h"
 #include "../../lib/vl_time.h"
-#include "../../lib/module_crypt.h"
 
 void ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
@@ -94,7 +97,9 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 
 int ip_receive_packets(
 		int fd,
+#ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
+#endif
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -151,6 +156,7 @@ int ip_receive_packets(
 		entry->addr = src_addr;
 		entry->addr_len = src_addr_len;
 
+#ifdef VL_WITH_OPENSSL
 		if (crypt_data->crypt != NULL) {
 			char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
 			if (*end != '\0') {
@@ -168,6 +174,7 @@ int ip_receive_packets(
 				return 1;
 			}
 		}
+#endif
 
 		if (parse_message(start, input_length, &entry->message) != 0) {
 			VL_MSG_ERR ("Received invalid message\n");
@@ -217,7 +224,9 @@ int ip_receive_packets(
 
 int ip_send_packet (
 		struct vl_message* message,
+#ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
+#endif
 		struct ip_send_packet_info *info,
 		struct ip_stats *stats
 ) {
@@ -230,6 +239,7 @@ int ip_send_packet (
 
 	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf + 1);
 
+#ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL && module_encrypt_message (
 			crypt_data,
 			buf + 1, strlen(buf + 1), // Remember that buf starts with zero
@@ -237,6 +247,7 @@ int ip_send_packet (
 	) != 0) {
 		return 1;
 	}
+#endif
 
 	if (buf[0] != 0) {
 		VL_MSG_ERR("ip: Start of send buffer was not zero\n");

@@ -28,8 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 
-#include "lib/cmdlineparser/cmdline.h"
+#ifdef VL_WITH_OPENSSL
 #include "lib/crypt.h"
+#endif
+
+#include "lib/cmdlineparser/cmdline.h"
 #include "lib/threads.h"
 #include "global.h"
 #include "modules.h"
@@ -54,7 +57,9 @@ static const char *library_paths[] = {
 };
 
 void module_threads_init() {
+#ifdef VL_WITH_OPENSSL
 	vl_crypt_initialize_locks();
+#endif
 	threads_init();
 }
 
@@ -64,7 +69,9 @@ void module_threads_stop() {
 
 void module_threads_destroy() {
 	threads_destroy();
+#ifdef VL_WITH_OPENSSL
 	vl_crypt_free_locks();
+#endif
 }
 
 void module_free_thread(struct module_thread_data *data) {
