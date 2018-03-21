@@ -171,6 +171,7 @@ int fifo_clear_order_lt (
 			free(entry);
 		}
 
+		fifo_write_unlock(buffer);
 		return 0;
 	}
 
