@@ -1,3 +1,9 @@
+voltage-logger (0.3) unstable; urgency=medium
+
+  * Bump version, see git log for details
+
+ -- Atle Solbakken <atle@maltewinje>  Wed, 21 Mar 2018 22:54:54 +0100
+
 voltage-logger (0.2) unstable; urgency=medium
 
   * Initial version
