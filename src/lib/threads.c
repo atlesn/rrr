@@ -290,6 +290,9 @@ void thread_cleanup(void *arg) {
 
 	// Check if we have died slowly and need to clean something up
 	// from our parent which has abandoned us
+	
+	// TODO : Maybe we should lock the thread to avoid race condition with
+	// threads_destroy()
 	if (thread->is_ghost && thread->ghost_cleanup_pointer != NULL) {
 		VL_MSG_ERR ("Thread waking up after being ghost, cleaning up for parent.");
 		free(thread->ghost_cleanup_pointer);
@@ -355,6 +358,9 @@ void threads_destroy() {
 
 		thread_lock(thread);
 		if (thread->is_ghost == 1) {
+			// TODO : thread_cleanup() does not lock, maybe it should to avoid race
+			// condition with is_ghost and ghost_cleanup_pointer
+			
 			// Move pointer to thread, we expect it to clean up if it dies
 			VL_MSG_ERR ("Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
 			thread->ghost_cleanup_pointer = thread;
