@@ -50,6 +50,7 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 ])
 
 AM_CONDITIONAL([VL_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
+AM_CONDITIONAL([VL_WITH_PERL5_XSI], [test "x$enable_perl5_xsi" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -128,7 +129,6 @@ AS_IF([test "x$enable_perl5" = xno], [
 	fi
 
 	enable_perl5_xsi=yes
-	AM_CONDITIONAL([VL_WITH_PERL5_XSI], [test "x$enable_perl5_xsi" = "xyes"])
 
 	AC_SUBST([PERL5_CFLAGS])
 	AC_SUBST([PERL5_LDFLAGS])
@@ -293,8 +293,11 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
+AM_COND_IF([VL_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
+AM_COND_IF([VL_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
+
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
+				misc/Makefile
 )
 AC_OUTPUT
