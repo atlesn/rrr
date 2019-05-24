@@ -10,4 +10,5 @@ Package: rrr
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Replaces: voltage-logger
+Conflicts: voltage-logger
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
