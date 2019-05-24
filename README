@@ -1,55 +1,57 @@
-# README FOR VOLTAGE LOGGER
+# README FOR READ ROUTE RECORD (3xR)
 ## ABOUT
 
-Voltage logger is designed to read data from sensors and logging it in a threaded and
+Read Route Record (3xR) is designed to read data from sensors and logging it in a threaded and
 buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
 routed between custom modules by having "senders" specified for some of them, instructing
 them who to read from. Source modules should have a buffer which they write to
 independently from their readers.
 
+3xR currently supports reading voltage measurements from USB devices.
+
 ## USAGE
 
 To start the program with module `raw` reading from `voltmonitor`, run:
 
-`vlogger module=raw,voltmonitor`
+`rrr module=raw,voltmonitor`
 
 To start the program with `raw` reading from two modules:
 
-`vlogger module=raw,voltmonitor,dummy`
+`rrr module=raw,voltmonitor,dummy`
 
 To start a chain with three modules `voltmonitor->averager->raw`:
 
-`vlogger module=raw,averager module=averager,voltmonitor`
+`rrr module=raw,averager module=averager,voltmonitor`
 
 A module can also be specified on its own:
 
-`vlogger module=custom_module`
+`rrr module=custom_module`
 
 
 ## MODULES
 
 ### raw (drain output from other modules)
 
-`vlogger module=raw,dummy`
+`rrr module=raw,dummy`
 
 Read output from any module and delete it. If debuglevel 2 is set, we print the values on the screen. We should use this module if
 some module produces output which we don't intend to use, so that the modules output buffer doesn't eat up memory.
 
 ### dummy (generate dummy measurements)
 
-`vlogger module=raw,dummy`
+`rrr module=raw,dummy`
 
 Create point measurements with current timestamp as value at some interval. 
 
 ### voltmonitor (USB voltmeter driver)
 
-`vlogger module=raw,voltmonitor vm_calibration=1.020 vm_channel=2`
+`rrr module=raw,voltmonitor vm_calibration=1.020 vm_channel=2`
 
 Specifiy channel (1 or 2) and/or calibration (factor which scales input).
 
 ### averager (create averages from voltmonitor)
 
-`vlogger module=averager,voltmonitor module=raw,averager [avg_preserve_points={yes|no}] [avg_timespan=SECONDS] [avg_interval=SECONDS]`
+`rrr module=averager,voltmonitor module=raw,averager [avg_preserve_points={yes|no}] [avg_timespan=SECONDS] [avg_interval=SECONDS]`
 
 Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 
@@ -58,7 +60,7 @@ Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 - `avg_preserve_points`: Preserve individual measurements and pass to next module, default is no
 	
 ### ipclient (Send UDP packets to server and wait for ACK)
-`vlogger module=ipclient,dummy [ipclient_server=10.0.2.2] [ipclient_server_port=5555] [ipclient_keyfile=FILE] [ipclient_noack={yes|no}]`
+`rrr module=ipclient,dummy [ipclient_server=10.0.2.2] [ipclient_server_port=5555] [ipclient_keyfile=FILE] [ipclient_noack={yes|no}]`
 
 Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
 is received, we continue try sending the messages. The server is expected to also run Voltage Logger, but with
@@ -69,7 +71,7 @@ If `ipclient_noack` is `yes`, we do not wait for `ACK`, but send packets only on
 If `ipclient_keyfile` is specified, we use this key to encrypt/decrypt packets. `ipserver` must also use the same key.
 
 ### blockdev (log messages to block device or file)
-`vlogger module=blockdev,voltmonitor device_path=DEVICE always_tag_saved={yes|no}`
+`rrr module=blockdev,voltmonitor device_path=DEVICE always_tag_saved={yes|no}`
 
 Specify block device or file to log entries, this storage must first be initialized
 using Block Device Logger command line application.
@@ -82,7 +84,7 @@ This should be specified if there are no modules listending to blockdev.
 ### mysql (store messages to database)
 Mysql reads data from ipserver and stores to a database.
 
-`vlogger module=mysql,ipserver module=ipserver,mysql [mysql_no_tagging={yes|no}] [mysql_host=HOST] [mysql_port=PORT] mysql_user=USER mysql_password=PASSWORD mysql_db=DATABASE mysql_table=TABLE`
+`rrr module=mysql,ipserver module=ipserver,mysql [mysql_no_tagging={yes|no}] [mysql_host=HOST] [mysql_port=PORT] mysql_user=USER mysql_password=PASSWORD mysql_db=DATABASE mysql_table=TABLE`
 
 Unless `mysql_no_tagging` is set, mysql generates TAG messages which can be processed
 by the blockdev module, these are sent back to the originating IP address.
@@ -109,7 +111,7 @@ place data into the table.
 is compatible). We send ACK messages back for every message received. Downstream modules (usually mysql)
 can generate messages which we also send back.
 
-`vlogger module=mysql,ipserver module=ipserver,mysql [ipserver_keyfile=KEYFILE]`
+`rrr module=mysql,ipserver module=ipserver,mysql [ipserver_keyfile=KEYFILE]`
 
 If `ipserver_keyfile` is specified, we use this key to encrypt/decrypt packets. `ipclient` must also use the same key.
 
@@ -118,7 +120,7 @@ If `ipserver_keyfile` is specified, we use this key to encrypt/decrypt packets. 
 The intention of this module is to store messages locally untill they are recevied and stored by a remote
 server, even in case of a power failure.
 
-`vlogger module=averager,voltmonitor module=controller,blockdev,ipclient,averager module=ipclient,controller module=blockdev,controller`
+`rrr module=averager,voltmonitor module=controller,blockdev,ipclient,averager module=ipclient,controller module=blockdev,controller`
 
 This will create a network like this:
 
@@ -145,7 +147,7 @@ This setup will save messages to `blockdev` and keep on sending them through `ip
 
 The current debug level is common for all modules and specified like this:
 
-`vlogger debuglevel=3`
+`rrr debuglevel=3`
 
 `debuglevel` is a sum of one or more of these values, or zero. It is also possible to specify `all`:
 * `0` - Only errors are printed
