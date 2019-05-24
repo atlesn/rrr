@@ -209,7 +209,7 @@ int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned 
 	struct module_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
-	struct vl_message *reading = &entry->message;
+	struct vl_message *reading = &entry->data.message;
 
 	VL_DEBUG_MSG_3 ("mysql: Result from buffer (ip): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
@@ -226,9 +226,9 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	// Convert message to IP buffer entry
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, reading, sizeof(entry->message));
+	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
 	free (reading);
-	reading = &entry->message;
+	reading = &entry->data.message;
 
 	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
 
@@ -265,7 +265,7 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 	char ipv4_string[strlen(ipv4_string_tmp)+1];
 	sprintf(ipv4_string, "%s", ipv4_string_tmp);
 
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = &entry->data.message;
 
 	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
 			message->type, message->timestamp_to);
@@ -352,17 +352,17 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	int err = 0;
 
-	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
 	if (mysql_save (process_data, entry) != 0) {
 		// Put back in buffer
-		VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
+		VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->data.message.timestamp_from);
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
 		err = 1;
 	}
 	else {
 		// Tag message as saved to sender
-		struct vl_message *message = &entry->message;
+		struct vl_message *message = &entry->data.message;
 		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
 		fifo_buffer_write(&mysql_data->output_buffer, data, size);

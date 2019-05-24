@@ -92,26 +92,28 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 	return ret;
 }
 
-int ip_receive_packets(
-		int fd,
-		struct module_crypt_data *crypt_data,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
+/* Receive raw packets */
+int ip_receive_packets (
+	int fd,
+	struct module_crypt_data *crypt_data,
+	int (*callback)(struct ip_buffer_entry *entry, void *arg),
+	void *arg,
+	struct ip_stats *stats
 ) {
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
-	char errbuf[256];
 
 	struct pollfd fds;
 	fds.fd = fd;
 	fds.events = POLLIN;
 
-	char buffer[MSG_STRING_MAX_LENGTH];
+	char buffer[VL_IP_RECEIVE_MAX_SIZE];
 
 	while (1) {
+		int res;
+
 		VL_DEBUG_MSG_5 ("ip polling data\n");
-		int res = poll(&fds, 1, 10);
+		res = poll(&fds, 1, 10);
 		if (res == -1) {
 			VL_MSG_ERR ("Error from poll when reading data from network: %s\n", strerror(errno));
 			return 1;
@@ -121,105 +123,140 @@ int ip_receive_packets(
 			break;
 		}
 
-		memset(buffer, '\0', MSG_STRING_MAX_LENGTH);
+		memset(buffer, '\0', VL_IP_RECEIVE_MAX_SIZE);
 
 		VL_DEBUG_MSG_3 ("ip receiving data\n");
-		ssize_t count = recvfrom(fd, buffer, MSG_STRING_MAX_LENGTH, 0, &src_addr, &src_addr_len);
+		ssize_t count = recvfrom(fd, buffer, VL_IP_RECEIVE_MAX_SIZE, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {
 			VL_MSG_ERR ("Error from recvfrom when reading d <sys/socket.h>ata from network: %s\n", strerror(errno));
 			return 1;
 		}
 
-		if (count < 10) {
-			VL_MSG_ERR ("Received short packet from network\n");
-			continue;
-		}
-
-		char *start = buffer;
-		if (*start != '\0') {
-			VL_MSG_ERR ("Datagram received from network did not start with zero\n");
-			continue;
-		}
-
-		start++;
-		unsigned int input_length = count - 1;
-
 		struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 		memset(entry, '\0', sizeof(*entry));
 
 		entry->addr = src_addr;
 		entry->addr_len = src_addr_len;
+		entry->data_length = count;
 
-		if (crypt_data->crypt != NULL) {
-			char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
-			if (*end != '\0') {
-				VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
-				free (entry);
-				return 1;
+		VL_ASSERT(sizeof(entry->data.data)==sizeof(buffer),sizes_of_buffers_equal)
+		memcpy (entry->data.data, buffer, count);
+
+		if (VL_DEBUGLEVEL_3) {
+			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
+				VL_DEBUG_MSG ("%02x-", entry->data.message.data[i]);
 			}
-
-			input_length = end - start;
-
-			VL_DEBUG_MSG_3("ip decrypting message %s\n", start);
-			if (module_decrypt_message(crypt_data, start, &input_length, MSG_STRING_MAX_LENGTH - 1) != 0) {
-				VL_MSG_ERR("Error returned from module decrypt function\n");
-				free (entry);
-				return 1;
-			}
+			VL_DEBUG_MSG ("\n");
 		}
 
-		if (parse_message(start, input_length, &entry->message) != 0) {
-			VL_MSG_ERR ("Received invalid message\n");
-			free (entry);
-			continue;
+		res = callback(entry, arg);
+		if (res == VL_IP_RECEIVE_STOP) {
+			break;
+		}
+		else if (res == VL_IP_RECEIVE_ERR) {
+			return 1;
 		}
 
-		if (message_checksum_check(&entry->message) != 0) {
-			VL_MSG_ERR ("Message checksum was invalid for '%s'\n", start);
-			free (entry);
-			continue;
-		}
-		else {
-			if (VL_DEBUGLEVEL_3) {
-				for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
-					VL_DEBUG_MSG ("%02x-", entry->message.data[i]);
-				}
-				VL_DEBUG_MSG ("\n");
-			}
-			int res = callback(entry, arg);
-			if (res == VL_IP_RECEIVE_STOP) {
-				break;
-			}
-			else if (res == VL_IP_RECEIVE_ERR) {
+		if (stats != NULL) {
+			res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
+			if (res == VL_IP_STATS_UPDATE_ERR) {
+				VL_MSG_ERR("ip: Error returned from stats update function\n");
 				return 1;
 			}
-
-			if (stats != NULL) {
-				int res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
-				if (res == VL_IP_STATS_UPDATE_ERR) {
-					VL_MSG_ERR("ip: Error returned from stats update function\n");
+			if (res == VL_IP_STATS_UPDATE_READY) {
+				if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
+					VL_MSG_ERR("ip: Error returned from stats print function\n");
 					return 1;
 				}
-				if (res == VL_IP_STATS_UPDATE_READY) {
-					if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
-						VL_MSG_ERR("ip: Error returned from stats print function\n");
-						return 1;
-					}
-				}
 			}
-
 		}
 	}
 
 	return 0;
 }
 
-int ip_send_packet (
-		struct vl_message* message,
-		struct module_crypt_data *crypt_data,
-		struct ip_send_packet_info *info,
-		struct ip_stats *stats
+struct ip_receive_messages_data {
+	int (*callback)(struct ip_buffer_entry *entry, void *arg);
+	void *arg;
+	struct module_crypt_data *crypt_data;
+};
+
+int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
+	struct ip_receive_messages_data *data = arg;
+
+	struct module_crypt_data *crypt_data = data->crypt_data;
+	const ssize_t count = entry->data_length;
+
+	if (count < 10) {
+		VL_MSG_ERR ("Received short message/packet from network\n");
+		return 0;
+	}
+
+	char *start = entry->data.data;
+	if (*start != '\0') {
+		VL_MSG_ERR ("Datagram received from network did not start with zero\n");
+		return 0;
+	}
+
+	start++;
+	unsigned int input_length = count - 1;
+
+	if (crypt_data->crypt != NULL) {
+		char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
+		if (*end != '\0') {
+			VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
+			free (entry);
+			return 1;
+		}
+
+		input_length = end - start;
+
+		VL_DEBUG_MSG_3("ip decrypting message %s\n", start);
+		if (module_decrypt_message(crypt_data, start, &input_length, MSG_STRING_MAX_LENGTH - 1) != 0) {
+			VL_MSG_ERR("Error returned from module decrypt function\n");
+			free (entry);
+			return 1;
+		}
+	}
+
+	if (parse_message(start, input_length, &entry->data.message) != 0) {
+		VL_MSG_ERR ("Received invalid message\n");
+		free (entry);
+		return 0;
+	}
+
+	if (message_checksum_check(&entry->data.message) != 0) {
+		VL_MSG_ERR ("Message checksum was invalid for '%s'\n", start);
+		free (entry);
+		return 0;
+	}
+
+	return data->callback(entry, data->arg);
+}
+
+/* Receive packets and parse vl_message struct or fail */
+int ip_receive_messages (
+	int fd,
+	struct module_crypt_data *crypt_data,
+	int (*callback)(struct ip_buffer_entry *entry, void *arg),
+	void *arg,
+	struct ip_stats *stats
+) {
+	struct ip_receive_messages_data data;
+
+	data.callback = callback;
+	data.arg = arg;
+	data.crypt_data = crypt_data;
+
+	return ip_receive_packets(fd, crypt_data, ip_receive_messages_callback, &data, stats);
+}
+
+int ip_send_message (
+	struct vl_message* message,
+	struct module_crypt_data *crypt_data,
+	struct ip_send_packet_info *info,
+	struct ip_stats *stats
 ) {
 	char buf[MSG_STRING_MAX_LENGTH];
 	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
@@ -276,19 +313,22 @@ void ip_network_cleanup (void *arg) {
 }
 
 int ip_network_start (struct ip_data *data) {
-	char errbuf[256];
-
 	int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s", strerror(errno));
 		goto out_error;
 	}
 
+	if (data->port < 1 || data->port > 65535) {
+		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		goto out_error;
+	}
+
 	struct sockaddr_in si;
 	memset(&si, '\0', sizeof(si));
 	si.sin_family = AF_INET;
-	si.sin_port = htons(VL_IP_DEFAULT_PORT );
-    si.sin_addr.s_addr = htonl(INADDR_ANY);
+	si.sin_port = htons(data->port);
+	si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
 		VL_MSG_ERR ("Could not bind to port %d: %s", VL_IP_DEFAULT_PORT, strerror(errno));
