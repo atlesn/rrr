@@ -4,7 +4,6 @@ Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>= 9), dh-autoreconf, build-essential, libusb-dev, libblock-device-logger-dev, libmysqlclient-dev | libmariadbclient-dev-compat, libssl-dev
 Standards-Version: 3.9.8
-Replaces: voltage-logger
 Homepage: https://github.com/atlesn/rrr
 
 Package: rrr
