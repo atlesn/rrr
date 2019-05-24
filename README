@@ -1,13 +1,13 @@
-# README FOR READ ROUTE RECORD (3xR)
+# README FOR READ ROUTE RECORD (triple R)
 ## ABOUT
 
-Read Route Record (3xR) is designed to read data from sensors and logging it in a threaded and
+RRR is designed to read data from sensors and logging it in a threaded and
 buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
 routed between custom modules by having "senders" specified for some of them, instructing
 them who to read from. Source modules should have a buffer which they write to
 independently from their readers.
 
-3xR currently supports reading voltage measurements from USB devices.
+RRR currently supports reading voltage measurements from USB devices.
 
 ## USAGE
 
