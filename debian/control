@@ -1,12 +1,14 @@
-Source: voltage-logger
+Source: rrr
 Section: main
 Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
 Build-Depends: debhelper (>= 9), dh-autoreconf, build-essential, libusb-dev, libblock-device-logger-dev, libmysqlclient-dev | libmariadbclient-dev-compat, libssl-dev
 Standards-Version: 3.9.8
-Homepage: https://github.com/atlesn/voltagelogger
+Replaces: voltage-logger
+Homepage: https://github.com/atlesn/rrr
 
-Package: voltage-logger
+Package: rrr
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Read entries from a digital meter and log them to files or send over the network.
+Replaces: voltage-logger
+Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
