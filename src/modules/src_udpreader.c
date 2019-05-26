@@ -31,7 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../modules.h"
 #include "../lib/messages.h"
 #include "../global.h"
-#include "common/ip.h" 
+#include "common/ip.h"
+#include "common/types.h"
+
+#define VL_UDPREADER_MAX_DATA_FIELDS CMD_ARGUMENT_MAX
 
 struct udpreader_data {
 	struct fifo_buffer buffer;
@@ -75,10 +78,9 @@ static int poll (
 }
 
 static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
+	// Parse listen port
 	const char *udpr_port = cmd_get_value(cmd, "udpr_port", 0);
-
 	unsigned int listen_port = 0;
-
 	if (udpr_port == NULL) {
 		VL_MSG_ERR ("Listen port argument udpr_port not specified for udpreader\n");
 		return 1;
@@ -96,6 +98,11 @@ static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
 
 	data->listen_port = listen_port;
 
+	// Parse expected data
+	do {
+
+	}
+
 	return 0;
 }
 
@@ -106,6 +113,8 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 
 	free (entry);
 	//fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+
+	return 0;
 }
 
 int read_data(struct udpreader_data *data) {

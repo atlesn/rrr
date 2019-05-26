@@ -32,6 +32,6 @@ mysql_la_LDFLAGS = ${module_ldflags} -lmysqlclient
 mysql_la_SOURCES = p_mysql.c
 
 udpreader_la_LDFLAGS = ${module_ldflags}
-udpreader_la_SOURCES = src_udpreader.c common/ip.c
+udpreader_la_SOURCES = src_udpreader.c common/ip.c common/types.c
 
 libdir=${exec_prefix}/lib/rrr
