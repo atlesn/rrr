@@ -85,8 +85,16 @@ struct vl_message *message_new_info (
 );
 struct vl_message *message_new_array (
 	uint64_t time,
-	const char *data,
 	uint32_t length
+);
+int init_empty_message (
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	unsigned long int data_size,
+	struct vl_message *result
 );
 int init_message (
 	unsigned long int type,

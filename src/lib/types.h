@@ -27,14 +27,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "messages.h"
 
+#define RRR_VERSION 1
 #define RRR_TYPES_MAX_DEFINITIONS CMD_ARGUMENT_MAX
 
 typedef uint8_t rrr_type;
-typedef cmd_arg_size rrr_type_length;
-typedef cmd_arg_size rrr_def_count;
+typedef uint32_t rrr_type_length;
+typedef uint32_t rrr_def_count;
 typedef ssize_t rrr_size;
 typedef uint64_t rrr_type_le;
 typedef uint64_t rrr_type_be;
+typedef uint16_t rrr_version;
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
@@ -57,6 +59,7 @@ struct rrr_type_definition {
 };
 
 struct rrr_type_definition_collection {
+	rrr_version version;
 	rrr_def_count count;
 	struct rrr_type_definition definitions[RRR_TYPES_MAX_DEFINITIONS];
 };

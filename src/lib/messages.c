@@ -85,18 +85,16 @@ struct vl_message *message_new_info (
 
 struct vl_message *message_new_array (
 	uint64_t time,
-	const char *data,
 	uint32_t length
 ) {
 	struct vl_message *res = malloc(sizeof(*res));
 
-	if (init_message (
+	if (init_empty_message (
 			MSG_TYPE_MSG,
 			MSG_CLASS_ARRAY,
 			time,
 			time,
 			0,
-			data,
 			length,
 			res
 	) != 0) {
@@ -156,13 +154,12 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 	return 0;
 }
 
-int init_message (
+int init_empty_message (
 	unsigned long int type,
 	unsigned long int class,
 	uint64_t timestamp_from,
 	uint64_t timestamp_to,
 	uint64_t data_numeric,
-	const char *data,
 	unsigned long int data_size,
 	struct vl_message *result
 ) {
@@ -181,6 +178,33 @@ int init_message (
 	}
 
 	result->length = data_size;
+	result->data[0] = '\0';
+
+	return 0;
+}
+
+int init_message (
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	const char *data,
+	unsigned long int data_size,
+	struct vl_message *result
+) {
+	if (init_empty_message (
+		type,
+		class,
+		timestamp_from,
+		timestamp_to,
+		data_numeric,
+		data_size,
+		result
+	) != 0) {
+		return 1;
+	}
+
 	memcpy (result->data, data, data_size);
 	result->data[data_size+1] = '\0';
 

@@ -27,8 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "types.h"
-#include "../global.h"
 #include "messages.h"
+#include "vl_time.h"
+#include "../global.h"
 
 #define PASTER(x,y) x ## _ ## y
 
@@ -129,21 +130,33 @@ int convert_blob(void *target, const char *data, rrr_type_length length) {
 	return 0;
 }
 
+int convert_64_to_le(void *data) {
+	uint64_t temp;
+	memcpy (&temp, data, sizeof(temp));
+
+	uint64_t *result = data;
+	*result = htole64(temp);
+	return 0;
+}
+
+int convert_blob(void *target) {
+	return 0;
+}
+
 /* Must be in same positions as type ID in types.h */
 static int (*rrr_types_convert_functions[]) (void *target, const char *data, rrr_type_length length) = {
 		NULL,
 		&convert_le,
 		&convert_be,
-		&convert_blob,
+		&convert_blob
+};
+
+/* Must be in same positions as type ID in types.h */
+static int (*rrr_types_to_le[]) (void *data) = {
 		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL
+		&convert_64_to_le,
+		&convert_64_to_le,
+		&convert_blob
 };
 
 int rrr_types_parse_definition (
@@ -154,6 +167,8 @@ int rrr_types_parse_definition (
 	rrr_def_count count = 0;
 
 	memset (target, '\0', sizeof(*target));
+
+	target->version = RRR_VERSION;
 
 	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i += 2) {
 		const char *type_c = cmd_get_subvalue(cmd, cmd_key, 0, i);
@@ -306,6 +321,42 @@ void rrr_types_destroy_data (struct rrr_data_collection *collection) {
 	free (collection);
 }
 
-struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data, uint64_t time) {
-	rrr_type_length total_length = 0;
+void rrr_types_definition_to_le(struct rrr_type_definition_collection *definition) {
+	struct rrr_type_definition_collection new;
+	memset (&new, '\0', sizeof(new));
+
+	new->count = htole32(definition->count);
+	new->version = htole16(definition->version);
+
+	for (rrr_def_count i = 0; i < definition->count; i++) {
+		new->definitions[i].length = htole32(definition->definitions[i].length);
+		new->definitions[i].max_length = htole32(definition->definitions[i].max_length);
+		new->definitions[i].type = definition->definitions[i].type;
+	}
+
+	memcpy (definition, &new, sizeof (*definition));
+}
+
+struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time) {
+	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_total_max_data_length(data);
+	struct vl_message *message = message_new_array(time_get_64(), total_length);
+	if (message == NULL) {
+		VL_MSG_ERR("Could not create message for data collection");
+		return NULL;
+	}
+
+	struct rrr_type_definition_collection *new_definition = message->data[0];
+	char *new_datastream = data[0 + sizeof(*new_definition)];
+
+	memcpy (new_definition, &data->definitions, sizeof(*new_definition));
+
+	char *pos = new_datastream;
+	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
+		memcpy(pos, data->data[i], data->definitions->definitions[i].length);
+		rrr_types_to_le[data->definitions->definitions[i].type](data->data[i]);
+	}
+
+	rrr_types_definition_to_le(new_definition);
+
+	return message;
 }
