@@ -172,7 +172,7 @@ int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned
 
 void averager_spawn_message (
 	struct averager_data *data,
-	int class,
+	long unsigned int class,
 	uint64_t time_from,
 	uint64_t time_to,
 	uint64_t measurement

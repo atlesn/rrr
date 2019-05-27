@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdio.h>
+
 #ifndef VL_GLOBAL_H
 #define VL_GLOBAL_H
 

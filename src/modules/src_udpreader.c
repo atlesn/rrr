@@ -99,7 +99,7 @@ static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
 	data->listen_port = listen_port;
 
 	// Parse expected data
-	do {
+	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
 
 	}
 

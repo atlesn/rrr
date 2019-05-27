@@ -248,7 +248,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
-	return ip_receive_packets(
+	return ip_receive_messages(
 			data->ip.fd,
 			&data->crypt_data,
 			receive_packets_callback,

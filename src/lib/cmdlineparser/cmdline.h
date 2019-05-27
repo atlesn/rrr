@@ -36,6 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define CMD_ARGUMENT_SIZE 256
 #endif 
 
+typedef unsigned long int cmd_arg_count;
+typedef unsigned long int cmd_arg_size;
+typedef unsigned long int cmd_conf;
+
 #define CMD_CONFIG_DEFAULTS			0
 #define CMD_CONFIG_NOCOMMAND		(1<<0)
 #define CMD_CONFIG_SPLIT_COMMA	 	(1<<1)
@@ -54,7 +58,7 @@ struct cmd_data {
 	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAX];
 };
 
-int cmd_parse					(struct cmd_data *data, const int argc, const char *argv[], unsigned long int config);
+int cmd_parse					(struct cmd_data *data, const int argc, const char *argv[], cmd_conf config);
 int cmd_match					(struct cmd_data *data, const char *test);
 
 int cmd_convert_hex_byte		(struct cmd_data *data, const char *value, char *result);
@@ -63,10 +67,10 @@ int cmd_convert_uint64_10		(struct cmd_data *data, const char *value, uint64_t *
 int cmd_convert_integer_10		(struct cmd_data *data, const char *value, int *result);
 int cmd_convert_float			(struct cmd_data *data, const char *value, float *result);
 
-const char *cmd_get_argument		(struct cmd_data *data, int index);
+const char *cmd_get_argument		(struct cmd_data *data, cmd_arg_count index);
 const char *cmd_get_last_argument	(struct cmd_data *data);
-const char *cmd_get_value			(struct cmd_data *data, const char *key, unsigned long int index);
-const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, unsigned long int index, unsigned long int subindex);
+const char *cmd_get_value			(struct cmd_data *data, const char *key, cmd_arg_count index);
+const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, cmd_arg_count index, cmd_arg_count subindex);
 
 int cmdline_check_yesno				(struct cmd_data *data, const char *string, int *result);
 

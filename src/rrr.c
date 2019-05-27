@@ -186,7 +186,7 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 		return EXIT_FAILURE;
 	}
 
-	int debuglevel = 0;
+	unsigned int debuglevel = 0;
 	const char* debuglevel_string = cmd_get_value(&*cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
 		if (strcmp(debuglevel_string, "all") == 0) {

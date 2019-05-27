@@ -190,7 +190,7 @@ int receive_packets(struct ipserver_data *data) {
 	struct receive_packets_data callback_data;
 	callback_data.data = data;
 	callback_data.counter = 0;
-	return ip_receive_packets (
+	return ip_receive_messages (
 		data->ip.fd,
 		&data->crypt_data,
 		receive_packets_callback,

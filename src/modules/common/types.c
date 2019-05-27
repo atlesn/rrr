@@ -21,7 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 #include <stddef.h>
-
+#include <stdlib.h>
+#include <string.h>
 #include "../global.h"
 #include "types.h"
 
@@ -47,9 +48,9 @@ struct rrr_data_collection *rrr_types_parse_data (
 	for (int i = 0; i < definition_length; i++) {
 		VL_ASSERT (sizeof(collection->definitions[i]) == sizeof(definitions[i]), type_size_mismatch_in_collection_definition)
 		memcpy (&(collection->definitions[i]), &definitions[i], sizeof(collection->definitions[i]));
-		collection->data[i] = malloc (definitions[i]->length);
+		collection->data[i] = malloc (definitions[i].length);
 		if (collection->data[i] == NULL) {
-			VL_MSG_ERR("Could not allocate %d bytes of memory for collection type data");
+			VL_MSG_ERR("Could not allocate %d bytes of memory for collection type data", definitions[i].length);
 			goto out_free_elements;
 		}
 	}
