@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include "common/ip.h"
 #include "../lib/buffer.h"
-#include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
+#include "../lib/ip.h"
+#include "../modules.h"
 #include "../global.h"
 
 // Should not be smaller than module max

@@ -45,7 +45,7 @@ int cmd_check_all_args_used(struct cmd_data *data) {
 	int err = 0;
 	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && *(data->args[i]) != '\0'; i++) {
 		if (data->args_used[i] != 1) {
-			fprintf (stderr, "Error: Argument %i ('%s') was not used, possible junk or typo\n", i, data->args[i]);
+			fprintf (stderr, "Error: Argument %lu ('%s') was not used, possible junk or typo\n", i, data->args[i]);
 			err = 1;
 		}
 	}
@@ -253,15 +253,15 @@ int cmd_parse(struct cmd_data *data, int argc, const char *argv[], cmd_conf conf
 				cmd_arg_size value_length = strlen(value);
 
 				if (key_length == 0 || value_length == 0) {
-					fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n", i, data->args[i]);
+					fprintf (stderr, "Error: Syntax error with = syntax in argument %lu ('%s'), use key=value\n", i, data->args[i]);
 					return 1;
 				}
 				if (key_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument key %i too long ('%s'), maximum size is %i\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
+					fprintf (stderr, "Error: Argument key %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
 					return 1;
 				}
 				if (value_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument value %i too long ('%s'), maximum size is %i\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
+					fprintf (stderr, "Error: Argument value %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
 					return 1;
 				}
 

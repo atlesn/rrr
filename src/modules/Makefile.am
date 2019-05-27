@@ -17,10 +17,10 @@ averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags} 
-ipclient_la_SOURCES = p_ipclient.c common/ip.c
+ipclient_la_SOURCES = p_ipclient.c
 
 ipserver_la_LDFLAGS = ${module_ldflags}
-ipserver_la_SOURCES = p_ipserver.c common/ip.c
+ipserver_la_SOURCES = p_ipserver.c
 
 blockdev_la_LDFLAGS = ${module_ldflags} -lbdl
 blockdev_la_SOURCES = p_blockdev.c
@@ -32,6 +32,6 @@ mysql_la_LDFLAGS = ${module_ldflags} -lmysqlclient
 mysql_la_SOURCES = p_mysql.c
 
 udpreader_la_LDFLAGS = ${module_ldflags}
-udpreader_la_SOURCES = src_udpreader.c common/ip.c common/types.c
+udpreader_la_SOURCES = src_udpreader.c
 
 libdir=${exec_prefix}/lib/rrr

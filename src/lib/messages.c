@@ -83,6 +83,31 @@ struct vl_message *message_new_info (
 	return res;
 }
 
+struct vl_message *message_new_array (
+	uint64_t time,
+	const char *data,
+	uint32_t length
+) {
+	struct vl_message *res = malloc(sizeof(*res));
+
+	if (init_message (
+			MSG_TYPE_MSG,
+			MSG_CLASS_ARRAY,
+			time,
+			time,
+			0,
+			data,
+			length,
+			res
+	) != 0) {
+		free(res);
+		VL_MSG_ERR ("Bug: Could not initialize array message\n");
+		exit (EXIT_FAILURE);
+	}
+
+	return res;
+}
+
 int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
 	unsigned long int search_length = strlen(search);
 

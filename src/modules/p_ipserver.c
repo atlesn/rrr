@@ -38,9 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
-#include "../global.h"
+#include "../lib/ip.h"
 #include "../lib/module_crypt.h"
-#include "common/ip.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS

@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#include "../../lib/messages.h"
-#include "../../lib/module_crypt.h"
+#include "messages.h"
+#include "module_crypt.h"
 
 #define VL_IP_DEFAULT_PORT 5555
 

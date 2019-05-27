@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_MAX 3
 #define MSG_CLASS_MIN 4
 #define MSG_CLASS_INFO 10
+#define MSG_CLASS_ARRAY 11
 
 #define MSG_TYPE_MSG_STRING "MSG"
 #define MSG_TYPE_ACK_STRING "ACK"
@@ -41,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_MAX_STRING "MAX"
 #define MSG_CLASS_MIN_STRING "MIN"
 #define MSG_CLASS_INFO_STRING "INFO"
+#define MSG_CLASS_ARRAY_STRING "ARRAY"
 
 #define MSG_DATA_MAX_LENGTH 256
 
@@ -80,6 +82,11 @@ struct vl_message *message_new_reading (
 struct vl_message *message_new_info (
 	uint64_t time,
 	const char *msg_terminated
+);
+struct vl_message *message_new_array (
+	uint64_t time,
+	const char *data,
+	uint32_t length
 );
 int init_message (
 	unsigned long int type,

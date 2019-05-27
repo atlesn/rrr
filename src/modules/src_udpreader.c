@@ -23,16 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <inttypes.h>
+#include <src/lib/types.h>
 #include <unistd.h>
 
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../modules.h"
 #include "../lib/messages.h"
+#include "../lib/ip.h"
+#include "../modules.h"
 #include "../global.h"
-#include "common/ip.h"
-#include "common/types.h"
 
 #define VL_UDPREADER_MAX_DATA_FIELDS CMD_ARGUMENT_MAX
 
@@ -40,12 +40,21 @@ struct udpreader_data {
 	struct fifo_buffer buffer;
 	unsigned int listen_port;
 	struct ip_data ip;
+	struct rrr_type_definition_collection definitions;
+	struct rrr_data_collection *type_data;
 };
+
+void type_data_cleanup(void *arg) {
+	if (arg != NULL) {
+		rrr_types_destroy_data(arg);
+	}
+}
 
 struct udpreader_data *data_init(struct module_thread_data *module_thread_data) {
 	// Use special memory region provided in module_thread_data which we don't have to free
 	struct udpreader_data *data = (struct udpreader_data *) module_thread_data->private_memory;
 	memset(data, '\0', sizeof(*data));
+
 	fifo_buffer_init(&data->buffer);
 
 	return data;
@@ -55,6 +64,9 @@ void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct udpreader_data *data = (struct udpreader_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
+	if (data->type_data != NULL) {
+		rrr_types_destroy_data(data->type_data);
+	}
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }
@@ -98,9 +110,15 @@ static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
 
 	data->listen_port = listen_port;
 
-	// Parse expected data
-	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+	// Parse expected input data
+	if (rrr_types_parse_definition (&data->definitions, cmd, "udpr_input_types") != 0) {
+		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
+		return 1;
+	}
 
+	if (data->definitions.count == 0) {
+		VL_MSG_ERR("No data types defined in udpr_input_types\n");
+		return 1;
 	}
 
 	return 0;
@@ -109,7 +127,13 @@ static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 
-	VL_DEBUG_MSG_2("udpreader received a packet in callback\n");
+
+	if (rrr_types_parse_data(entry->data.data, entry->data_length, data->type_data) != 0) {
+		VL_MSG_ERR("udpreader received an invalid packet\n");
+	}
+	else {
+		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
+	}
 
 	free (entry);
 	//fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
@@ -148,6 +172,9 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 		pthread_exit(0);
 	}
 
+	pthread_cleanup_push(type_data_cleanup, data->type_data);
+	data->type_data = rrr_types_allocate_data(&data->definitions);
+
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	data->ip.port = data->listen_port;
 	if (ip_network_start(&data->ip) != 0) {
@@ -177,6 +204,7 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("Dummy received encourage stop\n");
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

@@ -31,12 +31,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <src/lib/ip.h>
 
-#include "ip.h"
 #include "../global.h"
-#include "../../lib/messages.h"
-#include "../../lib/vl_time.h"
-#include "../../lib/module_crypt.h"
+#include "messages.h"
+#include "vl_time.h"
+#include "module_crypt.h"
 
 void ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
@@ -331,7 +331,7 @@ int ip_network_start (struct ip_data *data) {
 	si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		VL_MSG_ERR ("Could not bind to port %d: %s", VL_IP_DEFAULT_PORT, strerror(errno));
+		VL_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
