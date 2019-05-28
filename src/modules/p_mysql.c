@@ -274,14 +274,15 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	unsigned long string_lengths[VL_MYSQL_BIND_MAX];
 	memset(string_lengths, '\0', sizeof(string_lengths));
 
-	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		struct rrr_type_definition *definition = &definitions->definitions[i];
+	rrr_def_count bind_pos;
+	for (bind_pos = 0; bind_pos < definitions->count; bind_pos++) {
+		struct rrr_type_definition *definition = &definitions->definitions[bind_pos];
 
 		// TODO : Support signed
 		if (RRR_TYPE_IS_64(definition->type)) {
-			bind[i].buffer = collection->data[i];
-			bind[i].buffer_type = MYSQL_TYPE_LONGLONG;
-			bind[i].is_unsigned = 1;
+			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
+			bind[bind_pos].is_unsigned = 1;
 		}
 		else if (RRR_TYPE_IS_BLOB(definition->type)) {
 			if (definition->length > definition->max_length) {
@@ -291,16 +292,23 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 				goto out_cleanup;
 			}
 
-			string_lengths[i] = definition->length;
-			bind[i].buffer = collection->data[i];
-			bind[i].length = &string_lengths[i];
-			bind[i].buffer_type = MYSQL_TYPE_STRING;
+			string_lengths[bind_pos] = definition->length;
+			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].length = &string_lengths[bind_pos];
+			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 		}
 		else {
 			VL_MSG_ERR("Unkown type %ul when binding with mysql\n", definition->type);
 			res = 1;
 			goto out_cleanup;
 		}
+	}
+
+	unsigned long long int timestamp = time_get_64();
+	if (data->data->add_timestamp_col) {
+		bind[bind_pos].buffer = &timestamp;
+		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
+		bind[bind_pos].is_unsigned = 1;
 	}
 
 	res = mysql_bind_and_execute(data);
