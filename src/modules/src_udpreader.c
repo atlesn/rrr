@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/vl_time.h"
 #include "../modules.h"
 #include "../global.h"
 
@@ -134,9 +135,12 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	else {
 		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
 	}
-
 	free (entry);
-	//fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+
+	struct vl_message *message = rrr_types_create_message_le(data->type_data, time_get_64());
+	if (message != NULL) {
+		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+	}
 
 	return 0;
 }
@@ -183,7 +187,11 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	}
 	VL_DEBUG_MSG_2("udpreader: listening on port %d\n", data->listen_port);
 
+	static int count = 20;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
+		if (--count == 0) {
+			break;
+		}
 		update_watchdog_time(thread_data->thread);
 
 		uint64_t time = time_get_64();
@@ -199,10 +207,9 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 /*		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading)); */
 
 		usleep (750000); // 10 ms
-
 	}
 
-	VL_DEBUG_MSG_1 ("Dummy received encourage stop\n");
+	VL_DEBUG_MSG_1 ("Udpreader received encourage stop\n");
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

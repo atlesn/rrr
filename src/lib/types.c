@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "types.h"
 #include "messages.h"
-#include "vl_time.h"
 #include "../global.h"
 
 #define PASTER(x,y) x ## _ ## y
@@ -293,13 +292,13 @@ struct rrr_data_collection *rrr_types_allocate_data (
 rrr_type_length rrr_get_total_max_data_length(const struct rrr_data_collection *data) {
 	rrr_type_length ret = 0;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-			ret += data->definitions->definitions[i].max_length;
+			ret += data->definitions.definitions[i].max_length;
 	}
 	return ret;
 }
 
 int rrr_types_merge_data(char *target, rrr_type_length target_length, const struct rrr_data_collection *data) {
-	rrr_type_length length = rrr_get_total_data_length(data);
+	rrr_type_length length = rrr_get_total_max_data_length(data);
 	if (target_length < length) {
 		VL_MSG_ERR("BUG: Target length was too small in rrr_types_merge_data\n");
 		return 1;
@@ -307,8 +306,8 @@ int rrr_types_merge_data(char *target, rrr_type_length target_length, const stru
 
 	char *pos = target;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(target, data->data[i]);
-		target += data->definitions->definitions[i].max_length;
+		memcpy(target, data->data + i, length);
+		target += data->definitions.definitions[i].max_length;
 	}
 
 	return 0;
@@ -325,13 +324,13 @@ void rrr_types_definition_to_le(struct rrr_type_definition_collection *definitio
 	struct rrr_type_definition_collection new;
 	memset (&new, '\0', sizeof(new));
 
-	new->count = htole32(definition->count);
-	new->version = htole16(definition->version);
+	new.count = htole32(definition->count);
+	new.version = htole16(definition->version);
 
 	for (rrr_def_count i = 0; i < definition->count; i++) {
-		new->definitions[i].length = htole32(definition->definitions[i].length);
-		new->definitions[i].max_length = htole32(definition->definitions[i].max_length);
-		new->definitions[i].type = definition->definitions[i].type;
+		new.definitions[i].length = htole32(definition->definitions[i].length);
+		new.definitions[i].max_length = htole32(definition->definitions[i].max_length);
+		new.definitions[i].type = definition->definitions[i].type;
 	}
 
 	memcpy (definition, &new, sizeof (*definition));
@@ -339,21 +338,21 @@ void rrr_types_definition_to_le(struct rrr_type_definition_collection *definitio
 
 struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time) {
 	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_total_max_data_length(data);
-	struct vl_message *message = message_new_array(time_get_64(), total_length);
+	struct vl_message *message = message_new_array(time, total_length);
 	if (message == NULL) {
-		VL_MSG_ERR("Could not create message for data collection");
+		VL_MSG_ERR("Could not create message for data collection\n");
 		return NULL;
 	}
 
-	struct rrr_type_definition_collection *new_definition = message->data;
-	char *new_datastream = data[0 + sizeof(*new_definition)];
+	struct rrr_type_definition_collection *new_definition = (void*) message->data;
+	char *new_datastream = message->data + sizeof(*new_definition);
 
 	memcpy (new_definition, &data->definitions, sizeof(*new_definition));
 
 	char *pos = new_datastream;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(pos, data->data[i], data->definitions->definitions[i].length);
-		rrr_types_to_le[data->definitions->definitions[i].type](data->data[i]);
+		memcpy(pos, data->data + i, data->definitions.definitions[i].length);
+		rrr_types_to_le[data->definitions.definitions[i].type](pos);
 	}
 
 	rrr_types_definition_to_le(new_definition);

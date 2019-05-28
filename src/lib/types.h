@@ -88,5 +88,6 @@ struct rrr_data_collection *rrr_types_allocate_data (
 void rrr_types_destroy_data(struct rrr_data_collection *collection);
 
 struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data);
+struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time);
 
 #endif /* RRR_TYPES_H */
