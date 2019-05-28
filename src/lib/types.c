@@ -139,7 +139,7 @@ int convert_64_to_le(void *data) {
 	return 0;
 }
 
-int convert_blob(void *target) {
+int convert_blob_to_le(void *target) {
 	return 0;
 }
 
@@ -156,7 +156,7 @@ static int (*rrr_types_to_le[]) (void *data) = {
 		NULL,
 		&convert_64_to_le,
 		&convert_64_to_le,
-		&convert_blob
+		&convert_blob_to_le
 };
 
 int rrr_types_parse_definition (
@@ -345,7 +345,7 @@ struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection 
 		return NULL;
 	}
 
-	struct rrr_type_definition_collection *new_definition = message->data[0];
+	struct rrr_type_definition_collection *new_definition = message->data;
 	char *new_datastream = data[0 + sizeof(*new_definition)];
 
 	memcpy (new_definition, &data->definitions, sizeof(*new_definition));
