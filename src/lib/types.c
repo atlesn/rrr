@@ -142,6 +142,19 @@ int convert_blob_to_le(void *target) {
 	return 0;
 }
 
+int convert_64_to_host(void *data) {
+	uint64_t temp;
+	memcpy (&temp, data, sizeof(temp));
+
+	uint64_t *result = data;
+	*result = le64toh(temp);
+	return 0;
+}
+
+int convert_blob_to_host(void *target) {
+	return 0;
+}
+
 /* Must be in same positions as type ID in types.h */
 static int (*rrr_types_convert_functions[]) (void *target, const char *data, rrr_type_length length) = {
 		NULL,
@@ -156,6 +169,14 @@ static int (*rrr_types_to_le[]) (void *data) = {
 		&convert_64_to_le,
 		&convert_64_to_le,
 		&convert_blob_to_le
+};
+
+/* Must be in same positions as type ID in types.h */
+static int (*rrr_types_to_host[]) (void *data) = {
+		NULL,
+		&convert_64_to_host,
+		&convert_64_to_host,
+		&convert_blob_to_host
 };
 
 int rrr_types_parse_definition (
@@ -200,7 +221,7 @@ int rrr_types_parse_definition (
 
 		rrr_type_length max;
 		if (rrr_types_check_size(type, length, &max) != 0) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' is too large, max is '%lu'\n", length_c, type_c, cmd_key, max);
+			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' is too large, max is '%u'\n", length_c, type_c, cmd_key, max);
 			goto out_err;
 		}
 
@@ -228,14 +249,14 @@ int rrr_types_parse_data (
 	const struct rrr_type_definition_collection *definitions = &target->definitions;
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		VL_DEBUG_MSG_3("Parsing type index %lu of type %d\n", i, definitions->definitions[i].type);
+		VL_DEBUG_MSG_3("Parsing type index %u of type %d\n", i, definitions->definitions[i].type);
 		if (rrr_types_convert_functions[definitions->definitions[i].type] == NULL) {
 			VL_MSG_ERR("BUG: No convert function found for type %d\n", definitions->definitions[i].type);
 			exit (EXIT_FAILURE);
 		}
 		if (pos > end || pos + definitions->definitions[i].length > end) {
 			VL_MSG_ERR("Input data was too short according to configuration in type conversion\n");
-			VL_MSG_ERR("Received length was '%lu'\n", length);
+			VL_MSG_ERR("Received length was '%u'\n", length);
 			return 1;
 		}
 		if (rrr_types_convert_functions[definitions->definitions[i].type](target->data[i], pos, definitions->definitions[i].length) != 0) {
@@ -248,6 +269,7 @@ int rrr_types_parse_data (
 
 	return 0;
 }
+
 struct rrr_data_collection *rrr_types_allocate_data (
 		const struct rrr_type_definition_collection *definitions
 ) {
@@ -267,7 +289,7 @@ struct rrr_data_collection *rrr_types_allocate_data (
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
 		collection->data[i] = malloc (definitions->definitions[i].max_length);
 		if (collection->data[i] == NULL) {
-			VL_MSG_ERR("Could not allocate %lu bytes of memory for collection type data\n", definitions->definitions[i].length);
+			VL_MSG_ERR("Could not allocate %u bytes of memory for collection type data\n", definitions->definitions[i].length);
 			goto out_free_elements;
 		}
 	}
@@ -336,9 +358,27 @@ void rrr_types_definition_to_le(struct rrr_type_definition_collection *definitio
 	memcpy (definition, &new, sizeof (*definition));
 }
 
+void rrr_types_definition_to_host(struct rrr_type_definition_collection *definition) {
+	struct rrr_type_definition_collection new;
+	memset (&new, '\0', sizeof(new));
+
+	new.count = le32toh(definition->count);
+	new.version = le16toh(definition->version);
+
+	for (rrr_def_count i = 0; i < definition->count; i++) {
+		new.definitions[i].length = le32toh(definition->definitions[i].length);
+		new.definitions[i].max_length = le32toh(definition->definitions[i].max_length);
+		new.definitions[i].type = definition->definitions[i].type;
+	}
+
+	memcpy (definition, &new, sizeof (*definition));
+}
+
 struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time) {
 	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_total_max_data_length(data);
-	struct vl_message *message = message_new_array(time, total_length);
+	struct vl_message *message = NULL;
+
+	message = message_new_array(time, total_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
 		return NULL;
@@ -358,4 +398,51 @@ struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection 
 	rrr_types_definition_to_le(new_definition);
 
 	return message;
+}
+
+int rrr_types_message_to_collection(struct rrr_data_collection **target, const struct vl_message *message_orig) {
+	struct rrr_type_definition_collection definitions;
+	memcpy (&definitions, message_orig->data, sizeof(definitions));
+	const char *data_pos = message_orig->data + sizeof(definitions);
+
+	rrr_types_definition_to_host(&definitions);
+
+	if (definitions.version != RRR_VERSION) {
+		VL_MSG_ERR("rrr_types received array of incompatible version %u, expected %d\n", definitions.version, RRR_VERSION);
+		return 1;
+	}
+
+	struct rrr_data_collection *new_data = *target = rrr_types_allocate_data(&definitions);
+
+	if (new_data == NULL) {
+		VL_MSG_ERR("Could not allocate data for new data collection in rrr_types_message_to_collection\n");
+		return 1;
+	}
+
+	const char *pos = data_pos;
+	for (rrr_def_count i = 0; i < definitions.count; i++) {
+		char *target = new_data->data[i];
+		struct rrr_type_definition *definition = &definitions.definitions[i];
+
+		memcpy (target, data_pos, definition->max_length);
+		data_pos += definition->max_length;
+
+		if (data_pos > message_orig->data + message_orig->length) {
+			VL_MSG_ERR("Data read position exceeded message length in rrr_types_message_to_collection\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (!RRR_TYPE_OK(definition->type)) {
+			VL_MSG_ERR("Invalid type %u found when parsing array message to collection\n", definition->type);
+			goto out_free_data;
+		}
+
+		rrr_types_to_host[definition->type](target);
+	}
+
+	return 0;
+
+	out_free_data:
+	free(new_data);
+	return 1;
 }

@@ -125,6 +125,12 @@ static int cmd_parser(struct udpreader_data *data, struct cmd_data *cmd) {
 	return 0;
 }
 
+void free_message(void *msg) {
+	if (msg != NULL) {
+		free(msg);
+	}
+}
+
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 
@@ -137,10 +143,16 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	}
 	free (entry);
 
-	struct vl_message *message = rrr_types_create_message_le(data->type_data, time_get_64());
+	struct vl_message *message = NULL;
+	pthread_cleanup_push(free_message,message);
+
+	message = rrr_types_create_message_le(data->type_data, time_get_64());
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+		message = NULL;
 	}
+
+	pthread_cleanup_pop(0);
 
 	return 0;
 }

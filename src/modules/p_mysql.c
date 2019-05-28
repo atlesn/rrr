@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <errno.h>
 
+#include "../lib/types.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -49,6 +50,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MYSQL_BIND_MAX CMD_ARGUMENT_MAX
 #define VL_MYSQL_SQL_MAX 1024
 
+#define PASTE(x,y) x ## _ ## y
+
 // TODO : Fix URI support
 
 struct mysql_data {
@@ -65,13 +68,24 @@ struct mysql_data {
 //	const char *mysql_uri;
 	const char *mysql_db;
 	const char *mysql_table;
-	int colplan;
 	int no_tagging;
+	int colplan;
+	int add_timestamp_col;
+	const char *mysql_columns[VL_MYSQL_BIND_MAX];
 };
 
+struct process_entries_data {
+	struct mysql_data *data;
+	MYSQL_STMT *stmt;
+};
 
-int mysql_bind_and_execute(struct mysql_data *data) {
-	MYSQL_BIND *bind = &data->bind;
+struct column_configurator {
+	int (*create_sql)(char *target, unsigned int target_size, struct mysql_data *data);
+	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry *entry);
+};
+
+int mysql_bind_and_execute(struct process_entries_data *data) {
+	MYSQL_BIND *bind = data->data->bind;
 
 	if (mysql_stmt_bind_param(data->stmt, bind) != 0) {
 		VL_MSG_ERR ("mysql: Failed to bind values to statement: Error: %s\n",
@@ -84,27 +98,30 @@ int mysql_bind_and_execute(struct mysql_data *data) {
 				mysql_error(&data->data->mysql));
 		return 1;
 	}
+
 	return 0;
 }
 
-int colplan_voltage_create_sql(char *target, unsigned int target_size, const char *table) {
+int colplan_voltage_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
 	const char *query_base = "REPLACE INTO `%s` " \
 			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
 			"VALUES (?,?,?,?,?,?,?,?)";
 
-	unsigned int len = strlen(query_base) + strlen(table) + 1;
+	unsigned int len = strlen(query_base) + strlen(data->mysql_table) + 1;
 	if (len > target_size) {
 		VL_MSG_ERR("Could not fit voltage column plan SQL in colplan_volate_create_sql");
 		return 1;
 	}
 
-	sprintf(target, query_base, table);
+	sprintf(target, query_base, data->mysql_table);
 
 	return 0;
 }
 
-int colplan_voltage_prepare_bind(struct mysql_data *data, const struct ip_buffer_entry *entry) {
-	memset(data->bind, '\0', sizeof(data->bind));
+int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+	MYSQL_BIND *bind = data->data->bind;
+
+	memset(bind, '\0', sizeof(*bind));
 
 	struct sockaddr_in *ipv4_in = (struct sockaddr_in*) &entry->addr;
 
@@ -128,8 +145,7 @@ int colplan_voltage_prepare_bind(struct mysql_data *data, const struct ip_buffer
 		}
 	}
 
-	MYSQL_BIND *bind = data->bind;
-	struct vl_message *message = &entry->data.message;
+	// TODO : We are not very careful with int sizes here
 
 	// Timestamp
 	bind[0].buffer = &message->timestamp_to;
@@ -173,25 +189,167 @@ int colplan_voltage_prepare_bind(struct mysql_data *data, const struct ip_buffer
 	bind[7].buffer_type = MYSQL_TYPE_LONG;
 	bind[7].is_unsigned = 1;
 
+	return mysql_bind_and_execute(data);
+}
+
+int colplan_array_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
+	static const int query_base_max = VL_MYSQL_SQL_MAX + ((CMD_ARGUMENT_MAX + 1) * CMD_ARGUMENT_SIZE);
+	char query_base[query_base_max];
+	int pos = 0;
+
+	// Make sure constant strings to be put into query_base do no exceed
+	// VL_MYSQL_SQL_MAX, as we do not use snprintf (YOLO)
+
+	const char *timestamp_column = (data->add_timestamp_col ? ",`timestamp`" : "");
+	const char *timestamp_column_questionmark = (data->add_timestamp_col ? ",?" : "");
+
+	sprintf(query_base + pos, "REPLACE INTO `%s` (", data->mysql_table);
+	pos = strlen(query_base);
+
+	int columns_count = 0;
+	for (int i = 0; i < VL_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
+		int len = strlen(data->mysql_columns[i]);
+
+		if (len + pos + 4 > query_base_max) {
+			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
+			return 1;
+		}
+
+		const char *comma = (i > 0 ? "," : "");
+
+		sprintf (query_base + pos, "%s`%s`", comma, data->mysql_columns[i]);
+		pos = strlen(query_base);
+		columns_count++;
+	}
+
+
+	sprintf(query_base + pos, "%s) VALUES (", timestamp_column);
+	pos = strlen(query_base);
+
+	for (int i = 0; i < columns_count; i++) {
+		const char *comma = (i > 0 ? "," : "");
+		sprintf(query_base + pos, "%s?", comma);
+		pos = strlen(query_base);
+	}
+
+	sprintf(query_base + pos, "%s)", timestamp_column_questionmark);
+
+	VL_DEBUG_MSG_2("mysql array SQL: %s\n", query_base);
+
+	// Double check length
+	if (strlen(query_base) > query_base_max) {
+		VL_MSG_ERR("BUG: query_base was too long in colplan_array_create_sql");
+		exit(EXIT_FAILURE);
+	}
+
 	return 0;
 }
 
-/* Check order with function pointers */
-#define MYSQL_COLUMN_PLAN_VOLTAGE 1
-#define MYSQL_COLUMN_PLAN_ARRAY 2
-#define MYSQL_COLUMN_PLAN_NAME_VOLTAGE "voltage"
-#define MYSQL_COLUMN_PLAN_NAME_ARRAY "array"
+void free_collection(void *data) {
+	if (data != NULL) {
+		rrr_types_destroy_data(data);
+	}
+}
 
-struct mysql_column_configurator {
-	int (*create_sql)(char *target, unsigned int target_size, const char *table);
-	int (*prepare_bind)(MYSQL_BIND *bind, const struct ip_buffer_entry *entry);
-};
+int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+	int res = 0;
+
+	struct rrr_data_collection *collection = NULL;
+	pthread_cleanup_push(free_collection, collection);
+
+	if (rrr_types_message_to_collection(&collection, &entry->data.message) != 0) {
+		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
+		return 1;
+	}
+
+	struct rrr_type_definition_collection *definitions = &collection->definitions;
+	MYSQL_BIND *bind = data->data->bind;
+
+	if (definitions->count + data->data->add_timestamp_col > VL_MYSQL_BIND_MAX) {
+		VL_MSG_ERR("Number of types exceeded maximum (%u vs %i)\n", definitions->count, VL_MYSQL_BIND_MAX);
+		res = 1;
+		goto out_cleanup;
+	}
+
+	unsigned long string_lengths[VL_MYSQL_BIND_MAX];
+	memset(string_lengths, '\0', sizeof(string_lengths));
+
+	for (rrr_def_count i = 0; i < definitions->count; i++) {
+		struct rrr_type_definition *definition = &definitions->definitions[i];
+
+		// TODO : Support signed
+		if (RRR_TYPE_IS_64(definition->type)) {
+			bind[i].buffer = collection->data[i];
+			bind[i].buffer_type = MYSQL_TYPE_LONGLONG;
+			bind[i].is_unsigned = 1;
+		}
+		else if (RRR_TYPE_IS_BLOB(definition->type)) {
+			if (definition->length > definition->max_length) {
+				VL_MSG_ERR("Type length defined for column with index %ul exceeds maximum of %ul when binding with mysql\n",
+						definition->length, definition->max_length);
+				res = 1;
+				goto out_cleanup;
+			}
+
+			string_lengths[i] = definition->length;
+			bind[i].buffer = collection->data[i];
+			bind[i].length = &string_lengths[i];
+			bind[i].buffer_type = MYSQL_TYPE_STRING;
+		}
+		else {
+			VL_MSG_ERR("Unkown type %ul when binding with mysql\n", definition->type);
+			res = 1;
+			goto out_cleanup;
+		}
+	}
+
+	res = mysql_bind_and_execute(data);
+
+	for (rrr_def_count i = 0; i < definitions->count; i++) {
+		struct rrr_type_definition *definition = &definitions->definitions[i];
+
+		if (RRR_TYPE_IS_BLOB(definition->type)) {
+			if (string_lengths[i] != definition->length) {
+				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
+						string_lengths[i], definition->length, i);
+			}
+		}
+	}
+
+	out_cleanup:
+	if (res != 0) {
+		VL_MSG_ERR("Could not save array message to mysql database\n");
+	}
+	pthread_cleanup_pop(1);
+
+	return res;
+}
+
+/* Check order with function pointers */
+#define COLUMN_PLAN_VOLTAGE 1
+#define COLUMN_PLAN_ARRAY 2
+#define COLUMN_PLAN_MAX 2
+#define COLUMN_PLAN_NAME_VOLTAGE "voltage"
+#define COLUMN_PLAN_NAME_ARRAY "array"
+
+#define IS_COLPLAN_VOLTAGE(mysql_data) \
+	(mysql_data->colplan == COLUMN_PLAN_VOLTAGE)
+#define IS_COLPLAN_ARRAY(mysql_data) \
+	(mysql_data->colplan == COLUMN_PLAN_ARRAY)
+
+#define COLPLAN_OK(mysql_data) \
+	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
+
+#define COLUMN_PLAN_MATCH(str,name) \
+	strcmp(str,PASTE(COLUMN_PLAN_NAME,name)) == 0
+#define COLUMN_PLAN_INDEX(name) \
+	PASTE(COLUMN_PLAN,name)
 
 /* Check index numbers with defines above */
-struct mysql_column_configurator column_configurators[] = {
-		{ .create_sql = NULL,							.prepare_bind = NULL },
-		{ .create_sql = &colplan_voltage_create_sql,	.prepare_bind = &colplan_voltage_prepare_bind },
-		{ .create_sql = &colplan_array_create_sql,		.prepare_bind = &colplan_array_prepare_bind }
+struct column_configurator column_configurators[] = {
+		{ .create_sql = NULL,							.bind_and_execute = NULL },
+		{ .create_sql = &colplan_voltage_create_sql,	.bind_and_execute = &colplan_voltage_bind_execute },
+		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
 };
 
 void data_init(struct mysql_data *data) {
@@ -269,6 +427,8 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	const char *mysql_db = NULL;
 	const char *mysql_table = NULL;
 	const char *mysql_no_tagging = NULL;
+	const char *mysql_colplan = NULL;
+	const char *mysql_add_timestamp_col = NULL;
 //	const char *mysql_uri = NULL;
 
 	const char *tmp;
@@ -299,7 +459,14 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	if ((tmp = cmd_get_value(cmd, "mysql_no_tagging", 0)) != NULL ) {
 		mysql_no_tagging = tmp;
 	}
+	if ((tmp = cmd_get_value(cmd, "mysql_colplan", 0)) != NULL ) {
+		mysql_colplan = tmp;
+	}
+	if ((tmp = cmd_get_value(cmd, "mysql_add_timestamp_col", 0)) != NULL ) {
+		mysql_add_timestamp_col = tmp;
+	}
 
+	// TODO: Connect with URI
 /*	if ((tmp = cmd_get_value(cmd, "mysql_uri", 0)) != NULL) {
 		VL_DEBUG_MSG_1 ("mysql: Using URI for connecting to server\n");
 		mysql_uri = tmp;
@@ -322,6 +489,60 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 			return 1;
 		}
 		data->no_tagging = yesno;
+	}
+
+	data->add_timestamp_col = 0;
+	if (mysql_add_timestamp_col != NULL) {
+		int yesno;
+		if (!cmdline_check_yesno(cmd, mysql_add_timestamp_col, &yesno) != 0) {
+			VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col ('%s'), please specify 'yes' or 'no'\n", mysql_no_tagging);
+			return 1;
+		}
+		data->add_timestamp_col = yesno;
+	}
+
+	if (mysql_colplan == NULL) {
+		mysql_colplan = COLUMN_PLAN_NAME_ARRAY;
+		VL_MSG_ERR("Warning: No mysql_colplan set, defaulting to array\n");
+	}
+
+	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
+		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
+
+		cmd_arg_count i = 0;
+		while (1) {
+			const char *res = cmd_get_value(cmd, "mysql_columns", i);
+			if (res == NULL) {
+				break;
+			}
+			else if (i >= CMD_ARGUMENT_MAX) {
+				VL_MSG_ERR("BUG: Too many mysql column arguments\n");
+				exit (EXIT_FAILURE);
+			}
+			data->mysql_columns[i] = res;
+			i++;
+		}
+
+		VL_DEBUG_MSG_2("%lu mysql columns specified for array column plan", i);
+
+		if (data->mysql_columns[0] == NULL) {
+			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan\n");
+			return 1;
+		}
+	}
+	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
+		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
+
+		if (data->add_timestamp_col != 0) {
+			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan\n");
+			return 1;
+		}
+
+		VL_DEBUG_MSG_2("Using voltage column plan for mysql");
+	}
+	else {
+		VL_MSG_ERR("BUG: Reached end of colplan name tests in mysql");
+		exit(EXIT_FAILURE);
 	}
 
 	data->mysql_server = mysql_server;
@@ -378,23 +599,34 @@ int mysql_poll_delete_ip (
 	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
-struct process_entries_data {
-	struct mysql_data *data;
-	MYSQL_STMT *stmt;
-};
-
 int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	if (data->data->mysql_connected != 1) {
 		return 1;
 	}
 
+	struct mysql_data *mysql_data = data->data;
+	struct vl_message *message = &entry->data.message;
 
+	// TODO : Don't default to old voltage/info-message, should have it's own class
 
-	// TODO : We are not very careful with int sizes here
+	int colplan_index = COLUMN_PLAN_VOLTAGE;
+	if (MSG_IS_MSG_ARRAY(message)) {
+		if (!IS_COLPLAN_ARRAY(mysql_data)) {
+			VL_MSG_ERR("Received an array message in mysql but array column plan is not being used\n");
+			return 1;
+		}
+		colplan_index = COLUMN_PLAN_ARRAY;
+	}
+	else if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
+		VL_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used\n");
+		return 1;
+	}
+	else {
+		VL_MSG_ERR("Unknown message class/type %u/%u received in mysql_save", message->class, message->type);
+		return 1;
+	}
 
-	gfdgfdgfd
-
-	return 0;
+	return column_configurators[colplan_index].bind_and_execute(data, entry);
 }
 
 int process_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
@@ -452,8 +684,13 @@ int process_entries (struct module_thread_data *thread_data) {
 	poll_data.private_data = &process_data;
 	poll_data.source = thread_data;
 
-	gfdgfdgfdgfdgfdgfdfd
+	if (!COLPLAN_OK(data)) {
+		VL_MSG_ERR("BUG: Mysql colplan was out of range in process_entries\n");
+		exit (EXIT_FAILURE);
+	}
 
+	char query[VL_MYSQL_SQL_MAX];
+	column_configurators[data->colplan].create_sql(query, VL_MYSQL_SQL_MAX, data);
 
 	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
 		VL_MSG_ERR ("mysql: Failed to prepare statement: Error: %s\n",

@@ -27,9 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "messages.h"
 
-#define RRR_VERSION 1
-#define RRR_TYPES_MAX_DEFINITIONS CMD_ARGUMENT_MAX
-
 typedef uint8_t rrr_type;
 typedef uint32_t rrr_type_length;
 typedef uint32_t rrr_def_count;
@@ -38,11 +35,15 @@ typedef uint64_t rrr_type_le;
 typedef uint64_t rrr_type_be;
 typedef uint16_t rrr_version;
 
+#define RRR_VERSION 1
+#define RRR_TYPES_MAX_DEFINITIONS CMD_ARGUMENT_MAX
+
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
 #define RRR_TYPE_LE			1
 #define RRR_TYPE_BE			2
 #define RRR_TYPE_BLOB		3
+#define RRR_TYPE_MAX		3
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -51,6 +52,10 @@ typedef uint16_t rrr_version;
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
 #define RRR_TYPE_MAX_BLOB	CMD_ARGUMENT_SIZE
+
+#define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE)
+#define RRR_TYPE_IS_BLOB(type)	(type == RRR_TYPE_BLOB)
+#define RRR_TYPE_OK(type)		(type > 0 && type <= RRR_TYPE_MAX)
 
 struct rrr_type_definition {
 	rrr_type		type;
@@ -89,5 +94,10 @@ void rrr_types_destroy_data(struct rrr_data_collection *collection);
 
 struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data);
 struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time);
+
+int rrr_types_message_to_collection(struct rrr_data_collection **target, const struct vl_message *message_orig);
+
+void rrr_types_definition_to_le(struct rrr_type_definition_collection *definition);
+void rrr_types_definition_to_host(struct rrr_type_definition_collection *definition);
 
 #endif /* RRR_TYPES_H */
