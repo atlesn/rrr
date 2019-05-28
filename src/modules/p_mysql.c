@@ -46,12 +46,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MYSQL_DEFAULT_SERVER "localhost"
 #define VL_MYSQL_DEFAULT_PORT 5506
 
+#define VL_MYSQL_BIND_MAX CMD_ARGUMENT_MAX
+#define VL_MYSQL_SQL_MAX 1024
+
 // TODO : Fix URI support
 
 struct mysql_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
 	MYSQL mysql;
+	MYSQL_BIND bind[VL_MYSQL_BIND_MAX];
 	int mysql_initialized;
 	int mysql_connected;
 	const char *mysql_server;
@@ -61,7 +65,133 @@ struct mysql_data {
 //	const char *mysql_uri;
 	const char *mysql_db;
 	const char *mysql_table;
+	int colplan;
 	int no_tagging;
+};
+
+
+int mysql_bind_and_execute(struct mysql_data *data) {
+	MYSQL_BIND *bind = &data->bind;
+
+	if (mysql_stmt_bind_param(data->stmt, bind) != 0) {
+		VL_MSG_ERR ("mysql: Failed to bind values to statement: Error: %s\n",
+				mysql_error(&data->data->mysql));
+		return 1;
+	}
+
+	if (mysql_stmt_execute(data->stmt) != 0) {
+		VL_MSG_ERR ("mysql: Failed to execute statement: Error: %s\n",
+				mysql_error(&data->data->mysql));
+		return 1;
+	}
+	return 0;
+}
+
+int colplan_voltage_create_sql(char *target, unsigned int target_size, const char *table) {
+	const char *query_base = "REPLACE INTO `%s` " \
+			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
+			"VALUES (?,?,?,?,?,?,?,?)";
+
+	unsigned int len = strlen(query_base) + strlen(table) + 1;
+	if (len > target_size) {
+		VL_MSG_ERR("Could not fit voltage column plan SQL in colplan_volate_create_sql");
+		return 1;
+	}
+
+	sprintf(target, query_base, table);
+
+	return 0;
+}
+
+int colplan_voltage_prepare_bind(struct mysql_data *data, const struct ip_buffer_entry *entry) {
+	memset(data->bind, '\0', sizeof(data->bind));
+
+	struct sockaddr_in *ipv4_in = (struct sockaddr_in*) &entry->addr;
+
+	// TODO : not thread safe
+	char *ipv4_string_tmp = inet_ntoa(ipv4_in->sin_addr);
+	char ipv4_string[strlen(ipv4_string_tmp)+1];
+	sprintf(ipv4_string, "%s", ipv4_string_tmp);
+
+	struct vl_message *message = &entry->data.message;
+
+	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
+			message->type, message->timestamp_to);
+
+	/* Attempt to make an integer value if possible */
+	unsigned long long int value = message->data_numeric;
+	if (value == 0 && message->length > 0) {
+		char *pos;
+		value = strtoull(message->data, &pos, 10);
+		if (errno == ERANGE || pos == message->data) {
+			value = 0;
+		}
+	}
+
+	MYSQL_BIND *bind = data->bind;
+	struct vl_message *message = &entry->data.message;
+
+	// Timestamp
+	bind[0].buffer = &message->timestamp_to;
+	bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[0].is_unsigned = 1;
+
+	// Source
+	unsigned long source_length = strlen(ipv4_string);
+	bind[1].buffer = ipv4_string;
+	bind[1].length = &source_length;
+	bind[1].buffer_type = MYSQL_TYPE_STRING;
+
+	// Class
+	bind[2].buffer = &message->class;
+	bind[2].buffer_type = MYSQL_TYPE_LONG;
+	bind[2].is_unsigned = 1;
+
+	// Time from
+	bind[3].buffer = &message->timestamp_from;
+	bind[3].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[3].is_unsigned = 1;
+
+	// Time to
+	bind[4].buffer = &message->timestamp_to;
+	bind[4].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[4].is_unsigned = 1;
+
+	// Value
+	bind[5].buffer = &value;
+	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
+	bind[5].is_unsigned = 1;
+
+	// Message
+	unsigned long message_length = message->length;
+	bind[6].buffer = message->data;
+	bind[6].length = &message_length;
+	bind[6].buffer_type = MYSQL_TYPE_STRING;
+
+	// Message length
+	bind[7].buffer = &message->length;
+	bind[7].buffer_type = MYSQL_TYPE_LONG;
+	bind[7].is_unsigned = 1;
+
+	return 0;
+}
+
+/* Check order with function pointers */
+#define MYSQL_COLUMN_PLAN_VOLTAGE 1
+#define MYSQL_COLUMN_PLAN_ARRAY 2
+#define MYSQL_COLUMN_PLAN_NAME_VOLTAGE "voltage"
+#define MYSQL_COLUMN_PLAN_NAME_ARRAY "array"
+
+struct mysql_column_configurator {
+	int (*create_sql)(char *target, unsigned int target_size, const char *table);
+	int (*prepare_bind)(MYSQL_BIND *bind, const struct ip_buffer_entry *entry);
+};
+
+/* Check index numbers with defines above */
+struct mysql_column_configurator column_configurators[] = {
+		{ .create_sql = NULL,							.prepare_bind = NULL },
+		{ .create_sql = &colplan_voltage_create_sql,	.prepare_bind = &colplan_voltage_prepare_bind },
+		{ .create_sql = &colplan_array_create_sql,		.prepare_bind = &colplan_array_prepare_bind }
 };
 
 void data_init(struct mysql_data *data) {
@@ -258,86 +388,11 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 		return 1;
 	}
 
-	struct sockaddr_in *ipv4_in = (struct sockaddr_in*) &entry->addr;
 
-	// TODO : not thread safe
-	char *ipv4_string_tmp = inet_ntoa(ipv4_in->sin_addr);
-	char ipv4_string[strlen(ipv4_string_tmp)+1];
-	sprintf(ipv4_string, "%s", ipv4_string_tmp);
-
-	struct vl_message *message = &entry->data.message;
-
-	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
-			message->type, message->timestamp_to);
-
-	/* Attempt to make an integer value if possible */
-	unsigned long long int value = message->data_numeric;
-	if (value == 0 && message->length > 0) {
-		char *pos;
-		value = strtoull(message->data, &pos, 10);
-		if (errno == ERANGE || pos == message->data) {
-			value = 0;
-		}
-	}
 
 	// TODO : We are not very careful with int sizes here
 
-	MYSQL_BIND bind[8];
-	memset(bind, '\0', sizeof(bind));
-
-	// Timestamp
-	bind[0].buffer = &message->timestamp_to;
-	bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
-	bind[0].is_unsigned = 1;
-
-	// Source
-	unsigned long source_length = strlen(ipv4_string);
-	bind[1].buffer = ipv4_string;
-	bind[1].length = &source_length;
-	bind[1].buffer_type = MYSQL_TYPE_STRING;
-
-	// Class
-	bind[2].buffer = &message->class;
-	bind[2].buffer_type = MYSQL_TYPE_LONG;
-	bind[2].is_unsigned = 1;
-
-	// Time from
-	bind[3].buffer = &message->timestamp_from;
-	bind[3].buffer_type = MYSQL_TYPE_LONGLONG;
-	bind[3].is_unsigned = 1;
-
-	// Time to
-	bind[4].buffer = &message->timestamp_to;
-	bind[4].buffer_type = MYSQL_TYPE_LONGLONG;
-	bind[4].is_unsigned = 1;
-
-	// Value
-	bind[5].buffer = &value;
-	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
-	bind[5].is_unsigned = 1;
-
-	// Message
-	unsigned long message_length = message->length;
-	bind[6].buffer = message->data;
-	bind[6].length = &message_length;
-	bind[6].buffer_type = MYSQL_TYPE_STRING;
-
-	// Message length
-	bind[7].buffer = &message->length;
-	bind[7].buffer_type = MYSQL_TYPE_LONG;
-	bind[7].is_unsigned = 1;
-
-	if (mysql_stmt_bind_param(data->stmt, bind) != 0) {
-		VL_MSG_ERR ("mysql: Failed to bind values to statement: Error: %s\n",
-				mysql_error(&data->data->mysql));
-		return 1;
-	}
-
-	if (mysql_stmt_execute(data->stmt) != 0) {
-		VL_MSG_ERR ("mysql: Failed to execute statement: Error: %s\n",
-				mysql_error(&data->data->mysql));
-		return 1;
-	}
+	gfdgfdgfd
 
 	return 0;
 }
@@ -397,12 +452,8 @@ int process_entries (struct module_thread_data *thread_data) {
 	poll_data.private_data = &process_data;
 	poll_data.source = thread_data;
 
-	const char *query_base = "REPLACE INTO `%s` " \
-			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
-			"VALUES (?,?,?,?,?,?,?,?)";
+	gfdgfdgfdgfdgfdgfdfd
 
-	char query[strlen(query_base) + strlen(data->mysql_table) + 1];
-	sprintf(query, query_base, data->mysql_table);
 
 	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
 		VL_MSG_ERR ("mysql: Failed to prepare statement: Error: %s\n",

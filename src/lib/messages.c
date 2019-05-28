@@ -99,7 +99,7 @@ struct vl_message *message_new_array (
 			res
 	) != 0) {
 		free(res);
-		VL_MSG_ERR ("Bug: Could not initialize array message\n");
+		VL_MSG_ERR ("BUG: Could not initialize array message\n");
 		exit (EXIT_FAILURE);
 	}
 
@@ -173,7 +173,7 @@ int init_empty_message (
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message length was too long\n");
+		VL_MSG_ERR ("Message length was too long (%lu vs %d)\n", data_size, MSG_DATA_MAX_LENGTH);
 		return 1;
 	}
 

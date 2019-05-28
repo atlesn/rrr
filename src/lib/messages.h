@@ -44,7 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_INFO_STRING "INFO"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_DATA_MAX_LENGTH 256
+#define MSG_DATA_MAX_LENGTH 1024
 
 #define MSG_STRING_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
 
