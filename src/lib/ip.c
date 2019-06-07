@@ -145,7 +145,10 @@ int ip_receive_packets (
 
 		if (VL_DEBUGLEVEL_3) {
 			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
-				VL_DEBUG_MSG ("%02x-", entry->data.message.data[i]);
+				VL_DEBUG_MSG ("%02x-", entry->data.data[i]);
+				if ((i + 1) % 32 == 0) {
+					VL_DEBUG_MSG ("\n");
+				}
 			}
 			VL_DEBUG_MSG ("\n");
 		}

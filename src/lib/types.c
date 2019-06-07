@@ -80,16 +80,18 @@ int convert_le(void *target, const char *data, rrr_type_length length) {
 	temp.temp_f = 0;
 
 	rrr_type_length wpos = 0;
-	rrr_type_length i = 0;
-	do {
-		temp.temp_b[wpos++] = data[i++];
-	} while (i < length);
+	rrr_type_length rpos = length - 1;
+	while (wpos < length) {
+		temp.temp_b[wpos++] = data[rpos--];
+	}
 
 	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(final),convert_function_size_match_le)
 	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(temp.temp_f),convert_function_size_match_le)
 	final = le64toh(temp.temp_f);
 
 	memcpy(target, &final, sizeof(final));
+
+	VL_DEBUG_MSG_3("Converted an le64: %llu\n", final);
 
 	return 0;
 }
@@ -110,10 +112,10 @@ int convert_be(void *target, const char *data, rrr_type_length length) {
 
 	temp.temp_f = 0;
 
-	rrr_type_length wpos = sizeof(rrr_type_be) - 1;
+	rrr_type_length wpos = 0;
 	rrr_type_length i = 0;
 	do {
-		temp.temp_b[wpos--] = data[i++];
+		temp.temp_b[wpos++] = data[i++];
 	} while (i < length);
 
 	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(final),convert_function_size_match_le)
@@ -135,6 +137,9 @@ int convert_64_to_le(void *data) {
 
 	uint64_t *result = data;
 	*result = htole64(temp);
+
+//	VL_DEBUG_MSG_3("Converted type host64 to le64: %llu->%llu\n", temp, *result);
+
 	return 0;
 }
 
@@ -391,8 +396,14 @@ struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection 
 
 	char *pos = new_datastream;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(pos, data->data + i, data->definitions.definitions[i].length);
-		rrr_types_to_le[data->definitions.definitions[i].type](pos);
+		memcpy(pos, data->data[i], data->definitions.definitions[i].max_length);
+
+		if (rrr_types_to_le[data->definitions.definitions[i].type](pos) != 0) {
+			VL_MSG_ERR("Error while converting type index %lu to le\n", i);
+			return NULL;
+		}
+
+		pos += data->definitions.definitions[i].max_length;
 	}
 
 	rrr_types_definition_to_le(new_definition);

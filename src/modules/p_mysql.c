@@ -84,6 +84,26 @@ struct column_configurator {
 	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry *entry);
 };
 
+/* Check order with function pointers */
+#define COLUMN_PLAN_VOLTAGE 1
+#define COLUMN_PLAN_ARRAY 2
+#define COLUMN_PLAN_MAX 2
+#define COLUMN_PLAN_NAME_VOLTAGE "voltage"
+#define COLUMN_PLAN_NAME_ARRAY "array"
+
+#define IS_COLPLAN_VOLTAGE(mysql_data) \
+	(mysql_data->colplan == COLUMN_PLAN_VOLTAGE)
+#define IS_COLPLAN_ARRAY(mysql_data) \
+	(mysql_data->colplan == COLUMN_PLAN_ARRAY)
+
+#define COLPLAN_OK(mysql_data) \
+	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
+
+#define COLUMN_PLAN_MATCH(str,name) \
+	strcmp(str,PASTE(COLUMN_PLAN_NAME,name)) == 0
+#define COLUMN_PLAN_INDEX(name) \
+	PASTE(COLUMN_PLAN,name)
+
 int mysql_bind_and_execute(struct process_entries_data *data) {
 	MYSQL_BIND *bind = data->data->bind;
 
@@ -196,6 +216,7 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 	static const int query_base_max = VL_MYSQL_SQL_MAX + ((CMD_ARGUMENT_MAX + 1) * CMD_ARGUMENT_SIZE);
 	char query_base[query_base_max];
 	int pos = 0;
+	*target = '\0';
 
 	// Make sure constant strings to be put into query_base do no exceed
 	// VL_MYSQL_SQL_MAX, as we do not use snprintf (YOLO)
@@ -234,13 +255,20 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 
 	sprintf(query_base + pos, "%s)", timestamp_column_questionmark);
 
-	VL_DEBUG_MSG_2("mysql array SQL: %s\n", query_base);
+//	VL_DEBUG_MSG_3("mysql array SQL: %s\n", query_base);
 
 	// Double check length
 	if (strlen(query_base) > query_base_max) {
 		VL_MSG_ERR("BUG: query_base was too long in colplan_array_create_sql");
 		exit(EXIT_FAILURE);
 	}
+
+	if (target_size < strlen(query_base)) {
+		VL_MSG_ERR("Mysql query was too long in colplan_array_create_sql\n");
+		return 1;
+	}
+
+	sprintf(target, "%s", query_base);
 
 	return 0;
 }
@@ -255,12 +283,13 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	int res = 0;
 
 	struct rrr_data_collection *collection = NULL;
-	pthread_cleanup_push(free_collection, collection);
 
 	if (rrr_types_message_to_collection(&collection, &entry->data.message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		return 1;
 	}
+
+	pthread_cleanup_push(free_collection, collection);
 
 	struct rrr_type_definition_collection *definitions = &collection->definitions;
 	MYSQL_BIND *bind = data->data->bind;
@@ -332,26 +361,6 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	return res;
 }
-
-/* Check order with function pointers */
-#define COLUMN_PLAN_VOLTAGE 1
-#define COLUMN_PLAN_ARRAY 2
-#define COLUMN_PLAN_MAX 2
-#define COLUMN_PLAN_NAME_VOLTAGE "voltage"
-#define COLUMN_PLAN_NAME_ARRAY "array"
-
-#define IS_COLPLAN_VOLTAGE(mysql_data) \
-	(mysql_data->colplan == COLUMN_PLAN_VOLTAGE)
-#define IS_COLPLAN_ARRAY(mysql_data) \
-	(mysql_data->colplan == COLUMN_PLAN_ARRAY)
-
-#define COLPLAN_OK(mysql_data) \
-	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
-
-#define COLUMN_PLAN_MATCH(str,name) \
-	strcmp(str,PASTE(COLUMN_PLAN_NAME,name)) == 0
-#define COLUMN_PLAN_INDEX(name) \
-	PASTE(COLUMN_PLAN,name)
 
 /* Check index numbers with defines above */
 struct column_configurator column_configurators[] = {
@@ -492,8 +501,9 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	data->no_tagging = 0;
 	if (mysql_no_tagging != NULL) {
 		int yesno;
-		if (!cmdline_check_yesno(cmd, mysql_no_tagging, &yesno) != 0) {
-			VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging ('%s'), please specify 'yes' or 'no'\n", mysql_no_tagging);
+		if (cmdline_check_yesno(cmd, mysql_no_tagging, &yesno) != 0) {
+			VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging ('%s'), please specify 'yes' or 'no'\n",
+					mysql_no_tagging);
 			return 1;
 		}
 		data->no_tagging = yesno;
@@ -502,16 +512,17 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	data->add_timestamp_col = 0;
 	if (mysql_add_timestamp_col != NULL) {
 		int yesno;
-		if (!cmdline_check_yesno(cmd, mysql_add_timestamp_col, &yesno) != 0) {
-			VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col ('%s'), please specify 'yes' or 'no'\n", mysql_no_tagging);
+		if (cmdline_check_yesno(cmd, mysql_add_timestamp_col, &yesno) != 0) {
+			VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col ('%s'), please specify 'yes' or 'no'\n",
+					mysql_add_timestamp_col);
 			return 1;
 		}
 		data->add_timestamp_col = yesno;
 	}
 
 	if (mysql_colplan == NULL) {
-		mysql_colplan = COLUMN_PLAN_NAME_ARRAY;
-		VL_MSG_ERR("Warning: No mysql_colplan set, defaulting to array\n");
+		mysql_colplan = COLUMN_PLAN_NAME_VOLTAGE;
+		VL_MSG_ERR("Warning: No mysql_colplan set, defaulting to voltage\n");
 	}
 
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
@@ -519,12 +530,12 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 
 		cmd_arg_count i = 0;
 		while (1) {
-			const char *res = cmd_get_value(cmd, "mysql_columns", i);
-			if (res == NULL) {
+			const char *res = cmd_get_subvalue(cmd, "mysql_columns", 0, i);
+			if (res == NULL || *res == '\0') {
 				break;
 			}
 			else if (i >= CMD_ARGUMENT_MAX) {
-				VL_MSG_ERR("BUG: Too many mysql column arguments\n");
+				VL_MSG_ERR("BUG: Too many mysql column arguments (%lu vs %i)\n", i, CMD_ARGUMENT_MAX);
 				exit (EXIT_FAILURE);
 			}
 			data->mysql_columns[i] = res;
@@ -568,9 +579,8 @@ int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned 
 	struct module_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
-	struct vl_message *reading = &entry->data.message;
 
-	VL_DEBUG_MSG_3 ("mysql: Result from buffer (ip): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): size %lu\n", size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, data, size);
 
@@ -587,9 +597,8 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	memset(entry, '\0', sizeof(*entry));
 	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
 	free (reading);
-	reading = &entry->data.message;
 
-	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): size %lu\n", size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, (char*) entry, sizeof(*entry));
 

@@ -133,6 +133,7 @@ void free_message(void *msg) {
 
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
+	uint64_t timestamp = entry->data.message.timestamp_from;
 
 
 	if (rrr_types_parse_data(entry->data.data, entry->data_length, data->type_data) != 0) {
@@ -146,7 +147,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct vl_message *message = NULL;
 	pthread_cleanup_push(free_message,message);
 
-	message = rrr_types_create_message_le(data->type_data, time_get_64());
+	message = rrr_types_create_message_le(data->type_data, timestamp);
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
 		message = NULL;
@@ -199,11 +200,7 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	}
 	VL_DEBUG_MSG_2("udpreader: listening on port %d\n", data->listen_port);
 
-	static int count = 20;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
-		if (--count == 0) {
-			break;
-		}
 		update_watchdog_time(thread_data->thread);
 
 		uint64_t time = time_get_64();
@@ -218,7 +215,7 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 /*		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading)); */
 
-		usleep (750000); // 10 ms
+		usleep (50000); // 10 ms
 	}
 
 	VL_DEBUG_MSG_1 ("Udpreader received encourage stop\n");
