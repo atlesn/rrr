@@ -135,9 +135,10 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 	uint64_t timestamp = entry->data.message.timestamp_from;
 
-
 	if (rrr_types_parse_data(entry->data.data, entry->data_length, data->type_data) != 0) {
 		VL_MSG_ERR("udpreader received an invalid packet\n");
+		free (entry);
+		return 0;
 	}
 	else {
 		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");

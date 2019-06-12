@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <endian.h>
+#include <inttypes.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "types.h"
@@ -48,7 +49,7 @@ rrr_type rrr_types_get_type(const char *type) {
 #define RRR_TYPE_LENGTH_CHECK_CASE(type,length,max) \
 		case PASTER(RRR_TYPE,type): \
 			max = PASTER(RRR_TYPE_MAX,type); \
-			return ((length <= PASTER(RRR_TYPE_MAX,type)) == 1 ? 0 : 1)
+			return ((length <= PASTER(RRR_TYPE_MAX,type) && (length >= 0)) == 1 ? 0 : 1)
 
 int rrr_types_check_size (rrr_type type, rrr_type_length length, rrr_type_length *max) {
 	switch (type) {
@@ -90,19 +91,20 @@ int convert_le(void *target, const char *data, rrr_array_size array_size, rrr_ty
 
 	temp.temp_f = 0;
 
-	rrr_type_length wpos = 0;
-	rrr_type_length rpos = length - 1;
-	while (wpos < length) {
-		temp.temp_b[wpos++] = data[rpos--];
+	rrr_type_length pos = 0;
+	while (pos < length) {
+		temp.temp_b[pos] = data[pos];
+		pos++;
 	}
 
 	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(final),convert_function_size_match_le)
 	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(temp.temp_f),convert_function_size_match_le)
+
 	final = le64toh(temp.temp_f);
 
 	memcpy(target, &final, sizeof(final));
 
-	VL_DEBUG_MSG_3("Converted an le64: %llu\n", final);
+	VL_DEBUG_MSG_3("Converted a le64: %llu\n", (long long unsigned int) final);
 
 	return 0;
 }
@@ -134,17 +136,30 @@ int convert_be(void *target, const char *data, rrr_array_size array_size, rrr_ty
 
 	temp.temp_f = 0;
 
-	rrr_type_length wpos = 0;
-	rrr_type_length i = 0;
-	do {
-		temp.temp_b[wpos++] = data[i++];
-	} while (i < length);
+	rrr_type_length wpos = sizeof(rrr_type_be) - 1;
+	rrr_type_length rpos = length - 1;
 
-	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(final),convert_function_size_match_le)
-	VL_ASSERT(sizeof(le64toh(temp.temp_f))==sizeof(temp.temp_f),convert_function_size_match_le)
+	VL_DEBUG_MSG_3("rpos: %d, wpos: %d\n", rpos, wpos);
+
+	while (1) {
+		temp.temp_b[wpos] = data[rpos];
+
+		if (rpos == 0) {
+			break;
+		}
+
+		wpos--;
+		rpos--;
+	}
+
+	VL_ASSERT(sizeof(be64toh(temp.temp_f))==sizeof(final),convert_function_size_match_be)
+	VL_ASSERT(sizeof(be64toh(temp.temp_f))==sizeof(temp.temp_f),convert_function_size_match_be)
+
 	final = be64toh(temp.temp_f);
 
 	memcpy(target, &final, sizeof(final));
+
+	VL_DEBUG_MSG_3("Converted a be64: %llu\n", (long long unsigned int) final);
 
 	return 0;
 }
@@ -340,9 +355,37 @@ struct rrr_data_collection *rrr_types_allocate_data (
 	}
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		collection->data[i] = malloc (definitions->definitions[i].max_length * definitions->definitions[i].array_size);
+		if (!RRR_TYPE_OK(definitions->definitions[i].type)) {
+			VL_MSG_ERR("Invalid type %d received in rrr_types_allocate_data\n",
+					definitions->definitions[i].type);
+			goto out_free_elements;
+		}
+
+		rrr_type_length max_length;
+		if (rrr_types_check_size(definitions->definitions[i].type, definitions->definitions[i].length, &max_length) != 0) {
+			VL_MSG_ERR("Invalid length %d received in rrr_types_allocate_data, max length is %d\n",
+					definitions->definitions[i].length, max_length);
+			goto out_free_elements;
+		}
+
+		if (definitions->definitions[i].max_length != max_length) {
+			VL_MSG_ERR("Max length mismatch from default in rrr_types_allocate_data, %d vs %d",
+					definitions->definitions[i].max_length, max_length);
+			goto out_free_elements;
+		}
+
+		if (definitions->definitions[i].array_size < 1 || definitions->definitions[i].array_size > RRR_TYPE_MAX_ARRAY) {
+			VL_MSG_ERR("Invalid array length %d received in rrr_types_allocate_data, bounds are %d to %d\n",
+					definitions->definitions[i].array_size, 1, RRR_TYPE_MAX_ARRAY);
+			goto out_free_elements;
+		}
+
+		int allocate = definitions->definitions[i].max_length * definitions->definitions[i].array_size;
+		VL_DEBUG_MSG_3("Allocating memory for type in definition: %d\n", allocate);
+		collection->data[i] = malloc (allocate);
+
 		if (collection->data[i] == NULL) {
-			VL_MSG_ERR("Could not allocate %u bytes of memory for collection type data\n", definitions->definitions[i].length);
+			VL_MSG_ERR("Could not allocate %u bytes of memory for collection type data\n", allocate);
 			goto out_free_elements;
 		}
 	}
@@ -367,11 +410,11 @@ struct rrr_data_collection *rrr_types_allocate_data (
 rrr_type_length rrr_get_total_max_data_length(const struct rrr_data_collection *data) {
 	rrr_type_length ret = 0;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-			ret += data->definitions.definitions[i].max_length;
+			ret += data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size;
 	}
 	return ret;
 }
-
+/*
 int rrr_types_merge_data(char *target, rrr_type_length target_length, const struct rrr_data_collection *data) {
 	rrr_type_length length = rrr_get_total_max_data_length(data);
 	if (target_length < length) {
@@ -381,13 +424,13 @@ int rrr_types_merge_data(char *target, rrr_type_length target_length, const stru
 
 	char *pos = target;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(target, data->data + i, length);
+		memcpy(target, data->data + i, data->definitions.definitions[i].length * data->definitions.definitions[i].array_size);
 		target += data->definitions.definitions[i].max_length;
 	}
 
 	return 0;
 }
-
+*/
 void rrr_types_destroy_data (struct rrr_data_collection *collection) {
 	for (rrr_def_count i = 0; i < collection->definitions.count; i++) {
 		free(collection->data[i]);
@@ -406,6 +449,7 @@ void rrr_types_definition_to_le(struct rrr_type_definition_collection *definitio
 		new.definitions[i].length = htole32(definition->definitions[i].length);
 		new.definitions[i].max_length = htole32(definition->definitions[i].max_length);
 		new.definitions[i].type = definition->definitions[i].type;
+		new.definitions[i].array_size = htole32(definition->definitions[i].array_size);
 	}
 
 	memcpy (definition, &new, sizeof (*definition));
@@ -422,6 +466,7 @@ void rrr_types_definition_to_host(struct rrr_type_definition_collection *definit
 		new.definitions[i].length = le32toh(definition->definitions[i].length);
 		new.definitions[i].max_length = le32toh(definition->definitions[i].max_length);
 		new.definitions[i].type = definition->definitions[i].type;
+		new.definitions[i].array_size = le32toh(definition->definitions[i].array_size);
 	}
 
 	memcpy (definition, &new, sizeof (*definition));
@@ -444,14 +489,14 @@ struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection 
 
 	char *pos = new_datastream;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(pos, data->data[i], data->definitions.definitions[i].max_length);
+		memcpy(pos, data->data[i], data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size);
 
 		if (rrr_types_to_le[data->definitions.definitions[i].type](pos) != 0) {
-			VL_MSG_ERR("Error while converting type index %lu to le\n", i);
+			VL_MSG_ERR("Error while converting type index %lu to le\n", (long unsigned int) i);
 			return NULL;
 		}
 
-		pos += data->definitions.definitions[i].max_length;
+		pos += data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size;
 	}
 
 	rrr_types_definition_to_le(new_definition);
@@ -483,8 +528,8 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 		char *target = new_data->data[i];
 		struct rrr_type_definition *definition = &definitions.definitions[i];
 
-		memcpy (target, data_pos, definition->max_length);
-		data_pos += definition->max_length;
+		memcpy (target, data_pos, definition->max_length * definition->array_size);
+		data_pos += definition->max_length * definition->array_size;
 
 		if (data_pos > message_orig->data + message_orig->length) {
 			VL_MSG_ERR("Data read position exceeded message length in rrr_types_message_to_collection\n");

@@ -72,6 +72,9 @@ struct mysql_data {
 	int colplan;
 	int add_timestamp_col;
 	const char *mysql_columns[VL_MYSQL_BIND_MAX];
+	cmd_arg_count mysql_special_columns_count;
+	const char *mysql_special_columns[VL_MYSQL_BIND_MAX];
+	char *mysql_special_values[VL_MYSQL_BIND_MAX]; // Can't do const because of MySQL bind
 };
 
 struct process_entries_data {
@@ -213,7 +216,7 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 }
 
 int colplan_array_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
-	static const int query_base_max = VL_MYSQL_SQL_MAX + ((CMD_ARGUMENT_MAX + 1) * CMD_ARGUMENT_SIZE);
+	static const int query_base_max = VL_MYSQL_SQL_MAX + ((CMD_ARGUMENT_MAX + 1) * CMD_ARGUMENT_SIZE * 2);
 	char query_base[query_base_max];
 	int pos = 0;
 	*target = '\0';
@@ -227,6 +230,7 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 	sprintf(query_base + pos, "REPLACE INTO `%s` (", data->mysql_table);
 	pos = strlen(query_base);
 
+	// Standard columns
 	int columns_count = 0;
 	for (int i = 0; i < VL_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
 		int len = strlen(data->mysql_columns[i]);
@@ -236,13 +240,28 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 			return 1;
 		}
 
-		const char *comma = (i > 0 ? "," : "");
+		const char *comma = (columns_count > 0 ? "," : "");
 
 		sprintf (query_base + pos, "%s`%s`", comma, data->mysql_columns[i]);
 		pos = strlen(query_base);
 		columns_count++;
 	}
 
+	// Special columns
+	for (int i = 0; i < data->mysql_special_columns_count; i++) {
+		int len = strlen(data->mysql_special_columns[i]);
+
+		if (len + pos + 4 > query_base_max) {
+			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
+			return 1;
+		}
+
+		const char *comma = (columns_count > 0 ? "," : "");
+
+		sprintf (query_base + pos, "%s`%s`", comma, data->mysql_special_columns[i]);
+		pos = strlen(query_base);
+		columns_count++;
+	}
 
 	sprintf(query_base + pos, "%s) VALUES (", timestamp_column);
 	pos = strlen(query_base);
@@ -294,8 +313,8 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	struct rrr_type_definition_collection *definitions = &collection->definitions;
 	MYSQL_BIND *bind = data->data->bind;
 
-	if (definitions->count + data->data->add_timestamp_col > VL_MYSQL_BIND_MAX) {
-		VL_MSG_ERR("Number of types exceeded maximum (%u vs %i)\n", definitions->count, VL_MYSQL_BIND_MAX);
+	if (definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > VL_MYSQL_BIND_MAX) {
+		VL_MSG_ERR("Number of types exceeded maximum (%lu vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, VL_MYSQL_BIND_MAX);
 		res = 1;
 		goto out_cleanup;
 	}
@@ -308,7 +327,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 		struct rrr_type_definition *definition = &definitions->definitions[bind_pos];
 
 		if (definition->array_size > 1) {
-			// Arrays must be inserted as strings
+			// Arrays must be inserted as blobs
 			string_lengths[bind_pos] = definition->length * definition->array_size;
 			bind[bind_pos].buffer = collection->data[bind_pos];
 			bind[bind_pos].length = &string_lengths[bind_pos];
@@ -338,6 +357,15 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 			res = 1;
 			goto out_cleanup;
 		}
+	}
+
+	for (rrr_def_count i = 0; i < data->data->mysql_special_columns_count; i++) {
+		string_lengths[bind_pos] = strlen(data->data->mysql_special_values[i]);
+		bind[bind_pos].buffer = data->data->mysql_special_values[i];
+		bind[bind_pos].length = &string_lengths[bind_pos];
+		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
+
+		bind_pos++;
 	}
 
 	unsigned long long int timestamp = time_get_64();
@@ -384,6 +412,12 @@ void data_init(struct mysql_data *data) {
 
 void data_cleanup(void *arg) {
 	struct mysql_data *data = arg;
+	for (rrr_def_count i = 0; i < VL_MYSQL_BIND_MAX; i++) {
+		if (data->mysql_special_values[i] != NULL) {
+			free(data->mysql_special_values[i]);
+		}
+		data->mysql_special_values[i] = NULL;
+	}
 	fifo_buffer_invalidate (&data->input_buffer);
 	fifo_buffer_invalidate (&data->output_buffer);
 }
@@ -453,6 +487,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	const char *mysql_no_tagging = NULL;
 	const char *mysql_colplan = NULL;
 	const char *mysql_add_timestamp_col = NULL;
+	const char *mysql_special_columns = NULL;
 //	const char *mysql_uri = NULL;
 
 	const char *tmp;
@@ -532,6 +567,38 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 		VL_MSG_ERR("Warning: No mysql_colplan set, defaulting to voltage\n");
 	}
 
+	if ((tmp = cmd_get_value(cmd, "mysql_special_columns", 0)) != NULL ) {
+		cmd_arg_count i = 0;
+		while (1) {
+			const char *col = cmd_get_subvalue(cmd, "mysql_special_columns", 0, i);
+			const char *val = cmd_get_subvalue(cmd, "mysql_special_columns", 0, i + 1);
+
+			if (col == NULL || *col == '\0') {
+				break;
+			}
+			else if (val == NULL || *val == '\0') {
+				VL_MSG_ERR ("mysql: Missing value for special column %s", col);
+				return 1;
+			}
+			else if (data->mysql_special_columns_count >= VL_MYSQL_BIND_MAX) {
+				VL_MSG_ERR("BUG: Too many mysql special column arguments (%lu vs %i)\n",
+						data->mysql_special_columns_count, VL_MYSQL_BIND_MAX);
+				exit (EXIT_FAILURE);
+			}
+
+			data->mysql_special_columns[data->mysql_special_columns_count] = col;
+			data->mysql_special_values[data->mysql_special_columns_count] = malloc(strlen(val) + 1);
+			if (data->mysql_special_values[data->mysql_special_columns_count] == NULL) {
+				VL_MSG_ERR("Could not allocate memory for mysql special column value\n");
+				return 1;
+			}
+			sprintf(data->mysql_special_values[data->mysql_special_columns_count], "%s", val);
+			data->mysql_special_columns_count += 1;
+
+			i += 2;
+		}
+	}
+
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
 
@@ -541,8 +608,8 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 			if (res == NULL || *res == '\0') {
 				break;
 			}
-			else if (i >= CMD_ARGUMENT_MAX) {
-				VL_MSG_ERR("BUG: Too many mysql column arguments (%lu vs %i)\n", i, CMD_ARGUMENT_MAX);
+			else if (i >= VL_MYSQL_BIND_MAX) {
+				VL_MSG_ERR("BUG: Too many mysql column arguments (%lu vs %i)\n", i, VL_MYSQL_BIND_MAX);
 				exit (EXIT_FAILURE);
 			}
 			data->mysql_columns[i] = res;
@@ -561,6 +628,11 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 
 		if (data->add_timestamp_col != 0) {
 			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan\n");
+			return 1;
+		}
+
+		if (data->mysql_special_columns > 0) {
+			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan\n");
 			return 1;
 		}
 
