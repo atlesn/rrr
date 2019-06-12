@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 typedef uint8_t rrr_type;
 typedef uint32_t rrr_type_length;
 typedef uint32_t rrr_def_count;
+typedef uint32_t rrr_array_size;
 typedef ssize_t rrr_size;
 typedef uint64_t rrr_type_le;
 typedef uint64_t rrr_type_be;
@@ -48,10 +49,12 @@ typedef uint16_t rrr_version;
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
 #define RRR_TYPE_NAME_BLOB	"blob"
+#define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
 #define RRR_TYPE_MAX_BLOB	CMD_ARGUMENT_SIZE
+#define RRR_TYPE_MAX_ARRAY	65535
 
 #define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE)
 #define RRR_TYPE_IS_BLOB(type)	(type == RRR_TYPE_BLOB)
@@ -59,8 +62,9 @@ typedef uint16_t rrr_version;
 
 struct rrr_type_definition {
 	rrr_type		type;
-	rrr_type_length	length;
-	rrr_type_length max_length;
+	rrr_type_length		length;
+	rrr_type_length 	max_length;
+	rrr_array_size		array_size; // 1 = no array
 };
 
 struct rrr_type_definition_collection {

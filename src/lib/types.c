@@ -63,10 +63,21 @@ int rrr_types_check_size (rrr_type type, rrr_type_length length, rrr_type_length
 	return 1;
 }
 
-int convert_le(void *target, const char *data, rrr_type_length length) {
+int convert_le(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
 	if (length > sizeof(rrr_type_le)) {
 		VL_MSG_ERR("BUG: convert_le received length > %lu", sizeof(rrr_type_le));
 		return 1;
+	}
+
+	if (array_size > 1) {
+		int ret = 0;
+		for (int i = 0; i < array_size; i++) {
+			ret = convert_le(target + (i * length), data + (i * length), 1, length);
+			if (ret != 0) {
+				break;
+			}
+		}
+		return ret;
 	}
 
 	union leunion {
@@ -96,10 +107,21 @@ int convert_le(void *target, const char *data, rrr_type_length length) {
 	return 0;
 }
 
-int convert_be(void *target, const char *data, rrr_type_length length) {
+int convert_be(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
 	if (length > sizeof(rrr_type_le)) {
 		VL_MSG_ERR("BUG: convert_le received length > %lu", sizeof(rrr_type_le));
 		return 1;
+	}
+
+	if (array_size > 1) {
+		int ret = 0;
+		for (int i = 0; i < array_size; i++) {
+			ret = convert_be(target + (i * length), data + (i * length), 1, length);
+			if (ret != 0) {
+				break;
+			}
+		}
+		return ret;
 	}
 
 	union beunion {
@@ -127,7 +149,7 @@ int convert_be(void *target, const char *data, rrr_type_length length) {
 	return 0;
 }
 
-int convert_blob(void *target, const char *data, rrr_type_length length) {
+int convert_blob(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
 	return 0;
 }
 
@@ -161,7 +183,7 @@ int convert_blob_to_host(void *target) {
 }
 
 /* Must be in same positions as type ID in types.h */
-static int (*rrr_types_convert_functions[]) (void *target, const char *data, rrr_type_length length) = {
+static int (*rrr_types_convert_functions[]) (void *target, const char *data, rrr_array_size array_size, rrr_type_length length) = {
 		NULL,
 		&convert_le,
 		&convert_be,
@@ -195,6 +217,8 @@ int rrr_types_parse_definition (
 
 	target->version = RRR_VERSION;
 
+	int do_array = 0;
+	rrr_array_size array_size = 1;
 	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i += 2) {
 		const char *type_c = cmd_get_subvalue(cmd, cmd_key, 0, i);
 		if (*type_c == '\0') {
@@ -205,6 +229,22 @@ int rrr_types_parse_definition (
 		if (length_c == NULL) {
 			VL_MSG_ERR("Missing size definition for '%s' type definition in '%s'\n", type_c, cmd_key);
 			goto out_err;
+		}
+
+		if (strcmp(type_c, RRR_TYPE_NAME_ARRAY) == 0) {
+			int length;
+			if (cmd_convert_integer_10(cmd, length_c, &length) != 0) {
+				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not a valid number\n", length_c, cmd_key);
+				goto out_err;
+			}
+			if (length < 1 || length > RRR_TYPE_MAX_ARRAY) {
+				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not within range\n", length_c, cmd_key);
+				goto out_err;
+			}
+
+			do_array = 1;
+			array_size = length;
+			continue;
 		}
 
 		rrr_type type = rrr_types_get_type(type_c);
@@ -233,8 +273,16 @@ int rrr_types_parse_definition (
 		target->definitions[count].max_length = max;
 		target->definitions[count].length = length;
 		target->definitions[count].type = type;
+		target->definitions[count].array_size = array_size;
 
 		count++;
+		do_array = 0;
+		array_size = 1;
+	}
+
+	if (do_array) {
+		VL_MSG_ERR("Array was specified at end of type definition in '%s'\n", cmd_key);
+		goto out_err;
 	}
 
 	target->count = count;
@@ -254,7 +302,7 @@ int rrr_types_parse_data (
 	const struct rrr_type_definition_collection *definitions = &target->definitions;
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		VL_DEBUG_MSG_3("Parsing type index %u of type %d\n", i, definitions->definitions[i].type);
+		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, definitions->definitions[i].type, definitions->definitions[i].array_size);
 		if (rrr_types_convert_functions[definitions->definitions[i].type] == NULL) {
 			VL_MSG_ERR("BUG: No convert function found for type %d\n", definitions->definitions[i].type);
 			exit (EXIT_FAILURE);
@@ -264,12 +312,12 @@ int rrr_types_parse_data (
 			VL_MSG_ERR("Received length was '%u'\n", length);
 			return 1;
 		}
-		if (rrr_types_convert_functions[definitions->definitions[i].type](target->data[i], pos, definitions->definitions[i].length) != 0) {
+		if (rrr_types_convert_functions[definitions->definitions[i].type](target->data[i], pos, definitions->definitions[i].array_size, definitions->definitions[i].length) != 0) {
 			VL_MSG_ERR("Invalid data in type conversion\n");
 			return 1;
 		}
 
-		pos += definitions->definitions[i].length;
+		pos += (definitions->definitions[i].length * definitions->definitions[i].array_size);
 	}
 
 	return 0;
@@ -292,7 +340,7 @@ struct rrr_data_collection *rrr_types_allocate_data (
 	}
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		collection->data[i] = malloc (definitions->definitions[i].max_length);
+		collection->data[i] = malloc (definitions->definitions[i].max_length * definitions->definitions[i].array_size);
 		if (collection->data[i] == NULL) {
 			VL_MSG_ERR("Could not allocate %u bytes of memory for collection type data\n", definitions->definitions[i].length);
 			goto out_free_elements;

@@ -307,8 +307,15 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	for (bind_pos = 0; bind_pos < definitions->count; bind_pos++) {
 		struct rrr_type_definition *definition = &definitions->definitions[bind_pos];
 
-		// TODO : Support signed
-		if (RRR_TYPE_IS_64(definition->type)) {
+		if (definition->array_size > 1) {
+			// Arrays must be inserted as strings
+			string_lengths[bind_pos] = definition->length * definition->array_size;
+			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].length = &string_lengths[bind_pos];
+			bind[bind_pos].buffer_type = MYSQL_TYPE_BLOB;
+		}
+		else if (RRR_TYPE_IS_64(definition->type)) {
+			// TODO : Support signed
 			bind[bind_pos].buffer = collection->data[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 			bind[bind_pos].is_unsigned = 1;
