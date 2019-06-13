@@ -139,7 +139,7 @@ int convert_be(void *target, const char *data, rrr_array_size array_size, rrr_ty
 	rrr_type_length wpos = sizeof(rrr_type_be) - 1;
 	rrr_type_length rpos = length - 1;
 
-	VL_DEBUG_MSG_3("rpos: %d, wpos: %d\n", rpos, wpos);
+	// VL_DEBUG_MSG_3("rpos: %d, wpos: %d\n", rpos, wpos);
 
 	while (1) {
 		temp.temp_b[wpos] = data[rpos];

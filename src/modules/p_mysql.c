@@ -75,6 +75,7 @@ struct mysql_data {
 	cmd_arg_count mysql_special_columns_count;
 	const char *mysql_special_columns[VL_MYSQL_BIND_MAX];
 	char *mysql_special_values[VL_MYSQL_BIND_MAX]; // Can't do const because of MySQL bind
+	const char *mysql_columns_blob_writes[VL_MYSQL_BIND_MAX]; // Force blob write method
 };
 
 struct process_entries_data {
@@ -106,6 +107,21 @@ struct column_configurator {
 	strcmp(str,PASTE(COLUMN_PLAN_NAME,name)) == 0
 #define COLUMN_PLAN_INDEX(name) \
 	PASTE(COLUMN_PLAN,name)
+
+int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
+	for (int i = 0; i < VL_MYSQL_BIND_MAX; i++) {
+		const char *col_2 = data->mysql_columns_blob_writes[i];
+
+		if (col_2 == NULL) {
+			break;
+		}
+		if (strcmp(col_1, col_2) == 0) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
 
 int mysql_bind_and_execute(struct process_entries_data *data) {
 	MYSQL_BIND *bind = data->data->bind;
@@ -334,13 +350,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_BLOB;
 		}
-		else if (RRR_TYPE_IS_64(definition->type)) {
-			// TODO : Support signed
-			bind[bind_pos].buffer = collection->data[bind_pos];
-			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
-			bind[bind_pos].is_unsigned = 1;
-		}
-		else if (RRR_TYPE_IS_BLOB(definition->type)) {
+		else if (RRR_TYPE_IS_BLOB(definition->type) || mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])) {
 			if (definition->length > definition->max_length) {
 				VL_MSG_ERR("Type length defined for column with index %ul exceeds maximum of %ul when binding with mysql\n",
 						definition->length, definition->max_length);
@@ -352,6 +362,12 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 			bind[bind_pos].buffer = collection->data[bind_pos];
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
+		}
+		else if (RRR_TYPE_IS_64(definition->type)) {
+			// TODO : Support signed
+			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
+			bind[bind_pos].is_unsigned = 1;
 		}
 		else {
 			VL_MSG_ERR("Unkown type %ul when binding with mysql\n", definition->type);
@@ -489,6 +505,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 	const char *mysql_colplan = NULL;
 	const char *mysql_add_timestamp_col = NULL;
 	const char *mysql_special_columns = NULL;
+	const char *mysql_columns_blob_writes = NULL;
 //	const char *mysql_uri = NULL;
 
 	const char *tmp;
@@ -601,6 +618,21 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 		}
 	}
 
+	if ((tmp = cmd_get_value(cmd, "mysql_columns_blob_writes", 0)) != NULL ) {
+		cmd_arg_count i = 0;
+		while (1) {
+			const char *col = cmd_get_subvalue(cmd, "mysql_columns_blob_writes", 0, i);
+
+			if (col == NULL || *col == '\0') {
+				break;
+			}
+
+			data->mysql_columns_blob_writes[i] = col;
+
+			i++;
+		}
+	}
+
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
 
@@ -624,6 +656,33 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan\n");
 			return 1;
 		}
+
+		int all_was_ok = 1;
+		for (int i = 0; i < VL_MYSQL_BIND_MAX; i++) {
+			const char *col_1 = data->mysql_columns_blob_writes[i];
+
+			if (col_1 == NULL) {
+				break;
+			}
+
+			int was_ok = 0;
+			for (int j = 0; j < VL_MYSQL_BIND_MAX; j++) {
+				const char *col_2 = data->mysql_columns[j];
+				if (strcmp(col_1, col_2) == 0) {
+					was_ok = 1;
+					break;
+				}
+			}
+
+			if (was_ok == 0) {
+				VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n");
+				all_was_ok = 0;
+			}
+		}
+
+		if (all_was_ok != 1) {
+			return 1;
+		}
 	}
 	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
@@ -635,6 +694,11 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 
 		if (data->mysql_special_columns > 0) {
 			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan\n");
+			return 1;
+		}
+
+		if (data->mysql_columns_blob_writes[0] != NULL) {
+			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan\n");
 			return 1;
 		}
 
