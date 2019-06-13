@@ -737,6 +737,13 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	int err = 0;
 
+	if (message_fix_endianess (&entry->data.message) != 0) {
+		VL_MSG_ERR("mysql: Endianess could not be determined for message\n");
+		fifo_buffer_write(&mysql_data->input_buffer, data, size);
+		err = 1;
+		goto out;
+	}
+
 	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
 	if (mysql_save (process_data, entry) != 0) {
@@ -752,6 +759,8 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		message->type = MSG_TYPE_TAG;
 		fifo_buffer_write(&mysql_data->output_buffer, data, size);
 	}
+
+	out:
 
 	return err;
 }

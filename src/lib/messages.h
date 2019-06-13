@@ -72,6 +72,7 @@ struct vl_message {
 
 	// Used by ipclient and ipserver for network transfer
 	uint32_t crc32;
+	uint32_t endian_check;
 
 	uint32_t length;
 	char data[MSG_DATA_MAX_LENGTH+2];
@@ -117,6 +118,9 @@ int message_to_string (
 	struct vl_message *message,
 	char *target,
 	unsigned long int target_size
+);
+int message_fix_endianess (
+	struct vl_message *message
 );
 void message_checksum (
 	struct vl_message *message

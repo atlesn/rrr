@@ -170,6 +170,7 @@ int init_empty_message (
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
+	result->endian_check = 1;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
@@ -355,6 +356,58 @@ int message_to_string (
 	return 0;
 }
 
+void flip_endianess_64(uint64_t *value) {
+	uint64_t result = 0;
+
+	result |= (*value & 0x00000000000000ff) << 56;
+	result |= (*value & 0x000000000000ff00) << 40;
+	result |= (*value & 0x0000000000ff0000) << 24;
+	result |= (*value & 0x00000000ff000000) << 8;
+	result |= (*value & 0x000000ff00000000) >> 8;
+	result |= (*value & 0x0000ff0000000000) >> 24;
+	result |= (*value & 0x00ff000000000000) >> 40;
+	result |= (*value & 0xff00000000000000) >> 56;
+
+	*value = result;
+}
+
+void flip_endianess_32(uint32_t *value) {
+	uint32_t result = 0;
+
+	result |= (*value & 0x000000ff) << 24;
+	result |= (*value & 0x0000ff00) << 8;
+	result |= (*value & 0x00ff0000) >> 8;
+	result |= (*value & 0xff000000) >> 24;
+
+	*value = result;
+}
+
+int message_fix_endianess (
+	struct vl_message *message
+) {
+	if (message->endian_check == 1) {
+		return 0;
+	}
+	else {
+		flip_endianess_32(&message->class);
+		flip_endianess_32(&message->crc32);
+		flip_endianess_32(&message->endian_check);
+		flip_endianess_32(&message->length);
+		flip_endianess_32(&message->type);
+
+		flip_endianess_64(&message->timestamp_from);
+		flip_endianess_64(&message->timestamp_to);
+		flip_endianess_64(&message->data_numeric);
+	}
+
+	if (message->endian_check != 1) {
+		VL_MSG_ERR("Endian check for message was not 1 after conversion\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 void message_checksum (
 	struct vl_message *message
 ) {
@@ -364,6 +417,7 @@ void message_checksum (
 	message->timestamp_to = htole64(message->timestamp_to);
 	message->data_numeric = htole64(message->data_numeric);
 	message->length = htole32(message->length);
+	message->endian_check= htole32(message->endian_check);
 
 	message->crc32 = 0;
 
@@ -375,6 +429,7 @@ void message_checksum (
 	message->timestamp_to = le64toh(message->timestamp_to);
 	message->data_numeric = le64toh(message->data_numeric);
 	message->length = le32toh(message->length);
+	message->endian_check= le32toh(message->endian_check);
 
 	message->crc32 = result;
 }

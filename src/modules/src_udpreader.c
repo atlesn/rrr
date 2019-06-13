@@ -133,8 +133,8 @@ void free_message(void *msg) {
 
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
-	uint64_t timestamp = entry->data.message.timestamp_from;
 
+	// ATTENTION! - Received ip message does not contain a vl_message struct
 	if (rrr_types_parse_data(entry->data.data, entry->data_length, data->type_data) != 0) {
 		VL_MSG_ERR("udpreader received an invalid packet\n");
 		free (entry);
@@ -148,9 +148,14 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct vl_message *message = NULL;
 	pthread_cleanup_push(free_message,message);
 
+	uint64_t timestamp = time_get_64();
 	message = rrr_types_create_message_le(data->type_data, timestamp);
+
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+
+		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu\n", (long long unsigned int) message->timestamp_from);
+
 		message = NULL;
 	}
 
