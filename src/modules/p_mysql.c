@@ -327,7 +327,8 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 		struct rrr_type_definition *definition = &definitions->definitions[bind_pos];
 
 		if (definition->array_size > 1) {
-			// Arrays must be inserted as blobs
+			// Arrays must be inserted as blobs. They might be shorter than the
+			// maximum length, the input definition decides.
 			string_lengths[bind_pos] = definition->length * definition->array_size;
 			bind[bind_pos].buffer = collection->data[bind_pos];
 			bind[bind_pos].length = &string_lengths[bind_pos];
@@ -587,6 +588,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 			}
 
 			data->mysql_special_columns[data->mysql_special_columns_count] = col;
+
 			data->mysql_special_values[data->mysql_special_columns_count] = malloc(strlen(val) + 1);
 			if (data->mysql_special_values[data->mysql_special_columns_count] == NULL) {
 				VL_MSG_ERR("Could not allocate memory for mysql special column value\n");
