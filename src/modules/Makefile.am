@@ -1,7 +1,19 @@
+if ENABLE_PYTHON3
+lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la python3.la
+else
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
 	ipclient.la ipserver.la blockdev.la controller.la mysql.la
+endif
+
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr
+
+if ENABLE_PYTHON3
+python3_la_LDFLAGS = ${module_ldflags} ${PYTHON3_LDFLAGS}
+python3_la_CFLAGS = ${PYTHON3_CFLAGS}
+python3_la_SOURCES = p_python3.c
+endif
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c

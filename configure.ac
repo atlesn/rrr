@@ -21,7 +21,7 @@ if test "x$enable_python3" == "xyes"; then
 	AC_CHECK_PROG(PYTHON3_CONFIG,python3-config,yes)
 	if test x"${PYTHON3_CONFIG}" == x"yes"; then
 		AC_SUBST([PYTHON3_CFLAGS], `python3-config --cflags`)
-		AC_SUBST([PYTHON3_LDLAGS], `python3-config --ldflags`)
+		AC_SUBST([PYTHON3_LDFLAGS], `python3-config --ldflags`)
 		AC_DEFINE([VL_HAVE_PYTHON3], [1], [Build with python3 support], [])
 	else
 		AC_MSG_ERROR("Could not find python3-config")
