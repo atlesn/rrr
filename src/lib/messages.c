@@ -217,13 +217,7 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	const char *pos = msg;
 	const char *end = msg + size;
 
-	// Sometimes messages begin with zero
-	if (size >= 2) {
-		if (*pos == '\0') {
-			pos++;
-		}
-	}
-
+	printf ("Start is: '%p'\n", msg);
 	printf ("First character: '%c'\n", *msg);
 	printf ("Second character: '%c'\n", *(msg + 1));
 

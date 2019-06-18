@@ -7,10 +7,12 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
-
 AC_ARG_ENABLE([mysql],[AS_HELP_STRING([--disable-mysql],[build without the mysql bindings])],[enable_mysql=no],[enable_mysql=yes])
 
 AC_CHECK_HEADERS([usb.h pthread.h openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h bdl/bdl.h], [], [AC_MSG_ERROR([Headers missing])])
+
+AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h"
+AC_SUBST(AM_CFLAGS)
 
 echo -n "checking for mysql enabled... "
 if test "x$enable_mysql" == "xyes"; then
@@ -27,6 +29,8 @@ AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_L
 AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
 
 AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h"
+
+echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT

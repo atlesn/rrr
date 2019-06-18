@@ -674,7 +674,7 @@ int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
 			}
 
 			if (was_ok == 0) {
-				VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n");
+				VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n", col_1);
 				all_was_ok = 0;
 			}
 		}
