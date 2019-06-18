@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 #include "modules.h"
 #include "lib/cmdlineparser/cmdline.h"
+#include "lib/version.h"
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
@@ -280,6 +281,11 @@ void signal_interrupt (int s) {
 }
 
 int main (int argc, const char *argv[]) {
+	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
+		VL_MSG_ERR("Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	struct cmd_data cmd;
 
 	int ret = EXIT_SUCCESS;

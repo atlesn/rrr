@@ -63,7 +63,7 @@ int python3_parse_cmd(struct python3_data *data, struct cmd_data *cmd) {
 		python3_file = tmp;
 	}
 	else {
-		VL_MSG_ERR("No python3_file specified for python module");
+		VL_MSG_ERR("No python3_file specified for python module\n");
 		return 1;
 	}
 

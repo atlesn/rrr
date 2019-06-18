@@ -24,13 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#define CMD_ARGUMENT_MAX CMD_MAXIMUM_CMDLINE_ARGS
-/*
+#include "../../../config.h"
+
 #ifdef CMD_MAXIMUM_CMDLINE_ARGS
+#define CMD_ARGUMENT_MAX CMD_MAXIMUM_CMDLINE_ARGS
 #else
 #define CMD_ARGUMENT_MAX 8
 #endif
-*/
 
 #ifdef CMD_MAXIMUM_CMDLINE_ARG_SIZE
 #define CMD_ARGUMENT_SIZE CMD_MAXIMUM_CMDLINE_ARG_SIZE
@@ -60,7 +60,7 @@ struct cmd_data {
 	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAX];
 };
 
-int cmd_parse					(struct cmd_data *data, const int argc, const char *argv[], cmd_conf config);
+int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);
 int cmd_match					(struct cmd_data *data, const char *test);
 
 int cmd_convert_hex_byte		(struct cmd_data *data, const char *value, char *result);

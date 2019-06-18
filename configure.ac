@@ -14,7 +14,7 @@ AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOC
 
 AC_ARG_ENABLE([python3],[AS_HELP_STRING([--disable-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h"
+AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h"
 AC_SUBST(AM_CFLAGS)
 
 echo -n "checking for python3 enabled... "
@@ -33,6 +33,8 @@ if test "x$enable_python3" == "xyes"; then
 else
 	echo "no"
 fi
+
+echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT
