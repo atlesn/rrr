@@ -131,11 +131,11 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
     	exit(EXIT_FAILURE);
 	}
 
-	unsigned int step_size = sizeof(unsigned long int) * 2;
+	unsigned long int step_size = sizeof(unsigned long int) * 2;
 	unsigned char step[step_size+1];
 	step[step_size] = '\0';
 
-	int i = 0;
+	unsigned int i = 0;
     for (i = 0; i < src_length; i += step_size) {
     	memcpy(step, src + i, step_size);
     	char *end;
@@ -156,7 +156,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
     	memcpy (dst + i / 2, &tmp, sizeof(tmp));
     }
 
-    int leftover = i - src_length;
+    unsigned int leftover = i - src_length;
     if (leftover < step_size) {
     	i -= leftover;
     }
@@ -173,7 +173,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
     		VL_MSG_ERR("crypt string_to_bin: Invalid charaters found in input stream, should be a-f0-9 only\n");
     		return 1;
     	}
-    	char tmp_c = (tmp & 0xff);
+    	unsigned char tmp_c = (tmp & 0xff);
     	VL_DEBUG_MSG_4 ("Writing from source %u to dst %i\n", i, i / 2);
     	memcpy(dst + i / 2, &tmp_c, sizeof(tmp_c));
     }
@@ -185,7 +185,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
  * The key generated is too big for AES 256, but we might want other crypt
  * functions in the future.
  */
-int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename) {
+int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename) {
 	VL_CRYPT_CHECK_LOCKED();
 
 	int err = 0;
@@ -269,7 +269,7 @@ int vl_crypt_generate_iv(struct vl_crypt *crypt) {
 	return 0;
 }
 
-int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string) {
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const unsigned char *iv_string) {
 	if (sizeof(crypt->iv_bin) < strlen(iv_string) / 2) {
 		VL_MSG_ERR("IV string was too long\n");
 		return 1;

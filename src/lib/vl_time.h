@@ -31,16 +31,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static inline uint64_t time_get_64() {
 	struct timeval tv;
-	double time_tmp;
 
 	if (gettimeofday(&tv, NULL) != 0) {
 		fprintf (stderr, "Error while getting time, cannot recover from this: %s\n", strerror(errno));
 		exit (EXIT_FAILURE);
 	}
 
-	time_tmp = (tv.tv_sec * 1000000.0) + (tv.tv_usec);
+	uint64_t tv_sec = tv.tv_sec;
+	uint64_t tv_factor = 1000000;
+	uint64_t tv_usec = tv.tv_usec;
 
-	return time_tmp;
+	return (tv_sec * tv_factor) + (tv_usec);
 }
 
 #endif

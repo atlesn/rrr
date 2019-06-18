@@ -19,9 +19,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdio.h>
+
 #ifndef VL_GLOBAL_H
 #define VL_GLOBAL_H
 
+/* Compile time checks */
+#define VL_ASSERT_DEBUG
+#ifdef VL_ASSERT_DEBUG
+#define VL_ASSERT(predicate,name) \
+	do{typedef char _assertion_failed_##name##_[2*!!(predicate)-1];}while(0);
+#else
+#define VL_ASSERT(predicate,name)
+#endif
+
+/* Runtime globals */
 struct vl_global_config {
 	unsigned int debuglevel;
 };

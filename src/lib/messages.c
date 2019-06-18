@@ -83,6 +83,29 @@ struct vl_message *message_new_info (
 	return res;
 }
 
+struct vl_message *message_new_array (
+	uint64_t time,
+	uint32_t length
+) {
+	struct vl_message *res = malloc(sizeof(*res));
+
+	if (init_empty_message (
+			MSG_TYPE_MSG,
+			MSG_CLASS_ARRAY,
+			time,
+			time,
+			0,
+			length,
+			res
+	) != 0) {
+		free(res);
+		VL_MSG_ERR ("BUG: Could not initialize array message\n");
+		exit (EXIT_FAILURE);
+	}
+
+	return res;
+}
+
 int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
 	unsigned long int search_length = strlen(search);
 
@@ -131,13 +154,12 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 	return 0;
 }
 
-int init_message (
+int init_empty_message (
 	unsigned long int type,
 	unsigned long int class,
 	uint64_t timestamp_from,
 	uint64_t timestamp_to,
 	uint64_t data_numeric,
-	const char *data,
 	unsigned long int data_size,
 	struct vl_message *result
 ) {
@@ -148,14 +170,42 @@ int init_message (
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
+	result->endian_check = 1;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message length was too long\n");
+		VL_MSG_ERR ("Message length was too long (%lu vs %d)\n", data_size, MSG_DATA_MAX_LENGTH);
 		return 1;
 	}
 
 	result->length = data_size;
+	result->data[0] = '\0';
+
+	return 0;
+}
+
+int init_message (
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	const char *data,
+	unsigned long int data_size,
+	struct vl_message *result
+) {
+	if (init_empty_message (
+		type,
+		class,
+		timestamp_from,
+		timestamp_to,
+		data_numeric,
+		data_size,
+		result
+	) != 0) {
+		return 1;
+	}
+
 	memcpy (result->data, data, data_size);
 	result->data[data_size+1] = '\0';
 
@@ -306,6 +356,58 @@ int message_to_string (
 	return 0;
 }
 
+void flip_endianess_64(uint64_t *value) {
+	uint64_t result = 0;
+
+	result |= (*value & 0x00000000000000ff) << 56;
+	result |= (*value & 0x000000000000ff00) << 40;
+	result |= (*value & 0x0000000000ff0000) << 24;
+	result |= (*value & 0x00000000ff000000) << 8;
+	result |= (*value & 0x000000ff00000000) >> 8;
+	result |= (*value & 0x0000ff0000000000) >> 24;
+	result |= (*value & 0x00ff000000000000) >> 40;
+	result |= (*value & 0xff00000000000000) >> 56;
+
+	*value = result;
+}
+
+void flip_endianess_32(uint32_t *value) {
+	uint32_t result = 0;
+
+	result |= (*value & 0x000000ff) << 24;
+	result |= (*value & 0x0000ff00) << 8;
+	result |= (*value & 0x00ff0000) >> 8;
+	result |= (*value & 0xff000000) >> 24;
+
+	*value = result;
+}
+
+int message_fix_endianess (
+	struct vl_message *message
+) {
+	if (message->endian_check == 1) {
+		return 0;
+	}
+	else {
+		flip_endianess_32(&message->class);
+		flip_endianess_32(&message->crc32);
+		flip_endianess_32(&message->endian_check);
+		flip_endianess_32(&message->length);
+		flip_endianess_32(&message->type);
+
+		flip_endianess_64(&message->timestamp_from);
+		flip_endianess_64(&message->timestamp_to);
+		flip_endianess_64(&message->data_numeric);
+	}
+
+	if (message->endian_check != 1) {
+		VL_MSG_ERR("Endian check for message was not 1 after conversion\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 void message_checksum (
 	struct vl_message *message
 ) {
@@ -315,6 +417,7 @@ void message_checksum (
 	message->timestamp_to = htole64(message->timestamp_to);
 	message->data_numeric = htole64(message->data_numeric);
 	message->length = htole32(message->length);
+	message->endian_check= htole32(message->endian_check);
 
 	message->crc32 = 0;
 
@@ -326,6 +429,7 @@ void message_checksum (
 	message->timestamp_to = le64toh(message->timestamp_to);
 	message->data_numeric = le64toh(message->data_numeric);
 	message->length = le32toh(message->length);
+	message->endian_check= le32toh(message->endian_check);
 
 	message->crc32 = result;
 }

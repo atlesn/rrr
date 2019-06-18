@@ -38,9 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
-#include "../global.h"
+#include "../lib/ip.h"
 #include "../lib/module_crypt.h"
-#include "common/ip.h"
+#include "../global.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -83,7 +83,10 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, message, sizeof(*message));
+
+	VL_ASSERT(sizeof(*(&entry->data.message))==sizeof(*message),equal_size_of_message);
+
+	memcpy(&entry->data.message, message, sizeof(*message));
 	free(message);
 
 	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
@@ -124,14 +127,14 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 
 	struct vl_message *message_err;
 
-	if (message_prepare_for_network (&entry->message, buf, MSG_STRING_MAX_LENGTH) != 0) {
+	if (message_prepare_for_network (&entry->data.message, buf, MSG_STRING_MAX_LENGTH) != 0) {
 		return 1;
 	}
 
-	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
 	if (ip_send_packet(
-			&entry->message,
+			&entry->data.message,
 			&private_data->crypt_data,
 			&info,
 			VL_DEBUGLEVEL_2 ? &private_data->stats.send : NULL
@@ -169,15 +172,15 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	callback_data->counter++;
 
-	VL_DEBUG_MSG_3 ("Ipserver received OK message with data '%s'\n", entry->message.data);
+	VL_DEBUG_MSG_3 ("Ipserver received OK message with data '%s'\n", entry->data.message.data);
 
 	fifo_buffer_write(&data->output_buffer, (char*) entry, sizeof(*entry));
 
 	// Generate ACK reply
-	VL_DEBUG_MSG_2 ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_2 ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
 	memcpy(ack, entry, sizeof(*ack));
-	ack->message.type = MSG_TYPE_ACK;
+	ack->data.message.type = MSG_TYPE_ACK;
 	fifo_buffer_write(&data->send_buffer, (char*) ack, sizeof(*ack));
 
 	return (callback_data->counter == 5 ? VL_IP_RECEIVE_STOP : VL_IP_RECEIVE_OK);
@@ -187,7 +190,7 @@ int receive_packets(struct ipserver_data *data) {
 	struct receive_packets_data callback_data;
 	callback_data.data = data;
 	callback_data.counter = 0;
-	return ip_receive_packets (
+	return ip_receive_messages (
 		data->ip.fd,
 		&data->crypt_data,
 		receive_packets_callback,

@@ -22,14 +22,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#include "../../lib/messages.h"
-#include "../../lib/module_crypt.h"
+#include "messages.h"
+#include "module_crypt.h"
 
 #define VL_IP_DEFAULT_PORT 5555
 
 #define VL_IP_RECEIVE_OK 0
 #define VL_IP_RECEIVE_ERR 1
 #define VL_IP_RECEIVE_STOP 2
+
+#define VL_IP_RECEIVE_MAX_SIZE 8096
 
 // Print/reset stats every X seconds
 #define VL_IP_STATS_DEFAULT_PERIOD 3
@@ -49,8 +51,14 @@ struct ip_stats_twoway {
 	struct ip_stats receive;
 };
 
+union ip_buffer_data {
+	char data[VL_IP_RECEIVE_MAX_SIZE];
+	struct vl_message message;
+};
+
 struct ip_buffer_entry {
-	struct vl_message message; // Must be first, we do dangerous casts :)
+	union ip_buffer_data data; // Must be first, we do dangerous casts :)
+	ssize_t data_length;
 	struct sockaddr addr;
 	socklen_t addr_len;
 	uint64_t time;
@@ -65,6 +73,7 @@ struct ip_send_packet_info {
 
 struct ip_data {
 	int fd;
+	unsigned int port;
 };
 
 #define VL_IP_STATS_UPDATE_OK 0		// Stats was updated
@@ -85,6 +94,13 @@ int ip_stats_print_reset(
 );
 
 int ip_receive_packets (
+		int fd,
+		struct module_crypt_data *crypt_data,
+		int (*callback)(struct ip_buffer_entry *ip, void *arg),
+		void *arg,
+		struct ip_stats *stats
+);
+int ip_receive_messages (
 		int fd,
 		struct module_crypt_data *crypt_data,
 		int (*callback)(struct ip_buffer_entry *ip, void *arg),

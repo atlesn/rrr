@@ -47,8 +47,8 @@ int vl_crypt_global_lock();
 void vl_crypt_global_unlock(void *ret);
 struct vl_crypt *vl_crypt_new();
 void vl_crypt_free(struct vl_crypt *crypt);
-int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename);
-int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string);
+int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename);
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const unsigned char *iv_string);
 int vl_crypt_aes256 (
 		struct vl_crypt *crypt,
 		const void *source, unsigned int source_length,

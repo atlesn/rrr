@@ -40,9 +40,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static const char *library_paths[] = {
 		VL_MODULE_PATH,
-		"/usr/lib/voltagelogger",
-		"/lib/voltagelogger",
-		"/usr/local/lib/voltagelogger",
+		"/usr/lib/rrr",
+		"/lib/rrr",
+		"/usr/local/lib/rrr",
 		"/usr/lib/",
 		"/lib/",
 		"/usr/local/lib/",

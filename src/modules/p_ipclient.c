@@ -40,8 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/cmdlineparser/cmdline.h"
+#include "../lib/ip.h"
 #include "../global.h"
-#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -137,7 +137,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, reading, sizeof(entry->message));
+	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
 	free(data);
 
 	fifo_buffer_write(&private_data->send_buffer, (char*)entry, sizeof(*entry));
@@ -150,7 +150,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *ipclient_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = &entry->data.message;
 
 	uint64_t time_now = time_get_64();
 
@@ -193,7 +193,7 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 	struct ipclient_data *ipclient_data = callback_data->source;
 	struct vl_message *message_to_match = callback_data->private_data;
 	struct ip_buffer_entry *checked_entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &checked_entry->message;
+	struct vl_message *message = &checked_entry->data.message;
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, message->class);
@@ -216,10 +216,10 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 
 int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct ipclient_data *data = arg;
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = &entry->data.message;
 
 	VL_DEBUG_MSG_3 ("ipclient: Received packet from server type %" PRIu32 " with timestamp %" PRIu64 "\n",
-			entry->message.type, entry->message.timestamp_to);
+			message->type, message->timestamp_to);
 
 	// First, check if package is an ACK from the server in case we should delete
 	// the original message from our send queue. If not, we let some other module
@@ -238,7 +238,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	}
 	else {
 		struct vl_message *message = malloc(sizeof(*message));
-		memcpy (message, &entry->message, sizeof(*message));
+		memcpy (message, message, sizeof(*message));
 		free (entry);
 		fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
 	}
@@ -248,7 +248,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
-	return ip_receive_packets(
+	return ip_receive_messages(
 			data->ip.fd,
 			&data->crypt_data,
 			receive_packets_callback,
