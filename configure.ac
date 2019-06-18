@@ -1,13 +1,8 @@
 AC_INIT([Read Route Record], 0.5)
 AC_DEFINE([VL_CONFIG_VERSION], 0.5, [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
-<<<<<<< HEAD
 AC_DEFINE([VL_CONFIG_VERSION_MINOR], 5, [Minor version])
 AC_DEFINE([CMD_MAXIMUM_CMDLINE_ARGS], 16, [Max number of command line arguments])
-=======
-AC_DEFINE([VL_CONFIG_VERSION_MINOR], 3, [Minor version])
-AC_DEFINE([CMD_MAXIMUM_CMDLINE_ARGS], 32, [Max number of command line arguments])
->>>>>>> origin/testing
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])

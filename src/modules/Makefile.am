@@ -1,9 +1,9 @@
 if ENABLE_PYTHON3
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la mysql.la python3.la
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la udpreader.la python3.la
 else
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la mysql.la
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la udpreader.la
 endif
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr

@@ -39,6 +39,8 @@ src/vlogger
 
 # eclipse
 /Debug
+/.autotools
+/.settings/
 
 # http://www.gnu.org/software/autoconf
 
