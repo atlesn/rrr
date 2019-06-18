@@ -14,13 +14,17 @@ AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOC
 
 AC_ARG_ENABLE([python3],[AS_HELP_STRING([--disable-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 
-echo -n "Checking for python3 enabled... "
+AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h"
+AC_SUBST(AM_CFLAGS)
+
+echo -n "checking for python3 enabled... "
 AM_CONDITIONAL([ENABLE_PYTHON3], [test "x$enable_python3" == "xyes"])
 if test "x$enable_python3" == "xyes"; then
 	echo "yes"
 	AC_CHECK_PROG(PYTHON3_CONFIG,python3-config,yes)
 	if test x"${PYTHON3_CONFIG}" == x"yes"; then
-		AC_SUBST([PYTHON3_CFLAGS], `python3-config --cflags`)
+		PYTHON3_CFLAGS="`python3-config --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'` ${AM_CFLAGS}"
+		AC_SUBST([PYTHON3_CFLAGS])
 		AC_SUBST([PYTHON3_LDFLAGS], `python3-config --ldflags`)
 		AC_DEFINE([VL_HAVE_PYTHON3], [1], [Build with python3 support], [])
 	else
@@ -30,16 +34,11 @@ else
 	echo "no"
 fi
 
-
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h"
-
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT
 AC_PROG_CC
 AC_PROG_CC_STDC
 AC_PROG_INSTALL
-
-AC_SUBST(AM_CFLAGS)
 
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile)
 AC_OUTPUT

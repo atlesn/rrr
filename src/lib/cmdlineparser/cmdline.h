@@ -24,11 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#ifdef CMD_MAXIMUM_CMDLINE_ARGS
 #define CMD_ARGUMENT_MAX CMD_MAXIMUM_CMDLINE_ARGS
+/*
+#ifdef CMD_MAXIMUM_CMDLINE_ARGS
 #else
 #define CMD_ARGUMENT_MAX 8
 #endif
+*/
 
 #ifdef CMD_MAXIMUM_CMDLINE_ARG_SIZE
 #define CMD_ARGUMENT_SIZE CMD_MAXIMUM_CMDLINE_ARG_SIZE
