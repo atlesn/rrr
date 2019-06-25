@@ -369,6 +369,7 @@ void threads_destroy() {
 		}
 
 		thread_unlock(thread);
+		// TODO : Add pthread_mutex_destroy(threads[i]->....) and test
 		free(threads[i]);
 
 		nofree:

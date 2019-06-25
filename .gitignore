@@ -3,6 +3,7 @@ src/.libs
 src/lib/.libs
 src/modules/common/.dirstamp
 src/rrr
+/build_timestamp.h
 
 # debian
 debian/rrr/
@@ -41,6 +42,7 @@ src/vlogger
 /Debug
 /.autotools
 /.settings/
+/.externalToolBuilders/
 
 # http://www.gnu.org/software/autoconf
 
