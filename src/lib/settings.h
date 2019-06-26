@@ -19,16 +19,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_SETTINGS_H
+#define RRR_SETTINGS_H
+
 #include <pthread.h>
 
-#include "../../global.h"
+#include "../global.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 1
 
 #define RRR_SETTINGS_UINT_AS_TEXT_MAX 64
 
-#define RRR_SETTINGS_MAX_NAME_SIZE CMD_MAXIMUM_CMDLINE_ARG_SIZE
+#define RRR_SETTINGS_MAX_NAME_SIZE 255
 
 typedef unsigned int rrr_setting_type;
 typedef unsigned long long int rrr_setting_uint;
@@ -55,3 +58,6 @@ int rrr_settings_add_string (struct rrr_module_settings *target, const char *nam
 int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const char *name, rrr_setting_uint value);
 int rrr_settings_read_string (char **target, struct rrr_module_settings *settings, const char *name);
 int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_module_settings *settings, const char *name);
+int rrr_settings_dump (struct rrr_module_settings *settings);
+
+#endif /* RRR_SETTINGS_H */

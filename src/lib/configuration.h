@@ -19,8 +19,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "settings.h"
+
+#ifndef RRR_CONFIGURATION_H
+#define RRR_CONFIGURATION_H
+
 #define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
+#define RRR_CONFIG_MAX_SIZE 16*1024*1024
+#define RRR_CONFIG_MAX_SETTINGS 32
 
 struct rrr_config {
 
 };
+
+struct rrr_module_config {
+	char *name;
+	struct rrr_module_settings *settings;
+};
+
+int config_parse_file (const char *filename);
+
+#endif /* RRR_CONFIGURATION_H */

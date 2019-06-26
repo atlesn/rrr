@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
+#include "lib/configuration.h"
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
@@ -208,6 +209,12 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 	}
 
 	vl_init_global_config(debuglevel);
+
+	const char* config_string = cmd_get_value(&*cmd, "config", 0);
+	if (config_string != NULL) {
+		int ret = config_parse_file(config_string);
+	}
+
 	return 0;
 }
 

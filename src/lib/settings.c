@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "settings.h"
+#include "../global.h"
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -72,7 +73,7 @@ void rrr_settings_destroy(struct rrr_module_settings *target) {
 	}
 
 	for (int i = 0; i < target->settings_count; i++) {
-		__rrr_settings_destroy_setting(target->settings[i]);
+		__rrr_settings_destroy_setting(&target->settings[i]);
 	}
 
 	target->settings_count = 0;
@@ -83,6 +84,7 @@ void rrr_settings_destroy(struct rrr_module_settings *target) {
 	pthread_mutex_destroy(&target->mutex);
 
 	free(target->settings);
+	free(target);
 }
 
 void __rrr_settings_lock(struct rrr_module_settings *settings) {
@@ -90,7 +92,7 @@ void __rrr_settings_lock(struct rrr_module_settings *settings) {
 		VL_MSG_ERR("BUG: Tried to lock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
 	}
-	VL_DEBUG_MSG_4 ("Settings %d lock\n", settings);
+	VL_DEBUG_MSG_4 ("Settings %p lock\n", settings);
 	pthread_mutex_lock(&settings->mutex);
 }
 
@@ -99,7 +101,7 @@ void __rrr_settings_unlock(struct rrr_module_settings *settings) {
 		VL_MSG_ERR("BUG: Tried to unlock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
 	}
-	VL_DEBUG_MSG_4 ("Settings %d unlock\n", settings);
+	VL_DEBUG_MSG_4 ("Settings %p unlock\n", settings);
 	pthread_mutex_unlock(&settings->mutex);
 }
 
@@ -120,7 +122,7 @@ struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_module_settings *t
 	int pos = target->settings_count;
 	target->settings_count++;
 
-	ret = target->settings[pos];
+	ret = &target->settings[pos];
 
 	return ret;
 }
@@ -179,14 +181,14 @@ int __rrr_settings_add_raw (struct rrr_module_settings *target, const char *name
 }
 
 int rrr_settings_add_string (struct rrr_module_settings *target, const char *name, const char *value) {
-	void *data = value;
+	const void *data = value;
 	int size = strlen(value) + 1;
 
-	return __rrr_settings_add_raw(target, name, value, size, RRR_SETTINGS_TYPE_STRING);
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING);
 }
 
 int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const char *name, rrr_setting_uint value) {
-	void *data = &value;
+	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT);
@@ -194,7 +196,7 @@ int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const
 
 struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_module_settings *source, const char *name) {
 	for (int i = 0; i < source->settings_count; i++) {
-		struct rrr_setting *test = source->settings[i];
+		struct rrr_setting *test = &source->settings[i];
 
 		if (strcmp(test->name, name) == 0) {
 			return test;
@@ -240,7 +242,7 @@ int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting
 		if (sizeof(*target) != setting->data_size) {
 			VL_MSG_ERR("BUG: Setting unsigned integer size mismatch\n");
 		}
-		*target = setting->data;
+		target = setting->data;
 	}
 	else {
 		VL_MSG_ERR("BUG: Could not convert setting of type %d to string\n", setting->type);
@@ -262,7 +264,7 @@ int rrr_settings_read_string (char **target, struct rrr_module_settings *setting
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_to_string (target, setting);
+	ret = __rrr_settings_setting_to_string (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
@@ -272,7 +274,7 @@ int rrr_settings_read_string (char **target, struct rrr_module_settings *setting
 
 int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_module_settings *settings, const char *name) {
 	int ret = 0;
-	*target = NULL;
+	*target = 0;
 
 	__rrr_settings_lock(settings);
 
@@ -282,10 +284,33 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_mod
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_to_uint (target, setting);
+	ret = __rrr_settings_setting_to_uint (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_dump (struct rrr_module_settings *settings) {
+	int ret = 0;
+
+	for (int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		const char *name = setting->name;
+		char *value;
+		ret = __rrr_settings_setting_to_string(&value, setting);
+
+		if (ret != 0) {
+			VL_MSG_ERR("Error in settings dump function\n");
+			break;
+		}
+
+		printf("%s=%s\n", name, value);
+
+		free(value);
+	}
 
 	return ret;
 }
