@@ -2,8 +2,10 @@ src/modules/.libs
 src/.libs
 src/lib/.libs
 src/modules/common/.dirstamp
+src/rrr
 
 # debian
+debian/rrr.debhelper.log
 debian/autoconf.after
 debian/autoconf.before
 debian/autoreconf.after
@@ -16,6 +18,7 @@ debian/.debhelper/
 debian/tmp/
 # http://www.gnu.org/software/automake
 
+INSTALL
 Makefile.in
 /ar-lib
 /mdate-sh
