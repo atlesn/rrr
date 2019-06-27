@@ -85,6 +85,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	else if (
 		(strcmp (source->module->name, "averager") == 0) ||
 		(strcmp (source->module->name, "voltmonitor") == 0) ||
+		(strcmp (source->module->name, "udpreader") == 0) ||
 		(strcmp (source->module->name, "dummy") == 0)
 	) {
 		void *data_2 = message_duplicate(message); // Remember to copy message!

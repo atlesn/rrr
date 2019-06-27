@@ -181,7 +181,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	entry->time = time_now;
 
-	if (ip_send_packet(
+	if (ip_send_message (
 			message,
 			&ipclient_data->crypt_data,
 			info,

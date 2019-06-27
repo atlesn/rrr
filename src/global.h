@@ -45,9 +45,10 @@ extern struct vl_global_config global_config;
  * 0 - Only errors are printed
  * 1 - Info about loading and closing of modules and threads (low rate)
  * 2 - Runtime information in modules, they tell what they do at (high rate)
- * 3 - Hex prints and other data debugging are printed (high rate)
+ * 3 - Some data debugging is printed (high rate)
  * 4 - Debug locking, thread states and buffers (very high rate)
  * 5 - Alive-messages from some threads to see if they freeze (very high rate)
+ * 6 - Debug hex prints (large outputs)
  */
 
 #define __VL_DEBUGLEVEL_0	(0)		// 0
@@ -56,7 +57,8 @@ extern struct vl_global_config global_config;
 #define __VL_DEBUGLEVEL_3	(1<<2)	// 4
 #define __VL_DEBUGLEVEL_4	(1<<3)	// 8
 #define __VL_DEBUGLEVEL_5	(1<<4)	// 16
-#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4|__VL_DEBUGLEVEL_5)
+#define __VL_DEBUGLEVEL_6	(1<<5)	// 32
+#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4|__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6)
 
 #define VL_MSG_ERR(...) \
 	do {fprintf (stderr, __VA_ARGS__);}while(0)
@@ -76,6 +78,9 @@ extern struct vl_global_config global_config;
 #define VL_DEBUG_MSG_5(...) \
 		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0) { printf (__VA_ARGS__); }} while(0)
 
+#define VL_DEBUG_MSG_6(...) \
+		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0) { printf (__VA_ARGS__); }} while(0)
+
 #define VL_DEBUG_MSG(...) \
 	do { printf (__VA_ARGS__); } while(0)
 
@@ -92,7 +97,10 @@ extern struct vl_global_config global_config;
 		((global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0)
 
 #define VL_DEBUGLEVEL_5 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0)
+		((global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0)
+
+#define VL_DEBUGLEVEL_6 \
+		((global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0)
 
 #define VL_DEBUGLEVEL \
 		(global_config.debuglevel)

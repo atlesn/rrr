@@ -107,7 +107,7 @@ int ip_receive_messages (
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_send_packet (
+int ip_send_message (
 		struct vl_message* message,
 		struct module_crypt_data *crypt_data,
 		struct ip_send_packet_info* info,

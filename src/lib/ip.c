@@ -143,7 +143,7 @@ int ip_receive_packets (
 		VL_ASSERT(sizeof(entry->data.data)==sizeof(buffer),sizes_of_buffers_equal)
 		memcpy (entry->data.data, buffer, count);
 
-		if (VL_DEBUGLEVEL_3) {
+		if (VL_DEBUGLEVEL_6) {
 			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
 				VL_DEBUG_MSG ("%02x-", entry->data.data[i]);
 				if ((i + 1) % 32 == 0) {
