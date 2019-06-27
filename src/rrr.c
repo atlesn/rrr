@@ -107,6 +107,95 @@ struct module_metadata *find_module(const char *name) {
 	return NULL;
 }
 
+
+int main_process_single_module (struct rrr_config *all_config, struct rrr_module_config *module_config) {
+	int ret = 0;
+
+	char *module_name = NULL;
+	if (rrr_module_config_get_string_noconvert (&module_name, module_config, "module") != 0) {
+		VL_MSG_ERR("Could not find module= setting for module %s\n", module_config->name);
+		ret = 1;
+		goto out;
+	}
+
+	VL_DEBUG_MSG_1("Loading module '%s'\n", module_name);
+	struct module_metadata *module = find_or_load_module(module_name);
+	if (module == NULL || module->module == NULL) {
+		VL_MSG_ERR("Module %s could not be loaded A\n", module_name);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+/*
+	if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
+		if (senders_count == 0) {
+			VL_MSG_ERR("Sender module must be specified for processor module %s\n",
+					module_string);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		for (unsigned long int j = 0; j < senders_count; j++) {
+			VL_DEBUG_MSG_1("Loading sender module '%s' (if not already loaded)\n",
+					sender_strings[j]
+			);
+
+			struct module_metadata *module_sender =
+					find_or_load_module(sender_strings[j]);
+
+			if (module_sender == NULL) {
+				VL_MSG_ERR("Module %s could not be loaded B\n",
+						sender_strings[j]);
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+
+			if (module_sender == module || module_sender->module == NULL) {
+				VL_MSG_ERR("Module %s set with itself as sender\n",
+						sender_strings[j]);
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+
+			module->senders[module->senders_count++] = module_sender;
+		}
+	}
+	else if (module->module->type == VL_MODULE_TYPE_SOURCE) {
+		if (senders_count != 0) {
+			VL_MSG_ERR("Sender module cannot be specified for source module %s\n",
+					module_name);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+	else {
+		VL_MSG_ERR ("Unknown module type for %s: %i\n",
+				module_name, module->module->type
+		);
+	}
+*/
+	out:
+	if (module_name != NULL) {
+		free(module_name);
+	}
+
+	return ret;
+}
+
+int main_process_modules(struct rrr_config *config) {
+	int ret = 0;
+
+	for (int i = 0; i < config->module_count; i++) {
+		ret = main_process_single_module(config, config->configs[i]);
+		if (ret != 0) {
+			VL_MSG_ERR("Module processing failed for %s\n", config->configs[i]->name);
+			break;
+		}
+	}
+
+	return ret;
+}
+
+/*
 int main_parse_cmd_modules(struct cmd_data *cmd) {
 	memset(modules, '\0', sizeof(modules));
 
@@ -181,6 +270,7 @@ int main_parse_cmd_modules(struct cmd_data *cmd) {
 
 	return 0;
 }
+*/
 
 int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd) {
 	if (cmd_parse(cmd, argc, argv, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
@@ -209,11 +299,6 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 	}
 
 	vl_init_global_config(debuglevel);
-
-	const char* config_string = cmd_get_value(&*cmd, "config", 0);
-	if (config_string != NULL) {
-		int ret = config_parse_file(config_string);
-	}
 
 	return 0;
 }
@@ -294,6 +379,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	struct cmd_data cmd;
+	struct rrr_config *config = NULL;
 
 	int ret = EXIT_SUCCESS;
 
@@ -312,9 +398,30 @@ int main (int argc, const char *argv[]) {
 
 	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
 
+	const char* config_string = cmd_get_value(&cmd, "config", 0);
+	if (config_string != NULL) {
+		config = rrr_config_parse_file(config_string);
+
+		if (config == NULL) {
+			ret = EXIT_FAILURE;
+			VL_MSG_ERR("Configuration file parsing failed\n");
+			goto out_unload_modules;
+		}
+
+		VL_DEBUG_MSG_1("found %d modules\n", config->module_count);
+
+		ret = main_process_modules(config);
+
+		if (ret != 0) {
+			goto out_unload_modules;
+		}
+	}
+
+	/*
 	if ((ret = main_parse_cmd_modules(&cmd)) != 0) {
 		goto out_unload_modules;
 	}
+*/
 
 	threads_restart:
 
@@ -359,6 +466,9 @@ int main (int argc, const char *argv[]) {
 #ifndef VL_NO_MODULE_UNLOAD
 		unload_all_modules();
 #endif
+		if (config != NULL) {
+			rrr_config_destroy(config);
+		}
 
 	out:
 	return ret;

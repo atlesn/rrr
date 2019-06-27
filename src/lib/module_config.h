@@ -19,25 +19,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef MODULE_CONFIG_H
+#define MODULE_CONFIG_H
+
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "../global.h"
 #include "settings.h"
-#include "module_config.h"
 
-#ifndef RRR_CONFIGURATION_H
-#define RRR_CONFIGURATION_H
-
-#define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
-#define RRR_CONFIG_MAX_SIZE 16*1024*1024
-#define RRR_CONFIG_MAX_SETTINGS 32
-#define RRR_CONFIG_ALLOCATION_INTERVAL 4
-
-struct rrr_config {
-	int module_count;
-	int module_count_max;
-	struct rrr_module_config **configs;
+struct rrr_module_config {
+	char *name;
+	struct rrr_module_settings *settings;
 };
 
-struct rrr_module_config *rrr_config_find_module (struct rrr_config *source, const char *name);
-void rrr_config_destroy (struct rrr_config *target);
-struct rrr_config *rrr_config_parse_file (const char *filename);
+void rrr_config_destroy_module_config(struct rrr_module_config *config);
+struct rrr_module_config *rrr_config_new_module_config (const char *name_begin, const int name_length, const int max_settings);
 
-#endif /* RRR_CONFIGURATION_H */
+static inline int rrr_module_config_get_string_noconvert (char **target, struct rrr_module_config *source, const char *name) {
+	return rrr_settings_get_string_noconvert(target, source->settings, name);
+}
+
+#endif /* MODULE_CONFIG_H */

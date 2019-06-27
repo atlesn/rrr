@@ -61,7 +61,6 @@ struct rrr_module_settings *rrr_settings_new(const int count) {
 
 void __rrr_settings_destroy_setting(struct rrr_setting *setting) {
 	free(setting->data);
-	free(setting);
 }
 
 void rrr_settings_destroy(struct rrr_module_settings *target) {
@@ -105,7 +104,19 @@ void __rrr_settings_unlock(struct rrr_module_settings *settings) {
 	pthread_mutex_unlock(&settings->mutex);
 }
 
-struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_module_settings *target) {
+struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_module_settings *source, const char *name) {
+	for (int i = 0; i < source->settings_count; i++) {
+		struct rrr_setting *test = &source->settings[i];
+
+		if (strcmp(test->name, name) == 0) {
+			return test;
+		}
+	}
+
+	return NULL;
+}
+
+struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_module_settings *target, const char *name) {
 	struct rrr_setting *ret = NULL;
 
 	if (target->settings_count > target->settings_max) {
@@ -116,6 +127,11 @@ struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_module_settings *t
 	if (target->settings_count == target->settings_max) {
 		VL_MSG_ERR("Could not reserve setting because the maximum number of settings (%d) was reached",
 				target->settings_max);
+		return NULL;
+	}
+
+	if (__rrr_settings_find_setting_nolock(target, name) != NULL) {
+		VL_MSG_ERR("Settings name %s defined twice\n", name);
 		return NULL;
 	}
 
@@ -153,9 +169,10 @@ int __rrr_settings_add_raw (struct rrr_module_settings *target, const char *name
 
 	__rrr_settings_lock(target);
 
-	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target);
+	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target, name);
 	if (setting == NULL) {
 		VL_MSG_ERR("Could not create setting struct for %s\n", name);
+		ret = 1;
 		goto out_unlock;
 	}
 
@@ -180,6 +197,93 @@ int __rrr_settings_add_raw (struct rrr_module_settings *target, const char *name
 	return ret;
 }
 
+int rrr_settings_get_string_noconvert (char **target, struct rrr_module_settings *source, const char *name) {
+	int ret = 0;
+	*target = NULL;
+
+	__rrr_settings_lock(source);
+
+	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(source, name);
+
+	if (setting == NULL) {
+		VL_MSG_ERR("Could not locate setting '%s'\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	if (setting->type != RRR_SETTINGS_TYPE_STRING) {
+		VL_MSG_ERR("Tried to get string value of %s with no conversion but it was of wrong type %d\n", setting->name, setting->type);
+		ret = 1;
+		goto out;
+	}
+
+	if (setting->data_size <= 1) {
+		VL_MSG_ERR("BUG: Data size was <= 1 in rrr_settings_get_string_noconvert\n");
+		exit(EXIT_FAILURE);
+	}
+
+	const char *data = setting->data;
+
+	if (data[setting->data_size - 1] != '\0') {
+		VL_MSG_ERR("BUG: Data string type was not null terminated in rrr_settings_get_string_noconvert\n");
+		exit(EXIT_FAILURE);
+	}
+
+	char *string = malloc(setting->data_size);
+	if (string == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_settings_get_string_noconvert\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(string, data, setting->data_size);
+
+	*target = string;
+
+	out:
+	__rrr_settings_unlock(source);
+	return ret;
+}
+
+int rrr_settings_traverse_split_commas (
+		struct rrr_module_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg
+) {
+	int ret = 0;
+
+	char *value = NULL;
+
+	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
+		VL_MSG_ERR("Could not get setting %s for comma splitting\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	char *current_pos = value;
+	char *comma_pos;
+	while (*current_pos != '\0') {
+		comma_pos = strchr(current_pos, ',');
+		if (comma_pos == NULL) {
+			ret = callback(current_pos, arg);
+			break;
+		}
+
+		*comma_pos = '\0';
+		ret = callback(current_pos, arg);
+		if (ret != 0) {
+			break;
+		}
+		current_pos = comma_pos + 1;
+	}
+
+	out:
+	if (value != NULL) {
+		free(value);
+	}
+	return ret;
+}
+
+
 int rrr_settings_add_string (struct rrr_module_settings *target, const char *name, const char *value) {
 	const void *data = value;
 	int size = strlen(value) + 1;
@@ -192,18 +296,6 @@ int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const
 	int size = sizeof(rrr_setting_uint);
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT);
-}
-
-struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_module_settings *source, const char *name) {
-	for (int i = 0; i < source->settings_count; i++) {
-		struct rrr_setting *test = &source->settings[i];
-
-		if (strcmp(test->name, name) == 0) {
-			return test;
-		}
-	}
-
-	return NULL;
 }
 
 int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting) {

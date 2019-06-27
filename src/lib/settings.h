@@ -54,6 +54,9 @@ struct rrr_module_settings {
 
 struct rrr_module_settings *rrr_settings_new(const int count);
 void rrr_settings_destroy(struct rrr_module_settings *target);
+int rrr_settings_traverse_split_commas (struct rrr_module_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg);
+int rrr_settings_get_string_noconvert (char **target, struct rrr_module_settings *source, const char *name);
 int rrr_settings_add_string (struct rrr_module_settings *target, const char *name, const char *value);
 int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const char *name, rrr_setting_uint value);
 int rrr_settings_read_string (char **target, struct rrr_module_settings *settings, const char *name);
