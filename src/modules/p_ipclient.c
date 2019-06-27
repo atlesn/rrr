@@ -56,6 +56,7 @@ struct ipclient_data {
 	struct fifo_buffer receive_buffer;
 	const char *ip_server;
 	const char *ip_port;
+	const char *ip_src_port;
 	const char *crypt_file;
 	struct ip_data ip;
 	pthread_t receive_thread;
@@ -88,11 +89,13 @@ void data_cleanup(void *arg) {
 static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
 	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
+	const char *ip_src_port = cmd_get_value(cmd, "ipclient_source_port", 0);
 	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
 	const char *no_ack = cmd_get_value(cmd, "ipclient_no_ack", 0);
 
 	data->ip_server = VL_IPCLIENT_SERVER_NAME;
 	data->ip_port = VL_IPCLIENT_SERVER_PORT;
+	data->ip_src_port = VL_IPCLIENT_SERVER_PORT;
 	data->crypt_file = NULL;
 
 	if (ip_server != NULL) {
@@ -100,6 +103,9 @@ static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 	}
 	if (ip_port != NULL) {
 		data->ip_port = ip_port;
+	}
+	if (ip_src_port != NULL) {
+		data->ip_src_port = ip_src_port;
 	}
 	if (crypt_file != NULL) {
 		data->crypt_file = crypt_file;
@@ -112,6 +118,19 @@ static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
 			return 1;
 		}
 		data->no_ack = yesno;
+	}
+
+	if (data->ip_src_port != NULL) {
+		char *end;
+		data->ip.port = strtoul(data->ip_src_port, &end, 10);
+		if (*end != '\0') {
+			VL_MSG_ERR("ipclient: Could not understand ip_src_port argument, must be numeric\n");
+			return 1;
+		}
+		if (data->ip.port < 1 || data->ip.port > 65535) {
+			VL_MSG_ERR("ipclient: ip_src_port must be in the range 1-65535\n");
+			return 1;
+		}
 	}
 
 	return 0;
@@ -386,7 +405,9 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	init_data(data);
 	pthread_cleanup_push(data_cleanup, data);
 
-	parse_cmd(data, start_data->cmd);
+	if (parse_cmd(data, start_data->cmd) != 0) {
+		goto out_cleanup_data;
+	}
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -485,8 +506,12 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+
+	out_cleanup_data:
 	pthread_cleanup_pop(1);
+
 	pthread_exit(0);
+
 }
 
 static struct module_operations module_operations = {

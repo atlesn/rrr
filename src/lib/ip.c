@@ -324,7 +324,7 @@ int ip_network_start (struct ip_data *data) {
 
 	if (data->port < 1 || data->port > 65535) {
 		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
-		goto out_error;
+		goto out_close_socket;
 	}
 
 	struct sockaddr_in si;

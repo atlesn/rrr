@@ -236,7 +236,7 @@ int rrr_types_parse_definition (
 	rrr_array_size array_size = 1;
 	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i += 2) {
 		const char *type_c = cmd_get_subvalue(cmd, cmd_key, 0, i);
-		if (*type_c == '\0') {
+		if (type_c == NULL || *type_c == '\0') {
 			break;
 		}
 
