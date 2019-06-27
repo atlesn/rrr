@@ -7,7 +7,21 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
-AC_CHECK_HEADERS([usb.h pthread.h openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h mysql/mysql.h])
+
+AC_ARG_ENABLE([mysql],[AS_HELP_STRING([--disable-mysql],[build without the mysql bindings])],[enable_mysql=no],[enable_mysql=yes])
+
+AC_CHECK_HEADERS([usb.h pthread.h openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h bdl/bdl.h], [], [AC_MSG_ERROR([Headers missing])])
+
+echo -n "checking for mysql enabled... "
+if test "x$enable_mysql" == "xyes"; then
+	echo "yes"
+	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
+	AC_DEFINE([RRR_HAVE_MYSQL], [1], [Build with mysql support], [])
+else
+	echo "no"
+fi
+
+AM_CONDITIONAL([RRR_TEST_MYSQL], [test x$RRR_HAVE_MYSQL = x1])
 
 AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
