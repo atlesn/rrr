@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifdef VL_HAVE_MYSQL
 
 #include <stdio.h>
 #include <string.h>
@@ -1027,3 +1028,4 @@ void unload(struct module_dynamic_data *data) {
 	mysql_library_end();
 }
 
+#endif /* VL_HAVE_MYSQL */
