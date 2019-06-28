@@ -726,7 +726,7 @@ int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned 
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
-	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): size %lu\n", size);
+	VL_DEBUG_MSG_3 ("mysql: Result from buffer (ip): size %lu\n", size);
 
 	fifo_buffer_write(&mysql_data->input_buffer, data, size);
 
