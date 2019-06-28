@@ -67,7 +67,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n", message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("controller: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", message->timestamp_from, message->data_numeric, size);
 
 	if (strcmp (source->module->name, "blockdev") == 0) {
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);

@@ -154,7 +154,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
 
-		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu\n", (long long unsigned int) message->timestamp_from);
+		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n", (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 		message = NULL;
 	}

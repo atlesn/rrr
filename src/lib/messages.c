@@ -248,6 +248,9 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	else if (find_string (pos, end - pos, MSG_CLASS_INFO_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_INFO;
 	}
+	else if (find_string (pos, end - pos, MSG_CLASS_ARRAY_STRING, &pos) == 0) {
+		result->class = MSG_CLASS_ARRAY;
+	}
 	else {
 		VL_MSG_ERR ("Unknown message class\n");
 		return 1;
@@ -335,6 +338,9 @@ int message_to_string (
 		break;
 	case MSG_CLASS_INFO:
 		class = MSG_CLASS_INFO_STRING;
+		break;
+	case MSG_CLASS_ARRAY:
+		type = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
 		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
@@ -470,11 +476,13 @@ int message_checksum_check (
 int message_prepare_for_network (
 	struct vl_message *message, char *buf, unsigned long buf_size
 ) {
+	memset (buf, '\0', buf_size);
 
 	message->crc32 = 0;
 	message->data_numeric = 0;
 
-	if (VL_DEBUGLEVEL_3) {
+	if (VL_DEBUGLEVEL_6) {
+		VL_DEBUG_MSG("Message prepared for network: ");
 		for (int i = 0; i < sizeof(*message); i++) {
 			unsigned char *buf = (unsigned char *) message;
 			VL_DEBUG_MSG("%x-", *(buf + i));

@@ -152,7 +152,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", reading->timestamp_from, reading->data_numeric, size);
 
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
@@ -172,6 +172,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct vl_message *message = &entry->data.message;
 
 	uint64_t time_now = time_get_64();
+
+	VL_DEBUG_MSG_3 ("ipclient send packet timestamp %" PRIu64 "\n", message->timestamp_from);
 
 	// Check if we sent this packet recently
 	if (entry->time + VL_IPCLIENT_SEND_INTERVAL * 1000 > time_now) {
