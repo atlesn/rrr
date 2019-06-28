@@ -213,13 +213,8 @@ int init_message (
 }
 
 int parse_message(const char *msg, unsigned long int size, struct vl_message *result) {
-	memset (result, '\0', sizeof(*result));
 	const char *pos = msg;
 	const char *end = msg + size;
-
-	printf ("Start is: '%p'\n", msg);
-	printf ("First character: '%c'\n", *msg);
-	printf ("Second character: '%c'\n", *(msg + 1));
 
 	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
@@ -233,8 +228,8 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	}
 	else {
 		char buf[16];
-		snprintf(buf, 16, "%s", pos);
-		VL_MSG_ERR ("Unknown message type %s of size %lu\n", buf, size);
+		snprintf(buf, 16, "%s", msg);
+		VL_MSG_ERR ("Unknown message type '%s' of size %lu\n", buf, size);
 		return 1;
 	}
 
