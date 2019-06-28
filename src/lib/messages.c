@@ -143,6 +143,8 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 	strncpy(tmp, str, *end-str);
 	tmp[*end-str] = '\0';
 
+	printf ("Orig: '%s', Tmp: '%s'\n", str, tmp);
+
 	char *endptr;
 	*result = strtoull(tmp, &endptr, 10);
 	if (*endptr != '\0') {
@@ -216,6 +218,8 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	const char *pos = msg;
 	const char *end = msg + size;
 
+	VL_DEBUG_MSG_3("Parse message: %s\n", msg);
+
 	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
 		result->type = MSG_TYPE_MSG;
@@ -258,24 +262,32 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	}
 	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	uint64_t tmp;
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
+		VL_MSG_ERR ("Could not parse CRC32 of message '%s'\n", msg);
 		return 1;
 	}
 	result->crc32 = tmp;
 
 	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
+		VL_MSG_ERR ("Could not parse length of message '%s'\n", msg);
 		return 1;
 	}
 	result->length = tmp;
 
 	// {TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &result->timestamp_from) != 0) {
+		VL_MSG_ERR ("Could not parse timestamp from of message '%s'\n", msg);
 		return 1;
 	}
 
 	// {TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &result->timestamp_to) != 0) {
+		VL_MSG_ERR ("Could not parse timestamp to of message '%s'\n", msg);
 		return 1;
 	}
 
