@@ -340,7 +340,7 @@ int message_to_string (
 		class = MSG_CLASS_INFO_STRING;
 		break;
 	case MSG_CLASS_ARRAY:
-		type = MSG_CLASS_ARRAY_STRING;
+		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
 		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
