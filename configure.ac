@@ -21,7 +21,7 @@ else
 	echo "no"
 fi
 
-AM_CONDITIONAL([RRR_TEST_MYSQL], [test x$RRR_HAVE_MYSQL = x1])
+AM_CONDITIONAL([RRR_TEST_MYSQL], [test "x$enable_mysql" = "xyes"])
 
 AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])

@@ -238,6 +238,8 @@ static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
 		data->crypt_file = crypt_file;
 	}
 
+	data->ip.port = VL_IPSERVER_SERVER_PORT;
+
 	return 0;
 }
 

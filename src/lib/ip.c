@@ -205,6 +205,8 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 	start++;
 	unsigned int input_length = count - 1;
 
+	printf ("Next char is '%c'\n", *start);
+
 	if (crypt_data->crypt != NULL) {
 		unsigned char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
 		if (*end != '\0') {

@@ -217,6 +217,16 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	const char *pos = msg;
 	const char *end = msg + size;
 
+	// Sometimes messages begin with zero
+	if (size >= 2) {
+		if (*pos == '\0') {
+			pos++;
+		}
+	}
+
+	printf ("First character: '%c'\n", *msg);
+	printf ("Second character: '%c'\n", *(msg + 1));
+
 	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
 		result->type = MSG_TYPE_MSG;
@@ -228,11 +238,13 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		result->type = MSG_TYPE_TAG;
 	}
 	else {
-		VL_MSG_ERR ("Unknown message type\n");
+		char buf[16];
+		snprintf(buf, 16, "%s", pos);
+		VL_MSG_ERR ("Unknown message type %s of size %lu\n", buf, size);
 		return 1;
 	}
 
-	// {AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	// {AVG|MAX|MIN|POINT|INFO|ARRAY}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string (pos, end - pos, MSG_CLASS_AVG_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_AVG;
 	}
