@@ -1,4 +1,5 @@
 /*
+#include "instance_config.h"
 
 Read Route Record
 
@@ -20,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "settings.h"
-#include "module_config.h"
 
 #ifndef RRR_CONFIGURATION_H
 #define RRR_CONFIGURATION_H
@@ -33,10 +33,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_config {
 	int module_count;
 	int module_count_max;
-	struct rrr_module_config **configs;
+	struct rrr_instance_config **configs;
 };
 
-struct rrr_module_config *rrr_config_find_module (struct rrr_config *source, const char *name);
+struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name);
 void rrr_config_destroy (struct rrr_config *target);
 struct rrr_config *rrr_config_parse_file (const char *filename);
 

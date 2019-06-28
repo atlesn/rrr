@@ -26,7 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "configuration.h"
-#include "module_config.h"
+
+#include "instance_config.h"
 
 #define RRR_CONFIGFILE_DEBUG
 
@@ -57,10 +58,10 @@ int __rrr_config_expand(struct rrr_config *target) {
 	int new_size = old_size + (RRR_CONFIG_ALLOCATION_INTERVAL * sizeof(*target->configs));
 	int new_max = target->module_count_max + RRR_CONFIG_ALLOCATION_INTERVAL;
 
-	struct rrr_module_config **configs_new = realloc(target->configs, new_size);
+	struct rrr_instance_config **configs_new = realloc(target->configs, new_size);
 
 	if (configs_new == NULL) {
-		VL_MSG_ERR("Could not reallocate memory for rrr_module_config struct\n");
+		VL_MSG_ERR("Could not reallocate memory for rrr_instance_config struct\n");
 		return 1;
 	}
 
@@ -70,9 +71,9 @@ int __rrr_config_expand(struct rrr_config *target) {
 	return 0;
 }
 
-int __rrr_config_push (struct rrr_config *target, struct rrr_module_config *module_config) {
-	if (rrr_config_find_module (target, module_config->name) != NULL) {
-		VL_MSG_ERR("Two modules was named %s\n", module_config->name);
+int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config *instance_config) {
+	if (rrr_config_find_instance (target, instance_config->name) != NULL) {
+		VL_MSG_ERR("Two instances was named %s\n", instance_config->name);
 		return 1;
 	}
 
@@ -83,7 +84,7 @@ int __rrr_config_push (struct rrr_config *target, struct rrr_module_config *modu
 		}
 	}
 
-	target->configs[target->module_count] = module_config;
+	target->configs[target->module_count] = instance_config;
 	target->module_count++;
 
 	return 0;
@@ -217,7 +218,7 @@ int __rrr_config_extract_string (char **target, struct parse_pos *pos, const int
 	return 0;
 }
 
-int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_module_settings *settings, int *did_parse) {
+int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_settings *settings, int *did_parse) {
 	int ret = 0;
 
 	char c;
@@ -316,7 +317,7 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_module_setting
 	return ret;
 }
 
-int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos, int *did_parse) {
+int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *pos, int *did_parse) {
 	int ret = 0;
 	*did_parse = 0;
 
@@ -329,7 +330,7 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 	int begin = pos->pos;
 
 	if (pos->pos >= pos->size) {
-		VL_MSG_ERR("Unexpected end of module definition at line %d\n", pos->line);
+		VL_MSG_ERR("Unexpected end of instance definition at line %d\n", pos->line);
 		return 1;
 	}
 
@@ -338,7 +339,7 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
 		}
 		else {
-			VL_MSG_ERR("Unexpected character '%c' in module definition in line %d\n", c, pos->line);
+			VL_MSG_ERR("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);
 			ret = 1;
 			goto out;
 		}
@@ -353,14 +354,14 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 	}
 
 	if (__rrr_config_check_eof(pos)) {
-		VL_MSG_ERR("Unexpected end of module definition in line %d\n", pos->line);
+		VL_MSG_ERR("Unexpected end of instance definition in line %d\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	c = pos->data[pos->pos];
 	if (c != ']') {
-		VL_MSG_ERR("Syntax error in module definition in line %d, possibly missing ]\n", pos->line);
+		VL_MSG_ERR("Syntax error in instance definition in line %d, possibly missing ]\n", pos->line);
 		ret = 1;
 		goto out;
 	}
@@ -371,20 +372,20 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 	pos->pos++;
 
 	if (end < begin) {
-		VL_MSG_ERR("Module name at line %d was too short\n", pos->line);
+		VL_MSG_ERR("Instance name at line %d was too short\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
-	struct rrr_module_config *module_config = rrr_config_new_module_config(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
-	if (module_config == NULL) {
-		VL_MSG_ERR("Module config creation result was NULL\n");
+	struct rrr_instance_config *instance_config = rrr_config_new_instance_config(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
+	if (instance_config == NULL) {
+		VL_MSG_ERR("Instance config creation result was NULL\n");
 		ret = 1;
 		goto out;
 	}
 
 	int did_parse_setting;
-	while ((ret = __rrr_config_parse_setting(pos, module_config->settings, &did_parse_setting)) == 0) {
+	while ((ret = __rrr_config_parse_setting(pos, instance_config->settings, &did_parse_setting)) == 0) {
 		if (did_parse_setting != 1) {
 			break;
 		}
@@ -394,13 +395,13 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 	}
 
 	if (ret == 1) {
-		VL_MSG_ERR("Settings parsing failed for module %s at line %d\n", module_config->name, pos->line);
+		VL_MSG_ERR("Settings parsing failed for instance %s at line %d\n", instance_config->name, pos->line);
 		*did_parse = 0;
 	}
 
 #ifdef RRR_CONFIGFILE_DEBUG
-	printf("\nDumping settings for module %s:\n", module_config->name);
-	rrr_settings_dump(module_config->settings);
+	printf("\nDumping settings for instance %s:\n", instance_config->name);
+	rrr_settings_dump(instance_config->settings);
 #endif
 
 	if (ret == 0) {
@@ -409,14 +410,14 @@ int __rrr_config_parse_module (struct rrr_config *config, struct parse_pos *pos,
 
 	out_free_config:
 	if (ret == 0) {
-		ret = __rrr_config_push(config, module_config);
+		ret = __rrr_config_push(config, instance_config);
 		if (ret != 0) {
-			VL_MSG_ERR("Could not save module %s to global config\n", module_config->name);
+			VL_MSG_ERR("Could not save instance %s to global config\n", instance_config->name);
 		}
 	}
 
 	if (ret != 0) {
-		rrr_config_destroy_module_config(module_config);
+		rrr_config_destroy_instance_config(instance_config);
 	}
 
 	out:
@@ -441,9 +442,9 @@ int __rrr_config_parse_any (struct rrr_config *config, struct parse_pos *pos) {
 		}
 		else if (c == '[') {
 			int did_parse;
-			ret = __rrr_config_parse_module(config, pos, &did_parse);
+			ret = __rrr_config_parse_instance(config, pos, &did_parse);
 			if (did_parse == 0 && ret == 0) {
-				// No more modules, no errors
+				// No more instances, no errors
 			}
 			else if (ret == 1) {
 				// Error occured
@@ -483,11 +484,11 @@ int __rrr_config_parse_file (struct rrr_config *config, const void *data, const 
 	return ret;
 }
 
-struct rrr_module_config *rrr_config_find_module (struct rrr_config *source, const char *name) {
-	struct rrr_module_config *ret = NULL;
+struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name) {
+	struct rrr_instance_config *ret = NULL;
 
 	for (int i = 0; i < source->module_count; i++) {
-		struct rrr_module_config *test = source->configs[i];
+		struct rrr_instance_config *test = source->configs[i];
 		if (strcmp(test->name, name) == 0) {
 			ret = test;
 			break;
@@ -499,7 +500,7 @@ struct rrr_module_config *rrr_config_find_module (struct rrr_config *source, con
 
 void rrr_config_destroy (struct rrr_config *target) {
 	for (int i = 0; i < target->module_count; i++) {
-		rrr_config_destroy_module_config(target->configs[i]);
+		rrr_config_destroy_instance_config(target->configs[i]);
 	}
 	free(target->configs);
 	free(target);

@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-int __rrr_settings_init(struct rrr_module_settings *target, const int count) {
+int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
 	memset(target, '\0', sizeof(*target));
 
 	target->settings = malloc(sizeof(*(target->settings)) * count);
@@ -44,8 +44,8 @@ int __rrr_settings_init(struct rrr_module_settings *target, const int count) {
 	return 0;
 }
 
-struct rrr_module_settings *rrr_settings_new(const int count) {
-	struct rrr_module_settings *ret = malloc(sizeof(*ret));
+struct rrr_instance_settings *rrr_settings_new(const int count) {
+	struct rrr_instance_settings *ret = malloc(sizeof(*ret));
 
 	if (ret == NULL) {
 		VL_MSG_ERR("Could not allocate memory for module settings structure");
@@ -63,7 +63,7 @@ void __rrr_settings_destroy_setting(struct rrr_setting *setting) {
 	free(setting->data);
 }
 
-void rrr_settings_destroy(struct rrr_module_settings *target) {
+void rrr_settings_destroy(struct rrr_instance_settings *target) {
 	pthread_mutex_lock(&target->mutex);
 
 	if (target->initialized != 1) {
@@ -86,7 +86,7 @@ void rrr_settings_destroy(struct rrr_module_settings *target) {
 	free(target);
 }
 
-void __rrr_settings_lock(struct rrr_module_settings *settings) {
+void __rrr_settings_lock(struct rrr_instance_settings *settings) {
 	if (settings->initialized != 1) {
 		VL_MSG_ERR("BUG: Tried to lock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
@@ -95,7 +95,7 @@ void __rrr_settings_lock(struct rrr_module_settings *settings) {
 	pthread_mutex_lock(&settings->mutex);
 }
 
-void __rrr_settings_unlock(struct rrr_module_settings *settings) {
+void __rrr_settings_unlock(struct rrr_instance_settings *settings) {
 	if (settings->initialized != 1) {
 		VL_MSG_ERR("BUG: Tried to unlock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
@@ -104,7 +104,7 @@ void __rrr_settings_unlock(struct rrr_module_settings *settings) {
 	pthread_mutex_unlock(&settings->mutex);
 }
 
-struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_module_settings *source, const char *name) {
+struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_settings *source, const char *name) {
 	for (int i = 0; i < source->settings_count; i++) {
 		struct rrr_setting *test = &source->settings[i];
 
@@ -116,7 +116,7 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_module_settin
 	return NULL;
 }
 
-struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_module_settings *target, const char *name) {
+struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name) {
 	struct rrr_setting *ret = NULL;
 
 	if (target->settings_count > target->settings_max) {
@@ -154,7 +154,7 @@ int __rrr_settings_set_setting_name(struct rrr_setting *setting, const char *nam
 	return 0;
 }
 
-int __rrr_settings_add_raw (struct rrr_module_settings *target, const char *name, const void *old_data, const int size, rrr_setting_type type) {
+int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *name, const void *old_data, const int size, rrr_setting_type type) {
 	int ret = 0;
 
 	void *new_data = malloc(size);
@@ -197,7 +197,7 @@ int __rrr_settings_add_raw (struct rrr_module_settings *target, const char *name
 	return ret;
 }
 
-int rrr_settings_get_string_noconvert (char **target, struct rrr_module_settings *source, const char *name) {
+int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
 	int ret = 0;
 	*target = NULL;
 
@@ -245,15 +245,19 @@ int rrr_settings_get_string_noconvert (char **target, struct rrr_module_settings
 	return ret;
 }
 
-int rrr_settings_traverse_split_commas (
-		struct rrr_module_settings *source, const char *name,
-		int (*callback)(const char *value, void *arg), void *arg
+int __rrr_settings_traverse_split_commas (
+		struct rrr_instance_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg,
+		int silent_fail
 ) {
 	int ret = 0;
 
 	char *value = NULL;
 
 	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
+		if (silent_fail) {
+			goto out;
+		}
 		VL_MSG_ERR("Could not get setting %s for comma splitting\n", name);
 		ret = 1;
 		goto out;
@@ -284,14 +288,28 @@ int rrr_settings_traverse_split_commas (
 }
 
 
-int rrr_settings_add_string (struct rrr_module_settings *target, const char *name, const char *value) {
+int rrr_settings_traverse_split_commas (
+		struct rrr_instance_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg
+) {
+	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 0);
+}
+
+int rrr_settings_traverse_split_commas_silent_fail (
+		struct rrr_instance_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg
+) {
+	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 1);
+}
+
+int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value) {
 	const void *data = value;
 	int size = strlen(value) + 1;
 
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING);
 }
 
-int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const char *name, rrr_setting_uint value) {
+int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
 	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
@@ -344,7 +362,7 @@ int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting
 	return 0;
 }
 
-int rrr_settings_read_string (char **target, struct rrr_module_settings *settings, const char *name) {
+int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name) {
 	int ret = 0;
 	*target = NULL;
 
@@ -364,7 +382,7 @@ int rrr_settings_read_string (char **target, struct rrr_module_settings *setting
 	return ret;
 }
 
-int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_module_settings *settings, const char *name) {
+int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name) {
 	int ret = 0;
 	*target = 0;
 
@@ -384,7 +402,7 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_mod
 	return ret;
 }
 
-int rrr_settings_dump (struct rrr_module_settings *settings) {
+int rrr_settings_dump (struct rrr_instance_settings *settings) {
 	int ret = 0;
 
 	for (int i = 0; i < settings->settings_count; i++) {

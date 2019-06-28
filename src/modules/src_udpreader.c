@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/ip.h"
 #include "../lib/vl_time.h"
-#include "../modules.h"
+#include "../lib/module_thread.h"
 #include "../global.h"
 
 #define VL_UDPREADER_MAX_DATA_FIELDS CMD_ARGUMENT_MAX
@@ -248,14 +248,14 @@ __attribute__((constructor)) void load() {
 }
 
 void init(struct module_dynamic_data *data) {
-		data->name = module_name;
+		data->module_name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
 		data->private_data = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 }
 
 

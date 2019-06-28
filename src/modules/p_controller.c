@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/buffer.h"
-#include "../modules.h"
+#include "../lib/module_thread.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../global.h"
@@ -48,14 +48,14 @@ int poll_delete (
 	struct controller_data *controller_data = data->private_data;
 	struct module_thread_data *source = poll_data->source;
 
-	if (strcmp (source->module->name, "ipclient") == 0) {
+	if (strcmp (source->module->module_name, "ipclient") == 0) {
 		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data);
 	}
-	else if (strcmp (source->module->name, "blockdev") == 0) {
+	else if (strcmp (source->module->module_name, "blockdev") == 0) {
 		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data);
 	}
 	else {
-		VL_MSG_ERR ("controller: No output buffer defined for module %s\n", source->module->name);
+		VL_MSG_ERR ("controller: No output buffer defined for module %s\n", source->module->module_name);
 		return 1;
 	}
 
@@ -69,10 +69,10 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 
 	VL_DEBUG_MSG_3 ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n", message->data, message->data_numeric, size);
 
-	if (strcmp (source->module->name, "blockdev") == 0) {
+	if (strcmp (source->module->module_name, "blockdev") == 0) {
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 	}
-	else if (strcmp (source->module->name, "ipclient") == 0) {
+	else if (strcmp (source->module->module_name, "ipclient") == 0) {
 		if (message->type == MSG_TYPE_TAG) {
 			fifo_buffer_write(&controller_data->to_blockdev, data, size);
 		}
@@ -83,16 +83,16 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		}
 	}
 	else if (
-		(strcmp (source->module->name, "averager") == 0) ||
-		(strcmp (source->module->name, "voltmonitor") == 0) ||
-		(strcmp (source->module->name, "dummy") == 0)
+		(strcmp (source->module->module_name, "averager") == 0) ||
+		(strcmp (source->module->module_name, "voltmonitor") == 0) ||
+		(strcmp (source->module->module_name, "dummy") == 0)
 	) {
 		void *data_2 = message_duplicate(message); // Remember to copy message!
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 		fifo_buffer_write(&controller_data->to_blockdev, data_2, size);
 	}
 	else {
-		VL_MSG_ERR ("controller: Don't know where to route messages from %s\n", source->module->name);
+		VL_MSG_ERR ("controller: Don't know where to route messages from %s\n", source->module->module_name);
 		free(data);
 	}
 
@@ -206,13 +206,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy controller module\n");
 }
 

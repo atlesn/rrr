@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/buffer.h"
-#include "../modules.h"
+#include "../lib/module_thread.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/python3.h"
@@ -137,8 +137,8 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			VL_MSG_ERR ("python3 cannot use sender '%s', lacking poll_delete function.\n",
-					thread_data->senders[i]->module->name);
+			VL_MSG_ERR ("python3 cannot use sender '%s', module '%s' is lacking poll_delete function.\n",
+					thread_data->senders[i]->module->instance_name, thread_data->senders[i]->module->module_name);
 			goto out_message;
 		}
 	}
@@ -199,13 +199,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy python3 module\n");
 	Py_Finalize();
 }

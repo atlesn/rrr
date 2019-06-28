@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
@@ -185,7 +186,7 @@ void *thread_watchdog_entry(void *arg) {
 				!thread_check_state(thread, VL_THREAD_STATE_INIT) &&
 				!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)
 		) {
-			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longed RUNNING\n", thread->name, thread);
+			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
 			break;
 		}
 		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {

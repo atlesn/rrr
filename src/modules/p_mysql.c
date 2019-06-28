@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/ip.h"
-#include "../modules.h"
+#include "../lib/module_thread.h"
 #include "../global.h"
 
 // Should not be smaller than module max
@@ -940,7 +940,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("mysql cannot use sender '%s', lacking poll_delete_ip and poll_delete function.\n",
-					thread_data->senders[i]->module->name);
+					thread_data->senders[i]->module->module_name);
 			goto out_message;
 		}
 	}
@@ -1016,13 +1016,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy mysql module\n");
 	mysql_library_end();
 }

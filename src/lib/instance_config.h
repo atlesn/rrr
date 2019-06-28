@@ -19,26 +19,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef MODULE_CONFIG_H
-#define MODULE_CONFIG_H
-
-#include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
+#ifndef INSTANCE_CONFIG_H
+#define INSTANCE_CONFIG_H
 
 #include "../global.h"
 #include "settings.h"
 
-struct rrr_module_config {
+struct rrr_instance_config {
 	char *name;
-	struct rrr_module_settings *settings;
+	struct rrr_instance_settings *settings;
 };
 
-void rrr_config_destroy_module_config(struct rrr_module_config *config);
-struct rrr_module_config *rrr_config_new_module_config (const char *name_begin, const int name_length, const int max_settings);
+void rrr_config_destroy_instance_config(struct rrr_instance_config *config);
+struct rrr_instance_config *rrr_config_new_instance_config (const char *name_begin, const int name_length, const int max_settings);
 
-static inline int rrr_module_config_get_string_noconvert (char **target, struct rrr_module_config *source, const char *name) {
+static inline int rrr_instance_config_get_string_noconvert (char **target, struct rrr_instance_config *source, const char *name) {
 	return rrr_settings_get_string_noconvert(target, source->settings, name);
 }
 
-#endif /* MODULE_CONFIG_H */
+#endif /* INSTANCE_CONFIG_H */

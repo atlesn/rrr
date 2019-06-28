@@ -43,7 +43,7 @@ struct rrr_setting {
 	void *data;
 };
 
-struct rrr_module_settings {
+struct rrr_instance_settings {
 	pthread_mutex_t mutex;
 	int initialized;
 
@@ -52,15 +52,17 @@ struct rrr_module_settings {
 	struct rrr_setting *settings;
 };
 
-struct rrr_module_settings *rrr_settings_new(const int count);
-void rrr_settings_destroy(struct rrr_module_settings *target);
-int rrr_settings_traverse_split_commas (struct rrr_module_settings *source, const char *name,
+struct rrr_instance_settings *rrr_settings_new(const int count);
+void rrr_settings_destroy(struct rrr_instance_settings *target);
+int rrr_settings_traverse_split_commas (struct rrr_instance_settings *source, const char *name,
 		int (*callback)(const char *value, void *arg), void *arg);
-int rrr_settings_get_string_noconvert (char **target, struct rrr_module_settings *source, const char *name);
-int rrr_settings_add_string (struct rrr_module_settings *target, const char *name, const char *value);
-int rrr_settings_add_unsigned_integer (struct rrr_module_settings *target, const char *name, rrr_setting_uint value);
-int rrr_settings_read_string (char **target, struct rrr_module_settings *settings, const char *name);
-int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_module_settings *settings, const char *name);
-int rrr_settings_dump (struct rrr_module_settings *settings);
+int rrr_settings_traverse_split_commas_silent_fail (struct rrr_instance_settings *source, const char *name,
+		int (*callback)(const char *value, void *arg), void *arg);
+int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name);
+int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value);
+int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
+int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name);
+int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name);
+int rrr_settings_dump (struct rrr_instance_settings *settings);
 
 #endif /* RRR_SETTINGS_H */

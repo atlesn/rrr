@@ -25,26 +25,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "settings.h"
-#include "module_config.h"
+#include "instance_config.h"
 
-void rrr_config_destroy_module_config(struct rrr_module_config *config) {
+void rrr_config_destroy_instance_config(struct rrr_instance_config *config) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
 }
 
-struct rrr_module_config *rrr_config_new_module_config (const char *name_begin, const int name_length, const int max_settings) {
-	struct rrr_module_config *ret = NULL;
+struct rrr_instance_config *rrr_config_new_instance_config (const char *name_begin, const int name_length, const int max_settings) {
+	struct rrr_instance_config *ret = NULL;
 
 	char *name = malloc(name_length + 1);
 	if (name == NULL) {
-		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_module_config");
+		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out;
 	}
 
 	ret = malloc(sizeof(*ret));
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_module_config");
+		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out_free_name;
 	}
 
@@ -54,7 +54,7 @@ struct rrr_module_config *rrr_config_new_module_config (const char *name_begin, 
 	ret->name = name;
 	ret->settings = rrr_settings_new(max_settings);
 	if (ret->settings == NULL) {
-		VL_MSG_ERR("Could not create settings structure in __rrr_config_new_module_config");
+		VL_MSG_ERR("Could not create settings structure in __rrr_config_new_instance_config");
 		goto out_free_config;
 	}
 
