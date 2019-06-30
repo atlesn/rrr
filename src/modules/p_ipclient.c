@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <poll.h>
 
+#include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/module_crypt.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -54,9 +54,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
-	const char *ip_server;
-	const char *ip_port;
-	const char *crypt_file;
+	char *ip_server;
+	char *ip_port;
+	char *crypt_file;
 	struct ip_data ip;
 	pthread_t receive_thread;
 	pthread_mutex_t network_lock;
@@ -81,40 +81,66 @@ void init_data(struct ipclient_data *data) {
 
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
+	RRR_FREE_IF_NOT_NULL(data->crypt_file);
+	RRR_FREE_IF_NOT_NULL(data->ip_port);
+	RRR_FREE_IF_NOT_NULL(data->ip_server);
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
 }
 
-static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
-	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
-	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
-	const char *no_ack = cmd_get_value(cmd, "ipclient_no_ack", 0);
+int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
 
-	data->ip_server = VL_IPCLIENT_SERVER_NAME;
-	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-	data->crypt_file = NULL;
-
-	if (ip_server != NULL) {
-		data->ip_server = ip_server;
-	}
-	if (ip_port != NULL) {
-		data->ip_port = ip_port;
-	}
-	if (crypt_file != NULL) {
-		data->crypt_file = crypt_file;
-	}
-
-	if (no_ack != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, no_ack, &yesno) != 0) {
-			VL_MSG_ERR ("ipclient: Could not understand argument no_ack ('%s'), please specify 'yes' or 'no'\n", no_ack);
-			return 1;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_server, config, "ipclient_server")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_server settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
-		data->no_ack = yesno;
+		data->ip_server = malloc(strlen(VL_IPCLIENT_SERVER_NAME) + 1);
+		if (data->ip_server == NULL) {
+			VL_MSG_ERR("Could not allocate memory in ipclient parse_config\n");
+			goto out;
+		}
+		strcpy(data->ip_server, VL_IPCLIENT_SERVER_NAME);
 	}
 
-	return 0;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_port, config, "ipclient_server_port")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_server_port settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->ip_port = malloc(strlen(VL_IPCLIENT_SERVER_PORT) + 1);
+		if (data->ip_port == NULL) {
+			VL_MSG_ERR("Could not allocate memory in ipclient parse_config\n");
+			goto out;
+		}
+		strcpy(data->ip_server, VL_IPCLIENT_SERVER_PORT);
+	}
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->crypt_file, config, "ipclient_keyfile")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_keyfile settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->crypt_file = NULL;
+	}
+
+	if ((ret = rrr_instance_config_check_yesno(&data->no_ack, config, "ipclient_no_ack")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
+			int ret = 1;
+			goto out;
+		}
+		data->no_ack = 0;
+	}
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 // Poll request from other modules
@@ -385,9 +411,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 	init_data(data);
 	pthread_cleanup_push(data_cleanup, data);
-
-	parse_cmd(data, thread_data->init_data.cmd_data);
-
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
@@ -396,6 +419,12 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
+		goto out_message;
+	}
 
 	if (senders_count > VL_IPCLIENT_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for ipclient module, max is %i\n", VL_IPCLIENT_MAX_SENDERS);
