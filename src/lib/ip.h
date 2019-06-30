@@ -109,12 +109,14 @@ int ip_receive_packets (
 );
 int ip_receive_messages (
 		int fd,
+#ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
+#endif
 		int (*callback)(struct ip_buffer_entry *ip, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_send_packet (
+int ip_send_message (
 		struct vl_message* message,
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,

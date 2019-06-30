@@ -1,15 +1,22 @@
-lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la mysql.la udpreader.la python3.la
+if VL_WITH_MYSQL
+mysql = mysql.la
+mysql_la_SOURCES = p_mysql.c
+mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
+mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
+endif
 
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr
-
+if VL_WITH_PYTHON3
+python3 = python3.la
 python3_la_LDFLAGS = ${module_ldflags} ${PYTHON3_LDFLAGS}
 python3_la_CFLAGS = ${PYTHON3_CFLAGS}
 python3_la_SOURCES = p_python3.c
+endif
 
-mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
-mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
-mysql_la_SOURCES = p_mysql.c
+lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
+	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
+	${mysql} ${python3}
+
+module_ldflags=-module -avoid-version -shared -L../lib -lrrr
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c

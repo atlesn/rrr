@@ -55,12 +55,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
+
 	char *ip_server;
 	char *ip_port;
 #ifdef VL_WITH_OPENSSL
 	char *crypt_file;
 	struct module_crypt_data crypt_data;
 #endif
+
 	struct ip_data ip;
 	pthread_t receive_thread;
 	pthread_mutex_t network_lock;
@@ -138,13 +140,21 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 	if ((ret = rrr_instance_config_check_yesno(&data->no_ack, config, "ipclient_no_ack")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
-			int ret = 1;
+			ret = 1;
 			goto out;
 		}
 		data->no_ack = 0;
 	}
 
-	/* On error, memory is freed by data_cleanup */
+	rrr_setting_uint src_port;
+	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
+		data->ip.port = src_port;
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("ipclient: Could not understand ipclient_src_port argument, must be numeric\n");
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -166,7 +176,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", reading->timestamp_from, reading->data_numeric, size);
 
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
@@ -187,6 +197,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	uint64_t time_now = time_get_64();
 
+	VL_DEBUG_MSG_3 ("ipclient send packet timestamp %" PRIu64 "\n", message->timestamp_from);
+
 	// Check if we sent this packet recently
 	if (entry->time + VL_IPCLIENT_SEND_INTERVAL * 1000 > time_now) {
 		VL_DEBUG_MSG_3 ("ipclient: Not sending packet with timestamp %" PRIu64", it was sent recently\n", message->timestamp_from);
@@ -195,7 +207,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	entry->time = time_now;
 
-	if (ip_send_packet(
+	if (ip_send_message (
 			message,
 #ifdef VL_WITH_OPENSSL
 			&ipclient_data->crypt_data,
@@ -433,7 +445,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		VL_MSG_ERR("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
@@ -531,8 +542,12 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+
+	out_cleanup_data:
 	pthread_cleanup_pop(1);
+
 	pthread_exit(0);
+
 }
 
 static struct module_operations module_operations = {

@@ -149,7 +149,7 @@ int ip_receive_packets (
 		VL_ASSERT(sizeof(entry->data.data)==sizeof(buffer),sizes_of_buffers_equal)
 		memcpy (entry->data.data, buffer, count);
 
-		if (VL_DEBUGLEVEL_3) {
+		if (VL_DEBUGLEVEL_6) {
 			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
 				VL_DEBUG_MSG ("%02x-", entry->data.data[i]);
 				if ((i + 1) % 32 == 0) {
@@ -352,7 +352,7 @@ int ip_network_start (struct ip_data *data) {
 
 	if (data->port < 1 || data->port > 65535) {
 		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
-		goto out_error;
+		goto out_close_socket;
 	}
 
 	struct sockaddr_in si;

@@ -89,6 +89,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		}
 	}
 	else if (
+		(strcmp (source->init_data.module->module_name, "udpreader") == 0) ||
 		(strcmp (source->init_data.module->module_name, "averager") == 0) ||
 		(strcmp (source->init_data.module->module_name, "voltmonitor") == 0) ||
 		(strcmp (source->init_data.module->module_name, "dummy") == 0)

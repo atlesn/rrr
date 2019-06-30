@@ -138,7 +138,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 
 	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
-	if (ip_send_packet(
+	if (ip_send_message (
 			&entry->data.message,
 #ifdef VL_WITH_OPENSSL
 			&private_data->crypt_data,
@@ -259,6 +259,7 @@ static int parse_config (struct ipserver_data *data, struct rrr_instance_config 
 	}
 
 	data->server_port = ipserver_port;
+	data->ip.port = ipserver_port;
 
 	/* On error, memory is freed by data_cleanup */
 

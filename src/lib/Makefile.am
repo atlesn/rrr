@@ -9,7 +9,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 ip.c types.c version.c configuration.c settings.c instance_config.c \
 module_thread.c instances.c
 
-if ENABLE_PYTHON3
+if VL_WITH_PYTHON3
 librrr_la_LIBADD = librrrpython3.la
 noinst_LTLIBRARIES = librrrpython3.la
 librrrpython3_la_SOURCES = python3.c

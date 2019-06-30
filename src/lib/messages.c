@@ -143,6 +143,8 @@ int find_number(const char *str, unsigned long int size, const char **end, uint6
 	strncpy(tmp, str, *end-str);
 	tmp[*end-str] = '\0';
 
+	printf ("Orig: '%s', Tmp: '%s'\n", str, tmp);
+
 	char *endptr;
 	*result = strtoull(tmp, &endptr, 10);
 	if (*endptr != '\0') {
@@ -213,9 +215,10 @@ int init_message (
 }
 
 int parse_message(const char *msg, unsigned long int size, struct vl_message *result) {
-	memset (result, '\0', sizeof(*result));
 	const char *pos = msg;
 	const char *end = msg + size;
+
+	VL_DEBUG_MSG_3("Parse message: %s\n", msg);
 
 	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
@@ -228,11 +231,13 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		result->type = MSG_TYPE_TAG;
 	}
 	else {
-		VL_MSG_ERR ("Unknown message type\n");
+		char buf[16];
+		snprintf(buf, 16, "%s", msg);
+		VL_MSG_ERR ("Unknown message type '%s' of size %lu\n", buf, size);
 		return 1;
 	}
 
-	// {AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	// {AVG|MAX|MIN|POINT|INFO|ARRAY}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	if (find_string (pos, end - pos, MSG_CLASS_AVG_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_AVG;
 	}
@@ -248,30 +253,41 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	else if (find_string (pos, end - pos, MSG_CLASS_INFO_STRING, &pos) == 0) {
 		result->class = MSG_CLASS_INFO;
 	}
+	else if (find_string (pos, end - pos, MSG_CLASS_ARRAY_STRING, &pos) == 0) {
+		result->class = MSG_CLASS_ARRAY;
+	}
 	else {
 		VL_MSG_ERR ("Unknown message class\n");
 		return 1;
 	}
 	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	uint64_t tmp;
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
+		VL_MSG_ERR ("Could not parse CRC32 of message '%s'\n", msg);
 		return 1;
 	}
 	result->crc32 = tmp;
 
 	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
+		VL_MSG_ERR ("Could not parse length of message '%s'\n", msg);
 		return 1;
 	}
 	result->length = tmp;
 
 	// {TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &result->timestamp_from) != 0) {
+		VL_MSG_ERR ("Could not parse timestamp from of message '%s'\n", msg);
 		return 1;
 	}
 
 	// {TIMESTAMP_TO}:{DATA}
+	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
 	if (find_number(pos, end-pos, &pos, &result->timestamp_to) != 0) {
+		VL_MSG_ERR ("Could not parse timestamp to of message '%s'\n", msg);
 		return 1;
 	}
 
@@ -335,6 +351,9 @@ int message_to_string (
 		break;
 	case MSG_CLASS_INFO:
 		class = MSG_CLASS_INFO_STRING;
+		break;
+	case MSG_CLASS_ARRAY:
+		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
 		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
@@ -470,11 +489,13 @@ int message_checksum_check (
 int message_prepare_for_network (
 	struct vl_message *message, char *buf, unsigned long buf_size
 ) {
+	memset (buf, '\0', buf_size);
 
 	message->crc32 = 0;
 	message->data_numeric = 0;
 
-	if (VL_DEBUGLEVEL_3) {
+	if (VL_DEBUGLEVEL_6) {
+		VL_DEBUG_MSG("Message prepared for network: ");
 		for (int i = 0; i < sizeof(*message); i++) {
 			unsigned char *buf = (unsigned char *) message;
 			VL_DEBUG_MSG("%x-", *(buf + i));

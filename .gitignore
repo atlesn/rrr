@@ -3,7 +3,10 @@ src/.libs
 src/lib/.libs
 src/modules/common/.dirstamp
 src/rrr
-/build_timestamp.h
+build_timestamp.h
+
+# debian
+debian/rrr.debhelper.log
 
 # debian
 debian/rrr/
@@ -21,6 +24,7 @@ debian/.debhelper/
 debian/tmp/
 # http://www.gnu.org/software/automake
 
+INSTALL
 Makefile.in
 /ar-lib
 /mdate-sh
