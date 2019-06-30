@@ -75,7 +75,7 @@ struct mysql_data {
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
-	cmd_arg_count mysql_special_columns_count;
+	int mysql_special_columns_count;
 
 	/* Must be traversed and non-nulls freed at thread exit */
 	char *mysql_columns[RRR_MYSQL_BIND_MAX];
@@ -960,10 +960,6 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	if (mysql_parse_config(data, thread_data->init_data.instance_config) != 0) {
 			goto out_message;
 	}
-
-/*	if (mysql_parse_cmd(data, start_data->cmd) != 0) {
-		goto out_message;
-	}*/
 
 	if (senders_count > RRR_MYSQL_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for mysql module, max is %i\n", RRR_MYSQL_MAX_SENDERS);

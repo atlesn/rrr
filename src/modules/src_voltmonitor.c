@@ -48,7 +48,6 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
-#include "../lib/cmdlineparser/cmdline.h"
 #include "../global.h"
 
 struct voltmonitor_data {

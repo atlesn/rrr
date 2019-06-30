@@ -39,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
-#include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/ip.h"
 #include "../global.h"
 
