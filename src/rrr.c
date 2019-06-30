@@ -30,6 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
 #include "lib/configuration.h"
+#include "lib/threads.h"
+
+#ifdef VL_WITH_OPENSSL
+#include "lib/crypt.h"
+#endif
 
 #ifndef VL_BUILD_TIMESTAMP
 #define VL_BUILD_TIMESTAMP 1
@@ -93,13 +98,18 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 }
 
 int main_start_threads (
+		struct vl_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd
 ) {
-	// Initialzie dynamic_data thread data
-	rrr_threads_init();
+#ifdef VL_WITH_OPENSSL
+	vl_crypt_initialize_locks();
+#endif
 
+	int ret = 0;
+
+	// Initialzie dynamic_data thread data
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {
 			break;
@@ -115,10 +125,18 @@ int main_start_threads (
 
 		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		instance->thread_data = rrr_init_thread(&init_data);
+		if ((instance->thread_data = rrr_init_thread(&init_data)) == NULL) {
+			goto out;
+		}
 	}
 
 	// Start threads
+	if (thread_new_collection (thread_collection) != 0) {
+		VL_MSG_ERR("Could not create thread collection\n");
+		ret = 1;
+		goto out;
+	}
+
 	int threads_total = 0;
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {
@@ -129,7 +147,7 @@ int main_start_threads (
 			instance->thread_data->init_data.senders[j] = instance->senders[j];
 		}
 
-		if (rrr_start_thread(instance->thread_data) != 0) {
+		if (rrr_start_thread(*thread_collection, instance->thread_data) != 0) {
 			VL_MSG_ERR("Error when starting thread for instance%s\n",
 					instance->dynamic_data->instance_name);
 			return EXIT_FAILURE;
@@ -143,12 +161,22 @@ int main_start_threads (
 		return EXIT_FAILURE;
 	}
 
-	if (thread_start_all_after_initialized() != 0) {
+	if (thread_start_all_after_initialized(*thread_collection) != 0) {
 		VL_MSG_ERR("Error while waiting for threads to initialize\n");
 		return EXIT_FAILURE;
 	}
 
-	return 0;
+	out:
+	return ret;
+}
+
+void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances) {
+	threads_stop_and_join(collection);
+	instance_free_all_thread_data(instances);
+
+#ifdef VL_WITH_OPENSSL
+	vl_crypt_free_locks();
+#endif
 }
 
 static volatile int main_running = 1;
@@ -222,10 +250,11 @@ int main (int argc, const char *argv[]) {
 	}
 */
 
-	threads_restart:
-
 	// Initialzie dynamic_data thread data
-	if ((ret = main_start_threads(instances, config, &cmd)) != 0) {
+	struct vl_thread_collection *collection = NULL;
+
+	threads_restart:
+	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -235,9 +264,8 @@ int main (int argc, const char *argv[]) {
 		if (instance_check_threads_stopped(instances) == 0) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
 
-			rrr_threads_stop();
-			instance_free_all_threads(instances);
-			rrr_threads_destroy();
+			main_threads_stop(collection, instances);
+			thread_destroy_collection (collection);
 
 			if (main_running) {
 				goto threads_restart;
@@ -255,11 +283,8 @@ int main (int argc, const char *argv[]) {
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
-		rrr_threads_stop();
-		instance_free_all_threads(instances);
-
-	out_destroy_threads:
-		rrr_threads_destroy();
+		main_threads_stop(collection, instances);
+		thread_destroy_collection (collection);
 
 	out_unload_modules:
 #ifndef VL_NO_MODULE_UNLOAD

@@ -34,7 +34,7 @@ int instance_check_threads_stopped(struct instance_metadata_collection *instance
 	return 1;
 }
 
-void instance_free_all_threads(struct instance_metadata_collection *instances) {
+void instance_free_all_thread_data(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
 		rrr_free_thread(instance->thread_data);
 		instance->thread_data = NULL;

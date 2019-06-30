@@ -62,12 +62,9 @@ struct module_thread_data {
 };
 
 /* TODO : Rename functions, they have something to do with instances */
-void rrr_threads_init();
-void rrr_threads_stop();
-void rrr_threads_destroy();
+
 void rrr_free_thread(struct module_thread_data *data);
 struct module_thread_data *rrr_init_thread(struct module_thread_init_data *init_data);
-int rrr_restart_thread(struct module_thread_data *data);
-int rrr_start_thread(struct module_thread_data *data);
+int rrr_start_thread(struct vl_thread_collection *collection, struct module_thread_data *data);
 
 #endif /* MODULE_THREAD_H */

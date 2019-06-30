@@ -44,7 +44,7 @@ struct instance_metadata_collection {
 	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
 
 int instance_check_threads_stopped(struct instance_metadata_collection *target);
-void instance_free_all_threads(struct instance_metadata_collection *target);
+void instance_free_all_thread_data(struct instance_metadata_collection *target);
 int instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
 void instance_unload_all(struct instance_metadata_collection *target);
 void instance_metadata_collection_destroy (struct instance_metadata_collection *target);

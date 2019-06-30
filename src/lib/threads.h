@@ -66,18 +66,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
 #define VL_THREAD_WATCHDOG_KILLTIME_LIMIT 2000
 
-/* Initialize mutexes */
-void threads_init();
-
-/* Stop threads */
-void threads_stop();
-
-/* Free resources - RUN STOP FIRST */
-void threads_destroy();
-
 #define VL_THREAD_NAME_MAX_LENGTH 64
 
 struct vl_thread {
+	struct vl_thread *next;
 	pthread_t thread;
 	uint64_t watchdog_time;
 	pthread_mutex_t mutex;
@@ -98,14 +90,25 @@ struct vl_thread {
 //	char thread_private_memory[];
 };
 
-void thread_set_state(struct vl_thread *thread, int state);
-void thread_set_state_hard(struct vl_thread *thread, int state);
+struct vl_thread_collection {
+	struct vl_thread *first;
+	pthread_mutex_t threads_mutex;
+};
+
+#define VL_THREADS_LOOP(target,collection) \
+	for(struct vl_thread *target = collection->first; target != NULL; target = target->next)
 
 struct vl_thread_start_data {
 	void *(*start_routine) (struct vl_thread_start_data *);
 	struct vl_thread *thread;
 	void *private_arg;
 };
+
+void thread_set_state(struct vl_thread *thread, int state);
+int thread_new_collection (struct vl_thread_collection **target);
+void thread_destroy_collection (struct vl_thread_collection *collection);
+int thread_start_all_after_initialized (struct vl_thread_collection *collection);
+void threads_stop_and_join (struct vl_thread_collection *collection);
 
 static inline void thread_lock(struct vl_thread *thread) {
 	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
@@ -115,6 +118,14 @@ static inline void thread_lock(struct vl_thread *thread) {
 static inline void thread_unlock(struct vl_thread *thread) {
 	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
+}
+
+static inline void thread_unlock_if_locked(struct vl_thread *thread) {
+	VL_DEBUG_MSG_4 ("Thread %s test unlock\n", thread->name);
+	if (pthread_mutex_trylock(&thread->mutex) == EBUSY) {
+		VL_DEBUG_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
+		pthread_mutex_unlock(&thread->mutex);
+	}
 }
 
 static inline int thread_check_signal(struct vl_thread *thread, int signal) {
@@ -191,9 +202,13 @@ static inline void thread_set_stopping(void *arg) {
 	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
 }
 
-struct vl_thread *thread_start (
+struct vl_thread *thread_preload_and_register (
+		struct vl_thread_collection *collection,
 		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
 );
-int thread_start_all_after_initialized();
+
+
+
+//void thread_destroy (struct vl_thread_collection *collection, struct vl_thread *thread);
 
 #endif
