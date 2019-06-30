@@ -1,4 +1,5 @@
 /*
+#include "instance_config.h"
 
 Read Route Record
 
@@ -19,8 +20,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "build_timestamp.h"
+#include "settings.h"
 
-int rrr_verify_library_build_timestamp (long long int timestamp) {
-	return (timestamp == VL_BUILD_TIMESTAMP);
-}
+#ifndef RRR_CONFIGURATION_H
+#define RRR_CONFIGURATION_H
+
+#define RRR_CONFIG_MAX_MODULES CMD_MAXIMUM_CMDLINE_ARGS
+#define RRR_CONFIG_MAX_SIZE 16*1024*1024
+#define RRR_CONFIG_MAX_SETTINGS 32
+#define RRR_CONFIG_ALLOCATION_INTERVAL 4
+
+struct rrr_config {
+	int module_count;
+	int module_count_max;
+	struct rrr_instance_config **configs;
+};
+
+struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name);
+void rrr_config_destroy (struct rrr_config *target);
+struct rrr_config *rrr_config_parse_file (const char *filename);
+int rrr_config_dump (struct rrr_config *config);
+
+#endif /* RRR_CONFIGURATION_H */

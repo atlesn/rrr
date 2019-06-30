@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "messages.h"
+#include "instance_config.h"
 
 typedef uint8_t rrr_type;
 typedef uint32_t rrr_type_length;
@@ -37,7 +38,6 @@ typedef uint64_t rrr_type_be;
 typedef uint16_t rrr_version;
 
 #define RRR_VERSION 1
-#define RRR_TYPES_MAX_DEFINITIONS CMD_ARGUMENT_MAX
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
@@ -53,7 +53,7 @@ typedef uint16_t rrr_version;
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
-#define RRR_TYPE_MAX_BLOB	CMD_ARGUMENT_SIZE
+#define RRR_TYPE_MAX_BLOB	RRR_TYPE_MAX_BLOB_LENGTH
 #define RRR_TYPE_MAX_ARRAY	65535
 
 #define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE)
@@ -70,19 +70,19 @@ struct rrr_type_definition {
 struct rrr_type_definition_collection {
 	rrr_version version;
 	rrr_def_count count;
-	struct rrr_type_definition definitions[RRR_TYPES_MAX_DEFINITIONS];
+	struct rrr_type_definition definitions[RRR_TYPE_MAX_DEFINITIONS];
 };
 
 struct rrr_data_collection {
 	struct rrr_type_definition_collection definitions;
-	char *data[RRR_TYPES_MAX_DEFINITIONS];
+	char *data[RRR_TYPE_MAX_DEFINITIONS];
 };
 
 //static int (*rrr_types_convert_functions[]) (char *target, const char *data, rrr_type_length length);
 
 int rrr_types_parse_definition (
 		struct rrr_type_definition_collection *target,
-		struct cmd_data *cmd,
+		struct rrr_instance_config *config,
 		const char *cmd_key
 );
 

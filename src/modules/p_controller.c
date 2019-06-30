@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/buffer.h"
-#include "../modules.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../global.h"
@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct controller_data {
 	struct fifo_buffer to_ipclient;
 	struct fifo_buffer to_blockdev;
+	struct module_thread_data *data;
 };
 
 int poll_delete (
@@ -48,14 +49,18 @@ int poll_delete (
 	struct controller_data *controller_data = data->private_data;
 	struct module_thread_data *source = poll_data->source;
 
-	if (strcmp (source->module->name, "ipclient") == 0) {
+	if (strcmp (source->init_data.module->module_name, "ipclient") == 0) {
 		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data);
 	}
-	else if (strcmp (source->module->name, "blockdev") == 0) {
+	else if (strcmp (source->init_data.module->module_name, "blockdev") == 0) {
 		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data);
 	}
 	else {
-		VL_MSG_ERR ("controller: No output buffer defined for module %s\n", source->module->name);
+		VL_MSG_ERR ("controller %s: No output buffer defined for instance %s using module %s\n",
+				controller_data->data->init_data.module->instance_name,
+				source->init_data.module->instance_name,
+				source->init_data.module->module_name
+		);
 		return 1;
 	}
 
@@ -67,12 +72,13 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct module_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("controller: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", message->timestamp_from, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("controller: Result from buffer: %s measurement %" PRIu64 " size %lu\n",
+			message->data, message->data_numeric, size);
 
-	if (strcmp (source->module->name, "blockdev") == 0) {
+	if (strcmp (source->init_data.module->module_name, "blockdev") == 0) {
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 	}
-	else if (strcmp (source->module->name, "ipclient") == 0) {
+	else if (strcmp (source->init_data.module->module_name, "ipclient") == 0) {
 		if (message->type == MSG_TYPE_TAG) {
 			fifo_buffer_write(&controller_data->to_blockdev, data, size);
 		}
@@ -83,26 +89,31 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 		}
 	}
 	else if (
-		(strcmp (source->module->name, "averager") == 0) ||
-		(strcmp (source->module->name, "voltmonitor") == 0) ||
-		(strcmp (source->module->name, "udpreader") == 0) ||
-		(strcmp (source->module->name, "dummy") == 0)
+		(strcmp (source->init_data.module->module_name, "udpreader") == 0) ||
+		(strcmp (source->init_data.module->module_name, "averager") == 0) ||
+		(strcmp (source->init_data.module->module_name, "voltmonitor") == 0) ||
+		(strcmp (source->init_data.module->module_name, "dummy") == 0)
 	) {
 		void *data_2 = message_duplicate(message); // Remember to copy message!
 		fifo_buffer_write(&controller_data->to_ipclient, data, size);
 		fifo_buffer_write(&controller_data->to_blockdev, data_2, size);
 	}
 	else {
-		VL_MSG_ERR ("controller: Don't know where to route messages from %s\n", source->module->name);
+		VL_MSG_ERR ("controller %s: Don't know where to route messages from '%s' using module '%s'\n",
+				controller_data->data->init_data.module->instance_name,
+				source->init_data.module->instance_name,
+				source->init_data.module->module_name
+		);
 		free(data);
 	}
 
 	return 0;
 }
 
-void data_init(struct controller_data *data) {
+void data_init(struct controller_data *data, struct module_thread_data *thread_data) {
 	fifo_buffer_init(&data->to_blockdev);
 	fifo_buffer_init(&data->to_ipclient);
+	data->data = thread_data;
 }
 
 void data_cleanup(void *arg) {
@@ -114,14 +125,14 @@ void data_cleanup(void *arg) {
 static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 
 	struct controller_data *data = (struct controller_data *) thread_data->private_memory;
 	thread_data->private_data = data;
 
 	VL_DEBUG_MSG_1 ("controller thread data is %p\n", thread_data);
 
-	data_init(data);
+	data_init(data, thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -146,11 +157,15 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("controller: found sender %s\n", thread_data->senders[i]->thread->name);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("controller: found sender %s\n", thread_data->init_data.senders[i]->dynamic_data->instance_name);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			VL_MSG_ERR ("controller cannot use sender %s, lacking poll delete function.\n", thread_data->senders[i]->thread->name);
+			VL_MSG_ERR ("controller '%s' cannot use sender '%s', module '%s' lacking poll delete function.\n",
+					thread_data->init_data.module->instance_name,
+					thread_data->init_data.senders[i]->dynamic_data->instance_name,
+					thread_data->init_data.senders[i]->dynamic_data->module_name
+			);
 			goto out_message;
 		}
 	}
@@ -167,9 +182,9 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 		int err = 0;
 
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
+			struct fifo_callback_args poll_data = {thread_data->init_data.senders[i], data};
 
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("controller module received error from poll function\n");
 				err = 1;
@@ -207,13 +222,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy controller module\n");
 }
 

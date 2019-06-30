@@ -1,16 +1,14 @@
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr
-
-if RRR_TEST_MYSQL
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la mysql.la \
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la python3.la \
 	udpreader.la
 mysql_la_LDFLAGS = ${module_ldflags} -lmysqlclient
 mysql_la_SOURCES = p_mysql.c
-else
-lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la \
-	udpreader.la
-endif
+
+module_ldflags=-module -avoid-version -shared -L../lib -lrrr
+
+python3_la_LDFLAGS = ${module_ldflags} ${PYTHON3_LDFLAGS}
+python3_la_CFLAGS = ${PYTHON3_CFLAGS}
+python3_la_SOURCES = p_python3.c
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c

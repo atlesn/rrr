@@ -27,11 +27,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <bdl/bdl.h>
 
-#include "../modules.h"
+#include "../lib/settings.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/cmdlineparser/cmdline.h"
 #include "../global.h"
 
 // Should not be smaller than module max
@@ -42,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_BLOCKDEV_TAG_SAVED	(1<<1)
 
 struct blockdev_data {
-	const char *device_path;
+	char *device_path;
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
 	struct bdl_session device_session;
@@ -59,28 +60,8 @@ int poll_delete (
 	return fifo_read_clear_forward(&blockdev_data->output_buffer, NULL, callback, poll_data);
 }
 
-
-int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
+int data_init (struct blockdev_data *data) {
 	memset(data, '\0', sizeof(*data));
-
-	const char *device_path = cmd_get_value(cmd, "device_path", 0);
-
-	data->device_path = device_path;
-
-	if (data->device_path == NULL) {
-		VL_MSG_ERR ("blockdev: Device must be specified (device_path=DEVICE)\n");
-		return 1;
-	}
-
-	const char *always_tag_saved = cmd_get_value(cmd, "blockdev_always_tag", 0);
-	if (always_tag_saved != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, always_tag_saved, &yesno) != 0) {
-			VL_MSG_ERR ("blockdev: Could not understand argument blockdev_always_tag ('%s'), please specify 'yes' or 'no'\n", always_tag_saved);
-			return 1;
-		}
-		data->always_tag_saved = yesno;
-	}
 
 	fifo_buffer_init(&data->input_buffer);
 	fifo_buffer_init(&data->output_buffer);
@@ -88,10 +69,56 @@ int data_init_parse_cmd (struct blockdev_data *data, struct cmd_data *cmd) {
 	return 0;
 }
 
+int parse_config (struct blockdev_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	memset(data, '\0', sizeof(*data));
+
+	char *device_path = NULL;
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&device_path, config, "device_path")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing device_path settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->device_path = device_path;
+
+	if (data->device_path == NULL) {
+		VL_MSG_ERR ("blockdev instance %s: Device must be specified (device_path=DEVICE)\n", config->name);
+		return 1;
+	}
+
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "blockdev_always_tag")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing blockdev_always_tag settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->always_tag_saved = yesno;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
+}
+
 void data_cleanup (void *arg) {
 	struct blockdev_data *blockdev_data = arg;
 	fifo_buffer_invalidate(&blockdev_data->input_buffer);
 	fifo_buffer_invalidate(&blockdev_data->output_buffer);
+
+	if (blockdev_data->device_path != NULL) {
+		free(blockdev_data->device_path);
+	}
 
 	while (blockdev_data->device_session.usercount > 0) {
 		bdl_close_session(&blockdev_data->device_session);
@@ -287,14 +314,14 @@ int get_new_entries(struct module_thread_data *thread_data) {
 static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct blockdev_data *data = (struct blockdev_data *) thread_data->private_memory;
 	thread_data->private_data = data;
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
-	if (data_init_parse_cmd(data, start_data->cmd) != 0) {
+	if (data_init(data) != 0) {
 		pthread_exit(0);
 	}
 
@@ -304,6 +331,10 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("blockdev thread data is %p\n", thread_data);
 
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parsing failed for blockdev instance '%s'\n", thread_data->init_data.module->instance_name);
+		goto out_message;
+	}
 
 	if (senders_count > VL_BLOCKDEV_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
@@ -322,8 +353,8 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("blockdev: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("blockdev: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("blockdev cannot use this sender, lacking poll delete function.\n");
@@ -347,7 +378,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("blockdev module received error from poll function\n");
 				err = 1;
@@ -410,13 +441,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy blockdev module\n");
 }
 

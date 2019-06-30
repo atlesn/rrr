@@ -33,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <poll.h>
 
-#include "../modules.h"
+#include "../lib/instance_config.h"
+#include "../lib/settings.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -52,9 +54,10 @@ struct ipserver_data {
 	struct fifo_buffer receive_buffer;
 	struct fifo_buffer output_buffer;
 	struct ip_data ip;
-	const char *crypt_file;
+	char *crypt_file;
 	struct module_crypt_data crypt_data;
 	struct ip_stats_twoway stats;
+	rrr_setting_uint server_port;
 };
 
 // Poll request from other modules
@@ -216,43 +219,58 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
 	fifo_buffer_invalidate(&data->output_buffer);
+	if (data->crypt_file != NULL) {
+		free(data->crypt_file);
+	}
 }
 
 // TODO : Provide more configuration arguments
-static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
-//	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
-//	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *crypt_file = cmd_get_value(cmd, "ipserver_keyfile", 0);
+static int parse_config (struct ipserver_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
 
-//	data->ip_server = VL_IPCLIENT_SERVER_NAME;
-//	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-	data->crypt_file = NULL;
+	char *crypt_file = NULL;
+	rrr_setting_uint ipserver_port = 0;
 
-/*	if (ip_server != NULL) {
-		data->ip_server = ip_server;
-	}
-	if (ip_port != NULL) {
-		data->ip_port = ip_port;
-	}*/
-	if (crypt_file != NULL) {
-		data->crypt_file = crypt_file;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&crypt_file, config, "ipserver_keyfile")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipserver_keyfile settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
 	}
 
-	data->ip.port = VL_IPSERVER_SERVER_PORT;
+	data->server_port = ipserver_port;
 
-	return 0;
+	if ((ret = rrr_instance_config_read_unsigned_integer(&ipserver_port, config, "ipserver_server_port")) == 0) {
+		// OK
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing ipserver_server_port setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		ipserver_port = VL_IPSERVER_SERVER_PORT;
+	}
+
+	data->crypt_file = crypt_file;
+	data->ip.port = ipserver_port;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct ipserver_data* data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("ipserver thread data is %p\n", thread_data);
 
 	init_data(data);
-	parse_cmd(data, start_data->cmd);
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
@@ -262,6 +280,11 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parse failed for ipserver instance '%s'\n", thread_data->init_data.module->instance_name);
+		goto out_message;
+	}
 
 	if (senders_count > VL_IPSERVER_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for ipserver module, max is %i\n", VL_IPSERVER_MAX_SENDERS);
@@ -279,8 +302,8 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("ipserver: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+		VL_DEBUG_MSG_1 ("ipserver: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete_ip;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("ipserver cannot use this sender, lacking poll_delete_ip function.\n");
@@ -312,7 +335,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, data};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("ipserver module received error from poll function\n");
 				err = 1;
@@ -360,13 +383,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy ipserver module\n");
 }
 

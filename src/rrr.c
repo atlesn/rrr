@@ -25,160 +25,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "global.h"
-#include "modules.h"
+#include "lib/instances.h"
+#include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
+#include "lib/configuration.h"
+
+#ifndef VL_BUILD_TIMESTAMP
+#define VL_BUILD_TIMESTAMP 1
+#endif
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
 //#define VL_NO_MODULE_UNLOAD
 
-static struct module_metadata modules[CMD_ARGUMENT_MAX];
+int main_process_instances(struct rrr_config *config, struct instance_metadata_collection *instances) {
+	int ret = 0;
 
-int module_check_threads_stopped() {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		if (modules[i].module == NULL) {
+	for (int i = 0; i < config->module_count; i++) {
+		ret = instance_load_and_save(instances, config, config->configs[i]);
+		if (ret != 0) {
+			VL_MSG_ERR("Loading of instance failed for %s\n", config->configs[i]->name);
 			break;
 		}
-
-		if (thread_get_state(modules[i].thread_data->thread) == VL_THREAD_STATE_STOPPED || modules[i].thread_data->thread->is_ghost == 1) {
-			return 0;
-		}
 	}
-	return 1;
-}
 
-void module_free_all_threads() {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		if (modules[i].module == NULL) {
+	RRR_INSTANCE_LOOP(instance, instances) {
+		ret = instance_add_senders(instances, instance);
+		if (ret != 0) {
+			VL_MSG_ERR("Adding senders failed for %s\n", instance->dynamic_data->instance_name);
 			break;
 		}
-
-		module_free_thread(modules[i].thread_data);
-	}
-}
-
-void unload_all_modules() {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		if (modules[i].module == NULL) {
-			break;
-		}
-		unload_module(modules[i].module);
-	}
-}
-
-struct module_metadata *save_module(struct module_dynamic_data *module) {
-	VL_DEBUG_MSG_1 ("Saving module %s\n", module->name);
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		if (modules[i].module == NULL) {
-			modules[i].module = module;
-			return &modules[i];
-		}
-	}
-	VL_MSG_ERR ("Too many different modules defind, max is %i\n", CMD_ARGUMENT_MAX);
-	exit(EXIT_FAILURE);
-}
-
-struct module_metadata *find_or_load_module(const char *name) {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_dynamic_data *module = modules[i].module;
-		if (module != NULL && strcmp(module->name, name) == 0) {
-			return &modules[i];
-		}
 	}
 
-	struct module_dynamic_data *module = load_module(name);
-	if (module == NULL) {
-		VL_MSG_ERR ("Module %s could not be loaded (in find_or_load)\n", name);
-		return NULL;
-	}
-
-	return save_module(module);
-}
-
-struct module_metadata *find_module(const char *name) {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_dynamic_data *module = modules[i].module;
-		if (module != NULL && strcmp(module->name, name) == 0) {
-			return &modules[i];
-		}
-	}
-	return NULL;
-}
-
-int main_parse_cmd_modules(struct cmd_data *cmd) {
-	memset(modules, '\0', sizeof(modules));
-
-	for (unsigned long int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		const char *module_string = cmd_get_subvalue(cmd, "module", i, 0);
-
-		const char *sender_strings[VL_MODULE_MAX_SENDERS];
-		int senders_count = 0;
-		for (unsigned long int j = 1; j < VL_MODULE_MAX_SENDERS; j++) {
-			const char *sender_string = cmd_get_subvalue(cmd, "module", i, j);
-			if (sender_string == NULL || *sender_string == '\0') {
-				break;
-			}
-			sender_strings[senders_count++] =
-					cmd_get_subvalue(cmd, "module", i, j);
-		}
-
-		if (module_string == NULL || *module_string == '\0') {
-			break;
-		}
-
-		VL_DEBUG_MSG_1("Loading module '%s'\n", module_string);
-		struct module_metadata *module = find_or_load_module(module_string);
-		if (module == NULL || module->module == NULL) {
-			VL_MSG_ERR("Module %s could not be loaded A\n", module_string);
-			return EXIT_FAILURE;
-		}
-
-		if (module->module->type == VL_MODULE_TYPE_PROCESSOR) {
-			if (senders_count == 0) {
-				VL_MSG_ERR("Sender module must be specified for processor module %s\n",
-						module_string);
-				return EXIT_FAILURE;
-			}
-
-			for (unsigned long int j = 0; j < senders_count; j++) {
-				VL_DEBUG_MSG_1("Loading sender module '%s' (if not already loaded)\n",
-						sender_strings[j]
-				);
-
-				struct module_metadata *module_sender =
-						find_or_load_module(sender_strings[j]);
-
-				if (module_sender == NULL) {
-					VL_MSG_ERR("Module %s could not be loaded B\n",
-							sender_strings[j]);
-					return EXIT_FAILURE;
-				}
-
-				if (module_sender == module || module_sender->module == NULL) {
-					VL_MSG_ERR("Module %s set with itself as sender\n",
-							sender_strings[j]);
-					return EXIT_FAILURE;
-				}
-
-				module->senders[module->senders_count++] = module_sender;
-			}
-		}
-		else if (module->module->type == VL_MODULE_TYPE_SOURCE) {
-			if (senders_count != 0) {
-				VL_MSG_ERR("Sender module cannot be specified for source module %s\n",
-						module_string);
-				return EXIT_FAILURE;
-			}
-		}
-		else {
-			VL_MSG_ERR ("Unknown module type for %s: %i\n",
-					module_string, module->module->type
-			);
-		}
-	}
-
-	return 0;
+	return ret;
 }
 
 int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd) {
@@ -207,50 +87,51 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 		}
 	}
 
-	vl_init_global_config(debuglevel);
+	rrr_init_global_config(debuglevel);
+
 	return 0;
 }
 
-int main_start_threads(
-		struct module_metadata modules[CMD_ARGUMENT_MAX],
-		struct cmd_data* cmd
+int main_start_threads (
+		struct instance_metadata_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd
 ) {
-	// Initialzie module thread data
-	module_threads_init();
+	// Initialzie dynamic_data thread data
+	rrr_threads_init();
 
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_metadata *meta = &modules[i];
-
-		if (meta->module == NULL) {
+	RRR_INSTANCE_LOOP(instance,instances) {
+		if (instance->dynamic_data == NULL) {
 			break;
 		}
 
 		struct module_thread_init_data init_data;
-		init_data.module = meta->module;
-		memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
-		init_data.senders_count = meta->senders_count;
+		init_data.module = instance->dynamic_data;
+		memcpy(init_data.senders, instance->senders, sizeof(init_data.senders));
+		init_data.senders_count = instance->senders_count;
+		init_data.cmd_data = cmd;
+		init_data.global_config = global_config;
+		init_data.instance_config = instance->config;
 
-		VL_DEBUG_MSG_1("Initializing %s\n", meta->module->name);
+		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		meta->thread_data = module_init_thread(&init_data);
+		instance->thread_data = rrr_init_thread(&init_data);
 	}
 
 	// Start threads
 	int threads_total = 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_metadata *meta = &modules[i];
-
-		if (meta->module == NULL) {
+	RRR_INSTANCE_LOOP(instance,instances) {
+		if (instance->dynamic_data == NULL) {
 			break;
 		}
 
-		for (int j = 0; j < meta->senders_count; j++) {
-			meta->thread_data->senders[j] = meta->senders[j]->thread_data;
+		for (int j = 0; j < instance->senders_count; j++) {
+			instance->thread_data->init_data.senders[j] = instance->senders[j];
 		}
 
-		if (module_start_thread(meta->thread_data, cmd) != 0) {
-			VL_MSG_ERR("Error when starting thread for module %s\n",
-					meta->module->name);
+		if (rrr_start_thread(instance->thread_data) != 0) {
+			VL_MSG_ERR("Error when starting thread for instance%s\n",
+					instance->dynamic_data->instance_name);
 			return EXIT_FAILURE;
 		}
 
@@ -258,7 +139,7 @@ int main_start_threads(
 	}
 
 	if (threads_total == 0) {
-		VL_DEBUG_MSG_1("No modules started, exiting\n");
+		VL_DEBUG_MSG_1("No instances started, exiting\n");
 		return EXIT_FAILURE;
 	}
 
@@ -286,9 +167,16 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	struct instance_metadata_collection *instances;
+
 	struct cmd_data cmd;
+	struct rrr_config *config = NULL;
 
 	int ret = EXIT_SUCCESS;
+
+	if (instance_metadata_collection_new (&instances) != 0) {
+		goto out_no_cleanup;
+	}
 
 	struct sigaction action;
 	action.sa_handler = signal_interrupt;
@@ -300,31 +188,56 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	if ((ret = main_parse_cmd_arguments(argc, argv, &cmd)) != 0) {
-		goto out;
+		goto out_no_cleanup;
 	}
 
 	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
 
+	const char* config_string = cmd_get_value(&cmd, "config", 0);
+	if (config_string != NULL) {
+		config = rrr_config_parse_file(config_string);
+
+		if (config == NULL) {
+			ret = EXIT_FAILURE;
+			VL_MSG_ERR("Configuration file parsing failed\n");
+			goto out_unload_modules;
+		}
+
+		VL_DEBUG_MSG_1("found %d instances\n", config->module_count);
+
+		ret = main_process_instances(config, instances);
+
+		if (ret != 0) {
+			goto out_unload_modules;
+		}
+	}
+
+	if (VL_DEBUGLEVEL_1) {
+		int dump_ret = rrr_config_dump(config);
+	}
+
+	/*
 	if ((ret = main_parse_cmd_modules(&cmd)) != 0) {
 		goto out_unload_modules;
 	}
+*/
 
 	threads_restart:
 
-	// Initialzie module thread data
-	if ((ret = main_start_threads(modules, &cmd)) != 0) {
+	// Initialzie dynamic_data thread data
+	if ((ret = main_start_threads(instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
 
 	while (main_running) {
 		usleep (100000);
 
-		if (module_check_threads_stopped() == 0) {
+		if (instance_check_threads_stopped(instances) == 0) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
 
-			module_threads_stop();
-			module_free_all_threads();
-			module_threads_destroy();
+			rrr_threads_stop();
+			instance_free_all_threads(instances);
+			rrr_threads_destroy();
 
 			if (main_running) {
 				goto threads_restart;
@@ -342,17 +255,22 @@ int main (int argc, const char *argv[]) {
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
-		module_threads_stop();
-		module_free_all_threads();
+		rrr_threads_stop();
+		instance_free_all_threads(instances);
 
 	out_destroy_threads:
-		module_threads_destroy();
+		rrr_threads_destroy();
 
 	out_unload_modules:
 #ifndef VL_NO_MODULE_UNLOAD
-		unload_all_modules();
+		instance_unload_all(instances);
 #endif
+		if (config != NULL) {
+			rrr_config_destroy(config);
+		}
 
-	out:
+	instance_metadata_collection_destroy(instances);
+
+	out_no_cleanup:
 	return ret;
 }

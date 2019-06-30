@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <poll.h>
 
-#include "../modules.h"
+#include "../lib/instances.h"
 #include "../lib/module_crypt.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -399,7 +399,7 @@ int start_receive_thread(struct module_thread_data *thread_data) {
 static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct ipclient_data* data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("ipclient thread data is %p\n", thread_data);
@@ -407,14 +407,13 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	init_data(data);
 	pthread_cleanup_push(data_cleanup, data);
 
-	if (parse_cmd(data, start_data->cmd) != 0) {
-		goto out_cleanup_data;
-	}
-
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
+
+	// TODO : Change to config system
+	parse_cmd(data, thread_data->init_data.cmd_data);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -436,8 +435,8 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("ipclient cannot use this sender, lacking poll delete function.\n");
@@ -480,7 +479,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		VL_DEBUG_MSG_5 ("ipclient polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("ipclient module received error from poll function\n");
 				err = 1;
@@ -531,13 +530,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy ipclient module\n");
 }
 

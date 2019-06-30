@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/instances.h"
 #include "../lib/buffer.h"
-#include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../global.h"
@@ -47,7 +47,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 
 	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
 
@@ -74,13 +74,17 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("Raw: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("Raw: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
-			poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+			poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete_ip;
 			if (poll[i] == NULL) {
-				VL_MSG_ERR ("Raw cannot use sender %s, lacking poll_delete or poll_delete_ip function.\n", thread_data->senders[i]->thread->name);
+				VL_MSG_ERR ("Raw cannot use sender %s using module %s, lacking poll_delete or poll_delete_ip function for instance %s.\n",
+						thread_data->init_data.senders[i]->dynamic_data->instance_name,
+						thread_data->init_data.senders[i]->dynamic_data->module_name,
+						thread_data->init_data.module->module_name
+					);
 				goto out_message;
 			}
 		}
@@ -99,7 +103,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("Raw module received error from poll function\n");
 				err = 1;
@@ -136,13 +140,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy raw module\n");
 }
 

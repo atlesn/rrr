@@ -37,17 +37,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/ip.h"
-#include "../modules.h"
+#include "../lib/instances.h"
+#include "../lib/settings.h"
 #include "../global.h"
 
 // Should not be smaller than module max
-#define VL_MYSQL_MAX_SENDERS VL_MODULE_MAX_SENDERS
+#define RRR_MYSQL_MAX_SENDERS VL_MODULE_MAX_SENDERS
 
-#define VL_MYSQL_DEFAULT_SERVER "localhost"
-#define VL_MYSQL_DEFAULT_PORT 5506
+#define RRR_MYSQL_DEFAULT_SERVER "localhost"
+#define RRR_MYSQL_DEFAULT_PORT 5506
 
-#define VL_MYSQL_BIND_MAX CMD_ARGUMENT_MAX
-#define VL_MYSQL_SQL_MAX 1024
+#define RRR_MYSQL_SQL_MAX 4096
+#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
 #define PASTE(x,y) x ## _ ## y
 
@@ -57,24 +58,29 @@ struct mysql_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
 	MYSQL mysql;
-	MYSQL_BIND bind[VL_MYSQL_BIND_MAX];
+	MYSQL_BIND bind[RRR_MYSQL_BIND_MAX];
 	int mysql_initialized;
 	int mysql_connected;
-	const char *mysql_server;
+
+	/* These must be freed at thread end if not NULL */
+	char *mysql_server;
+	char *mysql_user;
+	char *mysql_password;
+	char *mysql_db;
+	char *mysql_table;
+
 	unsigned int mysql_port;
-	const char *mysql_user;
-	const char *mysql_password;
-//	const char *mysql_uri;
-	const char *mysql_db;
-	const char *mysql_table;
+
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
-	const char *mysql_columns[VL_MYSQL_BIND_MAX];
 	cmd_arg_count mysql_special_columns_count;
-	const char *mysql_special_columns[VL_MYSQL_BIND_MAX];
-	char *mysql_special_values[VL_MYSQL_BIND_MAX]; // Can't do const because of MySQL bind
-	const char *mysql_columns_blob_writes[VL_MYSQL_BIND_MAX]; // Force blob write method
+
+	/* Must be traversed and non-nulls freed at thread exit */
+	char *mysql_columns[RRR_MYSQL_BIND_MAX];
+	char *mysql_special_columns[RRR_MYSQL_BIND_MAX];
+	char *mysql_special_values[RRR_MYSQL_BIND_MAX];
+	char *mysql_columns_blob_writes[RRR_MYSQL_BIND_MAX]; // Force blob write method
 };
 
 struct process_entries_data {
@@ -108,7 +114,7 @@ struct column_configurator {
 	PASTE(COLUMN_PLAN,name)
 
 int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
-	for (int i = 0; i < VL_MYSQL_BIND_MAX; i++) {
+	for (int i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
 		const char *col_2 = data->mysql_columns_blob_writes[i];
 
 		if (col_2 == NULL) {
@@ -231,7 +237,7 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 }
 
 int colplan_array_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
-	static const int query_base_max = VL_MYSQL_SQL_MAX + ((CMD_ARGUMENT_MAX + 1) * CMD_ARGUMENT_SIZE * 2);
+	static const int query_base_max = RRR_MYSQL_SQL_MAX + ((RRR_MYSQL_BIND_MAX + 1) * RRR_MYSQL_MAX_COLUMN_NAME_LENGTH * 2);
 	char query_base[query_base_max];
 	int pos = 0;
 	*target = '\0';
@@ -247,7 +253,7 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 
 	// Standard columns
 	int columns_count = 0;
-	for (int i = 0; i < VL_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
+	for (int i = 0; i < RRR_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
 		int len = strlen(data->mysql_columns[i]);
 
 		if (len + pos + 4 > query_base_max) {
@@ -328,13 +334,13 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	struct rrr_type_definition_collection *definitions = &collection->definitions;
 	MYSQL_BIND *bind = data->data->bind;
 
-	if (definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > VL_MYSQL_BIND_MAX) {
-		VL_MSG_ERR("Number of types exceeded maximum (%lu vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, VL_MYSQL_BIND_MAX);
+	if (definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
+		VL_MSG_ERR("Number of types exceeded maximum (%lu vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
 		res = 1;
 		goto out_cleanup;
 	}
 
-	unsigned long string_lengths[VL_MYSQL_BIND_MAX];
+	unsigned long string_lengths[RRR_MYSQL_BIND_MAX];
 	memset(string_lengths, '\0', sizeof(string_lengths));
 
 	rrr_def_count bind_pos;
@@ -426,18 +432,6 @@ void data_init(struct mysql_data *data) {
 	fifo_buffer_init (&data->output_buffer);
 }
 
-void data_cleanup(void *arg) {
-	struct mysql_data *data = arg;
-	for (rrr_def_count i = 0; i < VL_MYSQL_BIND_MAX; i++) {
-		if (data->mysql_special_values[i] != NULL) {
-			free(data->mysql_special_values[i]);
-		}
-		data->mysql_special_values[i] = NULL;
-	}
-	fifo_buffer_invalidate (&data->input_buffer);
-	fifo_buffer_invalidate (&data->output_buffer);
-}
-
 int mysql_disconnect(struct mysql_data *data) {
 	if (data->mysql_connected == 1) {
 		mysql_close(&data->mysql);
@@ -493,230 +487,291 @@ int start_mysql(struct mysql_data *data) {
 	return 0;
 }
 
-int mysql_parse_cmd(struct mysql_data *data, struct cmd_data *cmd) {
-	const char *mysql_server = VL_MYSQL_DEFAULT_SERVER;
-	unsigned int mysql_port = VL_MYSQL_DEFAULT_PORT;
-	const char *mysql_user = NULL;
-	const char *mysql_password = NULL;
-	const char *mysql_db = NULL;
-	const char *mysql_table = NULL;
-	const char *mysql_no_tagging = NULL;
-	const char *mysql_colplan = NULL;
-	const char *mysql_add_timestamp_col = NULL;
-	const char *mysql_special_columns = NULL;
-	const char *mysql_columns_blob_writes = NULL;
-//	const char *mysql_uri = NULL;
+struct mysql_parse_columns_data {
+	char **target;
+	int target_length;
+	struct rrr_instance_config *config;
+	int columns_count;
+};
 
-	const char *tmp;
+void data_cleanup(void *arg) {
+	struct mysql_data *data = arg;
 
-	if ((tmp = cmd_get_value(cmd, "mysql_server", 0)) != NULL ) {
-		mysql_server = tmp;
+	for (rrr_def_count i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
+		RRR_FREE_IF_NOT_NULL(data->mysql_special_values[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_special_columns[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_columns[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_columns_blob_writes[i]);
 	}
 
-	int port = -1;
-	if ((tmp = cmd_get_value(cmd, "mysql_port", 0)) != NULL) {
-		if (cmd_convert_integer_10(cmd, tmp, &port) != 0 || port < 0) {
-			VL_MSG_ERR ("Syntax error in mysql_port argument\n");
-			return 1;
-		}
+	fifo_buffer_invalidate (&data->input_buffer);
+	fifo_buffer_invalidate (&data->output_buffer);
+
+	RRR_FREE_IF_NOT_NULL(data->mysql_server);
+	RRR_FREE_IF_NOT_NULL(data->mysql_user);
+	RRR_FREE_IF_NOT_NULL(data->mysql_password);
+	RRR_FREE_IF_NOT_NULL(data->mysql_db);
+	RRR_FREE_IF_NOT_NULL(data->mysql_table);
+}
+
+int mysql_parse_columns_callback(const char *value, void *_data) {
+	struct mysql_parse_columns_data *data = _data;
+
+	int ret = 0;
+
+	if (value == NULL || *value == '\0') {
+		goto out;
 	}
-	if ((tmp = cmd_get_value(cmd, "mysql_user", 0)) != NULL ) {
-		mysql_user = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_password", 0)) != NULL ) {
-		mysql_password = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_db", 0)) != NULL ) {
-		mysql_db = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_table", 0)) != NULL ) {
-		mysql_table = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_no_tagging", 0)) != NULL ) {
-		mysql_no_tagging = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_colplan", 0)) != NULL ) {
-		mysql_colplan = tmp;
-	}
-	if ((tmp = cmd_get_value(cmd, "mysql_add_timestamp_col", 0)) != NULL ) {
-		mysql_add_timestamp_col = tmp;
+	else if (data->columns_count >= data->target_length) {
+		VL_MSG_ERR("BUG: Too many mysql column arguments (%i vs %i) for instance %s\n",
+				data->columns_count, data->target_length, data->config->name);
+		exit (EXIT_FAILURE);
 	}
 
-	// TODO: Connect with URI
-/*	if ((tmp = cmd_get_value(cmd, "mysql_uri", 0)) != NULL) {
-		VL_DEBUG_MSG_1 ("mysql: Using URI for connecting to server\n");
-		mysql_uri = tmp;
+	int length = strlen(value);
+	if (length > RRR_MYSQL_MAX_COLUMN_NAME_LENGTH) {
+		VL_MSG_ERR("Length of column '%s' was longer than maximum (%i vs %i)\n", value, length, RRR_MYSQL_MAX_COLUMN_NAME_LENGTH);
+		ret = 1;
+		goto out;
 	}
-	else*/ if (mysql_user == NULL || mysql_password == NULL) {
-		VL_MSG_ERR ("mysql_user or mysql_password not correctly set.\n");
+
+	char *tmp =  malloc(length + 1);
+	if (tmp == NULL) {
+		VL_MSG_ERR("Could not allocate memory in mysql_parse_columns_callback\n");
 		return 1;
 	}
+	sprintf(tmp, "%s", value);
 
-	if (mysql_table == NULL || mysql_db == NULL) {
-		VL_MSG_ERR ("mysql_db or mysql_table not correctly set.\n");
-		return 1;
-	}
+	data->target[data->columns_count] = tmp;
+	data->columns_count++;
 
-	data->no_tagging = 0;
-	if (mysql_no_tagging != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, mysql_no_tagging, &yesno) != 0) {
-			VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging ('%s'), please specify 'yes' or 'no'\n",
-					mysql_no_tagging);
-			return 1;
+	out:
+	return ret;
+}
+
+int mysql_traverse_column_list (char **target, int target_length, int *count, struct rrr_instance_config *config, const char *name) {
+	struct mysql_parse_columns_data columns_data;
+
+	int ret = 0;
+
+	*count = 0;
+
+	columns_data.target = target;
+	columns_data.target_length = target_length;
+	columns_data.config = config;
+	columns_data.columns_count = 0;
+
+	ret = rrr_instance_config_traverse_split_commas_silent_fail (
+			config, name, &mysql_parse_columns_callback, &columns_data
+	);
+
+	*count = columns_data.columns_count;
+
+	return ret;
+}
+
+// Check that blob write columns are also defined in mysql_columns
+int mysql_verify_blob_write_colums (struct mysql_data *data) {
+	int ret = 0;
+	int all_was_ok = 1;
+
+	for (int i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
+		const char *col_1 = data->mysql_columns_blob_writes[i];
+
+		if (col_1 == NULL) {
+			break;
 		}
-		data->no_tagging = yesno;
+
+		int was_ok = 0;
+		for (int j = 0; j < RRR_MYSQL_BIND_MAX; j++) {
+			const char *col_2 = data->mysql_columns[j];
+			if (strcmp(col_1, col_2) == 0) {
+				was_ok = 1;
+				break;
+			}
+		}
+
+		if (was_ok == 0) {
+			VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n", col_1);
+			all_was_ok = 0;
+		}
 	}
 
-	data->add_timestamp_col = 0;
-	if (mysql_add_timestamp_col != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, mysql_add_timestamp_col, &yesno) != 0) {
-			VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col ('%s'), please specify 'yes' or 'no'\n",
-					mysql_add_timestamp_col);
-			return 1;
-		}
-		data->add_timestamp_col = yesno;
+	if (all_was_ok != 1) {
+		ret = 1;
 	}
+
+	out:
+	return ret;
+}
+
+int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	char *mysql_colplan = NULL;
+	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
 	if (mysql_colplan == NULL) {
 		mysql_colplan = COLUMN_PLAN_NAME_VOLTAGE;
-		VL_MSG_ERR("Warning: No mysql_colplan set, defaulting to voltage\n");
-	}
-
-	if ((tmp = cmd_get_value(cmd, "mysql_special_columns", 0)) != NULL ) {
-		cmd_arg_count i = 0;
-		while (1) {
-			const char *col = cmd_get_subvalue(cmd, "mysql_special_columns", 0, i);
-			const char *val = cmd_get_subvalue(cmd, "mysql_special_columns", 0, i + 1);
-
-			if (col == NULL || *col == '\0') {
-				break;
-			}
-			else if (val == NULL || *val == '\0') {
-				VL_MSG_ERR ("mysql: Missing value for special column %s", col);
-				return 1;
-			}
-			else if (data->mysql_special_columns_count >= VL_MYSQL_BIND_MAX) {
-				VL_MSG_ERR("BUG: Too many mysql special column arguments (%lu vs %i)\n",
-						data->mysql_special_columns_count, VL_MYSQL_BIND_MAX);
-				exit (EXIT_FAILURE);
-			}
-
-			data->mysql_special_columns[data->mysql_special_columns_count] = col;
-
-			data->mysql_special_values[data->mysql_special_columns_count] = malloc(strlen(val) + 1);
-			if (data->mysql_special_values[data->mysql_special_columns_count] == NULL) {
-				VL_MSG_ERR("Could not allocate memory for mysql special column value\n");
-				return 1;
-			}
-			sprintf(data->mysql_special_values[data->mysql_special_columns_count], "%s", val);
-			data->mysql_special_columns_count += 1;
-
-			i += 2;
-		}
-	}
-
-	if ((tmp = cmd_get_value(cmd, "mysql_columns_blob_writes", 0)) != NULL ) {
-		cmd_arg_count i = 0;
-		while (1) {
-			const char *col = cmd_get_subvalue(cmd, "mysql_columns_blob_writes", 0, i);
-
-			if (col == NULL || *col == '\0') {
-				break;
-			}
-
-			data->mysql_columns_blob_writes[i] = col;
-
-			i++;
-		}
+		VL_MSG_ERR("Warning: No mysql_colplan set for instance %s, defaulting to voltage\n", config->name);
 	}
 
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
 
-		cmd_arg_count i = 0;
-		while (1) {
-			const char *res = cmd_get_subvalue(cmd, "mysql_columns", 0, i);
-			if (res == NULL || *res == '\0') {
-				break;
-			}
-			else if (i >= VL_MYSQL_BIND_MAX) {
-				VL_MSG_ERR("BUG: Too many mysql column arguments (%lu vs %i)\n", i, VL_MYSQL_BIND_MAX);
-				exit (EXIT_FAILURE);
-			}
-			data->mysql_columns[i] = res;
-			i++;
+		int column_count = 0;
+
+		// TABLE COLUMNS
+		ret = mysql_traverse_column_list (
+				data->mysql_columns, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_columns"
+		);
+		VL_DEBUG_MSG_1("%i columns specified for mysql instance %s in array column plan\n", column_count, config->name);
+		if (column_count == 0) {
+			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+>>>>>>> cfgfile
 		}
 
-		VL_DEBUG_MSG_2("%lu mysql columns specified for array column plan", i);
-
-		if (data->mysql_columns[0] == NULL) {
-			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan\n");
-			return 1;
+		// BLOB WRITE COLUMNS
+		ret = mysql_traverse_column_list (
+				data->mysql_columns_blob_writes, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_blob_write_columns"
+		);
+		VL_DEBUG_MSG_1("%i blob write columns specified for mysql instance %s in array column plan\n", column_count, config->name);
+		if (mysql_verify_blob_write_colums (data) != 0) {
+			VL_MSG_ERR("Error in blob write column list for mysql instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 
-		int all_was_ok = 1;
-		for (int i = 0; i < VL_MYSQL_BIND_MAX; i++) {
-			const char *col_1 = data->mysql_columns_blob_writes[i];
-
-			if (col_1 == NULL) {
-				break;
-			}
-
-			int was_ok = 0;
-			for (int j = 0; j < VL_MYSQL_BIND_MAX; j++) {
-				const char *col_2 = data->mysql_columns[j];
-				if (strcmp(col_1, col_2) == 0) {
-					was_ok = 1;
-					break;
-				}
-			}
-
-			if (was_ok == 0) {
-				VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n", col_1);
-				all_was_ok = 0;
-			}
-		}
-
-		if (all_was_ok != 1) {
-			return 1;
+		// SPECIAL COLUMNS AND THEIR VALUES
+		int special_column_count = 0;
+		int special_value_count = 0;
+		ret = mysql_traverse_column_list (
+				data->mysql_special_columns, RRR_MYSQL_BIND_MAX, &special_column_count, config, "mysql_special_columns"
+		);
+		ret = mysql_traverse_column_list (
+				data->mysql_special_values, RRR_MYSQL_BIND_MAX, &special_value_count, config, "mysql_special_values"
+		);
+		if (special_column_count != special_value_count) {
+			VL_MSG_ERR("Special column/value count mismatch %i vs %i for mysql instance %s\n",
+					special_column_count, special_value_count, config->name);
+			ret = 1;
+			goto out;
 		}
 	}
 	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
 		if (data->add_timestamp_col != 0) {
-			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan\n");
-			return 1;
+			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 
 		if (data->mysql_special_columns > 0) {
-			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan\n");
-			return 1;
+			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 
 		if (data->mysql_columns_blob_writes[0] != NULL) {
-			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan\n");
-			return 1;
+			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 
-		VL_DEBUG_MSG_2("Using voltage column plan for mysql");
+		VL_DEBUG_MSG_2("Using voltage column plan for mysql for instance %s\n", config->name);
 	}
 	else {
-		VL_MSG_ERR("BUG: Reached end of colplan name tests in mysql");
+		VL_MSG_ERR("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
 		exit(EXIT_FAILURE);
 	}
 
-	data->mysql_server = mysql_server;
-	data->mysql_port = mysql_port;
-	data->mysql_user = mysql_user;
-	data->mysql_password = mysql_password;
-	data->mysql_db = mysql_db;
-	data->mysql_table = mysql_table;
-//	data->mysql_uri = mysql_uri;
+	out:
+	RRR_FREE_IF_NOT_NULL(mysql_colplan);
+	return ret;
+}
 
-	return 0;
+int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	data->mysql_port = RRR_MYSQL_DEFAULT_PORT;
+	rrr_setting_uint tmp_uint;
+
+	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "mysql_port");
+
+	if (ret != 0) {
+		if (ret == RRR_SETTING_PARSE_ERROR) {
+			VL_MSG_ERR("Could not parse mysql_port for instance %s\n", config->name);
+			ret = 1;
+		}
+	}
+
+	return ret;
+}
+
+int mysql_parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	// These values are parsed by sub functions
+
+	// char *mysql_colplan = NULL;
+	// char *mysql_add_ts_col = NULL;
+	// char *mysql_special_cols = NULL;
+	// char *mysql_cols_blob_wr = NULL;
+	// char *mysql_port = NULL;
+
+	// These are free()d on thread exit, not here
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_server,	config, "mysql_server");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_user,		config, "mysql_user");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_password,	config, "mysql_password");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_db,		config, "mysql_db");
+	rrr_instance_config_get_string_noconvert_silent (&data->mysql_table,	config, "mysql_table");
+
+	if (data->mysql_user == NULL || data->mysql_password == NULL) {
+		VL_MSG_ERR ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
+		goto out;
+	}
+
+	// NO TAGGING
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging")) == RRR_SETTING_PARSE_ERROR) {
+		VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+		goto out;
+	}
+	data->no_tagging = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// ADD TIMESTAMP COL
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col")) == RRR_SETTING_PARSE_ERROR) {
+		VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+		goto out;
+	}
+	data->add_timestamp_col = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// MYSQL PORT
+	if ((ret = mysql_parse_port(data, config)) != 0) {
+		VL_MSG_ERR("Error while parsing mysql port for instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	// COLUMN PLAN AND COLUMN LISTS
+	ret = mysql_parse_column_plan(data, config);
+	if (ret != 0) {
+		VL_MSG_ERR("Error in mysql column plan for instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -859,8 +914,8 @@ int process_entries (struct module_thread_data *thread_data) {
 		exit (EXIT_FAILURE);
 	}
 
-	char query[VL_MYSQL_SQL_MAX];
-	column_configurators[data->colplan].create_sql(query, VL_MYSQL_SQL_MAX, data);
+	char query[RRR_MYSQL_SQL_MAX];
+	column_configurators[data->colplan].create_sql(query, RRR_MYSQL_SQL_MAX, data);
 
 	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
 		VL_MSG_ERR ("mysql: Failed to prepare statement: Error: %s\n",
@@ -883,7 +938,7 @@ int process_entries (struct module_thread_data *thread_data) {
 static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
@@ -902,17 +957,21 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (mysql_parse_cmd(data, start_data->cmd) != 0) {
+	if (mysql_parse_config(data, thread_data->init_data.instance_config) != 0) {
+			goto out_message;
+	}
+
+/*	if (mysql_parse_cmd(data, start_data->cmd) != 0) {
+		goto out_message;
+	}*/
+
+	if (senders_count > RRR_MYSQL_MAX_SENDERS) {
+		VL_MSG_ERR ("Too many senders for mysql module, max is %i\n", RRR_MYSQL_MAX_SENDERS);
 		goto out_message;
 	}
 
-	if (senders_count > VL_MYSQL_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for mysql module, max is %i\n", VL_MYSQL_MAX_SENDERS);
-		goto out_message;
-	}
 
-
-	int (*poll[VL_MYSQL_MAX_SENDERS])(
+	int (*poll[RRR_MYSQL_MAX_SENDERS])(
 			struct module_thread_data *data,
 			int (*callback)(
 					struct fifo_callback_args *poll_data,
@@ -925,21 +984,24 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 #define POLL_TYPE_IP 1
 #define POLL_TYPE_LOCAL 2
 
-	int poll_types[VL_MYSQL_MAX_SENDERS];
+	int poll_types[RRR_MYSQL_MAX_SENDERS];
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("mysql: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+		VL_DEBUG_MSG_1 ("mysql: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete_ip;
 		poll_types[i] = POLL_TYPE_IP;
 
 		if (poll[i] == NULL) {
-			poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+			poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 			poll_types[i] = POLL_TYPE_LOCAL;
 		}
 
 		if (poll[i] == NULL) {
-			VL_MSG_ERR ("mysql cannot use sender '%s', lacking poll_delete_ip and poll_delete function.\n",
-					thread_data->senders[i]->module->name);
+			VL_MSG_ERR ("mysql '%s' cannot use sender '%s' using module '%s', lacking poll_delete_ip and poll_delete function.\n",
+					thread_data->init_data.module->instance_name,
+					thread_data->init_data.senders[i]->dynamic_data->instance_name,
+					thread_data->init_data.senders[i]->dynamic_data->module_name
+			);
 			goto out_message;
 		}
 	}
@@ -959,10 +1021,10 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res;
 			if (poll_types[i] == POLL_TYPE_IP) {
-				res = poll[i](thread_data->senders[i], poll_callback_ip, &poll_data);
+				res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_ip, &poll_data);
 			}
 			else if (poll_types[i] == POLL_TYPE_LOCAL) {
-				res = poll[i](thread_data->senders[i], poll_callback_local, &poll_data);
+				res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_local, &poll_data);
 			}
 			else {
 				VL_MSG_ERR("mysql: Bug: Unknown poll type %i\n", poll_types[i]);
@@ -1015,13 +1077,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy mysql module\n");
 	mysql_library_end();
 }

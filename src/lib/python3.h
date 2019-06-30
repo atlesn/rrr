@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,10 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "global.h"
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
 
-struct rrr_global_config rrr_global_config;
-
-void rrr_init_global_config(unsigned int debuglevel) {
-	rrr_global_config.debuglevel = debuglevel;
-}
+PyObject *rrr_py_import_object (PyObject *main_module, const char *symbol);
+PyObject *rrr_py_import_function (PyObject *main_module, const char *symbol);
+PyObject *rrr_py_call_function_no_args(PyObject *function);
+PyObject *rrr_py_import_and_call_function_no_args(PyObject *main_module, const char *symbol);

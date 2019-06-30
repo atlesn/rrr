@@ -27,9 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../../config.h"
 
 #ifdef CMD_MAXIMUM_CMDLINE_ARGS
-#define CMD_ARGUMENT_MAX CMD_MAXIMUM_CMDLINE_ARGS
+#define CMD_ARGUMENT_MAXIMUM CMD_MAXIMUM_CMDLINE_ARGS
 #else
-#define CMD_ARGUMENT_MAX 8
+#define CMD_ARGUMENT_MAXIMUM 8
 #endif
 
 #ifdef CMD_MAXIMUM_CMDLINE_ARG_SIZE
@@ -49,15 +49,15 @@ typedef unsigned long int cmd_conf;
 struct cmd_arg_pair {
 	char key[CMD_ARGUMENT_SIZE];
 	char value[CMD_ARGUMENT_SIZE];
-	char sub_values[CMD_ARGUMENT_MAX][CMD_ARGUMENT_SIZE];
+	char sub_values[CMD_ARGUMENT_MAXIMUM][CMD_ARGUMENT_SIZE];
 };
 
 struct cmd_data {
 	const char *program;
 	const char *command;
-	const char *args[CMD_ARGUMENT_MAX];
-	int args_used[CMD_ARGUMENT_MAX];
-	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAX];
+	const char *args[CMD_ARGUMENT_MAXIMUM];
+	int args_used[CMD_ARGUMENT_MAXIMUM];
+	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAXIMUM];
 };
 
 int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);

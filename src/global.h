@@ -34,11 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 /* Runtime globals */
-struct vl_global_config {
+struct rrr_global_config {
 	unsigned int debuglevel;
 };
 
-extern struct vl_global_config global_config;
+extern struct rrr_global_config rrr_global_config;
 
 /*
  * About debug levels, ORed together:
@@ -64,19 +64,19 @@ extern struct vl_global_config global_config;
 	do {fprintf (stderr, __VA_ARGS__);}while(0)
 
 #define VL_DEBUG_MSG_1(...) \
-	do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_1) != 0) { printf (__VA_ARGS__); }} while(0)
+	do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_1) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_2(...) \
-		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_2) != 0) { printf (__VA_ARGS__); }} while(0)
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_2) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_3(...) \
-		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_3) != 0) { printf (__VA_ARGS__); }} while(0)
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_3) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_4(...) \
-		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0) { printf (__VA_ARGS__); }} while(0)
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_5(...) \
-		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0) { printf (__VA_ARGS__); }} while(0)
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_6(...) \
 		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0) { printf (__VA_ARGS__); }} while(0)
@@ -85,26 +85,28 @@ extern struct vl_global_config global_config;
 	do { printf (__VA_ARGS__); } while(0)
 
 #define VL_DEBUGLEVEL_1 \
-	((global_config.debuglevel & __VL_DEBUGLEVEL_1) != 0)
+	((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_1) != 0)
 
 #define VL_DEBUGLEVEL_2 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_2) != 0)
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_2) != 0)
 
 #define VL_DEBUGLEVEL_3 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_3) != 0)
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_3) != 0)
 
 #define VL_DEBUGLEVEL_4 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0)
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_4) != 0)
 
 #define VL_DEBUGLEVEL_5 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0)
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0)
 
 #define VL_DEBUGLEVEL_6 \
-		((global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0)
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0)
 
 #define VL_DEBUGLEVEL \
-		(global_config.debuglevel)
+		(rrr_global_config.debuglevel)
 
-void vl_init_global_config(unsigned int debuglevel);
+#define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
+
+void rrr_init_global_config(unsigned int debuglevel);
 
 #endif
