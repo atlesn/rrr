@@ -336,7 +336,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	MYSQL_BIND *bind = data->data->bind;
 
 	if (definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
-		VL_MSG_ERR("Number of types exceeded maximum (%lu vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
+		VL_MSG_ERR("Number of types exceeded maximum (%i vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
 		res = 1;
 		goto out_cleanup;
 	}
