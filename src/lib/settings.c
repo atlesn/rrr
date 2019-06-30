@@ -26,6 +26,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+void rrr_settings_list_destroy (struct rrr_settings_list *list) {
+	if (list->data != NULL) {
+		free(list->data);
+	}
+	if (list->list != NULL) {
+		free(list->list);
+	}
+	list->length = 0;
+}
+
 int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {
 	memset(target, '\0', sizeof(*target));
 
@@ -197,7 +207,7 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 	return ret;
 }
 
-int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
+int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name, int silent_not_found) {
 	int ret = 0;
 	*target = NULL;
 
@@ -245,6 +255,13 @@ int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settin
 	return ret;
 }
 
+int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
+	return __rrr_settings_get_string_noconvert(target, source, name, 0);
+}
+int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name) {
+	return __rrr_settings_get_string_noconvert(target, source, name, 1);
+}
+
 int __rrr_settings_traverse_split_commas (
 		struct rrr_instance_settings *source, const char *name,
 		int (*callback)(const char *value, void *arg), void *arg,
@@ -277,6 +294,7 @@ int __rrr_settings_traverse_split_commas (
 		if (ret != 0) {
 			break;
 		}
+
 		current_pos = comma_pos + 1;
 	}
 
@@ -300,6 +318,87 @@ int rrr_settings_traverse_split_commas_silent_fail (
 		int (*callback)(const char *value, void *arg), void *arg
 ) {
 	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 1);
+}
+
+int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, struct rrr_instance_settings *source, const char *name) {
+	int ret = 0;
+
+	*target_ptr = NULL;
+
+	struct rrr_settings_list *target = malloc(sizeof(*target));
+	if (target == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_settings_split_commas_to_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(target, '\0', sizeof(*target));
+
+	char *value = NULL;
+	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
+		VL_MSG_ERR("Could not get setting %s for comma splitting and array building\n", name);
+		ret = 1;
+		goto out;
+	}
+
+	if (*value == '\0') {
+		ret = 0;
+		goto out;
+	}
+
+	int length = strlen(value);
+
+	target->data = malloc(length + 1);
+	if (target->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_settings_split_commas_to_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	int elements = 1;
+	for (int i = 0; i < length; i++) {
+		if (value[i] == ',') {
+			elements++;
+		}
+	}
+
+	target->list = malloc(elements * sizeof(char*));
+	if (target->list == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_settings_split_commas_to_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	strcpy(target->data, value);
+
+	int pos = 0;
+	target->list[pos] = target->data;
+	pos++;
+
+	for (int i = 0; i < length; i++) {
+		if (target->data[i] == ',') {
+			target->data[i] = '\0';
+			if (i + 1 < length && target->data[i + 1] != '\0') {
+				target->list[pos++] = target->data + i + 1;
+			}
+		}
+	}
+
+	target->length = pos;
+
+	out:
+	if (value != NULL) {
+		free(value);
+	}
+
+	if (ret != 0 && target != NULL) {
+		rrr_settings_list_destroy(target);
+	}
+	else {
+		*target_ptr = target;
+	}
+
+	return ret;
 }
 
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value) {
@@ -344,22 +443,51 @@ int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting
 
 	out_malloc_err:
 	VL_MSG_ERR("Could not allocate memory while converting setting to string");
-	return 1;
+	return RRR_SETTING_ERROR;
 }
 
 int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting *setting) {
+	int ret = 0;
+	char *tmp_string = NULL;
+	*target = 0;
+
 	if (setting->type == RRR_SETTINGS_TYPE_UINT) {
 		if (sizeof(*target) != setting->data_size) {
 			VL_MSG_ERR("BUG: Setting unsigned integer size mismatch\n");
+			exit(EXIT_FAILURE);
 		}
 		target = setting->data;
 	}
+	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
+		ret = __rrr_settings_setting_to_string(&tmp_string, setting);
+
+		if (ret != 0) {
+			VL_MSG_ERR("Could not get string of '%s' while converting to unsigned integer\n", setting->name);
+			goto out;
+		}
+
+		char *end;
+		rrr_setting_uint tmp = strtoull(tmp_string, &end, 10);
+
+		if (*end != '\0') {
+			ret = RRR_SETTING_PARSE_ERROR;
+			VL_MSG_ERR("Syntax error while converting setting '%s' with value '%s' to unsigned integer\n", setting->name, tmp_string);
+			goto out;
+		}
+
+		*target = tmp;
+	}
 	else {
-		VL_MSG_ERR("BUG: Could not convert setting of type %d to string\n", setting->type);
+		VL_MSG_ERR("BUG: Could not convert setting of type %d to unsigned int\n", setting->type);
 		exit (EXIT_FAILURE);
 	}
 
-	return 0;
+	out:
+	if (tmp_string != NULL) {
+		free(tmp_string);
+	}
+
+	return ret;
 }
 
 int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name) {
@@ -370,7 +498,7 @@ int rrr_settings_read_string (char **target, struct rrr_instance_settings *setti
 
 	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(settings, name);
 	if (setting == NULL) {
-		ret = 1;
+		ret = RRR_SETTING_NOT_FOUND;
 		goto out_unlock;
 	}
 
@@ -390,7 +518,7 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 
 	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(settings, name);
 	if (setting == NULL) {
-		ret = 1;
+		ret = RRR_SETTING_NOT_FOUND;
 		goto out_unlock;
 	}
 
@@ -398,6 +526,35 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name) {
+	*result = -1;
+	int ret = 0;
+
+	char *string = NULL;
+	if ((ret = rrr_settings_read_string (&string, settings, name)) != 0) {
+		goto out;
+	}
+
+	*result = 0;
+
+	if (*string == 'y' || *string == 'Y' || *string == '1') {
+		*result = 1;
+	}
+	else if (*string == 'n' || *string == 'N' || *string == '0') {
+		*result = 0;
+	}
+	else {
+		ret = RRR_SETTING_PARSE_ERROR;
+	}
+
+	out:
+	if (string != NULL) {
+		free(string);
+	}
 
 	return ret;
 }
@@ -413,13 +570,14 @@ int rrr_settings_dump (struct rrr_instance_settings *settings) {
 		ret = __rrr_settings_setting_to_string(&value, setting);
 
 		if (ret != 0) {
-			VL_MSG_ERR("Error in settings dump function\n");
-			break;
+			VL_MSG_ERR("Warning: Error in settings dump function\n");
+			goto next;
 		}
 
 		printf("%s=%s\n", name, value);
 
-		free(value);
+		next:
+		RRR_FREE_IF_NOT_NULL(value);
 	}
 
 	return ret;

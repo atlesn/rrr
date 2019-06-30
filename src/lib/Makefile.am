@@ -2,7 +2,7 @@ lib_LTLIBRARIES = librrr.la
 librrr_la_LDFLAGS = -lpthread
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c crypt.c \
 module_crypt.c ip.c types.c version.c configuration.c settings.c instance_config.c \
-module_thread.c
+module_thread.c instances.c
 
 if ENABLE_PYTHON3
 librrr_la_LIBADD = librrrpython3.la

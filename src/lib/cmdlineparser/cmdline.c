@@ -30,6 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define CMD_DBG_CMDLINE
 
+/* Needed to change the name to MAX and make uses other places fail at compilation due to change to RRR_MAX_INSTANCES */
+#define CMD_ARGUMENT_MAX CMD_ARGUMENT_MAXIMUM
+
 static const char *cmd_blank_argument = "";
 static const char *cmd_help = "help";
 

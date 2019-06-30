@@ -39,5 +39,6 @@ struct rrr_config {
 struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source, const char *name);
 void rrr_config_destroy (struct rrr_config *target);
 struct rrr_config *rrr_config_parse_file (const char *filename);
+int rrr_config_dump (struct rrr_config *config);
 
 #endif /* RRR_CONFIGURATION_H */

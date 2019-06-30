@@ -28,8 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <errno.h>
 
+#include "../lib/instance_config.h"
 #include "../lib/buffer.h"
-#include "../lib/module_thread.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/python3.h"
@@ -40,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct python3_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
-	const char *python3_file;
+	char *python3_file;
 };
 
 void data_init(struct python3_data *data) {
@@ -53,23 +54,26 @@ void data_cleanup(void *arg) {
 	struct python3_data *data = arg;
 	fifo_buffer_invalidate (&data->input_buffer);
 	fifo_buffer_invalidate (&data->output_buffer);
+	RRR_FREE_IF_NOT_NULL(data->python3_file);
 }
 
-int python3_parse_cmd(struct python3_data *data, struct cmd_data *cmd) {
-	const char *python3_file = NULL;
-	const char *tmp;
+int python3_parse_config(struct python3_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+	char *python3_file = NULL;
 
-	if ((tmp = cmd_get_value(cmd, "python3_file", 0)) != NULL) {
-		python3_file = tmp;
+	ret = rrr_instance_config_get_string_noconvert_silent (&python3_file, config, "python3_file");
+
+	if (ret == 0) {
+		data->python3_file = python3_file;
 	}
 	else {
 		VL_MSG_ERR("No python3_file specified for python module\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
-	data->python3_file = python3_file;
-
-	return 0;
+	out:
+	return ret;
 }
 
 // Poll request from other modules
@@ -98,7 +102,7 @@ int poll_callback_local (struct fifo_callback_args *poll_data, char *data, unsig
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	int senders_count = thread_data->senders_count;
+	int senders_count = thread_data->init_data.senders_count;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
@@ -112,7 +116,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	if (python3_parse_cmd(data, start_data->cmd) != 0) {
+	if (python3_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
 
@@ -132,13 +136,15 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("python3: found sender %p\n", thread_data->senders[i]);
+		VL_DEBUG_MSG_1 ("python3: found sender %p\n", thread_data->init_data.senders[i]);
 
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("python3 cannot use sender '%s', module '%s' is lacking poll_delete function.\n",
-					thread_data->senders[i]->module->instance_name, thread_data->senders[i]->module->module_name);
+					thread_data->init_data.senders[i]->dynamic_data->instance_name,
+					thread_data->init_data.senders[i]->dynamic_data->module_name
+			);
 			goto out_message;
 		}
 	}
@@ -158,7 +164,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
 			int res;
 
-			res = poll[i](thread_data->senders[i], poll_callback_local, &poll_data);
+			res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_local, &poll_data);
 
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("python3 module received error from poll function\n");

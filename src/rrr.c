@@ -25,34 +25,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "global.h"
-#include "instances.h"
+#include "lib/instances.h"
 #include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/version.h"
 #include "lib/configuration.h"
 
+#ifndef VL_BUILD_TIMESTAMP
+#define VL_BUILD_TIMESTAMP 1
+#endif
+
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
 //#define VL_NO_MODULE_UNLOAD
 
-/* TODO : Replace with a struct which holds the array + make non-global + rename to instance_metadata */
-static struct module_metadata instances[CMD_ARGUMENT_MAX];
-
-int main_process_instances(struct rrr_config *config) {
+int main_process_instances(struct rrr_config *config, struct instance_metadata_collection *instances) {
 	int ret = 0;
 
 	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_load(instances, config, config->configs[i]);
+		ret = instance_load_and_save(instances, config, config->configs[i]);
 		if (ret != 0) {
 			VL_MSG_ERR("Loading of instance failed for %s\n", config->configs[i]->name);
 			break;
 		}
 	}
 
-	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_add_senders(instances, config, config->configs[i], &instances[i]);
+	RRR_INSTANCE_LOOP(instance, instances) {
+		ret = instance_add_senders(instances, instance);
 		if (ret != 0) {
-			VL_MSG_ERR("Adding senders failed for %s\n", config->configs[i]->name);
+			VL_MSG_ERR("Adding senders failed for %s\n", instance->dynamic_data->instance_name);
 			break;
 		}
 	}
@@ -86,51 +87,51 @@ int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd)
 		}
 	}
 
-	vl_init_global_config(debuglevel);
+	rrr_init_global_config(debuglevel);
 
 	return 0;
 }
 
-int main_start_threads(
-		struct module_metadata modules[CMD_ARGUMENT_MAX],
-		struct cmd_data* cmd
+int main_start_threads (
+		struct instance_metadata_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd
 ) {
 	// Initialzie dynamic_data thread data
 	rrr_threads_init();
 
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_metadata *meta = &modules[i];
-
-		if (meta->dynamic_data == NULL) {
+	RRR_INSTANCE_LOOP(instance,instances) {
+		if (instance->dynamic_data == NULL) {
 			break;
 		}
 
 		struct module_thread_init_data init_data;
-		init_data.module = meta->dynamic_data;
-		memcpy(init_data.senders, meta->senders, sizeof(init_data.senders));
-		init_data.senders_count = meta->senders_count;
+		init_data.module = instance->dynamic_data;
+		memcpy(init_data.senders, instance->senders, sizeof(init_data.senders));
+		init_data.senders_count = instance->senders_count;
+		init_data.cmd_data = cmd;
+		init_data.global_config = global_config;
+		init_data.instance_config = instance->config;
 
-		VL_DEBUG_MSG_1("Initializing instance %s\n", meta->dynamic_data->instance_name);
+		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		meta->thread_data = rrr_init_thread(&init_data);
+		instance->thread_data = rrr_init_thread(&init_data);
 	}
 
 	// Start threads
 	int threads_total = 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		struct module_metadata *meta = &modules[i];
-
-		if (meta->dynamic_data == NULL) {
+	RRR_INSTANCE_LOOP(instance,instances) {
+		if (instance->dynamic_data == NULL) {
 			break;
 		}
 
-		for (int j = 0; j < meta->senders_count; j++) {
-			meta->thread_data->senders[j] = meta->senders[j]->thread_data;
+		for (int j = 0; j < instance->senders_count; j++) {
+			instance->thread_data->init_data.senders[j] = instance->senders[j];
 		}
 
-		if (rrr_start_thread(meta->thread_data, cmd) != 0) {
+		if (rrr_start_thread(instance->thread_data) != 0) {
 			VL_MSG_ERR("Error when starting thread for instance%s\n",
-					meta->dynamic_data->instance_name);
+					instance->dynamic_data->instance_name);
 			return EXIT_FAILURE;
 		}
 
@@ -166,10 +167,16 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	struct instance_metadata_collection *instances;
+
 	struct cmd_data cmd;
 	struct rrr_config *config = NULL;
 
 	int ret = EXIT_SUCCESS;
+
+	if (instance_metadata_collection_new (&instances) != 0) {
+		goto out_no_cleanup;
+	}
 
 	struct sigaction action;
 	action.sa_handler = signal_interrupt;
@@ -181,7 +188,7 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	if ((ret = main_parse_cmd_arguments(argc, argv, &cmd)) != 0) {
-		goto out;
+		goto out_no_cleanup;
 	}
 
 	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
@@ -198,11 +205,15 @@ int main (int argc, const char *argv[]) {
 
 		VL_DEBUG_MSG_1("found %d instances\n", config->module_count);
 
-		ret = main_process_instances(config);
+		ret = main_process_instances(config, instances);
 
 		if (ret != 0) {
 			goto out_unload_modules;
 		}
+	}
+
+	if (VL_DEBUGLEVEL_1) {
+		int dump_ret = rrr_config_dump(config);
 	}
 
 	/*
@@ -214,7 +225,7 @@ int main (int argc, const char *argv[]) {
 	threads_restart:
 
 	// Initialzie dynamic_data thread data
-	if ((ret = main_start_threads(instances, &cmd)) != 0) {
+	if ((ret = main_start_threads(instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -258,6 +269,8 @@ int main (int argc, const char *argv[]) {
 			rrr_config_destroy(config);
 		}
 
-	out:
+	instance_metadata_collection_destroy(instances);
+
+	out_no_cleanup:
 	return ret;
 }

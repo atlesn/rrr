@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/module_thread.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../global.h"
 

@@ -28,12 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <limits.h>
 #include <inttypes.h>
 
-#include "../lib/module_thread.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
-#include "../lib/cmdlineparser/cmdline.h"
 #include "../global.h"
 
 struct averager_data {
@@ -256,55 +256,66 @@ void data_cleanup(void *arg) {
 	//fifo_buffer_destroy(&data->buffer);
 }
 
-int parse_cmd (struct averager_data *data, struct cmd_data *cmd) {
+int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
 	memset(data, '\0', sizeof(*data));
 
-	const char *device_path = cmd_get_value(cmd, "device_path", 0);
+	rrr_setting_uint timespan = 0;
+	rrr_setting_uint interval = 0;
+	int preserve_points = 0;
 
-	data->preserve_point_measurements = 0;
-	data->timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
-	data->interval = VL_DEFAULT_AVERAGER_INTERVAL;
-
-	const char *preserve_point_measurements = cmd_get_value(cmd, "avg_preserve_points", 0);
-	const char *timespan = cmd_get_value(cmd, "avg_timespan", 0);
-	const char *interval = cmd_get_value(cmd, "avg_interval", 0);
-
-	if (preserve_point_measurements != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, preserve_point_measurements, &yesno) != 0) {
-			VL_MSG_ERR ("averager: Could not understand argument avg_preserver_points ('%s'), " \
-					"please specify 'yes' or 'no'\n", preserve_point_measurements);
-			return 1;
+	if ((ret = rrr_instance_config_read_unsigned_integer(&timespan, config, "avg_timespan")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
+			int ret = 1;
+			goto out;
 		}
-		data->preserve_point_measurements = yesno;
+		timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
+	}
+	else if (timespan < 0) {
+		VL_MSG_ERR("Syntax error in avg_timespan for instance %s, must be more than 0\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
-	int tmp = 0;
-	if (timespan != NULL) {
-		if (cmd_convert_integer_10(cmd, timespan, &tmp) != 0 || tmp < 1) {
-			VL_MSG_ERR("averager: Could not understand avg_timespan argument %s, please use a numeric value > 0\n", timespan);
-			data->timespan = tmp;
-			return 1;
+	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
+			int ret = 1;
+			goto out;
 		}
-		data->timespan = tmp;
+		interval = VL_DEFAULT_AVERAGER_INTERVAL;
 	}
-	if (interval != NULL) {
-		if (cmd_convert_integer_10(cmd, interval, &tmp) != 0 || tmp < 1) {
-			VL_MSG_ERR("averager: Could not understand avg_interval argument %s, please use a numeric value > 0\n", interval);
-			data->interval = tmp;
-			return 1;
-		}
-		data->interval = tmp;
+	else if (interval < 0) {
+		VL_MSG_ERR("Syntax error in avg_interval for instance %s, must be more than 0\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
-	return 0;
+	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
+			int ret = 1;
+			goto out;
+		}
+		preserve_points = 0;
+	}
+
+	data->timespan = timespan;
+	data->interval = interval;
+	data->preserve_point_measurements = preserve_points;
+
+	out:
+
+	return ret;
 }
 
 
 static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct averager_data *data = data_init(thread_data);
 	thread_data->private_data = data;
 
@@ -322,7 +333,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (parse_cmd(data, start_data->cmd) != 0) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
 
@@ -340,8 +351,8 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("Averager: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("Averager: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("Averager cannot use this sender, lacking poll delete function.\n");
@@ -366,8 +377,8 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		int err = 0;
 
 		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data->senders[i], data};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			struct fifo_callback_args poll_data = {thread_data->init_data.senders[i], data};
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("Averager module received error from poll function\n");
 				err = 1;

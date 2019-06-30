@@ -424,7 +424,9 @@ void thread_set_state(struct vl_thread *thread, int state) {
 	thread_unlock(thread);;
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd, const char *name) {
+struct vl_thread *thread_start (
+		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
+) {
 	struct vl_thread *thread;
 	struct vl_thread *watchdog_thread;
 
@@ -460,7 +462,6 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 	start_data->private_arg = arg;
 	start_data->start_routine = start_routine;
 	start_data->thread = thread;
-	start_data->cmd = cmd;
 
 	thread->state = VL_THREAD_STATE_INIT;
 

@@ -54,25 +54,27 @@ void rrr_free_thread(struct module_thread_data *data) {
 
 struct module_thread_data *rrr_init_thread(struct module_thread_init_data *init_data) {
 	VL_DEBUG_MSG_1 ("Init thread %s\n", init_data->module->instance_name);
-	struct module_thread_data *data = malloc(sizeof(*data));
-	memset(data, '\0', sizeof(*data));
 
-	data->module = init_data->module;
-	data->senders_count = init_data->senders_count;
+	struct module_thread_data *data = malloc(sizeof(*data));
+
+	memset(data, '\0', sizeof(*data));
+	data->init_data = *init_data;
 
 	return data;
 }
 
-int rrr_restart_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	VL_DEBUG_MSG_1 ("Restarting thread %s\n", data->module->instance_name);
+int rrr_restart_thread(struct module_thread_data *data) {
+	struct module_dynamic_data *module = data->init_data.module;
+
+	VL_DEBUG_MSG_1 ("Restarting thread %s\n", module->instance_name);
 	if (data->thread != NULL) {
 		free(data->thread);
 	}
 
-	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->instance_name);
+	data->thread = thread_start (module->operations.thread_entry, data, module->instance_name);
 
 	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for instance %s\n", data->module->instance_name);
+		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
 		free(data);
 		return 1;
 	}
@@ -80,12 +82,14 @@ int rrr_restart_thread(struct module_thread_data *data, struct cmd_data *cmd) {
 	return 0;
 }
 
-int rrr_start_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	VL_DEBUG_MSG_1 ("Starting thread %s\n", data->module->instance_name);
-	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->instance_name);
+int rrr_start_thread(struct module_thread_data *data) {
+	struct module_dynamic_data *module = data->init_data.module;
+
+	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	data->thread = thread_start (module->operations.thread_entry, data, module->instance_name);
 
 	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for instance %s\n", data->module->instance_name);
+		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
 		free(data);
 		return 1;
 	}

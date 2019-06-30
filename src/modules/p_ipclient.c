@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <poll.h>
 
-#include "../lib/module_thread.h"
+#include "../lib/instances.h"
 #include "../lib/module_crypt.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -378,7 +378,7 @@ int start_receive_thread(struct module_thread_data *thread_data) {
 static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct ipclient_data* data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("ipclient thread data is %p\n", thread_data);
@@ -386,7 +386,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	init_data(data);
 	pthread_cleanup_push(data_cleanup, data);
 
-	parse_cmd(data, start_data->cmd);
+	parse_cmd(data, thread_data->init_data.cmd_data);
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -413,8 +413,8 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("ipclient cannot use this sender, lacking poll delete function.\n");
@@ -457,7 +457,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		VL_DEBUG_MSG_5 ("ipclient polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("ipclient module received error from poll function\n");
 				err = 1;

@@ -70,3 +70,46 @@ struct rrr_instance_config *rrr_config_new_instance_config (const char *name_beg
 	out:
 	return ret;
 }
+
+int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_instance_config *source, const char *name) {
+	int ret = 0;
+
+	*target = 0;
+
+	rrr_setting_uint tmp_uint = 0;
+	ret = rrr_settings_read_unsigned_integer (&tmp_uint, source->settings, name);
+
+	if (ret != 0) {
+		if (ret == RRR_SETTING_PARSE_ERROR) {
+			char *tmp_string;
+
+			ret = rrr_settings_read_string (&tmp_string, source->settings, name);
+			VL_MSG_ERR (
+					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
+					name, (tmp_string != NULL ? tmp_string : "")
+			);
+
+			if (tmp_string != NULL) {
+				free(tmp_string);
+			}
+
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if (tmp_uint < 1 || tmp_uint > 65535) {
+			VL_MSG_ERR (
+					"port setting %s out of range, must be 1-65535 but was %llu.\n",
+					name, tmp_uint
+			);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	*target = tmp_uint;
+
+	out:
+	return ret;
+}

@@ -569,3 +569,25 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 	return ret;
 }
 
+int rrr_config_dump (struct rrr_config *config) {
+	printf ("Dumping configuration:\n");
+
+	int ret = 0;
+	for (int i = 0; i < config->module_count; i++) {
+		struct rrr_instance_config *instance_config = config->configs[i];
+
+		printf ("Configuration for instance %s:\n", instance_config->name);
+
+		if (rrr_instance_config_dump(instance_config) != 0) {
+			ret = 1;
+		}
+	}
+
+	if (ret != 0) {
+		printf ("Warning: Some error(s) occurred while dumping the configuration, some settings could possibly not be converted to strings\n");
+	}
+
+	printf ("-- End of configuration\n");
+
+	return ret;
+}

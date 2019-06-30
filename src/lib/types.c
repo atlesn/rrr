@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "types.h"
+#include "settings.h"
+#include "instance_config.h"
 #include "messages.h"
 #include "../global.h"
 
@@ -221,40 +223,73 @@ static int (*rrr_types_to_host[]) (void *data) = {
 		&convert_blob_to_host
 };
 
+int convert_integer_10(const char *value, int *result) {
+	char *err;
+	*result = strtol(value, &err, 10);
+
+	if (err[0] != '\0') {
+		return 1;
+	}
+
+	return 0;
+}
+
 int rrr_types_parse_definition (
 		struct rrr_type_definition_collection *target,
-		struct cmd_data *cmd,
+		struct rrr_instance_config *config,
 		const char *cmd_key
 ) {
+	int ret = 0;
+
+	struct rrr_settings_list *list = NULL;
+
+	ret = rrr_instance_config_split_commas_to_array (&list, config, cmd_key);
+
 	rrr_def_count count = 0;
 
 	memset (target, '\0', sizeof(*target));
 
 	target->version = RRR_VERSION;
 
+	if (list->length % 2 != 0) {
+		VL_MSG_ERR ("Number of elements in type definition was not even for instance %s setting %s\n", config->name, cmd_key);
+		ret = 1;
+		goto out;
+	}
+
+	if (list->length / 2 > RRR_TYPE_MAX_DEFINITIONS) {
+		VL_MSG_ERR ("Too many elements in type definition (%i vs %i) for instance %s setting %s\n",
+				list->length, RRR_TYPE_MAX_DEFINITIONS, config->name, cmd_key);
+		ret = 1;
+		goto out;
+	}
+
 	int do_array = 0;
 	rrr_array_size array_size = 1;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i += 2) {
-		const char *type_c = cmd_get_subvalue(cmd, cmd_key, 0, i);
+	for (cmd_arg_count i = 0; i < list->length; i += 2) {
+		const char *type_c = list->list[i];
 		if (*type_c == '\0') {
 			break;
 		}
 
-		const char *length_c = cmd_get_subvalue(cmd, cmd_key, 0, i + 1);
+		const char *length_c = list->list[i + 1];
 		if (length_c == NULL) {
 			VL_MSG_ERR("Missing size definition for '%s' type definition in '%s'\n", type_c, cmd_key);
-			goto out_err;
+			ret = 1;
+			goto out;
 		}
 
 		if (strcmp(type_c, RRR_TYPE_NAME_ARRAY) == 0) {
 			int length;
-			if (cmd_convert_integer_10(cmd, length_c, &length) != 0) {
+			if (convert_integer_10(length_c, &length) != 0) {
 				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not a valid number\n", length_c, cmd_key);
-				goto out_err;
+				ret = 1;
+				goto out;
 			}
 			if (length < 1 || length > RRR_TYPE_MAX_ARRAY) {
 				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not within range\n", length_c, cmd_key);
-				goto out_err;
+				ret = 1;
+				goto out;
 			}
 
 			do_array = 1;
@@ -265,24 +300,28 @@ int rrr_types_parse_definition (
 		rrr_type type = rrr_types_get_type(type_c);
 		if (type == 0) {
 			VL_MSG_ERR("Unknown type '%s' in '%s\n", type_c, cmd_key);
-			goto out_err;
+			ret = 1;
+			goto out;
 		}
 
 		int length;
-		if (cmd_convert_integer_10(cmd, length_c, &length) != 0) {
+		if (convert_integer_10(length_c, &length) != 0) {
 			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' was not a valid number\n", length_c, type_c, cmd_key);
-			goto out_err;
+			ret = 1;
+			goto out;
 		}
 
 		if (length <= 0) {
 			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' must be >0\n", length_c, type_c, cmd_key);
-			goto out_err;
+			ret = 1;
+			goto out;
 		}
 
 		rrr_type_length max;
 		if (rrr_types_check_size(type, length, &max) != 0) {
 			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' is too large, max is '%u'\n", length_c, type_c, cmd_key, max);
-			goto out_err;
+			ret = 1;
+			goto out;
 		}
 
 		target->definitions[count].max_length = max;
@@ -297,15 +336,16 @@ int rrr_types_parse_definition (
 
 	if (do_array) {
 		VL_MSG_ERR("Array was specified at end of type definition in '%s'\n", cmd_key);
-		goto out_err;
+		ret = 1;
+		goto out;
 	}
 
 	target->count = count;
 
-	return 0;
+	out:
+	rrr_settings_list_destroy(list);
 
-	out_err:
-	return 1;
+	return ret;
 }
 
 int rrr_types_parse_data (
@@ -349,7 +389,7 @@ struct rrr_data_collection *rrr_types_allocate_data (
 
 	memset (collection->data, '\0', sizeof(collection->data));
 
-	if (definitions->count > RRR_TYPES_MAX_DEFINITIONS) {
+	if (definitions->count > RRR_TYPE_MAX_DEFINITIONS) {
 		VL_MSG_ERR("BUG: Too many definitions in rrr_types_parse_data\n");
 		exit (EXIT_FAILURE);
 	}

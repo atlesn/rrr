@@ -36,6 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 typedef unsigned int rrr_setting_type;
 typedef unsigned long long int rrr_setting_uint;
 
+#define RRR_SETTING_ERROR 1
+#define RRR_SETTING_PARSE_ERROR 2
+#define RRR_SETTING_NOT_FOUND 3
+
 struct rrr_setting {
 	int type;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
@@ -52,17 +56,28 @@ struct rrr_instance_settings {
 	struct rrr_setting *settings;
 };
 
+struct rrr_settings_list {
+	char *data;
+	char **list;
+	int length;
+};
+
+void rrr_settings_list_destroy (struct rrr_settings_list *list);
+
 struct rrr_instance_settings *rrr_settings_new(const int count);
 void rrr_settings_destroy(struct rrr_instance_settings *target);
 int rrr_settings_traverse_split_commas (struct rrr_instance_settings *source, const char *name,
 		int (*callback)(const char *value, void *arg), void *arg);
 int rrr_settings_traverse_split_commas_silent_fail (struct rrr_instance_settings *source, const char *name,
 		int (*callback)(const char *value, void *arg), void *arg);
+int rrr_settings_split_commas_to_array (struct rrr_settings_list **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name);
+int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value);
 int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
 int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name);
 int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name);
+int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name);
 int rrr_settings_dump (struct rrr_instance_settings *settings);
 
 #endif /* RRR_SETTINGS_H */

@@ -2,7 +2,7 @@
 
 Voltage Logger
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,8 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "global.h"
 
-struct vl_global_config global_config;
+struct rrr_global_config rrr_global_config;
 
-void vl_init_global_config(unsigned int debuglevel) {
-	global_config.debuglevel = debuglevel;
+void rrr_init_global_config(unsigned int debuglevel) {
+	rrr_global_config.debuglevel = debuglevel;
 }
