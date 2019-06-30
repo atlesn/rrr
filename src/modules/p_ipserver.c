@@ -33,17 +33,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <poll.h>
 
-#ifdef VL_WITH_OPENSSL
-#include "../lib/module_crypt.h"
-#endif
-
-#include "../modules.h"
+#include "../lib/instance_config.h"
+#include "../lib/settings.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
+#include "../lib/ip.h"
+#include "../lib/module_crypt.h"
 #include "../global.h"
-#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -56,10 +55,11 @@ struct ipserver_data {
 	struct fifo_buffer output_buffer;
 	struct ip_data ip;
 #ifdef VL_WITH_OPENSSL
-	const char *crypt_file;
+	char *crypt_file;
 	struct module_crypt_data crypt_data;
 #endif
 	struct ip_stats_twoway stats;
+	rrr_setting_uint server_port;
 };
 
 // Poll request from other modules
@@ -88,7 +88,10 @@ void spawn_error(struct ipserver_data *data, const char *buf) {
 	struct vl_message *message = message_new_info(time_get_64(), buf);
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, message, sizeof(*message));
+
+	VL_ASSERT(sizeof(*(&entry->data.message))==sizeof(*message),equal_size_of_message);
+
+	memcpy(&entry->data.message, message, sizeof(*message));
 	free(message);
 
 	fifo_buffer_write(&data->receive_buffer, (char*)entry, sizeof(*entry));
@@ -129,14 +132,14 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 
 	struct vl_message *message_err;
 
-	if (message_prepare_for_network (&entry->message, buf, MSG_STRING_MAX_LENGTH) != 0) {
+	if (message_prepare_for_network (&entry->data.message, buf, MSG_STRING_MAX_LENGTH) != 0) {
 		return 1;
 	}
 
-	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
 	if (ip_send_packet(
-			&entry->message,
+			&entry->data.message,
 #ifdef VL_WITH_OPENSSL
 			&private_data->crypt_data,
 #endif
@@ -176,15 +179,15 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	callback_data->counter++;
 
-	VL_DEBUG_MSG_3 ("Ipserver received OK message with data '%s'\n", entry->message.data);
+	VL_DEBUG_MSG_3 ("Ipserver received OK message with data '%s'\n", entry->data.message.data);
 
 	fifo_buffer_write(&data->output_buffer, (char*) entry, sizeof(*entry));
 
 	// Generate ACK reply
-	VL_DEBUG_MSG_2 ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_2 ("ipserver: Generate ACK message for entry with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 	struct ip_buffer_entry *ack = malloc(sizeof(*ack));
 	memcpy(ack, entry, sizeof(*ack));
-	ack->message.type = MSG_TYPE_ACK;
+	ack->data.message.type = MSG_TYPE_ACK;
 	fifo_buffer_write(&data->send_buffer, (char*) ack, sizeof(*ack));
 
 	return (callback_data->counter == 5 ? VL_IP_RECEIVE_STOP : VL_IP_RECEIVE_OK);
@@ -194,7 +197,7 @@ int receive_packets(struct ipserver_data *data) {
 	struct receive_packets_data callback_data;
 	callback_data.data = data;
 	callback_data.counter = 0;
-	return ip_receive_packets (
+	return ip_receive_messages (
 		data->ip.fd,
 #ifdef VL_WITH_OPENSSL
 		&data->crypt_data,
@@ -222,43 +225,56 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
 	fifo_buffer_invalidate(&data->output_buffer);
+#ifdef VL_WITH_OPENSSL
+	RRR_FREE_IF_NOT_NULL(data->crypt_file);
+#endif
 }
 
 // TODO : Provide more configuration arguments
-static int parse_cmd (struct ipserver_data *data, struct cmd_data *cmd) {
-//	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
-//	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
+static int parse_config (struct ipserver_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	rrr_setting_uint ipserver_port = 0;
+
 #ifdef VL_WITH_OPENSSL
-	const char *crypt_file = cmd_get_value(cmd, "ipserver_keyfile", 0);
-	data->crypt_file = NULL;
-	if (crypt_file != NULL) {
-		data->crypt_file = crypt_file;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->crypt_file, config, "ipserver_keyfile")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipserver_keyfile settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
 	}
 #endif
 
-//	data->ip_server = VL_IPCLIENT_SERVER_NAME;
-//	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-
-/*	if (ip_server != NULL) {
-		data->ip_server = ip_server;
+	if ((ret = rrr_instance_config_read_unsigned_integer(&ipserver_port, config, "ipserver_server_port")) == 0) {
+		// OK
 	}
-	if (ip_port != NULL) {
-		data->ip_port = ip_port;
-	}*/
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing ipserver_server_port setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		ipserver_port = VL_IPSERVER_SERVER_PORT;
+	}
 
-	return 0;
+	data->server_port = ipserver_port;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct ipserver_data* data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("ipserver thread data is %p\n", thread_data);
 
 	init_data(data);
-	parse_cmd(data, start_data->cmd);
 
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(data_cleanup, data);
@@ -270,6 +286,11 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parse failed for ipserver instance '%s'\n", thread_data->init_data.module->instance_name);
+		goto out_message;
+	}
 
 	if (senders_count > VL_IPSERVER_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for ipserver module, max is %i\n", VL_IPSERVER_MAX_SENDERS);
@@ -287,8 +308,8 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("ipserver: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
+		VL_DEBUG_MSG_1 ("ipserver: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete_ip;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("ipserver cannot use this sender, lacking poll_delete_ip function.\n");
@@ -322,7 +343,7 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, data};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("ipserver module received error from poll function\n");
 				err = 1;
@@ -372,13 +393,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy ipserver module\n");
 }
 

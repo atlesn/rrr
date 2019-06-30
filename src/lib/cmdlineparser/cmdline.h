@@ -24,10 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+#include "../../../config.h"
+
 #ifdef CMD_MAXIMUM_CMDLINE_ARGS
-#define CMD_ARGUMENT_MAX CMD_MAXIMUM_CMDLINE_ARGS
+#define CMD_ARGUMENT_MAXIMUM CMD_MAXIMUM_CMDLINE_ARGS
 #else
-#define CMD_ARGUMENT_MAX 8
+#define CMD_ARGUMENT_MAXIMUM 8
 #endif
 
 #ifdef CMD_MAXIMUM_CMDLINE_ARG_SIZE
@@ -36,6 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define CMD_ARGUMENT_SIZE 256
 #endif 
 
+typedef unsigned long int cmd_arg_count;
+typedef unsigned long int cmd_arg_size;
+typedef unsigned long int cmd_conf;
+
 #define CMD_CONFIG_DEFAULTS			0
 #define CMD_CONFIG_NOCOMMAND		(1<<0)
 #define CMD_CONFIG_SPLIT_COMMA	 	(1<<1)
@@ -43,18 +49,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct cmd_arg_pair {
 	char key[CMD_ARGUMENT_SIZE];
 	char value[CMD_ARGUMENT_SIZE];
-	char sub_values[CMD_ARGUMENT_MAX][CMD_ARGUMENT_SIZE];
+	char sub_values[CMD_ARGUMENT_MAXIMUM][CMD_ARGUMENT_SIZE];
 };
 
 struct cmd_data {
 	const char *program;
 	const char *command;
-	const char *args[CMD_ARGUMENT_MAX];
-	int args_used[CMD_ARGUMENT_MAX];
-	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAX];
+	const char *args[CMD_ARGUMENT_MAXIMUM];
+	int args_used[CMD_ARGUMENT_MAXIMUM];
+	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAXIMUM];
 };
 
-int cmd_parse					(struct cmd_data *data, const int argc, const char *argv[], unsigned long int config);
+int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);
 int cmd_match					(struct cmd_data *data, const char *test);
 
 int cmd_convert_hex_byte		(struct cmd_data *data, const char *value, char *result);
@@ -63,10 +69,10 @@ int cmd_convert_uint64_10		(struct cmd_data *data, const char *value, uint64_t *
 int cmd_convert_integer_10		(struct cmd_data *data, const char *value, int *result);
 int cmd_convert_float			(struct cmd_data *data, const char *value, float *result);
 
-const char *cmd_get_argument		(struct cmd_data *data, int index);
+const char *cmd_get_argument		(struct cmd_data *data, cmd_arg_count index);
 const char *cmd_get_last_argument	(struct cmd_data *data);
-const char *cmd_get_value			(struct cmd_data *data, const char *key, unsigned long int index);
-const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, unsigned long int index, unsigned long int subindex);
+const char *cmd_get_value			(struct cmd_data *data, const char *key, cmd_arg_count index);
+const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, cmd_arg_count index, cmd_arg_count subindex);
 
 int cmdline_check_yesno				(struct cmd_data *data, const char *string, int *result);
 

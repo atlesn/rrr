@@ -2,7 +2,7 @@
 
 Voltage Logger
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,20 +20,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 #include <dlfcn.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <errno.h>
-#include <string.h>
 
-#ifdef VL_WITH_OPENSSL
-#include "lib/crypt.h"
-#endif
-
-#include "lib/cmdlineparser/cmdline.h"
-#include "lib/threads.h"
 #include "global.h"
 #include "modules.h"
 
@@ -43,9 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static const char *library_paths[] = {
 		VL_MODULE_PATH,
-		"/usr/lib/voltagelogger",
-		"/lib/voltagelogger",
-		"/usr/local/lib/voltagelogger",
+		"/usr/lib/rrr",
+		"/lib/rrr",
+		"/usr/local/lib/rrr",
 		"/usr/lib/",
 		"/lib/",
 		"/usr/local/lib/",
@@ -56,81 +50,8 @@ static const char *library_paths[] = {
 		""
 };
 
-void module_threads_init() {
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_initialize_locks();
-#endif
-	threads_init();
-}
-
-void module_threads_stop() {
-	threads_stop();
-}
-
-void module_threads_destroy() {
-	threads_destroy();
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_free_locks();
-#endif
-}
-
-void module_free_thread(struct module_thread_data *data) {
-	if (data == NULL) {
-		return;
-	}
-
-	free(data);
-}
-
-struct module_thread_data *module_init_thread(struct module_thread_init_data *init_data) {
-	VL_DEBUG_MSG_1 ("Init thread %s\n", init_data->module->name);
-	struct module_thread_data *data = malloc(sizeof(*data));
-	memset(data, '\0', sizeof(*data));
-
-	data->module = init_data->module;
-	data->senders_count = init_data->senders_count;
-
-	return data;
-}
-
-int module_restart_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	VL_DEBUG_MSG_1 ("Restarting thread %s\n", data->module->name);
-	if (data->thread != NULL) {
-		free(data->thread);
-	}
-
-	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
-
-	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for module %s\n", data->module->name);
-		free(data);
-		return 1;
-	}
-
-	return 0;
-}
-
-int module_start_thread(struct module_thread_data *data, struct cmd_data *cmd) {
-	VL_DEBUG_MSG_1 ("Starting thread %s\n", data->module->name);
-	data->thread = thread_start (data->module->operations.thread_entry, data, cmd, data->module->name);
-
-	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for module %s\n", data->module->name);
-		free(data);
-		return 1;
-	}
-
-	return 0;
-}
-
-void unload_module(struct module_dynamic_data *ptr) {
-	int err = 0;
-
-	void *dl_ptr = ptr->dl_ptr;
-
-	ptr->unload(ptr);
-
-	free(ptr);
+void module_unload (void *dl_ptr, void (*unload)()) {
+	unload();
 
 #ifndef VL_MODULE_NO_DL_CLOSE
 	if (dlclose(dl_ptr) != 0) {
@@ -141,15 +62,17 @@ void unload_module(struct module_dynamic_data *ptr) {
 #endif
 }
 
-struct module_dynamic_data *load_module(const char *name) {
+int module_load(struct module_load_data *target, const char *name) {
+	int ret = 1; // NOT OK
+
+	memset (target, '\0', sizeof(*target));
+
 	for (int i = 0; *(library_paths[i]) != '\0'; i++) {
 		char path[256 + strlen(name) + 1];
 		sprintf(path, "%s/%s.so", library_paths[i], name);
 
 		struct stat buf;
-		int ret = stat(path, &buf);
-
-		if (ret != 0) {
+		if (stat(path, &buf) != 0) {
 			if (errno == ENOENT) {
 				continue;
 			}
@@ -158,6 +81,7 @@ struct module_dynamic_data *load_module(const char *name) {
 		}
 
 		void *handle = dlopen(path, RTLD_LAZY);
+		VL_DEBUG_MSG_1 ("dlopen handle for %s: %p\n", name, handle);
 
 		if (handle == NULL) {
 			VL_MSG_ERR ("Error while opening module %s: %s\n", path, dlerror());
@@ -165,7 +89,7 @@ struct module_dynamic_data *load_module(const char *name) {
 		}
 
 		void (*init)(struct module_dynamic_data *data) = dlsym(handle, "init");
-		void (*unload)(struct module_dynamic_data *data) = dlsym(handle, "unload");
+		void (*unload)() = dlsym(handle, "unload");
 
 		if (init == NULL || unload == NULL) {
 			dlclose(handle);
@@ -173,14 +97,13 @@ struct module_dynamic_data *load_module(const char *name) {
 			continue;
 		}
 
-		struct module_dynamic_data *data = malloc(sizeof(*data));
+		target->dl_ptr = handle;
+		target->init = init;
+		target->unload = unload;
 
-		init(data);
-		data->dl_ptr = handle;
-		data->unload = unload;
-
-		return data;
+		ret = 0; // OK
+		break;
 	}
 
-	return NULL;
+	return ret;
 }

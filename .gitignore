@@ -2,8 +2,13 @@ src/modules/.libs
 src/.libs
 src/lib/.libs
 src/modules/common/.dirstamp
+src/rrr
+/build_timestamp.h
 
 # debian
+debian/rrr/
+debian/rrr.debhelper.log
+debian/rrr.substvars
 debian/autoconf.after
 debian/autoconf.before
 debian/autoreconf.after
@@ -35,6 +40,9 @@ src/vlogger
 
 # eclipse
 /Debug
+/.autotools
+/.settings/
+/.externalToolBuilders/
 
 # http://www.gnu.org/software/autoconf
 

@@ -35,14 +35,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/module_crypt.h"
 #endif
 
-#include "../modules.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
-#include "../lib/cmdlineparser/cmdline.h"
+#include "../lib/ip.h"
 #include "../global.h"
-#include "common/ip.h"
 
 // Should not be smaller than module max
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
@@ -55,10 +55,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ipclient_data {
 	struct fifo_buffer send_buffer;
 	struct fifo_buffer receive_buffer;
-	const char *ip_server;
-	const char *ip_port;
+	char *ip_server;
+	char *ip_port;
 #ifdef VL_WITH_OPENSSL
-	const char *crypt_file;
+	char *crypt_file;
 	struct module_crypt_data crypt_data;
 #endif
 	struct ip_data ip;
@@ -84,43 +84,70 @@ void init_data(struct ipclient_data *data) {
 
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
+#ifdef VL_WITH_OPENSSL
+	RRR_FREE_IF_NOT_NULL(data->crypt_file);
+#endif
+	RRR_FREE_IF_NOT_NULL(data->ip_port);
+	RRR_FREE_IF_NOT_NULL(data->ip_server);
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
 }
 
-static int parse_cmd (struct ipclient_data *data, struct cmd_data *cmd) {
-	const char *ip_server = cmd_get_value(cmd, "ipclient_server", 0);
-	const char *ip_port = cmd_get_value(cmd, "ipclient_server_port", 0);
-	const char *no_ack = cmd_get_value(cmd, "ipclient_no_ack", 0);
+int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
 
-	data->ip_server = VL_IPCLIENT_SERVER_NAME;
-	data->ip_port = VL_IPCLIENT_SERVER_PORT;
-
-	if (ip_server != NULL) {
-		data->ip_server = ip_server;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_server, config, "ipclient_server")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_server settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->ip_server = malloc(strlen(VL_IPCLIENT_SERVER_NAME) + 1);
+		if (data->ip_server == NULL) {
+			VL_MSG_ERR("Could not allocate memory in ipclient parse_config\n");
+			goto out;
+		}
+		strcpy(data->ip_server, VL_IPCLIENT_SERVER_NAME);
 	}
-	if (ip_port != NULL) {
-		data->ip_port = ip_port;
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_port, config, "ipclient_server_port")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_server_port settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->ip_port = malloc(strlen(VL_IPCLIENT_SERVER_PORT) + 1);
+		if (data->ip_port == NULL) {
+			VL_MSG_ERR("Could not allocate memory in ipclient parse_config\n");
+			goto out;
+		}
+		strcpy(data->ip_server, VL_IPCLIENT_SERVER_PORT);
 	}
 
 #ifdef VL_WITH_OPENSSL
-	const char *crypt_file = cmd_get_value(cmd, "ipclient_keyfile", 0);
-	data->crypt_file = NULL;
-	if (crypt_file != NULL) {
-		data->crypt_file = crypt_file;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->crypt_file, config, "ipclient_keyfile")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing ipclient_keyfile settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->crypt_file = NULL;
 	}
 #endif
 
-	if (no_ack != NULL) {
-		int yesno;
-		if (cmdline_check_yesno(cmd, no_ack, &yesno) != 0) {
-			VL_MSG_ERR ("ipclient: Could not understand argument no_ack ('%s'), please specify 'yes' or 'no'\n", no_ack);
-			return 1;
+	if ((ret = rrr_instance_config_check_yesno(&data->no_ack, config, "ipclient_no_ack")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
+			int ret = 1;
+			goto out;
 		}
-		data->no_ack = yesno;
+		data->no_ack = 0;
 	}
 
-	return 0;
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 // Poll request from other modules
@@ -143,7 +170,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, reading, sizeof(entry->message));
+	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
 	free(data);
 
 	fifo_buffer_write(&private_data->send_buffer, (char*)entry, sizeof(*entry));
@@ -156,7 +183,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct module_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *ipclient_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = &entry->data.message;
 
 	uint64_t time_now = time_get_64();
 
@@ -201,7 +228,7 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 	struct ipclient_data *ipclient_data = callback_data->source;
 	struct vl_message *message_to_match = callback_data->private_data;
 	struct ip_buffer_entry *checked_entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &checked_entry->message;
+	struct vl_message *message = &checked_entry->data.message;
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, message->class);
@@ -224,10 +251,10 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 
 int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	struct ipclient_data *data = arg;
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = &entry->data.message;
 
 	VL_DEBUG_MSG_3 ("ipclient: Received packet from server type %" PRIu32 " with timestamp %" PRIu64 "\n",
-			entry->message.type, entry->message.timestamp_to);
+			message->type, message->timestamp_to);
 
 	// First, check if package is an ACK from the server in case we should delete
 	// the original message from our send queue. If not, we let some other module
@@ -246,7 +273,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	}
 	else {
 		struct vl_message *message = malloc(sizeof(*message));
-		memcpy (message, &entry->message, sizeof(*message));
+		memcpy (message, message, sizeof(*message));
 		free (entry);
 		fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
 	}
@@ -256,7 +283,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data};
-	return ip_receive_packets(
+	return ip_receive_messages(
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
 			&data->crypt_data,
@@ -388,16 +415,13 @@ int start_receive_thread(struct module_thread_data *thread_data) {
 static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	struct module_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct ipclient_data* data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("ipclient thread data is %p\n", thread_data);
 
 	init_data(data);
 	pthread_cleanup_push(data_cleanup, data);
-
-	parse_cmd(data, start_data->cmd);
-
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
@@ -408,6 +432,12 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+
+
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
+		goto out_message;
+	}
 
 	if (senders_count > VL_IPCLIENT_MAX_SENDERS) {
 		VL_MSG_ERR ("Too many senders for ipclient module, max is %i\n", VL_IPCLIENT_MAX_SENDERS);
@@ -425,8 +455,8 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	);
 
 	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
+		VL_DEBUG_MSG_1 ("ipclient: found sender %p\n", thread_data->init_data.senders[i]);
+		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
 
 		if (poll[i] == NULL) {
 			VL_MSG_ERR ("ipclient cannot use this sender, lacking poll delete function.\n");
@@ -471,7 +501,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		VL_DEBUG_MSG_5 ("ipclient polling data\n");
 		for (int i = 0; i < senders_count; i++) {
 			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
+			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
 			if (!(res >= 0)) {
 				VL_MSG_ERR ("ipclient module received error from poll function\n");
 				err = 1;
@@ -520,13 +550,13 @@ __attribute__((constructor)) void load() {
 
 void init(struct module_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
+	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 	VL_DEBUG_MSG_1 ("Destroy ipclient module\n");
 }
 

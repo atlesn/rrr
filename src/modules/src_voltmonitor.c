@@ -42,12 +42,12 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include <stdlib.h>
 #include <usb.h>
 
+#include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../modules.h"
+#include "../lib/instances.h"
 #include "../lib/messages.h"
-#include "../lib/cmdlineparser/cmdline.h"
 #include "../global.h"
 
 struct voltmonitor_data {
@@ -311,34 +311,73 @@ void data_cleanup(void *arg) {
 	//fifo_buffer_destroy(&data->buffer);
 }
 
-static int cmd_parser(struct voltmonitor_data *data, struct cmd_data *cmd) {
-	const char *vm_calibration = cmd_get_value(cmd, "vm_calibration", 0);
-	const char *vm_channel = cmd_get_value(cmd, "vm_channel", 0);
+int convert_float(const char *value, float *result) {
+	char *err;
+	*result = strtof(value, &err);
+
+	if (err[0] != '\0') {
+		return 1;
+	}
+
+	return 0;
+}
+
+int convert_integer_10(const char *value, int *result) {
+	char *err;
+	*result = strtol(value, &err, 10);
+
+	if (err[0] != '\0') {
+		return 1;
+	}
+
+	return 0;
+}
+
+int config_parse(struct voltmonitor_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	char *vm_calibration = NULL;
+	char *vm_channel = NULL;
+
+	rrr_instance_config_get_string_noconvert_silent (&vm_calibration, config, "vm_calibration");
+	rrr_instance_config_get_string_noconvert_silent (&vm_channel, config, "vm_channel");
 
 	float calibration = 1.124;
 	int channel = 1;
 
 	if (vm_calibration != NULL) {
-		if (cmd_convert_float(cmd, vm_calibration, &calibration) != 0) {
+		if (convert_float(vm_calibration, &calibration) != 0) {
 			VL_MSG_ERR ("Syntax error in vm_calibration parameter, could not understand the number '%s'\n", vm_calibration);
-			return 1;
+			ret = 1;
+			goto out;
 		}
 	}
 	if (vm_channel != NULL) {
-		if (cmd_convert_integer_10(cmd, vm_channel, &channel) != 0) {
+		if (convert_integer_10(vm_channel, &channel) != 0) {
 			VL_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
-			return 1;
+			ret = 1;
+			goto out;
 		}
 		if (channel != 1 && channel != 2) {
 			VL_MSG_ERR ("vm_channel must be 1 or 2");
-			return 1;
+			ret = 1;
+			goto out;
 		}
 	}
 
 	data->usb_calibration = calibration;
 	data->usb_channel = channel;
 
-	return 0;
+	out:
+
+	if (vm_calibration != NULL) {
+		free(vm_calibration);
+	}
+	if (vm_channel!= NULL) {
+		free(vm_channel);
+	}
+
+	return ret;
 }
 
 static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
@@ -358,7 +397,7 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	if (cmd_parser(data, start_data->cmd) != 0) {
+	if (config_parse(data, thread_data->init_data.instance_config) != 0) {
 		pthread_exit(0);
 	}
 
@@ -410,13 +449,13 @@ __attribute__((constructor)) void load() {
 }
 
 void init(struct module_dynamic_data *data) {
-		data->name = module_name;
+		data->module_name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
 		data->private_data = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
+void unload() {
 }
 

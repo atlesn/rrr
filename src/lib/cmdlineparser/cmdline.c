@@ -26,15 +26,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "cmdline.h"
+#include "../../global.h"
 
 //#define CMD_DBG_CMDLINE
+
+/* Needed to change the name to MAX and make uses other places fail at compilation due to change to RRR_MAX_INSTANCES */
+#define CMD_ARGUMENT_MAX CMD_ARGUMENT_MAXIMUM
 
 static const char *cmd_blank_argument = "";
 static const char *cmd_help = "help";
 
 void cmd_init(struct cmd_data *data) {
 	data->command = NULL;
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		data->args[i] = NULL;
 		data->args_used[i] = 0;
 		memset(&data->arg_pairs[i], '\0', sizeof(data->arg_pairs[i]));
@@ -43,9 +47,9 @@ void cmd_init(struct cmd_data *data) {
 
 int cmd_check_all_args_used(struct cmd_data *data) {
 	int err = 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX && *(data->args[i]) != '\0'; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && *(data->args[i]) != '\0'; i++) {
 		if (data->args_used[i] != 1) {
-			fprintf (stderr, "Error: Argument %i ('%s') was not used, possible junk or typo\n", i, data->args[i]);
+			fprintf (stderr, "Error: Argument %lu ('%s') was not used, possible junk or typo\n", i, data->args[i]);
 			err = 1;
 		}
 	}
@@ -63,9 +67,9 @@ int cmd_get_value_index(struct cmd_data *data, const char *key, unsigned long in
 	return -1;
 }*/
 
-struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, unsigned long int index) {
-	unsigned long int index_counter = 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
+struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, cmd_arg_count index) {
+	cmd_arg_count index_counter = 0;
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
 		if (strcmp(data->arg_pairs[i].key, key) == 0 && index_counter++ == index) {
 			data->args_used[i] = 1;
 			return &data->arg_pairs[i];
@@ -134,7 +138,7 @@ int cmd_convert_float(struct cmd_data *data, const char *value, float *result) {
 	return 0;
 }
 
-const char *cmd_get_subvalue(struct cmd_data *data, const char *key, unsigned long int req_index, unsigned long int sub_index) {
+const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_count req_index, cmd_arg_count sub_index) {
 	if (req_index > CMD_ARGUMENT_MAX) {
 		fprintf (stderr, "Requested cmd value index out of range\n");
 		exit (EXIT_FAILURE);
@@ -153,8 +157,8 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, unsigned lo
 	return pair->sub_values[sub_index];
 }
 
-const char *cmd_get_value(struct cmd_data *data, const char *key, unsigned long int index) {
-	unsigned long int index_counter = 0;
+const char *cmd_get_value(struct cmd_data *data, const char *key, cmd_arg_count index) {
+	cmd_arg_count index_counter = 0;
 
 	if (index > CMD_ARGUMENT_MAX) {
 		fprintf (stderr, "Requested cmd value index out of range\n");
@@ -169,7 +173,7 @@ const char *cmd_get_value(struct cmd_data *data, const char *key, unsigned long 
 	return NULL;
 }
 
-const char *cmd_get_argument(struct cmd_data *data, int index) {
+const char *cmd_get_argument(struct cmd_data *data, cmd_arg_count index) {
 	if (index >= CMD_ARGUMENT_MAX || *(data->args[index]) == '\0') {
 		return NULL;
 	}
@@ -189,7 +193,7 @@ const char *cmd_get_last_argument(struct cmd_data *data) {
 }
 
 void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
-	unsigned long int sub_value_counter = 0;
+	cmd_arg_count sub_value_counter = 0;
 	const char *pos = pair->value;
 	const char *end = pos + strlen(pos);
 	while (pos < end) {
@@ -197,7 +201,7 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 		if (comma_pos == NULL) {
 			comma_pos = end;
 		}
-		unsigned long int length = comma_pos - pos;
+		cmd_arg_size length = comma_pos - pos;
 
 		memcpy(pair->sub_values[sub_value_counter], pos, length);
 		pair->sub_values[sub_value_counter][length] = '\0';
@@ -211,7 +215,7 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	}
 }
 
-int cmd_parse(struct cmd_data *data, int argc, const char *argv[], unsigned long int config) {
+int cmd_parse(struct cmd_data *data, int argc, const char *argv[], cmd_conf config) {
 	cmd_init(data);
 
 	data->program = argv[0];
@@ -232,36 +236,36 @@ int cmd_parse(struct cmd_data *data, int argc, const char *argv[], unsigned long
 	}
 
 	// Initialize all to empty strings
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		data->args[i] = cmd_blank_argument;
 	}
 
 	// Store pointers to all arguments
 	int arg_pos = argc_begin;
-	for (int i = 0; i < CMD_ARGUMENT_MAX && arg_pos < argc; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && arg_pos < argc; i++) {
 		data->args[i] = argv[arg_pos];
 		arg_pos++;
 	}
 
 	// Parse key-value pairs separated by =
 	int pairs_pos = 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
 			const char *pos;
 			if ((pos = strstr(data->args[i], "=")) != NULL) {
 				const char *value = pos + 1;
-				int key_length = pos - data->args[i];
-				int value_length = strlen(value);
+				cmd_arg_size key_length = pos - data->args[i];
+				cmd_arg_size value_length = strlen(value);
 
 				if (key_length == 0 || value_length == 0) {
-					fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n", i, data->args[i]);
+					fprintf (stderr, "Error: Syntax error with = syntax in argument %lu ('%s'), use key=value\n", i, data->args[i]);
 					return 1;
 				}
 				if (key_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument key %i too long ('%s'), maximum size is %i\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
+					fprintf (stderr, "Error: Argument key %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
 					return 1;
 				}
 				if (value_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument value %i too long ('%s'), maximum size is %i\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
+					fprintf (stderr, "Error: Argument value %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
 					return 1;
 				}
 
@@ -284,11 +288,11 @@ int cmd_parse(struct cmd_data *data, int argc, const char *argv[], unsigned long
 	printf ("Program: %s\n", data->program);
 	printf ("Command: %s\n", data->command);
 
-	for (int i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
 		printf ("Argument %i: %s\n", i, data->args[i]);
 	}
 
-	for (int i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
 		printf ("Argument %i key: %s\n", i, data->arg_pairs[i].key);
 		printf ("Argument %i value: %s\n", i, data->arg_pairs[i].value);
 	}

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_MAX 3
 #define MSG_CLASS_MIN 4
 #define MSG_CLASS_INFO 10
+#define MSG_CLASS_ARRAY 11
 
 #define MSG_TYPE_MSG_STRING "MSG"
 #define MSG_TYPE_ACK_STRING "ACK"
@@ -41,8 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_MAX_STRING "MAX"
 #define MSG_CLASS_MIN_STRING "MIN"
 #define MSG_CLASS_INFO_STRING "INFO"
+#define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_DATA_MAX_LENGTH 256
+#define MSG_DATA_MAX_LENGTH 1024
 
 #define MSG_STRING_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
 
@@ -53,9 +55,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MSG_IS_POINT(message)		(message->class == MSG_CLASS_POINT)
 #define MSG_IS_INFO(message)		(message->class == MSG_CLASS_INFO)
+#define MSG_IS_ARRAY(message)		(message->class == MSG_CLASS_ARRAY)
 
 #define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
 #define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
+#define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
 #include <stdint.h>
 
@@ -68,6 +72,7 @@ struct vl_message {
 
 	// Used by ipclient and ipserver for network transfer
 	uint32_t crc32;
+	uint32_t endian_check;
 
 	uint32_t length;
 	char data[MSG_DATA_MAX_LENGTH+2];
@@ -80,6 +85,19 @@ struct vl_message *message_new_reading (
 struct vl_message *message_new_info (
 	uint64_t time,
 	const char *msg_terminated
+);
+struct vl_message *message_new_array (
+	uint64_t time,
+	uint32_t length
+);
+int init_empty_message (
+	unsigned long int type,
+	unsigned long int class,
+	uint64_t timestamp_from,
+	uint64_t timestamp_to,
+	uint64_t data_numeric,
+	unsigned long int data_size,
+	struct vl_message *result
 );
 int init_message (
 	unsigned long int type,
@@ -100,6 +118,9 @@ int message_to_string (
 	struct vl_message *message,
 	char *target,
 	unsigned long int target_size
+);
+int message_fix_endianess (
+	struct vl_message *message
 );
 void message_checksum (
 	struct vl_message *message

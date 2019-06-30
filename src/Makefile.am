@@ -1,5 +1,5 @@
 SUBDIRS = lib modules
-bin_PROGRAMS = vlogger
-vlogger_LDFLAGS = -ldl -lpthread -L./lib -lvlogger
-vlogger_SOURCES = voltagelogger.c modules.c global.c
-vlogger_CFLAGS = ${AM_CFLAGS} -DVL_MODULE_PATH="\"${libdir}/voltagelogger\""
+bin_PROGRAMS = rrr
+rrr_LDFLAGS = -ldl -lpthread -L./lib -lrrr
+rrr_SOURCES = rrr.c modules.c global.c
+rrr_CFLAGS = ${AM_CFLAGS} -DVL_MODULE_PATH="\"${libdir}/rrr\""

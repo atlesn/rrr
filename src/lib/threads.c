@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
@@ -185,7 +186,7 @@ void *thread_watchdog_entry(void *arg) {
 				!thread_check_state(thread, VL_THREAD_STATE_INIT) &&
 				!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)
 		) {
-			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longed RUNNING\n", thread->name, thread);
+			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
 			break;
 		}
 		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {
@@ -290,6 +291,9 @@ void thread_cleanup(void *arg) {
 
 	// Check if we have died slowly and need to clean something up
 	// from our parent which has abandoned us
+	
+	// TODO : Maybe we should lock the thread to avoid race condition with
+	// threads_destroy()
 	if (thread->is_ghost && thread->ghost_cleanup_pointer != NULL) {
 		VL_MSG_ERR ("Thread waking up after being ghost, cleaning up for parent.");
 		free(thread->ghost_cleanup_pointer);
@@ -355,6 +359,9 @@ void threads_destroy() {
 
 		thread_lock(thread);
 		if (thread->is_ghost == 1) {
+			// TODO : thread_cleanup() does not lock, maybe it should to avoid race
+			// condition with is_ghost and ghost_cleanup_pointer
+			
 			// Move pointer to thread, we expect it to clean up if it dies
 			VL_MSG_ERR ("Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
 			thread->ghost_cleanup_pointer = thread;
@@ -363,6 +370,7 @@ void threads_destroy() {
 		}
 
 		thread_unlock(thread);
+		// TODO : Add pthread_mutex_destroy(threads[i]->....) and test
 		free(threads[i]);
 
 		nofree:
@@ -416,7 +424,9 @@ void thread_set_state(struct vl_thread *thread, int state) {
 	thread_unlock(thread);;
 }
 
-struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_data *), void *arg, struct cmd_data *cmd, const char *name) {
+struct vl_thread *thread_start (
+		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
+) {
 	struct vl_thread *thread;
 	struct vl_thread *watchdog_thread;
 
@@ -452,7 +462,6 @@ struct vl_thread *thread_start (void *(*start_routine) (struct vl_thread_start_d
 	start_data->private_arg = arg;
 	start_data->start_routine = start_routine;
 	start_data->thread = thread;
-	start_data->cmd = cmd;
 
 	thread->state = VL_THREAD_STATE_INIT;
 

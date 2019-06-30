@@ -1,16 +1,11 @@
-if VL_WITH_MYSQL
-mysql = mysql.la
-endif
-
-#MYSQL_CFLAGS='-I/usr/include/mysql '
-#MYSQL_CONFIG='/usr/bin/mysql_config'
-#MYSQL_LDFLAGS='-L/usr/lib/x86_64-linux-gnu -lmysqlclient -lpthread -lz -lm -lrt -ldl'
-
-
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
-	ipclient.la ipserver.la blockdev.la controller.la ${mysql}
+	ipclient.la ipserver.la blockdev.la controller.la mysql.la udpreader.la python3.la
 
-module_ldflags=-module -avoid-version -shared -L../lib -lvlogger
+module_ldflags=-module -avoid-version -shared -L../lib -lrrr
+
+python3_la_LDFLAGS = ${module_ldflags} ${PYTHON3_LDFLAGS}
+python3_la_CFLAGS = ${PYTHON3_CFLAGS}
+python3_la_SOURCES = p_python3.c
 
 mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
 mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
@@ -29,10 +24,10 @@ averager_la_LDFLAGS = ${module_ldflags}
 averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags} 
-ipclient_la_SOURCES = p_ipclient.c common/ip.c
+ipclient_la_SOURCES = p_ipclient.c
 
 ipserver_la_LDFLAGS = ${module_ldflags}
-ipserver_la_SOURCES = p_ipserver.c common/ip.c
+ipserver_la_SOURCES = p_ipserver.c
 
 blockdev_la_LDFLAGS = ${module_ldflags} -lbdl
 blockdev_la_SOURCES = p_blockdev.c
@@ -40,4 +35,7 @@ blockdev_la_SOURCES = p_blockdev.c
 controller_la_LDFLAGS = ${module_ldflags}
 controller_la_SOURCES = p_controller.c
 
-libdir=${exec_prefix}/lib/voltagelogger
+udpreader_la_LDFLAGS = ${module_ldflags}
+udpreader_la_SOURCES = src_udpreader.c
+
+libdir=${exec_prefix}/lib/rrr
