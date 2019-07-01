@@ -75,6 +75,11 @@ int fifo_search (
 	struct fifo_callback_args *callback_data
 ) {
 	fifo_write_lock(buffer);
+	if (buffer->invalid) {
+		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
+		fifo_write_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
+	}
 
 	int err = 0;
 
@@ -92,7 +97,7 @@ int fifo_search (
 			goto keep;
 		}
 		if (actions == FIFO_SEARCH_ERR) {
-			err = 1;
+			err = FIFO_CALLBACK_ERR;
 			break;
 		}
 		if ((actions & FIFO_SEARCH_GIVE) != 0) {
@@ -137,6 +142,11 @@ int fifo_clear_order_lt (
 		uint64_t order_min
 ) {
 	fifo_write_lock(buffer);
+	if (buffer->invalid) {
+		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
+		fifo_write_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
+	}
 
 	struct fifo_buffer_entry *entry;
 	struct fifo_buffer_entry *clear_end = NULL;
@@ -194,7 +204,8 @@ int fifo_read_clear_forward (
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
 		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
-		fifo_write_unlock(buffer); return -1;
+		fifo_write_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
 	}
 
 	struct fifo_buffer_entry *current = buffer->gptr_first;
@@ -220,7 +231,7 @@ int fifo_read_clear_forward (
 		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
-		ret = ret != 0 ? 1 : (ret_tmp != 0 ? 1 : 0);
+		ret = (ret != 0 ? FIFO_CALLBACK_ERR : (ret_tmp != 0 ? FIFO_CALLBACK_ERR : FIFO_OK));
 
 		free(current);
 

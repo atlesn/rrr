@@ -33,9 +33,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define FIFO_SPIN_DELAY 50 // milliseconds
 
+#define FIFO_OK 0
+#define FIFO_GLOBAL_ERR -1
+#define FIFO_CALLBACK_ERR 1
+
 struct fifo_callback_args {
 	void *source;
 	void *private_data;
+	unsigned int flags;
 };
 
 struct fifo_buffer_entry {
