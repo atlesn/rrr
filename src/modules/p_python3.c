@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <errno.h>
 
+#include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
@@ -78,7 +79,7 @@ int python3_parse_config(struct python3_data *data, struct rrr_instance_config *
 
 // Poll request from other modules
 int python3_poll_delete (
-	struct module_thread_data *thread_data,
+	struct instance_thread_data *thread_data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
@@ -87,8 +88,8 @@ int python3_poll_delete (
 	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
 }
 
-int poll_callback_local (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
+int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = poll_data->source;
 	struct python3_data *python3_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
@@ -100,15 +101,16 @@ int poll_callback_local (struct fifo_callback_args *poll_data, char *data, unsig
 }
 
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	int senders_count = thread_data->init_data.senders_count;
+	struct poll_collection poll;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	data_init(data);
-
+	poll_collection_init(&poll);
+	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -120,70 +122,25 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (senders_count > RRR_PYTHON3_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for python3 module, max is %i\n", RRR_PYTHON3_MAX_SENDERS);
-		goto out_message;
-	}
-
-	int (*poll[RRR_PYTHON3_MAX_SENDERS])(
-			struct module_thread_data *data,
-			int (*callback)(
-					struct fifo_callback_args *poll_data,
-					char *data,
-					unsigned long int size
-			),
-			struct fifo_callback_args *caller_data
-	);
-
-	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("python3: found sender %p\n", thread_data->init_data.senders[i]);
-
-		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
-
-		if (poll[i] == NULL) {
-			VL_MSG_ERR ("python3 cannot use sender '%s', module '%s' is lacking poll_delete function.\n",
-					thread_data->init_data.senders[i]->dynamic_data->instance_name,
-					thread_data->init_data.senders[i]->dynamic_data->module_name
-			);
-			goto out_message;
-		}
-	}
-
-	VL_DEBUG_MSG_1 ("python3 started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for python3 processor module\n");
+	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
+		VL_MSG_ERR("Python3 instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		int err = 0;
-
-		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res;
-
-			res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_local, &poll_data);
-
-			if (!(res >= 0)) {
-				VL_MSG_ERR ("python3 module received error from poll function\n");
-				err = 1;
-				break;
-			}
-		}
-
-//		process_entries(thread_data);
-
-		if (err != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
 			break;
 		}
+
 		usleep (20000); // 20 ms
 	}
 
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread python3 %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -203,7 +160,7 @@ __attribute__((constructor)) void load() {
 	Py_Initialize();
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;

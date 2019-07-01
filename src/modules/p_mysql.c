@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <errno.h>
 
+#include "../lib/poll_helper.h"
 #include "../lib/types.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
@@ -612,7 +613,13 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
 	if (mysql_colplan == NULL) {
-		mysql_colplan = COLUMN_PLAN_NAME_VOLTAGE;
+		mysql_colplan = malloc(strlen(COLUMN_PLAN_NAME_VOLTAGE) + 1);
+		if (mysql_colplan == NULL) {
+			VL_MSG_ERR("Could not allocate memory in mysql_parse_column_plan\n");
+			int ret = 1;
+			goto out;
+		}
+		strcpy (mysql_colplan, COLUMN_PLAN_NAME_VOLTAGE);
 		VL_MSG_ERR("Warning: No mysql_colplan set for instance %s, defaulting to voltage\n", config->name);
 	}
 
@@ -668,7 +675,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 			goto out;
 		}
 
-		if (data->mysql_special_columns > 0) {
+		if (data->mysql_special_columns_count > 0) {
 			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
 			goto out;
@@ -705,6 +712,9 @@ int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config *confi
 			VL_MSG_ERR("Could not parse mysql_port for instance %s\n", config->name);
 			ret = 1;
 		}
+		else if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
 	}
 
 	return ret;
@@ -730,43 +740,48 @@ int mysql_parse_config(struct mysql_data *data, struct rrr_instance_config *conf
 
 	if (data->mysql_user == NULL || data->mysql_password == NULL) {
 		VL_MSG_ERR ("mysql_user or mysql_password not correctly set for instance %s.\n", config->name);
-		goto out;
+		ret = 1;
+	}
+
+	if (data->mysql_table == NULL) {
+		VL_MSG_ERR ("mysql_table not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
+	if (data->mysql_server == NULL) {
+		VL_MSG_ERR ("mysql_server not correctly set for instance %s.\n", config->name);
+		ret = 1;
 	}
 
 	// NO TAGGING
 	int yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging")) == RRR_SETTING_PARSE_ERROR) {
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging") == RRR_SETTING_PARSE_ERROR) {
 		VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging of instance '%s', please specify 'yes' or 'no'\n",
 				config->name
 		);
 		ret = 1;
-		goto out;
 	}
 	data->no_tagging = (yesno == 0 || yesno == 1 ? yesno : 0);
 
 	// ADD TIMESTAMP COL
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col")) == RRR_SETTING_PARSE_ERROR) {
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col") == RRR_SETTING_PARSE_ERROR) {
 		VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
 				config->name
 		);
 		ret = 1;
-		goto out;
 	}
 	data->add_timestamp_col = (yesno == 0 || yesno == 1 ? yesno : 0);
 
 	// MYSQL PORT
-	if ((ret = mysql_parse_port(data, config)) != 0) {
+	if (mysql_parse_port(data, config) != 0) {
 		VL_MSG_ERR("Error while parsing mysql port for instance %s\n", config->name);
 		ret = 1;
-		goto out;
 	}
 
 	// COLUMN PLAN AND COLUMN LISTS
-	ret = mysql_parse_column_plan(data, config);
-	if (ret != 0) {
+	if (mysql_parse_column_plan(data, config) != 0) {
 		VL_MSG_ERR("Error in mysql column plan for instance %s\n", config->name);
 		ret = 1;
-		goto out;
 	}
 
 	out:
@@ -774,7 +789,7 @@ int mysql_parse_config(struct mysql_data *data, struct rrr_instance_config *conf
 }
 
 int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
+	struct instance_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
@@ -786,7 +801,7 @@ int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned 
 }
 
 int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
+	struct instance_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
@@ -805,7 +820,7 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 
 // Poll request from other modules
 int mysql_poll_delete_ip (
-	struct module_thread_data *thread_data,
+	struct instance_thread_data *thread_data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
@@ -847,7 +862,7 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 
 int process_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct process_entries_data *process_data = callback_data->private_data;
-	struct module_thread_data *thread_data = callback_data->source;
+	struct instance_thread_data *thread_data = callback_data->source;
 	struct mysql_data *mysql_data = process_data->data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
@@ -887,7 +902,7 @@ void close_mysql_stmt(void *arg) {
 	mysql_stmt_close(arg);
 }
 
-int process_entries (struct module_thread_data *thread_data) {
+int process_entries (struct instance_thread_data *thread_data) {
 	struct mysql_data *data = thread_data->private_data;
 	struct fifo_callback_args poll_data;
 
@@ -936,15 +951,20 @@ int process_entries (struct module_thread_data *thread_data) {
 }
 
 static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->init_data.senders_count;
+	struct poll_collection poll;
+	struct poll_collection poll_ip;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
 	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	data_init(data);
 
+	poll_collection_init(&poll);
+	poll_collection_init(&poll_ip);
+	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -961,45 +981,29 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			goto out_message;
 	}
 
-	if (senders_count > RRR_MYSQL_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for mysql module, max is %i\n", RRR_MYSQL_MAX_SENDERS);
-		goto out_message;
+	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
+
+	int err = 0;
+	RRR_SENDER_LOOP(sender,thread_data->init_data.senders) {
+		int ok = 0;
+
+		int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
+		int delete_ip_has = poll_collection_has(&poll_ip, sender->sender->thread_data);
+
+		if (delete_has + delete_ip_has == 2) {
+			VL_DEBUG_MSG_1("Sender %s for mysql instance %s has both delete and delete_ip poll functions, preferring IP\n",
+					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
+			poll_collection_remove(&poll, sender->sender->thread_data);
+		}
+		else if (delete_has + delete_ip_has == 0) {
+			VL_MSG_ERR("Sender %s for mysql instance %s did not have delete_ip or delete poll functions\n",
+					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
+			err = 1;
+		}
 	}
-
-
-	int (*poll[RRR_MYSQL_MAX_SENDERS])(
-			struct module_thread_data *data,
-			int (*callback)(
-					struct fifo_callback_args *poll_data,
-					char *data,
-					unsigned long int size
-			),
-			struct fifo_callback_args *caller_data
-	);
-
-#define POLL_TYPE_IP 1
-#define POLL_TYPE_LOCAL 2
-
-	int poll_types[RRR_MYSQL_MAX_SENDERS];
-
-	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("mysql: found sender %p\n", thread_data->init_data.senders[i]);
-		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete_ip;
-		poll_types[i] = POLL_TYPE_IP;
-
-		if (poll[i] == NULL) {
-			poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
-			poll_types[i] = POLL_TYPE_LOCAL;
-		}
-
-		if (poll[i] == NULL) {
-			VL_MSG_ERR ("mysql '%s' cannot use sender '%s' using module '%s', lacking poll_delete_ip and poll_delete function.\n",
-					thread_data->init_data.module->instance_name,
-					thread_data->init_data.senders[i]->dynamic_data->instance_name,
-					thread_data->init_data.senders[i]->dynamic_data->module_name
-			);
-			goto out_message;
-		}
+	if (err) {
+		goto out_message;
 	}
 
 	VL_DEBUG_MSG_1 ("mysql started thread %p\n", thread_data);
@@ -1013,24 +1017,14 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res;
-			if (poll_types[i] == POLL_TYPE_IP) {
-				res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_ip, &poll_data);
-			}
-			else if (poll_types[i] == POLL_TYPE_LOCAL) {
-				res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback_local, &poll_data);
-			}
-			else {
-				VL_MSG_ERR("mysql: Bug: Unknown poll type %i\n", poll_types[i]);
-				exit (EXIT_FAILURE);
-			}
-			if (!(res >= 0)) {
-				VL_MSG_ERR ("mysql module received error from poll function\n");
-				err = 1;
-				break;
-			}
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback_local) != 0) {
+			break;
+		}
+
+		process_entries(thread_data);
+
+		if (poll_do_poll_delete_ip_simple (&poll_ip, thread_data, poll_callback_ip) != 0) {
+			break;
 		}
 
 		process_entries(thread_data);
@@ -1053,6 +1047,8 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
@@ -1071,7 +1067,7 @@ __attribute__((constructor)) void load() {
 	mysql_library_init(0, NULL, NULL);
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;

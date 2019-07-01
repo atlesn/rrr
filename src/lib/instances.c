@@ -19,11 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../global.h"
-#include "instances.h"
+#include <stdlib.h>
 
-#include "module_thread.h"
+#include "../modules.h"
+#include "../global.h"
+#include "threads.h"
+#include "instances.h"
 #include "instance_config.h"
+#include "senders.h"
 
 int instance_check_threads_stopped(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
@@ -36,7 +39,7 @@ int instance_check_threads_stopped(struct instance_metadata_collection *instance
 
 void instance_free_all_thread_data(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		rrr_free_thread(instance->thread_data);
+		instance_free_thread(instance->thread_data);
 		instance->thread_data = NULL;
 	}
 }
@@ -44,7 +47,7 @@ void instance_free_all_thread_data(struct instance_metadata_collection *instance
 int instance_count_library_users (struct instance_metadata_collection *instances, void *dl_ptr) {
 	int users = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct module_dynamic_data *data = instance->dynamic_data;
+		struct instance_dynamic_data *data = instance->dynamic_data;
 		if (data->dl_ptr == dl_ptr) {
 			users++;
 		}
@@ -54,7 +57,7 @@ int instance_count_library_users (struct instance_metadata_collection *instances
 
 void instance_unload_all(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct module_dynamic_data *data = instance->dynamic_data;
+		struct instance_dynamic_data *data = instance->dynamic_data;
 		int dl_users = instance_count_library_users(instances, data->dl_ptr);
 		int no_dl_unload = (dl_users > 1 ? 1 : 0);
 
@@ -65,12 +68,13 @@ void instance_unload_all(struct instance_metadata_collection *instances) {
 }
 
 void __instance_metadata_destroy (struct instance_metadata *target) {
-	rrr_free_thread(target->thread_data);
+	instance_free_thread(target->thread_data);
+	senders_clear(&target->senders);
 	free(target->dynamic_data);
 	free(target);
 }
 
-int __instance_metadata_new (struct instance_metadata **target, struct module_dynamic_data *data) {
+int __instance_metadata_new (struct instance_metadata **target, struct instance_dynamic_data *data) {
 	int ret = 0;
 
 	struct instance_metadata *meta = malloc(sizeof(*meta));
@@ -84,6 +88,7 @@ int __instance_metadata_new (struct instance_metadata **target, struct module_dy
 	memset (meta, '\0', sizeof(*meta));
 
 	meta->dynamic_data = data;
+	senders_init(&meta->senders);
 
 	*target = meta;
 
@@ -93,7 +98,7 @@ int __instance_metadata_new (struct instance_metadata **target, struct module_dy
 
 struct instance_metadata *__instance_save (
 		struct instance_metadata_collection *instances,
-		struct module_dynamic_data *module,
+		struct instance_dynamic_data *module,
 		struct rrr_instance_config *config
 ) {
 	VL_DEBUG_MSG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
@@ -120,7 +125,7 @@ struct instance_metadata *__instance_load_module_and_save (
 	struct instance_metadata *ret = NULL;
 
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct module_dynamic_data *module = instance->dynamic_data;
+		struct instance_dynamic_data *module = instance->dynamic_data;
 		if (module != NULL && strcmp(module->instance_name, instance_config->name) == 0) {
 			VL_MSG_ERR("Instance '%s' can't be defined more than once\n", module->instance_name);
 			ret = NULL;
@@ -145,7 +150,7 @@ struct instance_metadata *__instance_load_module_and_save (
 		goto out;
 	}
 
-	struct module_dynamic_data *dynamic_data = malloc(sizeof(*dynamic_data));
+	struct instance_dynamic_data *dynamic_data = malloc(sizeof(*dynamic_data));
 	memset(dynamic_data, '\0', sizeof(*dynamic_data));
 
 	start_data.init(dynamic_data);
@@ -168,7 +173,7 @@ struct instance_metadata *instance_find (
 		const char *name
 ) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct module_dynamic_data *module = instance->dynamic_data;
+		struct instance_dynamic_data *module = instance->dynamic_data;
 		if (module != NULL && strcmp(module->instance_name, name) == 0) {
 			return instance;
 		}
@@ -192,21 +197,13 @@ int instance_load_and_save (
 
 struct add_sender_data {
 	struct instance_metadata_collection *instances;
-	struct instance_metadata *senders[VL_MODULE_MAX_SENDERS];
-	int pos;
-	int max;
+	struct instance_sender_collection *senders;
 };
 
 int __add_sender_callback(const char *value, void *_data) {
 	struct add_sender_data *data = _data;
 
 	int ret = 0;
-
-	if (data->pos == data->max) {
-		VL_MSG_ERR("Could not add sender: Too many senders, max is %d\n", VL_MODULE_MAX_SENDERS);
-		ret = 1;
-		goto out;
-	}
 
 	struct instance_metadata *sender = instance_find(data->instances, value);
 
@@ -216,9 +213,7 @@ int __add_sender_callback(const char *value, void *_data) {
 		goto out;
 	}
 
-	data->senders[data->pos] = sender;
-
-	data->pos++;
+	senders_add_sender(data->senders, sender);
 
 	out:
 	return ret;
@@ -239,8 +234,7 @@ int instance_add_senders (
 
 	struct add_sender_data sender_data;
 	sender_data.instances = instances;
-	sender_data.max = VL_MODULE_MAX_SENDERS;
-	sender_data.pos = 0;
+	sender_data.senders = &instance->senders;
 
 	ret = rrr_settings_traverse_split_commas_silent_fail (
 			instance_config->settings, "senders",
@@ -248,20 +242,20 @@ int instance_add_senders (
 	);
 
 	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR) {
-		if (sender_data.pos == 0) {
+		if (senders_check_empty(&instance->senders)) {
 			VL_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
 					instance->dynamic_data->module_name, instance->dynamic_data->instance_name);
 			ret = 1;
 			goto out;
 		}
 
-		for (int j = 0; j < sender_data.pos; j++) {
-			VL_DEBUG_MSG_1("Checking sender instance '%s' module '%s'\n",
-					sender_data.senders[j]->dynamic_data->instance_name,
-					sender_data.senders[j]->dynamic_data->module_name
-			);
+		RRR_SENDER_LOOP(sender_entry,&instance->senders) {
+			struct instance_metadata *sender = sender_entry->sender;
 
-			struct instance_metadata *sender = sender_data.senders[j];
+			VL_DEBUG_MSG_1("Checking sender instance '%s' module '%s'\n",
+					sender->dynamic_data->instance_name,
+					sender->dynamic_data->module_name
+			);
 
 			if (sender == instance) {
 				VL_MSG_ERR("Instance %s set with itself as sender\n",
@@ -269,12 +263,10 @@ int instance_add_senders (
 				ret = 1;
 				goto out;
 			}
-
-			instance->senders[instance->senders_count++] = sender;
 		}
 	}
 	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE) {
-		if (sender_data.pos != 0) {
+		if (!senders_check_empty(&instance->senders)) {
 			VL_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
 					instance->dynamic_data->instance_name, instance->dynamic_data->module_name);
 			ret = 1;
@@ -289,7 +281,7 @@ int instance_add_senders (
 		goto out;
 	}
 
-	VL_DEBUG_MSG_1("Added %d senders\n", sender_data.pos);
+	VL_DEBUG_MSG_1("Added %d senders\n", senders_count(&instance->senders));
 
 	out:
 	return ret;
@@ -323,4 +315,46 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 
 	out:
 	return ret;
+}
+
+void instance_free_thread(struct instance_thread_data *data) {
+	if (data == NULL) {
+		return;
+	}
+
+	free(data);
+}
+
+struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data) {
+	VL_DEBUG_MSG_1 ("Init thread %s\n", init_data->module->instance_name);
+
+	struct instance_thread_data *data = malloc(sizeof(*data));
+	if (data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_init_thread\n");
+		return NULL;
+	}
+
+	memset(data, '\0', sizeof(*data));
+	data->init_data = *init_data;
+
+	return data;
+}
+
+int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
+	struct instance_dynamic_data *module = data->init_data.module;
+
+	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	if (data->thread != NULL) {
+		VL_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
+		exit(EXIT_FAILURE);
+	}
+	data->thread = thread_preload_and_register (collection, module->operations.thread_entry, data, module->instance_name);
+
+	if (data->thread == NULL) {
+		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
+		free(data);
+		return 1;
+	}
+
+	return 0;
 }

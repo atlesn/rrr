@@ -10,4 +10,4 @@ export LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib/rrr
 #	mysql_special_columns=configuration,aths mysql_add_timestamp_col=yes mysql_columns_blob_writes=endian_indicator \
 #	mysql_no_tagging=yes
 
-valgrind --leak-check=full rrr config=rrr.conf debuglevel=5
+valgrind --leak-check=full rrr config=rrr.conf 

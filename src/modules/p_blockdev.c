@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <bdl/bdl.h>
 
+#include "../lib/poll_helper.h"
 #include "../lib/settings.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -52,7 +53,7 @@ struct blockdev_data {
 };
 
 int poll_delete (
-	struct module_thread_data *data,
+	struct instance_thread_data *data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *poll_data
 ) {
@@ -126,7 +127,7 @@ void data_cleanup (void *arg) {
 }
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
+	struct instance_thread_data *thread_data = poll_data->source;
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct vl_message *reading = (struct vl_message *) data;
@@ -289,7 +290,7 @@ struct bdl_update_info get_new_entries_callback(void *arg, uint64_t timestamp, u
 }
 
 
-int get_new_entries(struct module_thread_data *thread_data) {
+int get_new_entries(struct instance_thread_data *thread_data) {
 	struct blockdev_data *blockdev_data = thread_data->private_data;
 
 	struct get_new_entries_data callback_data;
@@ -312,12 +313,13 @@ int get_new_entries(struct module_thread_data *thread_data) {
 }
 
 static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->init_data.senders_count;
+	struct poll_collection poll;
 	struct blockdev_data *data = (struct blockdev_data *) thread_data->private_memory;
 	thread_data->private_data = data;
-
+	poll_collection_init(&poll);
+	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -336,30 +338,9 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (senders_count > VL_BLOCKDEV_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for blockdev module, max is %i\n", VL_BLOCKDEV_MAX_SENDERS);
+	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
+		VL_MSG_ERR("Blockdev requires poll_delete from senders\n");
 		goto out_message;
-	}
-
-	int (*poll[VL_BLOCKDEV_MAX_SENDERS])(
-			struct module_thread_data *data,
-			int (*callback)(
-					struct fifo_callback_args *poll_data,
-					char *data,
-					unsigned long int size
-			),
-			struct fifo_callback_args *caller_data
-	);
-
-
-	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("blockdev: found sender %p\n", thread_data->init_data.senders[i]);
-		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
-
-		if (poll[i] == NULL) {
-			VL_MSG_ERR ("blockdev cannot use this sender, lacking poll delete function.\n");
-			goto out_message;
-		}
 	}
 
 	VL_DEBUG_MSG_1 ("blockdev started thread %p\n", thread_data);
@@ -376,14 +357,8 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
-			if (!(res >= 0)) {
-				VL_MSG_ERR ("blockdev module received error from poll function\n");
-				err = 1;
-				break;
-			}
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+			break;
 		}
 
 		if (data->do_bdl_reset == 1) {
@@ -423,6 +398,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
@@ -439,7 +415,7 @@ static const char *module_name = "blockdev";
 __attribute__((constructor)) void load() {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;

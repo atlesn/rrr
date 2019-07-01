@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 
+#include "../modules.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -36,25 +37,17 @@ struct dummy_data {
 	struct fifo_buffer buffer;
 };
 
-static int poll_delete (
-		struct module_thread_data *data,
-		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
-		struct fifo_callback_args *caller_data
-) {
+static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, caller_data);
+	return fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data);
 }
 
-static int poll (
-		struct module_thread_data *data,
-		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
-		struct fifo_callback_args *poll_data
-) {
+static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
 	return fifo_search(&dummy_data->buffer, callback, poll_data);
 }
 
-struct dummy_data *data_init(struct module_thread_data *module_thread_data) {
+struct dummy_data *data_init(struct instance_thread_data *module_thread_data) {
 	// Use special memory region provided in module_thread_data which we don't have to free
 	struct dummy_data *data = (struct dummy_data *) module_thread_data->private_memory;
 	memset(data, '\0', sizeof(*data));
@@ -71,7 +64,7 @@ void data_cleanup(void *arg) {
 }
 
 static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	struct dummy_data *data = data_init(thread_data);
 
@@ -122,7 +115,7 @@ static const char *module_name = "dummy";
 __attribute__((constructor)) void load() {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 		data->module_name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

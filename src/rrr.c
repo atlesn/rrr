@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "lib/configuration.h"
 #include "lib/threads.h"
+#include "lib/module_thread.h"
+#include "lib/version.h"
 
 #ifdef VL_WITH_OPENSSL
 #include "lib/crypt.h"
@@ -115,17 +117,16 @@ int main_start_threads (
 			break;
 		}
 
-		struct module_thread_init_data init_data;
+		struct instance_thread_init_data init_data;
 		init_data.module = instance->dynamic_data;
-		memcpy(init_data.senders, instance->senders, sizeof(init_data.senders));
-		init_data.senders_count = instance->senders_count;
+		init_data.senders = &instance->senders;
 		init_data.cmd_data = cmd;
 		init_data.global_config = global_config;
 		init_data.instance_config = instance->config;
 
 		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		if ((instance->thread_data = rrr_init_thread(&init_data)) == NULL) {
+		if ((instance->thread_data = instance_init_thread(&init_data)) == NULL) {
 			goto out;
 		}
 	}
@@ -143,11 +144,7 @@ int main_start_threads (
 			break;
 		}
 
-		for (int j = 0; j < instance->senders_count; j++) {
-			instance->thread_data->init_data.senders[j] = instance->senders[j];
-		}
-
-		if (rrr_start_thread(*thread_collection, instance->thread_data) != 0) {
+		if (instance_start_thread(*thread_collection, instance->thread_data) != 0) {
 			VL_MSG_ERR("Error when starting thread for instance%s\n",
 					instance->dynamic_data->instance_name);
 			return EXIT_FAILURE;
@@ -243,12 +240,6 @@ int main (int argc, const char *argv[]) {
 	if (VL_DEBUGLEVEL_1) {
 		int dump_ret = rrr_config_dump(config);
 	}
-
-	/*
-	if ((ret = main_parse_cmd_modules(&cmd)) != 0) {
-		goto out_unload_modules;
-	}
-*/
 
 	// Initialzie dynamic_data thread data
 	struct vl_thread_collection *collection = NULL;

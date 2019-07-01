@@ -53,7 +53,7 @@ void type_data_cleanup(void *arg) {
 	}
 }
 
-struct udpreader_data *data_init(struct module_thread_data *module_thread_data) {
+struct udpreader_data *data_init(struct instance_thread_data *module_thread_data) {
 	// Use special memory region provided in module_thread_data which we don't have to free
 	struct udpreader_data *data = (struct udpreader_data *) module_thread_data->private_memory;
 	memset(data, '\0', sizeof(*data));
@@ -75,7 +75,7 @@ void data_cleanup(void *arg) {
 }
 
 static int poll_delete (
-		struct module_thread_data *data,
+		struct instance_thread_data *data,
 		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
@@ -84,7 +84,7 @@ static int poll_delete (
 }
 
 static int poll (
-		struct module_thread_data *data,
+		struct instance_thread_data *data,
 		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
 		struct fifo_callback_args *poll_data
 ) {
@@ -215,7 +215,7 @@ int read_data(struct udpreader_data *data) {
 }
 
 static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 	struct udpreader_data *data = data_init(thread_data);
 
@@ -289,7 +289,7 @@ static const char *module_name = "udpreader";
 __attribute__((constructor)) void load() {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 		data->module_name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

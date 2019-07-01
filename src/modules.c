@@ -88,7 +88,7 @@ int module_load(struct module_load_data *target, const char *name) {
 			continue;
 		}
 
-		void (*init)(struct module_dynamic_data *data) = dlsym(handle, "init");
+		void (*init)(struct instance_dynamic_data *data) = dlsym(handle, "init");
 		void (*unload)() = dlsym(handle, "unload");
 
 		if (init == NULL || unload == NULL) {

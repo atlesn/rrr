@@ -278,7 +278,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 }
 
 static int poll_delete (
-		struct module_thread_data *data,
+		struct instance_thread_data *data,
 		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
@@ -287,7 +287,7 @@ static int poll_delete (
 }
 
 static int poll (
-		struct module_thread_data *data,
+		struct instance_thread_data *data,
 		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 		struct fifo_callback_args *caller_data
 ) {
@@ -295,7 +295,7 @@ static int poll (
 	return fifo_search(&voltmonitor_data->buffer, callback, caller_data);
 }
 
-struct voltmonitor_data *data_init(struct module_thread_data *module_thread_data) {
+struct voltmonitor_data *data_init(struct instance_thread_data *module_thread_data) {
 	// Use special memory region provided in module_thread_data which we don't have to free
 	struct voltmonitor_data *data = (struct voltmonitor_data *) module_thread_data->private_memory;
 	memset(data, '\0', sizeof(*data));
@@ -381,7 +381,7 @@ int config_parse(struct voltmonitor_data *data, struct rrr_instance_config *conf
 }
 
 static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
 
 	struct voltmonitor_data *data = data_init(thread_data);
@@ -448,7 +448,7 @@ static const char *module_name = "voltmonitor";
 __attribute__((constructor)) void load() {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 		data->module_name = module_name;
 		data->type = VL_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;

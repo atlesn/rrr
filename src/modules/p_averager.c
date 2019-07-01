@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -34,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
+#include "../lib/poll_helper.h"
 #include "../global.h"
 
 struct averager_data {
@@ -48,9 +48,6 @@ struct averager_data {
 	unsigned int interval;
 };
 
-// Should not be smaller than module max
-#define VL_AVERAGER_MAX_SENDERS VL_MODULE_MAX_SENDERS
-
 // In seconds, keep x seconds of readings in the buffer
 #define VL_DEFAULT_AVERAGER_TIMESPAN 15
 
@@ -59,7 +56,7 @@ struct averager_data {
 
 // Poll of our output buffer from other modules
 int averager_poll_delete (
-	struct module_thread_data *thread_data,
+	struct instance_thread_data *thread_data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
@@ -78,7 +75,7 @@ int averager_poll_delete (
 
 // Poll of our output buffer from other modules
 int averager_poll (
-	struct module_thread_data *thread_data,
+	struct instance_thread_data *thread_data,
 	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
 	struct fifo_callback_args *caller_data
 ) {
@@ -89,7 +86,7 @@ int averager_poll (
 
 // Messages when from polling sender comes in here
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
+	struct instance_thread_data *thread_data = poll_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
 	struct averager_data *averager_data = poll_data->private_data;
@@ -233,7 +230,7 @@ void averager_calculate_average(struct averager_data *data) {
 	pthread_mutex_unlock(&data->average_ready_lock);
 }
 
-struct averager_data *data_init(struct module_thread_data *module_thread_data) {
+struct averager_data *data_init(struct instance_thread_data *module_thread_data) {
 	// Use special memory region provided in module_thread_data which we don't have to free
 	struct averager_data *data = (struct averager_data *) module_thread_data->private_memory;
 	if (sizeof(*data) > VL_MODULE_PRIVATE_MEMORY_SIZE) {
@@ -313,14 +310,16 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 
 static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
+	struct instance_thread_data *thread_data = start_data->private_arg;
 	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->init_data.senders_count;
 	struct averager_data *data = data_init(thread_data);
 	thread_data->private_data = data;
+	struct poll_collection poll;
 
 	VL_DEBUG_MSG_1 ("Averager thread data is %p\n", thread_data);
 
+	poll_collection_init(&poll);
+	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -328,43 +327,19 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	if (senders_count > VL_AVERAGER_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for averager module, max is %i\n", VL_AVERAGER_MAX_SENDERS);
-		goto out_message;
-	}
-
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
 
-	VL_DEBUG_MSG_1 ("Avarager: Interval: %u, Timespan: %u, Preserve points: %i\n",
+	VL_DEBUG_MSG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	int (*poll[VL_AVERAGER_MAX_SENDERS])(
-			struct module_thread_data *data,
-			int (*callback)(
-					struct fifo_callback_args *caller_data,
-					char *data,
-					unsigned long int size
-			),
-			struct fifo_callback_args *caller_data
-	);
-
-	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("Averager: found sender %p\n", thread_data->init_data.senders[i]);
-		poll[i] = thread_data->init_data.senders[i]->dynamic_data->operations.poll_delete;
-
-		if (poll[i] == NULL) {
-			VL_MSG_ERR ("Averager cannot use this sender, lacking poll delete function.\n");
-			goto out_message;
-		}
+	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
+		VL_MSG_ERR("Averager requires poll_delete from senders\n");
+		goto out_message;
 	}
 
 	VL_DEBUG_MSG_1 ("Averager started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for averager processor module\n");
-		goto out_message;
-	}
 
 	uint64_t previous_average_time = time_get_64();
 	uint64_t average_interval_useconds = data->interval * 1000000;
@@ -374,19 +349,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 		averager_maintain_buffer(data);
 
-		int err = 0;
-
-		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data->init_data.senders[i], data};
-			int res = poll[i](thread_data->init_data.senders[i]->thread_data, poll_callback, &poll_data);
-			if (!(res >= 0)) {
-				VL_MSG_ERR ("Averager module received error from poll function\n");
-				err = 1;
-				break;
-			}
-		}
-
-		if (err != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
 			break;
 		}
 
@@ -396,7 +359,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 			previous_average_time = current_time;
 		}
 
-		usleep (1000000); // 1000 ms
+		usleep (100000); // 100 ms
 	}
 
 	out_message:
@@ -405,6 +368,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 	out:
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -423,7 +387,7 @@ static const char *module_name = "averager";
 __attribute__((constructor)) void load() {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
 	data->type = VL_MODULE_TYPE_PROCESSOR;

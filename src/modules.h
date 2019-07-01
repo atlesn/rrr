@@ -35,28 +35,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define VL_MODULE_NO_DL_CLOSE
 
-struct module_dynamic_data;
-struct module_thread_data;
+struct instance_dynamic_data;
+struct instance_thread_data;
 struct fifo_callback_args;
 struct vl_thread_start_data;
 
 struct module_load_data {
 	void *dl_ptr;
-	void (*init)(struct module_dynamic_data *data);
+	void (*init)(struct instance_dynamic_data *data);
 	void (*unload)();
 };
+
+#define RRR_MODULE_POLL_CALLBACK_SIGNATURE \
+	struct fifo_callback_args *poll_data, char *data, unsigned long int size
+
+#define RRR_MODULE_POLL_SIGNATURE \
+		struct instance_thread_data *data, \
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE), \
+		struct fifo_callback_args *poll_data
+
+#define RRR_MODULE_PRINT_SIGNATURE \
+		struct instance_thread_data *data
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
 	void *(*thread_entry)(struct vl_thread_start_data *);
 
 	// For modules which returns vl_message struct from buffer
-	int (*poll)(struct module_thread_data *data, int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
-	int (*print)(struct module_thread_data *data);
-	int (*poll_delete)(struct module_thread_data *data, int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
+	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
+	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
+	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 
 	// For modules which return ip_buffer_entry from buffer
-	int (*poll_delete_ip)(struct module_thread_data *data, int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size), struct fifo_callback_args *poll_data);
+	int (*poll_delete_ip)(RRR_MODULE_POLL_SIGNATURE);
 };
 
 void module_unload (void *dl_ptr, void (*unload)());
