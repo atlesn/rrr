@@ -53,14 +53,10 @@ void type_data_cleanup(void *arg) {
 	}
 }
 
-struct udpreader_data *data_init(struct instance_thread_data *module_thread_data) {
-	// Use special memory region provided in module_thread_data which we don't have to free
-	struct udpreader_data *data = (struct udpreader_data *) module_thread_data->private_memory;
+void data_init(struct udpreader_data *data) {
 	memset(data, '\0', sizeof(*data));
 
 	fifo_buffer_init(&data->buffer);
-
-	return data;
 }
 
 void data_cleanup(void *arg) {
@@ -118,7 +114,7 @@ int config_parse_port (struct udpreader_data *data, struct rrr_instance_config *
 	return ret;
 }
 
-int config_parser (struct udpreader_data *data, struct rrr_instance_config *config) {
+int parse_config (struct udpreader_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	// Parse listen port
@@ -136,28 +132,6 @@ int config_parser (struct udpreader_data *data, struct rrr_instance_config *conf
 		VL_MSG_ERR("No data types defined in udpr_input_types\n");
 		return 1;
 	}
-
-	out:
-	return ret;
-}
-
-static int parse_config(struct udpreader_data *data, struct rrr_instance_config *config) {
-	int ret = 0;
-
-	rrr_setting_uint udpr_port;
-	if ((ret = rrr_instance_config_read_port_number (&udpr_port, config, "udpr_port")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			udpr_port = RRR_UDPREADER_DEFAULT_PORT;
-			ret = 0;
-		}
-		else {
-			VL_MSG_ERR("Error while parsing udpreader udpr_port for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->listen_port = udpr_port;
 
 	out:
 	return ret;
@@ -216,14 +190,16 @@ int read_data(struct udpreader_data *data) {
 
 static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
+	struct udpreader_data *data = thread_data->private_data = thread_data->private_memory;
+
 	thread_data->thread = start_data->thread;
-	struct udpreader_data *data = data_init(thread_data);
+
+	data_init(data);
 
 	VL_DEBUG_MSG_1 ("UDPreader thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
-	thread_data->private_data = data;
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -275,16 +251,24 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct udpreader_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 	thread_entry_udpreader,
 	poll,
 	NULL,
 	poll_delete,
-	NULL
+	NULL,
+	test_config
 };
 
 static const char *module_name = "udpreader";
-
 
 __attribute__((constructor)) void load() {
 }

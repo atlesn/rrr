@@ -295,12 +295,9 @@ static int poll (
 	return fifo_search(&voltmonitor_data->buffer, callback, caller_data);
 }
 
-struct voltmonitor_data *data_init(struct instance_thread_data *module_thread_data) {
-	// Use special memory region provided in module_thread_data which we don't have to free
-	struct voltmonitor_data *data = (struct voltmonitor_data *) module_thread_data->private_memory;
+void data_init(struct voltmonitor_data *data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->buffer);
-	return data;
 }
 
 void data_cleanup(void *arg) {
@@ -333,7 +330,7 @@ int convert_integer_10(const char *value, int *result) {
 	return 0;
 }
 
-int config_parse(struct voltmonitor_data *data, struct rrr_instance_config *config) {
+int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	char *vm_calibration = NULL;
@@ -382,10 +379,11 @@ int config_parse(struct voltmonitor_data *data, struct rrr_instance_config *conf
 
 static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
+	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+
 	thread_data->thread = start_data->thread;
 
-	struct voltmonitor_data *data = data_init(thread_data);
-	thread_data->private_data = data;
+	data_init(data);
 
 	pthread_cleanup_push(data_cleanup, data);
 
@@ -397,7 +395,7 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	if (config_parse(data, thread_data->init_data.instance_config) != 0) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		pthread_exit(0);
 	}
 
@@ -436,11 +434,21 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct voltmonitor_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_voltmonitor,
 		poll,
 		NULL,
-		poll_delete
+		poll_delete,
+		NULL,
+		test_config
 };
 
 static const char *module_name = "voltmonitor";

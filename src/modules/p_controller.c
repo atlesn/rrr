@@ -125,15 +125,15 @@ void data_cleanup(void *arg) {
 
 static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
+	struct controller_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 
-	struct controller_data *data = (struct controller_data *) thread_data->private_memory;
-	thread_data->private_data = data;
+	thread_data->thread = start_data->thread;
+
+	data_init(data, thread_data);
 
 	VL_DEBUG_MSG_1 ("controller thread data is %p\n", thread_data);
 
-	data_init(data, thread_data);
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
@@ -174,12 +174,17 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	return 0;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_controller,
 		NULL,
 		NULL,
 		poll_delete,
-		NULL
+		NULL,
+		test_config
 };
 
 static const char *module_name = "controller";

@@ -61,13 +61,11 @@ int poll_delete (
 	return fifo_read_clear_forward(&blockdev_data->output_buffer, NULL, callback, poll_data);
 }
 
-int data_init (struct blockdev_data *data) {
+void data_init (struct blockdev_data *data) {
 	memset(data, '\0', sizeof(*data));
 
 	fifo_buffer_init(&data->input_buffer);
 	fifo_buffer_init(&data->output_buffer);
-
-	return 0;
 }
 
 int parse_config (struct blockdev_data *data, struct rrr_instance_config *config) {
@@ -314,18 +312,17 @@ int get_new_entries(struct instance_thread_data *thread_data) {
 
 static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
+	struct blockdev_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
-	struct blockdev_data *data = (struct blockdev_data *) thread_data->private_memory;
-	thread_data->private_data = data;
+
+	thread_data->thread = start_data->thread;
+
+	data_init(data);
+
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
-
-	if (data_init(data) != 0) {
-		pthread_exit(0);
-	}
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -402,12 +399,21 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct blockdev_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_blockdev,
 		NULL,
 		NULL,
 		poll_delete,
-		NULL
+		NULL,
+		test_config
 };
 
 static const char *module_name = "blockdev";

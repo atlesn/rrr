@@ -47,12 +47,9 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_search(&dummy_data->buffer, callback, poll_data);
 }
 
-struct dummy_data *data_init(struct instance_thread_data *module_thread_data) {
-	// Use special memory region provided in module_thread_data which we don't have to free
-	struct dummy_data *data = (struct dummy_data *) module_thread_data->private_memory;
+void data_init(struct dummy_data *data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->buffer);
-	return data;
 }
 
 void data_cleanup(void *arg) {
@@ -65,14 +62,16 @@ void data_cleanup(void *arg) {
 
 static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
+	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
+
 	thread_data->thread = start_data->thread;
-	struct dummy_data *data = data_init(thread_data);
+
+	data_init(data);
 
 	VL_DEBUG_MSG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
-	thread_data->private_data = data;
 
 	static const char *dummy_msg = "Dummy measurement of time";
 
@@ -101,12 +100,17 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	return 0;
+}
+
 static struct module_operations module_operations = {
 	thread_entry_dummy,
 	poll,
 	NULL,
 	poll_delete,
-	NULL
+	NULL,
+	test_config
 };
 
 static const char *module_name = "dummy";

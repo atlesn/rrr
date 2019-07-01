@@ -43,8 +43,9 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
 	struct poll_collection poll;
+
+	thread_data->thread = start_data->thread;
 
 	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
 
@@ -82,12 +83,17 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	return 0;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_raw,
 		NULL,
 		NULL,
 		NULL,
-		NULL
+		NULL,
+		test_config
 };
 
 static const char *module_name = "raw";

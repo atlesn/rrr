@@ -58,7 +58,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->python3_file);
 }
 
-int python3_parse_config(struct python3_data *data, struct rrr_instance_config *config) {
+int parse_config(struct python3_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 	char *python3_file = NULL;
 
@@ -102,13 +102,15 @@ int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned lo
 
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
-	struct poll_collection poll;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
+	struct poll_collection poll;
+
+	thread_data->thread = start_data->thread;
+
+	data_init(data);
 
 	VL_DEBUG_MSG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	data_init(data);
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
@@ -118,7 +120,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	if (python3_parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
 
@@ -146,12 +148,21 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct python3_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_python3,
 		NULL,
 		NULL,
 		NULL,
-		python3_poll_delete
+		python3_poll_delete,
+		test_config
 };
 
 static const char *module_name = "python3";

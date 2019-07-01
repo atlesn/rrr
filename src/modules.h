@@ -39,6 +39,7 @@ struct instance_dynamic_data;
 struct instance_thread_data;
 struct fifo_callback_args;
 struct vl_thread_start_data;
+struct rrr_instance_config;
 
 struct module_load_data {
 	void *dl_ptr;
@@ -68,6 +69,9 @@ struct module_operations {
 
 	// For modules which return ip_buffer_entry from buffer
 	int (*poll_delete_ip)(RRR_MODULE_POLL_SIGNATURE);
+
+	// Test of configuration arguments
+	int (*test_config)(struct rrr_instance_config *config);
 };
 
 void module_unload (void *dl_ptr, void (*unload)());

@@ -230,18 +230,11 @@ void averager_calculate_average(struct averager_data *data) {
 	pthread_mutex_unlock(&data->average_ready_lock);
 }
 
-struct averager_data *data_init(struct instance_thread_data *module_thread_data) {
-	// Use special memory region provided in module_thread_data which we don't have to free
-	struct averager_data *data = (struct averager_data *) module_thread_data->private_memory;
-	if (sizeof(*data) > VL_MODULE_PRIVATE_MEMORY_SIZE) {
-		VL_MSG_ERR ("averager: Module thread private memory area too small\n");
-		exit(EXIT_FAILURE);
-	}
+void data_init(struct averager_data *data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->input_buffer);
 	fifo_buffer_init(&data->output_buffer);
 	pthread_mutex_init(&data->average_ready_lock, NULL);
-	return data;
 }
 
 void data_cleanup(void *arg) {
@@ -311,9 +304,12 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
+	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
+
 	thread_data->thread = start_data->thread;
-	struct averager_data *data = data_init(thread_data);
-	thread_data->private_data = data;
+
+	data_init(data);
+
 	struct poll_collection poll;
 
 	VL_DEBUG_MSG_1 ("Averager thread data is %p\n", thread_data);
@@ -374,12 +370,21 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct averager_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_averager,
 		averager_poll,
 		NULL,
 		averager_poll_delete,
-		NULL
+		NULL,
+		test_config
 };
 
 static const char *module_name = "averager";

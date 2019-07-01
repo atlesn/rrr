@@ -1,4 +1,4 @@
-SUBDIRS = lib modules
+SUBDIRS = lib modules tests
 bin_PROGRAMS = rrr
 rrr_LDFLAGS = -ldl -lpthread -L./lib -lrrr
 rrr_SOURCES = rrr.c modules.c global.c

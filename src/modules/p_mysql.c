@@ -720,7 +720,7 @@ int mysql_parse_port (struct mysql_data *data, struct rrr_instance_config *confi
 	return ret;
 }
 
-int mysql_parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
+int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	// These values are parsed by sub functions
@@ -952,14 +952,15 @@ int process_entries (struct instance_thread_data *thread_data) {
 
 static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
+	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 	struct poll_collection poll_ip;
-	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 
-	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	thread_data->thread = start_data->thread;
 
 	data_init(data);
+
+	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	poll_collection_init(&poll);
 	poll_collection_init(&poll_ip);
@@ -977,7 +978,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	if (mysql_parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 			goto out_message;
 	}
 
@@ -1052,12 +1053,21 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct mysql_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_mysql,
 		NULL,
 		NULL,
 		NULL,
-		mysql_poll_delete_ip
+		mysql_poll_delete_ip,
+		test_config
 };
 
 static const char *module_name = "mysql";

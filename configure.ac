@@ -105,5 +105,5 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile)
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile)
 AC_OUTPUT

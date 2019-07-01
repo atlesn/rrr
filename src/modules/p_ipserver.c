@@ -209,11 +209,7 @@ int receive_packets(struct ipserver_data *data) {
 	);
 }
 
-void init_data(struct ipserver_data *data) {
-	if (sizeof(*data) > VL_MODULE_PRIVATE_MEMORY_SIZE) {
-		VL_MSG_ERR ("ipserver: Module thread private memory area too small\n");
-		exit(EXIT_FAILURE);
-	}
+void data_init(struct ipserver_data *data) {
 	memset(data, '\0', sizeof(*data));
 	fifo_buffer_init(&data->send_buffer);
 	fifo_buffer_init(&data->receive_buffer);
@@ -270,13 +266,15 @@ static int parse_config (struct ipserver_data *data, struct rrr_instance_config 
 
 static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
-	struct poll_collection poll;
 	struct ipserver_data* data = thread_data->private_data = thread_data->private_memory;
+	struct poll_collection poll;
+
+	thread_data->thread = start_data->thread;
+
+	data_init(data);
 
 	VL_DEBUG_MSG_1 ("ipserver thread data is %p\n", thread_data);
 
-	init_data(data);
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
@@ -351,12 +349,21 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	pthread_exit(0);
 }
 
+static int test_config (struct rrr_instance_config *config) {
+	struct ipserver_data data;
+	data_init(&data);
+	int ret = parse_config(&data, config);
+	data_cleanup(&data);
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_ipserver,
 		NULL,
 		NULL,
 		NULL,
-		ipserver_poll_delete_ip
+		ipserver_poll_delete_ip,
+		test_config
 };
 
 static const char *module_name = "ipserver";
