@@ -21,3 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MSG_TEST(...) \
 	do {printf (__VA_ARGS__);}while(0)
+
+#define TEST_BEGIN(...) \
+	do { printf("Testing %s: ", __VA_ARGS__);
+
+#define TEST_RESULT(ok) \
+	printf("%s\n", (ok) ? "passed" : "failed");} while (0);

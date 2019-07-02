@@ -19,9 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "senders.h"
-#include "../modules.h"
 #include "../global.h"
+#include "senders.h"
+#include "modules.h"
 
 #define RRR_POLL_POLL			(1<<0)
 #define RRR_POLL_POLL_DELETE	(1<<1)

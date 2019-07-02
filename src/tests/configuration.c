@@ -19,7 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "../lib/configuration.c"
+#include <stdlib.h>
+
+#include "../global.h"
+#include "../lib/configuration.h"
 #include "test.h"
 
 int main (int argc, const char **argv) {
@@ -27,12 +30,21 @@ int main (int argc, const char **argv) {
 
 	struct rrr_config *config;
 
-	MSG_TEST("Testing non-existent config file\n");
+	TEST_BEGIN("non-existent config file")
 	config = rrr_config_parse_file("nonexistent_file");
+	TEST_RESULT(config == NULL)
 
-	MSG_TEST("Testing configuration loading\n");
+	if (config != NULL) {
+		free(config);
+	}
+
+	TEST_BEGIN("true configuration loading");
 	config = rrr_config_parse_file("test.conf");
+	TEST_RESULT(config != NULL)
 
+	if (config != NULL) {
+		rrr_config_destroy(config);
+	}
 
 	return ret;
 }

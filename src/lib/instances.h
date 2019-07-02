@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INSTANCES_H
 #define RRR_INSTANCES_H
 
-#include "../modules.h"
 #include "../global.h"
+#include "modules.h"
 #include "configuration.h"
 #include "module_thread.h"
 #include "senders.h"
