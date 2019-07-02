@@ -23,9 +23,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "../lib/configuration.h"
+#include "../lib/version.h"
 #include "test.h"
 
 int main (int argc, const char **argv) {
+	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
+		VL_MSG_ERR("Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
+	}
+
 	int ret = 0;
 
 	struct rrr_config *config;

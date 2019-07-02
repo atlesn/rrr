@@ -38,6 +38,7 @@ Makefile
 .libs/
 src/vlogger
 *.lai
+.dirstamp
 
 # eclipse
 /Debug
