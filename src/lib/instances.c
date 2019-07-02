@@ -120,7 +120,8 @@ struct instance_metadata *__instance_save (
 
 struct instance_metadata *__instance_load_module_and_save (
 		struct instance_metadata_collection *instances,
-		struct rrr_instance_config *instance_config
+		struct rrr_instance_config *instance_config,
+		const char **library_paths
 ) {
 	struct instance_metadata *ret = NULL;
 
@@ -143,7 +144,7 @@ struct instance_metadata *__instance_load_module_and_save (
 	VL_DEBUG_MSG_1("Creating dynamic_data for module '%s' instance '%s'\n", module_name, instance_config->name);
 
 	struct module_load_data start_data;
-	if (module_load(&start_data, module_name) != 0) {
+	if (module_load(&start_data, module_name, library_paths) != 0) {
 		VL_MSG_ERR ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
 				module_name, instance_config->name);
 		ret = NULL;
@@ -184,9 +185,10 @@ struct instance_metadata *instance_find (
 int instance_load_and_save (
 		struct instance_metadata_collection *instances,
 		struct rrr_config *all_config,
-		struct rrr_instance_config *instance_config
+		struct rrr_instance_config *instance_config,
+		const char **library_paths
 ) {
-	struct instance_metadata *module = __instance_load_module_and_save(instances, instance_config);
+	struct instance_metadata *module = __instance_load_module_and_save(instances, instance_config, library_paths);
 	if (module == NULL || module->dynamic_data == NULL) {
 		VL_MSG_ERR("Instance '%s' could not be loaded\n", instance_config->name);
 		return 1;
@@ -359,10 +361,10 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 	return 0;
 }
 
-int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config) {
+int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths) {
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_load_and_save(instances, config, config->configs[i]);
+		ret = instance_load_and_save(instances, config, config->configs[i], library_paths);
 		if (ret != 0) {
 			VL_MSG_ERR("Loading of instance failed for %s\n",
 					config->configs[i]->name);

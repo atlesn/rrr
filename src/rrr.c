@@ -36,6 +36,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/module_thread.h"
 #include "lib/version.h"
 
+const char *module_library_paths[] = {
+		VL_MODULE_PATH,
+		"/usr/lib/rrr",
+		"/lib/rrr",
+		"/usr/local/lib/rrr",
+		"/usr/lib/",
+		"/lib/",
+		"/usr/local/lib/",
+		"./src/modules/.libs",
+		"./src/modules",
+		"./modules",
+		"./",
+		""
+};
+
 #ifndef VL_BUILD_TIMESTAMP
 #define VL_BUILD_TIMESTAMP 1
 #endif
@@ -99,7 +114,7 @@ int main (int argc, const char *argv[]) {
 
 		VL_DEBUG_MSG_1("found %d instances\n", config->module_count);
 
-		ret = instance_process_from_config(instances, config);
+		ret = instance_process_from_config(instances, config, module_library_paths);
 
 		if (ret != 0) {
 			goto out_unload_modules;

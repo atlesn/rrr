@@ -75,11 +75,14 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	}
 
 	out_message:
-	VL_DEBUG_MSG_1 ("Thread raw %p instance %s exiting\n", thread_data->thread, INSTANCE_D_NAME(thread_data));
+	VL_DEBUG_MSG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
 	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+
+	VL_DEBUG_MSG_1 ("Thread raw %p instance %s exiting 2 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+
 	pthread_exit(0);
 }
 

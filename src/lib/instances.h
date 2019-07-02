@@ -93,19 +93,19 @@ int instance_add_senders (
 );
 
 int instance_load_and_save (
-		struct instance_metadata_collection *target,
+		struct instance_metadata_collection *instances,
 		struct rrr_config *all_config,
-		struct rrr_instance_config *instance_config
+		struct rrr_instance_config *instance_config,
+		const char **library_paths
 );
 
 struct instance_metadata *instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
 );
-
 void instance_free_thread(struct instance_thread_data *data);
 struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
 int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
-int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config);
+int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths);
 
 #endif /* RRR_INSTANCES_H */

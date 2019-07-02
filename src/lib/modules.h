@@ -83,6 +83,6 @@ struct module_operations {
 };
 
 void module_unload (void *dl_ptr, void (*unload)());
-int module_load(struct module_load_data *target, const char *name);
+int module_load(struct module_load_data *target, const char *name, const char **library_paths);
 
 #endif

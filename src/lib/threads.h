@@ -41,6 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Tell a thread to cancel */
 #define VL_THREAD_SIGNAL_KILL	(1<<1)
 
+/* Tell a thread to cancel */
+#define VL_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
+
 /* Can only be set in thread control */
 #define VL_THREAD_STATE_FREE 0
 
@@ -57,10 +60,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_THREAD_STATE_RUNNING 4
 
 /* Thread has been asked to stop, set by watchdog */
-#define VL_THREAD_STATE_ENCOURAGE_STOP 5
+// #define VL_THREAD_STATE_ENCOURAGE_STOP 5
 
 /* Thread has to do a few cleanup operations before stopping */
-#define VL_THREAD_STATE_STOPPING 6
+#define VL_THREAD_STATE_STOPPING 5
 
 // Milliseconds
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
@@ -156,11 +159,11 @@ static inline int thread_check_kill_signal(struct vl_thread *thread) {
 /* Threads should check this once in awhile to see if it should exit,
  * set by watchdog after it detects kill signal. */
 static inline int thread_check_encourage_stop(struct vl_thread *thread) {
-	int state;
+	int signal;
 	thread_lock(thread);
-	state = thread->state;
+	signal = thread->signal;
 	thread_unlock(thread);;
-	return state == VL_THREAD_STATE_ENCOURAGE_STOP;
+	return ((signal & VL_THREAD_SIGNAL_ENCOURAGE_STOP) > 0);
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */

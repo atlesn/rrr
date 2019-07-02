@@ -32,6 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmdlineparser/cmdline.h"
 #include "test.h"
 
+const char *library_paths[] = {
+		VL_MODULE_PATH,
+		""
+};
+
 int main (int argc, const char **argv) {
 	int ret = 0;
 
@@ -56,6 +61,8 @@ int main (int argc, const char **argv) {
 			ret = 1;
 		}
 	} TEST_RESULT(1)
+
+	VL_DEBUG_MSG_1("debuglevel is: %u\n", VL_DEBUGLEVEL);
 
 	if (ret == 1) {
 		goto out;
@@ -87,7 +94,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (instance_process_from_config(instances, config) != 0) {
+		if (instance_process_from_config(instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0)

@@ -35,21 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULE_PATH "./modules/"
 #endif
 
-static const char *library_paths[] = {
-		VL_MODULE_PATH,
-		"/usr/lib/rrr",
-		"/lib/rrr",
-		"/usr/local/lib/rrr",
-		"/usr/lib/",
-		"/lib/",
-		"/usr/local/lib/",
-		"./src/modules/.libs",
-		"./src/modules",
-		"./modules",
-		"./",
-		""
-};
-
 void module_unload (void *dl_ptr, void (*unload)()) {
 	unload();
 
@@ -62,7 +47,7 @@ void module_unload (void *dl_ptr, void (*unload)()) {
 #endif
 }
 
-int module_load(struct module_load_data *target, const char *name) {
+int module_load(struct module_load_data *target, const char *name, const char **library_paths) {
 	int ret = 1; // NOT OK
 
 	memset (target, '\0', sizeof(*target));
