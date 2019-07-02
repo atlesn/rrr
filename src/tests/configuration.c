@@ -33,6 +33,8 @@ int main (int argc, const char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
+	TEST_MSG("Starting test with module path %s\n", VL_MODULE_PATH);
+
 	int ret = 0;
 
 	struct rrr_config *config;

@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#define MSG_TEST(...) \
+#define TEST_MSG(...) \
 	do {printf (__VA_ARGS__);}while(0)
 
 #define TEST_BEGIN(...) \
