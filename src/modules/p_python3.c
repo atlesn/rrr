@@ -162,7 +162,8 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		python3_poll_delete,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "python3";

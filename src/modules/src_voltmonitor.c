@@ -448,7 +448,8 @@ static struct module_operations module_operations = {
 		NULL,
 		poll_delete,
 		NULL,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "voltmonitor";

@@ -75,7 +75,7 @@ struct mysql_data {
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
-	int mysql_special_columns_count;
+	unsigned int mysql_special_columns_count;
 
 	/* Must be traversed and non-nulls freed at thread exit */
 	char *mysql_columns[RRR_MYSQL_BIND_MAX];
@@ -238,7 +238,7 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 }
 
 int colplan_array_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
-	static const int query_base_max = RRR_MYSQL_SQL_MAX + ((RRR_MYSQL_BIND_MAX + 1) * RRR_MYSQL_MAX_COLUMN_NAME_LENGTH * 2);
+	static const unsigned int query_base_max = RRR_MYSQL_SQL_MAX + ((RRR_MYSQL_BIND_MAX + 1) * RRR_MYSQL_MAX_COLUMN_NAME_LENGTH * 2);
 	char query_base[query_base_max];
 	int pos = 0;
 	*target = '\0';
@@ -255,7 +255,7 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 	// Standard columns
 	int columns_count = 0;
 	for (int i = 0; i < RRR_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
-		int len = strlen(data->mysql_columns[i]);
+		unsigned int len = strlen(data->mysql_columns[i]);
 
 		if (len + pos + 4 > query_base_max) {
 			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
@@ -270,8 +270,8 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 	}
 
 	// Special columns
-	for (int i = 0; i < data->mysql_special_columns_count; i++) {
-		int len = strlen(data->mysql_special_columns[i]);
+	for (unsigned int i = 0; i < data->mysql_special_columns_count; i++) {
+		int unsigned len = strlen(data->mysql_special_columns[i]);
 
 		if (len + pos + 4 > query_base_max) {
 			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
@@ -910,7 +910,7 @@ int process_entries (struct instance_thread_data *thread_data) {
 		return 1;
 	}
 
-	int ret;
+	int ret = 0;
 
 	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
 
@@ -1067,7 +1067,8 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		mysql_poll_delete_ip,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "mysql";

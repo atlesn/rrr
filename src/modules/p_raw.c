@@ -93,7 +93,8 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		NULL,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "raw";

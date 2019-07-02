@@ -291,7 +291,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 }
 
 int receive_packets(struct ipclient_data *data) {
-	struct fifo_callback_args poll_data = {NULL, data};
+	struct fifo_callback_args poll_data = {NULL, data, 0};
 	return ip_receive_messages(
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
@@ -332,7 +332,7 @@ int send_packets(struct instance_thread_data *thread_data) {
 	info.res = res;
 	info.packet_counter = 0;
 
-	struct fifo_callback_args poll_data = {thread_data, &info};
+	struct fifo_callback_args poll_data = {thread_data, &info, 0};
 	err = fifo_search(&data->send_buffer, send_packet_callback, &poll_data);
 
 	VL_DEBUG_MSG_2 ("ipclient sent %i packets\n", info.packet_counter);
@@ -536,7 +536,8 @@ static struct module_operations module_operations = {
 		NULL,
 		ipclient_poll_delete,
 		NULL,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "ipclient";

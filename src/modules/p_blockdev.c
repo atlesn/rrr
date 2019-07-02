@@ -158,11 +158,11 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 		VL_DEBUG_MSG ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
 				data_length, update_test_data->message->length, message->length);
 
-		for (int j = 0; j < update_test_data->message->length; j++) {
+		for (unsigned int j = 0; j < update_test_data->message->length; j++) {
 			VL_DEBUG_MSG ("%02x-", update_test_data->message->data[j]);
 		}
 		VL_DEBUG_MSG ("\n");
-		for (int j = 0; j < message->length; j++) {
+		for (unsigned int j = 0; j < message->length; j++) {
 			VL_DEBUG_MSG ("%02x-", message->data[j]);
 		}
 		VL_DEBUG_MSG ("\n");
@@ -248,7 +248,7 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 }
 
 int write_to_device(struct blockdev_data *data) {
-	struct fifo_callback_args poll_data = {NULL, data};
+	struct fifo_callback_args poll_data = {NULL, data, 0};
 	fifo_search(&data->input_buffer, write_callback, &poll_data);
 
 	return 0;
@@ -413,7 +413,8 @@ static struct module_operations module_operations = {
 		NULL,
 		poll_delete,
 		NULL,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "blockdev";

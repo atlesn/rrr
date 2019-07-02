@@ -199,7 +199,7 @@ void averager_spawn_message (
 
 void averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
-	struct fifo_callback_args poll_data = {NULL, &calculation};
+	struct fifo_callback_args poll_data = {NULL, &calculation, 0};
 	fifo_search(&data->input_buffer, averager_callback, &poll_data);
 
 	if (calculation.entries == 0) {
@@ -263,11 +263,6 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 		}
 		timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
 	}
-	else if (timespan < 0) {
-		VL_MSG_ERR("Syntax error in avg_timespan for instance %s, must be more than 0\n", config->name);
-		ret = 1;
-		goto out;
-	}
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -276,11 +271,6 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		interval = VL_DEFAULT_AVERAGER_INTERVAL;
-	}
-	else if (interval < 0) {
-		VL_MSG_ERR("Syntax error in avg_interval for instance %s, must be more than 0\n", config->name);
-		ret = 1;
-		goto out;
 	}
 
 	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
@@ -384,7 +374,8 @@ static struct module_operations module_operations = {
 		NULL,
 		averager_poll_delete,
 		NULL,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "averager";

@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 
+#include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
@@ -34,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct dummy_data {
 	struct fifo_buffer buffer;
+	int no_generation;
 };
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
@@ -44,6 +46,13 @@ static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
 	return fifo_search(&dummy_data->buffer, callback, poll_data);
+}
+
+static int inject (RRR_MODULE_INCJECT_SIGNATURE) {
+	struct dummy_data *data = thread_data->private_data;
+	VL_DEBUG_MSG_2("dummy: writing data from inject function\n");
+	fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+	return 0;
 }
 
 void data_init(struct dummy_data *data) {
@@ -57,6 +66,31 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
+}
+
+int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	memset(data, '\0', sizeof(*data));
+
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing blockdev_always_tag settings of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->no_generation = yesno;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
@@ -81,12 +115,14 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		uint64_t time = time_get_64();
+		if (data->no_generation == 0) {
+			uint64_t time = time_get_64();
 
-		struct vl_message *reading = message_new_reading(time, time);
+			struct vl_message *reading = message_new_reading(time, time);
 
-		VL_DEBUG_MSG_2("dummy: writing data\n");
-		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+			VL_DEBUG_MSG_2("dummy: writing data\n");
+			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+		}
 
 		usleep (750000); // 750 ms
 
@@ -109,11 +145,11 @@ static struct module_operations module_operations = {
 	NULL,
 	poll_delete,
 	NULL,
-	test_config
+	test_config,
+	inject
 };
 
 static const char *module_name = "dummy";
-
 
 __attribute__((constructor)) void load() {
 }

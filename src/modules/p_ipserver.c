@@ -110,7 +110,7 @@ int process_entries_callback(struct fifo_callback_args *poll_data, char *data, u
 }
 
 int process_entries(struct ipserver_data *data) {
-	struct fifo_callback_args poll_data = {NULL, data};
+	struct fifo_callback_args poll_data = {NULL, data, 0};
 	return fifo_read_clear_forward(&data->receive_buffer, NULL, process_entries_callback, &poll_data);
 }
 
@@ -164,7 +164,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 }
 
 int send_replies(struct ipserver_data *data) {
-	struct fifo_callback_args poll_data = {NULL, data};
+	struct fifo_callback_args poll_data = {NULL, data, 0};
 	return fifo_read_clear_forward(&data->send_buffer, NULL, send_replies_callback, &poll_data);
 }
 
@@ -363,7 +363,8 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		ipserver_poll_delete_ip,
-		test_config
+		test_config,
+		NULL
 };
 
 static const char *module_name = "ipserver";
