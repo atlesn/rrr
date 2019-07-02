@@ -86,15 +86,18 @@ int instance_count_library_users (struct instance_metadata_collection *target, v
 void instance_unload_all(struct instance_metadata_collection *target);
 void instance_metadata_collection_destroy (struct instance_metadata_collection *target);
 int instance_metadata_collection_new (struct instance_metadata_collection **target);
+
 int instance_add_senders (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *instance
 );
+
 int instance_load_and_save (
 		struct instance_metadata_collection *target,
 		struct rrr_config *all_config,
 		struct rrr_instance_config *instance_config
 );
+
 struct instance_metadata *instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
@@ -103,5 +106,6 @@ struct instance_metadata *instance_find (
 void instance_free_thread(struct instance_thread_data *data);
 struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
 int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
+int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config);
 
 #endif /* RRR_INSTANCES_H */

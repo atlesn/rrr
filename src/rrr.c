@@ -1,4 +1,5 @@
 /*
+#include <main.h>
 
 Read Route Record
 
@@ -24,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <signal.h>
 
+#include "main.h"
 #include "global.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -34,10 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/module_thread.h"
 #include "lib/version.h"
 
-#ifdef VL_WITH_OPENSSL
-#include "lib/crypt.h"
-#endif
-
 #ifndef VL_BUILD_TIMESTAMP
 #define VL_BUILD_TIMESTAMP 1
 #endif
@@ -45,136 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
 //#define VL_NO_MODULE_UNLOAD
-
-int main_process_instances(struct rrr_config *config, struct instance_metadata_collection *instances) {
-	int ret = 0;
-
-	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_load_and_save(instances, config, config->configs[i]);
-		if (ret != 0) {
-			VL_MSG_ERR("Loading of instance failed for %s\n", config->configs[i]->name);
-			break;
-		}
-	}
-
-	RRR_INSTANCE_LOOP(instance, instances) {
-		ret = instance_add_senders(instances, instance);
-		if (ret != 0) {
-			VL_MSG_ERR("Adding senders failed for %s\n", instance->dynamic_data->instance_name);
-			break;
-		}
-	}
-
-	return ret;
-}
-
-int main_parse_cmd_arguments(int argc, const char* argv[], struct cmd_data* cmd) {
-	if (cmd_parse(cmd, argc, argv, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
-		VL_MSG_ERR("Error while parsing command line\n");
-		return EXIT_FAILURE;
-	}
-
-	unsigned int debuglevel = 0;
-	const char* debuglevel_string = cmd_get_value(&*cmd, "debuglevel", 0);
-	if (debuglevel_string != NULL) {
-		if (strcmp(debuglevel_string, "all") == 0) {
-			debuglevel = __VL_DEBUGLEVEL_ALL;
-		}
-		else if (cmd_convert_integer_10(cmd, debuglevel_string, &debuglevel) != 0) {
-			VL_MSG_ERR(
-					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
-					debuglevel_string);
-			return EXIT_FAILURE;
-		}
-		if (debuglevel < 0 || debuglevel > __VL_DEBUGLEVEL_ALL) {
-			VL_MSG_ERR(
-					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
-					__VL_DEBUGLEVEL_ALL, debuglevel);
-			return EXIT_FAILURE;
-		}
-	}
-
-	rrr_init_global_config(debuglevel);
-
-	return 0;
-}
-
-int main_start_threads (
-		struct vl_thread_collection **thread_collection,
-		struct instance_metadata_collection *instances,
-		struct rrr_config *global_config,
-		struct cmd_data *cmd
-) {
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_initialize_locks();
-#endif
-
-	int ret = 0;
-
-	// Initialzie dynamic_data thread data
-	RRR_INSTANCE_LOOP(instance,instances) {
-		if (instance->dynamic_data == NULL) {
-			break;
-		}
-
-		struct instance_thread_init_data init_data;
-		init_data.module = instance->dynamic_data;
-		init_data.senders = &instance->senders;
-		init_data.cmd_data = cmd;
-		init_data.global_config = global_config;
-		init_data.instance_config = instance->config;
-
-		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
-
-		if ((instance->thread_data = instance_init_thread(&init_data)) == NULL) {
-			goto out;
-		}
-	}
-
-	// Start threads
-	if (thread_new_collection (thread_collection) != 0) {
-		VL_MSG_ERR("Could not create thread collection\n");
-		ret = 1;
-		goto out;
-	}
-
-	int threads_total = 0;
-	RRR_INSTANCE_LOOP(instance,instances) {
-		if (instance->dynamic_data == NULL) {
-			break;
-		}
-
-		if (instance_start_thread(*thread_collection, instance->thread_data) != 0) {
-			VL_MSG_ERR("Error when starting thread for instance%s\n",
-					instance->dynamic_data->instance_name);
-			return EXIT_FAILURE;
-		}
-
-		threads_total++;
-	}
-
-	if (threads_total == 0) {
-		VL_DEBUG_MSG_1("No instances started, exiting\n");
-		return EXIT_FAILURE;
-	}
-
-	if (thread_start_all_after_initialized(*thread_collection) != 0) {
-		VL_MSG_ERR("Error while waiting for threads to initialize\n");
-		return EXIT_FAILURE;
-	}
-
-	out:
-	return ret;
-}
-
-void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances) {
-	threads_stop_and_join(collection);
-	instance_free_all_thread_data(instances);
-
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_free_locks();
-#endif
-}
 
 static volatile int main_running = 1;
 
@@ -200,6 +68,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 
 	if (instance_metadata_collection_new (&instances) != 0) {
+		ret = EXIT_FAILURE;
 		goto out_no_cleanup;
 	}
 
@@ -212,7 +81,7 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
-	if ((ret = main_parse_cmd_arguments(argc, argv, &cmd)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
 		goto out_no_cleanup;
 	}
 
@@ -230,7 +99,7 @@ int main (int argc, const char *argv[]) {
 
 		VL_DEBUG_MSG_1("found %d instances\n", config->module_count);
 
-		ret = main_process_instances(config, instances);
+		ret = instance_process_from_config(instances, config);
 
 		if (ret != 0) {
 			goto out_unload_modules;

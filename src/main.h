@@ -1,8 +1,8 @@
 /*
 
-Read Route Record
+Voltage Logger
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,11 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#define TEST_MSG(...) \
-	do {printf (__VA_ARGS__);}while(0)
+struct vl_thread_collection;
+struct instance_metadata_collection;
+struct rrr_config;
+struct cmd_data;
 
-#define TEST_BEGIN(...) \
-	do { printf("Testing %s: ", __VA_ARGS__); do
-
-#define TEST_RESULT(ok) \
-	while(0); printf("%s\n", (ok) ? "passed" : "failed");} while (0);
+int main_start_threads (
+		struct vl_thread_collection **thread_collection,
+		struct instance_metadata_collection *instances,
+		struct rrr_config *global_config,
+		struct cmd_data *cmd
+);
+void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances);
+int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[]);

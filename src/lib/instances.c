@@ -358,3 +358,25 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 
 	return 0;
 }
+
+int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config) {
+	int ret = 0;
+	for (int i = 0; i < config->module_count; i++) {
+		ret = instance_load_and_save(instances, config, config->configs[i]);
+		if (ret != 0) {
+			VL_MSG_ERR("Loading of instance failed for %s\n",
+					config->configs[i]->name);
+			break;
+		}
+	}
+	RRR_INSTANCE_LOOP(instance, instances)
+	{
+		ret = instance_add_senders(instances, instance);
+		if (ret != 0) {
+			VL_MSG_ERR("Adding senders failed for %s\n",
+					instance->dynamic_data->instance_name);
+			break;
+		}
+	}
+	return ret;
+}
