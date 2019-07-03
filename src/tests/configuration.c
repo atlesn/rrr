@@ -134,7 +134,7 @@ int main (int argc, const char **argv) {
 		ret = test_type_array(instances,"instance_udpreader","instance_buffer");
 	} TEST_RESULT(ret == 0);
 
-	usleep(4000000000);
+	usleep(1000000);
 
 	out_stop_threads:
 	main_threads_stop(collection, instances);

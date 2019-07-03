@@ -160,7 +160,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	pthread_cleanup_push(free_message,message);
 
 	uint64_t timestamp = time_get_64();
-	message = rrr_types_create_message_le(data->tmp_type_data, timestamp);
+	message = rrr_types_create_message(data->tmp_type_data, timestamp);
 
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
