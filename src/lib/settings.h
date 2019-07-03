@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
-#define RRR_SETTINGS_TYPE_UINT 1
+#define RRR_SETTINGS_TYPE_UINT 2
 
 #define RRR_SETTINGS_UINT_AS_TEXT_MAX 64
 

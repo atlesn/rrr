@@ -87,8 +87,8 @@ int rrr_types_parse_definition (
 );
 
 int rrr_types_parse_data (
-		const char *data, const rrr_type_length length,
-		struct rrr_data_collection *target
+		struct rrr_data_collection *target,
+		const char *data, const rrr_type_length length
 );
 struct rrr_data_collection *rrr_types_allocate_data (
 		const struct rrr_type_definition_collection *definitions
@@ -103,5 +103,12 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 
 void rrr_types_definition_to_le(struct rrr_type_definition_collection *definition);
 void rrr_types_definition_to_host(struct rrr_type_definition_collection *definition);
+
+rrr_type_length rrr_get_total_integer_max_length(const struct rrr_data_collection *data);
+rrr_type_length rrr_get_total_blob_length(const struct rrr_data_collection *data);
+rrr_type_length rrr_get_raw_length(const struct rrr_data_collection *data);
+
+int rrr_types_extract_raw_from_collection(char *target, rrr_type_length target_size, const struct rrr_data_collection *data);
+
 
 #endif /* RRR_TYPES_H */

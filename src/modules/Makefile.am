@@ -14,7 +14,7 @@ python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_SOURCES = p_python3.c
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la \
+lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la buffer.la \
 	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
 	${mysql} ${python3}
 
@@ -43,6 +43,9 @@ blockdev_la_SOURCES = p_blockdev.c
 
 controller_la_LDFLAGS = ${module_ldflags}
 controller_la_SOURCES = p_controller.c
+
+buffer_la_LDFLAGS = ${module_ldflags}
+buffer_la_SOURCES = p_buffer.c
 
 udpreader_la_LDFLAGS = ${module_ldflags}
 udpreader_la_SOURCES = src_udpreader.c

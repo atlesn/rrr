@@ -1,5 +1,4 @@
 /*
-#include <src/main.h>
 
 Read Route Record
 
@@ -37,6 +36,13 @@ const char *library_paths[] = {
 		""
 };
 
+/* type_array.c */
+int test_type_array (
+		struct instance_metadata_collection *instances,
+		const char *input_name,
+		const char *output_name
+);
+
 int main (int argc, const char **argv) {
 	int ret = 0;
 
@@ -60,7 +66,7 @@ int main (int argc, const char **argv) {
 		if (main_parse_cmd_arguments(&cmd, argc, argv) != 0) {
 			ret = 1;
 		}
-	} TEST_RESULT(1)
+	} TEST_RESULT(ret == 0);
 
 	VL_DEBUG_MSG_1("debuglevel is: %u\n", VL_DEBUGLEVEL);
 
@@ -72,7 +78,7 @@ int main (int argc, const char **argv) {
 
 	TEST_BEGIN("non-existent config file") {
 	config = rrr_config_parse_file("nonexistent_file");
-	} TEST_RESULT(config == NULL)
+	} TEST_RESULT(config == NULL);
 
 	if (config != NULL) {
 		free(config);
@@ -80,14 +86,14 @@ int main (int argc, const char **argv) {
 
 	TEST_BEGIN("true configuration loading") {
 		config = rrr_config_parse_file("test.conf");
-	} TEST_RESULT(config != NULL)
+	} TEST_RESULT(config != NULL);
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
 		if (instance_metadata_collection_new (&instances) != 0) {
 			ret = 1;
 		}
-	} TEST_RESULT(ret == 0)
+	} TEST_RESULT(ret == 0);
 
 	if (ret != 0) {
 		goto out_cleanup_config;
@@ -97,7 +103,7 @@ int main (int argc, const char **argv) {
 		if (instance_process_from_config(instances, config, library_paths) != 0) {
 			ret = 1;
 		}
-	} TEST_RESULT(ret == 0)
+	} TEST_RESULT(ret == 0);
 
 	if (ret != 0) {
 		goto out_cleanup_instances;
@@ -108,11 +114,27 @@ int main (int argc, const char **argv) {
 		if (main_start_threads(&collection, instances, config, &cmd) != 0) {
 			ret = 1;
 		}
-	} TEST_RESULT(ret == 0)
+	} TEST_RESULT(ret == 0);
 
 	if (ret != 0) {
 		goto out_cleanup_instances;
 	}
+
+	int threads_stopped = 0;
+	TEST_BEGIN("thread initialization") {
+		usleep(1000000);
+
+		if (instance_check_threads_stopped(instances) == 0) {
+			threads_stopped = 1;
+			goto out_stop_threads;
+		}
+	} TEST_RESULT(threads_stopped == 0);
+
+	TEST_BEGIN("testing type array parsing") {
+		ret = test_type_array(instances,"instance_udpreader","instance_buffer");
+	} TEST_RESULT(ret == 0);
+
+	usleep(4000000000);
 
 	out_stop_threads:
 	main_threads_stop(collection, instances);

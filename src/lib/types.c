@@ -240,16 +240,16 @@ int rrr_types_parse_definition (
 		const char *cmd_key
 ) {
 	int ret = 0;
-
-	struct rrr_settings_list *list = NULL;
-
-	ret = rrr_instance_config_split_commas_to_array (&list, config, cmd_key);
-
 	rrr_def_count count = 0;
+	struct rrr_settings_list *list = NULL;
 
 	memset (target, '\0', sizeof(*target));
 
-	target->version = RRR_VERSION;
+	if (rrr_instance_config_split_commas_to_array (&list, config, cmd_key) != 0) {
+		VL_MSG_ERR("Error while splitting comma list to array for instance %s setting %s\n", config->name, cmd_key);
+		ret = 1;
+		goto out_nofree;
+	}
 
 	if (list->length % 2 != 0) {
 		VL_MSG_ERR ("Number of elements in type definition was not even for instance %s setting %s\n", config->name, cmd_key);
@@ -341,20 +341,28 @@ int rrr_types_parse_definition (
 	}
 
 	target->count = count;
+	target->version = RRR_VERSION;
 
 	out:
 	rrr_settings_list_destroy(list);
+
+	out_nofree:
 
 	return ret;
 }
 
 int rrr_types_parse_data (
-		const char *data, const rrr_type_length length,
-		struct rrr_data_collection *target
+		struct rrr_data_collection *target,
+		const char *data, const rrr_type_length length
 ) {
 	const char *pos = data;
 	const char *end = data + length;
 	const struct rrr_type_definition_collection *definitions = &target->definitions;
+
+	if (length == 0) {
+		VL_MSG_ERR("BUG: Length was 0 in rrr_types_parse_data\n");
+		exit(EXIT_FAILURE);
+	}
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
 		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, definitions->definitions[i].type, definitions->definitions[i].array_size);
@@ -395,33 +403,36 @@ struct rrr_data_collection *rrr_types_allocate_data (
 	}
 
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		if (!RRR_TYPE_OK(definitions->definitions[i].type)) {
+		const struct rrr_type_definition *def = &definitions->definitions[i];
+		if (!RRR_TYPE_OK(def->type)) {
 			VL_MSG_ERR("Invalid type %d received in rrr_types_allocate_data\n",
-					definitions->definitions[i].type);
+					def->type);
 			goto out_free_elements;
 		}
 
 		rrr_type_length max_length;
-		if (rrr_types_check_size(definitions->definitions[i].type, definitions->definitions[i].length, &max_length) != 0) {
+		if (rrr_types_check_size(def->type, def->length, &max_length) != 0) {
 			VL_MSG_ERR("Invalid length %d received in rrr_types_allocate_data, max length is %d\n",
-					definitions->definitions[i].length, max_length);
+					def->length, max_length);
 			goto out_free_elements;
 		}
 
-		if (definitions->definitions[i].max_length != max_length) {
+		if (def->max_length != max_length) {
 			VL_MSG_ERR("Max length mismatch from default in rrr_types_allocate_data, %d vs %d",
-					definitions->definitions[i].max_length, max_length);
+					def->max_length, max_length);
 			goto out_free_elements;
 		}
 
-		if (definitions->definitions[i].array_size < 1 || definitions->definitions[i].array_size > RRR_TYPE_MAX_ARRAY) {
+		if (def->array_size < 1 || def->array_size > RRR_TYPE_MAX_ARRAY) {
 			VL_MSG_ERR("Invalid array length %d received in rrr_types_allocate_data, bounds are %d to %d\n",
-					definitions->definitions[i].array_size, 1, RRR_TYPE_MAX_ARRAY);
+					def->array_size, 1, RRR_TYPE_MAX_ARRAY);
 			goto out_free_elements;
 		}
 
-		int allocate = definitions->definitions[i].max_length * definitions->definitions[i].array_size;
+		int allocate = (RRR_TYPE_IS_64(def->type) ? def->max_length : def->length) * def->array_size;
+
 		VL_DEBUG_MSG_3("Allocating memory for type in definition: %d\n", allocate);
+
 		collection->data[i] = malloc (allocate);
 
 		if (collection->data[i] == NULL) {
@@ -447,16 +458,47 @@ struct rrr_data_collection *rrr_types_allocate_data (
 	return NULL;
 }
 
-rrr_type_length rrr_get_total_max_data_length(const struct rrr_data_collection *data) {
+rrr_type_length rrr_get_total_integer_max_length(const struct rrr_data_collection *data) {
 	rrr_type_length ret = 0;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
+		if (RRR_TYPE_IS_64(data->definitions.definitions[i].type)) {
 			ret += data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size;
+		}
 	}
 	return ret;
 }
-/*
-int rrr_types_merge_data(char *target, rrr_type_length target_length, const struct rrr_data_collection *data) {
-	rrr_type_length length = rrr_get_total_max_data_length(data);
+
+rrr_type_length rrr_get_total_blob_length(const struct rrr_data_collection *data) {
+	rrr_type_length ret = 0;
+	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
+		if (RRR_TYPE_IS_BLOB(data->definitions.definitions[i].type)) {
+			ret += data->definitions.definitions[i].length * data->definitions.definitions[i].array_size;
+		}
+	}
+	return ret;
+}
+
+rrr_type_length rrr_get_raw_length(const struct rrr_data_collection *data) {
+	rrr_type_length ret = 0;
+	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
+		const struct rrr_type_definition *def = &data->definitions.definitions[i];
+
+		if (RRR_TYPE_IS_64(def->type)) {
+			ret += def->max_length * def->array_size;
+		}
+		else if (RRR_TYPE_IS_BLOB(def->type)) {
+			ret += def->length * def->array_size;
+		}
+		else {
+			VL_MSG_ERR("BUG: Unknown type %u in rrr_get_raw_length\n", def->type);
+			exit(EXIT_FAILURE);
+		}
+	}
+	return ret;
+}
+
+int rrr_types_extract_raw_from_collection(char *target, rrr_type_length target_length, const struct rrr_data_collection *data) {
+	rrr_type_length length = rrr_get_raw_length(data);
 	if (target_length < length) {
 		VL_MSG_ERR("BUG: Target length was too small in rrr_types_merge_data\n");
 		return 1;
@@ -464,13 +506,26 @@ int rrr_types_merge_data(char *target, rrr_type_length target_length, const stru
 
 	char *pos = target;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(target, data->data + i, data->definitions.definitions[i].length * data->definitions.definitions[i].array_size);
-		target += data->definitions.definitions[i].max_length;
+		const struct rrr_type_definition *def = &data->definitions.definitions[i];
+
+		if (RRR_TYPE_IS_64(def->type)) {
+			memcpy(target, data->data[i], def->max_length * def->array_size);
+			target += def->max_length * def->array_size;
+		}
+		else if (RRR_TYPE_IS_BLOB(def->type)) {
+			memcpy(target, data->data[i], def->length * def->array_size);
+			target += def->length * def->array_size;
+		}
+		else {
+			VL_MSG_ERR("BUG: Unknown type %u in rrr_types_extract_raw_from_collection\n", def->type);
+			exit(EXIT_FAILURE);
+		}
+
 	}
 
 	return 0;
 }
-*/
+
 void rrr_types_destroy_data (struct rrr_data_collection *collection) {
 	for (rrr_def_count i = 0; i < collection->definitions.count; i++) {
 		free(collection->data[i]);
@@ -513,7 +568,7 @@ void rrr_types_definition_to_host(struct rrr_type_definition_collection *definit
 }
 
 struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection *data, uint64_t time) {
-	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_total_max_data_length(data);
+	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_raw_length(data);
 	struct vl_message *message = NULL;
 
 	message = message_new_array(time, total_length);
@@ -529,14 +584,24 @@ struct vl_message *rrr_types_create_message_le(const struct rrr_data_collection 
 
 	char *pos = new_datastream;
 	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		memcpy(pos, data->data[i], data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size);
+		const struct rrr_type_definition *def = &data->definitions.definitions[i];
 
-		if (rrr_types_to_le[data->definitions.definitions[i].type](pos) != 0) {
+		char *new_pos = pos;
+		if (RRR_TYPE_IS_64(def->type)) {
+			memcpy(pos, data->data[i], def->max_length * def->array_size);
+			new_pos += def->max_length * def->array_size;
+		}
+		else {
+			memcpy(pos, data->data[i], def->length * def->array_size);
+			new_pos += def->length * def->array_size;
+		}
+
+		if (rrr_types_to_le[def->type](pos) != 0) {
 			VL_MSG_ERR("Error while converting type index %lu to le\n", (long unsigned int) i);
 			return NULL;
 		}
 
-		pos += data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size;
+		pos = new_pos;
 	}
 
 	rrr_types_definition_to_le(new_definition);
@@ -566,22 +631,28 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 	const char *pos = data_pos;
 	for (rrr_def_count i = 0; i < definitions.count; i++) {
 		char *target = new_data->data[i];
-		struct rrr_type_definition *definition = &definitions.definitions[i];
+		struct rrr_type_definition *def = &definitions.definitions[i];
 
-		memcpy (target, data_pos, definition->max_length * definition->array_size);
-		data_pos += definition->max_length * definition->array_size;
+		if (RRR_TYPE_IS_64(def->type)) {
+			memcpy (target, data_pos, def->max_length * def->array_size);
+			data_pos += def->max_length * def->array_size;
+		}
+		else {
+			memcpy (target, data_pos, def->length * def->array_size);
+			data_pos += def->length * def->array_size;
+		}
 
 		if (data_pos > message_orig->data + message_orig->length) {
 			VL_MSG_ERR("Data read position exceeded message length in rrr_types_message_to_collection\n");
 			exit(EXIT_FAILURE);
 		}
 
-		if (!RRR_TYPE_OK(definition->type)) {
-			VL_MSG_ERR("Invalid type %u found when parsing array message to collection\n", definition->type);
+		if (!RRR_TYPE_OK(def->type)) {
+			VL_MSG_ERR("Invalid type %u found when parsing array message to collection\n", def->type);
 			goto out_free_data;
 		}
 
-		rrr_types_to_host[definition->type](target);
+		rrr_types_to_host[def->type](target);
 	}
 
 	return 0;

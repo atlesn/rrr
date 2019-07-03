@@ -36,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../global.h"
 
-#define VL_UDPREADER_MAX_DATA_FIELDS CMD_ARGUMENT_MAX
 #define RRR_UDPREADER_DEFAULT_PORT 2222
 
 struct udpreader_data {
@@ -44,7 +43,7 @@ struct udpreader_data {
 	unsigned int listen_port;
 	struct ip_data ip;
 	struct rrr_type_definition_collection definitions;
-	struct rrr_data_collection *type_data;
+	struct rrr_data_collection *tmp_type_data;
 };
 
 void type_data_cleanup(void *arg) {
@@ -63,8 +62,8 @@ void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct udpreader_data *data = (struct udpreader_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
-	if (data->type_data != NULL) {
-		rrr_types_destroy_data(data->type_data);
+	if (data->tmp_type_data != NULL) {
+		rrr_types_destroy_data(data->tmp_type_data);
 	}
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
@@ -147,7 +146,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 
 	// ATTENTION! - Received ip message does not contain a vl_message struct
-	if (rrr_types_parse_data(entry->data.data, entry->data_length, data->type_data) != 0) {
+	if (rrr_types_parse_data(data->tmp_type_data, entry->data.data, entry->data_length) != 0) {
 		VL_MSG_ERR("udpreader received an invalid packet\n");
 		free (entry);
 		return 0;
@@ -161,7 +160,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	pthread_cleanup_push(free_message,message);
 
 	uint64_t timestamp = time_get_64();
-	message = rrr_types_create_message_le(data->type_data, timestamp);
+	message = rrr_types_create_message_le(data->tmp_type_data, timestamp);
 
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
@@ -174,6 +173,13 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	pthread_cleanup_pop(0);
 
 	return 0;
+}
+
+static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+	struct udpreader_data *data = thread_data->private_data;
+	VL_DEBUG_MSG_2("udpreader: writing data from inject function\n");
+
+	return read_data_callback ((struct ip_buffer_entry *) message, data);
 }
 
 int read_data(struct udpreader_data *data) {
@@ -200,20 +206,26 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(type_data_cleanup, data->tmp_type_data);
+
+	int config_error = 0;
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
+		config_error = 1;
+	}
+	else {
+		data->tmp_type_data = rrr_types_allocate_data(&data->definitions);
+	}
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
-	pthread_cleanup_push(type_data_cleanup, data->type_data);
-	data->type_data = rrr_types_allocate_data(&data->definitions);
-
-	pthread_cleanup_push(ip_network_cleanup, &data->ip);
-
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
+	if (config_error) {
 		goto out_message;
 	}
+
+	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 
 	data->ip.port = data->listen_port;
 	if (ip_network_start(&data->ip) != 0) {
@@ -240,11 +252,12 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 		usleep (50000); // 10 ms
 	}
 
+	pthread_cleanup_pop(1);
+
 	out_message:
 
 	VL_DEBUG_MSG_1 ("udpreader %s received encourage stop\n", thread_data->init_data.instance_config->name);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -266,7 +279,7 @@ static struct module_operations module_operations = {
 	poll_delete,
 	NULL,
 	test_config,
-	NULL
+	inject
 };
 
 static const char *module_name = "udpreader";

@@ -26,4 +26,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { printf("Testing %s: ", __VA_ARGS__); do
 
 #define TEST_RESULT(ok) \
-	while(0); printf("%s\n", (ok) ? "passed" : "failed");} while (0);
+	while(0); printf("%s\n", (ok) ? "passed" : "failed");} while (0)

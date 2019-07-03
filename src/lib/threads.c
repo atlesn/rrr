@@ -299,6 +299,7 @@ void *__thread_watchdog_entry (void *arg) {
 	thread_set_state(self_thread, VL_THREAD_STATE_INITIALIZED);
 	thread_set_state(self_thread, VL_THREAD_STATE_RUNNING);
 
+	uint64_t prev_loop_time = time_get_64();
 	while (1) {
 		uint64_t nowtime = time_get_64();
 		uint64_t prevtime = get_watchdog_time(thread);
@@ -317,11 +318,17 @@ void *__thread_watchdog_entry (void *arg) {
 			break;
 		}
 		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {
-			VL_MSG_ERR ("Thread %s/%p froze, attempting to kill\n", thread->name, thread);
-			thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
-			break;
+			if (time_get_64() - prev_loop_time > 100000) { // 100 ms
+				VL_MSG_ERR ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
+			}
+			else {
+				VL_MSG_ERR ("Thread %s/%p froze, attempting to kill\n", thread->name, thread);
+				thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
+				break;
+			}
 		}
 
+		prev_loop_time = time_get_64();
 		usleep (50000); // 50 ms
 	}
 

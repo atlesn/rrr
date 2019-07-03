@@ -33,7 +33,7 @@ void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	if (list->list != NULL) {
 		free(list->list);
 	}
-	list->length = 0;
+	free(list);
 }
 
 int __rrr_settings_init(struct rrr_instance_settings *target, const int count) {

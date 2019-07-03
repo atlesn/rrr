@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
+#include "../lib/ip.h"
 #include "../global.h"
 
 struct dummy_data {
@@ -48,7 +49,7 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_search(&dummy_data->buffer, callback, poll_data);
 }
 
-static int inject (RRR_MODULE_INCJECT_SIGNATURE) {
+static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct dummy_data *data = thread_data->private_data;
 	VL_DEBUG_MSG_2("dummy: writing data from inject function\n");
 	fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));

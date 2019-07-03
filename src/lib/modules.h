@@ -41,6 +41,7 @@ struct fifo_callback_args;
 struct vl_thread_start_data;
 struct rrr_instance_config;
 struct vl_message;
+struct ip_buffer_entry;
 
 struct module_load_data {
 	void *dl_ptr;
@@ -59,9 +60,9 @@ struct module_load_data {
 #define RRR_MODULE_PRINT_SIGNATURE \
 		struct instance_thread_data *data
 
-#define RRR_MODULE_INCJECT_SIGNATURE \
+#define RRR_MODULE_INJECT_SIGNATURE \
 		struct instance_thread_data *thread_data, \
-		struct vl_message *message
+		struct ip_buffer_entry *message
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
@@ -79,7 +80,7 @@ struct module_operations {
 	int (*test_config)(struct rrr_instance_config *config);
 
 	// Inject any packet into buffer manually (usually for testing)
-	int (*inject)(RRR_MODULE_INCJECT_SIGNATURE);
+	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 };
 
 void module_unload (void *dl_ptr, void (*unload)());
