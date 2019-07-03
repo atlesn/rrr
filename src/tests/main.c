@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include "../main.h"
 #include "../global.h"
@@ -33,15 +34,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 const char *library_paths[] = {
 		VL_MODULE_PATH,
+		VL_TEST_MODULE_PATH,
 		""
 };
 
-/* type_array.c */
-int test_type_array (
-		struct instance_metadata_collection *instances,
-		const char *input_name,
-		const char *output_name
-);
+int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
+	struct instance_metadata *instance = instance_find(instances, "instance_configuration_tester");
+
+	if (instance == NULL) {
+		VL_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
+		return 1;
+	}
+
+	void *handle = instance->dynamic_data->dl_ptr;
+
+	int (*get_test_result)() = dlsym(handle, "get_configuration_test_result");
+
+	return get_test_result();
+}
 
 int main (int argc, const char **argv) {
 	int ret = 0;
@@ -120,24 +130,18 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_instances;
 	}
 
-	int threads_stopped = 0;
-	TEST_BEGIN("thread initialization") {
-		usleep(1000000);
-
-		if (instance_check_threads_stopped(instances) == 0) {
-			threads_stopped = 1;
-			goto out_stop_threads;
-		}
-	} TEST_RESULT(threads_stopped == 0);
-
 	TEST_BEGIN("testing type array parsing") {
-		ret = test_type_array(instances,"instance_udpreader","instance_buffer");
+		int threads_stopped = 0;
+
+		while (instance_check_threads_stopped(instances) != 0) {
+			usleep(10000);
+		}
+
+		main_threads_stop(collection, instances);
+		ret = main_get_configuration_test_result(instances);
+
 	} TEST_RESULT(ret == 0);
 
-	usleep(1000000);
-
-	out_stop_threads:
-	main_threads_stop(collection, instances);
 	thread_destroy_collection (collection);
 
 	out_cleanup_instances:

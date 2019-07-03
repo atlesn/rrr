@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <errno.h>
 
+#include "../lib/mysql.h"
 #include "../lib/poll_helper.h"
 #include "../lib/types.h"
 #include "../lib/buffer.h"
@@ -1067,6 +1068,16 @@ static int test_config (struct rrr_instance_config *config) {
 	return ret;
 }
 
+static int create_table_from_types (MYSQL_CREATE_TABLE_DEFINITION) {
+	int ret = 0;
+
+	struct mysql_data *data = thread_data->private_data;
+
+//	data->
+
+	return ret;
+}
+
 static struct module_operations module_operations = {
 		thread_entry_mysql,
 		NULL,
@@ -1075,6 +1086,10 @@ static struct module_operations module_operations = {
 		mysql_poll_delete_ip,
 		test_config,
 		NULL
+};
+
+static struct mysql_module_operations mysql_module_operations = {
+		create_table_from_types
 };
 
 static const char *module_name = "mysql";
@@ -1090,6 +1105,7 @@ void init(struct instance_dynamic_data *data) {
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
+	data->special_module_operations = &mysql_module_operations;
 }
 
 void unload() {

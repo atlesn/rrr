@@ -22,13 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 
-#include "test.h"
-#include "../global.h"
-#include "../lib/instances.h"
-#include "../lib/modules.h"
-#include "../lib/types.h"
-#include "../lib/buffer.h"
-#include "../lib/ip.h"
+#include "type_array.h"
+#include "../test.h"
+#include "../../global.h"
+#include "../../lib/instances.h"
+#include "../../lib/modules.h"
+#include "../../lib/types.h"
+#include "../../lib/buffer.h"
+#include "../../lib/ip.h"
 
 struct test_result {
 	int result;
@@ -184,7 +185,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");
-		for (int i = 0; i < sizeof(*final_data_raw); i++) {
+		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
 			char c = ((char*)final_data_raw)[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");

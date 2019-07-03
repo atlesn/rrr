@@ -158,6 +158,7 @@ struct instance_metadata *__instance_load_module_and_save (
 	dynamic_data->dl_ptr = start_data.dl_ptr;
 	dynamic_data->instance_name = instance_config->name;
 	dynamic_data->unload = start_data.unload;
+	dynamic_data->all_instances = instances;
 
 	ret = __instance_save(instances, dynamic_data, instance_config);
 

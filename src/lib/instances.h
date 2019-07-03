@@ -53,9 +53,11 @@ struct instance_dynamic_data {
 	const char *module_name;
 	unsigned int type;
 	struct module_operations operations;
+	void *special_module_operations;
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(struct instance_dynamic_data *data);
+	struct instance_metadata_collection *all_instances;
 };
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
