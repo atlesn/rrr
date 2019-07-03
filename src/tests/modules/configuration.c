@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 
+/* This is picked up by main after the tests are complete and all threads have stopped */
 static int configuration_test_result = 1;
 
 int get_configuration_test_result() {
@@ -74,14 +75,18 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 
 	update_watchdog_time(thread_data->thread);
 
-	int ret = test_type_array(thread_data->init_data.module->all_instances,
+	int ret;
+
+	/* Test array type and data endian conversion */
+	ret = test_type_array(thread_data->init_data.module->all_instances,
 			"instance_udpreader","instance_buffer");
+	TEST_MSG("Result from array test: %i\n", ret);
 
 	update_watchdog_time(thread_data->thread);
 
-	TEST_MSG("Result from array test: %i\n", ret);
-
 	set_configuration_test_result(ret);
+
+	/* We exit without looping which also makes the other loaded modules exit */
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
