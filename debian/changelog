@@ -1,3 +1,13 @@
+rrr (0.6) unstable; urgency=medium
+
+  * Package dependency fixes
+  * Support configuration file to set up modules
+  * Multiple instances of each module possible
+  * Rewrite of some global data structures
+  * Create test suite for building
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 03 Jul 2019 21:29:51 +0200
+
 rrr (0.5) unstable; urgency=medium
 
   * Add python module
