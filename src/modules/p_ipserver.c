@@ -42,8 +42,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
-#include "../lib/module_crypt.h"
 #include "../global.h"
+
+#ifdef VL_WITH_OPENSSL
+#include "../lib/module_crypt.h"
+#endif
 
 // Should not be smaller than module max
 #define VL_IPSERVER_MAX_SENDERS VL_MODULE_MAX_SENDERS
