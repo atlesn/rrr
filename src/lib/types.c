@@ -43,6 +43,7 @@ rrr_type rrr_types_get_type(const char *type) {
 
 	RRR_TYPES_MATCH_RETURN(type,BE)
 	RRR_TYPES_MATCH_RETURN(type,LE)
+	RRR_TYPES_MATCH_RETURN(type,H)
 	RRR_TYPES_MATCH_RETURN(type,BLOB)
 
 	return ret;
@@ -57,6 +58,7 @@ int rrr_types_check_size (rrr_type type, rrr_type_length length, rrr_type_length
 	switch (type) {
 		RRR_TYPE_LENGTH_CHECK_CASE(LE,length,*max);
 		RRR_TYPE_LENGTH_CHECK_CASE(BE,length,*max);
+		RRR_TYPE_LENGTH_CHECK_CASE(H,length,*max);
 		RRR_TYPE_LENGTH_CHECK_CASE(BLOB,length,*max);
 		default:
 			VL_MSG_ERR("BUG: Unknown type '%d' given too rrr_types_check_size\n", type);
@@ -176,6 +178,13 @@ int import_be(void *target, const char *data, rrr_array_size array_size, rrr_typ
 	return 0;
 }
 
+int import_h(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
+	return (RRR_TYPE_SYSTEM_ENDIAN_IS_LE ?
+			import_le(target, data, array_size, length) :
+			import_be(target, data, array_size, length)
+	);
+}
+
 int import_blob(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
 	memcpy(target, data, array_size * length);
 	return 0;
@@ -199,6 +208,10 @@ int convert_be_64_to_host(void *data) {
 	return 0;
 }
 
+int convert_h_64_to_host(void *data) {
+	return 0;
+}
+
 int convert_blob_to_host(void *target) {
 	return 0;
 }
@@ -208,6 +221,7 @@ static int (*rrr_types_import_functions[]) (void *target, const char *data, rrr_
 		NULL,
 		&import_le,
 		&import_be,
+		&import_h,
 		&import_blob
 };
 
@@ -232,6 +246,7 @@ static int (*rrr_types_to_host[]) (void *data) = {
 		NULL,
 		&convert_le_64_to_host,
 		&convert_be_64_to_host,
+		&convert_h_64_to_host,
 		&convert_blob_to_host
 };
 
@@ -355,7 +370,7 @@ int rrr_types_parse_definition (
 	}
 
 	target->count = count;
-	target->version = RRR_VERSION;
+	target->version = RRR_TYPE_VERSION;
 
 	out:
 	rrr_settings_list_destroy(list);
@@ -532,6 +547,30 @@ void rrr_types_destroy_data (struct rrr_data_collection *collection) {
 		free(collection->data[i]);
 	}
 	free (collection);
+}
+
+int rrr_types_collection_data_to_host (struct rrr_data_collection *data) {
+	int ret = 0;
+
+	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
+		struct rrr_type_definition *def = &data->definitions.definitions[i];
+
+		if (!RRR_TYPE_OK(def->type)) {
+			VL_MSG_ERR("BUG: Unknown type %u in rrr_types_collection_data_to_host\n", i);
+			exit(EXIT_FAILURE);
+		}
+
+		if (rrr_types_to_host[def->type](data->data[i]) != 0) {
+			VL_MSG_ERR("Error while converting member with index %u in rrr_types_collection_data_to_host\n", i);
+			return 1;
+		}
+
+		if (RRR_TYPE_IS_64(def->type)) {
+			def->type = RRR_TYPE_H;
+		}
+	}
+
+	return ret;
 }
 
 int rrr_types_definition_to_host(struct rrr_type_definition_collection *definition) {
@@ -758,8 +797,8 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 		return 1;
 	}
 
-	if (definitions.version != RRR_VERSION) {
-		VL_MSG_ERR("rrr_types received array of incompatible version %u, expected %d\n", definitions.version, RRR_VERSION);
+	if (definitions.version != RRR_TYPE_VERSION) {
+		VL_MSG_ERR("rrr_types received array of incompatible version %u, expected %d\n", definitions.version, RRR_TYPE_VERSION);
 		return 1;
 	}
 

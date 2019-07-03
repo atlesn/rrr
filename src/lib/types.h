@@ -35,28 +35,40 @@ typedef uint32_t rrr_array_size;
 typedef ssize_t rrr_size;
 typedef uint64_t rrr_type_le;
 typedef uint64_t rrr_type_be;
+typedef uint64_t rrr_type_h;
 typedef uint16_t rrr_version;
 
-#define RRR_VERSION 1
+static union type_system_endian {
+	uint16_t two;
+	uint8_t one;
+} type_system_endian = {0x1};
+
+#define RRR_TYPE_SYSTEM_ENDIAN_IS_LE (type_system_endian.one == 1)
+#define RRR_TYPE_SYSTEM_ENDIAN_IS_BE (type_system_endian.one == 0)
+
+#define RRR_TYPE_VERSION 2
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
-#define RRR_TYPE_LE			1
-#define RRR_TYPE_BE			2
-#define RRR_TYPE_BLOB		3
-#define RRR_TYPE_MAX		3
+#define RRR_TYPE_LE			1 // Little endian number
+#define RRR_TYPE_BE			2 // Big endian number
+#define RRR_TYPE_H			3 // Host endian number (can be both)
+#define RRR_TYPE_BLOB		4
+#define RRR_TYPE_MAX		4
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
+#define RRR_TYPE_NAME_H		"h"
 #define RRR_TYPE_NAME_BLOB	"blob"
 #define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
+#define RRR_TYPE_MAX_H		sizeof(rrr_type_h)
 #define RRR_TYPE_MAX_BLOB	RRR_TYPE_MAX_BLOB_LENGTH
 #define RRR_TYPE_MAX_ARRAY	65535
 
-#define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE)
+#define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE || type == RRR_TYPE_H)
 #define RRR_TYPE_IS_BLOB(type)	(type == RRR_TYPE_BLOB)
 #define RRR_TYPE_OK(type)		(type > 0 && type <= RRR_TYPE_MAX)
 
@@ -114,6 +126,7 @@ void rrr_types_destroy_data(struct rrr_data_collection *collection);
 struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data, uint64_t time);
 
 int rrr_types_message_to_collection(struct rrr_data_collection **target, const struct vl_message *message_orig);
+int rrr_types_collection_data_to_host (struct rrr_data_collection *data);
 int rrr_types_definition_to_host(struct rrr_type_definition_collection *definition);
 
 int rrr_types_extract_blob (char **target, rrr_size *size, const struct rrr_data_collection *collection, rrr_def_count pos, rrr_def_count array_pos, int do_zero_terminate);

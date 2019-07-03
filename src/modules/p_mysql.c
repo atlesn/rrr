@@ -325,12 +325,18 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	struct rrr_data_collection *collection = NULL;
 
+	pthread_cleanup_push(free_collection, collection);
 	if (rrr_types_message_to_collection(&collection, &entry->data.message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
-		return 1;
+		res = 1;
+		goto out_cleanup;
 	}
 
-	pthread_cleanup_push(free_collection, collection);
+	if (rrr_types_collection_data_to_host(collection) != 0) {
+		VL_MSG_ERR("Could not convert data collection to host endianess in mysql\n");
+		res = 1;
+		goto out_cleanup;
+	}
 
 	struct rrr_type_definition_collection *definitions = &collection->definitions;
 	MYSQL_BIND *bind = data->data->bind;
