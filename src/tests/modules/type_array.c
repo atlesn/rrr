@@ -397,8 +397,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
-		"`blob_a` blob NOT NULL,"
-		"`blob_b` blob NOT NULL,"
+		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
@@ -437,7 +436,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		goto out_close;
 	}
 
-	TEST_MSG("Connected to MySQL\n");
+	TEST_MSG("Connected to MySQL and test table created\n");
 
 	out_close:
 	mysql_close(&mysql);
@@ -515,7 +514,7 @@ int test_type_array_mysql (
 		goto out;
 	}
 
-
+	TEST_MSG("The error message 'Failed to prepare statement' is fine, it might show up before the table is created\n");
 	ret = test_type_array_setup_mysql (&mysql_data);
 	if (ret != 0) {
 		VL_MSG_ERR("Failed to setup MySQL test environment\n");
@@ -555,7 +554,7 @@ int test_type_array_mysql (
 		ret = 1;
 		goto out;
 	}
-	TEST_MSG("Result from MySQL test: %i\n", test_result.result);
+	TEST_MSG("Result from MySQL callback: %i\n", test_result.result);
 
 	ret = test_result.result;
 	if (ret != 0) {

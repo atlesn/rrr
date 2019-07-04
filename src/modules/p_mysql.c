@@ -411,8 +411,9 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	for (rrr_def_count i = 0; i < definitions->count; i++) {
 		struct rrr_type_definition *definition = &definitions->definitions[i];
 
+// TODO : Figure out what this test is meant to do
 		if (RRR_TYPE_IS_BLOB(definition->type)) {
-			if (string_lengths[i] != definition->length) {
+			if (string_lengths[i] < definition->length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
 						string_lengths[i], definition->length, i);
 			}

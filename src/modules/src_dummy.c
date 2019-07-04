@@ -80,7 +80,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			yesno = 0;
 		}
 		else {
-			VL_MSG_ERR("Error while parsing blockdev_always_tag settings of instance %s\n", config->name);
+			VL_MSG_ERR("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -111,6 +111,11 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup;
+	}
+
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
@@ -129,6 +134,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("Dummy received encourage stop\n");
 
+	out_cleanup:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
