@@ -74,6 +74,7 @@ struct mysql_data {
 
 	unsigned int mysql_port;
 
+	int drop_unknown_messages;
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
@@ -766,8 +767,18 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 		ret = 1;
 	}
 
-	// NO TAGGING
+	// DROP UNKNOWN MESSAGES
 	int yesno = 0;
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_drop_unknown_messages") == RRR_SETTING_PARSE_ERROR) {
+		VL_MSG_ERR ("mysql: Could not understand argument mysql_drop_unknown_messages of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+	}
+	data->drop_unknown_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// NO TAGGING
+	yesno = 0;
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging") == RRR_SETTING_PARSE_ERROR) {
 		VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging of instance '%s', please specify 'yes' or 'no'\n",
 				config->name
@@ -850,21 +861,30 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 
 	// TODO : Don't default to old voltage/info-message, should have it's own class
 
+	int is_unknown = 0;
 	int colplan_index = COLUMN_PLAN_VOLTAGE;
 	if (MSG_IS_MSG_ARRAY(message)) {
 		if (!IS_COLPLAN_ARRAY(mysql_data)) {
 			VL_MSG_ERR("Received an array message in mysql but array column plan is not being used\n");
-			return 1;
+			is_unknown = 1;
+			goto out;
 		}
 		colplan_index = COLUMN_PLAN_ARRAY;
 	}
 
 	else if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
 		VL_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
-		return 1;
+		is_unknown = 1;
+		goto out;
 	}
 	else {
 		VL_MSG_ERR("Unknown message class/type %u/%u received in mysql_save", message->class, message->type);
+		is_unknown = 1;
+		goto out;
+	}
+
+	out:
+	if (is_unknown) {
 		return 1;
 	}
 
@@ -890,11 +910,19 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
-	if (mysql_save (process_data, entry) != 0) {
-		// Put back in buffer
-		VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->data.message.timestamp_from);
-		fifo_buffer_write(&mysql_data->input_buffer, data, size);
-		err = 1;
+	int mysql_save_res = mysql_save (process_data, entry);
+
+	if (mysql_save_res != 0) {
+		if (mysql_data->drop_unknown_messages) {
+			VL_MSG_ERR("mysql instance %s dropping message\n", INSTANCE_D_NAME(thread_data));
+			free(entry);
+		}
+		else {
+			// Put back in buffer
+			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->data.message.timestamp_from);
+			fifo_buffer_write(&mysql_data->input_buffer, data, size);
+			err = 1;
+		}
 	}
 	else {
 		// Tag message as saved to sender
