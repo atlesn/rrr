@@ -19,14 +19,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-struct instance_thread_data;
-struct rrr_type_definition_collection;
+#include <pthread.h>
+#include <mysql/mysql.h>
 
-#define MYSQL_CREATE_TABLE_DEFINITION \
-	struct instance_thread_data *thread_data, \
-	const char *name, \
-	const struct rrr_type_definition_collection *definition
+#include "rrr_mysql.h"
 
-struct mysql_module_operations {
-	int (*create_table_from_types)(MYSQL_CREATE_TABLE_DEFINITION);
-};
+static pthread_mutex_t mysql_global_lock = PTHREAD_MUTEX_INITIALIZER;
+static int mysql_users = 0;
+
+void rrr_mysql_library_init(void) {
+	pthread_mutex_lock(&mysql_global_lock);
+	if (mysql_users == 0) {
+		mysql_library_init(0, NULL, NULL);
+	}
+	mysql_users++;
+	pthread_mutex_unlock(&mysql_global_lock);
+}
+
+void rrr_mysql_library_end(void) {
+	pthread_mutex_lock(&mysql_global_lock);
+	mysql_users--;
+	if (mysql_users == 0) {
+		rrr_mysql_library_end();
+	}
+	pthread_mutex_unlock(&mysql_global_lock);
+}
