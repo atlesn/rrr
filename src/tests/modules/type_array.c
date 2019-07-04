@@ -545,7 +545,7 @@ int test_type_array_mysql (
 	message = NULL; // Buffers take ownership
 
 	// Wait for MySQL to insert message and check for ACK
-	usleep (250000);
+	usleep (500000);
 
 	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
 	ret = poll_delete(mysql->thread_data, test_type_array_mysql_callback, &poll_data);

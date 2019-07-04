@@ -49,6 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_MAX_SENDERS VL_MODULE_MAX_SENDERS
 #define VL_IPCLIENT_SERVER_NAME "localhost"
 #define VL_IPCLIENT_SERVER_PORT "5555"
+#define VL_IPCLIENT_LOCAL_PORT 5555
 #define VL_IPCLIENT_SEND_RATE 50 // Time between sending packets, milliseconds
 #define VL_IPCLIENT_BURST_LIMIT 20 // Number of packets to send before we switch to reading
 #define VL_IPCLIENT_SEND_INTERVAL 10000 // Milliseconds before resending a packet
@@ -107,6 +108,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		strcpy(data->ip_server, VL_IPCLIENT_SERVER_NAME);
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_port, config, "ipclient_server_port")) != 0) {
@@ -121,6 +123,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		strcpy(data->ip_server, VL_IPCLIENT_SERVER_PORT);
+		ret = 0;
 	}
 
 #ifdef VL_WITH_OPENSSL
@@ -131,6 +134,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		data->crypt_file = NULL;
+		ret = 0;
 	}
 #endif
 
@@ -141,13 +145,18 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		data->no_ack = 0;
+		ret = 0;
 	}
 
 	rrr_setting_uint src_port;
 	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
 		data->ip.port = src_port;
 	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
+	else if (ret == RRR_SETTING_NOT_FOUND) {
+		data->ip.port = VL_IPCLIENT_LOCAL_PORT;
+		ret = 0;
+	}
+	else {
 		VL_MSG_ERR("ipclient: Could not understand ipclient_src_port argument, must be numeric\n");
 		ret = 1;
 		goto out;
