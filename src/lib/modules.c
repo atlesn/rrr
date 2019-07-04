@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULE_PATH "./modules/"
 #endif
 
-void module_unload (void *dl_ptr, void (*unload)()) {
+void module_unload (void *dl_ptr, void (*unload)(void)) {
 	unload();
 
 #ifndef VL_MODULE_NO_DL_CLOSE
@@ -74,7 +74,7 @@ int module_load(struct module_load_data *target, const char *name, const char **
 		}
 
 		void (*init)(struct instance_dynamic_data *data) = dlsym(handle, "init");
-		void (*unload)() = dlsym(handle, "unload");
+		void (*unload)(void) = dlsym(handle, "unload");
 
 		if (init == NULL || unload == NULL) {
 			dlclose(handle);

@@ -34,21 +34,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct vl_crypt {
 	EVP_PKEY *evp_key;
-	unsigned char key_bin[SHA512_DIGEST_LENGTH];
-	unsigned char key[SHA512_DIGEST_LENGTH * 2 + 1];
-	unsigned char iv_bin[SHA256_DIGEST_LENGTH];
-	unsigned char iv[SHA256_DIGEST_LENGTH * 2 + 1];
+	char key_bin[SHA512_DIGEST_LENGTH];
+	char key[SHA512_DIGEST_LENGTH * 2 + 1];
+	char iv_bin[SHA256_DIGEST_LENGTH];
+	char iv[SHA256_DIGEST_LENGTH * 2 + 1];
 	EVP_CIPHER_CTX *ctx;
 };
 
-void vl_crypt_initialize_locks();
-void vl_crypt_free_locks();
-int vl_crypt_global_lock();
-void vl_crypt_global_unlock(void *ret);
-struct vl_crypt *vl_crypt_new();
+void vl_crypt_initialize_locks(void);
+void vl_crypt_free_locks(void);
+int vl_crypt_global_lock(void);
+void vl_crypt_global_unlock(void *arg); // Need arg because of pthread_cleanup_push
+struct vl_crypt *vl_crypt_new(void);
 void vl_crypt_free(struct vl_crypt *crypt);
-int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename);
-int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const unsigned char *iv_string);
+int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename);
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string);
 int vl_crypt_aes256 (
 		struct vl_crypt *crypt,
 		const void *source, unsigned int source_length,

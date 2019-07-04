@@ -52,7 +52,7 @@ rrr_type rrr_types_get_type(const char *type) {
 #define RRR_TYPE_LENGTH_CHECK_CASE(type,length,max) \
 		case PASTER(RRR_TYPE,type): \
 			max = PASTER(RRR_TYPE_MAX,type); \
-			return ((length <= PASTER(RRR_TYPE_MAX,type) && (length >= 0)) == 1 ? 0 : 1)
+			return ((length <= PASTER(RRR_TYPE_MAX,type)) == 1 ? 0 : 1)
 
 int rrr_types_check_size (rrr_type type, rrr_type_length length, rrr_type_length *max) {
 	switch (type) {
@@ -76,7 +76,7 @@ int import_le(void *target, const char *data, rrr_array_size array_size, rrr_typ
 
 	if (array_size > 1) {
 		int ret = 0;
-		for (int i = 0; i < array_size; i++) {
+		for (rrr_array_size i = 0; i < array_size; i++) {
 			ret = import_le(target + (i * length), data + (i * length), 1, length);
 			if (ret != 0) {
 				break;
@@ -120,7 +120,7 @@ int import_be(void *target, const char *data, rrr_array_size array_size, rrr_typ
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("import_be input: 0x");
-		for (int i = 0; i < length; i++) {
+		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
@@ -132,7 +132,7 @@ int import_be(void *target, const char *data, rrr_array_size array_size, rrr_typ
 
 	if (array_size > 1) {
 		int ret = 0;
-		for (int i = 0; i < array_size; i++) {
+		for (rrr_array_size i = 0; i < array_size; i++) {
 			ret = import_be(target + (i * length), data + (i * length), 1, length);
 			if (ret != 0) {
 				break;
@@ -209,10 +209,13 @@ int convert_be_64_to_host(void *data) {
 }
 
 int convert_h_64_to_host(void *data) {
+	uint64_t num = *((uint64_t*) data);
+	VL_DEBUG_MSG_4("convert_h_64_to_host dummy convert of 0x%" PRIx64 "\n", num);
 	return 0;
 }
 
 int convert_blob_to_host(void *target) {
+	VL_DEBUG_MSG_4("convert_blob_to_host dummy convert first byte is %02x\n", *((char*)target));
 	return 0;
 }
 
@@ -295,7 +298,7 @@ int rrr_types_parse_definition (
 
 	int do_array = 0;
 	rrr_array_size array_size = 1;
-	for (cmd_arg_count i = 0; i < list->length; i += 2) {
+	for (unsigned int i = 0; i < list->length; i += 2) {
 		const char *type_c = list->list[i];
 		if (*type_c == '\0') {
 			break;
@@ -395,7 +398,7 @@ int rrr_types_parse_data (
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("rrr_types_parse_data input: 0x");
-		for (int i = 0; i < length; i++) {
+		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
@@ -497,7 +500,6 @@ struct rrr_data_collection *rrr_types_allocate_data (
 		}
 	}
 
-	out_free_collection:
 	free (collection);
 
 	return NULL;
@@ -742,6 +744,8 @@ int rrr_types_extract_raw_from_collection(char **target, rrr_size *size, const s
 		return 1;
 	}
 
+	*target = out;
+
 	return 0;
 }
 
@@ -809,7 +813,6 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 		return 1;
 	}
 
-	const char *pos = data_pos;
 	for (rrr_def_count i = 0; i < definitions.count; i++) {
 		char *target = new_data->data[i];
 		struct rrr_type_definition *def = &definitions.definitions[i];

@@ -185,7 +185,6 @@ struct instance_metadata *instance_find (
 
 int instance_load_and_save (
 		struct instance_metadata_collection *instances,
-		struct rrr_config *all_config,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 ) {
@@ -365,7 +364,7 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths) {
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_load_and_save(instances, config, config->configs[i], library_paths);
+		ret = instance_load_and_save(instances, config->configs[i], library_paths);
 		if (ret != 0) {
 			VL_MSG_ERR("Loading of instance failed for %s\n",
 					config->configs[i]->name);

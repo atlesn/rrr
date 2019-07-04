@@ -107,8 +107,6 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
-	static const char *dummy_msg = "Dummy measurement of time";
-
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
@@ -137,6 +135,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 }
 
 static int test_config (struct rrr_instance_config *config) {
+	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
 
@@ -152,7 +151,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "dummy";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -163,7 +162,7 @@ void init(struct instance_dynamic_data *data) {
 		data->private_data = NULL;
 }
 
-void unload() {
+void unload(void) {
 }
 
 

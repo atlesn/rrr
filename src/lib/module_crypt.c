@@ -37,7 +37,7 @@ int module_crypt_data_init(struct module_crypt_data *crypt_data, const char *fil
 		VL_MSG_ERR("Could not obtain OpenSSL lock\n");
 		return 1;
 	}
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
+	pthread_cleanup_push(vl_crypt_global_unlock, crypt_data);
 
 	crypt_data->crypt = vl_crypt_new();
 
@@ -65,11 +65,12 @@ void module_crypt_data_cleanup(void *arg) {
 	}
 
 	int do_unlock = 1;
+
 	if (vl_crypt_global_lock() != 0) {
 		VL_MSG_ERR("Warning: Could not obtain OpenSSL lock while cleaning up crypt data\n");
 		do_unlock = 0;
 	}
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
+	pthread_cleanup_push(vl_crypt_global_unlock, crypt_data);
 
 	vl_crypt_free(crypt_data->crypt);
 
@@ -82,9 +83,9 @@ int module_encrypt_message (
 		struct module_crypt_data *crypt_data,
 		char *buf, unsigned int buf_length, unsigned int buf_size
 ) {
-	struct vl_crypt *crypt = crypt_data->crypt;
-
 	int ret = 0;
+
+	struct vl_crypt *crypt = crypt_data->crypt;
 
 	unsigned int cipher_length = 0;
 	void *cipher_string = NULL;
@@ -93,7 +94,7 @@ int module_encrypt_message (
 		VL_MSG_ERR("Could not obtain OpenSSL lock while encrypting message\n");
 		return 1;
 	}
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
+	pthread_cleanup_push(vl_crypt_global_unlock, crypt_data);
 	if (vl_crypt_aes256 (
 			crypt,
 			buf, buf_length,
@@ -131,9 +132,9 @@ int module_decrypt_message (
 		struct module_crypt_data *crypt_data,
 		char *buf, unsigned int *buf_length, unsigned int buf_size
 ) {
-	struct vl_crypt *crypt = crypt_data->crypt;
-
 	int ret = 0;
+
+	struct vl_crypt *crypt = crypt_data->crypt;
 
 	unsigned int decrypted_string_length = 0;
 	void *decrypted_string = NULL;
@@ -142,7 +143,7 @@ int module_decrypt_message (
 		VL_MSG_ERR("Could not obtain OpenSSL lock while decrypting message\n");
 		return 1;
 	}
-	pthread_cleanup_push(vl_crypt_global_unlock, NULL);
+	pthread_cleanup_push(vl_crypt_global_unlock, crypt_data);
 
 	char *colon = memchr(buf, ':', *buf_length);
 	if (*colon != ':') {

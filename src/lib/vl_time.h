@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/time.h>
 
-static inline uint64_t time_get_64() {
+static inline uint64_t time_get_64(void) {
 	struct timeval tv;
 
 	if (gettimeofday(&tv, NULL) != 0) {

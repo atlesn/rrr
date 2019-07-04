@@ -28,15 +28,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
+#include "../lib/instance_config.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../global.h"
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
 	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("Raw: Result from buffer: poll flags %u %s measurement %" PRIu64 " size %lu\n",
+			poll_data->flags, reading->data, reading->data_numeric, size);
+
 	free(data);
 	return 0;
 }
@@ -77,7 +79,6 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
-	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
@@ -87,6 +88,7 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 }
 
 static int test_config (struct rrr_instance_config *config) {
+	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
 
@@ -102,7 +104,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "raw";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -113,7 +115,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy raw module\n");
 }
 

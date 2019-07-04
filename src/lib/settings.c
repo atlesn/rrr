@@ -81,7 +81,7 @@ void rrr_settings_destroy(struct rrr_instance_settings *target) {
 		exit(EXIT_FAILURE);
 	}
 
-	for (int i = 0; i < target->settings_count; i++) {
+	for (unsigned int i = 0; i < target->settings_count; i++) {
 		__rrr_settings_destroy_setting(&target->settings[i]);
 	}
 
@@ -115,7 +115,7 @@ void __rrr_settings_unlock(struct rrr_instance_settings *settings) {
 }
 
 struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_settings *source, const char *name) {
-	for (int i = 0; i < source->settings_count; i++) {
+	for (unsigned int i = 0; i < source->settings_count; i++) {
 		struct rrr_setting *test = &source->settings[i];
 
 		if (strcmp(test->name, name) == 0) {
@@ -216,8 +216,10 @@ int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_sett
 	struct rrr_setting *setting = __rrr_settings_find_setting_nolock(source, name);
 
 	if (setting == NULL) {
-		VL_MSG_ERR("Could not locate setting '%s'\n", name);
-		ret = 1;
+		if (!silent_not_found) {
+			VL_MSG_ERR("Could not locate setting '%s'\n", name);
+		}
+		ret = RRR_SETTING_NOT_FOUND;
 		goto out;
 	}
 
@@ -562,7 +564,7 @@ int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *setting
 int rrr_settings_dump (struct rrr_instance_settings *settings) {
 	int ret = 0;
 
-	for (int i = 0; i < settings->settings_count; i++) {
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		struct rrr_setting *setting = &settings->settings[i];
 
 		const char *name = setting->name;

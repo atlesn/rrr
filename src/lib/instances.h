@@ -56,7 +56,7 @@ struct instance_dynamic_data {
 	void *special_module_operations;
 	void *dl_ptr;
 	void *private_data;
-	void (*unload)(struct instance_dynamic_data *data);
+	void (*unload)(void);
 	struct instance_metadata_collection *all_instances;
 };
 
@@ -96,7 +96,6 @@ int instance_add_senders (
 
 int instance_load_and_save (
 		struct instance_metadata_collection *instances,
-		struct rrr_config *all_config,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 );

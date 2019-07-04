@@ -86,7 +86,6 @@ int averager_poll (
 
 // Messages when from polling sender comes in here
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
 	struct averager_data *averager_data = poll_data->private_data;
@@ -141,6 +140,9 @@ struct averager_calculation {
 int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct averager_calculation *calculation = poll_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
+
+
+	VL_DEBUG_MSG_4("averager callbackgot packet from buffer of size %lu\n", size);
 
 	if (!MSG_IS_MSG_POINT(message)) {
 		VL_DEBUG_MSG_2 ("Averager: Ignoring a message which is not point measurement\n");
@@ -258,7 +260,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 	if ((ret = rrr_instance_config_read_unsigned_integer(&timespan, config, "avg_timespan")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
-			int ret = 1;
+			ret = 1;
 			goto out;
 		}
 		timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
@@ -267,7 +269,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
-			int ret = 1;
+			ret = 1;
 			goto out;
 		}
 		interval = VL_DEFAULT_AVERAGER_INTERVAL;
@@ -276,7 +278,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
-			int ret = 1;
+			ret = 1;
 			goto out;
 		}
 		preserve_points = 0;
@@ -352,8 +354,6 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("Thread averager %p exiting\n", thread_data->thread);
 
-	out:
-
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -380,7 +380,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "averager";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -391,7 +391,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy averager module\n");
 }
 

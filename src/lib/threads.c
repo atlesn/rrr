@@ -120,7 +120,7 @@ int __thread_new_thread (struct vl_thread **target) {
 	return ret;
 }
 
-void __thread_destroy (struct vl_thread_collection *collection, struct vl_thread *thread) {
+void __thread_destroy (struct vl_thread *thread) {
 	thread_lock(thread);
 	if (thread->state != VL_THREAD_STATE_STOPPED) {
 		VL_MSG_ERR ("Attempted to free thread which was not STOPPED\n");
@@ -175,7 +175,7 @@ void thread_destroy_collection (struct vl_thread_collection *collection) {
 		else {
 			thread_unlock(thread);
 			// TODO : Add pthread_mutex_destroy(threads[i]->....) and test
-			__thread_destroy(collection, thread);
+			__thread_destroy(thread);
 		}
 	}
 
@@ -393,7 +393,6 @@ void *__thread_watchdog_entry (void *arg) {
 			pthread_cancel(thread->thread);
 			VL_MSG_ERR ("Thread %s/%p not responding to kill. Killing it harder.\n", thread->name, thread);
 			usleep (100000); // 100ms
-			void *retval;
 			if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 				VL_MSG_ERR ("Thread %s/%p dies slowly, waiting a bit more.\n", thread->name, thread);
 				usleep (2000000); // 2000ms
@@ -559,11 +558,11 @@ struct vl_thread *thread_preload_and_register (
 	out_error:
 	if (thread != NULL) {
 		thread_unlock_if_locked(thread);
-		__thread_destroy(collection, thread);
+		__thread_destroy(thread);
 	}
 	if (watchdog_thread != NULL) {
 		thread_unlock_if_locked(watchdog_thread);
-		__thread_destroy(collection, watchdog_thread);
+		__thread_destroy(watchdog_thread);
 	}
 	if (start_data != NULL) {
 		free(start_data);

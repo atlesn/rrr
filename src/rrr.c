@@ -64,6 +64,8 @@ static volatile int main_running = 1;
 void signal_interrupt (int s) {
     main_running = 0;
 
+    VL_DEBUG_MSG_1("Received signal %i\n", s);
+
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGUSR1, SIG_DFL);
@@ -122,7 +124,9 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if (VL_DEBUGLEVEL_1) {
-		int dump_ret = rrr_config_dump(config);
+		if (rrr_config_dump(config) != 0) {
+			VL_MSG_ERR("Error occured while dumping configuration\n");
+		}
 	}
 
 	// Initialzie dynamic_data thread data

@@ -46,7 +46,7 @@ struct ip_buffer_entry;
 struct module_load_data {
 	void *dl_ptr;
 	void (*init)(struct instance_dynamic_data *data);
-	void (*unload)();
+	void (*unload)(void);
 };
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE \
@@ -83,7 +83,7 @@ struct module_operations {
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 };
 
-void module_unload (void *dl_ptr, void (*unload)());
+void module_unload (void *dl_ptr, void (*unload)(void));
 int module_load(struct module_load_data *target, const char *name, const char **library_paths);
 
 #endif

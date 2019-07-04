@@ -119,21 +119,23 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 	unsigned int debuglevel = 0;
 	const char* debuglevel_string = cmd_get_value(&*cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
+		int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
 			debuglevel = __VL_DEBUGLEVEL_ALL;
 		}
-		else if (cmd_convert_integer_10(cmd, debuglevel_string, &debuglevel) != 0) {
+		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
 			VL_MSG_ERR(
 					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
 			return EXIT_FAILURE;
 		}
-		if (debuglevel < 0 || debuglevel > __VL_DEBUGLEVEL_ALL) {
+		if (debuglevel_tmp < 0 || debuglevel_tmp > __VL_DEBUGLEVEL_ALL) {
 			VL_MSG_ERR(
 					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
-					__VL_DEBUGLEVEL_ALL, debuglevel);
+					__VL_DEBUGLEVEL_ALL, debuglevel_tmp);
 			return EXIT_FAILURE;
 		}
+		debuglevel = debuglevel_tmp;
 	}
 
 	rrr_init_global_config(debuglevel);

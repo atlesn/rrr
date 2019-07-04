@@ -37,6 +37,10 @@ void poll_collection_clear(struct poll_collection *collection) {
 	collection->first = NULL;
 }
 
+void poll_collection_clear_void(void *data) {
+	return poll_collection_clear((struct poll_collection *) data);
+}
+
 void poll_collection_init(struct poll_collection *collection) {
 	memset(collection, '\0', sizeof(*collection));
 }

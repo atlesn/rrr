@@ -168,7 +168,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "python3";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 	Py_Initialize();
 }
 
@@ -180,7 +180,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy python3 module\n");
 	Py_Finalize();
 }

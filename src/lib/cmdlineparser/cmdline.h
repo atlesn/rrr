@@ -63,18 +63,18 @@ struct cmd_data {
 int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);
 int cmd_match					(struct cmd_data *data, const char *test);
 
-int cmd_convert_hex_byte		(struct cmd_data *data, const char *value, char *result);
-int cmd_convert_hex_64			(struct cmd_data *data, const char *value, uint64_t *result);
-int cmd_convert_uint64_10		(struct cmd_data *data, const char *value, uint64_t *result);
-int cmd_convert_integer_10		(struct cmd_data *data, const char *value, int *result);
-int cmd_convert_float			(struct cmd_data *data, const char *value, float *result);
+int cmd_convert_hex_byte		(const char *value, char *result);
+int cmd_convert_hex_64			(const char *value, uint64_t *result);
+int cmd_convert_uint64_10		(const char *value, uint64_t *result);
+int cmd_convert_integer_10		(const char *value, int *result);
+int cmd_convert_float			(const char *value, float *result);
 
 const char *cmd_get_argument		(struct cmd_data *data, cmd_arg_count index);
 const char *cmd_get_last_argument	(struct cmd_data *data);
 const char *cmd_get_value			(struct cmd_data *data, const char *key, cmd_arg_count index);
 const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, cmd_arg_count index, cmd_arg_count subindex);
 
-int cmdline_check_yesno				(struct cmd_data *data, const char *string, int *result);
+int cmdline_check_yesno				(const char *string, int *result);
 
 int cmd_check_all_args_used			(struct cmd_data *data);
 

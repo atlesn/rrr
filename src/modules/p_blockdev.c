@@ -140,23 +140,23 @@ struct update_test_data {
 	struct vl_message *message;
 };
 
-struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t application_data, uint64_t data_length, const char *data) {
+struct bdl_update_info update_test(void *arg, struct bdl_update_callback_data *update_data) {
 	struct update_test_data *update_test_data = arg;
 	struct bdl_update_info update_info;
 	memset(&update_info, '\0', sizeof(update_info));
 
-	const struct vl_message *message = (const struct vl_message *) data;
+	const struct vl_message *message = (const struct vl_message *) update_data->data;
 
 	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG ("blockdev update_test: Application data: %" PRIu64 "\n", application_data);
+		VL_DEBUG_MSG ("blockdev update_test: Application data: %" PRIu64 "\n", update_data->application_data);
 		VL_DEBUG_MSG ("blockdev update_test: Timestamp from: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
-				timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
+				update_data->timestamp, update_test_data->message->timestamp_from, message->timestamp_from);
 		VL_DEBUG_MSG ("blockdev update_test: Timestamp to: %" PRIu64 " vs %" PRIu64 " vs %" PRIu64 "\n",
-				timestamp, update_test_data->message->timestamp_to, message->timestamp_to);
+				update_data->timestamp, update_test_data->message->timestamp_to, message->timestamp_to);
 		VL_DEBUG_MSG ("blockdev update_test: Class: %" PRIu32 " vs %" PRIu32 "\n",
 				update_test_data->message->class, message->class);
 		VL_DEBUG_MSG ("blockdev update_test: Data length: %" PRIu64 " vs %" PRIu32 " vs %" PRIu32 "\n",
-				data_length, update_test_data->message->length, message->length);
+				update_data->data_length, update_test_data->message->length, message->length);
 
 		for (unsigned int j = 0; j < update_test_data->message->length; j++) {
 			VL_DEBUG_MSG ("%02x-", update_test_data->message->data[j]);
@@ -168,7 +168,7 @@ struct bdl_update_info update_test(void *arg, uint64_t timestamp, uint64_t appli
 		VL_DEBUG_MSG ("\n");
 	}
 	if (
-			(application_data & VL_BLOCKDEV_TAG_SAVED) == 1 ||
+			(update_data->application_data & VL_BLOCKDEV_TAG_SAVED) == 1 ||
 			message->timestamp_from != update_test_data->message->timestamp_from ||
 			message->timestamp_to != update_test_data->message->timestamp_to ||
 			message->length != update_test_data->message->length ||
@@ -259,9 +259,12 @@ struct get_new_entries_data {
 	int entries_counter;
 };
 
-struct bdl_update_info get_new_entries_callback(void *arg, uint64_t timestamp, uint64_t application_data, uint64_t data_length, const char *data) {
+struct bdl_update_info get_new_entries_callback(void *arg, struct bdl_update_callback_data *update_callback_data) {
 	struct get_new_entries_data *callback_data = arg;
 	struct blockdev_data *blockdev_data = callback_data->blockdev_data;
+
+	uint64_t data_length = update_callback_data->data_length;
+	const char *data = update_callback_data->data;
 
 	struct bdl_update_info ret;
 	if (data_length != sizeof(struct vl_message)) {
@@ -305,9 +308,14 @@ int get_new_entries(struct instance_thread_data *thread_data) {
 		&result
 	);
 
-	VL_DEBUG_MSG_1 ("blockdev: Read %i entries with NEW state from device\n", callback_data.entries_counter);
+	if (err) {
+		VL_MSG_ERR("Warning: Error return from blockdev while reading entries\n");
+	}
+	else {
+		VL_DEBUG_MSG_1 ("blockdev: Read %i entries with NEW state from device\n", callback_data.entries_counter);
+	}
 
-	return 0;
+	return err;
 }
 
 static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
@@ -341,11 +349,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	}
 
 	VL_DEBUG_MSG_1 ("blockdev started thread %p\n", thread_data);
-
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for blockdev processor module\n");
-		goto out_message;
-	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -392,7 +395,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread blockdev %p exiting\n", thread_data->thread);
 
-	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -419,7 +421,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "blockdev";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -430,7 +432,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy blockdev module\n");
 }
 

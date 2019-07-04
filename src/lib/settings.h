@@ -51,15 +51,15 @@ struct rrr_instance_settings {
 	pthread_mutex_t mutex;
 	int initialized;
 
-	int settings_count;
-	int settings_max;
+	unsigned int settings_count;
+	unsigned int settings_max;
 	struct rrr_setting *settings;
 };
 
 struct rrr_settings_list {
 	char *data;
 	char **list;
-	int length;
+	unsigned int length;
 };
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list);

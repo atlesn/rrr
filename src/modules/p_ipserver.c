@@ -107,6 +107,8 @@ int process_entries_callback(struct fifo_callback_args *poll_data, char *data, u
 	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
+	VL_DEBUG_MSG_4("ipserver process entries callback got packet from buffer of size %lu\n", size);
+
 	fifo_buffer_write(&private_data->output_buffer, (char*) entry, sizeof(*entry));
 
 	return 0;
@@ -302,10 +304,6 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	}
 
 	VL_DEBUG_MSG_1 ("ipserver started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for ipserver processor module\n");
-		goto out_message;
-	}
 
 #ifdef VL_WITH_OPENSSL
 	if (	data->crypt_file != NULL &&
@@ -341,7 +339,6 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread ipserver %p exiting\n", thread_data->thread);
 
-	out:
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_pop(1);
 #endif
@@ -372,7 +369,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "ipserver";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -383,7 +380,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy ipserver module\n");
 }
 

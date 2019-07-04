@@ -44,12 +44,12 @@ static pthread_mutex_t openssl_lock = PTHREAD_MUTEX_INITIALIZER;
  * It will reset the locking of OpenSSL in case we killed a thread which held
  * a lock.
  */
-void vl_crypt_initialize_locks() {
+void vl_crypt_initialize_locks(void) {
 	VL_DEBUG_MSG_4("Initialize crypt lock\n");
 	pthread_mutex_init(&openssl_lock, NULL);
 }
 
-void vl_crypt_free_locks() {
+void vl_crypt_free_locks(void) {
 	VL_DEBUG_MSG_4("Free crypt lock\n");
 }
 
@@ -60,7 +60,7 @@ void vl_crypt_free_locks() {
  * to minimize the delay when the other threads should exit so that we don't have
  * to kill them due to the lock not being available.
  */
-int vl_crypt_global_lock() {
+int vl_crypt_global_lock(void) {
 	VL_DEBUG_MSG_4("Lock crypt lock\n");
 	if (pthread_mutex_lock(&openssl_lock) != 0) {
 		return 1;
@@ -70,7 +70,9 @@ int vl_crypt_global_lock() {
 }
 
 void vl_crypt_global_unlock(void *arg) {
-	VL_DEBUG_MSG_4("Unlock crypt lock\n");
+	struct module_crypt_data *crypt_data = arg;
+
+	VL_DEBUG_MSG_4("Unlock crypt lock, crypt data is %p\n", crypt_data);
 	if (is_locked == 0) {
 		VL_MSG_ERR("Bug: Crypt unlock was called without lock being held\n");
 		exit(EXIT_FAILURE);
@@ -85,7 +87,7 @@ void vl_crypt_global_unlock(void *arg) {
 #define VL_CRYPT_CHECK_LOCKED() \
 	do {if (is_locked != 1) { VL_MSG_ERR("Bug: Crypto functions were not locked\n"); exit (EXIT_FAILURE); }}while(0)
 
-struct vl_crypt *vl_crypt_new() {
+struct vl_crypt *vl_crypt_new(void) {
 	VL_CRYPT_CHECK_LOCKED();
 
 	struct vl_crypt *ret = malloc(sizeof(*ret));
@@ -112,27 +114,27 @@ void vl_crypt_free(struct vl_crypt *crypt) {
 
 const char characters[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-void bin_to_string(const unsigned char *src, unsigned int src_length, unsigned char *dst, unsigned int dst_length) {
+void bin_to_string(const char *src, unsigned int src_length, char *dst, unsigned int dst_length) {
 	if (dst_length < src_length * 2 + 1) {
     	VL_MSG_ERR("Bug: bin_to_string: Crypt string buffer too small\n");
     	exit(EXIT_FAILURE);
 	}
 
-    for (int i = 0; i < src_length; i++) {
-    	sprintf(dst + i * 2, "%02x", src[i]);
+    for (unsigned int i = 0; i < src_length; i++) {
+    	sprintf((dst + i * 2), "%02x", src[i]);
     }
 
     dst[src_length * 2] = '\0';
 }
 
-int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned char *dst, unsigned int dst_length) {
+int string_to_bin(const char *src, unsigned int src_length, char *dst, unsigned int dst_length) {
 	if (dst_length < src_length / 2) {
     	VL_MSG_ERR("Bug: bin_to_string: Crypt string buffer too small (%u < %u)\n", dst_length, src_length / 2);
     	exit(EXIT_FAILURE);
 	}
 
 	unsigned long int step_size = sizeof(unsigned long int) * 2;
-	unsigned char step[step_size+1];
+	char step[step_size+1];
 	step[step_size] = '\0';
 
 	unsigned int i = 0;
@@ -185,7 +187,7 @@ int string_to_bin(const unsigned char *src, unsigned int src_length, unsigned ch
  * The key generated is too big for AES 256, but we might want other crypt
  * functions in the future.
  */
-int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename) {
+int vl_crypt_load_key(struct vl_crypt *crypt, const char *filename) {
 	VL_CRYPT_CHECK_LOCKED();
 
 	int err = 0;
@@ -201,8 +203,8 @@ int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename) {
 	SHA512_CTX ctx;
 	SHA512_Init(&ctx);
 
-	int total_bytes = 0;
-	int bytes;
+	size_t total_bytes = 0;
+	size_t bytes;
 	unsigned char buf[SHA512_DIGEST_LENGTH];
 	do {
 		bytes = fread(buf, 1, sizeof(buf), file);
@@ -233,11 +235,11 @@ int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename) {
     	exit(EXIT_FAILURE);
     }
 
-    SHA512_Final(crypt->key_bin, &ctx);
+    SHA512_Final((unsigned char *) crypt->key_bin, &ctx);
 
     bin_to_string(crypt->key_bin, sizeof(crypt->key_bin), crypt->key, sizeof(crypt->key));
 
-	VL_DEBUG_MSG_1("Crypt SHA512-ed %i bytes to generate the key\n", total_bytes);
+	VL_DEBUG_MSG_1("Crypt SHA512-ed %lu bytes to generate the key\n", total_bytes);
 
 	crypt->key[sizeof(crypt->key)-1] = '\0';
 
@@ -253,7 +255,7 @@ int vl_crypt_load_key(struct vl_crypt *crypt, const unsigned char *filename) {
 int vl_crypt_generate_iv(struct vl_crypt *crypt) {
 	VL_CRYPT_CHECK_LOCKED();
 
-	if (RAND_bytes (crypt->iv_bin, sizeof(crypt->iv_bin)) != 1) {
+	if (RAND_bytes ((unsigned char *) crypt->iv_bin, sizeof(crypt->iv_bin)) != 1) {
 		VL_MSG_ERR("Error while generating random bytes for IV. OpenSSL error message: \n\t");
 		ERR_print_errors_fp(stderr);
 		return 1;
@@ -269,7 +271,7 @@ int vl_crypt_generate_iv(struct vl_crypt *crypt) {
 	return 0;
 }
 
-int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const unsigned char *iv_string) {
+int vl_crypt_set_iv_from_hex(struct vl_crypt *crypt, const char *iv_string) {
 	if (sizeof(crypt->iv_bin) < strlen(iv_string) / 2) {
 		VL_MSG_ERR("IV string was too long\n");
 		return 1;
@@ -303,7 +305,7 @@ int vl_decrypt_aes256 (struct vl_crypt *crypt,
 		goto error;
 	}
 
-	if (EVP_DecryptInit_ex(crypt->ctx, EVP_aes_256_cbc(), NULL, crypt->key_bin, crypt->iv_bin) != 1)  {
+	if (EVP_DecryptInit_ex(crypt->ctx, EVP_aes_256_cbc(), NULL, (unsigned char *) crypt->key_bin, (unsigned char *) crypt->iv_bin) != 1)  {
 		goto error_free;
 	}
 
@@ -327,7 +329,7 @@ int vl_decrypt_aes256 (struct vl_crypt *crypt,
 	}
 	total_length += len;
 
-	success:
+	/* Success */
 		*target_length = total_length;
 		*target = ret;
 		free(tmp);
@@ -380,12 +382,13 @@ int vl_crypt_aes256 (
 
 	if (!(crypt->ctx = EVP_CIPHER_CTX_new())) goto error;
 
-	if (EVP_EncryptInit_ex(crypt->ctx, EVP_aes_256_cbc(), NULL, crypt->key_bin, crypt->iv_bin) != 1)  {
+	if (EVP_EncryptInit_ex(crypt->ctx, EVP_aes_256_cbc(), NULL,
+			(unsigned char *) crypt->key_bin, (unsigned char *) crypt->iv_bin) != 1)  {
 		goto error_free;
 	}
 
-	unsigned int length = 0;
-	unsigned int total_length = 0;
+	int length = 0;
+	int total_length = 0;
 
 	unsigned const int tmp_size = source_length * 2;
 	unsigned const int ret_size = tmp_size * 2 + 1;
@@ -409,7 +412,7 @@ int vl_crypt_aes256 (
 
 	bin_to_string(tmp, total_length, ret, total_length * 2 + 1);
 
-	success:
+	/* Success */
 		*target = ret;
 		*target_length = strlen(ret);
 		free(tmp);

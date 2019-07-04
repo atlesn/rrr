@@ -194,7 +194,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	uint64_t time_now = time_get_64();
 
-	VL_DEBUG_MSG_3 ("ipclient send packet timestamp %" PRIu64 "\n", message->timestamp_from);
+	VL_DEBUG_MSG_3 ("ipclient send packet timestamp %" PRIu64 " size %lu\n", message->timestamp_from, size);
 
 	// Check if we sent this packet recently
 	if (entry->time + VL_IPCLIENT_SEND_INTERVAL * 1000 > time_now) {
@@ -234,10 +234,11 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 }
 
 int receive_packets_search_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	struct ipclient_data *ipclient_data = callback_data->source;
 	struct vl_message *message_to_match = callback_data->private_data;
 	struct ip_buffer_entry *checked_entry = (struct ip_buffer_entry *) data;
 	struct vl_message *message = &checked_entry->data.message;
+
+	VL_DEBUG_MSG_4("ipclient reive_packets_search_callback got packet from buffer of size %lu\n", size);
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, message->class);
@@ -291,7 +292,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 }
 
 int receive_packets(struct ipclient_data *data) {
-	struct fifo_callback_args poll_data = {NULL, data, 0};
+//	struct fifo_callback_args poll_data = {NULL, data, 0};
 	return ip_receive_messages(
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
@@ -316,9 +317,6 @@ int send_packets(struct instance_thread_data *thread_data) {
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = IPPROTO_UDP;
 	hints.ai_flags = AI_ADDRCONFIG;
-
-	char errbuf[256];
-	struct vl_message *message;
 
 	struct addrinfo* res = NULL;
 	int err = getaddrinfo(hostname,portname,&hints,&res);
@@ -385,7 +383,6 @@ void stop_receive_thread(void *arg) {
 	struct instance_thread_data *thread_data = arg;
 	struct ipclient_data* data = thread_data->private_data;
 	if (data->receive_thread_started == 1 && data->receive_thread_died != 1) {
-		void *ret;
 		pthread_detach(data->receive_thread);
 		pthread_cancel(data->receive_thread);
 		int maxrounds = 4;
@@ -506,7 +503,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
-	out:
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_pop(1);
 #endif
@@ -515,7 +511,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
-	out_cleanup_data:
 	pthread_cleanup_pop(1);
 
 	pthread_exit(0);
@@ -542,7 +537,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "ipclient";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -553,7 +548,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy ipclient module\n");
 }
 

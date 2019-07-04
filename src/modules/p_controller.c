@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
+#include "../lib/instance_config.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../global.h"
@@ -149,10 +150,6 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	}
 
 	VL_DEBUG_MSG_1 ("controller started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for controller processor module\n");
-		goto out_message;
-	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -167,7 +164,6 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread controller %p exiting\n", thread_data->thread);
 
-	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -175,6 +171,7 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 }
 
 static int test_config (struct rrr_instance_config *config) {
+	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
 
@@ -190,7 +187,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "controller";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -201,7 +198,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy controller module\n");
 }
 

@@ -48,7 +48,7 @@ int main_get_configuration_test_result(struct instance_metadata_collection *inst
 
 	void *handle = instance->dynamic_data->dl_ptr;
 
-	int (*get_test_result)() = dlsym(handle, "get_configuration_test_result");
+	int (*get_test_result)(void) = dlsym(handle, "get_configuration_test_result");
 
 	return get_test_result();
 }
@@ -131,8 +131,6 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("testing type array parsing") {
-		int threads_stopped = 0;
-
 		while (instance_check_threads_stopped(instances) != 0) {
 			usleep(10000);
 		}

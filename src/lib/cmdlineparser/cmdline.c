@@ -78,8 +78,7 @@ struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, cmd_a
 	return NULL;
 }
 
-int cmd_convert_hex_byte(struct cmd_data *data, const char *value, char *result) {
-
+int cmd_convert_hex_byte(const char *value, char *result) {
 	char *err;
 	long int intermediate = strtol(value, &err, 16);
 
@@ -92,7 +91,7 @@ int cmd_convert_hex_byte(struct cmd_data *data, const char *value, char *result)
 	return 0;
 }
 
-int cmd_convert_hex_64(struct cmd_data *data, const char *value, uint64_t *result) {
+int cmd_convert_hex_64(const char *value, uint64_t *result) {
 	char *err;
 	uint64_t intermediate = strtoull(value, &err, 16);
 
@@ -105,7 +104,7 @@ int cmd_convert_hex_64(struct cmd_data *data, const char *value, uint64_t *resul
 	return 0;
 }
 
-int cmd_convert_uint64_10(struct cmd_data *data, const char *value, uint64_t *result) {
+int cmd_convert_uint64_10(const char *value, uint64_t *result) {
 	char *err;
 	*result = strtoull(value, &err, 10);
 
@@ -116,7 +115,7 @@ int cmd_convert_uint64_10(struct cmd_data *data, const char *value, uint64_t *re
 	return 0;
 }
 
-int cmd_convert_integer_10(struct cmd_data *data, const char *value, int *result) {
+int cmd_convert_integer_10(const char *value, int *result) {
 	char *err;
 	*result = strtol(value, &err, 10);
 
@@ -127,7 +126,7 @@ int cmd_convert_integer_10(struct cmd_data *data, const char *value, int *result
 	return 0;
 }
 
-int cmd_convert_float(struct cmd_data *data, const char *value, float *result) {
+int cmd_convert_float(const char *value, float *result) {
 	char *err;
 	*result = strtof(value, &err);
 
@@ -158,8 +157,6 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 }
 
 const char *cmd_get_value(struct cmd_data *data, const char *key, cmd_arg_count index) {
-	cmd_arg_count index_counter = 0;
-
 	if (index > CMD_ARGUMENT_MAX) {
 		fprintf (stderr, "Requested cmd value index out of range\n");
 		exit (EXIT_FAILURE);
@@ -306,7 +303,7 @@ int cmd_match(struct cmd_data *data, const char *test) {
 	return strcmp(data->command, test) == 0;
 }
 
-int cmdline_check_yesno (struct cmd_data *data, const char *string, int *result) {
+int cmdline_check_yesno (const char *string, int *result) {
 	*result = 0;
 
 	if (*string == 'y' || *string == 'Y' || *string == '1') {

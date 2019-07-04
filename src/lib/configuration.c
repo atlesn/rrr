@@ -38,7 +38,7 @@ struct parse_pos {
 	int line;
 };
 
-struct rrr_config *__rrr_config_new () {
+struct rrr_config *__rrr_config_new (void) {
 	struct rrr_config *ret = malloc(sizeof(*ret));
 
 	if (ret == NULL) {
@@ -123,7 +123,6 @@ void __rrr_config_ignore_spaces (struct parse_pos *pos) {
 			break;
 		}
 
-		pos->data[pos->pos];
 		c = pos->data[pos->pos];
 	}
 }
@@ -137,7 +136,6 @@ void __rrr_config_parse_comment (struct parse_pos *pos) {
 
 	while (c != '\r' && c != '\n' && pos->pos < pos->size) {
 		pos->pos++;
-		pos->data[pos->pos];
 		c = pos->data[pos->pos];
 	}
 
@@ -408,7 +406,6 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 		*did_parse = 1;
 	}
 
-	out_free_config:
 	if (ret == 0) {
 		ret = __rrr_config_push(config, instance_config);
 		if (ret != 0) {
@@ -523,16 +520,30 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 		goto out;
 	}
 
-	fseek(cfgfile, 0L, SEEK_END);
-	long int size = ftell(cfgfile);
+	if (fseek(cfgfile, 0L, SEEK_END) != 0) {
+		VL_MSG_ERR("Could not fseek to the end in configuration file %s: %s\n", filename, strerror(errno));
+		err = 1;
+		goto out_close;
+	}
+	ssize_t size_signed = ftell(cfgfile);
+	if (size_signed < 0) {
+		VL_MSG_ERR("Could not get size of configuration file %s: %s\n", filename, strerror(errno));
+		err = 1;
+		goto out_close;
+	}
 
+	size_t size = size_signed;
 	if (size > RRR_CONFIG_MAX_SIZE) {
 		VL_MSG_ERR("Configuration file %s was too big (%li > %d)\n", filename, size, RRR_CONFIG_MAX_SIZE);
 		err = 1;
 		goto out_close;
 	}
 
-	fseek(cfgfile, 0L, 0);
+	if (fseek(cfgfile, 0L, 0) != 0) {
+		VL_MSG_ERR("Could not fseek to the beginning in configuration file %s: %s\n", filename, strerror(errno));
+		err = 1;
+		goto out_close;
+	}
 
 	void *file_data = malloc(size);
 	if (file_data == NULL) {

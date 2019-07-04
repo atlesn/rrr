@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/ip.h"
 #include "../lib/instances.h"
+#include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../global.h"
 
@@ -609,7 +610,6 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 		ret = 1;
 	}
 
-	out:
 	return ret;
 }
 
@@ -623,7 +623,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		mysql_colplan = malloc(strlen(COLUMN_PLAN_NAME_VOLTAGE) + 1);
 		if (mysql_colplan == NULL) {
 			VL_MSG_ERR("Could not allocate memory in mysql_parse_column_plan\n");
-			int ret = 1;
+			ret = 1;
 			goto out;
 		}
 		strcpy (mysql_colplan, COLUMN_PLAN_NAME_VOLTAGE);
@@ -791,14 +791,12 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 		ret = 1;
 	}
 
-	out:
 	return ret;
 }
 
 int poll_callback_ip(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
-	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
 	VL_DEBUG_MSG_3 ("mysql: Result from buffer (ip): size %lu\n", size);
 
@@ -994,9 +992,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 	int err = 0;
 	RRR_SENDER_LOOP(sender,thread_data->init_data.senders) {
-		int ok = 0;
-
-		int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
+				int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
 		int delete_ip_has = poll_collection_has(&poll_ip, sender->sender->thread_data);
 
 		if (delete_has + delete_ip_has == 2) {
@@ -1015,10 +1011,6 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	}
 
 	VL_DEBUG_MSG_1 ("mysql started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for mysql processor module\n");
-		goto out_message;
-	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -1051,7 +1043,6 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread mysql %p exiting\n", thread_data->thread);
 
-	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -1094,7 +1085,7 @@ static struct mysql_module_operations mysql_module_operations = {
 
 static const char *module_name = "mysql";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 	// Has to be done here for thread-safety
 	mysql_library_init(0, NULL, NULL);
 }
@@ -1108,7 +1099,7 @@ void init(struct instance_dynamic_data *data) {
 	data->special_module_operations = &mysql_module_operations;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy mysql module\n");
 	mysql_library_end();
 }

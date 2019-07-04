@@ -38,7 +38,7 @@ typedef uint64_t rrr_type_be;
 typedef uint64_t rrr_type_h;
 typedef uint16_t rrr_version;
 
-static union type_system_endian {
+static const union type_system_endian {
 	uint16_t two;
 	uint8_t one;
 } type_system_endian = {0x1};

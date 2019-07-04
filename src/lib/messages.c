@@ -292,7 +292,6 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 	}
 
 	// {DATA}
-	unsigned long int data_length = size - (pos - msg);
 	if (result->length > MSG_DATA_MAX_LENGTH) {
 		VL_MSG_ERR ("Message data size was too long\n");
 		return 1;
@@ -457,7 +456,7 @@ int message_checksum_check (
 	struct vl_message *message
 ) {
 	// HEX dumper
-	for (int i = 0; i < sizeof(*message); i++) {
+	for (unsigned int i = 0; i < sizeof(*message); i++) {
 		unsigned char *buf = (unsigned char *) message;
 		VL_DEBUG_MSG_3("%x-", *(buf+i));
 	}
@@ -496,7 +495,7 @@ int message_prepare_for_network (
 
 	if (VL_DEBUGLEVEL_6) {
 		VL_DEBUG_MSG("Message prepared for network: ");
-		for (int i = 0; i < sizeof(*message); i++) {
+		for (unsigned int i = 0; i < sizeof(*message); i++) {
 			unsigned char *buf = (unsigned char *) message;
 			VL_DEBUG_MSG("%x-", *(buf + i));
 		}

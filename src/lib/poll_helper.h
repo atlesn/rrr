@@ -49,11 +49,7 @@ struct poll_collection {
 		for (struct poll_collection_entry *entry = collection->first; entry != NULL; entry = entry->next)
 
 void poll_collection_clear(struct poll_collection *collection);
-
-static void poll_collection_clear_void(void *collection) {
-	poll_collection_clear((struct poll_collection *) collection);
-}
-
+void poll_collection_clear_void(void *data);
 void poll_collection_init(struct poll_collection *collection);
 
 void poll_collection_remove (struct poll_collection *collection, struct instance_thread_data *find);

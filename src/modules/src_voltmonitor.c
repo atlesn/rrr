@@ -147,7 +147,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 	}
 
 	// write report to get device info
-	unsigned char outbuf[64];
+	char outbuf[64];
 	memset(outbuf, '\0', 64);
 	outbuf[0] = 0xff;
 	outbuf[1] = 0x37;
@@ -157,7 +157,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 	}
 
 	// read device info report
-	unsigned char inbuf[64];
+	char inbuf[64];
 	memset(inbuf, '\0', 64);
 	if ( usb_interrupt_read ( h, 1, inbuf, sizeof(inbuf), 1000 ) != 64 ) {
 		VL_MSG_ERR ("voltmonitor: USB read failed\n");
@@ -209,7 +209,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	}
 
 	// trigger measurement
-	unsigned char outbuf[64];
+	char outbuf[64];
 	memset ( outbuf, 255, 64 );
 	outbuf[0] = 0x37;
 		if ( usb_interrupt_write ( data->usb_handle, 1, outbuf, sizeof(outbuf), 1000 ) != 64 ) {
@@ -217,7 +217,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 			goto err_close_device;
 		}
 
-	unsigned char inbuf[64];
+	char inbuf[64];
 	memset ( inbuf, 255, 64 );
 		if ( usb_interrupt_read ( data->usb_handle, 1, inbuf, sizeof(inbuf), 1000 ) != 64 ) {
 			VL_MSG_ERR ( "voltagemonitor read failed\n" );
@@ -403,8 +403,6 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 	pthread_cleanup_push(usb_cleanup, data);
 
-	static const char *voltmonitor_msg = "voltmonitor measurement";
-
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
@@ -454,7 +452,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "voltmonitor";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -465,6 +463,6 @@ void init(struct instance_dynamic_data *data) {
 		data->private_data = NULL;
 }
 
-void unload() {
+void unload(void) {
 }
 

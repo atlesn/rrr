@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
+#include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -48,7 +49,6 @@ int poll_delete (
 	struct fifo_callback_args *poll_data
 ) {
 	struct buffer_data *buffer_data = data->private_data;
-	struct instance_thread_data *source = poll_data->source;
 
 	if (fifo_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data) == FIFO_GLOBAL_ERR) {
 		return 1;
@@ -60,7 +60,6 @@ int poll_delete (
 int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = caller_data->private_data;
 	struct buffer_data *buffer_data = thread_data->private_data;
-	struct instance_thread_data *source = caller_data->source;
 	struct vl_message *message = (struct vl_message *) data;
 
 	VL_DEBUG_MSG_3 ("buffer: Result from buffer: %s measurement %" PRIu64 " size %lu\n",
@@ -114,9 +113,6 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 	}
 
 	VL_DEBUG_MSG_1 ("buffer started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Warning: No senders are set for buffer processor module\n");
-	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -131,7 +127,6 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread buffer %p exiting\n", thread_data->thread);
 
-	out:
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -139,6 +134,7 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 }
 
 static int test_config (struct rrr_instance_config *config) {
+	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
 
@@ -154,7 +150,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "buffer";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -165,7 +161,7 @@ void init(struct instance_dynamic_data *data) {
 	data->dl_ptr = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy buffer module\n");
 }
 

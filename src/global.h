@@ -25,10 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_GLOBAL_H
 
 /* Compile time checks */
-#define VL_ASSERT_DEBUG
+//#define VL_ASSERT_DEBUG
 #ifdef VL_ASSERT_DEBUG
 #define VL_ASSERT(predicate,name) \
-	do{typedef char _assertion_failed_##name##_[2*!!(predicate)-1];}while(0);
+	do{char _assertion_failed_##name##_[2*!!(predicate)-1];_assertion_failed_##name##_[0]='\0';}while(0);
 #else
 #define VL_ASSERT(predicate,name)
 #endif

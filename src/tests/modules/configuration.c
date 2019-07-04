@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int configuration_test_result = 1;
 
-int get_configuration_test_result() {
+int get_configuration_test_result(void) {
 	return configuration_test_result;
 }
 
@@ -39,16 +39,17 @@ void set_configuration_test_result(int result) {
 }
 
 struct configuration_test_data {
-
+	int dummy;
 };
 
 
 void data_init(struct configuration_test_data *data) {
-
+	data->dummy = 1;
 }
 
 void data_cleanup(void *_data) {
 	struct configuration_test_data *data = _data;
+	data->dummy = 0;
 }
 
 static void *thread_entry_configuration_test (struct vl_thread_start_data *start_data) {
@@ -104,7 +105,7 @@ static struct module_operations module_operations = {
 };
 static const char *module_name = "configuration_test";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -116,6 +117,6 @@ void init(struct instance_dynamic_data *data) {
 	data->special_module_operations = NULL;
 }
 
-void unload() {
+void unload(void) {
 	VL_DEBUG_MSG_1 ("Destroy configuration test module\n");
 }

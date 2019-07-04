@@ -99,9 +99,6 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 /* Receive raw packets */
 int ip_receive_packets (
 	int fd,
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data,
-#endif
 	int (*callback)(struct ip_buffer_entry *entry, void *arg),
 	void *arg,
 	struct ip_stats *stats
@@ -206,7 +203,7 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 		return 0;
 	}
 
-	unsigned char *start = entry->data.data;
+	char *start = entry->data.data;
 	if (*start != '\0') {
 		VL_MSG_ERR ("Datagram received from network did not start with zero\n");
 		return 0;
@@ -217,7 +214,7 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 
 #ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL) {
-		unsigned char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
+		char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
 		if (*end != '\0') {
 			VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
 			free (entry);
@@ -270,9 +267,6 @@ int ip_receive_messages (
 
 	return ip_receive_packets (
 			fd,
-#ifdef VL_WITH_OPENSSL
-			crypt_data,
-#endif
 			ip_receive_messages_callback,
 			&data,
 			stats

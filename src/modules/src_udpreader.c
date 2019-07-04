@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
+#include "../lib/instance_config.h"
 #include "../global.h"
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
@@ -185,9 +186,6 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 int read_data(struct udpreader_data *data) {
 	return ip_receive_packets (
 		data->ip.fd,
-#ifdef VL_WITH_OPENSSL
-		NULL,
-#endif
 		read_data_callback,
 		data,
 		NULL
@@ -237,9 +235,7 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		uint64_t time = time_get_64();
-
-//		struct vl_message *reading = message_new_reading(time, time);
+		//		struct vl_message *reading = message_new_reading(time, time);
 
 		VL_DEBUG_MSG_2("udpreader: reading from network\n");
 
@@ -284,7 +280,7 @@ static struct module_operations module_operations = {
 
 static const char *module_name = "udpreader";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
 void init(struct instance_dynamic_data *data) {
@@ -295,7 +291,7 @@ void init(struct instance_dynamic_data *data) {
 		data->private_data = NULL;
 }
 
-void unload() {
+void unload(void) {
 }
 
 

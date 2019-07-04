@@ -20,7 +20,7 @@ AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code"
+AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered"
 AC_SUBST(AM_CFLAGS)
 
 AC_CHECK_HEADERS([usb.h pthread.h])
