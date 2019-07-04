@@ -140,7 +140,7 @@ int main (int argc, const char **argv) {
 
 	} TEST_RESULT(ret == 0);
 
-	thread_destroy_collection (collection);
+	thread_destroy_collection(collection);
 
 	out_cleanup_instances:
 	instance_metadata_collection_destroy(instances);

@@ -570,3 +570,12 @@ struct vl_thread *thread_preload_and_register (
 
 	return NULL;
 }
+
+void thread_free_double_pointer(void *arg) {
+	struct vl_thread_double_pointer *data = arg;
+	RRR_FREE_IF_NOT_NULL(*(data->ptr));
+}
+
+void thread_free_single_pointer(void *arg) {
+	RRR_FREE_IF_NOT_NULL(arg);
+}

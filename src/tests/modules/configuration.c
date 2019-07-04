@@ -55,6 +55,8 @@ void data_cleanup(void *_data) {
 static void *thread_entry_configuration_test (struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
 	struct configuration_test_data *data = thread_data->private_data = thread_data->private_memory;
+	int ret = 0;
+	struct vl_message *array_message = NULL;
 
 	thread_data->thread = start_data->thread;
 
@@ -62,6 +64,7 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 
 	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
@@ -76,22 +79,32 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 
 	update_watchdog_time(thread_data->thread);
 
-	int ret = 0;
-	struct vl_message *array_message = NULL;
-
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
 			&array_message,
 			thread_data->init_data.module->all_instances,
 			"instance_udpreader","instance_buffer");
-	TEST_MSG("Result from array test: %i\n", ret);
+	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
 
 	update_watchdog_time(thread_data->thread);
 
+	if (ret != 0) {
+		goto configtest_done;
+	}
+
+	/* Test putting the array into MySQL database */
+	ret = test_type_array_mysql(thread_data->init_data.module->all_instances,
+			"instance_dummy", "instance_mysql",
+			array_message
+	);
+	TEST_MSG("Result from MySQL test: %i\n", ret);
+
+	configtest_done:
 	set_configuration_test_result(ret);
 
 	/* We exit without looping which also makes the other loaded modules exit */
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

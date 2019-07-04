@@ -273,7 +273,7 @@ int __rrr_settings_traverse_split_commas (
 
 	char *value = NULL;
 
-	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
+	if (__rrr_settings_get_string_noconvert (&value, source, name, silent_fail) != 0) {
 		if (silent_fail) {
 			goto out;
 		}

@@ -28,3 +28,10 @@ int test_type_array (
 		const char *input_name,
 		const char *output_name
 );
+
+int test_type_array_mysql (
+		struct instance_metadata_collection *instances,
+		const char *input_name,
+		const char *mysql_name,
+		const struct vl_message *message_in
+);

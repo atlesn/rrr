@@ -760,6 +760,11 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 		ret = 1;
 	}
 
+	if (data->mysql_db == NULL) {
+		VL_MSG_ERR ("mysql_db not correctly set for instance %s.\n", config->name);
+		ret = 1;
+	}
+
 	// NO TAGGING
 	int yesno = 0;
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging") == RRR_SETTING_PARSE_ERROR) {
@@ -854,7 +859,7 @@ int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry)
 	}
 
 	else if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
-		VL_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used\n");
+		VL_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
 		return 1;
 	}
 	else {

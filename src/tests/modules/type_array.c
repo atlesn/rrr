@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <inttypes.h>
+#include <mysql/mysql.h>
+#include "../../lib/rrr_mysql.h"
 
 #include "type_array.h"
 #include "../test.h"
@@ -88,6 +90,14 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_data_collection *collection = NULL;
 
 	result->message = message;
+
+	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
+
+	if (!MSG_IS_ARRAY(message)) {
+		TEST_MSG("Message received in test_type_array_callback was not an array\n");
+		ret = 1;
+		goto out;
+	}
 
 	if (rrr_types_message_to_collection(&collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
@@ -331,7 +341,7 @@ int test_type_array (
 
 	usleep(200000);
 
-	struct test_result test_result = {0};
+	struct test_result test_result = {1, NULL};
 	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
 	ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data);
 	if (ret != 0) {
@@ -347,4 +357,229 @@ int test_type_array (
 	}
 
 	return 1;
+}
+
+int test_type_array_mysql_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	int ret = 0;
+
+	VL_DEBUG_MSG_4("Received message of size %lu in tyest_type_array_mysql_callback\n", size);
+
+	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
+	struct test_result *test_result = poll_data->private_data;
+	struct vl_message *message = (struct vl_message *) data;
+
+	test_result->message = message;
+	test_result->result = 0;
+
+	return ret;
+}
+
+struct test_type_array_mysql_data {
+	char *mysql_server;
+	char *mysql_user;
+	char *mysql_password;
+	char *mysql_db;
+	unsigned int mysql_port;
+};
+
+int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) {
+	int ret = 0;
+	rrr_mysql_library_init();
+	mysql_thread_init();
+
+	static const char *create_table_sql =
+	"CREATE TABLE IF NOT EXISTS `rrr-test-array-types` ("
+		"`int1` bigint(20) NOT NULL,"
+		"`int2` bigint(20) NOT NULL,"
+		"`int3` bigint(20) NOT NULL,"
+		"`int4` bigint(20) NOT NULL,"
+		"`int5` bigint(20) NOT NULL,"
+		"`int6` bigint(20) NOT NULL,"
+		"`int7` bigint(20) NOT NULL,"
+		"`int8` bigint(20) NOT NULL,"
+		"`blob_a` blob NOT NULL,"
+		"`blob_b` blob NOT NULL,"
+		"`timestamp` bigint(20) NOT NULL"
+	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";
+
+	void *ptr;
+	MYSQL mysql;
+
+	ptr = mysql_init(&mysql);
+	if (ptr == NULL) {
+		VL_MSG_ERR ("Could not initialize MySQL\n");
+		ret = 1;
+		goto out;
+	}
+
+	ptr = mysql_real_connect (
+			&mysql,
+			mysql_data->mysql_server,
+			mysql_data->mysql_user,
+			mysql_data->mysql_password,
+			mysql_data->mysql_db,
+			mysql_data->mysql_port,
+			NULL,
+			0
+	);
+
+	if (ptr == NULL) {
+		VL_MSG_ERR ("mysql_type_array_setup_mysql: Failed to connect to database: Error: %s\n",
+				mysql_error(&mysql));
+		ret = 1;
+		goto out;
+	}
+
+	if (mysql_query(&mysql, create_table_sql)) {
+		VL_MSG_ERR ("mysql_type_array_setup_mysql: Failed to create table: Error: %s\n",
+				mysql_error(&mysql));
+		ret = 1;
+		goto out_close;
+	}
+
+	TEST_MSG("Connected to MySQL\n");
+
+	out_close:
+	mysql_close(&mysql);
+
+	out:
+	mysql_thread_end();
+	rrr_mysql_library_end();
+	return ret;
+}
+
+int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, struct instance_metadata *mysql) {
+	int ret = 0;
+
+	memset(data, '\0', sizeof(*data));
+
+	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_server, mysql->config, "mysql_server");
+	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_user, mysql->config, "mysql_user");
+	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_password, mysql->config, "mysql_password");
+	ret |= rrr_instance_config_get_string_noconvert (&data->mysql_db, mysql->config, "mysql_db");
+
+	rrr_setting_uint port;
+	if (rrr_instance_config_read_port_number (&port, mysql->config, "mysql_port") == RRR_SETTING_ERROR) {
+		ret |= 1;
+	}
+	else if (data->mysql_port == 0) {
+		data->mysql_port = 5506;
+	}
+
+	return ret;
+}
+
+void test_type_array_mysql_data_cleanup(void *arg) {
+	struct test_type_array_mysql_data *data = arg;
+
+	RRR_FREE_IF_NOT_NULL(data->mysql_server);
+	RRR_FREE_IF_NOT_NULL(data->mysql_user);
+	RRR_FREE_IF_NOT_NULL(data->mysql_password);
+	RRR_FREE_IF_NOT_NULL(data->mysql_db);
+}
+
+int test_type_array_mysql (
+		struct instance_metadata_collection *instances,
+		const char *input_name,
+		const char *mysql_name,
+		const struct vl_message *message_in
+) {
+	int ret = 0;
+
+	struct test_result test_result = {1, NULL};
+	struct ip_buffer_entry *message = NULL;
+	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
+
+	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(message, message);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
+
+	message = malloc(sizeof(*message));
+	memset(message, '\0', sizeof(*message));
+	memcpy(&message->data.message, message_in, sizeof(message->data.message));
+
+	struct instance_metadata *input = instance_find(instances, input_name);
+	struct instance_metadata *mysql = instance_find(instances, mysql_name);
+
+	if (input == NULL || mysql == NULL) {
+		TEST_MSG("Could not find input and mysql instances %s and %s in test_type_array_mysql\n",
+				input_name, mysql_name);
+		ret = 1;
+		goto out;
+	}
+
+	ret = test_type_array_mysql_steal_config(&mysql_data, mysql);
+	if (ret != 0) {
+		VL_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql\n");
+		ret = 1;
+		goto out;
+	}
+
+
+	ret = test_type_array_setup_mysql (&mysql_data);
+	if (ret != 0) {
+		VL_MSG_ERR("Failed to setup MySQL test environment\n");
+		ret = 1;
+		goto out;
+	}
+
+	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
+
+	inject = input->dynamic_data->operations.inject;
+	poll_delete = mysql->dynamic_data->operations.poll_delete_ip;
+
+	if (inject == NULL || poll_delete == NULL) {
+		TEST_MSG("Could not find inject/poll_delete in modules in test_type_array_mysql\n");
+		ret = 1;
+		goto out;
+	}
+
+	uint64_t message_timestamp = message->data.message.timestamp_from;
+
+	ret = inject(input->thread_data, message);
+	if (ret != 0) {
+		TEST_MSG("Error from inject function in test_type_array_mysql\n");
+		ret = 1;
+		goto out;
+	}
+	message = NULL; // Buffers take ownership
+
+	// Wait for MySQL to insert message and check for ACK
+	usleep (250000);
+
+	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
+	ret = poll_delete(mysql->thread_data, test_type_array_mysql_callback, &poll_data);
+	if (ret != 0) {
+		VL_MSG_ERR("Error from poll_delete in mysql in test_type_array_mysql\n");
+		ret = 1;
+		goto out;
+	}
+	TEST_MSG("Result from MySQL test: %i\n", test_result.result);
+
+	ret = test_result.result;
+	if (ret != 0) {
+		VL_MSG_ERR("Result was not OK from test_type_array_mysql_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct vl_message *result_message = test_result.message;
+	if (!MSG_IS_TAG(result_message)) {
+		VL_MSG_ERR("Message from MySQL was not a TAG message\n");
+		ret = 1;
+		goto out;
+	};
+
+	if (result_message->timestamp_from != message_timestamp) {
+		VL_MSG_ERR("Timestamp of TAG message from MySQL did not match original message\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	return ret;
 }

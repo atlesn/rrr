@@ -71,6 +71,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VL_THREAD_NAME_MAX_LENGTH 64
 
+struct vl_thread_double_pointer {
+	void **ptr;
+};
+
+#define VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(name,pointer) \
+	struct vl_thread_double_pointer __##name##_double_pointer = {(void**) &(pointer)}; \
+	pthread_cleanup_push(thread_free_double_pointer, &__##name##_double_pointer)
+
+#define VL_THREAD_CLEANUP_PUSH_FREE_SINGLE_POINTER(name) \
+	pthread_cleanup_push(thread_free_single_pointer, name)
+
+
 struct vl_thread {
 	struct vl_thread *next;
 	pthread_t thread;
@@ -210,7 +222,8 @@ struct vl_thread *thread_preload_and_register (
 		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
 );
 
-
+void thread_free_double_pointer(void *arg);
+void thread_free_single_pointer(void *arg);
 
 //void thread_destroy (struct vl_thread_collection *collection, struct vl_thread *thread);
 
