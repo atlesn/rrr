@@ -19,9 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+struct vl_message;
 struct instance_metadata_collection;
 
 int test_type_array (
+		struct vl_message **result_message,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
 		const char *output_name

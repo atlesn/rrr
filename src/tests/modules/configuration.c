@@ -76,10 +76,13 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 
 	update_watchdog_time(thread_data->thread);
 
-	int ret;
+	int ret = 0;
+	struct vl_message *array_message = NULL;
 
 	/* Test array type and data endian conversion */
-	ret = test_type_array(thread_data->init_data.module->all_instances,
+	ret = test_type_array (
+			&array_message,
+			thread_data->init_data.module->all_instances,
 			"instance_udpreader","instance_buffer");
 	TEST_MSG("Result from array test: %i\n", ret);
 

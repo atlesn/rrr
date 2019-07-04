@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct test_result {
 	int result;
+	struct vl_message *message;
 };
 
 /* udpr_input_types=be,4,be,3,be,2,be,1,le,4,le,3,le,2,le,1,array,2,blob,8 */
@@ -74,6 +75,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 	struct test_result *result = poll_data->private_data;
 
+	result->message = NULL;
 	result->result = 1;
 
 	if (size > sizeof(struct vl_message)) {
@@ -84,6 +86,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct vl_message *message = (struct vl_message *) data;
 	struct rrr_data_collection *collection = NULL;
+
+	result->message = message;
 
 	if (rrr_types_message_to_collection(&collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
@@ -249,16 +253,24 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_types_destroy_data(collection);
 
 	out:
-	free(data);
+	if (ret != 0) {
+		RRR_FREE_IF_NOT_NULL(data);
+	}
+	else {
+		result->message = message;
+	}
+
 	return ret;
 }
 
 int test_type_array (
+		struct vl_message **result_message,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
 		const char *output_name
 ) {
 	int ret = 0;
+	*result_message = NULL;
 
 	struct instance_metadata *input = instance_find(instances, input_name);
 	struct instance_metadata *output = instance_find(instances, output_name);
@@ -319,15 +331,20 @@ int test_type_array (
 
 	usleep(200000);
 
-	struct test_result result = {0};
-	struct fifo_callback_args poll_data = {NULL, &result, 0};
+	struct test_result test_result = {0};
+	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
 	ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data);
 	if (ret != 0) {
 		TEST_MSG("Error from poll_delete function in test_type_array\n");
 		return 1;
 	}
 
-	TEST_MSG("Result of test_type_array, should be 2: %i\n", result.result);
+	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result.result);
 
-	return (result.result != 2);
+	if (test_result.result == 2) {
+		*result_message = test_result.message;
+		return 0;
+	}
+
+	return 1;
 }
