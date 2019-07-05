@@ -22,7 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <signal.h>
 
+#include "test.h"
 #include "../main.h"
 #include "../global.h"
 #include "../../build_timestamp.h"
@@ -30,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "test.h"
 
 const char *library_paths[] = {
 		VL_MODULE_PATH,
@@ -39,7 +40,7 @@ const char *library_paths[] = {
 };
 
 int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
-	struct instance_metadata *instance = instance_find(instances, "instance_configuration_tester");
+	struct instance_metadata *instance = instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		VL_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
@@ -48,10 +49,30 @@ int main_get_configuration_test_result(struct instance_metadata_collection *inst
 
 	void *handle = instance->dynamic_data->dl_ptr;
 
-	int (*get_test_result)(void) = dlsym(handle, "get_configuration_test_result");
+	dlerror();
+
+	int (*get_test_result)(void) = dlsym(handle, "get_test_module_result");
+
+	if (get_test_result == NULL) {
+		VL_MSG_ERR("Could not find test result function in test module: %s\n", dlerror());
+		return 1;
+	}
 
 	return get_test_result();
 }
+
+static volatile int main_running = 1;
+
+void signal_interrupt (int s) {
+    main_running = 0;
+
+    VL_DEBUG_MSG_1("Received signal %i\n", s);
+
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGUSR1, SIG_DFL);
+}
+
 
 int main (int argc, const char **argv) {
 	int ret = 0;
@@ -130,13 +151,22 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_instances;
 	}
 
+	struct sigaction action;
+	action.sa_handler = signal_interrupt;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
+
 	TEST_BEGIN("testing type array parsing") {
-		while (instance_check_threads_stopped(instances) != 0) {
+		while (main_running && (rrr_global_config.no_thread_restart || instance_check_threads_stopped(instances) == 0)) {
 			usleep(10000);
 		}
 
-		main_threads_stop(collection, instances);
 		ret = main_get_configuration_test_result(instances);
+		main_threads_stop(collection, instances);
 
 	} TEST_RESULT(ret == 0);
 

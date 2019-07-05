@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define MSG_DATA_MAX_LENGTH 1024
 
-#define MSG_STRING_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
+#define MSG_SEND_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
 
 #define MSG_TMP_SIZE 64
 
@@ -62,22 +62,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
+#define MSG_ENDIAN_BYTES	0x0102
+#define MSG_ENDIAN_LE		0x02
+#define MSG_ENDIAN_BE		0x01
+
+#define MSG_IS_LE(msg)		(msg->endian_one == MSG_ENDIAN_LE)
+#define MSG_IS_BE(msg)		(msg->endian_one == MSG_ENDIAN_BE)
+
 #include <stdint.h>
 
 struct vl_message {
+	// Used by ipclient and ipserver for network transfer. CRC must be first
+	// as we skip the first 4 bytes of the message when calculating.
+	uint32_t crc32;
+	union {
+		uint16_t endian_two;
+		uint8_t endian_one;
+	};
+	uint16_t reserved;
+
 	uint32_t type;
 	uint32_t class;
 	uint64_t timestamp_from;
 	uint64_t timestamp_to;
 	uint64_t data_numeric;
 
-	// Used by ipclient and ipserver for network transfer
-	uint32_t crc32;
-	uint32_t endian_check;
-
 	uint32_t length;
 	char data[MSG_DATA_MAX_LENGTH+2];
-};
+} __attribute__((packed));
 
 struct vl_message *message_new_reading (
 	uint64_t reading_millis,
@@ -110,7 +122,7 @@ int init_message (
 	unsigned long int data_size,
 	struct vl_message *result
 );
-int parse_message (
+/*int parse_message (
 	const char *msg,
 	unsigned long int size,
 	struct vl_message *result
@@ -122,15 +134,18 @@ int message_to_string (
 );
 int message_fix_endianess (
 	struct vl_message *message
-);
+);*/
 void message_checksum (
 	struct vl_message *message
 );
 int message_checksum_check (
 	struct vl_message *message
 );
-int message_prepare_for_network (
-	struct vl_message *message, char *buf, unsigned long buf_size
+int message_convert_endianess (
+	struct vl_message *message
+);
+void message_prepare_for_network (
+	struct vl_message *message
 );
 struct vl_message *message_duplicate (
 	struct vl_message *message

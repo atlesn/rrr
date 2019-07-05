@@ -79,7 +79,7 @@ void thread_set_state (struct vl_thread *thread, int state) {
 	thread->state = state;
 
 	nosetting:
-	thread_unlock(thread);;
+	thread_unlock(thread);
 }
 
 int __thread_is_in_collection (struct vl_thread_collection *collection, struct vl_thread *thread) {
@@ -258,7 +258,7 @@ void __thread_collection_remove_thread (struct vl_thread_collection *collection,
 }
 
 void __thread_collection_add_thread (struct vl_thread_collection *collection, struct vl_thread *thread) {
-	printf ("Adding thread %p to collection %p\n", thread, collection);
+//	VL_DEBUG_MSG_1 ("Adding thread %p to collection %p\n", thread, collection);
 
 	if (__thread_is_in_collection(collection, thread)) {
 		VL_MSG_ERR("BUG: Attempted to add thread to collection in which it was already part of\n");
@@ -301,6 +301,7 @@ void *__thread_watchdog_entry (void *arg) {
 
 	uint64_t prev_loop_time = time_get_64();
 	while (1) {
+
 		uint64_t nowtime = time_get_64();
 		uint64_t prevtime = get_watchdog_time(thread);
 
@@ -317,7 +318,9 @@ void *__thread_watchdog_entry (void *arg) {
 			VL_DEBUG_MSG_1 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
 			break;
 		}
-		else if (prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime) {
+		else if (!rrr_global_config.no_watchdog_timers &&
+				(prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime)
+		) {
 			if (time_get_64() - prev_loop_time > 100000) { // 100 ms
 				VL_MSG_ERR ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);
 			}
@@ -405,6 +408,7 @@ void *__thread_watchdog_entry (void *arg) {
 			VL_DEBUG_MSG_1 ("Thread %s/%p finished.\n", thread->name, thread);
 			break;
 		}
+
 		usleep (10000); // 10 ms
 	}
 
@@ -471,7 +475,7 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 	// Join with the watchdogs. The other threads might be in hung up state.
 	VL_THREADS_LOOP(thread,collection) {
 		if (thread->is_watchdog) {
-			printf ("Joining with thread watchdog %s\n", thread->name);
+			VL_DEBUG_MSG_1 ("Joining with thread watchdog %s\n", thread->name);
 			void *ret;
 			pthread_join(thread->thread, &ret);
 		}
@@ -527,7 +531,7 @@ struct vl_thread *thread_preload_and_register (
 		goto out_error;
 	}
 
-	printf ("Started thread %s pthread address %p\n", thread->name, &thread->thread);
+	VL_DEBUG_MSG_1 ("Started thread %s pthread address %p\n", thread->name, &thread->thread);
 
 	pthread_detach(thread->thread);
 

@@ -814,15 +814,14 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 	}
 
 	for (rrr_def_count i = 0; i < definitions.count; i++) {
-		char *target = new_data->data[i];
 		struct rrr_type_definition *def = &definitions.definitions[i];
 
 		if (RRR_TYPE_IS_64(def->type)) {
-			memcpy (target, data_pos, def->max_length * def->array_size);
+			memcpy ((char *) new_data->data[i], data_pos, def->max_length * def->array_size);
 			data_pos += def->max_length * def->array_size;
 		}
 		else {
-			memcpy (target, data_pos, def->length * def->array_size);
+			memcpy ((char *) new_data->data[i], data_pos, def->length * def->array_size);
 			data_pos += def->length * def->array_size;
 		}
 
@@ -840,6 +839,7 @@ int rrr_types_message_to_collection(struct rrr_data_collection **target, const s
 	return 0;
 
 	out_free_data:
+	*target = NULL;
 	free(new_data);
 	return 1;
 }

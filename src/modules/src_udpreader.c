@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct udpreader_data {
 	struct fifo_buffer buffer;
+	struct fifo_buffer inject_buffer;
 	unsigned int listen_port;
 	struct ip_data ip;
 	struct rrr_type_definition_collection definitions;
@@ -57,12 +58,14 @@ void data_init(struct udpreader_data *data) {
 	memset(data, '\0', sizeof(*data));
 
 	fifo_buffer_init(&data->buffer);
+	fifo_buffer_init(&data->inject_buffer);
 }
 
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct udpreader_data *data = (struct udpreader_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
+	fifo_buffer_invalidate(&data->inject_buffer);
 	if (data->tmp_type_data != NULL) {
 		rrr_types_destroy_data(data->tmp_type_data);
 	}
@@ -176,21 +179,42 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	return 0;
 }
 
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
-	struct udpreader_data *data = thread_data->private_data;
-	VL_DEBUG_MSG_2("udpreader: writing data from inject function\n");
-
-	return read_data_callback ((struct ip_buffer_entry *) message, data);
+int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct udpreader_data *udpreader_data = poll_data->private_data;
+	return read_data_callback((struct ip_buffer_entry *) data, udpreader_data);
 }
 
 int read_data(struct udpreader_data *data) {
-	return ip_receive_packets (
+	int ret = 0;
+
+	ret |= ip_receive_packets (
 		data->ip.fd,
 		read_data_callback,
 		data,
 		NULL
 	);
+
+	struct fifo_callback_args callback_data = {NULL, data, 0};
+	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data);
+
+	ret = (ret != 0 ? 1 : 0);
+
+	return ret;
 }
+
+static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+	struct udpreader_data *data = thread_data->private_data;
+	VL_DEBUG_MSG_2("udpreader: writing data from inject function\n");
+
+	if (data->inject_buffer.invalid) {
+		return 1;
+	}
+
+	fifo_buffer_write(&data->inject_buffer, (char *) message, sizeof(*message));
+
+	return 0;
+}
+
 
 static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;

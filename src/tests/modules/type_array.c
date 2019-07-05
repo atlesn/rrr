@@ -302,7 +302,7 @@ int test_type_array (
 		return 1;
 	}
 
-	// Allocate more bytes as we cast to vl_message later (although we are actually not a vl_message)
+	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not a vl_message)
 	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
 	memset(entry, '\0', sizeof(*entry));
 
@@ -339,30 +339,34 @@ int test_type_array (
 		return 1;
 	}
 
-	usleep(200000);
-
 	struct test_result test_result = {1, NULL};
-	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-	ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data);
-	if (ret != 0) {
-		TEST_MSG("Error from poll_delete function in test_type_array\n");
-		return 1;
-	}
+	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
+		usleep(50000);
 
-	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result.result);
+		TEST_MSG("Test result polling try: %i of 10\n", i);
 
-	if (test_result.result == 2) {
-		*result_message = test_result.message;
-		return 0;
+		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
+		ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data);
+		if (ret != 0) {
+			TEST_MSG("Error from poll_delete function in test_type_array\n");
+			return 1;
+		}
+
+		TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result.result);
+
+		if (test_result.result == 2) {
+			*result_message = test_result.message;
+			return 0;
+		}
 	}
 
 	return 1;
 }
 
-int test_type_array_mysql_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_4("Received message of size %lu in tyest_type_array_mysql_callback\n", size);
+	VL_DEBUG_MSG_4("Received message of size %lu in test_type_array_mysql_and_network_callback\n", size);
 
 	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
 	struct test_result *test_result = poll_data->private_data;
@@ -477,39 +481,46 @@ void test_type_array_mysql_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_db);
 }
 
-int test_type_array_mysql (
+int test_type_array_mysql_and_network (
 		struct instance_metadata_collection *instances,
-		const char *input_name,
+		const char *input_buffer_name,
+		const char *tag_buffer_name,
 		const char *mysql_name,
-		const struct vl_message *message_in
+		const struct vl_message *message
 ) {
 	int ret = 0;
 
 	struct test_result test_result = {1, NULL};
-	struct ip_buffer_entry *message = NULL;
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 
+	struct ip_buffer_entry *entry = NULL;
+
 	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(message, message);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
 
-	message = malloc(sizeof(*message));
-	memset(message, '\0', sizeof(*message));
-	memcpy(&message->data.message, message_in, sizeof(message->data.message));
+	VL_ASSERT(sizeof(*message) < sizeof(*entry),vl_message_smaller_than_ip_buffer_entry);
 
-	struct instance_metadata *input = instance_find(instances, input_name);
+	entry = malloc(sizeof(*entry));
+	memset(entry, '\0', sizeof(*entry));
+	memcpy(entry, message, sizeof(*message)); // Note: Message is smaller than entry
+
+	uint64_t expected_ack_timestamp = entry->data.message.timestamp_from;
+
+	struct instance_metadata *input_buffer = instance_find(instances, input_buffer_name);
+	struct instance_metadata *tag_buffer = instance_find(instances, tag_buffer_name);
 	struct instance_metadata *mysql = instance_find(instances, mysql_name);
 
-	if (input == NULL || mysql == NULL) {
-		TEST_MSG("Could not find input and mysql instances %s and %s in test_type_array_mysql\n",
-				input_name, mysql_name);
+	if (input_buffer == NULL || tag_buffer == NULL || mysql == NULL) {
+		TEST_MSG("Could not find input, tag and mysql instances %s, %s and %s in test_type_array_mysql_and_network\n",
+				input_buffer_name, tag_buffer_name, mysql_name);
 		ret = 1;
 		goto out;
 	}
 
 	ret = test_type_array_mysql_steal_config(&mysql_data, mysql);
 	if (ret != 0) {
-		VL_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql\n");
+		VL_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
@@ -525,40 +536,44 @@ int test_type_array_mysql (
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 
-	inject = input->dynamic_data->operations.inject;
-	poll_delete = mysql->dynamic_data->operations.poll_delete_ip;
+	inject = input_buffer->dynamic_data->operations.inject;
+	poll_delete = tag_buffer->dynamic_data->operations.poll_delete;
 
 	if (inject == NULL || poll_delete == NULL) {
-		TEST_MSG("Could not find inject/poll_delete in modules in test_type_array_mysql\n");
+		TEST_MSG("Could not find inject/poll_delete in modules in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
 
-	uint64_t message_timestamp = message->data.message.timestamp_from;
-
-	ret = inject(input->thread_data, message);
-	if (ret != 0) {
-		TEST_MSG("Error from inject function in test_type_array_mysql\n");
+	ret = inject(input_buffer->thread_data, entry);
+	if (ret == 0) {
+		entry = NULL;
+	}
+	else {
+		VL_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
-	message = NULL; // Buffers take ownership
 
 	// Wait for MySQL to insert message and check for ACK
-	usleep (500000);
+	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
+		usleep (50000);
 
-	struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-	ret = poll_delete(mysql->thread_data, test_type_array_mysql_callback, &poll_data);
-	if (ret != 0) {
-		VL_MSG_ERR("Error from poll_delete in mysql in test_type_array_mysql\n");
-		ret = 1;
-		goto out;
+		TEST_MSG("Polling MySQL test result try %i of 10\n", i);
+
+		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
+		ret = poll_delete(tag_buffer->thread_data, test_type_array_mysql_and_network_callback, &poll_data);
+		if (ret != 0) {
+			VL_MSG_ERR("Error from poll_delete in buffer in test_type_array_mysql_and_network\n");
+			ret = 1;
+			goto out;
+		}
+		TEST_MSG("Result from buffer callback: %i\n", test_result.result);
 	}
-	TEST_MSG("Result from MySQL callback: %i\n", test_result.result);
 
 	ret = test_result.result;
 	if (ret != 0) {
-		VL_MSG_ERR("Result was not OK from test_type_array_mysql_callback\n");
+		VL_MSG_ERR("Result was not OK from test_type_array_mysql_and_network_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -570,8 +585,9 @@ int test_type_array_mysql (
 		goto out;
 	};
 
-	if (result_message->timestamp_from != message_timestamp) {
-		VL_MSG_ERR("Timestamp of TAG message from MySQL did not match original message\n");
+	if (result_message->timestamp_from != expected_ack_timestamp) {
+		VL_MSG_ERR("Timestamp of TAG message from MySQL did not match original message (%" PRIu64 " vs %" PRIu64 ")\n",
+				result_message->timestamp_from, expected_ack_timestamp);
 		ret = 1;
 		goto out;
 	}

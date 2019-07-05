@@ -123,10 +123,6 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	struct ipserver_data *private_data = poll_data->private_data;
 	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
 
-	char buf[MSG_STRING_MAX_LENGTH];
-	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
-	buf[0] = '\0'; // Network messages must start and end with zero
-
 	struct addrinfo res;
 	res.ai_addr = &entry->addr;
 	res.ai_addrlen = entry->addr_len;
@@ -136,11 +132,7 @@ int send_replies_callback(struct fifo_callback_args *poll_data, char *data, unsi
 	info.packet_counter = 0;
 	info.res = &res;
 
-	struct vl_message *message_err;
-
-	if (message_prepare_for_network (&entry->data.message, buf, MSG_STRING_MAX_LENGTH) != 0) {
-		return 1;
-	}
+	struct vl_message *message_err = NULL;
 
 	VL_DEBUG_MSG_3 ("ipserver: send reply timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
@@ -245,6 +237,7 @@ static int parse_config (struct ipserver_data *data, struct rrr_instance_config 
 			ret = 1;
 			goto out;
 		}
+		ret = 0;
 	}
 #endif
 
@@ -258,6 +251,7 @@ static int parse_config (struct ipserver_data *data, struct rrr_instance_config 
 	}
 	else {
 		ipserver_port = VL_IPSERVER_SERVER_PORT;
+		ret = 0;
 	}
 
 	data->server_port = ipserver_port;

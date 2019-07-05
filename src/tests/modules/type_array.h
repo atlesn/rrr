@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <inttypes.h>
+
 struct vl_message;
 struct instance_metadata_collection;
 
@@ -29,9 +31,10 @@ int test_type_array (
 		const char *output_name
 );
 
-int test_type_array_mysql (
+int test_type_array_mysql_and_network (
 		struct instance_metadata_collection *instances,
-		const char *input_name,
+		const char *input_buffer_name,
+		const char *tag_buffer_name,
 		const char *mysql_name,
-		const struct vl_message *message_in
+		const struct vl_message *message
 );

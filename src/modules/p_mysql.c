@@ -317,9 +317,10 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 	return 0;
 }
 
-void free_collection(void *data) {
-	if (data != NULL) {
-		rrr_types_destroy_data(data);
+void free_collection(void *arg) {
+	struct vl_thread_double_pointer *data = arg;
+	if (*data->ptr != NULL) {
+		rrr_types_destroy_data(*data->ptr);
 	}
 }
 
@@ -328,7 +329,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	struct rrr_data_collection *collection = NULL;
 
-	pthread_cleanup_push(free_collection, collection);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER_CUSTOM(collection_cleanup,free_collection,collection);
 	if (rrr_types_message_to_collection(&collection, &entry->data.message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		res = 1;
@@ -901,12 +902,12 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 
 	int err = 0;
 
-	if (message_fix_endianess (&entry->data.message) != 0) {
+/*	if (message_fix_endianess (&entry->data.message) != 0) {
 		VL_MSG_ERR("mysql: Endianess could not be determined for message\n");
 		fifo_buffer_write(&mysql_data->input_buffer, data, size);
 		err = 1;
 		goto out;
-	}
+	}*/
 
 	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
 
@@ -931,8 +932,6 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		message->type = MSG_TYPE_TAG;
 		fifo_buffer_write(&mysql_data->output_buffer, data, size);
 	}
-
-	out:
 
 	return err;
 }
@@ -1026,7 +1025,7 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 	int err = 0;
 	RRR_SENDER_LOOP(sender,thread_data->init_data.senders) {
-				int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
+		int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
 		int delete_ip_has = poll_collection_has(&poll_ip, sender->sender->thread_data);
 
 		if (delete_has + delete_ip_has == 2) {

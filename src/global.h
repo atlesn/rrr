@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_GLOBAL_H
 
 /* Compile time checks */
-//#define VL_ASSERT_DEBUG
+#define VL_ASSERT_DEBUG
 #ifdef VL_ASSERT_DEBUG
 #define VL_ASSERT(predicate,name) \
 	do{char _assertion_failed_##name##_[2*!!(predicate)-1];_assertion_failed_##name##_[0]='\0';}while(0);
@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Runtime globals */
 struct rrr_global_config {
 	unsigned int debuglevel;
+	unsigned int no_watchdog_timers;
+	unsigned int no_thread_restart;
 };
 
 extern struct rrr_global_config rrr_global_config;
@@ -107,6 +109,6 @@ extern struct rrr_global_config rrr_global_config;
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
 
-void rrr_init_global_config(unsigned int debuglevel);
+void rrr_init_global_config(unsigned int debuglevel, unsigned int no_watcdog_timers, unsigned int no_thread_restart);
 
 #endif

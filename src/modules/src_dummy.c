@@ -77,7 +77,8 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	int yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 0;
+			yesno = 1; // Default to yes
+			ret = 0;
 		}
 		else {
 			VL_MSG_ERR("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
@@ -132,9 +133,8 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 	}
 
-	VL_DEBUG_MSG_1 ("Dummy received encourage stop\n");
-
 	out_cleanup:
+	VL_DEBUG_MSG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

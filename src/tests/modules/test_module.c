@@ -28,33 +28,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/modules.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
-static int configuration_test_result = 1;
+static int test_module_result = 1;
 
-int get_configuration_test_result(void) {
-	return configuration_test_result;
+int get_test_module_result(void) {
+	return test_module_result;
 }
 
-void set_configuration_test_result(int result) {
-	configuration_test_result = result;
+void set_test_module_result(int result) {
+	test_module_result = result;
 }
 
-struct configuration_test_data {
+struct test_module_data {
 	int dummy;
 };
 
 
-void data_init(struct configuration_test_data *data) {
+void data_init(struct test_module_data *data) {
 	data->dummy = 1;
 }
 
 void data_cleanup(void *_data) {
-	struct configuration_test_data *data = _data;
+	struct test_module_data *data = _data;
 	data->dummy = 0;
 }
 
-static void *thread_entry_configuration_test (struct vl_thread_start_data *start_data) {
+static void *thread_entry_test_module (struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
-	struct configuration_test_data *data = thread_data->private_data = thread_data->private_memory;
+	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
 	struct vl_message *array_message = NULL;
 
@@ -92,18 +92,21 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 		goto configtest_done;
 	}
 
-	/* Test putting the array into MySQL database */
-	ret = test_type_array_mysql(thread_data->init_data.module->all_instances,
-			"instance_dummy", "instance_mysql",
+	/* Test which sets up the MySQL database and then listens on a
+	 * buffer for ACK message */
+	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
+			"instance_dummy_input", "instance_buffer_msg", "instance_mysql",
 			array_message
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);
 
+
 	configtest_done:
-	set_configuration_test_result(ret);
+	set_test_module_result(ret);
 
 	/* We exit without looping which also makes the other loaded modules exit */
 
+	VL_DEBUG_MSG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -111,7 +114,7 @@ static void *thread_entry_configuration_test (struct vl_thread_start_data *start
 }
 
 static struct module_operations module_operations = {
-		thread_entry_configuration_test,
+		thread_entry_test_module,
 		NULL,
 		NULL,
 		NULL,
@@ -119,7 +122,7 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL
 };
-static const char *module_name = "configuration_test";
+static const char *module_name = "test_module";
 
 __attribute__((constructor)) void load(void) {
 }

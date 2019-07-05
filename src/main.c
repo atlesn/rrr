@@ -117,7 +117,10 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 	}
 
 	unsigned int debuglevel = 0;
-	const char* debuglevel_string = cmd_get_value(&*cmd, "debuglevel", 0);
+	int no_watchdog_timers = 0;
+	int no_thread_restart = 0;
+
+	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
 		int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
@@ -138,7 +141,25 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 		debuglevel = debuglevel_tmp;
 	}
 
-	rrr_init_global_config(debuglevel);
+	const char *no_watchdog_timers_string = cmd_get_value(cmd, "no_watchdog_timers", 0);
+	if (no_watchdog_timers_string != NULL) {
+		if (cmdline_check_yesno(no_watchdog_timers_string, &no_watchdog_timers) != 0) {
+			VL_MSG_ERR("Could not understand argument no_watchdog_timer=%s, please specify 'yes' or 'no'\n",
+					no_watchdog_timers_string);
+			return EXIT_FAILURE;
+		}
+	}
+
+	const char *no_thread_restart_string = cmd_get_value(cmd, "no_thread_restart", 0);
+	if (no_thread_restart_string != NULL) {
+		if (cmdline_check_yesno(no_thread_restart_string, &no_thread_restart) != 0) {
+			VL_MSG_ERR("Could not understand argument no_thread_restart=%s, please specify 'yes' or 'no'\n",
+					no_thread_restart_string);
+			return EXIT_FAILURE;
+		}
+	}
+
+	rrr_init_global_config(debuglevel, no_watchdog_timers, no_thread_restart);
 
 	return 0;
 }

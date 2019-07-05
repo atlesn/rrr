@@ -165,7 +165,7 @@ int ip_receive_packets (
 		}
 
 		if (stats != NULL) {
-			res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
+			res = ip_stats_update(stats, 1, VL_IP_RECEIVE_MAX_SIZE);
 			if (res == VL_IP_STATS_UPDATE_ERR) {
 				VL_MSG_ERR("ip: Error returned from stats update function\n");
 				return 1;
@@ -203,43 +203,40 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 		return 0;
 	}
 
-	char *start = entry->data.data;
-	if (*start != '\0') {
-		VL_MSG_ERR ("Datagram received from network did not start with zero\n");
-		return 0;
-	}
-
-	start++;
-	unsigned int input_length = count - 1;
-
 #ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL) {
-		char *end = memchr(start, '\0', MSG_STRING_MAX_LENGTH - 1);
-		if (*end != '\0') {
-			VL_MSG_ERR("Could not find terminating zero byte in encrypted message\n");
-			free (entry);
-			return 1;
-		}
+		unsigned int input_length = count;
 
-		input_length = end - start;
-
-		VL_DEBUG_MSG_3("ip decrypting message %s\n", start);
-		if (module_decrypt_message(crypt_data, start, &input_length, MSG_STRING_MAX_LENGTH - 1) != 0) {
+		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", input_length);
+		if (module_decrypt_message(
+				crypt_data,
+				(char*) entry->data.data,
+				&input_length,
+				sizeof(entry->data.data)
+		) != 0) {
 			VL_MSG_ERR("Error returned from module decrypt function\n");
 			free (entry);
 			return 1;
 		}
+
+		entry->data_length = input_length;
 	}
 #endif
 
-	if (parse_message(start, input_length, &entry->data.message) != 0) {
+/*	if (parse_message(start, input_length, &entry->data.message) != 0) {
 		VL_MSG_ERR ("Received invalid message\n");
+		free (entry);
+		return 0;
+	}*/
+
+	if (message_checksum_check(&entry->data.message) != 0) {
+		VL_MSG_ERR ("Message checksum was invalid\n");
 		free (entry);
 		return 0;
 	}
 
-	if (message_checksum_check(&entry->data.message) != 0) {
-		VL_MSG_ERR ("Message checksum was invalid for '%s'\n", start);
+	if (message_convert_endianess(&entry->data.message) != 0) {
+		VL_MSG_ERR ("Could not convert message endianess\n");
 		free (entry);
 		return 0;
 	}
@@ -274,21 +271,23 @@ int ip_receive_messages (
 }
 
 int ip_send_message (
-	struct vl_message* message,
+	const struct vl_message *input_message,
 #ifdef VL_WITH_OPENSSL
 	struct module_crypt_data *crypt_data,
 #endif
 	struct ip_send_packet_info *info,
 	struct ip_stats *stats
 ) {
-	char buf[MSG_STRING_MAX_LENGTH];
-	memset(buf, '\0', MSG_STRING_MAX_LENGTH);
-	buf[0] = '\0'; // Network messages must start and end with zero
-	if (message_prepare_for_network(message, buf, MSG_STRING_MAX_LENGTH) != 0) {
-		//return FIFO_SEARCH_KEEP;
-	}
+	char buf[VL_IP_RECEIVE_MAX_SIZE];
+	struct vl_message *final_message = (struct vl_message *) buf;
 
-	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", message->timestamp_from, buf + 1);
+	VL_ASSERT(sizeof(buf) >= sizeof(*input_message),ip_send_buf_can_hold_vl_message);
+
+	memcpy(final_message, input_message, sizeof(*final_message));
+
+	message_prepare_for_network(final_message);
+
+	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", input_message->timestamp_from, buf + 1);
 
 #ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL && module_encrypt_message (
@@ -300,20 +299,15 @@ int ip_send_message (
 	}
 #endif
 
-	if (buf[0] != 0) {
-		VL_MSG_ERR("ip: Start of send buffer was not zero\n");
-		exit(EXIT_FAILURE);
-	}
+	VL_DEBUG_MSG_3("ip: Final message to send ready\n");
 
-	VL_DEBUG_MSG_3("ip: Final message to send: %s\n", buf + 1);
-
-	if (sendto(info->fd, buf, MSG_STRING_MAX_LENGTH, 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
+	if (sendto(info->fd, buf, sizeof(*final_message), 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
 		VL_MSG_ERR("ip: Error while sending packet to server\n");
 		return 1;
 	}
 
 	if (stats != NULL) {
-		int res = ip_stats_update(stats, 1, MSG_STRING_MAX_LENGTH);
+		int res = ip_stats_update(stats, 1, sizeof(*final_message));
 		if (res == VL_IP_STATS_UPDATE_ERR) {
 			VL_MSG_ERR("ip: Error returned from stats update function\n");
 			return 1;

@@ -75,6 +75,10 @@ struct vl_thread_double_pointer {
 	void **ptr;
 };
 
+#define VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER_CUSTOM(name,free_function,pointer) \
+	struct vl_thread_double_pointer __##name##_double_pointer = {(void**) &(pointer)}; \
+	pthread_cleanup_push(free_function, &__##name##_double_pointer)
+
 #define VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(name,pointer) \
 	struct vl_thread_double_pointer __##name##_double_pointer = {(void**) &(pointer)}; \
 	pthread_cleanup_push(thread_free_double_pointer, &__##name##_double_pointer)

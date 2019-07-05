@@ -114,7 +114,7 @@ int ip_receive_messages (
 		struct ip_stats *stats
 );
 int ip_send_message (
-		struct vl_message* message,
+		const struct vl_message* message,
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif

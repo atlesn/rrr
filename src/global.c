@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_global_config rrr_global_config;
 
-void rrr_init_global_config(unsigned int debuglevel) {
+void rrr_init_global_config(unsigned int debuglevel, unsigned int no_watcdog_timers, unsigned int no_thread_restart) {
 	rrr_global_config.debuglevel = debuglevel;
+	rrr_global_config.no_watchdog_timers = no_watcdog_timers;
+	rrr_global_config.no_thread_restart = no_thread_restart;
 }

@@ -172,7 +172,7 @@ int init_empty_message (
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
-	result->endian_check = 1;
+	result->endian_two = MSG_ENDIAN_BYTES;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
@@ -213,7 +213,7 @@ int init_message (
 
 	return 0;
 }
-
+/*
 int parse_message(const char *msg, unsigned long int size, struct vl_message *result) {
 	const char *pos = msg;
 	const char *end = msg + size;
@@ -260,6 +260,7 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		VL_MSG_ERR ("Unknown message class\n");
 		return 1;
 	}
+
 	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 	uint64_t tmp;
 	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
@@ -296,12 +297,11 @@ int parse_message(const char *msg, unsigned long int size, struct vl_message *re
 		VL_MSG_ERR ("Message data size was too long\n");
 		return 1;
 	}
-	/* Ignore this, just accept what's there if it's enough
+	// Ignore this, just accept what's there if it's enough
 	if (result->length != data_length) {
 		VL_MSG_ERR ("Message reported data length did not match actual length\n");
 		return 1;
 	}
-	*/
 
 	memcpy(result->data, pos, result->length);
 
@@ -373,6 +373,7 @@ int message_to_string (
 
 	return 0;
 }
+*/
 
 void flip_endianess_64(uint64_t *value) {
 	uint64_t result = 0;
@@ -400,55 +401,19 @@ void flip_endianess_32(uint32_t *value) {
 	*value = result;
 }
 
-int message_fix_endianess (
-	struct vl_message *message
-) {
-	if (message->endian_check == 1) {
-		return 0;
-	}
-	else {
-		flip_endianess_32(&message->class);
-		flip_endianess_32(&message->crc32);
-		flip_endianess_32(&message->endian_check);
-		flip_endianess_32(&message->length);
-		flip_endianess_32(&message->type);
-
-		flip_endianess_64(&message->timestamp_from);
-		flip_endianess_64(&message->timestamp_to);
-		flip_endianess_64(&message->data_numeric);
-	}
-
-	if (message->endian_check != 1) {
-		VL_MSG_ERR("Endian check for message was not 1 after conversion\n");
-		return 1;
-	}
-
-	return 0;
-}
 
 void message_checksum (
 	struct vl_message *message
 ) {
-	message->type = htole32(message->type);
-	message->class = htole32(message->class);
-	message->timestamp_from = htole64(message->timestamp_from);
-	message->timestamp_to = htole64(message->timestamp_to);
-	message->data_numeric = htole64(message->data_numeric);
-	message->length = htole32(message->length);
-	message->endian_check= htole32(message->endian_check);
+	if (((void*) &message->crc32) != ((void*) message)) {
+		VL_MSG_ERR("CRC32 was not at beginning of message struct");
+		exit(EXIT_FAILURE);
+	}
 
-	message->crc32 = 0;
+	void *start_pos = ((void *) message) + sizeof(message->crc32);
+	ssize_t checksum_data_length = sizeof(*message) - sizeof(message->crc32);
 
-	uint32_t result = crc32buf((char *) message, sizeof(*message));
-
-	message->type = le32toh(message->type);
-	message->class = le32toh(message->class);
-	message->timestamp_from = le64toh(message->timestamp_from);
-	message->timestamp_to = le64toh(message->timestamp_to);
-	message->data_numeric = le64toh(message->data_numeric);
-	message->length = le32toh(message->length);
-	message->endian_check= le32toh(message->endian_check);
-
+	uint32_t result = crc32buf((char *) start_pos, checksum_data_length);
 	message->crc32 = result;
 }
 
@@ -456,42 +421,102 @@ int message_checksum_check (
 	struct vl_message *message
 ) {
 	// HEX dumper
-	for (unsigned int i = 0; i < sizeof(*message); i++) {
+/*	for (unsigned int i = 0; i < sizeof(*message); i++) {
 		unsigned char *buf = (unsigned char *) message;
 		VL_DEBUG_MSG_3("%x-", *(buf+i));
 	}
-	VL_DEBUG_MSG_3("\n");
-
-	message->type = htole32(message->type);
-	message->class = htole32(message->class);
-	message->timestamp_from = htole64(message->timestamp_from);
-	message->timestamp_to = htole64(message->timestamp_to);
-	message->data_numeric = htole64(message->data_numeric);
-	message->length = htole32(message->length);
+	VL_DEBUG_MSG_3("\n");*/
 
 	uint32_t checksum = message->crc32;
-	message->crc32 = 0;
+	if (MSG_IS_LE(message)) {
+		checksum = le32toh(checksum);
+	}
+	else if (MSG_IS_BE(message)) {
+		checksum = be32toh(checksum);
+	}
+	else {
+		VL_MSG_ERR("Unknown endian bytes %u found in message\n", message->endian_two);
+		return 1;
+	}
 
-	int res = crc32cmp((char *) message, sizeof(*message), checksum);
+	void *start_pos = ((void *) message) + sizeof(message->crc32);
+	ssize_t checksum_data_length = sizeof(*message) - sizeof(message->crc32);
 
-	message->type = le32toh(message->type);
-	message->class = le32toh(message->class);
-	message->timestamp_from = le64toh(message->timestamp_from);
-	message->timestamp_to = le64toh(message->timestamp_to);
-	message->data_numeric = le64toh(message->data_numeric);
-	message->length = le32toh(message->length);
+	int res = crc32cmp((char *) start_pos, checksum_data_length, checksum);
 
-	message->crc32 = checksum;
 	return (res == 0 ? 0 : 1);
 }
 
-int message_prepare_for_network (
-	struct vl_message *message, char *buf, unsigned long buf_size
+int message_convert_endianess (
+		struct vl_message *message
 ) {
-	memset (buf, '\0', buf_size);
+	if (MSG_IS_LE(message)) {
+		message->endian_two = le16toh(message->endian_two);
+		message->crc32 = le32toh(message->crc32);
+		message->type = le32toh(message->type);
+		message->class = le32toh(message->class);
+		message->timestamp_from = le64toh(message->timestamp_from);
+		message->timestamp_to = le64toh(message->timestamp_to);
+		message->data_numeric = le64toh(message->data_numeric);
+		message->length = le32toh(message->length);
+	}
+	else if (MSG_IS_BE(message)) {
+		message->endian_two = be16toh(message->endian_two);
+		message->crc32 = be32toh(message->crc32);
+		message->type = be32toh(message->type);
+		message->class = be32toh(message->class);
+		message->timestamp_from = be64toh(message->timestamp_from);
+		message->timestamp_to = be64toh(message->timestamp_to);
+		message->data_numeric = be64toh(message->data_numeric);
+		message->length = be32toh(message->length);
+	}
+	else {
+		VL_MSG_ERR("Unknown endian bytes found in message\n");
+		return 1;
+	}
 
+	return 0;
+}
+/*
+struct vl_message {
+	// Used by ipclient and ipserver for network transfer. CRC must be first
+	// as we skip the first 4 bytes of the message when calculating.
+	uint32_t crc32;
+	union {
+		uint16_t endian_two;
+		uint8_t endian_one;
+	};
+	uint16_t reserved;
+
+	uint32_t type;
+	uint32_t class;
+	uint64_t timestamp_from;
+	uint64_t timestamp_to;
+	uint64_t data_numeric;
+
+	uint32_t length;
+	char data[MSG_DATA_MAX_LENGTH+2];
+} __attribute__((packed));
+*/
+
+void message_prepare_for_network (
+	struct vl_message *message
+) {
 	message->crc32 = 0;
 	message->data_numeric = 0;
+	message->endian_two = MSG_ENDIAN_BYTES;
+
+	message->endian_two = htobe16(message->endian_two);
+	message->type = htobe32(message->type);
+	message->class = htobe32(message->class);
+	message->timestamp_from = htobe64(message->timestamp_from);
+	message->timestamp_to = htobe64(message->timestamp_to);
+	message->data_numeric = htobe64(message->data_numeric);
+	message->length = htobe32(message->length);
+
+	message_checksum(message);
+
+	message->crc32 = htobe32(message->crc32);
 
 	if (VL_DEBUGLEVEL_6) {
 		VL_DEBUG_MSG("Message prepared for network: ");
@@ -501,15 +526,12 @@ int message_prepare_for_network (
 		}
 		VL_DEBUG_MSG("\n");
 	}
-
-	message_checksum(message);
-
+/*
 	if (message_to_string (message, buf+1, buf_size) != 0) {
 		VL_MSG_ERR ("ipclient: Error while converting message to string\n");
 		return 1;
 	}
-
-	return 0;
+*/
 }
 
 struct vl_message *message_duplicate(struct vl_message *message) {

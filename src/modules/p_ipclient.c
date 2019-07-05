@@ -291,10 +291,12 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 		free(entry);
 	}
 	else {
-		struct vl_message *message = malloc(sizeof(*message));
-		memcpy (message, message, sizeof(*message));
+		struct vl_message *message_new = malloc(sizeof(*message_new));
+		memcpy (message_new, message, sizeof(*message_new));
 		free (entry);
-		fifo_buffer_write(&data->receive_buffer, (char*) message, sizeof(*message));
+		VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " to receive buffer\n",
+				message_new->timestamp_from);
+		fifo_buffer_write(&data->receive_buffer, (char*) message_new, sizeof(*message_new));
 	}
 
 	return VL_IP_RECEIVE_OK;

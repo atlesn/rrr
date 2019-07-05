@@ -29,12 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "senders.h"
 
 int instance_check_threads_stopped(struct instance_metadata_collection *instances) {
+	int ret = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED || instance->thread_data->thread->is_ghost == 1) {
-			return 0;
+			VL_DEBUG_MSG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
+			ret = 1;
 		}
 	}
-	return 1;
+	return ret;
 }
 
 void instance_free_all_thread_data(struct instance_metadata_collection *instances) {

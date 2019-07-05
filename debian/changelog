@@ -1,3 +1,13 @@
+rrr (0.7) unstable; urgency=medium
+
+  * Remove textual representation of messages sent over network
+  * Convert all messages on network to BE (network order) and auto-convert
+    back
+  * Test MySQL and IP functions in test suite
+  * Minor bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 05 Jul 2019 20:14:19 +0200
+
 rrr (0.6) unstable; urgency=medium
 
   * Package dependency fixes
