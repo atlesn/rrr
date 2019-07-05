@@ -41,12 +41,12 @@ struct dummy_data {
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data);
+	return fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_search(&dummy_data->buffer, callback, poll_data);
+	return fifo_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -56,9 +56,9 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return 0;
 }
 
-void data_init(struct dummy_data *data) {
+int data_init(struct dummy_data *data) {
 	memset(data, '\0', sizeof(*data));
-	fifo_buffer_init(&data->buffer);
+	return fifo_buffer_init(&data->buffer);
 }
 
 void data_cleanup(void *arg) {
@@ -101,7 +101,10 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("Dummy thread data is %p\n", thread_data);
 
@@ -117,10 +120,11 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 		goto out_cleanup;
 	}
 
+	int ratelimit = 0;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		if (data->no_generation == 0) {
+		if (data->no_generation == 0 && ratelimit == 10) {
 			uint64_t time = time_get_64();
 
 			struct vl_message *reading = message_new_reading(time, time);
@@ -129,7 +133,12 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 		}
 
-		usleep (750000); // 750 ms
+		ratelimit++;
+		if (ratelimit > 10) {
+			ratelimit = 0;
+		}
+
+		usleep (50); // 50 ms
 
 	}
 
@@ -141,8 +150,15 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 }
 
 static int test_config (struct rrr_instance_config *config) {
-	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
-	return 0;
+	struct dummy_data data;
+	int ret = 0;
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+	ret = parse_config(&data, config);
+	data_cleanup(&data);
+	err:
+	return ret;
 }
 
 static struct module_operations module_operations = {

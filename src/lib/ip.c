@@ -42,17 +42,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "vl_time.h"
 
-void ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
+int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
 	stats->name = name;
 	stats->type = type;
-	pthread_mutex_init(&stats->lock, NULL);
+	return (pthread_mutex_init(&stats->lock, NULL) != 0);
 }
 
-void ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
+int ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
 	memset(stats, '\0', sizeof(*stats));
-	ip_stats_init(&stats->send, period, "send", name);
-	ip_stats_init(&stats->receive, period, "receive", name);
+	int ret = 0;
+	ret |= ip_stats_init(&stats->send, period, "send", name);
+	ret |= ip_stats_init(&stats->receive, period, "receive", name);
+	return ret;
 }
 
 int ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {

@@ -70,10 +70,9 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
-		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
-		usleep (100000); // 100 ms
 	}
 
 	out_message:

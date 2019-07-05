@@ -288,8 +288,8 @@ void *__thread_watchdog_entry (void *arg) {
 
 	VL_DEBUG_MSG_1 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 
-	// Wait one second in case main thread does stuff
-	usleep(1000000);
+	// Wait a bit in case main thread does stuff
+	usleep(20000);
 
 	VL_DEBUG_MSG_1 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
 
@@ -369,7 +369,7 @@ void *__thread_watchdog_entry (void *arg) {
 		VL_MSG_ERR("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
 	}
 
-	thread_set_signal(thread, VL_THREAD_SIGNAL_ENCOURAGE_STOP);
+	thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
 
 //	__thread_set_state_hard(thread, VL_THREAD_STATE_ENCOURAGE_STOP);
 
@@ -463,8 +463,8 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 				thread->state == VL_THREAD_STATE_INIT ||
 				thread->state == VL_THREAD_STATE_INITIALIZED
 		) {
-			VL_DEBUG_MSG_1 ("Setting kill signal thread %s/%p\n", thread->name, thread);
-			thread->signal = VL_THREAD_SIGNAL_KILL;
+			VL_DEBUG_MSG_1 ("Setting encourage stop signal thread %s/%p\n", thread->name, thread);
+			thread->signal = VL_THREAD_SIGNAL_ENCOURAGE_STOP;
 		}
 		thread_unlock(thread);
 	}
@@ -478,6 +478,7 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 			VL_DEBUG_MSG_1 ("Joining with thread watchdog %s\n", thread->name);
 			void *ret;
 			pthread_join(thread->thread, &ret);
+			VL_DEBUG_MSG_1 ("Joined with thread watchdog %s\n", thread->name);
 		}
 	}
 

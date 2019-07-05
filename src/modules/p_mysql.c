@@ -438,10 +438,35 @@ struct column_configurator column_configurators[] = {
 		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
 };
 
-void data_init(struct mysql_data *data) {
+void data_cleanup(void *arg) {
+	struct mysql_data *data = arg;
+
+	for (rrr_def_count i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
+		RRR_FREE_IF_NOT_NULL(data->mysql_special_values[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_special_columns[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_columns[i]);
+		RRR_FREE_IF_NOT_NULL(data->mysql_columns_blob_writes[i]);
+	}
+
+	fifo_buffer_invalidate (&data->input_buffer);
+	fifo_buffer_invalidate (&data->output_buffer);
+
+	RRR_FREE_IF_NOT_NULL(data->mysql_server);
+	RRR_FREE_IF_NOT_NULL(data->mysql_user);
+	RRR_FREE_IF_NOT_NULL(data->mysql_password);
+	RRR_FREE_IF_NOT_NULL(data->mysql_db);
+	RRR_FREE_IF_NOT_NULL(data->mysql_table);
+}
+
+int data_init(struct mysql_data *data) {
+	int ret = 0;
 	memset (data, '\0', sizeof(*data));
-	fifo_buffer_init (&data->input_buffer);
-	fifo_buffer_init (&data->output_buffer);
+	ret |= fifo_buffer_init (&data->input_buffer);
+	ret |= fifo_buffer_init (&data->output_buffer);
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
 int mysql_disconnect(struct mysql_data *data) {
@@ -505,26 +530,6 @@ struct mysql_parse_columns_data {
 	struct rrr_instance_config *config;
 	int columns_count;
 };
-
-void data_cleanup(void *arg) {
-	struct mysql_data *data = arg;
-
-	for (rrr_def_count i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
-		RRR_FREE_IF_NOT_NULL(data->mysql_special_values[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_special_columns[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_columns[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_columns_blob_writes[i]);
-	}
-
-	fifo_buffer_invalidate (&data->input_buffer);
-	fifo_buffer_invalidate (&data->output_buffer);
-
-	RRR_FREE_IF_NOT_NULL(data->mysql_server);
-	RRR_FREE_IF_NOT_NULL(data->mysql_user);
-	RRR_FREE_IF_NOT_NULL(data->mysql_password);
-	RRR_FREE_IF_NOT_NULL(data->mysql_db);
-	RRR_FREE_IF_NOT_NULL(data->mysql_table);
-}
 
 int mysql_parse_columns_callback(const char *value, void *_data) {
 	struct mysql_parse_columns_data *data = _data;
@@ -842,14 +847,10 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 }
 
 // Poll request from other modules
-int mysql_poll_delete_ip (
-	struct instance_thread_data *thread_data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *caller_data
-) {
-	struct mysql_data *data = thread_data->private_data;
+int mysql_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
+	struct mysql_data *mysql_data = data->private_data;
 
-	return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
+	return fifo_read_clear_forward(&mysql_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
@@ -977,7 +978,7 @@ int process_entries (struct instance_thread_data *thread_data) {
 		goto out;
 	}
 
-	ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data);
+	ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data, 50);
 	if (ret != 0) {
 		VL_MSG_ERR ("mysql: Error when saving entries to database\n");
 		mysql_disconnect(data);
@@ -996,7 +997,10 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initalize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
@@ -1050,27 +1054,26 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback_local) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback_local, 50) != 0) {
 			break;
 		}
 
 		process_entries(thread_data);
 
-		if (poll_do_poll_delete_ip_simple (&poll_ip, thread_data, poll_callback_ip) != 0) {
+		if (poll_do_poll_delete_ip_simple (&poll_ip, thread_data, poll_callback_ip, 50) != 0) {
 			break;
 		}
 
 		process_entries(thread_data);
 
 		if (data->mysql_connected != 1) {
-			// Sleep a little longer if we can't connect to the server
+			// Sleep a little if we can't connect to the server
 			usleep (1000000);
 		}
 
 		if (err != 0) {
 			break;
 		}
-		usleep (20000); // 20 ms
 	}
 
 	out_message:
@@ -1086,9 +1089,13 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 
 static int test_config (struct rrr_instance_config *config) {
 	struct mysql_data data;
-	data_init(&data);
-	int ret = parse_config(&data, config);
+	int ret = 0;
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+	ret = parse_config(&data, config);
 	data_cleanup(&data);
+	err:
 	return ret;
 }
 

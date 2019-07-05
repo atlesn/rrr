@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Tell a thread to cancel */
 #define VL_THREAD_SIGNAL_KILL	(1<<1)
 
-/* Tell a thread to cancel */
+/* Tell a thread politely to cancel */
 #define VL_THREAD_SIGNAL_ENCOURAGE_STOP	(1<<2)
 
 /* Can only be set in thread control */
@@ -163,7 +163,7 @@ static inline void thread_signal_wait(struct vl_thread *thread, int signal) {
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		usleep (100000); // 100ms
+		usleep (10000); // 10ms
 	}
 }
 
@@ -178,8 +178,8 @@ static inline int thread_check_encourage_stop(struct vl_thread *thread) {
 	int signal;
 	thread_lock(thread);
 	signal = thread->signal;
-	thread_unlock(thread);;
-	return ((signal & VL_THREAD_SIGNAL_ENCOURAGE_STOP) > 0);
+	thread_unlock(thread);
+	return ((signal & (VL_THREAD_SIGNAL_ENCOURAGE_STOP)) > 0);
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */

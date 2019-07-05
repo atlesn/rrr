@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <inttypes.h>
+#include <string.h>
+#include <errno.h>
 
 #include "buffer.h"
 #include "../global.h"
@@ -54,13 +56,36 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
 	pthread_mutex_destroy (&buffer->write_mutex);
+	sem_destroy(&buffer->new_data_available);
 	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
 }
 
-void fifo_buffer_init(struct fifo_buffer *buffer) {
+int fifo_buffer_init(struct fifo_buffer *buffer) {
+	int ret = 0;
+
+	buffer->invalid = 1;
+
 	memset (buffer, '\0', sizeof(*buffer));
-	pthread_mutex_init (&buffer->mutex, NULL);
-	pthread_mutex_init (&buffer->write_mutex, NULL);
+	ret |= pthread_mutex_init (&buffer->mutex, NULL);
+	ret |= pthread_mutex_init (&buffer->write_mutex, NULL);
+
+	int sem_ret = sem_init(&buffer->new_data_available, 1, 0);
+	if (sem_ret != 0) {
+		char buf[1024];
+		buf[0] = '\0';
+		strerror_r(errno, buf, sizeof(buf));
+		VL_MSG_ERR("Could not initialize semaphore in buffer: %s\n", buf);
+		ret = 1;
+	}
+
+	if (ret == 0) {
+		buffer->invalid = 0;
+	}
+	else {
+		ret = 1;
+	}
+
+	return ret;
 }
 
 /*
@@ -72,8 +97,12 @@ void fifo_buffer_init(struct fifo_buffer *buffer) {
 int fifo_search (
 	struct fifo_buffer *buffer,
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-	struct fifo_callback_args *callback_data
+	struct fifo_callback_args *callback_data,
+	unsigned int wait_milliseconds
 ) {
+	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
+		return FIFO_OK;
+	}
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
 		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
@@ -198,8 +227,13 @@ int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
 		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct fifo_callback_args *callback_data
+		struct fifo_callback_args *callback_data,
+		unsigned int wait_milliseconds
 ) {
+	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
+		return FIFO_OK;
+	}
+
 	int ret = 0;
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
@@ -245,7 +279,14 @@ int fifo_read_clear_forward (
  * This reading method blocks writers but allow other readers to traverse at the
  * same time.
  */
-void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)) {
+void fifo_read (
+		struct fifo_buffer *buffer,
+		void (*callback)(char *data, unsigned long int size),
+		unsigned int wait_milliseconds
+) {
+	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
+		return FIFO_OK;
+	}
 	fifo_read_lock(buffer);
 	if (buffer->invalid) { fifo_read_unlock(buffer); return; }
 
@@ -257,6 +298,15 @@ void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned
 
 	fifo_read_unlock(buffer);
 }
+
+void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
+	int sem_status = 0;
+	sem_getvalue(&buffer->new_data_available, &sem_status);
+	if (sem_status == 0) {
+		sem_post(&buffer->new_data_available);
+	}
+}
+
 /*
  * This writing method holds the lock for a minimum amount of time, only to
  * update the pointers to the end.
@@ -281,6 +331,8 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 	}
 
 	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
+
+	__fifo_buffer_set_data_available(buffer);
 
 	fifo_write_unlock(buffer);
 }
@@ -337,6 +389,8 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 
 	out:
 	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
+
+	__fifo_buffer_set_data_available(buffer);
 
 	fifo_write_unlock(buffer);
 }

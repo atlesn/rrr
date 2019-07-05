@@ -27,8 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <unistd.h>
+#include <semaphore.h>
 
+#include "vl_time.h"
 #include "../global.h"
 
 #define FIFO_SPIN_DELAY 50 // milliseconds
@@ -59,6 +62,7 @@ struct fifo_buffer {
 	int writers;
 	int writer_waiting;
 	int invalid;
+	sem_t new_data_available;
 };
 
 // TODO : These locking methods are unfair, fix if it matters
@@ -132,6 +136,38 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->mutex);
 }
 
+static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wait_milliseconds) {
+	if (wait_milliseconds == 0) {
+		return 0;
+	}
+
+//	printf ("Waiting for %u milliseconds\n", wait_milliseconds);
+
+	uint64_t time_start = time_get_64();
+	uint64_t time_end = time_start + (wait_milliseconds * 1000);
+
+	uint64_t microseconds = time_end % 1000000;
+	uint64_t seconds = (time_end - microseconds) / 1000 / 1000;
+
+	struct timespec wait_time;
+	wait_time.tv_sec = seconds;
+	wait_time.tv_nsec = microseconds * 1000;
+	int res = sem_timedwait(&buffer->new_data_available, &wait_time);
+
+/*	uint64_t time_end_real = time_get_64();
+
+	printf ("Waiting time was %" PRIu64 " result was %i\n", (time_end_real - time_start) / 1000, res);*/
+/*	if (res != 0) {
+		char buf[1024];
+		buf[0] = '\0';
+		strerror_r(errno, buf, sizeof(buf));
+		VL_MSG_ERR("Could wait on semaphore in buffer: %s\n", buf);
+		VL_MSG_ERR("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
+	}
+*/
+	return res;
+}
+
 /*
  * With fifo_read_clear_forward, the callback function MUST
  * handle ALL entries as we cannot add elements back in this
@@ -163,7 +199,8 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 int fifo_search (
 	struct fifo_buffer *buffer,
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-	struct fifo_callback_args *callback_data
+	struct fifo_callback_args *callback_data,
+	unsigned int wait_milliseconds
 );
 int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,
@@ -173,7 +210,8 @@ int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
 		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct fifo_callback_args *callback_data
+		struct fifo_callback_args *callback_data,
+		unsigned int wait_milliseconds
 );
 
 //void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
@@ -182,6 +220,6 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
-void fifo_buffer_init(struct fifo_buffer *buffer);
+int fifo_buffer_init(struct fifo_buffer *buffer);
 
 #endif

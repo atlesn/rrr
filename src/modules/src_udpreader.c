@@ -54,41 +54,34 @@ void type_data_cleanup(void *arg) {
 	}
 }
 
-void data_init(struct udpreader_data *data) {
-	memset(data, '\0', sizeof(*data));
-
-	fifo_buffer_init(&data->buffer);
-	fifo_buffer_init(&data->inject_buffer);
-}
-
 void data_cleanup(void *arg) {
-	// Make sure all readers have left and invalidate buffer
 	struct udpreader_data *data = (struct udpreader_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
 	fifo_buffer_invalidate(&data->inject_buffer);
 	if (data->tmp_type_data != NULL) {
 		rrr_types_destroy_data(data->tmp_type_data);
 	}
-	// Don't destroy mutex, threads might still try to use it
-	//fifo_buffer_destroy(&data->buffer);
 }
 
-static int poll_delete (
-		struct instance_thread_data *data,
-		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
-		struct fifo_callback_args *caller_data
-) {
-	struct udpreader_data *udpreader_data = data->private_data;
-	return fifo_read_clear_forward(&udpreader_data->buffer, NULL, callback, caller_data);
+int data_init(struct udpreader_data *data) {
+	memset(data, '\0', sizeof(*data));
+	int ret = 0;
+	ret |= fifo_buffer_init(&data->buffer);
+	ret |= fifo_buffer_init(&data->inject_buffer);
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
-static int poll (
-		struct instance_thread_data *data,
-		int (*callback)(struct fifo_callback_args *poll_data, char *data, unsigned long int size),
-		struct fifo_callback_args *poll_data
-) {
+static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct udpreader_data *udpreader_data = data->private_data;
-	return fifo_search(&udpreader_data->buffer, callback, poll_data);
+	return fifo_read_clear_forward(&udpreader_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+}
+
+static int poll (RRR_MODULE_POLL_SIGNATURE) {
+	struct udpreader_data *udpreader_data = data->private_data;
+	return fifo_search(&udpreader_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 int config_parse_port (struct udpreader_data *data, struct rrr_instance_config *config) {
@@ -180,6 +173,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 }
 
 int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	VL_DEBUG_MSG_4("udpreader inject callback size %lu\n", size);
 	struct udpreader_data *udpreader_data = poll_data->private_data;
 	return read_data_callback((struct ip_buffer_entry *) data, udpreader_data);
 }
@@ -195,7 +189,7 @@ int read_data(struct udpreader_data *data) {
 	);
 
 	struct fifo_callback_args callback_data = {NULL, data, 0};
-	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data);
+	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50);
 
 	ret = (ret != 0 ? 1 : 0);
 
@@ -222,7 +216,10 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initalize data in udpreader instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("UDPreader thread data is %p\n", thread_data);
 
@@ -259,17 +256,15 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		//		struct vl_message *reading = message_new_reading(time, time);
-
 		VL_DEBUG_MSG_2("udpreader: reading from network\n");
+
+		uint64_t start_time = time_get_64();
 
 		if (read_data(data) != 0) {
 			break;
 		}
 
-/*		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading)); */
-
-		usleep (50000); // 10 ms
+		uint64_t end_time = time_get_64();
 	}
 
 	pthread_cleanup_pop(1);
@@ -286,9 +281,13 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 static int test_config (struct rrr_instance_config *config) {
 	struct udpreader_data data;
-	data_init(&data);
-	int ret = parse_config(&data, config);
+	int ret = 0;
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+	ret = parse_config(&data, config);
 	data_cleanup(&data);
+	err:
 	return ret;
 }
 

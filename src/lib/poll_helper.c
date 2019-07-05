@@ -209,7 +209,8 @@ int poll_do_poll (
 		struct instance_thread_data **faulty_instance,
 		unsigned int flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct fifo_callback_args *poll_data
+		const struct fifo_callback_args *poll_data,
+		unsigned int wait_milliseconds
 ) {
 	int ret = 0;
 	*faulty_instance = NULL;
@@ -219,7 +220,7 @@ int poll_do_poll (
 
 		struct fifo_callback_args callback_args = *poll_data;
 		if (RRR_POLL_POLL & flags & entry->flags) {
-			ret_tmp = entry->poll(entry->thread_data, callback, &callback_args);
+			ret_tmp = entry->poll(entry->thread_data, callback, &callback_args, wait_milliseconds);
 		}
 		else {
 			VL_MSG_ERR("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll\n");
@@ -243,7 +244,8 @@ int poll_do_poll_delete (
 		struct instance_thread_data **faulty_instance,
 		unsigned int control_flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct fifo_callback_args *poll_data
+		const struct fifo_callback_args *poll_data,
+		unsigned int wait_milliseconds
 ) {
 	int ret = 0;
 	*faulty_instance = NULL;
@@ -253,7 +255,7 @@ int poll_do_poll_delete (
 
 		struct fifo_callback_args callback_args = *poll_data;
 		if (control_flags & entry->flags) {
-			ret_tmp = entry->poll_delete(entry->thread_data, callback, &callback_args);
+			ret_tmp = entry->poll_delete(entry->thread_data, callback, &callback_args, wait_milliseconds);
 		}
 		else {
 			VL_MSG_ERR("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll_delete\n");
@@ -281,7 +283,8 @@ int poll_do_poll_delete_simple_final (
 		struct poll_collection *poll,
 		struct instance_thread_data *thread_data,
 		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int flags
+		unsigned int flags,
+		unsigned int wait_milliseconds
 ) {
 	int ret = 0;
 
@@ -292,7 +295,8 @@ int poll_do_poll_delete_simple_final (
 			&faulty_sender,
 			RRR_POLL_BREAK_ON_ERR|flags,
 			poll_callback,
-			&poll_data
+			&poll_data,
+			wait_milliseconds
 	);
 	if (res != 0) {
 		VL_MSG_ERR ("module %s instance %s received error from poll delete function of instance %s\n",

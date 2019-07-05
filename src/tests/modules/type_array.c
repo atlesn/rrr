@@ -341,12 +341,10 @@ int test_type_array (
 
 	struct test_result test_result = {1, NULL};
 	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
-		usleep(50000);
-
 		TEST_MSG("Test result polling try: %i of 10\n", i);
 
 		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-		ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data);
+		ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data, 50);
 		if (ret != 0) {
 			TEST_MSG("Error from poll_delete function in test_type_array\n");
 			return 1;
@@ -557,12 +555,10 @@ int test_type_array_mysql_and_network (
 
 	// Wait for MySQL to insert message and check for ACK
 	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
-		usleep (50000);
-
 		TEST_MSG("Polling MySQL test result try %i of 10\n", i);
 
 		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-		ret = poll_delete(tag_buffer->thread_data, test_type_array_mysql_and_network_callback, &poll_data);
+		ret = poll_delete(tag_buffer->thread_data, test_type_array_mysql_and_network_callback, &poll_data, 250);
 		if (ret != 0) {
 			VL_MSG_ERR("Error from poll_delete in buffer in test_type_array_mysql_and_network\n");
 			ret = 1;

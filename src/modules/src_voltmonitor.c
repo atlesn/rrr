@@ -277,35 +277,24 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	return 1;
 }
 
-static int poll_delete (
-		struct instance_thread_data *data,
-		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-		struct fifo_callback_args *caller_data
-) {
+static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return  fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, caller_data);
+	return  fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
-static int poll (
-		struct instance_thread_data *data,
-		int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-		struct fifo_callback_args *caller_data
-) {
+static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return fifo_search(&voltmonitor_data->buffer, callback, caller_data);
+	return fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
-void data_init(struct voltmonitor_data *data) {
+int data_init(struct voltmonitor_data *data) {
 	memset(data, '\0', sizeof(*data));
-	fifo_buffer_init(&data->buffer);
+	return fifo_buffer_init(&data->buffer);
 }
 
 void data_cleanup(void *arg) {
-	// Make sure all readers have left and invalidate buffer
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
-	// Don't destroy mutex, threads might still try to use it
-	//fifo_buffer_destroy(&data->buffer);
 }
 
 int convert_float(const char *value, float *result) {
@@ -383,7 +372,10 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	pthread_cleanup_push(data_cleanup, data);
 
@@ -434,9 +426,16 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 static int test_config (struct rrr_instance_config *config) {
 	struct voltmonitor_data data;
-	data_init(&data);
-	int ret = parse_config(&data, config);
+	int ret = 0;
+
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+
+	ret = parse_config(&data, config);
 	data_cleanup(&data);
+
+	err:
 	return ret;
 }
 

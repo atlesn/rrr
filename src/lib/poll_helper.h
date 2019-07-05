@@ -75,7 +75,8 @@ int poll_do_poll (
 		struct instance_thread_data **faulty_instance,
 		unsigned int flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct fifo_callback_args *poll_data
+		const struct fifo_callback_args *poll_data,
+		unsigned int wait_milliseconds
 );
 
 int poll_do_poll_delete (
@@ -83,33 +84,38 @@ int poll_do_poll_delete (
 		struct instance_thread_data **faulty_instance,
 		unsigned int flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct fifo_callback_args *poll_data
+		const struct fifo_callback_args *poll_data,
+		unsigned int wait_milliseconds
 );
 
 int poll_do_poll_delete_simple_final (
 		struct poll_collection *poll,
 		struct instance_thread_data *thread_data,
 		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int flags
+		unsigned int flags,
+		unsigned int wait_milliseconds
 );
 
 static inline int poll_do_poll_delete_simple (
 		struct poll_collection *poll,
 		struct instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE); }
+		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE, wait_milliseconds); }
 
 static inline int poll_do_poll_delete_ip_simple (
 		struct poll_collection *poll,
 		struct instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP); }
+		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP, wait_milliseconds); }
 
 static inline int poll_do_poll_delete_combined_simple (
 		struct poll_collection *poll,
 		struct instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP|RRR_POLL_POLL_DELETE); }
+		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		unsigned int wait_milliseconds
+) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP|RRR_POLL_POLL_DELETE, wait_milliseconds); }
 
 int poll_collection_count (struct poll_collection *collection);
 

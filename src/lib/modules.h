@@ -55,7 +55,8 @@ struct module_load_data {
 #define RRR_MODULE_POLL_SIGNATURE \
 		struct instance_thread_data *data, \
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE), \
-		struct fifo_callback_args *poll_data
+		struct fifo_callback_args *poll_data, \
+		unsigned int wait_milliseconds
 
 #define RRR_MODULE_PRINT_SIGNATURE \
 		struct instance_thread_data *data

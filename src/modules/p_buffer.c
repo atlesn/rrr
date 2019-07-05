@@ -43,14 +43,10 @@ struct buffer_data {
 	struct instance_thread_data *data;
 };
 
-int poll_delete (
-	struct instance_thread_data *data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *poll_data
-) {
+int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct buffer_data *buffer_data = data->private_data;
 
-	if (fifo_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data) == FIFO_GLOBAL_ERR) {
+	if (fifo_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data, wait_milliseconds) == FIFO_GLOBAL_ERR) {
 		return 1;
 	}
 
@@ -77,14 +73,19 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return 0;
 }
 
-void data_init(struct buffer_data *data, struct instance_thread_data *thread_data) {
-	fifo_buffer_init(&data->storage);
-	data->data = thread_data;
-}
-
 void data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
 	fifo_buffer_invalidate(&data->storage);
+}
+
+int data_init(struct buffer_data *data, struct instance_thread_data *thread_data) {
+	int ret = 0;
+	data->data = thread_data;
+	ret |= fifo_buffer_init(&data->storage);
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
 static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
@@ -94,7 +95,10 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data, thread_data);
+	if (data_init(data, thread_data) != 0) {
+		VL_MSG_ERR("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("buffer thread data is %p\n", thread_data);
 
@@ -117,11 +121,9 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
-
-		usleep (100000); // 100 ms
 	}
 
 	out_message:

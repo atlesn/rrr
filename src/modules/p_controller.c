@@ -43,19 +43,15 @@ struct controller_data {
 	struct instance_thread_data *data;
 };
 
-int poll_delete (
-	struct instance_thread_data *data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *poll_data
-) {
+int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct controller_data *controller_data = data->private_data;
 	struct instance_thread_data *source = poll_data->source;
 
 	if (strcmp (source->init_data.module->module_name, "ipclient") == 0) {
-		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data);
+		fifo_read_clear_forward(&controller_data->to_ipclient, NULL, callback, poll_data, wait_milliseconds);
 	}
 	else if (strcmp (source->init_data.module->module_name, "blockdev") == 0) {
-		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data);
+		fifo_read_clear_forward(&controller_data->to_blockdev, NULL, callback, poll_data, wait_milliseconds);
 	}
 	else {
 		VL_MSG_ERR ("controller %s: No output buffer defined for instance %s using module %s\n",
@@ -112,16 +108,21 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	return 0;
 }
 
-void data_init(struct controller_data *data, struct instance_thread_data *thread_data) {
-	fifo_buffer_init(&data->to_blockdev);
-	fifo_buffer_init(&data->to_ipclient);
-	data->data = thread_data;
-}
-
 void data_cleanup(void *arg) {
 	struct controller_data *data = arg;
 	fifo_buffer_invalidate(&data->to_blockdev);
 	fifo_buffer_invalidate(&data->to_ipclient);
+}
+
+int data_init(struct controller_data *data, struct instance_thread_data *thread_data) {
+	int ret = 0;
+	ret |= fifo_buffer_init(&data->to_blockdev);
+	ret |= fifo_buffer_init(&data->to_ipclient);
+	data->data = thread_data;
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
 static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
@@ -131,7 +132,10 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data, thread_data);
+	if (data_init(data, thread_data) != 0) {
+		VL_MSG_ERR("Could not initalize data in controller instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("controller thread data is %p\n", thread_data);
 
@@ -154,11 +158,9 @@ static void *thread_entry_controller(struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
-
-		usleep (100000); // 100 ms
 	}
 
 	out_message:

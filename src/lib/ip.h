@@ -85,10 +85,10 @@ struct ip_data {
 #define VL_IP_STATS_UPDATE_ERR 1	// Error
 #define VL_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
-void ip_stats_init (
+int ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
-void ip_stats_init_twoway (
+int ip_stats_init_twoway (
 		struct ip_stats_twoway *stats, unsigned int period, const char *name
 );
 int ip_stats_update(

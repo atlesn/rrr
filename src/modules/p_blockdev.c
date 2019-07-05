@@ -52,20 +52,35 @@ struct blockdev_data {
 	int always_tag_saved;
 };
 
-int poll_delete (
-	struct instance_thread_data *data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *poll_data
-) {
+int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct blockdev_data *blockdev_data = data->private_data;
-	return fifo_read_clear_forward(&blockdev_data->output_buffer, NULL, callback, poll_data);
+	return fifo_read_clear_forward(&blockdev_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
-void data_init (struct blockdev_data *data) {
+void data_cleanup (void *arg) {
+	struct blockdev_data *blockdev_data = arg;
+	fifo_buffer_invalidate(&blockdev_data->input_buffer);
+	fifo_buffer_invalidate(&blockdev_data->output_buffer);
+
+	if (blockdev_data->device_path != NULL) {
+		free(blockdev_data->device_path);
+	}
+
+	while (blockdev_data->device_session.usercount > 0) {
+		bdl_close_session(&blockdev_data->device_session);
+	}
+}
+
+int data_init (struct blockdev_data *data) {
 	memset(data, '\0', sizeof(*data));
 
-	fifo_buffer_init(&data->input_buffer);
-	fifo_buffer_init(&data->output_buffer);
+	int ret = 0;
+	ret |= fifo_buffer_init(&data->input_buffer);
+	ret |= fifo_buffer_init(&data->output_buffer);
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
 int parse_config (struct blockdev_data *data, struct rrr_instance_config *config) {
@@ -108,20 +123,6 @@ int parse_config (struct blockdev_data *data, struct rrr_instance_config *config
 
 	out:
 	return ret;
-}
-
-void data_cleanup (void *arg) {
-	struct blockdev_data *blockdev_data = arg;
-	fifo_buffer_invalidate(&blockdev_data->input_buffer);
-	fifo_buffer_invalidate(&blockdev_data->output_buffer);
-
-	if (blockdev_data->device_path != NULL) {
-		free(blockdev_data->device_path);
-	}
-
-	while (blockdev_data->device_session.usercount > 0) {
-		bdl_close_session(&blockdev_data->device_session);
-	}
 }
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -249,7 +250,7 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 
 int write_to_device(struct blockdev_data *data) {
 	struct fifo_callback_args poll_data = {NULL, data, 0};
-	fifo_search(&data->input_buffer, write_callback, &poll_data);
+	fifo_search(&data->input_buffer, write_callback, &poll_data, 50);
 
 	return 0;
 }
@@ -325,7 +326,10 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initalize data in blockdev instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
@@ -357,7 +361,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 		int err = 0;
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -373,7 +377,7 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 			VL_DEBUG_MSG_2 ("blockdev start session\n");
 			if (bdl_start_session(&data->device_session, data->device_path, 1) != 0) { // 1 == no memorymapping
 				VL_MSG_ERR ("blockdev: Could not open block device %s\n", data->device_path);
-				goto sleep;
+				continue;
 			}
 
 			// Get entries from device which are not tagged as saved in remote database
@@ -387,9 +391,6 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-
-		sleep:
-		usleep (100000); // 100 ms
 	}
 
 	out_message:
@@ -403,9 +404,13 @@ static void *thread_entry_blockdev(struct vl_thread_start_data *start_data) {
 
 static int test_config (struct rrr_instance_config *config) {
 	struct blockdev_data data;
-	data_init(&data);
-	int ret = parse_config(&data, config);
+	int ret = 0;
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+	ret = parse_config(&data, config);
 	data_cleanup(&data);
+	err:
 	return ret;
 }
 

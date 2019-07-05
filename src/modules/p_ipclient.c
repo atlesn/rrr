@@ -74,14 +74,6 @@ struct ipclient_data {
 	int no_ack;
 };
 
-void data_init(struct ipclient_data *data) {
-	memset(data, '\0', sizeof(*data));
-	fifo_buffer_init(&data->send_buffer);
-	fifo_buffer_init(&data->receive_buffer);
-	pthread_mutex_init(&data->network_lock, NULL);
-	ip_stats_init_twoway(&data->stats, VL_IP_STATS_DEFAULT_PERIOD, "ipclient");
-}
-
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
 #ifdef VL_WITH_OPENSSL
@@ -91,6 +83,21 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->ip_server);
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
+}
+
+int data_init(struct ipclient_data *data) {
+	memset(data, '\0', sizeof(*data));
+	int ret = 0;
+	ret |= fifo_buffer_init(&data->send_buffer);
+	ret |= fifo_buffer_init(&data->receive_buffer);
+	ret |= pthread_mutex_init(&data->network_lock, NULL);
+	if (ret != 0) {
+		data_cleanup(data);
+		goto err;
+	}
+	ret = ip_stats_init_twoway(&data->stats, VL_IP_STATS_DEFAULT_PERIOD, "ipclient");
+	err:
+	return (ret != 0);
 }
 
 int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
@@ -167,14 +174,10 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 }
 
 // Poll request from other modules
-int ipclient_poll_delete (
-	struct instance_thread_data *thread_data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *caller_data
-) {
-	struct ipclient_data *data = thread_data->private_data;
+int ipclient_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
+	struct ipclient_data *ipclient_data = data->private_data;
 
-	return fifo_read_clear_forward(&data->receive_buffer, NULL, callback, caller_data);
+	return fifo_read_clear_forward(&ipclient_data->receive_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -286,7 +289,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 			struct fifo_callback_args callback_args;
 			callback_args.source = data;
 			callback_args.private_data = message;
-			fifo_search(&data->send_buffer, receive_packets_search_callback, &callback_args);
+			fifo_search(&data->send_buffer, receive_packets_search_callback, &callback_args, 50);
 		}
 		free(entry);
 	}
@@ -342,7 +345,7 @@ int send_packets(struct instance_thread_data *thread_data) {
 	info.packet_counter = 0;
 
 	struct fifo_callback_args poll_data = {thread_data, &info, 0};
-	err = fifo_search(&data->send_buffer, send_packet_callback, &poll_data);
+	err = fifo_search(&data->send_buffer, send_packet_callback, &poll_data, 50);
 
 	VL_DEBUG_MSG_2 ("ipclient sent %i packets\n", info.packet_counter);
 
@@ -399,7 +402,7 @@ void stop_receive_thread(void *arg) {
 		int maxrounds = 4;
 		while (data->receive_thread_died != 1) {
 			VL_DEBUG_MSG_1 ("Waiting for ipclient receive thread to die\n");
-			usleep(1000000);
+			usleep(10000);
 			if (--maxrounds == 0) {
 				VL_MSG_ERR ("Could not join with ipclient receive thread\n");
 				break;
@@ -436,7 +439,10 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	if (data_init(data) != 0) {
+		VL_MSG_ERR("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
 
 	VL_DEBUG_MSG_1 ("ipclient thread data is %p\n", thread_data);
 
@@ -495,7 +501,7 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		int err = 0;
 
 		VL_DEBUG_MSG_5 ("ipclient polling data\n");
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -508,7 +514,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 		if (err != 0) {
 			break;
 		}
-		usleep (100000); // 100 ms
 	}
 
 	out_message:
@@ -530,8 +535,14 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 
 static int test_config (struct rrr_instance_config *config) {
 	struct ipclient_data data;
-	data_init(&data);
-	int ret = parse_config(&data, config);
+	int ret;
+
+	if ((ret = data_init(&data)) != 0) {
+		goto err;
+	}
+	ret = parse_config(&data, config);
+
+	err:
 	data_cleanup(&data);
 	return ret;
 }

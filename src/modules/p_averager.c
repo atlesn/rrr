@@ -55,33 +55,25 @@ struct averager_data {
 #define VL_DEFAULT_AVERAGER_INTERVAL 10
 
 // Poll of our output buffer from other modules
-int averager_poll_delete (
-	struct instance_thread_data *thread_data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *caller_data
-) {
-	struct averager_data *data = thread_data->private_data;
+int averager_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
+	struct averager_data *avg_data = data->private_data;
 
-	pthread_mutex_lock(&data->average_ready_lock);
-	if (data->average_is_ready == 1) {
-		data->average_is_ready = 0;
-		pthread_mutex_unlock(&data->average_ready_lock);
-		return fifo_read_clear_forward(&data->output_buffer, NULL, callback, caller_data);
+	pthread_mutex_lock(&avg_data->average_ready_lock);
+	if (avg_data->average_is_ready == 1) {
+		avg_data->average_is_ready = 0;
+		pthread_mutex_unlock(&avg_data->average_ready_lock);
+		return fifo_read_clear_forward(&avg_data ->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 	}
-	pthread_mutex_unlock(&data->average_ready_lock);
+	pthread_mutex_unlock(&avg_data->average_ready_lock);
 
 	return 0;
 }
 
 // Poll of our output buffer from other modules
-int averager_poll (
-	struct instance_thread_data *thread_data,
-	int (*callback)(struct fifo_callback_args *caller_data, char *data, unsigned long int size),
-	struct fifo_callback_args *caller_data
-) {
-	struct averager_data *data = thread_data->private_data;
+int averager_poll (RRR_MODULE_POLL_SIGNATURE) {
+	struct averager_data *avg_data = data->private_data;
 
-	return fifo_search(&data->output_buffer, callback, caller_data);
+	return fifo_search(&avg_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
 // Messages when from polling sender comes in here
@@ -202,7 +194,7 @@ void averager_spawn_message (
 void averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
 	struct fifo_callback_args poll_data = {NULL, &calculation, 0};
-	fifo_search(&data->input_buffer, averager_callback, &poll_data);
+	fifo_search(&data->input_buffer, averager_callback, &poll_data, 50);
 
 	if (calculation.entries == 0) {
 		VL_DEBUG_MSG_2 ("Averager: No entries, not averaging\n");
@@ -232,13 +224,6 @@ void averager_calculate_average(struct averager_data *data) {
 	pthread_mutex_unlock(&data->average_ready_lock);
 }
 
-void data_init(struct averager_data *data) {
-	memset(data, '\0', sizeof(*data));
-	fifo_buffer_init(&data->input_buffer);
-	fifo_buffer_init(&data->output_buffer);
-	pthread_mutex_init(&data->average_ready_lock, NULL);
-}
-
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct averager_data *data = (struct averager_data *) arg;
@@ -246,6 +231,18 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->output_buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
+}
+
+int data_init(struct averager_data *data) {
+	memset(data, '\0', sizeof(*data));
+	int ret = 0;
+	ret |= fifo_buffer_init(&data->input_buffer) << 0;
+	ret |= fifo_buffer_init(&data->output_buffer) << 1;
+	ret |= pthread_mutex_init(&data->average_ready_lock, NULL) << 2;
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
 }
 
 int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
@@ -300,7 +297,12 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 	thread_data->thread = start_data->thread;
 
-	data_init(data);
+	int init_ret = 0;
+	if ((init_ret = data_init(data)) != 0) {
+		VL_MSG_ERR("Could not initalize data in averager instance %s flags %i\n",
+				INSTANCE_D_NAME(thread_data), init_ret);
+		pthread_exit(0);
+	}
 
 	struct poll_collection poll;
 
@@ -337,7 +339,7 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 
 		averager_maintain_buffer(data);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback) != 0) {
+		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -346,8 +348,6 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 			averager_calculate_average(data);
 			previous_average_time = current_time;
 		}
-
-		usleep (100000); // 100 ms
 	}
 
 	out_message:
