@@ -100,9 +100,8 @@ int fifo_search (
 	struct fifo_callback_args *callback_data,
 	unsigned int wait_milliseconds
 ) {
-	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
-		return FIFO_OK;
-	}
+	fifo_wait_for_data(buffer, wait_milliseconds);
+
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
 		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
@@ -230,9 +229,7 @@ int fifo_read_clear_forward (
 		struct fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 ) {
-	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
-		return FIFO_OK;
-	}
+	fifo_wait_for_data(buffer, wait_milliseconds);
 
 	int ret = 0;
 	fifo_write_lock(buffer);
@@ -284,9 +281,8 @@ void fifo_read (
 		void (*callback)(char *data, unsigned long int size),
 		unsigned int wait_milliseconds
 ) {
-	if (fifo_wait_for_data(buffer, wait_milliseconds) != 0) {
-		return FIFO_OK;
-	}
+	fifo_wait_for_data(buffer, wait_milliseconds);
+
 	fifo_read_lock(buffer);
 	if (buffer->invalid) { fifo_read_unlock(buffer); return; }
 
