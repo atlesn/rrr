@@ -88,11 +88,12 @@ static inline void fifo_write_lock(struct fifo_buffer *buffer) {
 				VL_DEBUG_MSG_4("Buffer %p write lock obtained\n", buffer);
 				buffer->writers = 1;
 				ok = 2;
+				pthread_mutex_unlock(&buffer->mutex);
 			}
 			else {
+				pthread_mutex_unlock(&buffer->mutex);
 				usleep(FIFO_SPIN_DELAY*1000);
 			}
-			pthread_mutex_unlock(&buffer->mutex);
 		}
 		else {
 			usleep(FIFO_SPIN_DELAY*1000);
@@ -120,11 +121,12 @@ static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 			VL_DEBUG_MSG_4("Buffer %p read lock pass 1\n", buffer);
 			buffer->readers++;
 			ok = 1;
+			pthread_mutex_unlock(&buffer->mutex);
 		}
 		else {
+			pthread_mutex_unlock(&buffer->mutex);
 			usleep(FIFO_SPIN_DELAY*1000);
 		}
-		pthread_mutex_unlock(&buffer->mutex);
 	}
 }
 
