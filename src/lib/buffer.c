@@ -28,6 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "../global.h"
 
+/*
+ * Set the invalid flag on the buffer, preventing new readers and writers from
+ * using the buffer. After already initiated reads and writes have completed,
+ * free the buffer contents.
+ */
 void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_lock (&buffer->mutex);
 	if (buffer->invalid) { pthread_mutex_unlock (&buffer->mutex); return; }
@@ -92,7 +97,7 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
  * Search entries and act according to the return value of the callback function. We
  * can delete entries or stop looping. See buffer.h . The callback function is expected
  * to take control of the memory of an entry which fifo_search deletes, if not
- * it will be leaked unless the callback tells us to free the data using FIFO_SEARCH_FREE.
+ * it will be leaked unless the callback also tells us to free the data using FIFO_SEARCH_FREE.
  */
 int fifo_search (
 	struct fifo_buffer *buffer,
@@ -165,6 +170,10 @@ int fifo_search (
 	return err;
 }
 
+/*
+ * Delete entries with and order value >= order_min. We assume the buffer is
+ * already ordered by using fifo_buffer_write_ordered writes only.
+ */
 int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,
 		uint64_t order_min
@@ -208,9 +217,6 @@ int fifo_clear_order_lt (
 			free(entry->data);
 			free(entry);
 		}
-
-		fifo_write_unlock(buffer);
-		return 0;
 	}
 
 	fifo_write_unlock(buffer);
@@ -218,9 +224,9 @@ int fifo_clear_order_lt (
 }
 
 /*
- * This reading method holds a write lock for a minum amount of time by
+ * This reading method holds a write lock for a minimum amount of time by
  * taking control of the start of the queue making it inaccessible to
- * others.
+ * others. The callback function must store the data pointer or free it.
  */
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
@@ -274,7 +280,7 @@ int fifo_read_clear_forward (
 
 /*
  * This reading method blocks writers but allow other readers to traverse at the
- * same time.
+ * same time. The callback function must not free the data or store it's pointer.
  */
 void fifo_read (
 		struct fifo_buffer *buffer,
@@ -305,7 +311,8 @@ void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 
 /*
  * This writing method holds the lock for a minimum amount of time, only to
- * update the pointers to the end.
+ * update the pointers to the end. If the buffer turns out to be invalid, we
+ * simply free the data and return.
  */
 void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int size) {
 	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
@@ -333,6 +340,9 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 	fifo_write_unlock(buffer);
 }
 
+/*
+ * This write method insert data in order according to the order 8-byte value.
+ */
 void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size) {
 	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	memset (entry, '\0', sizeof(*entry));

@@ -53,6 +53,21 @@ struct fifo_buffer_entry {
 	struct fifo_buffer_entry *next;
 };
 
+/*
+ * Buffer rules:
+ * - There may be many readers at the same time
+ * - There may only be one writer
+ * - Writers need to wait for all reads to complete before obtaining lock
+ * - Before locking, writers set the writer_waiting property which prevents new
+ *   readers from obtaining read lock thus giving waiting writers priority.
+ * - When the invalid property is set, no new readers or writers may work on the
+ *   buffer. After all reads and writes have completed, the buffers contents are
+ *   deleted.
+ * - Writers increment the new_data_available semaphore to inform waiting readers
+ *   that data is available. After waiting is completed, regardless of whether a
+ *   timeout occurred or not, the readers will check the buffer for new data.
+ */
+
 struct fifo_buffer {
 	struct fifo_buffer_entry *gptr_first;
 	struct fifo_buffer_entry *gptr_last;
