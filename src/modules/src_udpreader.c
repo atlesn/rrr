@@ -258,13 +258,9 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 		VL_DEBUG_MSG_2("udpreader: reading from network\n");
 
-		uint64_t start_time = time_get_64();
-
 		if (read_data(data) != 0) {
 			break;
 		}
-
-		uint64_t end_time = time_get_64();
 	}
 
 	pthread_cleanup_pop(1);
