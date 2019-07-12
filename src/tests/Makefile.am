@@ -1,6 +1,6 @@
 SUBDIRS = modules 
 
-bin_PROGRAMS = test
+noinst_PROGRAMS = test
 test_LDFLAGS = -ldl -lpthread -L../lib -lrrr
 test_SOURCES = test.c ../global.c ../main.c
 test_CFLAGS = ${AM_CFLAGS} \

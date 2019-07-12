@@ -1,0 +1,395 @@
+.Dd 2019-07-11
+.TH RRR.CONF 5
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.SH DESCRIPTION
+The
+.B rrr
+environment is set up with a configuration file. The file specifies any number
+of
+.B instances
+of different
+.B modules.
+The different instances either get messages from other
+modules or read them externally. Some also save messages externally or
+send them over the network.
+.PP
+Instances are linked to each other using the 
+.B senders=sender1,sender2,...
+argument, which tells the instance which other modules to get messages from. A
+.B source
+module is a module which cannot read from other modules, and this argument should
+not be specified.
+.PP
+.B rrr
+may be extended with custom modules. Custom functionality may also be achieved by
+using a module which can send data to and from a python program.
+.PP
+.B rrr
+automatically restarts all running instances in case one instance for any
+reason stops or hangs, like due to network problems. A failing instance
+usually does not make
+.B rrr
+quit, all instances are simply restarted.
+.PP
+.SH SYNTAX
+Any number of instances may be specified. An instance specification begins with a [] containing
+the user chosen name of the instance. A module to use must then be specified, along with
+module-specific settings. The
+.B senders=
+setting is mandatory for modules which read from other modules, but invalid for modules
+which are sources (see MODULES section). An instance section ends when a new begins
+or when we reach the end of the file.
+.PP
+.nf
+# Comment begins with #, the rest of the line is ignored
+[INSTANCE NAME]             # User chosen name of the instance
+module={MODULE NAME}        # Which module to use for the instance
+senders=INSTANCE NAME,...   # Which other instances to read from (not for source modules)
+argument1=value1            # Module-specific arguments
+argument2=value2
+...
+.BR
+[INSTANCE NAME]
+module={MODULE NAME}
+...
+.fi	
+.PP
+If an instance is specified as sender in more than one other instance, these will compete
+about messages from it. Instances may not use themselves as senders.
+.SH MESSAGES
+A message consists of at least a timestamp (in milliseconds) which is used to identify the message. 
+It may also contain one of the following types of data:
+.SS TAG MESSAGES
+Some modules may generate a tag message after they have processed a message, for instance
+when it has been successfully saved somewhere. The tag messages can be sent back
+to prior modules in the chain which might cache messages untill they have been safely stored.
+The tag message contains the whole original message with the tag flag set.
+.SS VOLTAGE MESSAGES
+The voltage message are an implementation used to get voltage readings (or other readings) with
+max, min and average values and save them to a database. In the future, this
+should be generalized.
+.SS DATA ARRAY MESSAGES
+Some modules support parsing data arrays from externally or from other modules. They might require a
+list of expected data types to be specified in their configuration. If the total size og the input
+does not match the received input, the parsing of the message will fail.
+.PP
+The general syntax is a comma separated list of data type and size pairs:
+.PP
+.Dl {DATA TYPE A},{DATA SIZE A},{DATA TYPE B},{DATA SIZE B},...
+.PP
+When reading many data entries of the same type, and array specification may preceed the type/data-pair.
+The following will duplicate TYPE A four times:
+.PP
+.Dl array,4,{DATA TYPE A},{DATA SIZE A}
+.PP
+.B DATA TYPE
+may be one of the following:
+.PP
+.Bl -tag -width -indent
+.It be
+A big endian number, converted to host endianess automatically. Size range 1 to 8.
+.It le
+A little endian number, converted to host endianess automatically. Size range 1 to 8.
+.It h
+A number expected to already be in host endianess, no conversion is performed. Size range 1 to 8.
+.It blob
+Some amount of binary data or text, not processed at all. Size must be > 0.
+.El
+.PP
+For instance, this specifies four big-endian integers of 2 bytes and one blob of 10 bytes, a total size of 18 bytes.
+.PP
+.Dl array,4,be,2,blob,10
+.SS IP MESSAGES
+Some modules support parsing of IP messages. These are simply normal messages apart from that they also contain information
+about the originating IP addresses. They are used for instance when sending replies back to a sender over network to know
+where to send them. Some modules require that readers are IP capable when reading from them and vice versa.
+.SS ACK MESSAGES
+An ACK message is sent over network to inform senders that a packet was successfully retrieved.
+.SH MODULES
+.PP
+Modules have different special capabilites, denoted by the following letters. The actual implementation may
+vary between modules. Many modules can despite this handle all types of messages, more or less ignoring their contents.
+.PP
+.Bl -tag -width -indent
+.It S
+Source module, cannot have senders
+.It P
+Processor modules, can have senders specified to read from (set with
+.B senders=
+)
+.It A
+Module supports data arrays (see above)
+.It I
+Module supports IP messages
+.It T
+Module supports tag (confirmation) messages
+.It V
+Module supports voltage reading messages
+.El
+.PP
+The following modules and module-specific arguments are available and can be used
+.PP
+.SS dummy (S)
+Constantly generates empty messages only with a timestamp set.
+.PP
+.Bl -tag -width -indent
+.It dummy_no_generation={yes|no}
+No messages are generated if set to 'yes'
+.El
+.SS udpreader (SA)
+Listen to an UDP port and read messages of number arrays. The udpreader creates a message for each received packet
+and adds a timestamp. If the received data does not match the specified data array, the packet is dropped.
+.PP
+.Bl -tag -width -indent
+.It udpr_port=LISTEN PORT
+Port to listen on, range is 1-65535
+.It udpr_input_types=DATA ARRAY
+Specification of expected data to receive in a network packet. See DATA ARRAYS for syntax.
+.El
+.PP
+.SS voltmonitor (SV)
+Read voltage readings from a USB device.
+.PP
+.Bl -tag -width -indent
+.It vm_calibration=FLOAT
+Factor to calibrate the readings, defaults to 1.124.
+.It vm_channel={1|2}
+Which channel to use on two-channel devices.
+.El
+.PP
+.SS averager (PV)
+The averager reads point measurements from it's senders and produces average measurments over a given timespan and
+at a given rate. Information messages are passed through, these might for instance contain status messages from
+measurement devices.
+.PP
+.Bl -tag -width -indent
+.It avg_timespan=SECONDS
+How long timespan to average over. Defaults to 15 seconds.
+.It avg_interval=SECONDS
+How often to produce average calculations. Defaults to 10 seconds.
+.It avg_preserve_points={yes|no}
+Preserve individual measurements and put them in output buffer. Defaults to no.
+.It avg_discard_unknowns={yes|no}
+Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
+.El
+.SS blockdev (PT)
+The blockdev module can puts messages it receives into a special round robin database and stores them untill overwritten.
+This can be used to store messages temoporarily before sending over network and preserving them also in case of the program
+stopping. On restart of
+.B rrr
+, all messages are read in from the database and can be read by other instances. If we receive a tag message for a message,
+the stored message is tagged and is no longer re-read in case of restart.
+.PP
+The database file is of fixed size and must first be initialized using 
+.B bdl(1).
+.PP
+.Bl -tag -width -indent
+.It device_path=FILE
+Path to an initialized block device file.
+.It blockdev_always_tag={yes|no}
+Always tag messages immediately as they are saved (as if we received a tag message for them), causing them not to be read in on restart.
+.El
+.SS controller (P)
+This module can route messages between a source and blockdev and ipclient to safely cache messages locally before sending them 
+over the network. An ipclient and a blockdev instance is set with a controller as sender, and the controller is set with
+those two same instances as senders in addition to a third source instance. More than one source may be used, but using more
+than one blockdev or ipclient might produce unwanted results.
+.PP
+The controller has two separate outbut buffers, one for ipclient and one for blockdev. If any other module tries to use
+controller as a sender, it will produce an error. 
+.PP
+.Bl -bullet -offset indent -compact
+.It
+Messages from blockdev is sent to ipclient
+.It
+Messages from ipclient is sent to blockdev
+.It
+Messages from the source is sent to both ipclient and blockdev
+.El
+.PP
+The controller can use the following modules as sources:
+.PP
+.Bl -bullet -offset indent -compact
+.It
+udpreader
+.It
+averager
+.It
+voltmonitor
+.It
+dummy
+.El
+.PP
+Here is an example where we make measurements with voltmonitor and averager, and then send them over
+the network with ipclient while caching them locally using blockdev.
+.PP
+.nf
+                               Local host                             |           Remote host
+----------------------------------------------------------------------|-----------------------------------
+                                                                      |
+                                   +------------+     +----------+    | (see ipserver/mysql paragraphs)
+                                   |            | <=> | blockdev |    |
++-------------+    +----------+    |            |     +----------+    |
+| voltmonitor | => | averager | => | controller |                     |
++-------------+    +----------+    |            |     +----------+    |    +----------+     +-------+
+                                   |            | <=> | ipclient | <=====> | ipserver | <=> | mysql |
+                                   +------------+     +----------+    |    +----------+     +-------+
+----------------------------------------------------------------------|-----------------------------------
+.PP
+And the configuration file (for local host only):
+.PP
+[usb_voltmeter]
+module=voltmonitor
+vm_channel=1
+
+[averager]
+module=averager
+senders=usb_voltmeter
+
+[controller]
+module=controller
+senders=averager,blockdev,ipclient
+
+[blockdev]
+module=blockdev
+blockdev_file=/tmp/rrr.bdl
+senders=controller
+
+[ipclient]
+ipclient_server=10.0.0.2
+senders=controller
+
+.fi
+.SS buffer (P)
+The buffer collects all messages from all senders and wait for them to be collected by another instance.
+.SS ipclient (PT)
+The ipclient module collects any message from senders and sends them over the network to another 
+.B rrr
+environment with the an instance of the ipserver module using UDP. The ipclient caches messages locally in RAM
+untill an ACK message is received from the ipserver. It will try to resend unacknowlegded messages on a regular
+basis as they might have been lost. Messages are checksummed with a CRC32 algorithm.
+.PP
+A keyfile of an arbitary length may be specified from which an AES256 key is generated. It should contain good
+random data. ipclient will then encrypt messages prior to sending (and use the same key to decrypt received messages).
+.PP
+The ipclient module, while creating IP messages, does not support reading IP messages from other modules. Messages
+are always sent to the same ipserver target. To send packets to arbitary receivers, ipserver must be used.
+.Bl -tag -width -indent
+.It ipclient_server=SERVER NAME OR ADDRESS
+The name or address of the server which we communucate with, defaults to localhost.
+.It ipclient_server_port=PORT NUMBER
+The port number the server listens to, defaults to 5555.
+.It ipclient_src_port=PORT NUMBER
+Source port used for sending and receiving packtes, defaults to 5555.
+.It ipclient_keyfile=KEY FILE
+An optional keyfile which we use to generate a key used to encrypt messages we send. The server must use the same file.
+.It ipclient_no_ack={yes|no}
+Do not store messages locally in RAM awaiting ACK messages, defaults to no. Any received ACK messages are ignored.
+.El
+.SS ipserver (PTI)
+This module will listen on the specified UDP port waiting for messages from ipclient. When a message is received,
+and ACK message is generated and sent back.
+.PP
+It is also possible to send other messages back, for instance tag messages from a module which saves messages permanently.
+Modules which produce tag messages should then be specified as senders for ipserver.
+.PP
+Sender modules specified for ipserver must be IP capable and specify the correct target for each message. There are no checks
+regarding the target of the message apart from that the target must be a valid IP-address.
+.PP
+The ipserver module does cache messages temporarily and check wether they arrive or not. If a sender misses out on an ACK message
+from ipserver, it must simply re-send the original message in which ipserver will generate a new ACK upon receival.
+.PP
+It is possible for two ipserver instances to communicate over network (as opposed to one ipclient and one ipserver). They will
+generate ACK messages and send back to each other, but these will simply be forwarded for other modules to pick up. Sender modules
+of ipserver must then specifiy the correct target addresses in the IP message.
+.Bl -tag -width -indent
+.It ipserver_keyfile=KEY FILE
+An optional keyfile which we use to generate a key used to encrypt messages we send. The clients must use the same file.
+.It ipserver_server_port=PORT NUMBER
+The port used for sending and receiving packtes, defaults to 5555.
+.El
+.PP
+.SS mysql (PTAIV)
+This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
+database. Tag messages are
+generated for each saved message. Tag messages for messages originating locally (from non-IP modules) can only be picked
+up by non-IP modules and vice versa.
+.PP
+A column plan must be used to describe the table we are saving to. The received data must match this column plan. If
+data save for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
+and try again later. It is not possible for the mysql module to know wether it's settings are at fault or if the database
+is at fault. Messages which fails can however be set to be dropped instead.
+.Bl -tag -width -indent
+.It mysql_server=SERVER NAME
+The server name of the MySQL or MariaDB server to use
+.It mysql_port=PORT NUMBER
+The port number used to connect to the server.
+.It mysql_user=USER NAME
+The username for logging into the server
+.It mysql_password=PASSWORD
+The password for logging into the server
+.It mysql_db=DATABASE NAME
+The name of the database to use
+.It mysql_table=TABLE NAME
+The table name to use for storing data
+.It mysql_drop_unknown_messages={yes|no}
+If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
+.It mysql_no_tagging={yes|no}
+Do not generate tag messages for other modules to pick up. Defaults to no.
+.It mysql_colplan={array|voltage}
+Specifiy wether a table with arbitary columns should be used, or a fixed voltage-style table.
+.El
+.PP
+If the
+.B voltage
+column plan is used, we expect to receive voltage messages and the target table must contain at least these columns:
+.PP
+.nf
+CREATE TABLE `entries` (
+	`timestamp` bigint(20) UNSIGNED NOT NULL,
+	`source` varchar(50) NOT NULL,
+	`class` tinyint(3) UNSIGNED NOT NULL,
+	`time_from` bigint(20) UNSIGNED NOT NULL,
+	`time_to` bigint(20) UNSIGNED NOT NULL,
+	`value` bigint(20) NOT NULL,
+	`message` varchar(255) NOT NULL,
+	`message_length` int(10) UNSIGNED NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+.fi
+.PP
+If the
+.B array
+column plan is used, the following options can be used to describe the target table:
+.PP
+.Bl -tag -width -indent
+.It mysql_columns={column name 1,column name 2,...}
+Specify the columns in the table to write data to. The column count must match the number of values received in array
+messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
+types received. Integers are sent to the database as integers and blobs are sent as blobs.
+If a message contains an array of values, one column sould be specified for the whole array. Arrays are sent to mysql
+as blobs.
+.It mysql_blob_write_columns={column name 1,column name 2,...}
+Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
+.It mysql_special_columns={column name 1,column name 2,...}
+.It mysql_special_values={columns value 1,column value 2,...}
+Used to write fixed values to the database.
+.It mysql_add_timestamp_col={yes|no}
+In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
+.El
+.SS python3 (P)
+This module does nothing for now apart from reading from it's senders.
+.PP
+The following options may be specified:
+.Bl -tag -width -indent
+.It python3_file=FILE NAME
+The file name for the python3 program to be executed.
+.El
+.SS raw (P)
+This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
+can read from both IP modules and non-IP.
+.El
+.SH SEE ALSO
+.Xr rrr(1),
+.Xr bdl(1)
