@@ -140,13 +140,13 @@ int main (int argc, const char *argv[]) {
 	while (main_running) {
 		usleep (100000);
 
-		if (rrr_global_config.no_thread_restart || instance_check_threads_stopped(instances) == 0) {
+		if (instance_check_threads_stopped(instances) == 1) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
 
 			main_threads_stop(collection, instances);
 			thread_destroy_collection (collection);
 
-			if (main_running) {
+			if (main_running && rrr_global_config.no_thread_restart == 0) {
 				goto threads_restart;
 			}
 			else {
