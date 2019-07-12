@@ -138,7 +138,7 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 			ratelimit = 0;
 		}
 
-		usleep (50); // 50 ms
+		usleep (50000); // 50 ms
 
 	}
 
