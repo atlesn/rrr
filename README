@@ -43,6 +43,13 @@ Read voltage measurements from an USB device.
 The udpreader listens on a port and processes integers and blob data it receives, forwarding them
 as messages to other modules. It expects a fixed packet length.
 
+### buffer (buffer messages)
+The buffer simply collects data from it's senders and puts them in a buffer to be read from others.
+
+### duplicator (buffer and duplicate messages)
+The duplicator automatically creates one buffer for each of it's readers, and all data it reads from
+other modules are duplicated for each of its readers.
+
 ### averager (create averages from voltmonitor)
 Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 	

@@ -16,6 +16,7 @@ endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la buffer.la \
 	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
+	duplicator.la \
 	${mysql} ${python3}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr
@@ -46,6 +47,9 @@ controller_la_SOURCES = p_controller.c
 
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c
+
+duplicator_la_LDFLAGS = ${module_ldflags}
+duplicator_la_SOURCES = p_duplicator.c
 
 udpreader_la_LDFLAGS = ${module_ldflags}
 udpreader_la_SOURCES = src_udpreader.c

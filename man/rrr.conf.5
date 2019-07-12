@@ -264,6 +264,9 @@ senders=controller
 .fi
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by another instance.
+.SS duplicator (P)
+The duplicator works like buffer only that it creates one output buffer for every reader and duplicates the
+data it reads from other modules for each reader. The readers of duplicator are detected automatically.
 .SS ipclient (PT)
 The ipclient module collects any message from senders and sends them over the network to another 
 .B rrr
