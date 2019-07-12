@@ -59,7 +59,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct mysql_data {
 	struct fifo_buffer input_buffer;
-	struct fifo_buffer output_buffer;
+	struct fifo_buffer output_buffer_local;
+	struct fifo_buffer output_buffer_ip;
 	MYSQL mysql;
 	MYSQL_BIND bind[RRR_MYSQL_BIND_MAX];
 	int mysql_initialized;
@@ -449,7 +450,8 @@ void data_cleanup(void *arg) {
 	}
 
 	fifo_buffer_invalidate (&data->input_buffer);
-	fifo_buffer_invalidate (&data->output_buffer);
+	fifo_buffer_invalidate (&data->output_buffer_local);
+	fifo_buffer_invalidate (&data->output_buffer_ip);
 
 	RRR_FREE_IF_NOT_NULL(data->mysql_server);
 	RRR_FREE_IF_NOT_NULL(data->mysql_user);
@@ -462,7 +464,8 @@ int data_init(struct mysql_data *data) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
 	ret |= fifo_buffer_init (&data->input_buffer);
-	ret |= fifo_buffer_init (&data->output_buffer);
+	ret |= fifo_buffer_init (&data->output_buffer_local);
+	ret |= fifo_buffer_init (&data->output_buffer_ip);
 	if (ret != 0) {
 		data_cleanup(data);
 	}
@@ -846,11 +849,18 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	return 0;
 }
 
-// Poll request from other modules
+// Poll request from other local modules
+int mysql_poll_delete_local (RRR_MODULE_POLL_SIGNATURE) {
+	struct mysql_data *mysql_data = data->private_data;
+
+	return fifo_read_clear_forward(&mysql_data->output_buffer_local, NULL, callback, poll_data, wait_milliseconds);
+}
+
+// Poll request from other IP-capable modules
 int mysql_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	struct mysql_data *mysql_data = data->private_data;
 
-	return fifo_read_clear_forward(&mysql_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return fifo_read_clear_forward(&mysql_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds);
 }
 
 int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
@@ -931,7 +941,13 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		struct vl_message *message = &entry->data.message;
 		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
-		fifo_buffer_write(&mysql_data->output_buffer, data, size);
+		if (entry->addr_len == 0) {
+			// Message does not contain IP information which means it originated locally
+			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
+		}
+		else {
+			fifo_buffer_write(&mysql_data->output_buffer_ip, data, size);
+		}
 	}
 
 	return err;
@@ -1103,7 +1119,7 @@ static struct module_operations module_operations = {
 		thread_entry_mysql,
 		NULL,
 		NULL,
-		NULL,
+		mysql_poll_delete_local,
 		mysql_poll_delete_ip,
 		test_config,
 		NULL
