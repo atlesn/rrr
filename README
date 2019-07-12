@@ -39,12 +39,16 @@ Create dummy messages with current timestamp as value at some interval.
 ### voltmonitor (USB voltmeter driver)
 Read voltage measurements from an USB device.
 
+### udpreader (read arbitary UDP packets and create messages from them)
+The udpreader listens on a port and processes integers and blob data it receives, forwarding them
+as messages to other modules. It expects a fixed packet length.
+
 ### averager (create averages from voltmonitor)
 Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
 	
 ### ipclient (Send UDP packets to server and wait for ACK)
 Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
-is received, we continue try sending the messages. The server is expected to also run Voltage Logger, but with
+is received, we continue try sending the messages. The server is expected to also run Read Route Record, but with
 the ipserver module listening for packets.
 
 ### blockdev (log messages to block device or file)
@@ -121,8 +125,9 @@ information and/or value it stores.
       `Timestamp to`. `Timestamp from` contains the end time of the measurement timestamp, and
       the start time can be found by checking the from-timestamp of the previous measurement.
     * `INFO`: Usally information in text, for instance to log error conditions.
+    * `ARRAY`: An array of data, for instance created by udpreader
   * `Data`
-    Textual representation of the data in the message
+    Textual representation of the data in the message (optional)
   * `Numeric value`
     Messages containing measurements store these both in text format and binary format to make
     them easier to process. When sent over network, this numeric representation may be lost, but
@@ -150,7 +155,7 @@ same directory using the same naming convention as the other modules.
 
 After a module is copied, replace all instances of the old name inside the file with your new name to avoid confusion.
 
-All modules must provide an `init()` function which is used to provide information to Voltage Logger about which functions
+All modules must provide an `init()` function which is used to provide information to Read Route Record about which functions
 the module provides, its name and type. This can usually be left alone, just change the static `module_name` value to change
 the informational name of the module. The `type` field, however, provides information about wether we expect a sender to
 be specified or if we only are a source module (see `dummy` module vs `raw`);
@@ -182,8 +187,8 @@ initialize libraries before any threads start, for instance the MySQL client lib
 
 ### Thread state convention
 
-Voltage Logger creates one thread for every module when it starts. All threads, when started, must first initialize their data
-which other modules might use, and then wait for a START signal which Voltage Logger sends when all threads are initialized and
+Read Route Record creates one thread for every instance when it starts. All threads, when started, must first initialize their data
+which other modules might use, and then wait for a START signal which RRR sends when all threads are initialized and
 may read from each other. 
 
 The threads should follow a strict pattern on how to initialize and close correctly. This has to be done to prevent readers to use
@@ -210,11 +215,11 @@ If one or more threads exit, all threads are stopped and restarted automatically
 
 ### Thread data
 
-When a thread starts with the specified entry function, it receives a `vl_thread_start_data` struct. It contains a pointer to the
-command line argument struct from the main program (`cmd_data` struct) and a `private_arg` pointer which should be casted in the 
+When a thread/instance starts with the specified entry function, it receives a `vl_thread_start_data` struct. It contains a pointer to the
+command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 
 thread to `module_thread_data` struct. 
 
-There is a slot of 8kB freely available in `module_thread_data` for a module to use which does not have to be de-allocated on exit,
+There is a slot of 8kB freely available in `instance_thread_data` for a thread to use which does not have to be de-allocated on exit,
 it is called `char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
 address.
 
@@ -229,7 +234,7 @@ corruption. Use the private memory provided instead.
 
 ### Buffers
 
-Voltage Logger provides a framework for buffering data before it is read by other modules, or buffer data from other modules before
+Read Route Record provides a framework for buffering data before it is read by other modules, or buffer data from other modules before
 processing. A module is not required to be buffered, it can simply generate it's data whenever a poll function is called. However
 if the module depends on I/O, it is generally a good idea to use the main thread function to put data in a buffer which others then
 read from.
@@ -289,5 +294,5 @@ reasonable to only use ordered writes before using this function. No callback fu
 
 ## CONTACT
 
-github.com/atlesn/voltagelogger
+github.com/atlesn/rrr
 
