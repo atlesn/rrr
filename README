@@ -12,13 +12,13 @@ independently from their readers.
 To start the program with module, a config file must first be made. Write this into a file
 called `rrr.conf`.
 
-[my_source]
-module=dummy
-dummy_no_generation=no
-
-[my_target]
-module=raw
-senders=my_source
+	[my_source]
+	module=dummy
+	dummy_no_generation=no
+	
+	[my_target]
+	module=raw
+	senders=my_source
 
 Then, run this:
 
