@@ -28,6 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "../global.h"
 
+void fifo_buffer_set_ratelimit(struct fifo_buffer *buffer, int ratelimit) {
+	pthread_mutex_lock (&buffer->mutex);
+	buffer->ratelimit = ratelimit;
+	pthread_mutex_unlock (&buffer->mutex);
+}
+
 /*
  * Set the invalid flag on the buffer, preventing new readers and writers from
  * using the buffer. After already initiated reads and writes have completed,
@@ -68,9 +74,11 @@ void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 int fifo_buffer_init(struct fifo_buffer *buffer) {
 	int ret = 0;
 
-	buffer->invalid = 1;
-
 	memset (buffer, '\0', sizeof(*buffer));
+
+	buffer->invalid = 1;
+	buffer->ratelimit = FIFO_DEFAULT_RATELIMIT;
+
 	ret |= pthread_mutex_init (&buffer->mutex, NULL);
 	ret |= pthread_mutex_init (&buffer->write_mutex, NULL);
 
@@ -165,6 +173,8 @@ int fifo_search (
 		prev = entry;
 	}
 
+	buffer->consecutive_writes = 0;
+
 	fifo_write_unlock(buffer);
 
 	return err;
@@ -219,6 +229,8 @@ int fifo_clear_order_lt (
 		}
 	}
 
+	buffer->consecutive_writes = 0;
+
 	fifo_write_unlock(buffer);
 	return 0;
 }
@@ -260,6 +272,8 @@ int fifo_read_clear_forward (
 		buffer->gptr_last = NULL;
 	}
 
+	buffer->consecutive_writes = 0;
+
 	fifo_write_unlock(buffer);
 
 	while (current != stop) {
@@ -298,6 +312,8 @@ void fifo_read (
 		first = first->next;
 	}
 
+	buffer->consecutive_writes = 0;
+
 	fifo_read_unlock(buffer);
 }
 
@@ -333,11 +349,19 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last = entry;
 	}
 
-	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_4 ("New buffer entry %p data %p consecutive writes %i\n", entry, entry->data, buffer->consecutive_writes);
 
 	__fifo_buffer_set_data_available(buffer);
 
+	buffer->consecutive_writes++;
+	int consecutive_writes = buffer->consecutive_writes;
+
 	fifo_write_unlock(buffer);
+
+	if (consecutive_writes > buffer->ratelimit) {
+		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing, sleep.\n", buffer);
+		usleep(FIFO_SPIN_DELAY * 1000);
+	}
 }
 
 /*
@@ -394,9 +418,17 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	}
 
 	out:
-	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
+	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p consecutive writes %i\n", entry, entry->data, buffer->consecutive_writes);
 
 	__fifo_buffer_set_data_available(buffer);
 
+	buffer->consecutive_writes++;
+	int consecutive_writes = buffer->consecutive_writes;
+
 	fifo_write_unlock(buffer);
+
+	if (consecutive_writes > buffer->ratelimit) {
+		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing, sleep.\n", buffer);
+		usleep(FIFO_SPIN_DELAY * 1000);
+	}
 }

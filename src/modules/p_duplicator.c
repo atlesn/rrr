@@ -47,12 +47,60 @@ struct duplicator_data {
 	struct duplicator_reader readers[DUPLICATOR_MAX_SENDERS];
 	struct instance_thread_data *data;
 	int readers_count;
+	int registering_active;
+	int readers_active;
 };
+
+inline void readers_read_lock(struct duplicator_data *data) {
+	int ok = 0;
+
+	while (!ok) {
+		pthread_mutex_lock(&data->readers_lock);
+		if (!data->registering_active) {
+			data->readers_active++;
+			ok = 1;
+		}
+		pthread_mutex_unlock(&data->readers_lock);
+	}
+}
+
+inline void readers_read_unlock(struct duplicator_data *data) {
+	pthread_mutex_lock(&data->readers_lock);
+	data->readers_active--;
+	pthread_mutex_unlock(&data->readers_lock);
+}
+
+inline void readers_register_lock(struct duplicator_data *data) {
+	int ok = 0;
+	while (ok != 2) {
+		if (ok == 0) {
+			pthread_mutex_lock(&data->readers_lock);
+			if (data->registering_active == 0) {
+				ok = 1;
+				data->registering_active = 1;
+			}
+			pthread_mutex_unlock(&data->readers_lock);
+		}
+		if (ok == 1) {
+			pthread_mutex_lock(&data->readers_lock);
+			if (data->readers_active == 0) {
+				ok = 2;
+			}
+			pthread_mutex_unlock(&data->readers_lock);
+		}
+	}
+}
+
+inline void readers_register_unlock(struct duplicator_data *data) {
+	pthread_mutex_lock(&data->readers_lock);
+	data->registering_active = 0;
+	pthread_mutex_unlock(&data->readers_lock);
+}
 
 struct duplicator_reader *find_reader (struct duplicator_data *data, const struct instance_thread_data *identifier) {
 	struct duplicator_reader *result = NULL;
 
-	pthread_mutex_lock(&data->readers_lock);
+	readers_read_lock(data);
 
 	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
 		struct duplicator_reader *test = &data->readers[i];
@@ -62,7 +110,7 @@ struct duplicator_reader *find_reader (struct duplicator_data *data, const struc
 		}
 	}
 
-	pthread_mutex_unlock(&data->readers_lock);
+	readers_read_unlock(data);
 
 	return result;
 }
@@ -70,7 +118,7 @@ struct duplicator_reader *find_reader (struct duplicator_data *data, const struc
 struct duplicator_reader *register_reader (struct duplicator_data *data, const struct instance_thread_data *identifier) {
 	struct duplicator_reader *result = NULL;
 
-	pthread_mutex_lock(&data->readers_lock);
+	readers_register_lock(data);
 
 	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
 		struct duplicator_reader *test = &data->readers[i];
@@ -86,7 +134,7 @@ struct duplicator_reader *register_reader (struct duplicator_data *data, const s
 		}
 	}
 
-	pthread_mutex_unlock(&data->readers_lock);
+	readers_register_unlock(data);
 
 	if (result == NULL) {
 		VL_MSG_ERR("Maximum number of readers reached: %i\n", DUPLICATOR_MAX_SENDERS);
@@ -128,7 +176,9 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: %s measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
 
-	pthread_mutex_lock(&duplicator_data->readers_lock);
+	readers_read_lock(duplicator_data);
+
+	uint64_t time_begin = time_get_64();
 
 	int count = 0;
 	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
@@ -141,14 +191,24 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 				break;
 			}
 			memcpy(new_data, data, size);
+
+			uint64_t time_middle = time_get_64();
+
+			VL_DEBUG_MSG_3 ("duplicator %s write measurement to buffer %p: %" PRIu64 " to %s time since begin is %" PRIu64 "\n",
+					INSTANCE_D_NAME(thread_data), &test->buffer, message->data_numeric,
+					INSTANCE_D_NAME(test->identifier), time_middle - time_begin);
 			fifo_buffer_write(&test->buffer, new_data, size);
 			count++;
 		}
 	}
 
-	free(data);
+	uint64_t time_end = time_get_64();
 
-	pthread_mutex_unlock(&duplicator_data->readers_lock);
+	VL_DEBUG_MSG_3 ("duplicator %s loop time: %" PRIu64 "\n", INSTANCE_D_NAME(thread_data), time_end - time_begin);
+
+	readers_read_unlock(duplicator_data);
+
+	free(data);
 
 	VL_DEBUG_MSG_3 ("duplicator %s: Message duplicated %i times\n", INSTANCE_D_NAME(thread_data), count);
 

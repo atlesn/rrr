@@ -34,18 +34,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../global.h"
 
+struct raw_data {
+	int message_count;
+};
+
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = poll_data->private_data;
+	struct raw_data *raw_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("Raw: Result from buffer: poll flags %u %s measurement %" PRIu64 " size %lu\n",
-			poll_data->flags, reading->data, reading->data_numeric, size);
+
+	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u %s measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->data, reading->data_numeric, size);
+
+	raw_data->message_count++;
 
 	free(data);
 	return 0;
 }
 
+void data_init(struct raw_data *data) {
+	memset (data, '\0', sizeof(*data));
+}
+
 static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
+	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
+
+	data_init(raw_data);
 
 	thread_data->thread = start_data->thread;
 
@@ -68,10 +84,22 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("Raw started thread %p\n", thread_data);
 
+	uint64_t timer_start = time_get_64();
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
+
 		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
+		}
+
+		uint64_t timer_now = time_get_64();
+		if (timer_now - timer_start > 1000000) {
+			timer_start = timer_now;
+
+			VL_DEBUG_MSG_1("Raw instance %s messages per second: %i\n",
+					INSTANCE_D_NAME(thread_data), raw_data->message_count);
+
+			raw_data->message_count = 0;
 		}
 	}
 

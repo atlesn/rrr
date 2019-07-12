@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct dummy_data {
 	struct fifo_buffer buffer;
 	int no_generation;
+	int no_sleeping;
 };
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
@@ -71,10 +72,10 @@ void data_cleanup(void *arg) {
 
 int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
+	int yesno = 0;
 
 	memset(data, '\0', sizeof(*data));
 
-	int yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			yesno = 1; // Default to yes
@@ -88,6 +89,20 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	}
 
 	data->no_generation = yesno;
+
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_sleeping")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0; // Default to no
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->no_sleeping = yesno;
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -120,25 +135,24 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 		goto out_cleanup;
 	}
 
-	int ratelimit = 0;
+	/* If we don't sleep in the loop, put as much data in as the reader can handle */
+	fifo_buffer_set_ratelimit(&data->buffer, FIFO_DEFAULT_RATELIMIT / 5);
+
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		if (data->no_generation == 0 && ratelimit == 10) {
+		if (data->no_generation == 0) {
 			uint64_t time = time_get_64();
 
 			struct vl_message *reading = message_new_reading(time, time);
 
-			VL_DEBUG_MSG_2("dummy: writing data\n");
+			VL_DEBUG_MSG_2("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 		}
 
-		ratelimit++;
-		if (ratelimit > 10) {
-			ratelimit = 0;
+		if (data->no_sleeping == 0) {
+			usleep (50000); // 50 ms
 		}
-
-		usleep (50000); // 50 ms
 
 	}
 

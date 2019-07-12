@@ -130,19 +130,19 @@ int thread_start_all_after_initialized (struct vl_thread_collection *collection)
 void threads_stop_and_join (struct vl_thread_collection *collection);
 
 static inline void thread_lock(struct vl_thread *thread) {
-	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
+//	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void thread_unlock(struct vl_thread *thread) {
-	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
+//	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
 static inline void thread_unlock_if_locked(struct vl_thread *thread) {
-	VL_DEBUG_MSG_4 ("Thread %s test unlock\n", thread->name);
+//	VL_DEBUG_MSG_4 ("Thread %s test unlock\n", thread->name);
 	if (pthread_mutex_trylock(&thread->mutex) == EBUSY) {
-		VL_DEBUG_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
+//		VL_DEBUG_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
 		pthread_mutex_unlock(&thread->mutex);
 	}
 }

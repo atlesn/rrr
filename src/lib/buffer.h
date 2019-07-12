@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 #define FIFO_SPIN_DELAY 50 // milliseconds
+#define FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 
 #define FIFO_OK 0
 #define FIFO_GLOBAL_ERR -1
@@ -77,6 +78,8 @@ struct fifo_buffer {
 	int writers;
 	int writer_waiting;
 	int invalid;
+	int consecutive_writes;
+	int ratelimit;
 	sem_t new_data_available;
 };
 
@@ -238,5 +241,7 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 int fifo_buffer_init(struct fifo_buffer *buffer);
+
+void fifo_buffer_set_ratelimit(struct fifo_buffer *buffer, int ratelimit);
 
 #endif

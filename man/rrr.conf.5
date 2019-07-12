@@ -137,6 +137,8 @@ Constantly generates empty messages only with a timestamp set.
 .Bl -tag -width -indent
 .It dummy_no_generation={yes|no}
 No messages are generated, defaults to yes. 
+.It dummy_no_sleeping={yes|no}
+Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
 .El
 .SS udpreader (SA)
 Listen to an UDP port and read messages of number arrays. The udpreader creates a message for each received packet
