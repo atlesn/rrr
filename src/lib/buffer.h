@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "../global.h"
 
-#define FIFO_SPIN_DELAY 50 // milliseconds
+//#define FIFO_SPIN_DELAY 0 // microseconds
 #define FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 
 #define FIFO_OK 0
@@ -77,6 +77,7 @@ struct fifo_buffer {
 	int readers;
 	int writers;
 	int writer_waiting;
+	int readers_waiting;
 	int invalid;
 	int consecutive_writes;
 	int ratelimit;
@@ -110,11 +111,11 @@ static inline void fifo_write_lock(struct fifo_buffer *buffer) {
 			}
 			else {
 				pthread_mutex_unlock(&buffer->mutex);
-				usleep(FIFO_SPIN_DELAY*1000);
+//				usleep(FIFO_SPIN_DELAY);
 			}
 		}
 		else {
-			usleep(FIFO_SPIN_DELAY*1000);
+//			usleep(FIFO_SPIN_DELAY);
 		}
 	}
 
@@ -132,6 +133,9 @@ static inline void fifo_write_unlock(struct fifo_buffer *buffer) {
 
 static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 	int ok = 0;
+	pthread_mutex_lock(&buffer->mutex);
+	buffer->readers_waiting++;
+	pthread_mutex_unlock(&buffer->mutex);
 	while (!ok) {
 		VL_DEBUG_MSG_4("Buffer %p read lock wait for mutex\n", buffer);
 		pthread_mutex_lock(&buffer->mutex);
@@ -139,11 +143,12 @@ static inline void fifo_read_lock(struct fifo_buffer *buffer) {
 			VL_DEBUG_MSG_4("Buffer %p read lock pass 1\n", buffer);
 			buffer->readers++;
 			ok = 1;
+			buffer->readers_waiting--;
 			pthread_mutex_unlock(&buffer->mutex);
 		}
 		else {
 			pthread_mutex_unlock(&buffer->mutex);
-			usleep(FIFO_SPIN_DELAY*1000);
+			//usleep(FIFO_SPIN_DELAY);
 		}
 	}
 }
@@ -221,6 +226,13 @@ int fifo_search (
 	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 	struct fifo_callback_args *callback_data,
 	unsigned int wait_milliseconds
+);
+int fifo_read_minimum (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data,
+		uint64_t minimum_order,
+		unsigned int wait_milliseconds
 );
 int fifo_clear_order_lt (
 		struct fifo_buffer *buffer,

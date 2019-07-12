@@ -40,12 +40,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct duplicator_reader {
 	const struct instance_thread_data *identifier;
 	struct fifo_buffer buffer;
+	uint64_t read_position;
 };
 
 struct duplicator_data {
 	pthread_mutex_t readers_lock;
 	struct duplicator_reader readers[DUPLICATOR_MAX_SENDERS];
 	struct instance_thread_data *data;
+	struct fifo_buffer input_buffer;
 	int readers_count;
 	int registering_active;
 	int readers_active;
@@ -143,6 +145,48 @@ struct duplicator_reader *register_reader (struct duplicator_data *data, const s
 	return result;
 }
 
+struct read_minimum_data {
+	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size);
+	struct fifo_callback_args *poll_data;
+	uint64_t result_timestamp;
+};
+
+int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned long int size) {
+	int ret = 0;
+
+	struct read_minimum_data *minimum_callback_data = args->private_data;
+	struct fifo_callback_args *fifo_callback_data_orig = minimum_callback_data->poll_data;
+
+	if (size < sizeof(struct vl_message)) {
+		VL_MSG_ERR("Bug: Size was too small in read_minimum_callback\n");
+		exit (EXIT_FAILURE);
+	}
+
+	struct vl_message *message = (struct vl_message *) data;
+
+	uint64_t timestamp = message->timestamp_from;
+
+	char *new_data = malloc(size);
+	if (new_data == NULL) {
+		VL_MSG_ERR("Could not allocate data in duplicator read_minimum_callback\n");
+		return 1;
+	}
+
+	memcpy(new_data, data, size);
+
+	int res = minimum_callback_data->callback(fifo_callback_data_orig, new_data, size);
+
+	if (res == 0) {
+		minimum_callback_data->result_timestamp = timestamp;
+	}
+	else {
+		free(new_data);
+		ret = 1;
+	}
+
+	return ret;
+}
+
 int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct duplicator_data *duplicator_data = data->private_data;
 	struct instance_thread_data *instance_reader = poll_data->source;
@@ -159,7 +203,22 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 		}
 	}
 
-	if (fifo_read_clear_forward(&reader->buffer, NULL, callback, poll_data, wait_milliseconds) == FIFO_GLOBAL_ERR) {
+	struct read_minimum_data minimum_callback_data = {callback, poll_data, 0};
+	struct fifo_callback_args fifo_callback_data = {NULL, &minimum_callback_data, 0};
+
+	int res = fifo_read_minimum (
+			&duplicator_data->input_buffer,
+			read_minimum_callback,
+			&fifo_callback_data,
+			reader->read_position,
+			wait_milliseconds
+	);
+
+	readers_read_lock(duplicator_data);
+	reader->read_position = minimum_callback_data.result_timestamp;
+	readers_read_unlock(duplicator_data);
+
+	if (res == FIFO_GLOBAL_ERR) {
 		return 1;
 	}
 
@@ -175,7 +234,7 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 
 	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: %s measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
-
+	/*
 	readers_read_lock(duplicator_data);
 
 	uint64_t time_begin = time_get_64();
@@ -211,12 +270,41 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	free(data);
 
 	VL_DEBUG_MSG_3 ("duplicator %s: Message duplicated %i times\n", INSTANCE_D_NAME(thread_data), count);
+*/
+
+	update_watchdog_time(thread_data->thread);
+	fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp_from, data, size);
+
+	return ret;
+}
+
+int maintain_input_buffer(struct duplicator_data *data) {
+	int ret = 0;
+
+	uint64_t lowest_timestamp = 0xffffffffffffffff;
+
+	readers_read_lock(data);
+	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
+		struct duplicator_reader *test = &data->readers[i];
+		if (test->identifier != NULL) {
+			if (lowest_timestamp > test->read_position) {
+				lowest_timestamp = test->read_position;
+			}
+		}
+	}
+	readers_read_unlock(data);
+
+	if (fifo_clear_order_lt(&data->input_buffer, lowest_timestamp) == FIFO_GLOBAL_ERR) {
+		VL_MSG_ERR("Duplicator got error from fifo_clear_order_lt\n");
+		ret = 1;
+	}
 
 	return ret;
 }
 
 void data_cleanup(void *arg) {
 	struct duplicator_data *data = arg;
+	fifo_buffer_invalidate(&data->input_buffer);
 	pthread_mutex_lock(&data->readers_lock);
 	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
 		for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
@@ -235,6 +323,7 @@ int data_init(struct duplicator_data *data, struct instance_thread_data *thread_
 	memset(data, '\0', sizeof(*data));
 	data->data = thread_data;
 	ret |= pthread_mutex_init(&data->readers_lock, NULL);
+	ret |= fifo_buffer_init(&data->input_buffer);
 	if (ret != 0) {
 		data_cleanup(data);
 	}
@@ -277,12 +366,21 @@ static void *thread_entry_duplicator(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("duplicator instance %s detected %i readers for now\n",
 			INSTANCE_D_NAME(thread_data), data->readers_count);
 
+	int maintain_throttle = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
 		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
 		}
+
+//		if (++maintain_throttle == 10) {
+			if (maintain_input_buffer(data) != 0) {
+				VL_MSG_ERR("Duplicator instance %s got error from maintain function\n", INSTANCE_D_NAME(thread_data));
+				break;
+			}
+//			maintain_throttle = 0;
+//		}
 	}
 
 	out_message:

@@ -181,7 +181,7 @@ int fifo_search (
 }
 
 /*
- * Delete entries with and order value >= order_min. We assume the buffer is
+ * Delete entries with and order value < order_min. We assume the buffer is
  * already ordered by using fifo_buffer_write_ordered writes only.
  */
 int fifo_clear_order_lt (
@@ -228,8 +228,6 @@ int fifo_clear_order_lt (
 			free(entry);
 		}
 	}
-
-	buffer->consecutive_writes = 0;
 
 	fifo_write_unlock(buffer);
 	return 0;
@@ -317,6 +315,46 @@ void fifo_read (
 	fifo_read_unlock(buffer);
 }
 
+/*
+ * This reading method blocks writers but allow other readers to traverse at the
+ * same time. The callback function must not free the data or store it's pointer.
+ * Only elements with an order value higher than minimum_order are read. If the
+ * callback function produces an error, we stop.
+ */
+int fifo_read_minimum (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data,
+		uint64_t minimum_order,
+		unsigned int wait_milliseconds
+) {
+	fifo_wait_for_data(buffer, wait_milliseconds);
+
+	fifo_read_lock(buffer);
+	if (buffer->invalid) { fifo_read_unlock(buffer); return FIFO_GLOBAL_ERR; }
+
+	int res = 0;
+	struct fifo_buffer_entry *first = buffer->gptr_first;
+	while (first != NULL) {
+		if (first->order > minimum_order) {
+			int res_ = callback(callback_data, first->data, first->size);
+			if (res_ == 0) {
+				// Do nothing
+			}
+			else {
+				break;
+			}
+		}
+		first = first->next;
+	}
+
+	buffer->consecutive_writes = 0;
+
+	fifo_read_unlock(buffer);
+
+	return (res != 0 ? res : FIFO_OK);
+}
+
 void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 	int sem_status = 0;
 	sem_getvalue(&buffer->new_data_available, &sem_status);
@@ -355,12 +393,13 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 
 	buffer->consecutive_writes++;
 	int consecutive_writes = buffer->consecutive_writes;
+	int ratelimit = buffer->ratelimit;
 
 	fifo_write_unlock(buffer);
 
-	if (consecutive_writes > buffer->ratelimit) {
-		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing, sleep.\n", buffer);
-		usleep(FIFO_SPIN_DELAY * 1000);
+	if (consecutive_writes > ratelimit) {
+		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing and readers are waiting, sleep.\n", buffer);
+		usleep(40);
 	}
 }
 
@@ -424,11 +463,12 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 
 	buffer->consecutive_writes++;
 	int consecutive_writes = buffer->consecutive_writes;
+	int ratelimit = buffer->ratelimit;
 
 	fifo_write_unlock(buffer);
 
-	if (consecutive_writes > buffer->ratelimit) {
-		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing, sleep.\n", buffer);
-		usleep(FIFO_SPIN_DELAY * 1000);
+	if (consecutive_writes > ratelimit) {
+		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing and readers are waiting, sleep.\n", buffer);
+		usleep(40);
 	}
 }
