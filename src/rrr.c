@@ -133,6 +133,7 @@ int main (int argc, const char *argv[]) {
 	struct vl_thread_collection *collection = NULL;
 
 	threads_restart:
+	rrr_set_debuglevel_orig();
 	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
@@ -143,6 +144,7 @@ int main (int argc, const char *argv[]) {
 		if (instance_check_threads_stopped(instances) == 1) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
 
+			rrr_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
 			thread_destroy_collection (collection);
 
@@ -162,6 +164,8 @@ int main (int argc, const char *argv[]) {
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
+		rrr_set_debuglevel_on_exit();
+		VL_DEBUG_MSG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
 		thread_destroy_collection (collection);
 

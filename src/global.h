@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdio.h>
+#include <pthread.h>
 
 #ifndef VL_GLOBAL_H
 #define VL_GLOBAL_H
@@ -36,9 +37,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_ASSERT(predicate,name)
 #endif
 
+extern pthread_mutex_t global_config_mutex;
+
 /* Runtime globals */
 struct rrr_global_config {
 	unsigned int debuglevel;
+	unsigned int debuglevel_on_exit;
+	unsigned int debuglevel_orig;
 	unsigned int no_watchdog_timers;
 	unsigned int no_thread_restart;
 };
@@ -112,6 +117,13 @@ extern struct rrr_global_config rrr_global_config;
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
 
-void rrr_init_global_config(unsigned int debuglevel, unsigned int no_watcdog_timers, unsigned int no_thread_restart);
+void rrr_set_debuglevel_orig(void);
+void rrr_set_debuglevel_on_exit(void);
+void rrr_init_global_config (
+		unsigned int debuglevel,
+		unsigned int debuglevel_on_exit,
+		unsigned int no_watcdog_timers,
+		unsigned int no_thread_restart
+);
 
 #endif

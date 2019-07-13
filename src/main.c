@@ -45,7 +45,7 @@ int main_start_threads (
 
 	int ret = 0;
 
-	// Initialzie dynamic_data thread data
+	// Initialize dynamic_data thread data
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {
 			break;
@@ -117,6 +117,7 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 	}
 
 	unsigned int debuglevel = 0;
+	unsigned int debuglevel_on_exit = 0;
 	int no_watchdog_timers = 0;
 	int no_thread_restart = 0;
 
@@ -141,6 +142,27 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 		debuglevel = debuglevel_tmp;
 	}
 
+	const char *debuglevel_on_exit_string = cmd_get_value(cmd, "debuglevel_on_exit", 0);
+	if (debuglevel_on_exit_string != NULL) {
+		int debuglevel_on_exit_tmp;
+		if (strcmp(debuglevel_on_exit_string, "all") == 0) {
+			debuglevel_on_exit = __VL_DEBUGLEVEL_ALL;
+		}
+		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
+			VL_MSG_ERR(
+					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
+					debuglevel_on_exit_string);
+			return EXIT_FAILURE;
+		}
+		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __VL_DEBUGLEVEL_ALL) {
+			VL_MSG_ERR(
+					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
+					__VL_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
+			return EXIT_FAILURE;
+		}
+		debuglevel_on_exit = debuglevel_on_exit_tmp;
+	}
+
 	const char *no_watchdog_timers_string = cmd_get_value(cmd, "no_watchdog_timers", 0);
 	if (no_watchdog_timers_string != NULL) {
 		if (cmdline_check_yesno(no_watchdog_timers_string, &no_watchdog_timers) != 0) {
@@ -159,7 +181,7 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 		}
 	}
 
-	rrr_init_global_config(debuglevel, no_watchdog_timers, no_thread_restart);
+	rrr_init_global_config(debuglevel, debuglevel_on_exit, no_watchdog_timers, no_thread_restart);
 
 	return 0;
 }

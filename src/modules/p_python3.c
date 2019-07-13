@@ -43,6 +43,9 @@ struct python3_data {
 	struct fifo_buffer input_buffer;
 	struct fifo_buffer output_buffer;
 	char *python3_file;
+	char *source_function;
+	char *process_function;
+	char *config_function;
 };
 
 void data_cleanup(void *arg) {
@@ -50,6 +53,9 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate (&data->input_buffer);
 	fifo_buffer_invalidate (&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->python3_file);
+	RRR_FREE_IF_NOT_NULL(data->source_function);
+	RRR_FREE_IF_NOT_NULL(data->process_function);
+	RRR_FREE_IF_NOT_NULL(data->config_function);
 }
 
 int data_init(struct python3_data *data) {
@@ -65,18 +71,18 @@ int data_init(struct python3_data *data) {
 
 int parse_config(struct python3_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-	char *python3_file = NULL;
 
-	ret = rrr_instance_config_get_string_noconvert_silent (&python3_file, config, "python3_file");
+	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_file, config, "python3_file");
 
-	if (ret == 0) {
-		data->python3_file = python3_file;
-	}
-	else {
+	if (ret != 0) {
 		VL_MSG_ERR("No python3_file specified for python module\n");
 		ret = 1;
 		goto out;
 	}
+
+	rrr_instance_config_get_string_noconvert_silent (&data->source_function, config, "python3_source_function");
+	rrr_instance_config_get_string_noconvert_silent (&data->process_function, config, "python3_processor_function");
+	rrr_instance_config_get_string_noconvert_silent (&data->config_function, config, "python3_config_function");
 
 	out:
 	return ret;
@@ -101,6 +107,17 @@ int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned lo
 	return 0;
 }
 
+int python3_start(struct python3_data *data) {
+	int ret = 0;
+
+	return ret;
+}
+
+void python3_stop(void *_data) {
+	struct python3_data *data = _data;
+
+}
+
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	struct instance_thread_data *thread_data = start_data->private_arg;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
@@ -118,6 +135,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(python3_stop, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
@@ -133,6 +151,11 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+	if (python3_start(data) != 0) {
+		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
@@ -144,6 +167,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread python3 %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
