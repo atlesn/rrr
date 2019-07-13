@@ -482,12 +482,28 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 		}
 	}
 
+	VL_THREADS_LOOP(thread,collection) {
+		if (!thread->is_watchdog) {
+			if (thread->poststop_routine != NULL) {
+				if (thread->state == VL_THREAD_STATE_STOPPED) {
+					VL_DEBUG_MSG_1 ("Running post stop routine for %s\n", thread->name);
+					thread->poststop_routine(thread);
+				}
+				else {
+					VL_MSG_ERR ("Cannot run post stop for thread %s as it is not in STOPPED state\n", thread->name);
+				}
+			}
+		}
+	}
 	// Don't unlock, destroy does that
 }
 
 struct vl_thread *thread_preload_and_register (
 		struct vl_thread_collection *collection,
-		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
+		void *(*start_routine) (struct vl_thread_start_data *),
+		int (*preload_routine) (struct vl_thread_start_data *),
+		void (*poststop_routine) (const struct vl_thread *),
+		void *arg, const char *name
 ) {
 	struct vl_thread *thread = NULL;
 	struct vl_thread *watchdog_thread = NULL;
@@ -504,6 +520,8 @@ struct vl_thread *thread_preload_and_register (
 		goto out_error;
 	}
 
+	thread->private_data = arg;
+	thread->poststop_routine = poststop_routine;
 	thread->watchdog_time = 0;
 	thread->signal = 0;
 	sprintf(thread->name, "%s", name);
@@ -525,7 +543,12 @@ struct vl_thread *thread_preload_and_register (
 
 	thread->state = VL_THREAD_STATE_INIT;
 
-	int err;
+	int err = (preload_routine != NULL ? preload_routine(start_data) : 0);
+	if (err != 0) {
+		VL_MSG_ERR ("Error while preloading thread\n");
+		goto out_error;
+	}
+
 	err = pthread_create(&thread->thread, NULL, __thread_start_routine_intermediate, start_data);
 	if (err != 0) {
 		VL_MSG_ERR ("Error while starting thread: %s\n", strerror(err));

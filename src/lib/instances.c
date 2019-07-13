@@ -352,7 +352,13 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 		VL_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
 		exit(EXIT_FAILURE);
 	}
-	data->thread = thread_preload_and_register (collection, module->operations.thread_entry, data, module->instance_name);
+	data->thread = thread_preload_and_register (
+			collection,
+			module->operations.thread_entry,
+			module->operations.preload,
+			module->operations.poststop,
+			data, module->instance_name
+	);
 
 	if (data->thread == NULL) {
 		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);

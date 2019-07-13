@@ -28,7 +28,9 @@ pthread_mutex_t global_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void rrr_set_debuglevel_on_exit(void) {
 	pthread_mutex_lock(&global_config_mutex);
-	rrr_global_config.debuglevel = rrr_global_config.debuglevel_on_exit;
+	if (rrr_global_config.debuglevel_on_exit > 0) {
+		rrr_global_config.debuglevel = rrr_global_config.debuglevel_on_exit;
+	}
 	pthread_mutex_unlock(&global_config_mutex);
 }
 

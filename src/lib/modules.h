@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULES_H
 
 #define VL_MODULE_PRIVATE_MEMORY_SIZE 8196
+#define VL_MODULE_PRELOAD_MEMORY_SIZE 64
 
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_PROCESSOR 3
@@ -42,6 +43,7 @@ struct vl_thread_start_data;
 struct rrr_instance_config;
 struct vl_message;
 struct ip_buffer_entry;
+struct vl_thread;
 
 struct module_load_data {
 	void *dl_ptr;
@@ -82,6 +84,12 @@ struct module_operations {
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+
+	// Preload function - Run before thread is started in main thread context
+	int (*preload)(struct vl_thread_start_data *);
+
+	// Post stop function - Run after thread has finished from main thread context
+	void (*poststop)(const struct vl_thread *);
 };
 
 void module_unload (void *dl_ptr, void (*unload)(void));

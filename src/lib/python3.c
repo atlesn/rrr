@@ -30,6 +30,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3.h"
 #include "../global.h"
 
+struct python3_thread_state python3_swap_thread_in(PyThreadState *tstate) {
+	struct python3_thread_state ret;
+	memset (&ret, '\0', sizeof(ret));
+
+	if (tstate != NULL) {
+		 ret.tstate = PyThreadState_Swap(tstate);
+	}
+
+	ret.tstate = tstate;
+
+	return ret;
+}
+
+void python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
+	if (tstate_holder->tstate != NULL) {
+		PyThreadState_Swap(tstate_holder->tstate);
+	}
+
+	tstate_holder->tstate = NULL;
+}
+
 PyObject *rrr_py_import_object (PyObject *main_module, const char *symbol) {
 	return PyObject_GetAttrString(main_module, symbol);
 }

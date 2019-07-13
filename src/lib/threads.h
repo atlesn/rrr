@@ -86,7 +86,6 @@ struct vl_thread_double_pointer {
 #define VL_THREAD_CLEANUP_PUSH_FREE_SINGLE_POINTER(name) \
 	pthread_cleanup_push(thread_free_single_pointer, name)
 
-
 struct vl_thread {
 	struct vl_thread *next;
 	pthread_t thread;
@@ -96,6 +95,7 @@ struct vl_thread {
 	int state;
 	int is_watchdog;
 	char name[VL_THREAD_NAME_MAX_LENGTH];
+	void *private_data;
 
 	// Set when we tried to cancel a thread but we couldn't join
 	int is_ghost;
@@ -105,6 +105,7 @@ struct vl_thread {
 	// it's cleanup procedure and free this pointer
 	void *ghost_cleanup_pointer;
 
+	void (*poststop_routine)(const struct vl_thread *);
 // TODO : Probably don't need this
 //	char thread_private_memory[];
 };
@@ -223,7 +224,10 @@ static inline void thread_set_stopping(void *arg) {
 
 struct vl_thread *thread_preload_and_register (
 		struct vl_thread_collection *collection,
-		void *(*start_routine) (struct vl_thread_start_data *), void *arg, const char *name
+		void *(*start_routine) (struct vl_thread_start_data *),
+		int (*preload_routine) (struct vl_thread_start_data *),
+		void(*poststop_routine) (const struct vl_thread *),
+		void *arg, const char *name
 );
 
 void thread_free_double_pointer(void *arg);

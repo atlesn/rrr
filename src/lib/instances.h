@@ -76,7 +76,9 @@ struct instance_thread_data {
 
 	struct vl_thread *thread;
 	void *private_data;
+	void *preload_data;
 	char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE];
+	char preload_memory[VL_MODULE_PRELOAD_MEMORY_SIZE];
 };
 
 #define RRR_INSTANCE_LOOP(target,collection) \
