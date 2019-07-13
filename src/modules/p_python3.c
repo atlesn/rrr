@@ -110,12 +110,15 @@ int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned lo
 int python3_start(struct python3_data *data) {
 	int ret = 0;
 
+	(void)(*data);
+
 	return ret;
 }
 
 void python3_stop(void *_data) {
 	struct python3_data *data = _data;
 
+	(void)(*data);
 }
 
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {

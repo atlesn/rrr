@@ -94,11 +94,11 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 	else if (averager_data->discard_unknown_messages) {
-		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, disarding according to configuration\n", size, message->data);
+		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, disarding according to configuration\n", size);
 		free(data);
 	}
 	else {
-		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size, message->data);
+		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size);
 		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 
