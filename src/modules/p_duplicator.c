@@ -366,7 +366,6 @@ static void *thread_entry_duplicator(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("duplicator instance %s detected %i readers for now\n",
 			INSTANCE_D_NAME(thread_data), data->readers_count);
 
-	int maintain_throttle = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
@@ -374,13 +373,10 @@ static void *thread_entry_duplicator(struct vl_thread_start_data *start_data) {
 			break;
 		}
 
-//		if (++maintain_throttle == 10) {
-			if (maintain_input_buffer(data) != 0) {
-				VL_MSG_ERR("Duplicator instance %s got error from maintain function\n", INSTANCE_D_NAME(thread_data));
-				break;
-			}
-//			maintain_throttle = 0;
-//		}
+		if (maintain_input_buffer(data) != 0) {
+			VL_MSG_ERR("Duplicator instance %s got error from maintain function\n", INSTANCE_D_NAME(thread_data));
+			break;
+		}
 	}
 
 	out_message:
@@ -398,7 +394,9 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_duplicator,
+		NULL,
 		NULL,
 		NULL,
 		poll_delete,

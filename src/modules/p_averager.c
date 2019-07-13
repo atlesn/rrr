@@ -363,7 +363,9 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_averager,
+		NULL,
 		averager_poll,
 		NULL,
 		averager_poll_delete,

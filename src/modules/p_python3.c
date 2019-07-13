@@ -383,15 +383,15 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		thread_preload_python3,
 		thread_entry_python3,
+		thread_poststop_python3,
 		NULL,
 		NULL,
 		NULL,
 		python3_poll_delete,
 		test_config,
-		NULL,
-		thread_preload_python3,
-		thread_poststop_python3
+		NULL
 };
 
 static const char *module_name = "python3";

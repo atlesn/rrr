@@ -69,7 +69,14 @@ struct module_load_data {
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
+	// Preload function - Run before thread is started in main thread context
+	int (*preload)(struct vl_thread_start_data *);
+
+	// Main function with a loop to run the thread
 	void *(*thread_entry)(struct vl_thread_start_data *);
+
+	// Post stop function - Run after thread has finished from main thread context
+	void (*poststop)(const struct vl_thread *);
 
 	// For modules which returns vl_message struct from buffer
 	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
@@ -84,12 +91,6 @@ struct module_operations {
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-
-	// Preload function - Run before thread is started in main thread context
-	int (*preload)(struct vl_thread_start_data *);
-
-	// Post stop function - Run after thread has finished from main thread context
-	void (*poststop)(const struct vl_thread *);
 };
 
 void module_unload (void *dl_ptr, void (*unload)(void));

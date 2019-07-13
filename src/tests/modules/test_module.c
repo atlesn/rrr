@@ -114,7 +114,9 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_test_module,
+		NULL,
 		NULL,
 		NULL,
 		NULL,

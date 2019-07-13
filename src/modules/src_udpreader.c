@@ -288,7 +288,9 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+	NULL,
 	thread_entry_udpreader,
+	NULL,
 	poll,
 	NULL,
 	poll_delete,
