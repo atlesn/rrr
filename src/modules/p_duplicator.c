@@ -177,7 +177,9 @@ int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned
 	int res = minimum_callback_data->callback(fifo_callback_data_orig, new_data, size);
 
 	if (res == 0) {
-		minimum_callback_data->result_timestamp = timestamp;
+		if (timestamp > minimum_callback_data->result_timestamp) {
+			minimum_callback_data->result_timestamp = timestamp;
+		}
 	}
 	else {
 		free(new_data);
@@ -214,9 +216,17 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 			wait_milliseconds
 	);
 
-	readers_read_lock(duplicator_data);
-	reader->read_position = minimum_callback_data.result_timestamp;
-	readers_read_unlock(duplicator_data);
+	if (minimum_callback_data.result_timestamp > 0) {
+		VL_DEBUG_MSG_3("Duplicator %s New read position for reader %s: %lu\n",
+				INSTANCE_D_NAME(duplicator_data->data),
+				INSTANCE_D_NAME(reader->identifier),
+				minimum_callback_data.result_timestamp
+		);
+
+		readers_read_lock(duplicator_data);
+		reader->read_position = minimum_callback_data.result_timestamp;
+		readers_read_unlock(duplicator_data);
+	}
 
 	if (res == FIFO_GLOBAL_ERR) {
 		return 1;
@@ -369,8 +379,15 @@ static void *thread_entry_duplicator(struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-			break;
+		int input_buffer_size = fifo_buffer_get_entry_count(&data->input_buffer);
+
+		if (input_buffer_size > 5000) {
+			usleep(1000);
+		}
+		else {
+			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
+				break;
+			}
 		}
 
 		if (maintain_input_buffer(data) != 0) {

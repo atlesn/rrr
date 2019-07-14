@@ -100,6 +100,14 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 	return ret;
 }
 
+void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
+	int sem_status = 0;
+	sem_getvalue(&buffer->new_data_available, &sem_status);
+	if (sem_status == 0) {
+		sem_post(&buffer->new_data_available);
+	}
+}
+
 /*
  * Search entries and act according to the return value of the callback function. We
  * can delete entries or stop looping. See buffer.h . The callback function is expected
@@ -179,6 +187,10 @@ int fifo_search (
 	buffer->entry_count -= cleared_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
+	if (buffer->gptr_first != NULL) {
+		__fifo_buffer_set_data_available(buffer);
+	}
+
 	fifo_write_unlock(buffer);
 
 	return err;
@@ -240,6 +252,10 @@ int fifo_clear_order_lt (
 	buffer->entry_count -= cleared_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
+	if (buffer->gptr_first != NULL) {
+		__fifo_buffer_set_data_available(buffer);
+	}
+
 	fifo_write_unlock(buffer);
 	return 0;
 }
@@ -290,6 +306,10 @@ int fifo_read_clear_forward (
 		buffer->gptr_last = NULL;
 	}
 
+	if (buffer->gptr_first != NULL) {
+		__fifo_buffer_set_data_available(buffer);
+	}
+
 	fifo_write_unlock(buffer);
 
 	int processed_entries = 0;
@@ -334,6 +354,10 @@ void fifo_read (
 		first = first->next;
 	}
 
+	if (buffer->gptr_first != NULL) {
+		__fifo_buffer_set_data_available(buffer);
+	}
+
 	fifo_read_unlock(buffer);
 }
 
@@ -370,17 +394,13 @@ int fifo_read_minimum (
 		first = first->next;
 	}
 
+	if (buffer->gptr_first != NULL) {
+		__fifo_buffer_set_data_available(buffer);
+	}
+
 	fifo_read_unlock(buffer);
 
 	return (res != 0 ? res : FIFO_OK);
-}
-
-void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
-	int sem_status = 0;
-	sem_getvalue(&buffer->new_data_available, &sem_status);
-	if (sem_status == 0) {
-		sem_post(&buffer->new_data_available);
-	}
 }
 
 
@@ -391,7 +411,9 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 
-	long long unsigned int spin_time = buffer->ratelimit.sleep_spin_time + (buffer->entry_count * 4);
+	long long unsigned int spin_time =
+			buffer->ratelimit.sleep_spin_time +
+			(buffer->entry_count * buffer->entry_count);
 	/*
 	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
 	 * sleep one time for 9 entries before we loop again and measure the time once more. The 10th
