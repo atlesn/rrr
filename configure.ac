@@ -70,6 +70,14 @@ AS_IF([test "x$enable_python3" = xno], [
 	AC_SUBST([PYTHON3_CFLAGS])
 	AC_SUBST([PYTHON3_LDFLAGS], `$python3_config_bin --ldflags`)
 
+	AC_MSG_CHECKING([python version >= 3.3])
+	AC_MSG_RESULT([$PYTHON3_MAJOR_VERSION.$PYTHON3_MINOR_VERSION])
+	if test ${PYTHON3_MINOR_VERSION} -lt 3; then
+		if test ${PYTHON3_MAJOR_VERSION} != 3; then
+			AC_MSG_ERROR([Python3 version >= 3.3 is required])
+		fi
+	fi
+
 	AC_MSG_CHECKING([python version >= 3.7])
 	if test ${PYTHON3_MINOR_VERSION} -lt 7; then
 		AC_MSG_RESULT([no])

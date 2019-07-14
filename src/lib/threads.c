@@ -454,8 +454,6 @@ void *__thread_watchdog_entry (void *arg) {
 
 	thread_set_signal(thread, VL_THREAD_SIGNAL_KILL);
 
-//	__thread_set_state_hard(thread, VL_THREAD_STATE_ENCOURAGE_STOP);
-
 	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
 	uint64_t prevtime = time_get_64();
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {

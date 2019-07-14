@@ -38,8 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/python3.h"
 #include "../global.h"
 
-#define RRR_PYTHON3_MAX_SENDERS 16
-
 //static PyThreadState *main_tstate = NULL;
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static PyThreadState *main_python_tstate = NULL;
