@@ -54,6 +54,14 @@ struct fifo_buffer_entry {
 	struct fifo_buffer_entry *next;
 };
 
+struct fifo_buffer_ratelimit {
+	double read_write_balance;
+	int prev_entry_count;
+	long long int sleep_spin_time;
+	uint64_t prev_time;
+	int burst_counter;
+};
+
 /*
  * Buffer rules:
  * - There may be many readers at the same time
@@ -74,15 +82,38 @@ struct fifo_buffer {
 	struct fifo_buffer_entry *gptr_last;
 	pthread_mutex_t mutex;
 	pthread_mutex_t write_mutex;
+	pthread_mutex_t ratelimit_mutex;
 	int readers;
 	int writers;
 	int writer_waiting;
 	int readers_waiting;
 	int invalid;
-	int consecutive_writes;
-	int ratelimit;
+
+	int buffer_do_ratelimit;
+	int entry_count;
+
+	long long int spins_per_us;
+
+	struct fifo_buffer_ratelimit ratelimit;
+
 	sem_t new_data_available;
 };
+
+static inline int fifo_buffer_get_entry_count (struct fifo_buffer *buffer) {
+	int ret = 0;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	ret = buffer->entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	return ret;
+}
+
+static inline void fifo_buffer_set_do_ratelimit(struct fifo_buffer *buffer, int set) {
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->buffer_do_ratelimit = set;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+}
 
 // TODO : These locking methods are unfair, fix if it matters
 static inline void fifo_write_lock(struct fifo_buffer *buffer) {
@@ -253,7 +284,5 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 int fifo_buffer_init(struct fifo_buffer *buffer);
-
-void fifo_buffer_set_ratelimit(struct fifo_buffer *buffer, int ratelimit);
 
 #endif

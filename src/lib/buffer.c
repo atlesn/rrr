@@ -28,12 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "../global.h"
 
-void fifo_buffer_set_ratelimit(struct fifo_buffer *buffer, int ratelimit) {
-	pthread_mutex_lock (&buffer->mutex);
-	buffer->ratelimit = ratelimit;
-	pthread_mutex_unlock (&buffer->mutex);
-}
-
 /*
  * Set the invalid flag on the buffer, preventing new readers and writers from
  * using the buffer. After already initiated reads and writes have completed,
@@ -67,6 +61,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
 	pthread_mutex_destroy (&buffer->write_mutex);
+	pthread_mutex_destroy (&buffer->ratelimit_mutex);
 	sem_destroy(&buffer->new_data_available);
 	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
 }
@@ -77,10 +72,14 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 	memset (buffer, '\0', sizeof(*buffer));
 
 	buffer->invalid = 1;
-	buffer->ratelimit = FIFO_DEFAULT_RATELIMIT;
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->buffer_do_ratelimit = 0;
+	buffer->ratelimit.sleep_spin_time = 2000000;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	ret |= pthread_mutex_init (&buffer->mutex, NULL);
 	ret |= pthread_mutex_init (&buffer->write_mutex, NULL);
+	ret |= pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
 
 	int sem_ret = sem_init(&buffer->new_data_available, 1, 0);
 	if (sem_ret != 0) {
@@ -123,6 +122,7 @@ int fifo_search (
 	}
 
 	int err = 0;
+	int cleared_entries = 0;
 
 	struct fifo_buffer_entry *entry;
 	struct fifo_buffer_entry *next;
@@ -152,6 +152,8 @@ int fifo_search (
 				prev->next = entry->next;
 			}
 
+			cleared_entries++;
+
 			if ((actions & FIFO_SEARCH_FREE) != 0) {
 				free(entry->data);
 			}
@@ -173,7 +175,9 @@ int fifo_search (
 		prev = entry;
 	}
 
-	buffer->consecutive_writes = 0;
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count -= cleared_entries;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	fifo_write_unlock(buffer);
 
@@ -195,12 +199,15 @@ int fifo_clear_order_lt (
 		return FIFO_GLOBAL_ERR;
 	}
 
+	int cleared_entries = 0;
+
 	struct fifo_buffer_entry *entry;
 	struct fifo_buffer_entry *clear_end = NULL;
 	for (entry = buffer->gptr_first; entry != NULL; entry = entry->next){
 		if (entry->order < order_min) {
 			// All entries up to here are to be cleared
 			clear_end = entry;
+			cleared_entries++;
 		}
 		else {
 			break;
@@ -228,6 +235,10 @@ int fifo_clear_order_lt (
 			free(entry);
 		}
 	}
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count -= cleared_entries;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	fifo_write_unlock(buffer);
 	return 0;
@@ -258,6 +269,15 @@ int fifo_read_clear_forward (
 	struct fifo_buffer_entry *current = buffer->gptr_first;
 	struct fifo_buffer_entry *stop = NULL;
 
+	if (last_element == NULL) {
+		int i = 500;
+		struct fifo_buffer_entry *test = current;
+		while (test != NULL && --i) {
+			test = test->next;
+		}
+		last_element = test;
+	}
+
 	if (last_element != NULL) {
 		buffer->gptr_first = last_element->next;
 		stop = last_element->next;
@@ -270,15 +290,15 @@ int fifo_read_clear_forward (
 		buffer->gptr_last = NULL;
 	}
 
-	buffer->consecutive_writes = 0;
-
 	fifo_write_unlock(buffer);
 
+	int processed_entries = 0;
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
 		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
+		processed_entries++;
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		ret = (ret != 0 ? FIFO_CALLBACK_ERR : (ret_tmp != 0 ? FIFO_CALLBACK_ERR : FIFO_OK));
 
@@ -286,6 +306,10 @@ int fifo_read_clear_forward (
 
 		current = next;
 	}
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count -= processed_entries;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	return ret;
 }
@@ -310,8 +334,6 @@ void fifo_read (
 		first = first->next;
 	}
 
-	buffer->consecutive_writes = 0;
-
 	fifo_read_unlock(buffer);
 }
 
@@ -332,12 +354,12 @@ int fifo_read_minimum (
 
 	fifo_read_lock(buffer);
 	if (buffer->invalid) { fifo_read_unlock(buffer); return FIFO_GLOBAL_ERR; }
-
 	int res = 0;
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
 		if (first->order > minimum_order) {
 			int res_ = callback(callback_data, first->data, first->size);
+
 			if (res_ == 0) {
 				// Do nothing
 			}
@@ -347,8 +369,6 @@ int fifo_read_minimum (
 		}
 		first = first->next;
 	}
-
-	buffer->consecutive_writes = 0;
 
 	fifo_read_unlock(buffer);
 
@@ -361,6 +381,136 @@ void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 	if (sem_status == 0) {
 		sem_post(&buffer->new_data_available);
 	}
+}
+
+
+void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
+	if (!buffer->buffer_do_ratelimit) {
+		return;
+	}
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+
+	long long unsigned int spin_time = buffer->ratelimit.sleep_spin_time + (buffer->entry_count * 4);
+	/*
+	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
+	 * sleep one time for 9 entries before we loop again and measure the time once more. The 10th
+	 * time (at the spin), we subtract the approximate number of spins we already did while sleeping
+	 * on the other 9.
+	 *
+	 * If the spin loop is longer than some time period, we only spin every 10 times.
+	 */
+
+	if (++(buffer->ratelimit.burst_counter) == 10) {
+		buffer->ratelimit.burst_counter = 0;
+
+		unsigned long int do_usleep = 0;
+
+		/* If we know how long the spinlock lasts, sleep half the period */
+		if (buffer->spins_per_us > 0) {
+			do_usleep = spin_time / 2 / buffer->spins_per_us;
+
+			if (do_usleep < 50) {
+				do_usleep = 0;
+			}
+			else {
+				spin_time = spin_time / 2;
+			}
+		}
+
+		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+		uint64_t time_start = time_get_64();
+		long long int spin_time_orig = spin_time;
+		while (--spin_time > 0) {
+			asm("");
+		}
+		uint64_t time_end = time_get_64();
+		uint64_t time_diff = time_end - time_start;
+		if (do_usleep) {
+			usleep(do_usleep);
+		}
+		pthread_mutex_lock(&buffer->ratelimit_mutex);
+
+/*		printf ("Spin time %lu rounds %llu usleep %lu\n",
+				time_diff,
+				spin_time_orig,
+				do_usleep
+		);*/
+
+		long long int current_spins_per_us = spin_time_orig / time_diff;
+
+		if (buffer->spins_per_us == 0) {
+			buffer->spins_per_us = current_spins_per_us;
+		}
+		else {
+			// Give little weight to the new value when updating
+			buffer->spins_per_us = (buffer->spins_per_us * 9 + current_spins_per_us) / 10;
+		}
+//		VL_DEBUG_MSG_1("spintime %llu spins per us %llu\n", time_diff, buffer->spins_per_us);
+	}
+
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+}
+
+void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
+	struct fifo_buffer_ratelimit *ratelimit = &buffer->ratelimit;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+
+	uint64_t time_now = time_get_64();
+
+	if (ratelimit->prev_time == 0) {
+		ratelimit->prev_time = time_now;
+		ratelimit->prev_entry_count = buffer->entry_count;
+		goto out_unlock;
+	}
+
+	// Work every 250ms
+	if (time_now - ratelimit->prev_time < 250000) {
+		goto out_unlock;
+	}
+
+	int entry_diff = ratelimit->prev_entry_count - buffer->entry_count;
+
+	if (entry_diff > 0) {
+		// Readers are faster
+		ratelimit->read_write_balance = (ratelimit->read_write_balance + entry_diff) / 2;
+	}
+	else if (entry_diff < 0) {
+		// Writers are faster
+		ratelimit->read_write_balance = (ratelimit->read_write_balance + entry_diff) / 2;
+		ratelimit->sleep_spin_time += 1000;
+	}
+	else {
+		ratelimit->sleep_spin_time -= (ratelimit->sleep_spin_time / 10);
+	}
+
+	ratelimit->sleep_spin_time = ratelimit->sleep_spin_time - (ratelimit->read_write_balance * 10);
+
+	if (ratelimit->sleep_spin_time < 1) {
+		ratelimit->sleep_spin_time = 1;
+	}
+	else if (ratelimit->sleep_spin_time > 10000000000) {
+		ratelimit->sleep_spin_time = 10000000000;
+	}
+
+	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (buffer->spins_per_us + 1));
+
+	VL_DEBUG_MSG_1("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
+			buffer,
+			ratelimit->read_write_balance,
+			ratelimit->sleep_spin_time,
+			spintime_us,
+			buffer->spins_per_us,
+			buffer->entry_count,
+			buffer->buffer_do_ratelimit
+	);
+
+	ratelimit->prev_time = time_now;
+	ratelimit->prev_entry_count = buffer->entry_count;
+
+	out_unlock:
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 }
 
 /*
@@ -376,7 +526,12 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 
 	fifo_write_lock(buffer);
 
-	if (buffer->invalid) { free(entry->data); free(entry); fifo_write_unlock(buffer); return; }
+	if (buffer->invalid) {
+		fifo_write_unlock(buffer);
+		free(entry->data);
+		free(entry);
+		return;
+	}
 
 	if (buffer->gptr_last == NULL) {
 		buffer->gptr_last = entry;
@@ -387,20 +542,19 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last = entry;
 	}
 
-	VL_DEBUG_MSG_4 ("New buffer entry %p data %p consecutive writes %i\n", entry, entry->data, buffer->consecutive_writes);
+	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
 	__fifo_buffer_set_data_available(buffer);
 
-	buffer->consecutive_writes++;
-	int consecutive_writes = buffer->consecutive_writes;
-	int ratelimit = buffer->ratelimit;
+	__fifo_buffer_update_ratelimit(buffer);
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count++;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	fifo_write_unlock(buffer);
 
-	if (consecutive_writes > ratelimit) {
-		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing and readers are waiting, sleep.\n", buffer);
-		usleep(40);
-	}
+	__fifo_buffer_do_ratelimit(buffer);
 }
 
 /*
@@ -414,6 +568,13 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	entry->order = order;
 
 	fifo_write_lock(buffer);
+
+	if (buffer->invalid) {
+		fifo_write_unlock(buffer);
+		free(entry->data);
+		free(entry);
+		return;
+	}
 
 	struct fifo_buffer_entry *pos = buffer->gptr_first;
 
@@ -457,18 +618,17 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 	}
 
 	out:
-	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p consecutive writes %i\n", entry, entry->data, buffer->consecutive_writes);
+	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	__fifo_buffer_set_data_available(buffer);
 
-	buffer->consecutive_writes++;
-	int consecutive_writes = buffer->consecutive_writes;
-	int ratelimit = buffer->ratelimit;
+	__fifo_buffer_update_ratelimit(buffer);
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count++;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	fifo_write_unlock(buffer);
 
-	if (consecutive_writes > ratelimit) {
-		VL_DEBUG_MSG_4("Buffer %p reached rate limit while writing and readers are waiting, sleep.\n", buffer);
-		usleep(40);
-	}
+	__fifo_buffer_do_ratelimit(buffer);
 }

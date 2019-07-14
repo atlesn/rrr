@@ -43,18 +43,32 @@ static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static PyThreadState *main_python_tstate = NULL;
 static int python_users = 0;
 
+void p_python3_global_lock(void) {
+	pthread_mutex_lock(&main_python_lock);
+}
+
+void p_python3_global_unlock(void *dummy) {
+	(void)(dummy);
+	pthread_mutex_unlock(&main_python_lock);
+}
+
 struct python3_preload_data {
 	PyThreadState *istate;
 };
 
 struct python3_data {
-	struct fifo_buffer input_buffer;
-	struct fifo_buffer output_buffer;
-	char *python3_file;
+	struct instance_thread_data *thread_data;
 
+	struct fifo_buffer output_buffer;
+
+	char *python3_file;
 	char *source_function;
 	char *process_function;
 	char *config_function;
+
+	struct python3_thread_state python3_thread_ctx;
+	int gil_acquired;
+
 	PyObject *py_source_function;
 	PyObject *py_process_function;
 	PyObject *py_config_function;
@@ -66,12 +80,13 @@ struct python3_data {
 	PyObject *py_main_dict;
 	FILE *py_file;
 
+	struct python3_message_maker message_maker;
+
 	pthread_mutex_t python3_mutex;
 };
 
 void data_cleanup(void *arg) {
 	struct python3_data *data = arg;
-	fifo_buffer_invalidate (&data->input_buffer);
 	fifo_buffer_invalidate (&data->output_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->python3_file);
@@ -79,8 +94,11 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->process_function);
 	RRR_FREE_IF_NOT_NULL(data->config_function);
 
+	int release_condition = 1;
 
-	//PYTHON3_THREAD_IN(data->istate);
+	PYTHON3_THREAD_IN(data->tstate, &release_condition);
+	rrr_py_destroy_message_struct(&data->message_maker);
+	PYTHON3_THREAD_OUT();
 
 /*	Py_XDECREF(data->py_source_function);
 	Py_XDECREF(data->py_process_function);
@@ -106,13 +124,12 @@ void data_cleanup(void *arg) {
 	data->py_main = NULL;
 	data->py_main_dict = NULL;
 
-	//PYTHON3_THREAD_OUT();
 }
 
-int data_init(struct python3_data *data, const struct python3_preload_data *preload_data) {
+int data_init(struct python3_data *data, const struct python3_preload_data *preload_data, struct instance_thread_data *thread_data) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
-	ret |= fifo_buffer_init (&data->input_buffer);
+
 	ret |= fifo_buffer_init (&data->output_buffer);
 	ret |= pthread_mutex_init(&data->python3_mutex, NULL);
 
@@ -120,6 +137,8 @@ int data_init(struct python3_data *data, const struct python3_preload_data *prel
 		VL_MSG_ERR("Bug: No preload data in python3 data_init\n");
 		exit(EXIT_FAILURE);
 	}
+
+	data->thread_data = thread_data;
 
 	data->istate = preload_data->istate;
 	data->tstate = PyThreadState_New(data->istate->interp);
@@ -153,22 +172,66 @@ int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
-int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
+int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	int ret = 0;
+
+	(void)(size);
+
+	struct instance_thread_data *thread_data = (struct instance_thread_data *) poll_data->source;
 	struct python3_data *python3_data = thread_data->private_data;
-	struct vl_message *reading = (struct vl_message *) data;
+	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("python3: Result from buffer (local): %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
+	PyObject *new_py_message = NULL;
+	PyObject *old_py_message = NULL;
 
-	fifo_buffer_write(&python3_data->input_buffer, (char*) reading, sizeof(*reading));
+	update_watchdog_time(python3_data->thread_data->thread);
 
-	return 0;
+	if (python3_data->gil_acquired == 0) {
+		python3_data->python3_thread_ctx = python3_swap_thread_in(python3_data->tstate, &python3_data->gil_acquired);
+		python3_data->gil_acquired = 1;
+	}
+
+	VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
+			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
+
+	old_py_message = rrr_py_new_message(&python3_data->message_maker, message);
+	if (old_py_message == NULL) {
+		VL_MSG_ERR("Could not generate python3 vl_message in process_input_callback for instance %s\n",
+				INSTANCE_D_NAME(python3_data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	ret = rrr_py_process_message(&new_py_message, python3_data->py_process_function, old_py_message);
+
+	// A Process function might return anything, but only fills the return pointer with vl_message objects
+	if (new_py_message != NULL) {
+		struct vl_message *new_message = NULL;
+		ret = rrr_py_message_to_internal(&new_message, new_py_message);
+		if (ret != 0) {
+			VL_MSG_ERR("Could not convert message from python3 to internal message.\n");
+			goto out;
+		}
+
+		VL_DEBUG_MSG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
+				INSTANCE_D_NAME(python3_data->thread_data), new_message->timestamp_from);
+
+		fifo_buffer_write(&python3_data->output_buffer, (char*) new_message, sizeof(*new_message));
+	}
+
+	out:
+	Py_XDECREF(old_py_message);
+	Py_XDECREF(new_py_message);
+	free(data);
+
+	return ret;
 }
 
 int python3_start(struct python3_data *data) {
 	int ret = 0;
+	int release_condition = 1;
 
-	PYTHON3_THREAD_IN(data->tstate);
+	PYTHON3_THREAD_IN(data->tstate, &release_condition);
 	if (!PYTHON3_THREAD_OK()) {
 		VL_MSG_ERR("Could not swap python3 thread state in python3_start\n");
 		ret = 1;
@@ -178,17 +241,27 @@ int python3_start(struct python3_data *data) {
 	// LOAD PYTHON MAIN DICTIONARY
 	data->py_main = PyImport_ImportModule("__main__");
     if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python __main__ in python3_start\n");
+    	VL_MSG_ERR("Could not get python3 __main__ in python3_start:\n");
+    	PyErr_Print();
     	ret = 1;
     	goto out_thread_out;
     }
 
     data->py_main_dict = PyModule_GetDict(data->py_main);
     if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python main dictionary in python3_start\n");
+    	VL_MSG_ERR("Could not get python3 main dictionary in python3_start:\n");
+    	PyErr_Print();
     	ret = 1;
     	goto out_thread_out;
     }
+
+    // PREPARE RRR ENVIRONMENT
+	if (rrr_py_get_message_struct(&data->message_maker, data->py_main_dict) != 0) {
+		VL_MSG_ERR("Could not get message maker function in python3 instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		PyErr_Print();
+		ret = 1;
+		goto out_thread_out;
+	}
 
     // OPEN PYTHON FILE
 	data->py_file = fopen (data->python3_file, "r");
@@ -206,13 +279,14 @@ int python3_start(struct python3_data *data) {
 	);
 	if (result == NULL) {
 			PyErr_Print();
+			ret = 1;
 			goto out_thread_out;
 	}
 	Py_XDECREF(result);
 
 	// LOAD FUNCTIONS FROM PYTHON PROGRAM
 	if (data->config_function != NULL) {
-		data->py_config_function = rrr_py_import_function (data->py_main, data->config_function);
+		data->py_config_function = rrr_py_import_function (data->py_main_dict, data->config_function);
 		if (data->py_config_function == NULL) {
 			VL_MSG_ERR("Could not get config function '%s' from python program:\n", data->config_function);
 			PyErr_Print();
@@ -222,7 +296,7 @@ int python3_start(struct python3_data *data) {
 	}
 
 	if (data->process_function != NULL) {
-		data->py_process_function = rrr_py_import_function (data->py_main, data->process_function);
+		data->py_process_function = rrr_py_import_function (data->py_main_dict, data->process_function);
 		if (data->py_process_function == NULL) {
 			VL_MSG_ERR("Could not get process function '%s' from python program:\n", data->process_function);
 			PyErr_Print();
@@ -259,25 +333,27 @@ static void thread_poststop_python3 (const struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 
-	pthread_mutex_lock(&main_python_lock);
+	p_python3_global_lock();
 
-	if (preload_data->istate != NULL) {
-		PyEval_RestoreThread(preload_data->istate);
-		Py_EndInterpreter(preload_data->istate);
-		PyThreadState_Swap(main_python_tstate);
-		PyEval_SaveThread();
-
-		preload_data->istate = NULL;
-	}
-
+	/* If we are last, let Py_Finalize() do all the cleanup to avoid getting
+	 * strange errors . If we are not last, only clean up after ourselves. */
 	if (--python_users == 0) {
 		PyEval_RestoreThread(main_python_tstate);
 		VL_DEBUG_MSG_1 ("python3 finalize\n");
 		Py_Finalize();
 		main_python_tstate = NULL;
 	}
+	else if (preload_data->istate != NULL) {
+		VL_DEBUG_MSG_1 ("python3 stop thread intsance %s\n", INSTANCE_D_NAME(thread_data));
+		PyEval_RestoreThread(preload_data->istate);
+		Py_EndInterpreter(preload_data->istate);
+		PyThreadState_Swap(main_python_tstate);
+		PyEval_SaveThread();
+	}
 
-	pthread_mutex_unlock(&main_python_lock);
+	preload_data->istate = NULL;
+
+	p_python3_global_unlock(NULL);
 }
 
 static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
@@ -285,12 +361,13 @@ static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 	VL_ASSERT(VL_MODULE_PRELOAD_MEMORY_SIZE >= sizeof(*preload_data),python3_preload_data_size_ok);
 
-	pthread_mutex_lock(&main_python_lock);
+	p_python3_global_lock();
 
 	if (++python_users == 1) {
 		VL_DEBUG_MSG_1 ("python3 initialize\n");
 
 		Py_InitializeEx(0);
+
 #ifdef RRR_PYTHON_VERSION_LT_3_7
 		PyEval_InitThreads();
 #endif
@@ -303,7 +380,7 @@ static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
 	preload_data->istate = Py_NewInterpreter();
 	PyEval_SaveThread();
 
-	pthread_mutex_unlock(&main_python_lock);
+	p_python3_global_unlock(NULL);
 
 	return 0;
 }
@@ -322,8 +399,10 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(python3_stop, data);
+	pthread_cleanup_push(python3_swap_thread_out_void,&data->python3_thread_ctx);
 
-	if (data_init(data, preload_data) != 0) {
+	if (data_init(data, preload_data, thread_data) != 0) {
 		VL_MSG_ERR("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
@@ -343,7 +422,6 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	pthread_cleanup_push(python3_stop, data);
 	if (python3_start(data) != 0) {
 		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -352,14 +430,25 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-			break;
+		int output_buffer_size = fifo_buffer_get_entry_count(&data->output_buffer);
+
+		if (output_buffer_size > 500) {
+			usleep(1000);
 		}
+		else {
+			if (poll_do_poll_delete_simple (&poll, thread_data, process_input_callback, 50) != 0) {
+				break;
+			}
+			python3_swap_thread_out(&data->python3_thread_ctx);
+		}
+
+		update_watchdog_time(thread_data->thread);
 	}
 
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread python3 %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -370,7 +459,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 static int test_config (struct rrr_instance_config *config) {
 	struct python3_data data;
 	int ret = 0;
-	if ((ret = data_init(&data, NULL)) != 0) {
+	if ((ret = data_init(&data, NULL, NULL)) != 0) {
 		goto err;
 	}
 	ret = parse_config(&data, config);
@@ -385,8 +474,8 @@ static struct module_operations module_operations = {
 		thread_poststop_python3,
 		NULL,
 		NULL,
-		NULL,
 		python3_poll_delete,
+		NULL,
 		test_config,
 		NULL
 };

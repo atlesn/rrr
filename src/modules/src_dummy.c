@@ -59,7 +59,8 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 int data_init(struct dummy_data *data) {
 	memset(data, '\0', sizeof(*data));
-	return fifo_buffer_init(&data->buffer);
+	int ret = fifo_buffer_init(&data->buffer);
+	return ret;
 }
 
 void data_cleanup(void *arg) {
@@ -73,8 +74,6 @@ void data_cleanup(void *arg) {
 int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 	int yesno = 0;
-
-	memset(data, '\0', sizeof(*data));
 
 	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
@@ -135,9 +134,14 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 		goto out_cleanup;
 	}
 
-	/* If we don't sleep in the loop, put as much data in as the reader can handle */
-	fifo_buffer_set_ratelimit(&data->buffer, FIFO_DEFAULT_RATELIMIT / 5);
+	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
+	if (data->no_sleeping == 1) {
+		VL_DEBUG_MSG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
+		fifo_buffer_set_do_ratelimit(&data->buffer, 1);
+	}
 
+	uint64_t time_start = time_get_64();
+	int generated_count = 0;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
@@ -148,8 +152,17 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 
 			VL_DEBUG_MSG_2("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+			generated_count++;
 		}
 
+		uint64_t time_now = time_get_64();
+
+		if (time_now - time_start > 1000000) {
+			VL_DEBUG_MSG_1("dummy instance %s messages per second %i\n",
+					INSTANCE_D_NAME(thread_data), generated_count);
+			generated_count = 0;
+			time_start = time_now;
+		}
 		if (data->no_sleeping == 0) {
 			usleep (50000); // 50 ms
 		}
