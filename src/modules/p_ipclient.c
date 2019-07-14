@@ -450,11 +450,11 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(stop_receive_thread, thread_data);
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
 #endif
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
 	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -526,7 +526,6 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-
 	pthread_cleanup_pop(1);
 
 	pthread_exit(0);

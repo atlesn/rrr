@@ -224,8 +224,8 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 	VL_DEBUG_MSG_1 ("UDPreader thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 	pthread_cleanup_push(type_data_cleanup, data->tmp_type_data);
+	pthread_cleanup_push(thread_set_stopping, start_data->thread);
 
 	int config_error = 0;
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {

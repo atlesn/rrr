@@ -37,6 +37,97 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define VL_THREAD_NO_WATCHDOGS
 
+static struct vl_thread_ghost_data *ghost_cleanup_list_first = NULL;
+static pthread_mutex_t ghost_cleanup_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static inline struct vl_thread_ghost_data *thread_new_ghost_data (struct vl_thread *thread, void *ptr) {
+	struct vl_thread_ghost_data *ret = malloc(sizeof(*ret));
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not allocate memory in thread_new_ghost_data\n");
+		return NULL;
+	}
+
+	memset (ret, '\0', sizeof(*ret));
+
+	thread_lock(thread);
+	ret->ghost_cleanup_pointer = ptr;
+	ret->poststop_routine = thread->poststop_routine;
+	ret->thread = thread;
+	thread_unlock(thread);
+
+	return ret;
+}
+
+void thread_add_ghost_data (struct vl_thread_ghost_data *data) {
+	pthread_mutex_lock(&ghost_cleanup_list_mutex);
+	if (ghost_cleanup_list_first == NULL) {
+		ghost_cleanup_list_first = data;
+	}
+	else {
+		data->next = ghost_cleanup_list_first;
+		ghost_cleanup_list_first = data;
+	}
+	pthread_mutex_unlock(&ghost_cleanup_list_mutex);
+}
+
+int thread_run_ghost_cleanup(int *count) {
+	int ret = 0;
+
+	*count = 0;
+
+	pthread_mutex_lock(&ghost_cleanup_list_mutex);
+	struct vl_thread_ghost_data *data = ghost_cleanup_list_first;
+	while (data != NULL) {
+		struct vl_thread_ghost_data *next = data->next;
+
+		(*count)++;
+
+		int do_thread_free = 0;
+		int do_private_data_free = 0;
+
+		// If free_as_ghost_data is zero, thread collection cleanup has not run yet. We then
+		// only run the poststop routine and the thread struct will be freed later. If
+		// collection cleanup is complete, we must free the thread struct as well.
+		thread_lock(data->thread);
+
+		VL_DEBUG_MSG_1("Running ghost cleanup for thread %s\n", data->thread->name);
+
+		if (data->thread->free_by_ghost) {
+			do_thread_free = 1;
+		}
+		if (data->thread->free_private_data_by_ghost) {
+			do_private_data_free = 1;
+		}
+
+		if (data->thread->poststop_routine != NULL) {
+			VL_DEBUG_MSG_1("Running post stop routine for thread %s\n", data->thread->name);
+			data->thread->poststop_routine(data->thread);
+		}
+		data->poststop_routine = NULL; // Make sure things aren't done twice
+
+		// TODO : Nobody sets this pointer
+		if (data->ghost_cleanup_pointer != NULL) {
+			free(data->ghost_cleanup_pointer);
+		}
+
+		thread_unlock(data->thread);
+
+		if (do_private_data_free) {
+			free(data->thread->private_data);
+		}
+		if (do_thread_free) {
+			free(data->thread);
+		}
+		free(data);
+
+		data = next;
+	}
+	ghost_cleanup_list_first = NULL;
+	pthread_mutex_unlock(&ghost_cleanup_list_mutex);
+
+	return ret;
+}
+
 void __thread_set_state_hard (struct vl_thread *thread, int state) {
 	thread_lock(thread);
 
@@ -169,7 +260,7 @@ void thread_destroy_collection (struct vl_thread_collection *collection) {
 
 			// Move pointer to thread, we expect it to clean up if it dies
 			VL_MSG_ERR ("Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
-			thread->ghost_cleanup_pointer = thread;
+			thread->free_by_ghost = 1;
 			thread_unlock(thread);
 		}
 		else {
@@ -335,9 +426,7 @@ void *__thread_watchdog_entry (void *arg) {
 		usleep (50000); // 50 ms
 	}
 
-	if (	thread_check_state(thread, VL_THREAD_STATE_STOPPED) ||
-			thread_check_state(thread, VL_THREAD_STATE_STOPPING)
-	) {
+	if (thread_check_state(thread, VL_THREAD_STATE_STOPPED)) {
 		// Thread has stopped by itself
 		goto out_nostop;
 	}
@@ -358,12 +447,6 @@ void *__thread_watchdog_entry (void *arg) {
 		}
 	}
 
-	if (thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)) {
-		VL_DEBUG_MSG_1("Thread %s/%p was in INITIALIZED state, set start signal\n", thread->name, thread);
-		thread_set_signal(thread, VL_THREAD_SIGNAL_START);
-		usleep (500000); // 500 ms
-	}
-
 	int state = thread_get_state(thread);
 	if (state < VL_THREAD_STATE_RUNNING && state > VL_THREAD_STATE_STOPPED) {
 		VL_MSG_ERR("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
@@ -375,11 +458,12 @@ void *__thread_watchdog_entry (void *arg) {
 
 	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
 	uint64_t prevtime = time_get_64();
-	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED && thread_get_state(thread) != VL_THREAD_STATE_STOPPING) {
+	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			VL_MSG_ERR ("Thread %s/%p not responding to kill. State is now %i. Killing it harder.\n", thread->name, thread, thread->state);
 			pthread_cancel(thread->thread);
+			usleep(1000000); // 1 s
 			break;
 		}
 
@@ -393,28 +477,25 @@ void *__thread_watchdog_entry (void *arg) {
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
-			pthread_cancel(thread->thread);
-			VL_MSG_ERR ("Thread %s/%p not responding to kill. Killing it harder.\n", thread->name, thread);
-			usleep (100000); // 100ms
-			if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-				VL_MSG_ERR ("Thread %s/%p dies slowly, waiting a bit more.\n", thread->name, thread);
-				usleep (2000000); // 2000ms
-				if (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
-					VL_MSG_ERR ("Thread %s/%p doesn't seem to want to let go. Ignoring it and tagging as ghost.\n", thread->name, thread);
-					thread->is_ghost = 1;
-					break;
-				}
+			VL_MSG_ERR ("Thread %s/%p not responding to cancellation.\n", thread->name, thread);
+			if (thread_get_state(thread) == VL_THREAD_STATE_STOPPING) {
+				VL_MSG_ERR ("Thread %s/%p is stuck in STOPPING, not finished with it's cleanup.\n", thread->name, thread);
 			}
-			VL_DEBUG_MSG_1 ("Thread %s/%p finished.\n", thread->name, thread);
+			else if (thread_get_state(thread) == VL_THREAD_STATE_RUNNING) {
+				VL_MSG_ERR ("Thread %s/%p is stuck in RUNNING, has not started it's cleanup yet.\n", thread->name, thread);
+			}
+			VL_MSG_ERR ("Thread %s/%p: Tagging as ghost.\n", thread->name, thread);
+			thread_set_ghost(thread);
 			break;
 		}
 
 		usleep (10000); // 10 ms
 	}
 
+	VL_DEBUG_MSG_1 ("Thread %s/%p finished.\n", thread->name, thread);
+
 	out_nostop:
 
-//	thread_set_state(self_thread, VL_THREAD_STATE_ENCOURAGE_STOP);
 	thread_set_state(self_thread, VL_THREAD_STATE_STOPPING);
 	thread_set_state(self_thread, VL_THREAD_STATE_STOPPED);
 
@@ -426,7 +507,6 @@ void *__thread_watchdog_entry (void *arg) {
 void __thread_cleanup(void *arg) {
 	struct vl_thread_start_data *start_data = arg;
 	struct vl_thread *thread = start_data->thread;
-	thread_set_state(thread, VL_THREAD_STATE_STOPPED);
 	free(start_data);
 
 	// Check if we have died slowly and need to clean something up
@@ -434,22 +514,34 @@ void __thread_cleanup(void *arg) {
 
 	// TODO : Maybe we should lock the thread to avoid race condition with
 	// threads_destroy()
-	if (thread->is_ghost && thread->ghost_cleanup_pointer != NULL) {
-		VL_MSG_ERR ("Thread waking up after being ghost, cleaning up for parent.");
-		free(thread->ghost_cleanup_pointer);
+	if (thread_is_ghost(thread)) {
+		VL_MSG_ERR ("Thread %s waking up after being ghost, telling parent to clean up now.\n", thread->name);
+		struct vl_thread_ghost_data *ghost_data = thread_new_ghost_data(thread, NULL);
+		if (ghost_data == NULL) {
+			return;
+		}
+		thread_add_ghost_data(ghost_data);
 	}
 }
 
 void *__thread_start_routine_intermediate(void *arg) {
 	struct vl_thread_start_data *start_data = arg;
+
+	pthread_cleanup_push(thread_set_stopped, start_data->thread);
 	pthread_cleanup_push(__thread_cleanup, start_data);
+
 	start_data->start_routine(start_data);
+
 	pthread_cleanup_pop(1);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_STOPPED);
+	pthread_cleanup_pop(1);
+
 	return NULL;
 }
 
-void threads_stop_and_join (struct vl_thread_collection *collection) {
+void threads_stop_and_join (
+		struct vl_thread_collection *collection,
+		void (*upstream_ghost_handler)(struct vl_thread *thread)
+) {
 	VL_DEBUG_MSG_1 ("Stopping all threads\n");
 
 	pthread_mutex_lock(&collection->threads_mutex);
@@ -463,8 +555,8 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 				thread->state == VL_THREAD_STATE_INIT ||
 				thread->state == VL_THREAD_STATE_INITIALIZED
 		) {
-			VL_DEBUG_MSG_1 ("Setting encourage stop signal thread %s/%p\n", thread->name, thread);
-			thread->signal = VL_THREAD_SIGNAL_ENCOURAGE_STOP;
+			VL_DEBUG_MSG_1 ("Setting encourage stop and start signal thread %s/%p\n", thread->name, thread);
+			thread->signal = VL_THREAD_SIGNAL_ENCOURAGE_STOP|VL_THREAD_SIGNAL_START;
 		}
 		thread_unlock(thread);
 	}
@@ -484,6 +576,7 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 
 	VL_THREADS_LOOP(thread,collection) {
 		if (!thread->is_watchdog) {
+			thread_lock(thread);
 			if (thread->poststop_routine != NULL) {
 				if (thread->state == VL_THREAD_STATE_STOPPED) {
 					VL_DEBUG_MSG_1 ("Running post stop routine for %s\n", thread->name);
@@ -491,8 +584,17 @@ void threads_stop_and_join (struct vl_thread_collection *collection) {
 				}
 				else {
 					VL_MSG_ERR ("Cannot run post stop for thread %s as it is not in STOPPED state\n", thread->name);
+					if (!thread->is_ghost) {
+						VL_MSG_ERR("Bug: Thread was not STOPPED nor ghost after join attempt\n");
+						exit(EXIT_FAILURE);
+					}
+					VL_MSG_ERR ("Thread will run post stop itself after cleanup\n");
 				}
 			}
+			if (thread->is_ghost) {
+				upstream_ghost_handler(thread);
+			}
+			thread_unlock(thread);
 		}
 	}
 	// Don't unlock, destroy does that

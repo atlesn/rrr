@@ -35,17 +35,16 @@ struct python3_thread_state python3_swap_thread_in(PyThreadState *tstate) {
 	memset (&ret, '\0', sizeof(ret));
 
 	if (tstate != NULL) {
-		 ret.tstate = PyThreadState_Swap(tstate);
+		ret.tstate = tstate;
+		PyEval_RestoreThread(tstate);
 	}
-
-	ret.tstate = tstate;
 
 	return ret;
 }
 
 void python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
-	if (tstate_holder->tstate != NULL) {
-		PyThreadState_Swap(tstate_holder->tstate);
+	if (PyEval_SaveThread() != tstate_holder->tstate) {
+		VL_MSG_ERR("Bug: tstates did not match in python3_swap_thread_out\n");
 	}
 
 	tstate_holder->tstate = NULL;

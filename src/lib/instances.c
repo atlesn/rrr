@@ -31,7 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int instance_check_threads_stopped(struct instance_metadata_collection *instances) {
 	int ret = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
-		if (thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED || instance->thread_data->thread->is_ghost == 1) {
+		if (
+				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED ||
+				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPING ||
+				thread_is_ghost(instance->thread_data->thread)
+		) {
 			VL_DEBUG_MSG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
 			ret = 1;
 		}
@@ -323,6 +327,10 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 
 void instance_free_thread(struct instance_thread_data *data) {
 	if (data == NULL) {
+		return;
+	}
+
+	if (data->used_by_ghost) {
 		return;
 	}
 

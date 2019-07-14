@@ -138,6 +138,7 @@ int main (int argc, const char *argv[]) {
 		goto out_stop_threads;
 	}
 
+	int count = 0;
 	while (main_running) {
 		usleep (100000);
 
@@ -155,6 +156,11 @@ int main (int argc, const char *argv[]) {
 				goto out_unload_modules;
 			}
 		}
+
+		thread_run_ghost_cleanup(&count);
+		if (count > 0) {
+			VL_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
+		}
 	}
 
 	signal(SIGTERM, SIG_DFL);
@@ -168,6 +174,10 @@ int main (int argc, const char *argv[]) {
 		VL_DEBUG_MSG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
 		thread_destroy_collection (collection);
+		thread_run_ghost_cleanup(&count);
+		if (count > 0) {
+			VL_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
+		}
 
 	out_unload_modules:
 #ifndef VL_NO_MODULE_UNLOAD
@@ -178,6 +188,8 @@ int main (int argc, const char *argv[]) {
 		}
 
 	instance_metadata_collection_destroy(instances);
+
+	thread_run_ghost_cleanup(&count);
 
 	out_no_cleanup:
 	return ret;

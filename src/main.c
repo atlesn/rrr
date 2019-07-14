@@ -101,8 +101,16 @@ int main_start_threads (
 	return ret;
 }
 
+// The thread framework calls us back to here if a thread is marked as ghost.
+// Make sure we do not free the memory the thread uses.
+void main_ghost_handler (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
+	thread_data->used_by_ghost = 1;
+	thread->free_private_data_by_ghost = 1;
+}
+
 void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances) {
-	threads_stop_and_join(collection);
+	threads_stop_and_join(collection, main_ghost_handler);
 	instance_free_all_thread_data(instances);
 
 #ifdef VL_WITH_OPENSSL

@@ -91,6 +91,7 @@ void data_cleanup(void *arg) {
 	Py_XDECREF(data->py_main);*/
 
 	if (data->tstate != NULL) {
+		PyEval_RestoreThread(data->tstate);
 		PyThreadState_Clear(data->tstate);
         PyThreadState_DeleteCurrent();
 		data->tstate = NULL;
@@ -122,10 +123,8 @@ int data_init(struct python3_data *data, const struct python3_preload_data *prel
 		exit(EXIT_FAILURE);
 	}
 
-	PyThreadState *tstate_orig = PyThreadState_Get();
 	data->istate = preload_data->istate;
 	data->tstate = PyThreadState_New(data->istate->interp);
-	PyThreadState_Swap(tstate_orig);
 
 	return ret;
 }
@@ -265,15 +264,16 @@ static void thread_poststop_python3 (const struct vl_thread *thread) {
 	pthread_mutex_lock(&main_python_lock);
 
 	if (preload_data->istate != NULL) {
-		PyThreadState *state_orig = PyThreadState_Swap(preload_data->istate);
+		PyEval_RestoreThread(preload_data->istate);
 		Py_EndInterpreter(preload_data->istate);
-		PyThreadState_Swap(state_orig);
+		PyThreadState_Swap(main_python_tstate);
+		PyEval_SaveThread();
 
 		preload_data->istate = NULL;
 	}
 
 	if (--python_users == 0) {
-		PyThreadState_Swap(main_python_tstate);
+		PyEval_RestoreThread(main_python_tstate);
 		VL_DEBUG_MSG_1 ("python3 finalize\n");
 		Py_Finalize();
 		main_python_tstate = NULL;
@@ -289,8 +289,6 @@ static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
 
 	pthread_mutex_lock(&main_python_lock);
 
-	PyThreadState_Swap(main_python_tstate);
-
 	if (++python_users == 1) {
 		VL_DEBUG_MSG_1 ("python3 initialize\n");
 
@@ -300,11 +298,12 @@ static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
 #endif
 
 		main_python_tstate = PyThreadState_Get();
+		PyEval_SaveThread();
 	}
 
+	PyEval_RestoreThread(main_python_tstate);
 	preload_data->istate = Py_NewInterpreter();
-
-	PyThreadState_Swap(main_python_tstate);
+	PyEval_SaveThread();
 
 	pthread_mutex_unlock(&main_python_lock);
 

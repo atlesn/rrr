@@ -74,6 +74,8 @@ struct instance_thread_init_data {
 struct instance_thread_data {
 	struct instance_thread_init_data init_data;
 
+	int used_by_ghost;
+
 	struct vl_thread *thread;
 	void *private_data;
 	void *preload_data;

@@ -86,6 +86,18 @@ struct vl_thread_double_pointer {
 #define VL_THREAD_CLEANUP_PUSH_FREE_SINGLE_POINTER(name) \
 	pthread_cleanup_push(thread_free_single_pointer, name)
 
+struct vl_thread_ghost_data {
+	struct vl_thread_ghost_data *next;
+
+	struct vl_thread *thread;
+
+	// Main thread may set this value if a thread doesn't respond and
+	// we wish to forget about it. If the thread awakes, it will run
+	// it's cleanup procedure and free this pointer
+	void *ghost_cleanup_pointer;
+	void (*poststop_routine)(const struct vl_thread *);
+};
+
 struct vl_thread {
 	struct vl_thread *next;
 	pthread_t thread;
@@ -100,14 +112,11 @@ struct vl_thread {
 	// Set when we tried to cancel a thread but we couldn't join
 	int is_ghost;
 
-	// Main thread may set this value if a thread doesn't respond and
-	// we wish to forget about it. If the thread awakes, it will run
-	// it's cleanup procedure and free this pointer
-	void *ghost_cleanup_pointer;
+	// If the thread is a ghost, we can't free this struct. Ghost does it.
+	int free_by_ghost;
+	int free_private_data_by_ghost;
 
 	void (*poststop_routine)(const struct vl_thread *);
-// TODO : Probably don't need this
-//	char thread_private_memory[];
 };
 
 struct vl_thread_collection {
@@ -124,11 +133,15 @@ struct vl_thread_start_data {
 	void *private_arg;
 };
 
+int thread_run_ghost_cleanup(int *count);
 void thread_set_state(struct vl_thread *thread, int state);
 int thread_new_collection (struct vl_thread_collection **target);
 void thread_destroy_collection (struct vl_thread_collection *collection);
 int thread_start_all_after_initialized (struct vl_thread_collection *collection);
-void threads_stop_and_join (struct vl_thread_collection *collection);
+void threads_stop_and_join (
+		struct vl_thread_collection *collection,
+		void (*upstream_ghost_handler)(struct vl_thread *thread)
+);
 
 static inline void thread_lock(struct vl_thread *thread) {
 //	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
@@ -190,6 +203,20 @@ static inline void update_watchdog_time(struct vl_thread *thread) {
 	thread_unlock(thread);;
 }
 
+static inline int thread_is_ghost(struct vl_thread *thread) {
+	int ret;
+	thread_lock(thread);
+	ret = thread->is_ghost;
+	thread_unlock(thread);
+	return ret;
+}
+
+static inline void thread_set_ghost(struct vl_thread *thread) {
+	thread_lock(thread);
+	thread->is_ghost = 1;
+	thread_unlock(thread);
+}
+
 static inline uint64_t get_watchdog_time(struct vl_thread *thread) {
 	uint64_t ret;
 	thread_lock(thread);
@@ -220,6 +247,11 @@ static inline int thread_check_state(struct vl_thread *thread, int state) {
 static inline void thread_set_stopping(void *arg) {
 	struct vl_thread *thread = arg;
 	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
+}
+
+static inline void thread_set_stopped(void *arg) {
+	struct vl_thread *thread = arg;
+	thread_set_state(thread, VL_THREAD_STATE_STOPPED);
 }
 
 struct vl_thread *thread_preload_and_register (
