@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 

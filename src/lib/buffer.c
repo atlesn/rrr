@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -42,6 +42,8 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_lock (&buffer->mutex);
 	VL_DEBUG_MSG_1 ("Buffer %p waiting for %i readers and %i writers before invalidate\n", buffer, buffer->readers, buffer->writers);
 	while (buffer->readers > 0 || buffer->writers > 0) {
+		pthread_mutex_unlock (&buffer->mutex);
+		pthread_mutex_lock (&buffer->mutex);
 	}
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	int freed_counter = 0;

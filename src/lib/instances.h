@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "modules.h"
 #include "configuration.h"
-#include "module_thread.h"
 #include "senders.h"
 #include "threads.h"
 

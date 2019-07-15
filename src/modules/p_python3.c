@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
@@ -335,20 +335,23 @@ static void thread_poststop_python3 (const struct vl_thread *thread) {
 
 	p_python3_global_lock();
 
-	/* If we are last, let Py_Finalize() do all the cleanup to avoid getting
-	 * strange errors . If we are not last, only clean up after ourselves. */
-	if (--python_users == 0) {
-		PyEval_RestoreThread(main_python_tstate);
-		VL_DEBUG_MSG_1 ("python3 finalize\n");
-		Py_Finalize();
-		main_python_tstate = NULL;
-	}
-	else if (preload_data->istate != NULL) {
-		VL_DEBUG_MSG_1 ("python3 stop thread intsance %s\n", INSTANCE_D_NAME(thread_data));
+//	PyEval_AcquireLock()
+//	PyEval_ReleaseLock
+	VL_DEBUG_MSG_1 ("python3 stop thread instance %s\n", INSTANCE_D_NAME(thread_data));
+
+	if (preload_data->istate != NULL) {
 		PyEval_RestoreThread(preload_data->istate);
 		Py_EndInterpreter(preload_data->istate);
 		PyThreadState_Swap(main_python_tstate);
 		PyEval_SaveThread();
+	}
+
+	/* If we are not last, only clean up after ourselves. */
+	if (--python_users == 0) {
+		VL_DEBUG_MSG_1 ("python3 finalize\n");
+		PyEval_RestoreThread(main_python_tstate);
+		Py_Finalize();
+		main_python_tstate = NULL;
 	}
 
 	preload_data->istate = NULL;

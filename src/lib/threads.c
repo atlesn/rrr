@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -468,8 +468,7 @@ void *__thread_watchdog_entry (void *arg) {
 		usleep (10000); // 10 ms
 	}
 
-	VL_DEBUG_MSG_1 ("Detected exit of thread %s/%p.\n", thread->name, thread);
-
+	VL_DEBUG_MSG_1 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, thread_get_state(thread));
 
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
