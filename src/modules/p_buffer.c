@@ -111,6 +111,8 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
 		VL_MSG_ERR("buffer instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;

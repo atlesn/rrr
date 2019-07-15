@@ -1040,6 +1040,8 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 			goto out_message;
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
 

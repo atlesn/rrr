@@ -134,6 +134,8 @@ static void *thread_entry_dummy(struct vl_thread_start_data *start_data) {
 		goto out_cleanup;
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
 	if (data->no_sleeping == 1) {
 		VL_DEBUG_MSG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));

@@ -113,3 +113,14 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	out:
 	return ret;
 }
+
+int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *config) {
+	int ret = rrr_settings_check_all_used (config->settings);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
+				config->name);
+	}
+
+	return ret;
+}

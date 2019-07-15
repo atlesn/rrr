@@ -73,6 +73,8 @@ struct python3_data {
 	PyObject *py_process_function;
 	PyObject *py_config_function;
 
+	PyObject *py_instance_settings;
+
 	PyThreadState *istate;
 	PyThreadState *tstate;
 
@@ -80,7 +82,7 @@ struct python3_data {
 	PyObject *py_main_dict;
 	FILE *py_file;
 
-	struct python3_message_maker message_maker;
+	struct python3_rrr_objects rrr_objects;
 
 	pthread_mutex_t python3_mutex;
 };
@@ -97,7 +99,7 @@ void data_cleanup(void *arg) {
 	int release_condition = 1;
 
 	PYTHON3_THREAD_IN(data->tstate, &release_condition);
-	rrr_py_destroy_message_struct(&data->message_maker);
+	rrr_py_destroy_message_struct(&data->rrr_objects);
 	PYTHON3_THREAD_OUT();
 
 /*	Py_XDECREF(data->py_source_function);
@@ -194,7 +196,7 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
 
-	old_py_message = rrr_py_new_message(&python3_data->message_maker, message);
+	old_py_message = rrr_py_new_message(&python3_data->rrr_objects, message);
 	if (old_py_message == NULL) {
 		VL_MSG_ERR("Could not generate python3 vl_message in process_input_callback for instance %s\n",
 				INSTANCE_D_NAME(python3_data->thread_data));
@@ -233,15 +235,17 @@ int python3_start(struct python3_data *data) {
 
 	PYTHON3_THREAD_IN(data->tstate, &release_condition);
 	if (!PYTHON3_THREAD_OK()) {
-		VL_MSG_ERR("Could not swap python3 thread state in python3_start\n");
+		VL_MSG_ERR("Could not swap python3 thread state in python3_start in instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
-		goto out_unlock;
+		goto out_no_unlock;
 	}
 
 	// LOAD PYTHON MAIN DICTIONARY
 	data->py_main = PyImport_ImportModule("__main__");
     if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python3 __main__ in python3_start:\n");
+    	VL_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
+				INSTANCE_D_NAME(data->thread_data));
     	PyErr_Print();
     	ret = 1;
     	goto out_thread_out;
@@ -249,15 +253,17 @@ int python3_start(struct python3_data *data) {
 
     data->py_main_dict = PyModule_GetDict(data->py_main);
     if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python3 main dictionary in python3_start:\n");
+    	VL_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
+				INSTANCE_D_NAME(data->thread_data));
     	PyErr_Print();
     	ret = 1;
     	goto out_thread_out;
     }
 
     // PREPARE RRR ENVIRONMENT
-	if (rrr_py_get_message_struct(&data->message_maker, data->py_main_dict) != 0) {
-		VL_MSG_ERR("Could not get message maker function in python3 instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	if (rrr_py_get_rrr_objects(&data->rrr_objects, data->py_main_dict) != 0) {
+		VL_MSG_ERR("Could not get rrr objects function in python3 instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
 		ret = 1;
 		goto out_thread_out;
@@ -267,7 +273,8 @@ int python3_start(struct python3_data *data) {
 	data->py_file = fopen (data->python3_file, "r");
 
 	if (data->py_file == NULL) {
-		VL_MSG_ERR ("Could not open python file: %s\n", strerror(errno));
+		VL_MSG_ERR ("Could not open python file in instance %s: %s\n",
+				INSTANCE_D_NAME(data->thread_data), strerror(errno));
 		ret = 1;
 		goto out_thread_out;
 	}
@@ -288,7 +295,9 @@ int python3_start(struct python3_data *data) {
 	if (data->config_function != NULL) {
 		data->py_config_function = rrr_py_import_function (data->py_main_dict, data->config_function);
 		if (data->py_config_function == NULL) {
-			VL_MSG_ERR("Could not get config function '%s' from python program:\n", data->config_function);
+			VL_MSG_ERR("Could not get config function '%s' from python program in instance %s:\n",
+					data->config_function,
+					INSTANCE_D_NAME(data->thread_data));
 			PyErr_Print();
 			ret = 1;
 			goto out_thread_out;
@@ -298,7 +307,9 @@ int python3_start(struct python3_data *data) {
 	if (data->process_function != NULL) {
 		data->py_process_function = rrr_py_import_function (data->py_main_dict, data->process_function);
 		if (data->py_process_function == NULL) {
-			VL_MSG_ERR("Could not get process function '%s' from python program:\n", data->process_function);
+			VL_MSG_ERR("Could not get process function '%s' from python program in instance %s:\n",
+					data->process_function,
+					INSTANCE_D_NAME(data->thread_data));
 			PyErr_Print();
 			ret = 1;
 			goto out_thread_out;
@@ -308,9 +319,66 @@ int python3_start(struct python3_data *data) {
 	if (data->source_function != NULL) {
 		data->py_source_function = rrr_py_import_function (data->py_main, data->source_function);
 		if (data->py_source_function == NULL) {
-			VL_MSG_ERR("Could not get source function '%s' from python program:\n", data->source_function);
+			VL_MSG_ERR("Could not get source function '%s' from python program in instance %s:\n",
+					data->source_function,
+					INSTANCE_D_NAME(data->thread_data));
 			PyErr_Print();
 			ret = 1;
+			goto out_thread_out;
+		}
+	}
+
+	// CALL CONFIG FUNCTION IF DEFINED
+	data->py_instance_settings = rrr_py_new_settings (
+			&data->rrr_objects,
+			data->thread_data->init_data.instance_config->settings
+	);
+
+	if (data->py_instance_settings == NULL) {
+		VL_MSG_ERR("Could not save settings for instance %s to python3:\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out_thread_out;
+	}
+
+	if (data->py_config_function != NULL) {
+		PyObject *result = NULL;
+		PyObject *arglist = NULL;
+
+		arglist = Py_BuildValue("(O)", data->py_instance_settings);
+		if (arglist == NULL) {
+			VL_MSG_ERR("Could not prepare argument list to call python3 config function in instance %s:\n",
+					INSTANCE_D_NAME(data->thread_data));
+			PyErr_Print();
+			ret = 1;
+			goto out_py_config;
+		}
+
+		result = PyObject_CallObject(data->py_config_function, arglist);
+		if (result == NULL) {
+			VL_MSG_ERR("Could not run python3 config function in instance %s:\n",
+					INSTANCE_D_NAME(data->thread_data));
+			PyErr_Print();
+			ret = 1;
+			goto out_py_config;
+		}
+
+		if (rrr_py_settings_update_used (
+				&data->rrr_objects,
+				data->thread_data->init_data.instance_config->settings,
+				data->py_instance_settings
+		) != 0) {
+			VL_MSG_ERR("Could not check whether settings for instance %s was used or not after python3 config function\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out_py_config;
+		}
+
+		out_py_config:
+		Py_XDECREF(result);
+		Py_XDECREF(arglist);
+
+		if (ret != 0) {
 			goto out_thread_out;
 		}
 	}
@@ -318,8 +386,7 @@ int python3_start(struct python3_data *data) {
 	out_thread_out:
 	PYTHON3_THREAD_OUT();
 
-	out_unlock:
-
+	out_no_unlock:
 	return ret;
 }
 
@@ -429,6 +496,10 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	// Check after python3 has started, maybe the script uses some settings which will
+	// then be tagged as used to avoid warnings
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);

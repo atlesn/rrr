@@ -391,6 +391,8 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 		pthread_exit(0);
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	usb_init();
 
 	pthread_cleanup_push(usb_cleanup, data);

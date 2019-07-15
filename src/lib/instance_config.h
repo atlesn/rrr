@@ -59,5 +59,6 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 static inline int rrr_instance_config_dump(struct rrr_instance_config *source) {
 	return rrr_settings_dump (source->settings);
 }
+int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *config);
 
 #endif /* INSTANCE_CONFIG_H */

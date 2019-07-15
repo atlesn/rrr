@@ -300,6 +300,8 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE_IP) != 0) {
 		VL_MSG_ERR("Ipserver requires poll_delete_ip from senders\n");
 		goto out_message;

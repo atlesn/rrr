@@ -244,6 +244,8 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 
 	data->ip.port = data->listen_port;

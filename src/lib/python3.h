@@ -29,7 +29,13 @@ struct python3_thread_state {
 	int *condition;
 };
 
-struct python3_message_maker {
+struct python3_rrr_objects {
+	PyObject *rrr_settings_class;
+	PyObject *rrr_settings_get;
+	PyObject *rrr_settings_set;
+	PyObject *rrr_settings_check_used;
+	PyObject *rrr_settings_new;
+
 	PyObject *vl_message_class;
 	PyObject *vl_message_new;
 };
@@ -56,9 +62,16 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol);
 PyObject *rrr_py_call_function_no_args(PyObject *function);
 PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const char *symbol);
 
-/* Message handling functions */
-PyObject *rrr_py_new_message(struct python3_message_maker *message_maker, const struct vl_message *message);
+/* Message and settings handling functions */
+PyObject *rrr_py_new_settings(struct python3_rrr_objects *rrr_objects, struct rrr_instance_settings *settings);
+int rrr_py_settings_update_used (
+		struct python3_rrr_objects *rrr_objects,
+		struct rrr_instance_settings *settings,
+		PyObject *py_rrr_settings
+);
+
+PyObject *rrr_py_new_message(struct python3_rrr_objects *message_maker, const struct vl_message *message);
 int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message);
 int rrr_py_process_message(PyObject **result, PyObject *process_function, PyObject *message);
-void rrr_py_destroy_message_struct (struct python3_message_maker *message_maker);
-int rrr_py_get_message_struct (struct python3_message_maker *target, PyObject *dictionary);
+void rrr_py_destroy_message_struct (struct python3_rrr_objects *message_maker);
+int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictionary);

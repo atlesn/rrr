@@ -315,6 +315,8 @@ static void *thread_entry_averager(struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
 	VL_DEBUG_MSG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 

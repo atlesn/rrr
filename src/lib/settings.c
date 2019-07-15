@@ -119,6 +119,7 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_sett
 		struct rrr_setting *test = &source->settings[i];
 
 		if (strcmp(test->name, name) == 0) {
+			test->was_used = 1;
 			return test;
 		}
 	}
@@ -417,7 +418,7 @@ int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, con
 	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT);
 }
 
-int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting) {
 	int ret = 0;
 	*target = NULL;
 
@@ -448,7 +449,7 @@ int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting
 	return RRR_SETTING_ERROR;
 }
 
-int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting) {
 	int ret = 0;
 	char *tmp_string = NULL;
 	*target = 0;
@@ -461,7 +462,7 @@ int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting
 		target = setting->data;
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
-		ret = __rrr_settings_setting_to_string(&tmp_string, setting);
+		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
 
 		if (ret != 0) {
 			VL_MSG_ERR("Could not get string of '%s' while converting to unsigned integer\n", setting->name);
@@ -504,7 +505,7 @@ int rrr_settings_read_string (char **target, struct rrr_instance_settings *setti
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_setting_to_string (target, setting);
+	ret = rrr_settings_setting_to_string_nolock (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
@@ -524,7 +525,7 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_setting_to_uint (target, setting);
+	ret = rrr_settings_setting_to_uint_nolock (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
@@ -561,15 +562,34 @@ int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *setting
 	return ret;
 }
 
+int rrr_settings_check_all_used (struct rrr_instance_settings *settings) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		if (setting->was_used == 0) {
+			VL_MSG_ERR("Warning: Setting %s has not been used\n", setting->name);
+			ret = 1;
+		}
+	}
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
 int rrr_settings_dump (struct rrr_instance_settings *settings) {
 	int ret = 0;
+
+	__rrr_settings_lock(settings);
 
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		struct rrr_setting *setting = &settings->settings[i];
 
 		const char *name = setting->name;
 		char *value;
-		ret = __rrr_settings_setting_to_string(&value, setting);
+		ret = rrr_settings_setting_to_string_nolock(&value, setting);
 
 		if (ret != 0) {
 			VL_MSG_ERR("Warning: Error in settings dump function\n");
@@ -581,6 +601,32 @@ int rrr_settings_dump (struct rrr_instance_settings *settings) {
 		next:
 		RRR_FREE_IF_NOT_NULL(value);
 	}
+
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_iterate (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		ret = callback(setting, callback_args);
+
+		if (ret != 0) {
+			break;
+		}
+	}
+
+	__rrr_settings_unlock(settings);
 
 	return ret;
 }

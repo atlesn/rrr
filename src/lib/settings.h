@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
 
+#define RRR_SETTING_IS_STRING(setting) (setting->type==RRR_SETTINGS_TYPE_STRING)
+#define RRR_SETTING_IS_UINT(setting) (setting->type==RRR_SETTINGS_TYPE_UINT)
+
 #define RRR_SETTINGS_UINT_AS_TEXT_MAX 64
 
 #define RRR_SETTINGS_MAX_NAME_SIZE 255
@@ -45,6 +48,7 @@ struct rrr_setting {
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
 	int data_size;
 	void *data;
+	int was_used;
 };
 
 struct rrr_instance_settings {
@@ -75,9 +79,17 @@ int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settin
 int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value);
 int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
+int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting);
+int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting);
 int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name);
 int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name);
 int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name);
+int rrr_settings_check_all_used (struct rrr_instance_settings *settings);
 int rrr_settings_dump (struct rrr_instance_settings *settings);
+int rrr_settings_iterate (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+);
 
 #endif /* RRR_SETTINGS_H */
