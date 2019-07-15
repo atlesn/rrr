@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../test.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
+#include "../../lib/messages.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;
@@ -57,6 +58,7 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
 	struct vl_message *array_message = NULL;
+	struct vl_message *array_message_python3 = NULL;
 
 	thread_data->thread = start_data->thread;
 
@@ -64,6 +66,7 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 
 	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -82,13 +85,21 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
 			&array_message,
+			&array_message_python3,
 			thread_data->init_data.module->all_instances,
-			"instance_udpreader","instance_buffer");
+			"instance_udpreader","instance_buffer", "instance_python3");
 	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
 
 	update_watchdog_time(thread_data->thread);
 
 	if (ret != 0) {
+		goto configtest_done;
+	}
+
+	if (array_message->timestamp_from + 1 != array_message_python3->timestamp_from) {
+		TEST_MSG("Received message from python3 did not have timestamp incremented by 1 (%" PRIu64 " < %" PRIu64 ")\n",
+				array_message->timestamp_from, array_message_python3->timestamp_from);
+		ret = 1;
 		goto configtest_done;
 	}
 
@@ -107,6 +118,7 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 	/* We exit without looping which also makes the other loaded modules exit */
 
 	VL_DEBUG_MSG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

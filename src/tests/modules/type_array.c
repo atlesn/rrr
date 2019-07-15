@@ -73,6 +73,11 @@ struct test_final_data {
 
 #define TEST_DATA_ELEMENTS 9
 
+
+/*
+ *  The main output receives an identical message_1 as the one we sent in,
+ *  we check for correct endianess among other things
+ */
 int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 	struct test_result *result = poll_data->private_data;
@@ -81,7 +86,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->result = 1;
 
 	if (size > sizeof(struct vl_message)) {
-		TEST_MSG("Size of message in test_type_array_callback exceeds struct vl_message size\n");
+		TEST_MSG("Size of message_1 in test_type_array_callback exceeds struct vl_message size\n");
 		ret = 1;
 		goto out;
 	}
@@ -273,31 +278,64 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
-int test_type_array (
-		struct vl_message **result_message,
-		struct instance_metadata_collection *instances,
-		const char *input_name,
-		const char *output_name
+int test_do_poll_loop (
+		struct test_result *test_result,
+		struct instance_thread_data *thread_data,
+		int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE),
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 ) {
 	int ret = 0;
-	*result_message = NULL;
+
+	// Poll from output
+	for (int i = 1; i <= 10 && test_result->message == NULL; i++) {
+		TEST_MSG("Test result polling try: %i of 10\n", i);
+
+		struct fifo_callback_args poll_data = {NULL, test_result, 0};
+		ret = poll_delete(thread_data, callback, &poll_data, 150);
+		if (ret != 0) {
+			TEST_MSG("Error from poll_delete function in test_type_array\n");
+			ret = 1;
+			goto out;
+		}
+
+		TEST_MSG("Result of polling: %i\n", test_result->result);
+	}
+
+	out:
+	return ret;
+}
+
+int test_type_array (
+		struct vl_message **result_message_1,
+		struct vl_message **result_message_2,
+		struct instance_metadata_collection *instances,
+		const char *input_name,
+		const char *output_name_1,
+		const char *output_name_2
+) {
+	int ret = 0;
+	*result_message_1 = NULL;
+	*result_message_2 = NULL;
 
 	struct instance_metadata *input = instance_find(instances, input_name);
-	struct instance_metadata *output = instance_find(instances, output_name);
+	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
+	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
 
-	if (input == NULL || output == NULL) {
+	if (input == NULL || output_1 == NULL || output_2 == NULL) {
 		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
-				input_name, output_name);
+				input_name, output_name_1);
 		return 1;
 	}
 
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
+	int (*poll_delete_1)(RRR_MODULE_POLL_SIGNATURE);
+	int (*poll_delete_2)(RRR_MODULE_POLL_SIGNATURE);
 
 	inject = input->dynamic_data->operations.inject;
-	poll_delete = output->dynamic_data->operations.poll_delete;
+	poll_delete_1 = output_1->dynamic_data->operations.poll_delete;
+	poll_delete_2 = output_2->dynamic_data->operations.poll_delete;
 
-	if (inject == NULL || poll_delete == NULL) {
+	if (inject == NULL || poll_delete_1 == NULL || poll_delete_2 == NULL) {
 		TEST_MSG("Could not find inject and/or poll_delete in modules in test_type_array\n");
 		return 1;
 	}
@@ -336,35 +374,33 @@ int test_type_array (
 	if (ret != 0) {
 		TEST_MSG("Error from inject function in test_type_array\n");
 		free(entry);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
-	struct test_result test_result = {1, NULL};
-	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
-		TEST_MSG("Test result polling try: %i of 10\n", i);
+	// Poll from first output
+	struct test_result test_result_1 = {1, NULL};
+	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, poll_delete_1, test_type_array_callback);
+	TEST_MSG("Result of test_type_array 1/2, should be 2: %i\n", test_result_1.result);
+	*result_message_1 = test_result_1.message;
 
-		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-		ret = poll_delete(output->thread_data, test_type_array_callback, &poll_data, 50);
-		if (ret != 0) {
-			TEST_MSG("Error from poll_delete function in test_type_array\n");
-			return 1;
-		}
+	// Poll from second output
+	struct test_result test_result_2 = {1, NULL};
+	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, poll_delete_2, test_type_array_callback);
+	TEST_MSG("Result of test_type_array 2/2, should be 2: %i\n", test_result_2.result);
+	*result_message_2 = test_result_2.message;
 
-		TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result.result);
+	// Error if result is not two from both polls
+	ret |= (test_result_1.result != 2) | (test_result_2.result != 2);
 
-		if (test_result.result == 2) {
-			*result_message = test_result.message;
-			return 0;
-		}
-	}
-
-	return 1;
+	out:
+	return ret;
 }
 
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_4("Received message of size %lu in test_type_array_mysql_and_network_callback\n", size);
+	VL_DEBUG_MSG_4("Received message_1 of size %lu in test_type_array_mysql_and_network_callback\n", size);
 
 	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
 	struct test_result *test_result = poll_data->private_data;
@@ -523,7 +559,7 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	TEST_MSG("The error message 'Failed to prepare statement' is fine, it might show up before the table is created\n");
+	TEST_MSG("The error message_1 'Failed to prepare statement' is fine, it might show up before the table is created\n");
 	ret = test_type_array_setup_mysql (&mysql_data);
 	if (ret != 0) {
 		VL_MSG_ERR("Failed to setup MySQL test environment\n");
@@ -553,19 +589,9 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	// Wait for MySQL to insert message and check for ACK
-	for (int i = 1; i <= 10 && test_result.message == NULL; i++) {
-		TEST_MSG("Polling MySQL test result try %i of 10\n", i);
-
-		struct fifo_callback_args poll_data = {NULL, &test_result, 0};
-		ret = poll_delete(tag_buffer->thread_data, test_type_array_mysql_and_network_callback, &poll_data, 250);
-		if (ret != 0) {
-			VL_MSG_ERR("Error from poll_delete in buffer in test_type_array_mysql_and_network\n");
-			ret = 1;
-			goto out;
-		}
-		TEST_MSG("Result from buffer callback: %i\n", test_result.result);
-	}
+	TEST_MSG("Polling MySQL\n");
+	ret |= test_do_poll_loop(&test_result, tag_buffer->thread_data, poll_delete, test_type_array_mysql_and_network_callback);
+	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
 
 	ret = test_result.result;
 	if (ret != 0) {
@@ -576,13 +602,13 @@ int test_type_array_mysql_and_network (
 
 	struct vl_message *result_message = test_result.message;
 	if (!MSG_IS_TAG(result_message)) {
-		VL_MSG_ERR("Message from MySQL was not a TAG message\n");
+		VL_MSG_ERR("Message from MySQL was not a TAG message_1\n");
 		ret = 1;
 		goto out;
 	};
 
 	if (result_message->timestamp_from != expected_ack_timestamp) {
-		VL_MSG_ERR("Timestamp of TAG message from MySQL did not match original message (%" PRIu64 " vs %" PRIu64 ")\n",
+		VL_MSG_ERR("Timestamp of TAG message_1 from MySQL did not match original message_1 (%" PRIu64 " vs %" PRIu64 ")\n",
 				result_message->timestamp_from, expected_ack_timestamp);
 		ret = 1;
 		goto out;
