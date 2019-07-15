@@ -411,11 +411,12 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 		return;
 	}
 
+	struct fifo_buffer_ratelimit *ratelimit = &buffer->ratelimit;
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 
 	long long unsigned int spin_time =
-			buffer->ratelimit.sleep_spin_time +
-			(buffer->entry_count * buffer->entry_count);
+			ratelimit->sleep_spin_time + (buffer->entry_count * buffer->entry_count);
 	/*
 	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
 	 * sleep one time for 9 entries before we loop again and measure the time once more. The 10th
@@ -425,14 +426,14 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 	 * If the spin loop is longer than some time period, we only spin every 10 times.
 	 */
 
-	if (++(buffer->ratelimit.burst_counter) == 10) {
-		buffer->ratelimit.burst_counter = 0;
+	if (++(ratelimit->burst_counter) == 10) {
+		ratelimit->burst_counter = 0;
 
 		unsigned long int do_usleep = 0;
 
 		/* If we know how long the spinlock lasts, sleep half the period */
-		if (buffer->spins_per_us > 0) {
-			do_usleep = spin_time / 2 / buffer->spins_per_us;
+		if (ratelimit->spins_per_us > 0) {
+			do_usleep = spin_time / 2 / ratelimit->spins_per_us;
 
 			if (do_usleep < 50) {
 				do_usleep = 0;
@@ -463,12 +464,12 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 
 		long long int current_spins_per_us = spin_time_orig / time_diff;
 
-		if (buffer->spins_per_us == 0) {
-			buffer->spins_per_us = current_spins_per_us;
+		if (ratelimit->spins_per_us == 0) {
+			ratelimit->spins_per_us = current_spins_per_us;
 		}
 		else {
 			// Give little weight to the new value when updating
-			buffer->spins_per_us = (buffer->spins_per_us * 9 + current_spins_per_us) / 10;
+			ratelimit->spins_per_us = (ratelimit->spins_per_us * 9 + current_spins_per_us) / 10;
 		}
 //		VL_DEBUG_MSG_1("spintime %llu spins per us %llu\n", time_diff, buffer->spins_per_us);
 	}
@@ -518,14 +519,14 @@ void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
 		ratelimit->sleep_spin_time = 10000000000;
 	}
 
-	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (buffer->spins_per_us + 1));
+	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (ratelimit->spins_per_us + 1));
 
 	VL_DEBUG_MSG_1("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
 			buffer,
 			ratelimit->read_write_balance,
 			ratelimit->sleep_spin_time,
 			spintime_us,
-			buffer->spins_per_us,
+			ratelimit->spins_per_us,
 			buffer->entry_count,
 			buffer->buffer_do_ratelimit
 	);

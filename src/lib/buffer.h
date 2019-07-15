@@ -60,6 +60,7 @@ struct fifo_buffer_ratelimit {
 	long long int sleep_spin_time;
 	uint64_t prev_time;
 	int burst_counter;
+	long long int spins_per_us;
 };
 
 /*
@@ -91,8 +92,6 @@ struct fifo_buffer {
 
 	int buffer_do_ratelimit;
 	int entry_count;
-
-	long long int spins_per_us;
 
 	struct fifo_buffer_ratelimit ratelimit;
 
