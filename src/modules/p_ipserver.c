@@ -372,6 +372,7 @@ static struct module_operations module_operations = {
 		NULL,
 		ipserver_poll_delete_ip,
 		test_config,
+		NULL,
 		NULL
 };
 

@@ -557,6 +557,7 @@ static struct module_operations module_operations = {
 		ipclient_poll_delete,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

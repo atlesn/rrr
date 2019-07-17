@@ -60,13 +60,24 @@ const char *module_library_paths[] = {
 static volatile int main_running = 1;
 
 void signal_interrupt (int s) {
-    main_running = 0;
+
+    if (s == SIGUSR1) {
+        main_running = 0;
+    }
+    if (s == SIGPIPE) {
+        VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+    }
+    else if (s == SIGTERM) {
+    	exit(EXIT_FAILURE);
+    }
+    else {
+        main_running = 0;
+    }
 
     VL_DEBUG_MSG_1("Received signal %i\n", s);
 
-	signal(SIGTERM, SIG_DFL);
+    // Allow double ctrl+c to close program
 	signal(SIGINT, SIG_DFL);
-	signal(SIGUSR1, SIG_DFL);
 }
 
 int main (int argc, const char *argv[]) {
@@ -75,26 +86,18 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	struct vl_thread_collection *collection = NULL;
 	struct instance_metadata_collection *instances;
-
+	const char* config_string;
 	struct cmd_data cmd;
 	struct rrr_config *config = NULL;
-
 	int ret = EXIT_SUCCESS;
+	int count = 0;
 
 	if (instance_metadata_collection_new (&instances) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_no_cleanup;
 	}
-
-	struct sigaction action;
-	action.sa_handler = signal_interrupt;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
 
 	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
 		goto out_no_cleanup;
@@ -102,7 +105,7 @@ int main (int argc, const char *argv[]) {
 
 	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
 
-	const char* config_string = cmd_get_value(&cmd, "config", 0);
+	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL) {
 		config = rrr_config_parse_file(config_string);
 
@@ -122,26 +125,34 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if (VL_DEBUGLEVEL_1) {
-		if (rrr_config_dump(config) != 0) {
+		if (config != NULL && rrr_config_dump(config) != 0) {
 			VL_MSG_ERR("Error occured while dumping configuration\n");
 		}
 	}
 
-	// Initialzie dynamic_data thread data
-	struct vl_thread_collection *collection = NULL;
-
 	threads_restart:
+
 	rrr_set_debuglevel_orig();
 	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
 
-	int count = 0;
+	// Initialzie dynamic_data thread data
+	struct sigaction action;
+	action.sa_handler = signal_interrupt;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	sigaction (SIGTERM, &action, NULL);
+	sigaction (SIGINT, &action, NULL);
+	sigaction (SIGUSR1, &action, NULL);
+	sigaction (SIGPIPE, &action, NULL);
+
 	while (main_running) {
 		usleep (100000);
 
 		if (instance_check_threads_stopped(instances) == 1) {
-			VL_DEBUG_MSG_1 ("One or more threads have finished. Restart.\n");
+			VL_DEBUG_MSG_1 ("One or more threads have finished or do hard restart. Restart.\n");
 
 			rrr_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
@@ -160,10 +171,6 @@ int main (int argc, const char *argv[]) {
 			VL_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
 		}
 	}
-
-	signal(SIGTERM, SIG_DFL);
-	signal(SIGINT, SIG_DFL);
-	signal(SIGUSR1, SIG_DFL);
 
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
@@ -186,8 +193,6 @@ int main (int argc, const char *argv[]) {
 		}
 
 	instance_metadata_collection_destroy(instances);
-
-	thread_run_ghost_cleanup(&count);
 
 	out_no_cleanup:
 	return ret;

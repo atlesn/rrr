@@ -151,6 +151,7 @@ struct read_minimum_data {
 	uint64_t result_timestamp;
 };
 
+/* Callback must free or take care of memory even in case of an error */
 int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned long int size) {
 	int ret = 0;
 
@@ -182,7 +183,6 @@ int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned
 		}
 	}
 	else {
-		free(new_data);
 		ret = 1;
 	}
 
@@ -210,6 +210,7 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 
 	int res = fifo_read_minimum (
 			&duplicator_data->input_buffer,
+			NULL,
 			read_minimum_callback,
 			&fifo_callback_data,
 			reader->read_position,
@@ -421,6 +422,7 @@ static struct module_operations module_operations = {
 		poll_delete,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

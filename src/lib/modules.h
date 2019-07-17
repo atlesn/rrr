@@ -91,6 +91,9 @@ struct module_operations {
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+
+	// Custom cancellation method (if we are hung and main wants to cancel us)
+	int (*cancel_function)(struct vl_thread *);
 };
 
 void module_unload (void *dl_ptr, void (*unload)(void));

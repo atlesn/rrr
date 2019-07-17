@@ -425,6 +425,7 @@ static struct module_operations module_operations = {
 		poll_delete,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

@@ -1126,6 +1126,7 @@ static struct module_operations module_operations = {
 		mysql_poll_delete_local,
 		mysql_poll_delete_ip,
 		test_config,
+		NULL,
 		NULL
 };
 

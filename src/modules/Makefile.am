@@ -9,7 +9,8 @@ endif
 
 if VL_WITH_PYTHON3
 python3 = python3.la
-python3_la_LDFLAGS = ${module_ldflags} ${PYTHON3_LDFLAGS}
+python3_la_LDFLAGS = ${module_ldflags}
+#${PYTHON3_LDFLAGS}
 python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_SOURCES = p_python3.c
 endif

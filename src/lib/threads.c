@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
@@ -37,8 +38,68 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define VL_THREAD_NO_WATCHDOGS
 
+struct vl_thread_ghost {
+	struct vl_thread_ghost *next;
+	struct vl_thread *thread;
+};
+
+static struct vl_thread_ghost *ghost_list_first = NULL;
 static struct vl_thread_ghost_data *ghost_cleanup_list_first = NULL;
-static pthread_mutex_t ghost_cleanup_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t ghost_list_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void thread_clear_ghosts(void) {
+	pthread_mutex_lock(&ghost_list_mutex);
+	struct vl_thread_ghost *next;
+	for (struct vl_thread_ghost *cur = ghost_list_first; cur != NULL; cur = next) {
+		next = cur->next;
+		free(cur);
+	}
+	pthread_mutex_unlock(&ghost_list_mutex);
+}
+
+int thread_has_ghosts(void) {
+	pthread_mutex_lock(&ghost_list_mutex);
+	for (struct vl_thread_ghost *cur = ghost_list_first; cur != NULL; cur = cur->next) {
+		VL_MSG_ERR("Thread is ghost: %s\n", cur->thread->name);
+	}
+	pthread_mutex_unlock(&ghost_list_mutex);
+
+	return (ghost_list_first != NULL);
+}
+
+// Lock should be held already
+void thread_remove_ghost(const struct vl_thread *thread) {
+	struct vl_thread_ghost *do_free = NULL;
+
+	struct vl_thread_ghost *prev = NULL;
+	for (struct vl_thread_ghost *cur = ghost_list_first; cur != NULL; cur = cur->next) {
+			if (cur->thread == thread) {
+				if (prev) {
+					prev->next = cur->next;
+				}
+				else {
+					ghost_list_first = cur->next;
+				}
+				break;
+			}
+			prev = cur;
+	}
+
+	if (do_free) {
+		VL_MSG_ERR("Removed thread %s from ghost queue\n", do_free->thread->name);
+		free (do_free);
+	}
+}
+
+void thread_push_ghost(struct vl_thread *thread) {
+	struct vl_thread_ghost *ghost = malloc(sizeof(*ghost));
+
+	pthread_mutex_lock(&ghost_list_mutex);
+	ghost->next = ghost_list_first;
+	ghost->thread = thread;
+	ghost_list_first = ghost;
+	pthread_mutex_unlock(&ghost_list_mutex);
+}
 
 static inline struct vl_thread_ghost_data *thread_new_ghost_data (struct vl_thread *thread, void *ptr) {
 	struct vl_thread_ghost_data *ret = malloc(sizeof(*ret));
@@ -59,7 +120,7 @@ static inline struct vl_thread_ghost_data *thread_new_ghost_data (struct vl_thre
 }
 
 void thread_add_ghost_data (struct vl_thread_ghost_data *data) {
-	pthread_mutex_lock(&ghost_cleanup_list_mutex);
+	pthread_mutex_lock(&ghost_list_mutex);
 	if (ghost_cleanup_list_first == NULL) {
 		ghost_cleanup_list_first = data;
 	}
@@ -67,7 +128,7 @@ void thread_add_ghost_data (struct vl_thread_ghost_data *data) {
 		data->next = ghost_cleanup_list_first;
 		ghost_cleanup_list_first = data;
 	}
-	pthread_mutex_unlock(&ghost_cleanup_list_mutex);
+	pthread_mutex_unlock(&ghost_list_mutex);
 }
 
 int thread_run_ghost_cleanup(int *count) {
@@ -75,7 +136,7 @@ int thread_run_ghost_cleanup(int *count) {
 
 	*count = 0;
 
-	pthread_mutex_lock(&ghost_cleanup_list_mutex);
+	pthread_mutex_lock(&ghost_list_mutex);
 	struct vl_thread_ghost_data *data = ghost_cleanup_list_first;
 	while (data != NULL) {
 		struct vl_thread_ghost_data *next = data->next;
@@ -110,6 +171,8 @@ int thread_run_ghost_cleanup(int *count) {
 			free(data->ghost_cleanup_pointer);
 		}
 
+		thread_remove_ghost(data->thread);
+
 		thread_unlock(data->thread);
 
 		if (do_private_data_free) {
@@ -123,7 +186,7 @@ int thread_run_ghost_cleanup(int *count) {
 		data = next;
 	}
 	ghost_cleanup_list_first = NULL;
-	pthread_mutex_unlock(&ghost_cleanup_list_mutex);
+	pthread_mutex_unlock(&ghost_list_mutex);
 
 	return ret;
 }
@@ -261,6 +324,7 @@ void thread_destroy_collection (struct vl_thread_collection *collection) {
 			// Move pointer to thread, we expect it to clean up if it dies
 			VL_MSG_ERR ("Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
 			thread->free_by_ghost = 1;
+			thread_push_ghost(thread);
 			thread_unlock(thread);
 		}
 		else {
@@ -397,7 +461,7 @@ void *__thread_watchdog_entry (void *arg) {
 		uint64_t prevtime = get_watchdog_time(thread);
 
 		// We or others might try to kill the thread
-		if (thread_check_kill_signal(thread)) {
+		if (thread_check_kill_signal(thread) || thread_check_encourage_stop(thread)) {
 			VL_DEBUG_MSG_1 ("Thread %s/%p received kill signal\n", thread->name, thread);
 			break;
 		}
@@ -460,7 +524,13 @@ void *__thread_watchdog_entry (void *arg) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
 			VL_MSG_ERR ("Thread %s/%p not responding to kill. State is now %i. Killing it harder.\n", thread->name, thread, thread->state);
-			pthread_cancel(thread->thread);
+			if (thread->cancel_function != NULL) {
+				int res = thread->cancel_function(thread);
+				VL_MSG_ERR ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
+			}
+			else {
+				pthread_cancel(thread->thread);
+			}
 			usleep(1000000); // 1 s
 			break;
 		}
@@ -471,10 +541,19 @@ void *__thread_watchdog_entry (void *arg) {
 	VL_DEBUG_MSG_1 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, thread_get_state(thread));
 
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
+	prevtime = time_get_64();
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
 		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
-			VL_MSG_ERR ("Thread %s/%p not responding to cancellation.\n", thread->name, thread);
+			VL_MSG_ERR ("Thread %s/%p not responding to cancellation, try again .\n", thread->name, thread);
+			if (thread->cancel_function != NULL) {
+				int res = thread->cancel_function(thread);
+				VL_MSG_ERR ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
+			}
+			else {
+				pthread_cancel(thread->thread);
+			}
+			usleep(1000000);
 			if (thread_get_state(thread) == VL_THREAD_STATE_STOPPING) {
 				VL_MSG_ERR ("Thread %s/%p is stuck in STOPPING, not finished with it's cleanup.\n", thread->name, thread);
 			}
@@ -602,6 +681,7 @@ struct vl_thread *thread_preload_and_register (
 		void *(*start_routine) (struct vl_thread_start_data *),
 		int (*preload_routine) (struct vl_thread_start_data *),
 		void (*poststop_routine) (const struct vl_thread *),
+		int (*cancel_function) (struct vl_thread *),
 		void *arg, const char *name
 ) {
 	struct vl_thread *thread = NULL;
@@ -620,6 +700,7 @@ struct vl_thread *thread_preload_and_register (
 	}
 
 	thread->private_data = arg;
+	thread->cancel_function = cancel_function;
 	thread->poststop_routine = poststop_routine;
 	thread->watchdog_time = 0;
 	thread->signal = 0;

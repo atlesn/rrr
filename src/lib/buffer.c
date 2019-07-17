@@ -276,7 +276,7 @@ int fifo_read_clear_forward (
 ) {
 	fifo_wait_for_data(buffer, wait_milliseconds);
 
-	int ret = 0;
+	int ret = FIFO_OK;
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
 		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
@@ -287,13 +287,17 @@ int fifo_read_clear_forward (
 	struct fifo_buffer_entry *current = buffer->gptr_first;
 	struct fifo_buffer_entry *stop = NULL;
 
-	if (last_element == NULL) {
-		int i = 500;
-		struct fifo_buffer_entry *test = current;
-		while (test != NULL && --i) {
-			test = test->next;
+	int max_counter = FIFO_MAX_READS;
+	struct fifo_buffer_entry *last_element_max = current;
+	while (last_element_max != NULL && --max_counter) {
+		if (last_element_max == last_element) {
+			break;
 		}
-		last_element = test;
+		last_element_max = last_element_max->next;
+	}
+
+	if (max_counter == 0) {
+		last_element = last_element_max;
 	}
 
 	if (last_element != NULL) {
@@ -322,7 +326,12 @@ int fifo_read_clear_forward (
 
 		processed_entries++;
 		int ret_tmp = callback(callback_data, current->data, current->size);
-		ret = (ret != 0 ? FIFO_CALLBACK_ERR : (ret_tmp != 0 ? FIFO_CALLBACK_ERR : FIFO_OK));
+		if (ret_tmp != 0) {
+			if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP)) != 0) {
+				VL_BUG("Bug: FIFO_SEARCH_GIVE, FIFO_SEARCH_STOP or FIFO_SEARCH_FREE returned to fifo_read_clear_forward\n");
+			}
+			ret = FIFO_CALLBACK_ERR;
+		}
 
 		free(current);
 
@@ -339,10 +348,13 @@ int fifo_read_clear_forward (
 /*
  * This reading method blocks writers but allow other readers to traverse at the
  * same time. The callback function must not free the data or store it's pointer.
+ * This function does not check FIFO_MAX_READS.
+ *
+ * TODO : Possibly unused function
  */
 void fifo_read (
 		struct fifo_buffer *buffer,
-		void (*callback)(char *data, unsigned long int size),
+		int (*callback)(char *data, unsigned long int size),
 		unsigned int wait_milliseconds
 ) {
 	fifo_wait_for_data(buffer, wait_milliseconds);
@@ -352,7 +364,15 @@ void fifo_read (
 
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
-		callback(first->data, first->size);
+		int ret_tmp = callback(first->data, first->size);
+		if (ret_tmp != 0) {
+			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
+				break;
+			}
+			else if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
+				VL_BUG("Bug: FIFO_SEARCH_GIVE or FIFO_SEARCH_FREE returned to fifo_read\n");
+			}
+		}
 		first = first->next;
 	}
 
@@ -371,6 +391,7 @@ void fifo_read (
  */
 int fifo_read_minimum (
 		struct fifo_buffer *buffer,
+		struct fifo_buffer_entry *last_element,
 		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
 		struct fifo_callback_args *callback_data,
 		uint64_t minimum_order,
@@ -382,17 +403,31 @@ int fifo_read_minimum (
 	if (buffer->invalid) { fifo_read_unlock(buffer); return FIFO_GLOBAL_ERR; }
 	int res = 0;
 	struct fifo_buffer_entry *first = buffer->gptr_first;
+
+	int processed_entries = 0;
 	while (first != NULL) {
 		if (first->order > minimum_order) {
 			int res_ = callback(callback_data, first->data, first->size);
 
+			if (++processed_entries == FIFO_MAX_READS || first == last_element) {
+				break;
+			}
 			if (res_ == 0) {
 				// Do nothing
 			}
+			else if ((res & FIFO_SEARCH_STOP) != 0) {
+				res = 0;
+				break;
+			}
+			else if ((res & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
+				VL_BUG("Bug: FIFO_SEARCH_GIVE or FIFO_SEARCH_FREE returned to fifo_read_minimum\n");
+			}
 			else {
+				res = res_;
 				break;
 			}
 		}
+
 		first = first->next;
 	}
 

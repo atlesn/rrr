@@ -373,6 +373,7 @@ static struct module_operations module_operations = {
 		averager_poll_delete,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

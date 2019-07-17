@@ -116,6 +116,7 @@ struct vl_thread {
 	int free_by_ghost;
 	int free_private_data_by_ghost;
 
+	int (*cancel_function)(struct vl_thread *);
 	void (*poststop_routine)(const struct vl_thread *);
 };
 
@@ -133,6 +134,8 @@ struct vl_thread_start_data {
 	void *private_arg;
 };
 
+void thread_clear_ghosts(void);
+int thread_has_ghosts(void);
 int thread_run_ghost_cleanup(int *count);
 void thread_set_state(struct vl_thread *thread, int state);
 int thread_new_collection (struct vl_thread_collection **target);
@@ -259,6 +262,7 @@ struct vl_thread *thread_preload_and_register (
 		void *(*start_routine) (struct vl_thread_start_data *),
 		int (*preload_routine) (struct vl_thread_start_data *),
 		void(*poststop_routine) (const struct vl_thread *),
+		int (*cancel_function) (struct vl_thread *),
 		void *arg, const char *name
 );
 

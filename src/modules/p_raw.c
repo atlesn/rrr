@@ -130,6 +130,7 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

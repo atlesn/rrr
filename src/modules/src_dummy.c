@@ -199,7 +199,8 @@ static struct module_operations module_operations = {
 	poll_delete,
 	NULL,
 	test_config,
-	inject
+	inject,
+	NULL
 };
 
 static const char *module_name = "dummy";

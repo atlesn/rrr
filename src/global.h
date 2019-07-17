@@ -115,6 +115,9 @@ extern struct rrr_global_config rrr_global_config;
 #define VL_DEBUGLEVEL \
 		(rrr_global_config.debuglevel)
 
+#define VL_BUG(...) \
+	do { VL_MSG_ERR(__VA_ARGS__); abort(); } while (0)
+
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
 
 void rrr_set_debuglevel_orig(void);
