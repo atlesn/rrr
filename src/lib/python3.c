@@ -741,33 +741,29 @@ int rrr_py_persistent_receive_message (
 			goto out;
 		}
 
+		PYTHON3_PROFILE_START(recv_data,rrr_objects->accumulated_time_recv_message_nonblock);
 		res = PyObject_CallObject(rrr_objects->rrr_persistent_thread_recv_data_nonblock, arglist);
 		if (res == NULL) {
+			PyObject *exc = PyErr_Occurred();
+			if (exc) {
+				printf ("%s\n", Py_TYPE(exc)->tp_name);
+			}
 			VL_MSG_ERR("Could not run python3 rrr_persistent_thread_recv_data_nonblock: \n");
 			PyErr_Print();
 			ret = 1;
-			abort();
 			goto out;
 		}
 
+		PYTHON3_PROFILE_STOP(recv_data);
+
 		VL_DEBUG_MSG_3("rrr_py_process_message received an object of type %s from process function\n", Py_TYPE(res)->tp_name);
 
-		if (PyLong_Check(res)) {
-			long int _ret = PyLong_AsLong(res);
-			if (_ret == 1) {
-				VL_DEBUG_MSG_3("rrr_persistent_thread_recv_data returned 1 which means empty pipe\n");
-				ret = 0;
-				break;
-			}
-			else if (_ret != 0) {
-				VL_MSG_ERR("rrr_persistent_thread_recv_data returned non-null error %li\n", _ret);
-				ret = 1;
-				break;
-			}
-		}
-		else if (strcmp(Py_TYPE(res)->tp_name, "vl_message") == 0) {
+		if (strcmp(Py_TYPE(res)->tp_name, "vl_message") == 0) {
 			ret = callback (res, callback_arg);
 			res = NULL;
+		}
+		else if (strcmp(Py_TYPE(res)->tp_name, "None")) {
+			break;
 		}
 		else {
 			VL_BUG("Bug: rrr_persistent_thread_recv_data received an object of unknown type back from process function\n");

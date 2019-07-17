@@ -513,6 +513,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	// then be tagged as used to avoid warnings
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	uint64_t time_begin = time_get_64();
 	uint64_t accumulated_polling = 0;
 	uint64_t accumulated_reading = 0;
 
@@ -554,8 +555,8 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		update_watchdog_time(thread_data->thread);
 	}
 
-	VL_DEBUG_MSG_1("python3 instance %s time spent polling %" PRIu64 " time spent reading %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), accumulated_polling, accumulated_reading);
+	VL_DEBUG_MSG_1("python3 instance %s total time %" PRIu64 " time spent polling %" PRIu64 " time spent reading %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), time_get_64()-time_begin, accumulated_polling, accumulated_reading);
 
 	out_message:
 	VL_DEBUG_MSG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));

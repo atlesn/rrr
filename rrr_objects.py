@@ -60,20 +60,14 @@ class rrr_result:
 class rrr_process_pipe:
 	pipe = None
 	process = None
-	timeout = 1
 
 	def __init__(self, p):
 		self.pipe = p
-
-	def set_nonblock_timeout(self, t):
-		self.timeout = t
 
 	def set_process(self, p):
 		self.process = p
 
 	def send(self, data):
-		if self.process and not self.process.is_alive():
-			return -1
 		try:
 			self.pipe.send(data)
 		except Exception as exc:
@@ -81,25 +75,7 @@ class rrr_process_pipe:
 		return 0
 
 	def recv(self):
-		if self.process and not self.process.is_alive():
-			return -1
 		return self.pipe.recv()
-				
-	def recv_nonblock(self):
-		if self.process and not self.process.is_alive():
-			return -2
-		try:
-			try:
-				if (self.pipe.poll(self.timeout)):
-					return self.pipe.recv()
-				else:
-					return 1
-			except TimeoutException as exc:
-				return 1
-		except Exception:
-			print("received exception in recv_nonblock")
-			return -1
-		return -1
 		
 	def join(self):
 		return self.process.join()
@@ -112,7 +88,7 @@ class rrr_process_pipe:
 
 def rrr_process_start_persistent_intermediate(pipe : rrr_process_pipe, function):
 	result = rrr_result()
-	data = pipe.recv()
+	data = pipe.pipe.recv()
 	while data:
 		ret = function(result, data)
 		if ret == 0:
@@ -120,7 +96,7 @@ def rrr_process_start_persistent_intermediate(pipe : rrr_process_pipe, function)
 				pipe.send(result.get())
 		else:
 			print("Received error from function in rrr_process_start_persistent_intermediate")
-		data = pipe.recv()
+		data = pipe.pipe.recv()
 		
 def rrr_process_start_single_intermediate(pipe : rrr_process_pipe, function):
 	result = rrr_result()
@@ -149,7 +125,6 @@ class rrr_process_dict:
 
 		if (persistent):
 			p = Process(target=rrr_process_start_persistent_intermediate, args=(child, function))
-			main.set_nonblock_timeout(0.03)
 			p.start()
 		else:
 			p = Process(target=rrr_process_start_single_intermediate, args=(child, function))
@@ -192,7 +167,7 @@ def rrr_persistent_thread_send_new_vl_message(pipe : rrr_process_pipe, *args):
 	except IndexError:
 		args = args[0]
 	message = vl_message(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
-	return pipe.send(message)
+	return pipe.pipe.send(message)
 
 def rrr_persistent_thread_recv_data(pipe : rrr_process_pipe):
 	ret = pipe.recv()
@@ -200,8 +175,9 @@ def rrr_persistent_thread_recv_data(pipe : rrr_process_pipe):
 	return ret
 
 def rrr_persistent_thread_recv_data_nonblock(pipe : rrr_process_pipe):
-	ret = pipe.recv_nonblock()
-	return ret
+	if pipe.pipe.poll():
+		return pipe.pipe.recv()
+	return None
 
 def rrr_thread_terminate_all(process_dict : rrr_process_dict):
 	return process_dict.terminate_all()

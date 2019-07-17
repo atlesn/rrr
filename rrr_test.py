@@ -3,7 +3,7 @@ import rrr_objects
 def process(result : rrr_objects.rrr_result, message: rrr_objects.vl_message):
 #	print ("timestamp: " + str(message.timestamp_from))
 	message.timestamp_from = message.timestamp_from + 1
-#	result.put(message)
+	result.put(message)
 	return 0
 
 def config(result : rrr_objects.rrr_result, settings : rrr_objects.rrr_instance_settings):

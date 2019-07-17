@@ -45,6 +45,23 @@ struct python3_object_cache {
 	int initialized;
 };
 
+#define PASTE(a,b,c) a ## b ## v
+
+#define PYTHON3_PROFILING
+
+#ifdef PYTHON3_PROFILING
+#include "vl_time.h"
+#define PYTHON3_PROFILE_START(name, target) do { \
+		uint64_t profile_##name##_ = time_get_64();\
+		uint64_t *profile_##name##_target = &(target)
+#define PYTHON3_PROFILE_STOP(name) \
+	*(profile_##name##_target) = time_get_64() - profile_##name##_; \
+	} while (0)
+#else
+#define PYTHON3_PROFILE_START(a,b) do {
+#define PYTHON3_PROFILE_STOP(a) } while(0)
+#endif /* PYTHON3_PROFILING */
+
 struct python3_rrr_objects {
 	PyObject *rrr_settings_class;
 	PyObject *rrr_settings_get;
@@ -64,6 +81,10 @@ struct python3_rrr_objects {
 
 	PyObject *vl_message_class;
 	PyObject *vl_message_new;
+
+#ifdef PYTHON3_PROFILING
+	uint64_t accumulated_time_recv_message_nonblock;
+#endif /* PYTHON3_PROFILING */
 };
 
 int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyThreadState *tstate);
