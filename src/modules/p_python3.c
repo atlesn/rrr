@@ -58,6 +58,11 @@ struct python3_preload_data {
 	PyThreadState *istate;
 };
 
+struct process_input_state {
+	struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX];
+	int count;
+};
+
 struct python3_data {
 	struct instance_thread_data *thread_data;
 
@@ -82,6 +87,9 @@ struct python3_data {
 	PyObject *allocating_pipe;
 
 	struct python3_rrr_objects rrr_objects;
+	struct process_input_state process_input_state;
+
+	int messages_pending;
 };
 
 static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
@@ -261,7 +269,6 @@ int python3_start(struct python3_data *data) {
 		VL_MSG_ERR("Could not start python3 allocator function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out_thread_out;
 	}
-
 	out_thread_out:
 	if (python3_swap_thread_out(&data->python3_thread_ctx)) {
 		ret = 1;
@@ -276,6 +283,10 @@ void python3_stop(void *arg) {
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
 	rrr_py_terminate_threads(&data->rrr_objects);
+
+	Py_XDECREF(data->allocating_pipe);
+	Py_XDECREF(data->processing_pipe);
+
 	rrr_py_destroy_rrr_objects(&data->rrr_objects);
 
 	Py_XDECREF(data->py_main_dict);
@@ -385,12 +396,20 @@ int read_from_processor(struct python3_data *data) {
 	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
+	int count = 0;
+
 	ret = rrr_py_persistent_receive_message (
+			&count,
 			&data->rrr_objects,
 			data->processing_pipe,
 			read_from_processor_callback,
 			data
 	);
+
+	data->messages_pending -= count;
+	if (data->messages_pending < 0) {
+		data->messages_pending = 0;
+	}
 
 	return ret;
 }
@@ -409,31 +428,59 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct instance_thread_data *thread_data = (struct instance_thread_data *) poll_data->source;
 	struct python3_data *python3_data = thread_data->private_data;
+	struct process_input_state *process_input_state = &python3_data->process_input_state;
 	struct vl_message *message = (struct vl_message *) data;
 
 	update_watchdog_time(python3_data->thread_data->thread);
 
+	// Collect some number of messages then send to rrr_py_persistent_process_new_messages
+	if (message != NULL) {
+		process_input_state->messages[process_input_state->count++] = message;
+
+		VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer, temporarily buffered %i of %i\n",
+				INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from, process_input_state->count, RRR_PERSISTENT_PROCESS_INPUT_MAX);
+
+		if (process_input_state->count < RRR_PERSISTENT_PROCESS_INPUT_MAX) {
+				goto out_nofree;
+		}
+	}
+
 	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
 	python3_swap_thread_in(&python3_data->python3_thread_ctx, python3_data->tstate);
 
-	VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
-			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
-
-	ret = rrr_py_persistent_process_new_message (
+	ret = rrr_py_persistent_process_new_messages (
 			&(python3_data->rrr_objects),
 			python3_data->processing_pipe,
-			message
+			process_input_state->messages,
+			process_input_state->count
 	);
 	if (ret != 0) {
 		VL_MSG_ERR("Error returned from rrr_py_persistent_process_new_message in instance %s\n",
 				INSTANCE_D_NAME(python3_data->thread_data));
 		ret = 1;
+		goto out;
 	}
 
-	free(data);
+	// Read messages here in between while python works
+	python3_data->messages_pending += 1;
+	if (python3_data->messages_pending % 15 == 0) {
+		ret = read_from_processor(python3_data);
+		if (ret != 0) {
+			VL_MSG_ERR("Error returned from read_from_processor inside process_input_callback\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	for (int i = 0; i < process_input_state->count; i++) {
+		free(process_input_state->messages[i]);
+	}
+	process_input_state->count = 0;
 
 	VL_DEBUG_MSG_3("python3 instance %s return from callback: %i\n", INSTANCE_D_NAME(python3_data->thread_data), ret);
 
+	out_nofree:
 	return ret;
 }
 
@@ -516,24 +563,40 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	uint64_t time_begin = time_get_64();
 	uint64_t accumulated_polling = 0;
 	uint64_t accumulated_reading = 0;
+	uint64_t accumulated_buffer = 0;
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
+		uint64_t now = time_get_64();
 		int output_buffer_size = fifo_buffer_get_entry_count(&data->output_buffer);
+		accumulated_buffer += time_get_64() - now;
 
 		if (output_buffer_size > 500) {
+			uint64_t now = time_get_64();
 			usleep(1000);
+			accumulated_buffer += time_get_64() - now;
 		}
 		else {
 			uint64_t now;
 			int res;
 
 			now = time_get_64();
+			data->process_input_state.count = 0;
 			if ((res = poll_do_poll_delete_simple (&poll, thread_data, process_input_callback, 50)) != 0) {
-				VL_MSG_ERR("python3 return from poll was not 0 but %i in instance %s\n",
+				VL_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;
+			}
+
+			if (data->process_input_state.count != 0) {
+				struct fifo_callback_args fifo_args = { thread_data, NULL, 0 };
+				res = process_input_callback(&fifo_args, NULL, 0);
+				if (res != 0) {
+					VL_MSG_ERR("python3 error in secondary process_input_callback call in instance %s\n",
+							INSTANCE_D_NAME(thread_data));
+					break;
+				}
 			}
 			accumulated_polling += time_get_64() - now;
 
@@ -545,18 +608,20 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 			}
 			accumulated_reading += time_get_64() - now;
 
+			now = time_get_64();
 			if ((res = python3_swap_thread_out(&data->python3_thread_ctx))) {
 				VL_MSG_ERR("python3 return from thread swap out was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;
 			}
+			accumulated_buffer += time_get_64() - now;
 		}
 
 		update_watchdog_time(thread_data->thread);
 	}
 
-	VL_DEBUG_MSG_1("python3 instance %s total time %" PRIu64 " time spent polling %" PRIu64 " time spent reading %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), time_get_64()-time_begin, accumulated_polling, accumulated_reading);
+	VL_DEBUG_MSG_1("python3 instance %s total time %" PRIu64 " time spent polling %" PRIu64 " time spent reading %" PRIu64 " spent buffering/unlocking %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), time_get_64()-time_begin, accumulated_polling, accumulated_reading, accumulated_buffer);
 
 	out_message:
 	VL_DEBUG_MSG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));

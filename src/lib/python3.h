@@ -32,6 +32,8 @@ struct python3_thread_state {
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
 #define RRR_PYTHON3_OBJECT_CACHE_OK 0
 
+#define RRR_PERSISTENT_PROCESS_INPUT_MAX 12
+
 struct python3_object_cache_entry {
 	struct python3_object_cache_entry *next;
 	PyObject *object;
@@ -105,7 +107,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 /* Asynchronous functions */
 int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects);
 int rrr_py_start_persistent_thread (
-		PyObject **result,
+		PyObject **result_process_pipe,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
 		const char *function_name
@@ -130,6 +132,7 @@ PyObject *rrr_py_new_empty_message(struct python3_rrr_objects *rrr_objects);
 PyObject *rrr_py_new_message(struct python3_rrr_objects *message_maker, const struct vl_message *message);
 int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message);
 int rrr_py_persistent_receive_message (
+		int *count,
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
 		int (*callback)(PyObject *message, void *arg),
@@ -140,10 +143,11 @@ int rrr_py_persistent_process_message (
 		PyObject *processor_pipe,
 		PyObject *message
 );
-int rrr_py_persistent_process_new_message (
+int rrr_py_persistent_process_new_messages (
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
-		const struct vl_message *message
+		struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX],
+		int count
 );
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);
 int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictionary);

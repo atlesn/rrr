@@ -56,8 +56,7 @@ int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyTh
 		current_tstate = _PyThreadState_UncheckedGet();
 
 		if (current_tstate != python3_thread_ctx->tstate) {
-			VL_MSG_ERR("After python3 restore thread, current actual thread does not match\n");
-			abort();
+			VL_BUG("After python3 restore thread, current actual thread does not match\n");
 		}
 
 		VL_DEBUG_MSG_4 ("Restore thread complete expected thread active %p actual tstate %p\n",
@@ -66,8 +65,7 @@ int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyTh
 	}
 	else {
 		if (current_tstate != python3_thread_ctx->tstate) {
-			VL_MSG_ERR("Bug: We are tagged as holding lock already in python3_swap_thread_in but python3 says we do not\n");
-			abort();
+			VL_BUG("Bug: We are tagged as holding lock already in python3_swap_thread_in but python3 says we do not\n");
 		}
 		VL_DEBUG_MSG_4 ("Restore did not run\n");
 		ret = 1;
@@ -94,8 +92,7 @@ int python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
 			return 1;
 		}
 		else if (PyEval_SaveThread() != tstate_holder->tstate) {
-			VL_MSG_ERR("Bug: tstates did not match in python3_swap_thread_out\n");
-			abort();
+			VL_BUG("Bug: tstates did not match in python3_swap_thread_out\n");
 		}
 
 		VL_DEBUG_MSG_4 ("Save thread complete %p actual tstate %p\n",
@@ -286,14 +283,14 @@ int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
 }
 
 int rrr_py_start_persistent_thread (
-		PyObject **result,
+		PyObject **result_process_pipe,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
 		const char *function_name
 ) {
 	int ret = 0;
 
-	*result = NULL;
+	*result_process_pipe = NULL;
 
 	PyObject *arglist = NULL;
 	PyObject *process_pipe = NULL;
@@ -320,10 +317,24 @@ int rrr_py_start_persistent_thread (
 		abort();
 		goto out;
 	}
+	Py_XDECREF(arglist);
 
-	*result = process_pipe;
+	arglist = Py_BuildValue("O",
+			process_pipe
+	);
+	if (arglist == NULL) {
+		VL_MSG_ERR("Could not prepare argument list while calling getters for raw pipes:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+	*result_process_pipe = process_pipe;
 
 	out:
+	if (ret != 0) {
+		Py_XDECREF(process_pipe);
+	}
 	Py_XDECREF(arglist);
 	return ret;
 }
@@ -718,12 +729,14 @@ int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message)
 }
 
 int rrr_py_persistent_receive_message (
+		int *count,
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
 		int (*callback)(PyObject *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
+	*count = 0;
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_receive_message getting message\n");
 
@@ -761,6 +774,7 @@ int rrr_py_persistent_receive_message (
 		if (strcmp(Py_TYPE(res)->tp_name, "vl_message") == 0) {
 			ret = callback (res, callback_arg);
 			res = NULL;
+			(*count)++;
 		}
 		else if (strcmp(Py_TYPE(res)->tp_name, "None")) {
 			break;
@@ -806,7 +820,6 @@ int rrr_py_persistent_process_data (
 		VL_MSG_ERR("Could not run python3 rrr_persistent_thread_send_data: \n");
 		PyErr_Print();
 		ret = 1;
-		abort();
 		goto out;
 	}
 
@@ -827,8 +840,7 @@ int rrr_py_persistent_process_message (
 	VL_DEBUG_MSG_3("rrr_py_persistent_process_message processing message\n");
 
 	if (message == NULL || processor_pipe == NULL) {
-		VL_MSG_ERR("Bug: Message or processor pipe was NULL in rrr_py_persistent_process_message\n");
-		abort();
+		VL_BUG("Bug: Message or processor pipe was NULL in rrr_py_persistent_process_message\n");
 	}
 
 	ret = rrr_py_persistent_process_data (rrr_objects->rrr_persistent_thread_send_data, processor_pipe, message);
@@ -841,17 +853,73 @@ int rrr_py_persistent_process_message (
 	return ret;
 }
 
-int rrr_py_persistent_process_new_message (
+int rrr_py_persistent_process_new_messages (
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
-		const struct vl_message *message
+		struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX],
+		int count
 ) {
 	int ret = 0;
 	PyObject *arglist = NULL;
+	PyObject *message_arglist = NULL;
+	PyObject *pycount = NULL;
 
-	if ((arglist = __rrr_py_message_new_arglist(message)) == NULL) {
+	if (count == 0) {
+		goto out;
+	}
+
+	arglist = PyTuple_New(count + 2);
+	if (arglist == NULL) {
+		VL_MSG_ERR("Could not create PyTuple in rrr_py_persistent_process_new_message:\n");
+		PyErr_Print();
 		ret = 1;
 		goto out;
+	}
+
+	pycount = PyLong_FromLong(count);
+	if (pycount == NULL) {
+		VL_MSG_ERR("Could not create PyLong in rrr_py_persistent_process_new_message:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+	ret = PyTuple_SetItem(arglist, 0, processor_pipe); // Steals reference to processor_pipe
+	if (ret != 0) {
+		VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+	Py_INCREF(processor_pipe);
+
+	ret = PyTuple_SetItem(arglist, 1, pycount); // Steals reference to pycount
+	if (ret != 0) {
+		VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+	Py_INCREF(pycount);
+
+
+	for (int i = 0; i < count; i++) {
+		message_arglist = __rrr_py_message_new_arglist(messages[i]);
+		if (message_arglist == NULL) {
+			VL_MSG_ERR("Could not create message argument list in rrr_py_persistent_process_new_message:\n");
+			PyErr_Print();
+			ret = 1;
+			goto out;
+		}
+
+		ret = PyTuple_SetItem(arglist, i + 2, message_arglist); // Steals reference to message_arglist
+		if (ret != 0) {
+			VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
+			PyErr_Print();
+			ret = 1;
+			goto out;
+		}
+		message_arglist = NULL;
 	}
 
 	ret = rrr_py_persistent_process_data(rrr_objects->rrr_persistent_thread_send_new_vl_message, processor_pipe, arglist);
@@ -861,7 +929,9 @@ int rrr_py_persistent_process_new_message (
 	}
 
 	out:
-	Py_XDECREF(arglist);
+	Py_XDECREF(message_arglist);
+	Py_XDECREF(arglist);;
+	Py_XDECREF(pycount);
 	return ret;
 }
 
@@ -934,6 +1004,7 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 			"sys.path.append('.')\n"
 			"import rrr_objects\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
+			"pipe_dummy, pipe_dummy_b = Pipe()\n"
 	;
 
 	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + 1);

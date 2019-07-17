@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define FIFO_SPIN_DELAY 0 // microseconds
 #define FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
-#define FIFO_MAX_READS 50 // Maximum number of reads per call to a read function
+#define FIFO_MAX_READS 500 // Maximum number of reads per call to a read function
 
 #define FIFO_OK 0
 #define FIFO_GLOBAL_ERR -1
