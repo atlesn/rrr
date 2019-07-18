@@ -75,6 +75,7 @@ struct python3_rrr_objects {
 
 	PyObject *rrr_onetime_thread_start;
 	PyObject *rrr_persistent_thread_start;
+	PyObject *rrr_persistent_thread_readonly_start;
 	PyObject *rrr_persistent_thread_send_data;
 	PyObject *rrr_persistent_thread_send_new_vl_message;
 	PyObject *rrr_persistent_thread_recv_data;
@@ -112,6 +113,12 @@ int rrr_py_start_persistent_thread (
 		const char *module_name,
 		const char *function_name
 );
+int rrr_py_start_persistent_readonly_thread (
+		PyObject **result_process_pipe,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name
+);
 int rrr_py_call_object_async (
 		PyObject **result,
 		struct python3_rrr_objects *rrr_objects,
@@ -132,11 +139,16 @@ PyObject *rrr_py_new_empty_message(struct python3_rrr_objects *rrr_objects);
 PyObject *rrr_py_new_message(struct python3_rrr_objects *message_maker, const struct vl_message *message);
 int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message);
 int rrr_py_persistent_receive_message (
-		int *count,
+		int *pending_counter,
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
 		int (*callback)(PyObject *message, void *arg),
 		void *callback_arg
+);
+int rrr_py_persistent_readonly_send_counter (
+		struct python3_rrr_objects *rrr_objects,
+		PyObject *processor_pipe,
+		int count
 );
 int rrr_py_persistent_process_message (
 		struct python3_rrr_objects *rrr_objects,

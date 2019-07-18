@@ -262,6 +262,25 @@ int fifo_clear_order_lt (
 	return 0;
 }
 
+int fifo_verify_counter(struct fifo_buffer *buffer) {
+	int counter = 0;
+	int claimed_count = 0;
+	fifo_read_lock(buffer);
+
+	claimed_count = buffer->entry_count;
+
+	struct fifo_buffer_entry *current = buffer->gptr_first;
+	while (current) {
+		struct fifo_buffer_entry *next = current->next;
+		counter++;
+		current = next;
+	}
+
+	fifo_read_unlock(buffer);
+
+	return (counter != claimed_count);
+}
+
 /*
  * This reading method holds a write lock for a minimum amount of time by
  * taking control of the start of the queue making it inaccessible to
@@ -308,6 +327,7 @@ int fifo_read_clear_forward (
 		}
 	}
 	else {
+		last_element = buffer->gptr_last;
 		buffer->gptr_first = NULL;
 		buffer->gptr_last = NULL;
 	}
@@ -324,13 +344,44 @@ int fifo_read_clear_forward (
 
 		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
-		processed_entries++;
 		int ret_tmp = callback(callback_data, current->data, current->size);
+		processed_entries++;
 		if (ret_tmp != 0) {
-			if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP)) != 0) {
-				VL_BUG("Bug: FIFO_SEARCH_GIVE, FIFO_SEARCH_STOP or FIFO_SEARCH_FREE returned to fifo_read_clear_forward\n");
+			if ((ret_tmp & (FIFO_SEARCH_GIVE)) != 0) {
+				VL_BUG("Bug: FIFO_SEARCH_GIVE returned to fifo_read_clear_forward, we always GIVE by default\n");
 			}
-			ret = FIFO_CALLBACK_ERR;
+			if ((ret_tmp & FIFO_SEARCH_FREE) != 0) {
+					// Entry has not been processed and/or freed callback (for some reason)
+					free(current->data);
+			}
+			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
+				// Stop processing and put the rest back into the buffer
+				fifo_write_lock(buffer);
+				struct fifo_buffer_entry *new_first = next;
+
+				if (next == NULL) {
+					// We are done anyway
+				}
+				else {
+					last_element->next = buffer->gptr_first;
+					buffer->gptr_first = new_first;
+					if (buffer->gptr_last == NULL) {
+						buffer->gptr_last = last_element;
+					}
+				}
+
+				fifo_write_unlock(buffer);
+				free(current);
+				break;
+			}
+			if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {
+				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
+				ret = 1;
+			}
+			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR);
+			if (ret_tmp != 0) {
+				VL_BUG("Unknown flags %i returned to fifo_read_clear_forward\n", ret_tmp);
+			}
 		}
 
 		free(current);
@@ -341,6 +392,12 @@ int fifo_read_clear_forward (
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= processed_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+#ifdef FIFO_DEBUG_COUNTER
+	if (fifo_verify_counter(buffer) != 0) {
+		VL_BUG("Buffer size mismatch\n");
+	}
+#endif /* FIFO_DEBUG_COUNTER */
 
 	return ret;
 }
@@ -556,7 +613,7 @@ void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
 
 	unsigned long long int spintime_us = (ratelimit->sleep_spin_time / (ratelimit->spins_per_us + 1));
 
-	VL_DEBUG_MSG_1("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
+	VL_DEBUG_MSG_4("Buffer %p read/write balance %f spins %llu (%llu us) spins/us %llu entries %i (do sleep = %i)\n",
 			buffer,
 			ratelimit->read_write_balance,
 			ratelimit->sleep_spin_time,

@@ -1,21 +1,10 @@
 import sys
 import multiprocessing
 import importlib
+import time
 from multiprocessing.pool import Pool
-from multiprocessing import Queue, Lock, Pipe, Process
-
-# Fix for TypeError: AutoProxy() got an unexpected keyword argument 'manager_owned'
-# old_autoproxy = multiprocessing.Manager.AutoProxy
-# def new_autoproxy(token, serializer, manager=None, authkey=None, exposed=None, incref=True, manager_owned=True):
-#     return old_autoproxy(token, serializer, manager, authkey, exposed, incref)
-# multiprocessing.Manager.AutoProxy = new_autoproxy
-
-# Source must be edited manually, in multiprocessing/managers.py replace 
-# def AutoProxy(token, serializer, manager=None, authkey=None,
-#          exposed=None, incref=True):
-# with
-# def AutoProxy(token, serializer, manager=None, authkey=None,
-#          exposed=None, incref=True, manager_owned=True):
+from multiprocessing import Lock, Pipe, Process
+from queue import Queue
 
 # TODO : Make configure generate 1024 number from  MSG_DATA_MAX_LENGTH_STR
 
@@ -79,6 +68,77 @@ class rrr_process_pipe:
 		self.pipe_to_process.close()
 		self.pipe_from_process.close()
 
+class rrr_send_buffer:
+	max_in_buffer = 50
+	max_in_transit = 50
+	in_transit = 0
+	queue = Queue(max_in_buffer)
+
+	def sub_in_transit(self, count : int):
+		self.in_transit = self.in_transit - count
+
+	def inc_in_transit(self):
+		self.in_transit = self.in_transit + 1
+		return (self.in_transit > self.max_in_transit)
+
+	def full_in_transit(self):
+		return (self.in_transit >= self.max_in_transit)
+
+	def get(self):
+		if (self.queue.empty()):
+			return False
+		return self.queue.get_nowait()
+
+	def put(self, m):
+		if (self.queue.full()):
+			return False
+		self.queue.put_nowait(m)
+		return True
+
+	def full(self):
+		return self.queue.full()
+
+def rrr_process_start_persistent_readonly_intermediate(pipe : rrr_process_pipe, function):
+	result = rrr_result()
+	send_buffer = rrr_send_buffer()
+	while True:
+		# Read message counters from receiver
+		received_count = 0
+		while True:
+			while pipe.pipe_to_process.poll():
+				received_count = received_count + pipe.pipe_to_process.recv()
+				send_buffer.sub_in_transit(received_count)
+			if (send_buffer.full_in_transit()):
+				time.sleep(0.01)
+			else:
+				break
+		pass
+
+		if not send_buffer.full():
+			ret = function(result) 
+			if ret == 0 and result.has_data():
+				message = result.get()
+				if (isinstance(message, rrr_objects.vl_message)):
+					send_buffer.put(message)
+				else:
+					print("Warning: Received non-vl_message " + str(message) + " in rrr_process_start_persistent_readonly_intermediate");
+			if ret:
+				print("Received error from function in rrr_process_start_persistent_readonly_intermediate")
+				break
+		pass
+
+		if (not send_buffer.full_in_transit()):
+			m = send_buffer.get()
+			count = 0
+			while m:
+				pipe.pipe_from_process.send(m)
+				if (send_buffer.inc_in_transit()):
+					break;
+				count += 1
+				m = send_buffer.get()
+		pass
+	pass
+
 def rrr_process_start_persistent_intermediate(pipe : rrr_process_pipe, function):
 	result = rrr_result()
 	data = pipe.pipe_to_process.recv()
@@ -111,7 +171,7 @@ class rrr_process_dict:
 	lock = Lock()
 	process_pipes = []
 
-	def new_process_pipe(self, module_str : str, function_str : str, persistent):
+	def new_process_pipe(self, module_str : str, function_str : str, start_function):
 		mod = importlib.import_module(module_str)
 		function = getattr(mod, function_str)
 			
@@ -121,12 +181,8 @@ class rrr_process_dict:
 		main = rrr_process_pipe(a1, b1)
 		child = rrr_process_pipe(a2, b2)
 
-		if (persistent):
-			p = Process(target=rrr_process_start_persistent_intermediate, args=(child, function))
-			p.start()
-		else:
-			p = Process(target=rrr_process_start_single_intermediate, args=(child, function))
-			p.start()
+		p = Process(target=start_function, args=(child, function))
+		p.start()
 		
 		main.set_process(p)
 
@@ -134,6 +190,15 @@ class rrr_process_dict:
 			self.process_pipes.append(main)
 			
 		return main
+
+	def new_process_pipe_persistent(self, module_str : str, function_str : str):
+		return self.new_process_pipe(module_str, function_str, rrr_process_start_persistent_intermediate)
+
+	def new_process_pipe_persistent_readonly(self, module_str : str, function_str : str):
+		return self.new_process_pipe(module_str, function_str, rrr_process_start_persistent_readonly_intermediate)
+
+	def new_process_pipe_onetime(self, module_str : str, function_str : str):
+		return self.new_process_pipe(module_str, function_str, rrr_process_start_single_intermediate)
 	
 	def remove_process_pipe(self, pipe : rrr_process_pipe):
 		with self.lock:
@@ -152,25 +217,26 @@ class rrr_process_dict:
 			self.process_pipes.clear()
 		return 0
 
+def rrr_persistent_thread_readonly_start(process_dict : rrr_process_dict, module_str : str, function_str : str):
+	pipe = process_dict.new_process_pipe_persistent_readonly(module_str, function_str)
+	return pipe
+
 def rrr_persistent_thread_start(process_dict : rrr_process_dict, module_str : str, function_str : str):
-	pipe = process_dict.new_process_pipe(module_str, function_str, 1)
+	pipe = process_dict.new_process_pipe_persistent(module_str, function_str)
 	return pipe
 
 def rrr_persistent_thread_send_data(pipe : rrr_process_pipe, data):
-	return pipe.send(data)
+	return pipe.pipe_to_process.send(data)
 
 def rrr_persistent_thread_send_new_vl_message(*args):
 	to_send = []
 
 	pipe = args[0]
 	count = args[1][1]
-#	print ("Found " + str(count) + " messages");
 		
 	for i in range(2,count+2):
 		message = args[1][i];
-#		print ("New message " + str(message) + " timestamp " + str(message[2]))
 		new_message = vl_message(message[0], message[1], message[2], message[3], message[4], message[5], message[6]);
-#		print ("New New message : " + str(new_message))
 		to_send.append(new_message)
 	return pipe.pipe_to_process.send(to_send)
 
@@ -202,7 +268,7 @@ def rrr_onetime_thread_start(*args):
 	function_str = args[2]
 	argument = args[3]
 
-	process_pipe = process_dict.new_process_pipe(module_str, function_str, 0)
+	process_pipe = process_dict.new_process_pipe_onetime(module_str, function_str)
 	process_pipe.pipe_to_process.send(argument)
 
 	result = process_pipe.pipe_from_process.recv()
@@ -241,7 +307,6 @@ class rrr_instance_settings(dict):
 
 	def check_used(self, key):
 		l = dir(key)
-#		print(l)
 		return super(rrr_instance_settings,self).get(key).check_used()
 
 def rrr_settings_new():

@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "../global.h"
 
+//#define FIFO_DEBUG_COUNTER
 //#define FIFO_SPIN_DELAY 0 // microseconds
 #define FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 #define FIFO_MAX_READS 500 // Maximum number of reads per call to a read function

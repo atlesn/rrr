@@ -282,11 +282,12 @@ int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
 	return ret;
 }
 
-int rrr_py_start_persistent_thread (
+int __rrr_py_start_persistent_thread (
 		PyObject **result_process_pipe,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
-		const char *function_name
+		const char *function_name,
+		PyObject *start_method
 ) {
 	int ret = 0;
 
@@ -309,12 +310,11 @@ int rrr_py_start_persistent_thread (
 		goto out;
 	}
 
-	process_pipe = PyObject_CallObject(rrr_objects->rrr_persistent_thread_start, arglist);
+	process_pipe = PyObject_CallObject(start_method, arglist);
 	if (process_pipe == NULL) {
 		VL_MSG_ERR("Could not run python3 thread starter: \n");
 		PyErr_Print();
 		ret = 1;
-		abort();
 		goto out;
 	}
 	Py_XDECREF(arglist);
@@ -339,6 +339,35 @@ int rrr_py_start_persistent_thread (
 	return ret;
 }
 
+int rrr_py_start_persistent_thread (
+		PyObject **result_process_pipe,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name
+) {
+	return __rrr_py_start_persistent_thread (
+			result_process_pipe,
+			rrr_objects,
+			module_name,
+			function_name,
+			rrr_objects->rrr_persistent_thread_start
+	);
+}
+
+int rrr_py_start_persistent_readonly_thread (
+		PyObject **result_process_pipe,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name
+) {
+	return __rrr_py_start_persistent_thread (
+			result_process_pipe,
+			rrr_objects,
+			module_name,
+			function_name,
+			rrr_objects->rrr_persistent_thread_readonly_start
+	);
+}
 
 // First element of arglist must be function to call
 int rrr_py_call_object_async (
@@ -729,33 +758,33 @@ int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message)
 }
 
 int rrr_py_persistent_receive_message (
-		int *count,
+		int *pending_counter,
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
 		int (*callback)(PyObject *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
-	*count = 0;
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_receive_message getting message\n");
 
 	PyObject *res = NULL;
-	PyObject *arglist = NULL;
+//	PyObject *arglist = NULL;
 
-	while (1) {
-		arglist = Py_BuildValue("(O)",
-				processor_pipe
-		);
-		if (arglist == NULL) {
-			VL_MSG_ERR("Could not prepare argument list in rrr_py_persistent_receive_message:\n");
-			PyErr_Print();
-			ret = 1;
-			goto out;
-		}
+	/*arglist = Py_BuildValue("(O)",
+			processor_pipe
+	);
+	if (arglist == NULL) {
+		VL_MSG_ERR("Could not prepare argument list in rrr_py_persistent_receive_message:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}*/
 
+	int do_continue = 1;
+	while (do_continue) {
 		PYTHON3_PROFILE_START(recv_data,rrr_objects->accumulated_time_recv_message_nonblock);
-		res = PyObject_CallObject(rrr_objects->rrr_persistent_thread_recv_data_nonblock, arglist);
+		res = PyObject_CallFunction(rrr_objects->rrr_persistent_thread_recv_data_nonblock, "O", processor_pipe);
 		if (res == NULL) {
 			PyObject *exc = PyErr_Occurred();
 			if (exc) {
@@ -769,27 +798,27 @@ int rrr_py_persistent_receive_message (
 
 		PYTHON3_PROFILE_STOP(recv_data);
 
-		VL_DEBUG_MSG_3("rrr_py_process_message received an object of type %s from process function\n", Py_TYPE(res)->tp_name);
+//		VL_DEBUG_MSG_3("rrr_py_process_message received an object of type %s from process function\n", Py_TYPE(res)->tp_name);
 
 		if (strcmp(Py_TYPE(res)->tp_name, "vl_message") == 0) {
 			ret = callback (res, callback_arg);
 			res = NULL;
-			(*count)++;
+			(*pending_counter)--;
 		}
-		else if (strcmp(Py_TYPE(res)->tp_name, "None")) {
-			break;
+		else if (strcmp(Py_TYPE(res)->tp_name, "NoneType") == 0) {
+			do_continue = 0;
 		}
 		else {
 			VL_BUG("Bug: rrr_persistent_thread_recv_data received an object of unknown type back from process function\n");
 		}
 		Py_XDECREF(res);
-		Py_XDECREF(arglist);
+	//	Py_XDECREF(arglist);
 		res = NULL;
 	}
 
 	out:
 	Py_XDECREF(res);
-	Py_XDECREF(arglist);
+//	Py_XDECREF(arglist);
 	return ret;
 }
 
@@ -829,6 +858,36 @@ int rrr_py_persistent_process_data (
 	return ret;
 }
 
+int rrr_py_persistent_readonly_send_counter (
+		struct python3_rrr_objects *rrr_objects,
+		PyObject *processor_pipe,
+		int count
+) {
+	int ret = 0;
+	PyObject *counter = NULL;
+	PyObject *res = NULL;
+
+	counter = PyLong_FromLong(count);
+	if (counter == NULL) {
+		VL_MSG_ERR("Could not convert long to PyLong in rr_py_persistent_readonly_send_counter:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+	res = PyObject_CallFunction(rrr_objects->rrr_persistent_thread_send_data, "OO", processor_pipe, counter);
+	if (res == NULL) {
+		VL_MSG_ERR("Could not call python function in rr_py_persistent_readonly_send_counter:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	Py_XDECREF(res);
+	Py_XDECREF(counter);
+	return ret;
+}
 
 int rrr_py_persistent_process_message (
 		struct python3_rrr_objects *rrr_objects,
@@ -946,6 +1005,7 @@ void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *rrr_objects) {
 
 	Py_XDECREF(rrr_objects->rrr_onetime_thread_start);
 	Py_XDECREF(rrr_objects->rrr_persistent_thread_start);
+	Py_XDECREF(rrr_objects->rrr_persistent_thread_readonly_start);
 	Py_XDECREF(rrr_objects->rrr_persistent_thread_send_data);
 	Py_XDECREF(rrr_objects->rrr_persistent_thread_send_new_vl_message);
 	Py_XDECREF(rrr_objects->rrr_persistent_thread_recv_data);
@@ -1081,6 +1141,7 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 	// IMPORT THREAD FUNCTIONS
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_onetime_thread_start, ret);
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_start, ret);
+	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_readonly_start, ret);
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_send_data, ret);
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_send_new_vl_message, ret);
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_recv_data, ret);
