@@ -43,6 +43,35 @@ Read voltage measurements from an USB device.
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
 objects which resemble RRR internals are provided.
 
+A custom python program might look like this, checkout `man rrr.conf` on how to make it run.
+
+       from rrr import *
+       import time
+
+       def process(result : rrr_result, message: vl_message):
+            # modify the retrieved message as needed
+            message.timestamp_from = message.timestamp_from + 1
+            # queue the message to be sent back (optional) for python to give to readers
+            result.put(message)
+            return 0
+
+       def source(result : rrr_result):
+            # create a new message
+            message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+            # queue the message to be sent back (optional) for python to give to readers
+            result.put(message)
+            # sleep to limit output rate
+            time.sleep(1)
+            return 0
+
+       def config(result : rrr_result, settings : rrr_instance_settings):
+            # retrieve some custom settings from configuration file
+            print ("1: " + settings['custom_config_argument_1'])
+            print ("2: " + settings['custom_config_argument_2'])
+            # send settings back to update which have been read (optional)
+            result.put(settings)
+            return 0
+
 ### udpreader (read arbitary UDP packets and create messages from them)
 The udpreader listens on a port and processes integers and blob data it receives, forwarding them
 as messages to other modules. It expects a fixed packet length.
@@ -263,10 +292,11 @@ Buffer read functions require a callback function to be specified to receive the
 values to inform the buffer framework about different situations. Not all are valid for all functions (see below). The values may be
 ORed together. The callback function is called once for every entry found.
 
-0. `FIFO_SEARCH_KEEP`	- Everything was OK 
-1. `FIFO_SEARCH_ERR`	- Some error occured, print error message
-2. `FIFO_SEARCH_STOP`	- We don't want to be called again, stop processing.
-4. `FIFO_SEARCH_GIVE`	- We have taken control of the data, remove its entry from the buffer. 
+	0. `FIFO_SEARCH_KEEP`	- Everything was OK 
+	1. `FIFO_SEARCH_ERR`	- Some error occured, print error message
+	2. `FIFO_SEARCH_STOP`	- Callback does not want to be called again, stop processing.
+	4. `FIFO_SEARCH_GIVE`	- Callback has taken control of the data, remove its entry from the buffer. 
+	8. `FIFO_SEARCH_FREE`	- Tell the buffer to free the data, usually used along with STOP or ERR
 
 The `fifo_read_clear_forward` function will continue to pass on data to the callback regardless of return value. The callback MUST ALWAYS
 take care of the data.
@@ -277,17 +307,20 @@ The `size` arguments may be used to check if a type is correct or not.
 See `buffer.h` for function syntax, and look in existing modules for examples on usage. The locking functions should not be called.
 
 #### `fifo_read_clear_forward`
-This function clears the whole buffer and passes each entry one by one to a callback function. The callback
-function MUST take care of the memory returned and `free()` it when no longer used, or put it in another buffer. This function is very
+This function clears at most the whole buffer and passes each entry one by one to a callback function.
+All entries are read from and removed from the buffer untill the entry pointed to by `last_element` is reached. If this is NULL, all entries are
+processed.
+The callback function MUST take care of the memory returned and `free()` it when no longer used, or put it in another buffer. This function is very
 efficient as it only locks the buffer for a minimal amount of time, to set the  global pointers to `NULL`.
+
+`FIFO_SEARCH_FREE` can always be specified as return value in conjunction with other return values, in which the buffer will free the actual data.
+
+If the callback returns `FIFO_SEARCH_ERR`, we will eventually return error to the caller of the buffer but we do not stop.
+
+The callback function may return `FIFO_SEARCH_STOP` in which the remaining fetched messages are put back into the buffer (at the beginning).
 
 The callback function may put data back into the same buffer using a write function, since no lock is held. This can be done for
 instance on error conditions.
-
-All return values from the callback function are ignored, but if one or more calls return error, `fifo_read_clear_forward` returns 1.
-
-All entries are read from and removed from the buffer untill the entry pointed to by `last_element` is reached. If this is NULL, all entries are
-processed.  
 
 #### `fifo_search`
 This function passes all elements from a buffer to a callback function untill it returns `FIFO_SEARCH_STOP` or `FIFO_SEARCH_ERR`. If it receives
