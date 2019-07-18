@@ -292,11 +292,11 @@ Buffer read functions require a callback function to be specified to receive the
 values to inform the buffer framework about different situations. Not all are valid for all functions (see below). The values may be
 ORed together. The callback function is called once for every entry found.
 
--1. `FIFO_SEARCH_ERR`	- Some error occured, print error message
-0. `FIFO_SEARCH_KEEP`	- Everything was OK 
-2. `FIFO_SEARCH_STOP`	- Callback does not want to be called again, stop processing.
-4. `FIFO_SEARCH_GIVE`	- Callback has taken control of the data, remove its entry from the buffer. 
-8. `FIFO_SEARCH_FREE`	- Tell the buffer to free the data, usually used along with STOP or ERR
+	0. `FIFO_SEARCH_KEEP`	- Everything was OK 
+	1. `FIFO_SEARCH_ERR`	- Some error occured, print error message
+	2. `FIFO_SEARCH_STOP`	- Callback does not want to be called again, stop processing.
+	4. `FIFO_SEARCH_GIVE`	- Callback has taken control of the data, remove its entry from the buffer. 
+	8. `FIFO_SEARCH_FREE`	- Tell the buffer to free the data, usually used along with STOP or ERR
 
 The `fifo_read_clear_forward` function will continue to pass on data to the callback regardless of return value. The callback MUST ALWAYS
 take care of the data.
