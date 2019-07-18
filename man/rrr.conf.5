@@ -384,13 +384,66 @@ Used to write fixed values to the database.
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
 .El
 .SS python3 (P)
-This module does nothing for now apart from reading from it's senders.
+This module can send messages to a custom python program and read them back.
+All messages read from the senders are sent to the python program to the process function specified.
+A read-only source function may also be specified if the python program should only generate messages by itself and not receive any.
+It is possible to specify both source- and process-functions at the same time.
+Functions should return 0 on success and put any messages into the result class provided in the argument.
+If something goes wrong, the functions can return 1 or raise an exception which makes RRR stop all running instances and restart.
+.PP
+The RRR module should be imported by the custom python program.
+It can also be reviewed to understand the classes used, rrr_settings, vl_message and rrr_result.
+It is usually found in "/usr/lib/python(VERSION OF PYTHON)/site-packages/rrr.py", and in the source directory "./src/python/rrr.py".
 .PP
 The following options may be specified:
 .Bl -tag -width -indent
-.It python3_file=FILE NAME
-The file name for the python3 program to be executed.
+.It python3_module=MODULE NAME
+The module name for the python3 program to be executed. Imported by 'from MODULE NAME import *'
+.It python3_module_path=MODULE NAME
+An extra path in which to search for the module.
+.It python3_source_function=FUNCTION NAME
+The name of the source function in the python program which we read from continously.
+.It python3_process_function=FUNCTION NAME
+The name of the processing function in the python program which we send packets from other modules to. We also read any messages sent back.
+.It python3_config_function=FUNCTION NAME
+The name of the function in the python program to which we send the settings structure.
+All settings defined inside the python block in the configuration file are sent in here.
+The function might also send the settings back after which settings which have been accessed are updated.
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the python program might be set as needed.
 .El
+.PP
+Below follows an example python message processing and generating program.
+.PP
+.nf
+from rrr import *
+import time
+
+def process(result : rrr_result, message: vl_message):
+	# modify the retrieved message as needed
+	message.timestamp_from = message.timestamp_from + 1
+	# queue the message to be sent back (optional) for python to give to readers
+	result.put(message)
+	return 0
+
+def source(result : rrr_result):
+	# create a new message
+	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	# queue the message to be sent back (optional) for python to give to readers
+	result.put(message)
+	# sleep to limit output rate
+	time.sleep(1)
+	return 0
+
+def config(result : rrr_result, settings : rrr_instance_settings):
+	# retrieve some custom settings from configuration file
+	print ("1: " + settings['custom_config_argument_1'])
+	print ("2: " + settings['custom_config_argument_2'])
+	# send settings back to update which have been read (optional)
+	result.put(settings)
+	return 0
+.fi
+
 .SS raw (P)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.

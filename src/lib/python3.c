@@ -1043,29 +1043,8 @@ int rrr_py_get_rrr_objects (
 ) {
 	PyObject *res = NULL;
 	PyObject *settings_class_dictionary = NULL;
-//	FILE *file = NULL;
 	char *rrr_py_start_thread_final = NULL;
 	int ret = 0;
-
-	// TODO : Fix this, import python-style without fopen
-
-/*	file = fopen(RRR_PYTHON3_EXTRA_SYS_PATH "/rrr_objects.py", "r");
-	if (file == NULL) {
-		VL_MSG_ERR("Could not open rrr_objects.py: %s\n", strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	res = PyRun_FileExFlags (file, "rrr_objects.py", Py_file_input, dictionary, dictionary, 1, NULL);
-	if (res == NULL) {
-		VL_MSG_ERR("Could generate import thread starter function A: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	Py_XDECREF(res);*/
-
-	// TODO : Fix python paths
 
 	int module_paths_total_size = 0;
 	for (int i = 0; i < module_paths_length; i++) {

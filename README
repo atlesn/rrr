@@ -39,6 +39,10 @@ Create dummy messages with current timestamp as value at some interval.
 ### voltmonitor (USB voltmeter driver)
 Read voltage measurements from an USB device.
 
+### python3 (generate and/or modify messages by a custom python program)
+The python3 module use a custom user-provided program to process and generate messages. Special RRR-
+objects which resemble RRR internals are provided.
+
 ### udpreader (read arbitary UDP packets and create messages from them)
 The udpreader listens on a port and processes integers and blob data it receives, forwarding them
 as messages to other modules. It expects a fixed packet length.
