@@ -51,6 +51,7 @@ struct instance_dynamic_data {
 	const char *instance_name;
 	const char *module_name;
 	unsigned int type;
+	int start_priority;
 	struct module_operations operations;
 	void *special_module_operations;
 	void *dl_ptr;

@@ -313,6 +313,7 @@ void init(struct instance_dynamic_data *data) {
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
 		data->private_data = NULL;
+		data->start_priority = VL_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {

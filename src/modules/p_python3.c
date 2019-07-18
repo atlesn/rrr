@@ -605,6 +605,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
+	// Set back to running again after we have no forks left from python
 	pthread_cleanup_push(python3_stop, data);
 	pthread_cleanup_push(debug_tstate,NULL);
 	pthread_cleanup_push(thread_set_stopping, start_data->thread);
@@ -638,6 +639,8 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING_FORKED);
 
 	// Check after python3 has started, maybe the script uses some settings which will
 	// then be tagged as used to avoid warnings
@@ -723,6 +726,7 @@ void init(struct instance_dynamic_data *data) {
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
+	data->start_priority = VL_THREAD_START_PRIORITY_FORK;
 }
 
 void unload(void) {

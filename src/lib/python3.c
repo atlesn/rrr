@@ -1039,13 +1039,13 @@ int __rrr_py_import_function_or_print_error(PyObject **target, PyObject *diction
 int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictionary) {
 	PyObject *res = NULL;
 	PyObject *settings_class_dictionary = NULL;
-	FILE *file = NULL;
+//	FILE *file = NULL;
 	char *rrr_py_start_thread_final = NULL;
 	int ret = 0;
 
 	// TODO : Fix this, import python-style without fopen
 
-	file = fopen(RRR_PYTHON3_EXTRA_SYS_PATH "/rrr_objects.py", "r");
+/*	file = fopen(RRR_PYTHON3_EXTRA_SYS_PATH "/rrr_objects.py", "r");
 	if (file == NULL) {
 		VL_MSG_ERR("Could not open rrr_objects.py: %s\n", strerror(errno));
 		ret = 1;
@@ -1059,14 +1059,16 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 		PyErr_Print();
 		goto out;
 	}
-	Py_XDECREF(res);
+	Py_XDECREF(res);*/
 
 	// TODO : Fix python paths
 
 	const char *rrr_py_start_thread_template =
 			"import sys\n"
 			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "')\n"
-			"import rrr_objects\n"
+			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "/src/python')\n"
+			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "/src/tests')\n"
+			"from rrr import *\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
 			"pipe_dummy, pipe_dummy_b = Pipe()\n"
 	;

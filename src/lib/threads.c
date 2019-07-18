@@ -206,26 +206,27 @@ void thread_set_state (struct vl_thread *thread, int state) {
 	VL_DEBUG_MSG_4 ("Thread %s set state %i\n", thread->name, state);
 
 	if (state == VL_THREAD_STATE_INIT) {
-		VL_MSG_ERR ("Attempted to set STARTING state of thread outside reserve_thread function\n");
-		exit (EXIT_FAILURE);
+		VL_BUG("Attempted to set STARTING state of thread outside reserve_thread function\n");
 	}
 	if (state == VL_THREAD_STATE_FREE) {
-		VL_MSG_ERR ("Attempted to set FREE state of thread outside reserve_thread function\n");
-		exit (EXIT_FAILURE);
+		VL_BUG("Attempted to set FREE state of thread outside reserve_thread function\n");
 	}
-	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INITIALIZED) {
-		VL_MSG_ERR ("Attempted to set RUNNING state of thread while it was not in INITIALIZED state\n");
-		exit (EXIT_FAILURE);
+	if (state == VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INITIALIZED && thread->state != VL_THREAD_STATE_RUNNING_FORKED) {
+		VL_BUG("Attempted to set RUNNING state of thread while it was not in INITIALIZED or RUNNING_FORKED state\n");
 	}
-/*	if (state == VL_THREAD_STATE_ENCOURAGE_STOP && thread->state != VL_THREAD_STATE_RUNNING) {
-		VL_MSG_ERR ("Warning: Attempted to set ENCOURAGE STOP state of thread while it was not in RUNNING state\n");
-		goto nosetting;
-	}*/
+	if (state == VL_THREAD_STATE_RUNNING_FORKED && thread->state != VL_THREAD_STATE_RUNNING) {
+		VL_BUG("Attempted to set RUNNING_FORKED state of thread while it was not in RUNNING state but %i\n", thread->state);
+	}
 	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INIT)) {
 		VL_MSG_ERR ("Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
 		goto nosetting;
 	}
-	if (state == VL_THREAD_STATE_STOPPED && (thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_STOPPING)) {
+	if (state == VL_THREAD_STATE_STOPPED && (
+			thread->state != VL_THREAD_STATE_RUNNING &&
+			thread->state != VL_THREAD_STATE_RUNNING_FORKED &&
+			thread->state != VL_THREAD_STATE_STOPPING
+		)
+	) {
 		VL_MSG_ERR ("Warning: Attempted to set STOPPED state of thread %p while it was not in ENCOURAGE STOP or STOPPING state\n", thread);
 		goto nosetting;
 	}
@@ -375,10 +376,70 @@ int thread_start_all_after_initialized (struct vl_thread_collection *collection)
 		}
 	}
 
-	/* Signal all threads to proceed */
+	/* Check for valid start priority */
+	int fork_priority_threads_count = 0;
 	VL_THREADS_LOOP(thread,collection) {
-		if (thread_get_state(thread) == VL_THREAD_STATE_INITIALIZED && thread->is_watchdog != 1) {
+		if (thread->start_priority < 0 || thread->start_priority > VL_THREAD_START_PRIORITY_MAX) {
+			VL_BUG("Thread %s has unknown start priority of %i\n", thread->name, thread->start_priority);
+		}
+		if (thread->is_watchdog != 1 && thread->start_priority == VL_THREAD_START_PRIORITY_FORK) {
+			fork_priority_threads_count++;
+		}
+	}
+
+	/* Signal priority 0 and fork threads to proceed */
+	VL_THREADS_LOOP(thread,collection) {
+		if (	thread->is_watchdog != 1 && (
+					thread->start_priority == VL_THREAD_START_PRIORITY_NORMAL ||
+					thread->start_priority == VL_THREAD_START_PRIORITY_FORK
+				) &&
+				thread_get_state(thread) == VL_THREAD_STATE_INITIALIZED
+		) {
+				VL_DEBUG_MSG_1 ("Start signal to thread %p name %s with priority NORMAL or FORK\n", thread, thread->name);
+				thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+		}
+	}
+
+	VL_DEBUG_MSG_1 ("Wait for %i fork threads to set RUNNNIG_FORKED\n", fork_priority_threads_count);
+
+	/* Wait for forking threads to finish off their forking-business. They might
+	 * also have failed at this point in which they would set STOPPED or STOPPING */
+	VL_THREADS_LOOP(thread,collection) {
+		if (thread->is_watchdog == 1 || thread->start_priority != VL_THREAD_START_PRIORITY_FORK) {
+			continue;
+		}
+		while (1) {
+			if (	thread_get_state(thread) == VL_THREAD_STATE_RUNNING_FORKED ||
+					thread_get_state(thread) == VL_THREAD_STATE_STOPPED ||
+					thread_get_state(thread) == VL_THREAD_STATE_STOPPING
+			) {
+				VL_DEBUG_MSG_1 ("Fork thread %p name %s set RUNNING_FORKED\n", thread, thread->name);
+				fork_priority_threads_count--;
+				break;
+			}
+		}
+		if (fork_priority_threads_count == 0) {
+			break;
+		}
+		if (fork_priority_threads_count < 0) {
+			VL_BUG("Bug: fork_priority_threads_count was < 0\n");
+		}
+	}
+
+	/* Finally, start network priority threads */
+	VL_THREADS_LOOP(thread,collection) {
+		if (	thread->is_watchdog != 1 &&
+				thread->start_priority == VL_THREAD_START_PRIORITY_NETWORK
+		) {
 			thread_set_signal(thread, VL_THREAD_SIGNAL_START);
+			VL_DEBUG_MSG_1 ("Start signal to thread %p name %s with priority NETWORK\n", thread, thread->name);
+		}
+	}
+
+	/* Double check that everything was started */
+	VL_THREADS_LOOP(thread,collection) {
+		if (thread->is_watchdog != 1 && !thread_check_signal(thread, VL_THREAD_SIGNAL_START)) {
+			VL_BUG("Bug: Thread %s did not receive start signal\n", thread->name);
 		}
 	}
 
@@ -467,6 +528,7 @@ void *__thread_watchdog_entry (void *arg) {
 		}
 
 		if (	!thread_check_state(thread, VL_THREAD_STATE_RUNNING) &&
+				!thread_check_state(thread, VL_THREAD_STATE_RUNNING_FORKED) &&
 				!thread_check_state(thread, VL_THREAD_STATE_INIT) &&
 				!thread_check_state(thread, VL_THREAD_STATE_INITIALIZED)
 		) {
@@ -560,6 +622,9 @@ void *__thread_watchdog_entry (void *arg) {
 			else if (thread_get_state(thread) == VL_THREAD_STATE_RUNNING) {
 				VL_MSG_ERR ("Thread %s/%p is stuck in RUNNING, has not started it's cleanup yet.\n", thread->name, thread);
 			}
+			else if (thread_get_state(thread) == VL_THREAD_STATE_RUNNING_FORKED) {
+				VL_MSG_ERR ("Thread %s/%p is stuck in RUNNING_FORKED, has not started it's cleanup yet.\n", thread->name, thread);
+			}
 			VL_MSG_ERR ("Thread %s/%p: Tagging as ghost.\n", thread->name, thread);
 			thread_set_ghost(thread);
 			break;
@@ -628,6 +693,7 @@ void threads_stop_and_join (
 		}
 		thread_lock(thread);
 		if (	thread->state == VL_THREAD_STATE_RUNNING ||
+				thread->state == VL_THREAD_STATE_RUNNING_FORKED ||
 				thread->state == VL_THREAD_STATE_INIT ||
 				thread->state == VL_THREAD_STATE_INITIALIZED
 		) {
@@ -682,6 +748,7 @@ struct vl_thread *thread_preload_and_register (
 		int (*preload_routine) (struct vl_thread_start_data *),
 		void (*poststop_routine) (const struct vl_thread *),
 		int (*cancel_function) (struct vl_thread *),
+		int start_priority,
 		void *arg, const char *name
 ) {
 	struct vl_thread *thread = NULL;
@@ -704,6 +771,7 @@ struct vl_thread *thread_preload_and_register (
 	thread->poststop_routine = poststop_routine;
 	thread->watchdog_time = 0;
 	thread->signal = 0;
+	thread->start_priority = start_priority;
 	sprintf(thread->name, "%s", name);
 
 	if (__thread_new_thread(&watchdog_thread) != 0) {

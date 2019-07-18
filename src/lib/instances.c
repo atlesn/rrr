@@ -366,6 +366,7 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,
+			module->start_priority,
 			data, module->instance_name
 	);
 

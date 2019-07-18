@@ -1,6 +1,6 @@
-import rrr_objects
+from rrr import *
 
-def process(result: rrr_objects.rrr_result, message: rrr_objects.vl_message):
+def process(result: rrr_result, message: vl_message):
 #	print ("timestamp: " + str(message.timestamp_from))
 	message.timestamp_from = message.timestamp_from + 1
 	result.put(message)

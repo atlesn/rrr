@@ -521,10 +521,10 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_pop(1);
 #endif
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -572,6 +572,7 @@ void init(struct instance_dynamic_data *data) {
 	data->type = VL_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
+	data->start_priority = VL_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {

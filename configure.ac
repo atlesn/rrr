@@ -102,6 +102,8 @@ AS_IF([test "x$enable_python3" = xno], [
 		$python3_config_bin --includes
 		AC_MSG_ERROR("Python3 test failed")
 	fi
+
+	AM_PATH_PYTHON([3.6])
 ])
 
 AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
@@ -163,5 +165,5 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile)
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile src/python/Makefile)
 AC_OUTPUT

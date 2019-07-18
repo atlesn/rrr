@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 #include <pthread.h>
 #include <src/lib/ip.h>
+#include <fcntl.h>
 
 #ifdef VL_WITH_OPENSSL
 #include "module_crypt.h"
@@ -334,7 +335,7 @@ void ip_network_cleanup (void *arg) {
 }
 
 int ip_network_start (struct ip_data *data) {
-	int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	int fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_UDP);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s", strerror(errno));
 		goto out_error;

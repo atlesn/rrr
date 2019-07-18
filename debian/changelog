@@ -1,8 +1,10 @@
 rrr (0.9) unstable; urgency=medium
 
   * Improve python module, is now fairly usable. Must fix import paths.
+  * Threads start in a staggered matter with network processes last
+    to avoid forked processes inheriting open filehandles
 
- -- atle <atle@goliathdns.no>  Thu, 18 Jul 2019 02:47:46 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Jul 2019 02:47:46 +0200
 
 rrr (0.8) unstable; urgency=medium
 

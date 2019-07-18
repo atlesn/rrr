@@ -59,11 +59,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 /* Set by the thread itself when started */
 #define VL_THREAD_STATE_RUNNING 4
 
-/* Thread has been asked to stop, set by watchdog */
-// #define VL_THREAD_STATE_ENCOURAGE_STOP 5
+/* Set by the thread itself when it has started and has completed forking (if it forks)
+ * We only check for this if thread is started with INSTANCE_START_PRIORITY_FORK */
+#define VL_THREAD_STATE_RUNNING_FORKED 5
 
 /* Thread has to do a few cleanup operations before stopping */
-#define VL_THREAD_STATE_STOPPING 5
+#define VL_THREAD_STATE_STOPPING 6
+
+/* Priority 0 threads are started first. They have no wait points. This need not to be set, zero is default. */
+#define VL_THREAD_START_PRIORITY_NORMAL 0
+
+/* Modules which forks are started at the same time as NORMAL. They first set RUNNING when they receive start signal,
+ * and after forking the must set RUNNING_FORKED.
+ * Modules should not fork again without a restart of all modules unless the forked process only is short-lived. */
+#define VL_THREAD_START_PRIORITY_FORK 1
+
+/* Network modules must start after fork modules to prevent forked process to inherit file handles.
+ * This also goes for other modules which use open(). */
+#define VL_THREAD_START_PRIORITY_NETWORK 2
+
+/* Used for error-checking */
+#define VL_THREAD_START_PRIORITY_MAX VL_THREAD_START_PRIORITY_NETWORK
 
 // Milliseconds
 #define VL_THREAD_WATCHDOG_FREEZE_LIMIT 5000
@@ -106,6 +122,7 @@ struct vl_thread {
 	int signal;
 	int state;
 	int is_watchdog;
+	int start_priority;
 	char name[VL_THREAD_NAME_MAX_LENGTH];
 	void *private_data;
 
@@ -247,6 +264,16 @@ static inline int thread_check_state(struct vl_thread *thread, int state) {
 	return (thread_get_state(thread) == state);
 }
 
+static inline void thread_set_running(void *arg) {
+	struct vl_thread *thread = arg;
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+}
+
+static inline void thread_set_running_forked(void *arg) {
+	struct vl_thread *thread = arg;
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING_FORKED);
+}
+
 static inline void thread_set_stopping(void *arg) {
 	struct vl_thread *thread = arg;
 	thread_set_state(thread, VL_THREAD_STATE_STOPPING);
@@ -261,8 +288,9 @@ struct vl_thread *thread_preload_and_register (
 		struct vl_thread_collection *collection,
 		void *(*start_routine) (struct vl_thread_start_data *),
 		int (*preload_routine) (struct vl_thread_start_data *),
-		void(*poststop_routine) (const struct vl_thread *),
+		void (*poststop_routine) (const struct vl_thread *),
 		int (*cancel_function) (struct vl_thread *),
+		int start_priority,
 		void *arg, const char *name
 );
 
