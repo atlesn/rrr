@@ -247,8 +247,8 @@ static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wa
  * counting.
  */
 
-#define FIFO_SEARCH_ERR		-1
 #define FIFO_SEARCH_KEEP	0
+#define FIFO_SEARCH_ERR		1
 #define FIFO_SEARCH_STOP	(1 << 1)
 #define FIFO_SEARCH_GIVE	(1 << 2)
 #define FIFO_SEARCH_FREE	(1 << 3)
