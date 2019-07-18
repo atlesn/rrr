@@ -38,6 +38,8 @@ AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
 	AC_MSG_RESULT([Not compiling with python3])
 ], [
+	AM_PATH_PYTHON([3.6])
+
 	AC_MSG_RESULT([yes])
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
 		 AC_SUBST([PYTHON3_MAJOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[[^0-9]]*' '$0=$1'`])
@@ -102,8 +104,6 @@ AS_IF([test "x$enable_python3" = xno], [
 		$python3_config_bin --includes
 		AC_MSG_ERROR("Python3 test failed")
 	fi
-
-	AM_PATH_PYTHON([3.6])
 ])
 
 AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])

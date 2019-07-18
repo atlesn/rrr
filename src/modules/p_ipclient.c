@@ -129,7 +129,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			VL_MSG_ERR("Could not allocate memory in ipclient parse_config\n");
 			goto out;
 		}
-		strcpy(data->ip_server, VL_IPCLIENT_SERVER_PORT);
+		strcpy(data->ip_port, VL_IPCLIENT_SERVER_PORT);
 		ret = 0;
 	}
 

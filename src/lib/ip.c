@@ -305,7 +305,7 @@ int ip_send_message (
 	VL_DEBUG_MSG_3("ip: Final message to send ready\n");
 
 	if (sendto(info->fd, buf, sizeof(*final_message), 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
-		VL_MSG_ERR("ip: Error while sending packet to server\n");
+		VL_MSG_ERR("ip: Error while sending packet to server: %s\n", strerror(errno));
 		return 1;
 	}
 

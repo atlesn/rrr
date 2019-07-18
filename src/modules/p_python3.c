@@ -72,6 +72,7 @@ struct python3_data {
 	char *source_function;
 	char *process_function;
 	char *config_function;
+	char *module_path;
 
 	struct python3_thread_state python3_thread_ctx;
 	struct python3_object_cache python3_object_cache;
@@ -148,27 +149,33 @@ int python3_start(struct python3_data *data) {
 
 	// LOAD PYTHON MAIN DICTIONARY
 	data->py_main = PyImport_AddModule("__main__");
-    if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
+	if (data->py_main == NULL) {
+		VL_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
 				INSTANCE_D_NAME(data->thread_data));
-    	PyErr_Print();
-    	ret = 1;
-    	goto out_thread_out;
-    }
+		PyErr_Print();
+		ret = 1;
+		goto out_thread_out;
+	}
 	Py_INCREF(data->py_main);
 
-    data->py_main_dict = PyModule_GetDict(data->py_main);
-    if (data->py_main == NULL) {
-    	VL_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
+	data->py_main_dict = PyModule_GetDict(data->py_main);
+	if (data->py_main == NULL) {
+		VL_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
 				INSTANCE_D_NAME(data->thread_data));
-    	PyErr_Print();
-    	ret = 1;
-    	goto out_thread_out;
-    }
-    Py_INCREF(data->py_main_dict);
+		PyErr_Print();
+		ret = 1;
+		goto out_thread_out;
+	}
+	Py_INCREF(data->py_main_dict);
 
-    // PREPARE RRR ENVIRONMENT
-	if (rrr_py_get_rrr_objects(&data->rrr_objects, data->py_main_dict) != 0) {
+	// PREPARE RRR ENVIRONMENT
+	char *module_path[1];
+	int module_path_length = 0;
+	if (data->module_path != NULL) {
+		module_path[0] = data->module_path;
+		module_path_length = 1;
+	}
+	if (rrr_py_get_rrr_objects(&data->rrr_objects, data->py_main_dict, (const char **) module_path, module_path_length) != 0) {
 		VL_MSG_ERR("Could not get rrr objects function in python3 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
@@ -193,8 +200,8 @@ int python3_start(struct python3_data *data) {
 		PyObject *new_py_instance_settings = NULL;
 		PyObject *arglist = NULL;
 
-	    ret = rrr_py_call_object_async (
-	    		&new_py_instance_settings,
+		ret = rrr_py_call_object_async (
+				&new_py_instance_settings,
 				&data->rrr_objects,
 				data->python3_module,
 				data->config_function,
@@ -317,6 +324,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->source_function);
 	RRR_FREE_IF_NOT_NULL(data->process_function);
 	RRR_FREE_IF_NOT_NULL(data->config_function);
+	RRR_FREE_IF_NOT_NULL(data->module_path);
 
 	rrr_py_object_cache_destroy(&data->python3_object_cache);
 
@@ -371,6 +379,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	rrr_instance_config_get_string_noconvert_silent (&data->source_function, config, "python3_source_function");
 	rrr_instance_config_get_string_noconvert_silent (&data->process_function, config, "python3_process_function");
 	rrr_instance_config_get_string_noconvert_silent (&data->config_function, config, "python3_config_function");
+	rrr_instance_config_get_string_noconvert_silent (&data->module_path, config, "python3_module_path");
 
 	if (data->source_function == NULL && data->process_function == NULL) {
 		VL_MSG_ERR("No source or processor function defined for python3 instance %s\n",

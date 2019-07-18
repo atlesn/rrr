@@ -165,4 +165,9 @@ int rrr_py_persistent_process_new_messages (
 		int count
 );
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);
-int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictionary);
+int rrr_py_get_rrr_objects (
+		struct python3_rrr_objects *target,
+		PyObject *dictionary,
+		const char **extra_module_paths,
+		int module_paths_length
+);

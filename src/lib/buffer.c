@@ -542,7 +542,7 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 			asm("");
 		}
 		uint64_t time_end = time_get_64();
-		uint64_t time_diff = time_end - time_start;
+		uint64_t time_diff = (time_end - time_start) + 1; // +1 to prevent division by zero
 		if (do_usleep) {
 			usleep(do_usleep);
 		}

@@ -9,7 +9,7 @@ def process(result : rrr_result, message: vl_message):
 	return 0
 
 def source(result : rrr_result):
-	message = rrr_objects.vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
 	message.timestamp = 1
 #	print ("timestamp: " + str(message.timestamp_from))
 	result.put(message)

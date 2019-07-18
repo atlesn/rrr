@@ -43,6 +43,9 @@ src/vlogger
 *.lai
 .dirstamp
 
+# python
+/src/python/__pycache__/
+
 # eclipse
 /Debug
 /.autotools

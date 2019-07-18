@@ -402,7 +402,6 @@ int rrr_py_call_object_async (
 		VL_MSG_ERR("Could not run python3 thread starter: \n");
 		PyErr_Print();
 		ret = 1;
-		abort();
 		goto out;
 	}
 
@@ -1036,7 +1035,12 @@ int __rrr_py_import_function_or_print_error(PyObject **target, PyObject *diction
 			goto out; \
 		}} while(0)
 
-int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictionary) {
+int rrr_py_get_rrr_objects (
+		struct python3_rrr_objects *target,
+		PyObject *dictionary,
+		const char **extra_module_paths,
+		int module_paths_length
+) {
 	PyObject *res = NULL;
 	PyObject *settings_class_dictionary = NULL;
 //	FILE *file = NULL;
@@ -1063,24 +1067,45 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 
 	// TODO : Fix python paths
 
+	int module_paths_total_size = 0;
+	for (int i = 0; i < module_paths_length; i++) {
+		module_paths_total_size += strlen(extra_module_paths[i]) + strlen("sys.path.append('')\n");
+	}
+
+	char extra_module_paths_concat[module_paths_total_size+1];
+	*extra_module_paths_concat = '\0';
+	for (int i = 0; i < module_paths_length; i++) {
+		sprintf(extra_module_paths_concat + strlen(extra_module_paths_concat), "sys.path.append('%s')\n", extra_module_paths[i]);
+	}
+
 	const char *rrr_py_start_thread_template =
 			"import sys\n"
+#ifdef RRR_PYTHON3_EXTRA_SYS_PATH
+			"sys.path.append('.')\n"
 			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "')\n"
 			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "/src/python')\n"
 			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "/src/tests')\n"
+#endif /* RRR_PYTHON3_EXTRA_SYS_PATH */
+#ifdef RRR_PYTHON3_PKGDIR
+			"sys.path.append('" RRR_PYTHON3_PKGDIR "')\n"
+#endif /* RRR_PYTHON3_PKGDIR */
+#ifdef RRR_PYTHON3_SITE_PACKAGES_DIR
+			"sys.path.append('" RRR_PYTHON3_SITE_PACKAGES_DIR "')\n"
+#endif /* RRR_PYTHON3_PKGDIR */
+			"%s"
 			"from rrr import *\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
 			"pipe_dummy, pipe_dummy_b = Pipe()\n"
 	;
 
+	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + strlen(extra_module_paths_concat) + 1);
+	sprintf(rrr_py_start_thread_final, rrr_py_start_thread_template, extra_module_paths_concat);
+
 	if (VL_DEBUGLEVEL_1) {
 		printf ("=== PYTHON FIXED INITIAL CODE =====================================\n");
-		printf ("%s", rrr_py_start_thread_template);
+		printf ("%s", rrr_py_start_thread_final);
 		printf ("=== PYTHON FIXED INITIAL CODE END =================================\n");
 	}
-
-	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + 1);
-	strcpy(rrr_py_start_thread_final, rrr_py_start_thread_template);
 
 	memset (target, '\0', sizeof(*target));
 

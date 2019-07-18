@@ -20,7 +20,7 @@ lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la buffer.la \
 	duplicator.la \
 	${mysql} ${python3}
 
-module_ldflags=-module -avoid-version -shared -L../lib -lrrr
+module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c
