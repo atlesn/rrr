@@ -59,7 +59,7 @@ struct python3_preload_data {
 };
 
 struct process_input_state {
-	struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX];
+	struct vl_message *messages[RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX];
 	int count;
 };
 
@@ -147,7 +147,6 @@ int python3_start(struct python3_data *data) {
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
 	// LOAD PYTHON MAIN DICTIONARY
-	// Not to be DECREF'ed, borrowed reference
 	data->py_main = PyImport_AddModule("__main__");
     if (data->py_main == NULL) {
     	VL_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
@@ -158,7 +157,6 @@ int python3_start(struct python3_data *data) {
     }
 	Py_INCREF(data->py_main);
 
-    // Not to be DECREF'ed, borrowed reference
     data->py_main_dict = PyModule_GetDict(data->py_main);
     if (data->py_main == NULL) {
     	VL_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
@@ -374,6 +372,13 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	rrr_instance_config_get_string_noconvert_silent (&data->process_function, config, "python3_process_function");
 	rrr_instance_config_get_string_noconvert_silent (&data->config_function, config, "python3_config_function");
 
+	if (data->source_function == NULL && data->process_function == NULL) {
+		VL_MSG_ERR("No source or processor function defined for python3 instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
 	out:
 	return ret;
 }
@@ -400,65 +405,6 @@ int read_from_processor_callback (PyObject *message, void *arg) {
 	return ret;
 }
 
-int read_from_processor(struct python3_data *data) {
-	int ret = 0;
-
-	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
-	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
-
-	ret = rrr_py_persistent_receive_message (
-			&data->messages_pending,
-			&data->rrr_objects,
-			data->processing_pipe,
-			read_from_processor_callback,
-			data
-	);
-
-	if (data->messages_pending < 0) {
-		VL_DEBUG_MSG_1("Python3 instance %s generated %i extra messages in the program\n",
-				INSTANCE_D_NAME(data->thread_data), -(data->messages_pending));
-		data->messages_pending = 0;
-	}
-
-	return ret;
-}
-
-int read_from_source(struct python3_data *data) {
-	int ret = 0;
-
-	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
-	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
-
-	int result = 0;
-	ret |= rrr_py_persistent_receive_message (
-			&result,
-			&data->rrr_objects,
-			data->source_pipe,
-			read_from_processor_callback,
-			data
-	);
-
-	result = -result;
-
-	VL_DEBUG_MSG_3("Python3 instance %s generated %i source messages in the program\n",
-			INSTANCE_D_NAME(data->thread_data), result);
-
-	ret |= rrr_py_persistent_readonly_send_counter (
-			&data->rrr_objects,
-			data->source_pipe,
-			result
-	);
-
-	return ret;
-}
-
-// Poll request from other modules
-int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct python3_data *py_data = data->private_data;
-
-	return fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
 int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
@@ -476,9 +422,9 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		process_input_state->messages[process_input_state->count++] = message;
 
 		VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer, temporarily buffered %i of %i\n",
-				INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from, process_input_state->count, RRR_PERSISTENT_PROCESS_INPUT_MAX);
+				INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from, process_input_state->count, RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX);
 
-		if (process_input_state->count < RRR_PERSISTENT_PROCESS_INPUT_MAX) {
+		if (process_input_state->count < RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX) {
 				goto out_nofree;
 		}
 	}
@@ -526,6 +472,95 @@ int process_input (struct instance_thread_data *thread_data) {
 	ret = ret & ~(FIFO_SEARCH_STOP);
 
 	return ret;
+}
+
+int read_from_processor_and_poll(struct python3_data *data, struct poll_collection *poll) {
+	int ret = 0;
+
+	if (data->process_function == NULL) {
+		return 0;
+	}
+
+	data->process_input_state.count = 0;
+	if (data->messages_pending < 50) {
+		if ((ret = poll_do_poll_delete_simple (poll, data->thread_data, process_input_callback, 50)) != 0) {
+			VL_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
+					ret, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+	}
+
+	if (data->process_input_state.count != 0) {
+		ret = process_input(data->thread_data);
+		if (ret != 0) {
+			VL_MSG_ERR("python3 error in secondary process_input_callback call in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		if (data->process_input_state.count != 0) {
+			VL_BUG("Bug: python3 error in secondary process_input_callback, did not clear buffer\n");
+		}
+	}
+
+	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
+	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
+
+	ret = rrr_py_persistent_receive_message (
+			&data->messages_pending,
+			&data->rrr_objects,
+			data->processing_pipe,
+			read_from_processor_callback,
+			data
+	);
+
+	if (data->messages_pending < 0) {
+		VL_DEBUG_MSG_1("Python3 instance %s generated %i extra messages in the program\n",
+				INSTANCE_D_NAME(data->thread_data), -(data->messages_pending));
+		data->messages_pending = 0;
+	}
+
+	out:
+	return ret;
+}
+
+int read_from_source(struct python3_data *data) {
+	int ret = 0;
+
+	if (data->source_function == NULL) {
+		return 0;
+	}
+
+	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
+	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
+
+	int result = 0;
+	ret |= rrr_py_persistent_receive_message (
+			&result,
+			&data->rrr_objects,
+			data->source_pipe,
+			read_from_processor_callback,
+			data
+	);
+
+	result = -result;
+
+	VL_DEBUG_MSG_3("Python3 instance %s generated %i source messages in the program\n",
+			INSTANCE_D_NAME(data->thread_data), result);
+
+	ret |= rrr_py_persistent_readonly_send_counter (
+			&data->rrr_objects,
+			data->source_pipe,
+			result
+	);
+
+	return ret;
+}
+
+// Poll request from other modules
+int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
+	struct python3_data *py_data = data->private_data;
+
+	return fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int thread_cancel_python3 (struct vl_thread *thread) {
@@ -594,6 +629,11 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
+	if (poll_collection_count (&poll) > 0 && !data->process_function) {
+		VL_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
 	if (python3_start(data) != 0) {
 		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -603,78 +643,38 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	// then be tagged as used to avoid warnings
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	uint64_t time_begin = time_get_64();
-	uint64_t accumulated_polling = 0;
-	uint64_t accumulated_reading = 0;
-	uint64_t accumulated_buffer = 0;
-
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		uint64_t now = time_get_64();
 		int output_buffer_size = fifo_buffer_get_entry_count(&data->output_buffer);
-		accumulated_buffer += time_get_64() - now;
 
 		if (output_buffer_size > 500) {
-			uint64_t now = time_get_64();
 			usleep(1000);
-			accumulated_buffer += time_get_64() - now;
 		}
 		else {
-			uint64_t now;
 			int res;
 
-			now = time_get_64();
-			data->process_input_state.count = 0;
-			if (data->messages_pending < 50) {
-				if ((res = poll_do_poll_delete_simple (&poll, thread_data, process_input_callback, 50)) != 0) {
-					VL_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
-							res, INSTANCE_D_NAME(thread_data));
-					break;
-				}
-			}
-
-			if (data->process_input_state.count != 0) {
-				res = process_input(thread_data);
-				if (res != 0) {
-					VL_MSG_ERR("python3 error in secondary process_input_callback call in instance %s\n",
-							INSTANCE_D_NAME(thread_data));
-					break;
-				}
-				if (data->process_input_state.count != 0) {
-					VL_BUG("Bug: python3 error in secondary process_input_callback, did not clear buffer\n");
-				}
-			}
-			accumulated_polling += time_get_64() - now;
-
-			now = time_get_64();
-			if ((res = read_from_processor(data)) != 0) {
+			if ((res = read_from_processor_and_poll(data, &poll)) != 0) {
 				VL_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;
 			}
+
 			if ((res = read_from_source(data)) != 0) {
 				VL_MSG_ERR("python3 return from read from source was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;
 			}
-			accumulated_reading += time_get_64() - now;
 
-			now = time_get_64();
 			if ((res = python3_swap_thread_out(&data->python3_thread_ctx))) {
 				VL_MSG_ERR("python3 return from thread swap out was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;
 			}
-
-			accumulated_buffer += time_get_64() - now;
 		}
 
 		update_watchdog_time(thread_data->thread);
 	}
-
-	VL_DEBUG_MSG_1("python3 instance %s total time %" PRIu64 " time spent polling %" PRIu64 " time spent reading %" PRIu64 " spent buffering/unlocking %" PRIu64 "\n",
-			INSTANCE_D_NAME(thread_data), time_get_64()-time_begin, accumulated_polling, accumulated_reading, accumulated_buffer);
 
 	out_message:
 	VL_DEBUG_MSG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));

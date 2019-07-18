@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "../../build_directory.h"
+
 struct vl_message;
 
 struct python3_thread_state {
@@ -32,7 +34,8 @@ struct python3_thread_state {
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
 #define RRR_PYTHON3_OBJECT_CACHE_OK 0
 
-#define RRR_PERSISTENT_PROCESS_INPUT_MAX 12
+#define RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX 12
+#define RRR_PYTHON3_EXTRA_SYS_PATH RRR_BUILD_DIR
 
 struct python3_object_cache_entry {
 	struct python3_object_cache_entry *next;
@@ -158,7 +161,7 @@ int rrr_py_persistent_process_message (
 int rrr_py_persistent_process_new_messages (
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
-		struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX],
+		struct vl_message *messages[RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX],
 		int count
 );
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);

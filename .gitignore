@@ -5,6 +5,7 @@
 /src/modules/common/.dirstamp
 /src/rrr
 /build_timestamp.h
+/build_directory.h
 
 # debian
 /debian/rrr/

@@ -1,3 +1,9 @@
+rrr (0.9) unstable; urgency=medium
+
+  * Improve python module, is now fairly usable. Must fix import paths.
+
+ -- atle <atle@goliathdns.no>  Thu, 18 Jul 2019 02:47:46 +0200
+
 rrr (0.8) unstable; urgency=medium
 
   * Improve buffer performance

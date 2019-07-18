@@ -915,7 +915,7 @@ int rrr_py_persistent_process_message (
 int rrr_py_persistent_process_new_messages (
 		struct python3_rrr_objects *rrr_objects,
 		PyObject *processor_pipe,
-		struct vl_message *messages[RRR_PERSISTENT_PROCESS_INPUT_MAX],
+		struct vl_message *messages[RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX],
 		int count
 ) {
 	int ret = 0;
@@ -1043,7 +1043,9 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 	char *rrr_py_start_thread_final = NULL;
 	int ret = 0;
 
-	file = fopen("rrr_objects.py", "r");
+	// TODO : Fix this, import python-style without fopen
+
+	file = fopen(RRR_PYTHON3_EXTRA_SYS_PATH "/rrr_objects.py", "r");
 	if (file == NULL) {
 		VL_MSG_ERR("Could not open rrr_objects.py: %s\n", strerror(errno));
 		ret = 1;
@@ -1059,13 +1061,21 @@ int rrr_py_get_rrr_objects (struct python3_rrr_objects *target, PyObject *dictio
 	}
 	Py_XDECREF(res);
 
+	// TODO : Fix python paths
+
 	const char *rrr_py_start_thread_template =
 			"import sys\n"
-			"sys.path.append('.')\n"
+			"sys.path.append('" RRR_PYTHON3_EXTRA_SYS_PATH "')\n"
 			"import rrr_objects\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
 			"pipe_dummy, pipe_dummy_b = Pipe()\n"
 	;
+
+	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON FIXED INITIAL CODE =====================================\n");
+		printf ("%s", rrr_py_start_thread_template);
+		printf ("=== PYTHON FIXED INITIAL CODE END =================================\n");
+	}
 
 	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + 1);
 	strcpy(rrr_py_start_thread_final, rrr_py_start_thread_template);

@@ -19,6 +19,8 @@ AC_PROG_INSTALL
 #AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
+echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
+
 
 AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered"
 AC_SUBST(AM_CFLAGS)
