@@ -1,14 +1,14 @@
-import rrr_objects
+from rrr import *
 import time
 
-def process(result : rrr_objects.rrr_result, message: rrr_objects.vl_message):
+def process(result : rrr_result, message: vl_message):
 #	print ("timestamp: " + str(message.timestamp_from))
 	message.timestamp_from = message.timestamp_from + 1
 	result.put(message)
 #	time.sleep(1)
 	return 0
 
-def source(result : rrr_objects.rrr_result):
+def source(result : rrr_result):
 	message = rrr_objects.vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
 	message.timestamp = 1
 #	print ("timestamp: " + str(message.timestamp_from))
@@ -16,7 +16,7 @@ def source(result : rrr_objects.rrr_result):
 #	time.sleep(1)
 	return 0
 
-def config(result : rrr_objects.rrr_result, settings : rrr_objects.rrr_instance_settings):
+def config(result : rrr_result, settings : rrr_instance_settings):
 	print("Result: " + str(result) + " Argument: " + str(settings))
 	print ("1: " + settings['custom_config_argument_1'])
 	print ("2: " + settings['custom_config_argument_2'])
