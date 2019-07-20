@@ -192,8 +192,14 @@ int main (int argc, const char *argv[]) {
 			rrr_config_destroy(config);
 		}
 
-	instance_metadata_collection_destroy(instances);
+		instance_metadata_collection_destroy(instances);
 
 	out_no_cleanup:
-	return ret;
+		if (ret == 0) {
+			VL_DEBUG_MSG_1("Exiting program without errors\n");
+		}
+		else {
+			VL_DEBUG_MSG_1("Exiting program with errors\n");
+		}
+		return ret;
 }

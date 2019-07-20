@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "python3_module.h"
+#include "settings.h"
+
 #include "../../build_directory.h"
 
 struct vl_message;
@@ -102,12 +105,6 @@ void rrr_py_object_cache_destroy (struct python3_object_cache *cache);
 int rrr_py_object_cache_push (struct python3_object_cache *cache, PyObject *object);
 PyObject *rrr_py_object_cache_pop(struct python3_object_cache *cache);
 
-/* General functions */
-PyObject *rrr_py_import_object (PyObject *dictionary, const char *symbol);
-PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol);
-PyObject *rrr_py_call_function_no_args(PyObject *function);
-PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const char *symbol);
-
 /* Asynchronous functions */
 int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects);
 int rrr_py_start_persistent_thread (
@@ -165,9 +162,13 @@ int rrr_py_persistent_process_new_messages (
 		int count
 );
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);
+void rrr_py_dump_dict_entries (PyObject *dict);
 int rrr_py_get_rrr_objects (
 		struct python3_rrr_objects *target,
 		PyObject *dictionary,
 		const char **extra_module_paths,
 		int module_paths_length
 );
+int rrr_py_with_global_tstate_do(int (*callback)(void *arg), void *arg);
+void rrr_py_destroy_thread_state(PyThreadState *tstate);
+PyThreadState *rrr_py_new_thread_state(void);

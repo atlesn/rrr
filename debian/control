@@ -9,7 +9,7 @@ Homepage: https://github.com/atlesn/rrr
 
 Package: rrr
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, libmysqlclient | libmariadbclient-compat, libssl, libusb, python3 (>= 3.6), systemd
 Replaces: voltage-logger
 Conflicts: voltage-logger
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.

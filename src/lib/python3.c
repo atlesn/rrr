@@ -28,18 +28,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "python3_common.h"
+#include "python3_module.h"
 #include "settings.h"
 #include "messages.h"
 #include "python3.h"
 #include "../global.h"
 
+//static PyThreadState *main_tstate = NULL;
+static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
+static PyThreadState *main_python_tstate = NULL;
+static int python_users = 0;
+
 /*
- * GIL LOCKING MUST BE HANDLED BY THESE TWO FUNCTIONS, OTHER FUNCTIONS
- * DO NOT LOCK THEMSELVES. ALSO, THESE METHODS ARE NOT THREAD SAFE,
- * MUST ONLY BE USED BY ONE THREAD AT A TIME
+ * GIL LOCKING MUST BE HANDLED BY THESE TWO FUNCTIONS
  */
 
-pthread_mutex_t rrr_global_tstate_lock = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t rrr_global_tstate_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyThreadState *tstate) {
 	int ret = 0;
@@ -186,67 +191,6 @@ PyObject *rrr_py_object_cache_pop(struct python3_object_cache *cache) {
 	PyObject *ret = entry->object;
 	free(entry);
 	return ret;
-}
-
-PyObject *rrr_py_import_object (PyObject *dictionary, const char *symbol) {
-	PyObject *res = PyDict_GetItemString(dictionary, symbol);
-	Py_XINCREF(res);
-	return res;
-}
-
-PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
-	PyObject *ret = rrr_py_import_object(dictionary, symbol);
-
-	if (ret == NULL) {
-		VL_MSG_ERR("Could not load %s function\n", symbol);
-		goto out_err;
-	}
-
-	if (!PyCallable_Check(ret)) {
-	        VL_MSG_ERR("%s was not a callable\n", symbol);
-        	goto out_err_cleanup;
-	}
-
-	return ret;
-
-	out_err_cleanup:
-	Py_XDECREF(ret);
-
-	out_err:
-	return NULL;
-}
-
-PyObject *rrr_py_call_function_no_args(PyObject *function) {
-	PyObject *args = PyTuple_New(0);
-	PyObject *result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
-	if (result == NULL) {
-		PyErr_Print();
-	}
-	return result;
-}
-
-PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const char *symbol) {
-	PyObject *result = NULL;
-
-	PyObject *function = rrr_py_import_function(dictionary, symbol);
-	if (function == NULL) {
-		goto out_cleanup;
-	}
-
-	PyObject *args = PyTuple_New(0);
-	result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
-	if (result == NULL) {
-		VL_MSG_ERR("NULL result from function %s\n", symbol);
-		PyErr_Print();
-		goto out_cleanup;
-	}
-
-	out_cleanup:
-	Py_XDECREF(function);
-
-	return result;
 }
 
 int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
@@ -1043,9 +987,10 @@ int rrr_py_get_rrr_objects (
 ) {
 	PyObject *res = NULL;
 	PyObject *settings_class_dictionary = NULL;
-	char *rrr_py_start_thread_final = NULL;
+	char *rrr_py_import_final = NULL;
 	int ret = 0;
 
+	// FIX IMPORT PATHS AND IMPORT STUFF. INITIALIZE GLOBAL OBJECTS.
 	int module_paths_total_size = 0;
 	for (int i = 0; i < module_paths_length; i++) {
 		module_paths_total_size += strlen(extra_module_paths[i]) + strlen("sys.path.append('')\n");
@@ -1057,7 +1002,8 @@ int rrr_py_get_rrr_objects (
 		sprintf(extra_module_paths_concat + strlen(extra_module_paths_concat), "sys.path.append('%s')\n", extra_module_paths[i]);
 	}
 
-	const char *rrr_py_start_thread_template =
+	// RUN STARTUP CODE
+	const char *rrr_py_import_template =
 			"import sys\n"
 #ifdef RRR_PYTHON3_EXTRA_SYS_PATH
 			"sys.path.append('.')\n"
@@ -1073,22 +1019,19 @@ int rrr_py_get_rrr_objects (
 #endif /* RRR_PYTHON3_PKGDIR */
 			"%s"
 			"from rrr import *\n"
+			"import rrr_helper\n"
+			"from rrr_helper import *\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
-			"pipe_dummy, pipe_dummy_b = Pipe()\n"
+			"socket = rrr_socket()\n"
+			"socket.test(1)\n"
 	;
 
-	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + strlen(extra_module_paths_concat) + 1);
-	sprintf(rrr_py_start_thread_final, rrr_py_start_thread_template, extra_module_paths_concat);
-
-	if (VL_DEBUGLEVEL_1) {
-		printf ("=== PYTHON FIXED INITIAL CODE =====================================\n");
-		printf ("%s", rrr_py_start_thread_final);
-		printf ("=== PYTHON FIXED INITIAL CODE END =================================\n");
-	}
+	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
+	sprintf(rrr_py_import_final, rrr_py_import_template, extra_module_paths_concat);
 
 	memset (target, '\0', sizeof(*target));
 
-	res = PyRun_String(rrr_py_start_thread_final, Py_file_input, dictionary, dictionary);
+	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);
 	if (res == NULL) {
 		VL_MSG_ERR("Could run import sys: \n");
 		ret = 1;
@@ -1096,6 +1039,19 @@ int rrr_py_get_rrr_objects (
 		goto out;
 	}
 	Py_XDECREF(res);
+
+	// IMPORT RRR BUILT-IN HELPER MODULE INTO CURRENT INTERPRETER
+	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON3 DUMPING RRR HELPER MODULE ==============================\n");
+		rrr_python3_module_dump_dict_keys();
+		printf ("=== PYTHON3 DUMPING RRR HELPER MODULE END ==========================\n\n");
+	}
+
+	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON3 DUMPING GLOBAL MODULES =================================\n");
+		rrr_py_dump_global_modules();
+		printf ("=== PYTHON3 DUMPING GLOBAL MODULES END =============================\n\n");
+	}
 
 	// IMPORT RESULT QUEUE OBJECT
 	res = rrr_py_import_object(dictionary, "rrr_global_process_dict");
@@ -1177,11 +1133,101 @@ int rrr_py_get_rrr_objects (
 	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, vl_message_new, ret);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(rrr_py_start_thread_final);
+	RRR_FREE_IF_NOT_NULL(rrr_py_import_final);
 	Py_XDECREF(settings_class_dictionary);
 	if (ret != 0) {
 		rrr_py_destroy_rrr_objects(target);
 	}
+
+	return ret;
+}
+
+void __rrr_py_global_lock(void) {
+	pthread_mutex_lock(&main_python_lock);
+}
+
+void __rrr_py_global_unlock(void *dummy) {
+	(void)(dummy);
+	pthread_mutex_unlock(&main_python_lock);
+}
+
+int __rrr_py_initialize_increment_users(void) {
+	int ret = 0;
+	__rrr_py_global_lock();
+
+	if (++python_users == 1) {
+		VL_DEBUG_MSG_1 ("python3 initialize\n");
+
+		if (rrr_python3_module_append_inittab() != 0) {
+			VL_MSG_ERR("Could not append python3 rrr_helper module to inittab before initializing\n");
+			ret = 1;
+			goto out;
+		}
+
+		Py_NoSiteFlag = 1;
+		Py_InitializeEx(0);
+		Py_NoSiteFlag = 0;
+
+#ifdef RRR_PYTHON_VERSION_LT_3_7
+		PyEval_InitThreads();
+#endif
+
+		main_python_tstate = PyEval_SaveThread();
+	}
+
+	out:
+	if (ret != 0) {
+		python_users--;
+	}
+	__rrr_py_global_unlock(NULL);
+	return ret;
+}
+
+void __rrr_py_finalize_decrement_users(void) {
+	__rrr_py_global_lock();
+	/* If we are not last, only clean up after ourselves. */
+	if (--python_users == 0) {
+		VL_DEBUG_MSG_1 ("python3 finalize\n");
+		PyEval_RestoreThread(main_python_tstate);
+		Py_Finalize();
+		main_python_tstate = NULL;
+	}
+	__rrr_py_global_unlock(NULL);
+}
+
+int rrr_py_with_global_tstate_do(int (*callback)(void *arg), void *arg) {
+	int ret = 0;
+	PyEval_RestoreThread(main_python_tstate);
+	ret = callback(arg);
+	PyEval_SaveThread();
+	return ret;
+}
+
+void rrr_py_destroy_thread_state(PyThreadState *tstate) {
+	__rrr_py_global_lock();
+	PyEval_RestoreThread(tstate);
+	Py_EndInterpreter(tstate);
+	PyThreadState_Swap(main_python_tstate);
+	PyEval_SaveThread();
+	__rrr_py_global_unlock(NULL);
+
+	__rrr_py_finalize_decrement_users();
+}
+
+PyThreadState *rrr_py_new_thread_state(void) {
+	PyThreadState *ret = NULL;
+
+	if (__rrr_py_initialize_increment_users() != 0) {
+		return NULL;
+	}
+
+	__rrr_py_global_lock();
+
+	PyEval_RestoreThread(main_python_tstate);
+	ret = Py_NewInterpreter();
+	PyEval_SaveThread();
+
+	__rrr_py_global_unlock(NULL);
 
 	return ret;
 }

@@ -16,7 +16,7 @@ LT_INIT
 AC_PROG_CC
 AC_PROG_CC_STDC
 AC_PROG_INSTALL
-#AM_SILENT_RULES([yes])
+AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
@@ -107,7 +107,7 @@ AS_IF([test "x$enable_python3" = xno], [
 ])
 
 AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
-AC_MSG_CHECKING([Checking encryption usage])
+AC_MSG_CHECKING([for encryption usage])
 AS_IF([test "x$with_encryption" = xno], [
 	AC_MSG_RESULT([Not compiling with encryption])
 ], [
@@ -165,5 +165,5 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile src/python/Makefile)
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile src/python/Makefile misc/Makefile)
 AC_OUTPUT

@@ -217,8 +217,8 @@ void thread_set_state (struct vl_thread *thread, int state) {
 	if (state == VL_THREAD_STATE_RUNNING_FORKED && thread->state != VL_THREAD_STATE_RUNNING) {
 		VL_BUG("Attempted to set RUNNING_FORKED state of thread while it was not in RUNNING state but %i\n", thread->state);
 	}
-	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_INIT)) {
-		VL_MSG_ERR ("Warning: Attempted to set STOPPING state of thread %p while it was not in ENCOURAGE STOP or RUNNING state\n", thread);
+	if (state == VL_THREAD_STATE_STOPPING && (thread->state != VL_THREAD_STATE_RUNNING && thread->state != VL_THREAD_STATE_RUNNING_FORKED && thread->state != VL_THREAD_STATE_INIT)) {
+		VL_MSG_ERR ("Warning: Attempted to set STOPPING state of thread %p/%s while it was not in ENCOURAGE STOP or RUNNING state\n", thread, thread->name);
 		goto nosetting;
 	}
 	if (state == VL_THREAD_STATE_STOPPED && (

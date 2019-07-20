@@ -40,20 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define P_PYTHON3_MESSAGE_CACHE_MAX 100
 
-//static PyThreadState *main_tstate = NULL;
-static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
-static PyThreadState *main_python_tstate = NULL;
-static int python_users = 0;
-
-void p_python3_global_lock(void) {
-	pthread_mutex_lock(&main_python_lock);
-}
-
-void p_python3_global_unlock(void *dummy) {
-	(void)(dummy);
-	pthread_mutex_unlock(&main_python_lock);
-}
-
 struct python3_preload_data {
 	PyThreadState *istate;
 };
@@ -98,28 +84,10 @@ static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 	VL_ASSERT(VL_MODULE_PRELOAD_MEMORY_SIZE >= sizeof(*preload_data),python3_preload_data_size_ok);
 
-	p_python3_global_lock();
-
-	if (++python_users == 1) {
-		VL_DEBUG_MSG_1 ("python3 initialize\n");
-
-		Py_NoSiteFlag = 1;
-		Py_InitializeEx(0);
-		Py_NoSiteFlag = 0;
-
-#ifdef RRR_PYTHON_VERSION_LT_3_7
-		PyEval_InitThreads();
-#endif
-
-		main_python_tstate = PyEval_SaveThread();
+	if ((preload_data->istate = rrr_py_new_thread_state()) == NULL) {
+		VL_MSG_ERR("Could not get thread state in python3 preload function\n");
+		return 1;
 	}
-
-
-	PyEval_RestoreThread(main_python_tstate);
-	preload_data->istate = Py_NewInterpreter();
-	PyEval_SaveThread();
-
-	p_python3_global_unlock(NULL);
 
 	return 0;
 }
@@ -341,28 +309,11 @@ static void thread_poststop_python3 (const struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 
-	p_python3_global_lock();
-
-//	PyEval_AcquireLock()
-//	PyEval_ReleaseLock
 	VL_DEBUG_MSG_1 ("python3 stop thread instance %s\n", INSTANCE_D_NAME(thread_data));
 
-	PyEval_RestoreThread(preload_data->istate);
-	Py_EndInterpreter(preload_data->istate);
-	PyThreadState_Swap(main_python_tstate);
-	PyEval_SaveThread();
-
-	/* If we are not last, only clean up after ourselves. */
-	if (--python_users == 0) {
-		VL_DEBUG_MSG_1 ("python3 finalize\n");
-		PyEval_RestoreThread(main_python_tstate);
-		Py_Finalize();
-		main_python_tstate = NULL;
-	}
+	rrr_py_destroy_thread_state(preload_data->istate);
 
 	preload_data->istate = NULL;
-
-	p_python3_global_unlock(NULL);
 }
 
 int parse_config(struct python3_data *data, struct rrr_instance_config *config) {
@@ -572,27 +523,26 @@ int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
-static int thread_cancel_python3 (struct vl_thread *thread) {
-	int ret = 0;
+int thread_cancel_callback(void *arg) {
+	struct python3_data *data = arg;
+	return rrr_py_terminate_threads (&data->rrr_objects);
+}
 
+static int thread_cancel_python3 (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data;
 
 	VL_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
 
-	PyEval_RestoreThread(main_python_tstate);
-	ret = rrr_py_terminate_threads (&data->rrr_objects);
-
-	if (ret != 0) {
+	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
 		VL_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
 		PyErr_Print();
 		return 1;
 	}
-	PyEval_SaveThread();
 
 	VL_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
 
-	return ret;
+	return 0;
 }
 
 void debug_tstate (void *dummy) {
