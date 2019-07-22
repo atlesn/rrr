@@ -386,17 +386,20 @@ int instance_process_from_config(struct instance_metadata_collection *instances,
 		if (ret != 0) {
 			VL_MSG_ERR("Loading of instance failed for %s\n",
 					config->configs[i]->name);
-			break;
+			goto out;
 		}
 	}
+
 	RRR_INSTANCE_LOOP(instance, instances)
 	{
 		ret = instance_add_senders(instances, instance);
 		if (ret != 0) {
 			VL_MSG_ERR("Adding senders failed for %s\n",
 					instance->dynamic_data->instance_name);
-			break;
+			goto out;
 		}
 	}
+
+	out:
 	return ret;
 }
