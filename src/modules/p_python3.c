@@ -70,7 +70,7 @@ struct python3_data {
 	PyObject *py_main;
 	PyObject *py_main_dict;
 
-	PyObject *processing_pipe;
+	PyObject *processing_socket;
 	PyObject *source_pipe;
 
 	struct python3_rrr_objects rrr_objects;
@@ -221,7 +221,7 @@ int python3_start(struct python3_data *data) {
 	// START PROCESSING THREAD
 	if (data->process_function != NULL) {
 		if ((ret = rrr_py_start_persistent_thread (
-				&data->processing_pipe,
+				&data->processing_socket,
 				&data->rrr_objects,
 				data->python3_module,
 				data->process_function
@@ -267,7 +267,7 @@ void python3_stop(void *arg) {
 
 	rrr_py_terminate_threads(&data->rrr_objects);
 
-	Py_XDECREF(data->processing_pipe);
+	Py_XDECREF(data->processing_socket);
 	Py_XDECREF(data->source_pipe);
 
 	rrr_py_destroy_rrr_objects(&data->rrr_objects);
@@ -311,7 +311,9 @@ static void thread_poststop_python3 (const struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("python3 stop thread instance %s\n", INSTANCE_D_NAME(thread_data));
 
-	rrr_py_destroy_thread_state(preload_data->istate);
+	if (preload_data->istate) {
+		rrr_py_destroy_thread_state(preload_data->istate);
+	}
 
 	preload_data->istate = NULL;
 }
@@ -394,7 +396,7 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	ret = rrr_py_persistent_process_new_messages (
 			&(python3_data->rrr_objects),
-			python3_data->processing_pipe,
+			python3_data->processing_socket,
 			process_input_state->messages,
 			process_input_state->count
 	);
@@ -468,7 +470,7 @@ int read_from_processor_and_poll(struct python3_data *data, struct poll_collecti
 	ret = rrr_py_persistent_receive_message (
 			&data->messages_pending,
 			&data->rrr_objects,
-			data->processing_pipe,
+			data->processing_socket,
 			read_from_processor_callback,
 			data
 	);
@@ -534,11 +536,11 @@ static int thread_cancel_python3 (struct vl_thread *thread) {
 
 	VL_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
 
-	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
+	/*if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
 		VL_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
 		PyErr_Print();
 		return 1;
-	}
+	}*/
 
 	VL_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
 

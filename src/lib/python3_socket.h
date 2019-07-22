@@ -19,16 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_MODULE_H
-#define RRR_PYTHON3_MODULE_H
+#ifndef RRR_PYTHON3_SOCKET_H
+#define RRR_PYTHON3_SOCKET_H
 
-extern PyTypeObject rrr_python3_socket_type;
-extern PyTypeObject rrr_python3_vl_message_type;
+#include <Python.h>
 
-#define rrr_python3_socket_check(op) (Py_TYPE(op) == &rrr_python3_socket_type)
-#define rrr_python3_vl_message_check(op) (Py_TYPE(op) == &rrr_python3_vl_message_type)
+const char *rrr_python3_module_socket_get_filename(PyObject *self);
 
-int rrr_python3_module_append_inittab(void);
-void rrr_python3_module_dump_dict_keys(void);
-
-#endif /* RRR_PYTHON3_MODULE_H */
+#endif /* RRR_PYTHON3_SOCKET_H */

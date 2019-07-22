@@ -227,7 +227,7 @@ int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
 }
 
 int __rrr_py_start_persistent_thread (
-		PyObject **result_process_pipe,
+		PyObject **result_process_socket,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
 		const char *function_name,
@@ -235,12 +235,14 @@ int __rrr_py_start_persistent_thread (
 ) {
 	int ret = 0;
 
-	*result_process_pipe = NULL;
+	*result_process_socket = NULL;
 
 	PyObject *arglist = NULL;
-	PyObject *process_pipe = NULL;
+	PyObject *process_socket = NULL;
 
 	VL_DEBUG_MSG_3("Start persistent thread of module %s function %s\n", module_name, function_name);
+
+
 
 	arglist = Py_BuildValue("Oss",
 			rrr_objects->rrr_global_process_dict,
@@ -254,8 +256,8 @@ int __rrr_py_start_persistent_thread (
 		goto out;
 	}
 
-	process_pipe = PyObject_CallObject(start_method, arglist);
-	if (process_pipe == NULL) {
+	process_socket = PyObject_CallObject(start_method, arglist);
+	if (process_socket == NULL) {
 		VL_MSG_ERR("Could not run python3 thread starter: \n");
 		PyErr_Print();
 		ret = 1;
@@ -264,7 +266,7 @@ int __rrr_py_start_persistent_thread (
 	Py_XDECREF(arglist);
 
 	arglist = Py_BuildValue("O",
-			process_pipe
+			process_socket
 	);
 	if (arglist == NULL) {
 		VL_MSG_ERR("Could not prepare argument list while calling getters for raw pipes:\n");
@@ -273,24 +275,24 @@ int __rrr_py_start_persistent_thread (
 		goto out;
 	}
 
-	*result_process_pipe = process_pipe;
+	*result_process_socket = process_socket;
 
 	out:
 	if (ret != 0) {
-		Py_XDECREF(process_pipe);
+		Py_XDECREF(process_socket);
 	}
 	Py_XDECREF(arglist);
 	return ret;
 }
 
 int rrr_py_start_persistent_thread (
-		PyObject **result_process_pipe,
+		PyObject **result_process_socket,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
 		const char *function_name
 ) {
 	return __rrr_py_start_persistent_thread (
-			result_process_pipe,
+			result_process_socket,
 			rrr_objects,
 			module_name,
 			function_name,
@@ -1022,8 +1024,6 @@ int rrr_py_get_rrr_objects (
 			"import rrr_helper\n"
 			"from rrr_helper import *\n"
 			"rrr_global_process_dict = rrr_process_dict()\n"
-			"socket = rrr_socket()\n"
-			"socket.test(1)\n"
 	;
 
 	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
@@ -1033,14 +1033,14 @@ int rrr_py_get_rrr_objects (
 
 	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);
 	if (res == NULL) {
-		VL_MSG_ERR("Could run import sys: \n");
+		VL_MSG_ERR("Could not run initial python3 code to set up RRR environment: \n");
 		ret = 1;
 		PyErr_Print();
 		goto out;
 	}
 	Py_XDECREF(res);
 
-	// IMPORT RRR BUILT-IN HELPER MODULE INTO CURRENT INTERPRETER
+	// DEBUG
 	if (VL_DEBUGLEVEL_1) {
 		printf ("=== PYTHON3 DUMPING RRR HELPER MODULE ==============================\n");
 		rrr_python3_module_dump_dict_keys();

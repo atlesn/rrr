@@ -187,6 +187,8 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 		goto out_unlock;
 	}
 
+	memset (setting, '\0', sizeof(*setting));
+
 	if (__rrr_settings_set_setting_name(setting, name) != 0) {
 		goto out_unlock;
 	}
@@ -194,6 +196,7 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 	setting->data = new_data;
 	setting->data_size = size;
 	setting->type = type;
+	setting->was_used = 0;
 
 	out_unlock:
 	if (ret != 0) {

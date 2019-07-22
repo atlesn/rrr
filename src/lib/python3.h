@@ -108,7 +108,7 @@ PyObject *rrr_py_object_cache_pop(struct python3_object_cache *cache);
 /* Asynchronous functions */
 int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects);
 int rrr_py_start_persistent_thread (
-		PyObject **result_process_pipe,
+		PyObject **result_process_socket,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
 		const char *function_name
