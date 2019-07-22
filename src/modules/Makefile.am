@@ -15,18 +15,21 @@ python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_SOURCES = p_python3.c
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la averager.la voltmonitor.la buffer.la \
+if RRR_WITH_USB
+voltmonitor = voltmonitor.la
+voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
+voltmonitor_la_SOURCES = src_voltmonitor.c
+endif
+
+lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
 	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
 	duplicator.la \
-	${mysql} ${python3}
+	${mysql} ${python3} ${voltmonitor}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c
-
-voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
-voltmonitor_la_SOURCES = src_voltmonitor.c
 
 raw_la_LDFLAGS = ${module_ldflags}
 raw_la_SOURCES = p_raw.c
