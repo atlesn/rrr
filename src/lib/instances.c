@@ -384,8 +384,11 @@ int instance_process_from_config(struct instance_metadata_collection *instances,
 	for (int i = 0; i < config->module_count; i++) {
 		ret = instance_load_and_save(instances, config->configs[i], library_paths);
 		if (ret != 0) {
-			VL_MSG_ERR("Loading of instance failed for %s\n",
+			VL_MSG_ERR("Loading of instance failed for %s. Library paths used:\n",
 					config->configs[i]->name);
+			for (int j = 0; *library_paths[j] != '\0'; j++) {
+				VL_MSG_ERR("-> %s\n", library_paths[j]);
+			}
 			goto out;
 		}
 	}
