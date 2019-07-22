@@ -25,28 +25,29 @@ echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered"
 AC_SUBST(AM_CFLAGS)
 
-AC_CHECK_HEADERS([usb.h pthread.h])
+AC_CHECK_HEADERS([pthread.h])
 
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
-AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the mysql bindings])],[enable_mysql=no],[enable_mysql=yes])
+AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
+AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB bindings])],[enable_usb=no],[enable_usb=yes])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with the python debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
-AM_CONDITIONAL([VL_WITH_PYTHON3], [test "x$enable_python3" == "xyes"])
+AM_CONDITIONAL([VL_WITH_PYTHON3], [test "x$enable_python3" = "xyes"])
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
 	AC_MSG_RESULT([Not compiling with python3])
 ], [
-	AM_PATH_PYTHON([3.6])
-
 	AC_MSG_RESULT([yes])
+
+	AM_PATH_PYTHON([3.6])
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
 		 AC_SUBST([PYTHON3_MAJOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[[^0-9]]*' '$0=$1'`])
 		 AC_SUBST([PYTHON3_MINOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[[^0-9]]*' '$0=$2'`])
 	else
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,python3,yes)
-		if test x"${PYTHON3_INTERPRETER}" == x"yes"; then
+		if test x"${PYTHON3_INTERPRETER}" = x"yes"; then
 			AC_SUBST([PYTHON3_MAJOR_VERSION],[`python3 --version | awk -F'[[^0-9]]*' '$0=$2'`])
 			AC_SUBST([PYTHON3_MINOR_VERSION],[`python3 --version | awk -F'[[^0-9]]*' '$0=$3'`])
 		else
@@ -55,7 +56,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 
 	AC_MSG_CHECKING([for python3 debug enabled])
-	if test "x$enable_python3_debug" == x"yes"; then
+	if test "x$enable_python3_debug" = x"yes"; then
 		python3_config_bin="python${PYTHON3_MAJOR_VERSION}.${PYTHON3_MINOR_VERSION}-dbg-config"
 		AC_MSG_RESULT([$python3_config_bin])
 	else
@@ -64,7 +65,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 
 	AC_CHECK_PROG(PYTHON3_CONFIG,"$python3_config_bin",yes)
-	if test x"${PYTHON3_CONFIG}" == x"yes"; then
+	if test x"${PYTHON3_CONFIG}" = x"yes"; then
 		AC_DEFINE([VL_WITH_PYTHON3], [1], [Build with python3 support], [])
 	else
 		AC_MSG_ERROR("Could not find python3-config for version $PYTHON3_MAJOR_VERSION.$PYTHON3_MINOR_VERSION")
@@ -96,7 +97,7 @@ AS_IF([test "x$enable_python3" = xno], [
 	PYTHON3_TEST_RESULT="$?"
 
 	AC_MSG_CHECKING([functional python3 config])
-	if test x"$PYTHON3_TEST_RESULT" == x"0"; then
+	if test x"$PYTHON3_TEST_RESULT" = x"0"; then
 		AC_MSG_RESULT([yes])
 	else
 		AC_MSG_RESULT([no])
@@ -119,7 +120,36 @@ AS_IF([test "x$with_encryption" = xno], [
 	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
 	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
 	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
-	
+])
+
+AM_CONDITIONAL([RRR_WITH_USB], [test "x$with_usb" != xno])
+AC_MSG_CHECKING([for USB enabled])
+AS_IF([test "x$with_usb" = xno], [
+	AC_MSG_RESULT([Not compiling with USB])
+], [
+	AC_MSG_RESULT([yes])
+	AC_CHECK_HEADERS([usb.h])
+	AC_CHECK_LIB(usb, usb_init, [], AC_MSG_ERROR([usb_init from libusb not found]))
+	AC_CHECK_LIB(usb, usb_find_busses, [], AC_MSG_ERROR([usb_find_busses from libusb not found]))
+	AC_CHECK_LIB(usb, usb_find_devices, [], AC_MSG_ERROR([usb_find_devices from libusb not found]))
+	AC_MSG_CHECKING([usb.h symbols])
+	AC_RUN_IFELSE([
+		AC_LANG_SOURCE([[
+			#include <usb.h>
+			
+			int main (int argc, char *argv[]) {
+				struct usb_config_descriptor a;
+				struct usb_device_descriptor b;
+				struct usb_device c;
+				struct usb_bus d;
+				return 0;
+			}				
+		]])
+	], [
+		AC_MSG_RESULT([OK])
+	], [
+		AC_MSG_ERROR([Test of symbols from usb.h failed, make sure libusb-dev or libusb-compat is installed.])
+	])
 ])
 
 AM_CONDITIONAL([VL_WITH_MYSQL], [test "x$with_mysql" != xno])
