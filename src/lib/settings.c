@@ -19,9 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "rrr_socket.h"
 #include "settings.h"
 #include "../global.h"
 
+#include <bits/endian.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -632,4 +634,98 @@ int rrr_settings_iterate (
 	__rrr_settings_unlock(settings);
 
 	return ret;
+}
+
+int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
+	int ret = 0;
+	struct rrr_setting_packed *result = NULL;
+
+	*target = NULL;
+
+	if (source->data_size > RRR_SETTINGS_MAX_DATA_SIZE) {
+		VL_MSG_ERR("Cannot pack setting %s with data size %u, size exceeds limit\n", source->name, source->data_size);
+		ret = 1;
+		goto out;
+	}
+
+	result = malloc(sizeof(*result) + source->data_size - 1);
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in  __rrr_setting_pack\n");
+		ret = 1;
+		goto out;
+	}
+
+	rrr_socket_msg_head_to_network((struct rrr_socket_msg *) result, RRR_SOCKET_MSG_TYPE_SETTING, sizeof(*result));
+
+	result->type = htobe32(source->type);
+	result->was_used = htobe32(source->was_used);
+	result->data_size = htobe32(source->was_used);
+	memcpy(result->name, source->name, sizeof(result->name));
+	memcpy(result->var_data, source->data, source->data_size);
+
+	rrr_socket_msg_checksum((struct rrr_socket_msg *) result, sizeof(*result));
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+
+	return ret;
+}
+
+int rrr_settings_iterate_packed (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting_packed *setting_packed, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+		struct rrr_setting_packed *setting_packed = NULL;
+
+		if (__rrr_setting_pack(&setting_packed, setting) != 0) {
+			VL_MSG_ERR("Could not pack setting in rrr_settings_iterate_packed\n");
+			ret = 1;
+			goto out;
+		}
+
+		ret = callback(setting_packed, callback_arg);
+
+		free(setting_packed);
+
+		if (ret != 0) {
+			break;
+		}
+	}
+
+	out:
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_packed_convert_endianess (struct rrr_setting_packed *setting_packed) {
+	if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) setting_packed) != 0) {
+		return 1;
+	}
+	if (RRR_SOCKET_MSG_IS_LE(setting_packed)) {
+		setting_packed->type = le32toh(setting_packed->type);
+		setting_packed->was_used = le32toh(setting_packed->was_used);
+		setting_packed->data_size = le32toh(setting_packed->data_size);
+	}
+	else if (RRR_SOCKET_MSG_IS_BE(setting_packed)) {
+		setting_packed->type = be32toh(setting_packed->type);
+		setting_packed->was_used = be32toh(setting_packed->was_used);
+		setting_packed->data_size = be32toh(setting_packed->data_size);
+	}
+	else {
+		VL_MSG_ERR("Unknown endian bytes found in message\n");
+		return 1;
+	}
+
+	return 0;
 }

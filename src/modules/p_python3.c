@@ -168,7 +168,7 @@ int python3_start(struct python3_data *data) {
 		PyObject *new_py_instance_settings = NULL;
 		PyObject *arglist = NULL;
 
-		ret = rrr_py_call_object_async (
+		ret = rrr_py_start_onetime_rw_thread(
 				&new_py_instance_settings,
 				&data->rrr_objects,
 				data->python3_module,
@@ -345,17 +345,17 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int read_from_processor_callback (PyObject *message, void *arg) {
+int read_from_processor_callback (const struct vl_message *message, void *arg) {
 	struct python3_data *python3_data = (struct python3_data *) arg;
 
 	int ret = 0;
 
-	struct vl_message *new_message = NULL;
-	ret = rrr_py_message_to_internal(&new_message, message);
-	if (ret != 0) {
-		VL_MSG_ERR("Could not convert message from python3 to internal message.\n");
+	struct vl_message *new_message = malloc(sizeof(*new_message));
+	if (new_message == NULL) {
+		VL_MSG_ERR("Could not allocate memory in read_from_processor_callback\n");
 		goto out;
 	}
+	memcpy(new_message, message, sizeof(*new_message));
 
 	VL_DEBUG_MSG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), new_message->timestamp_from);
@@ -468,9 +468,7 @@ int read_from_processor_and_poll(struct python3_data *data, struct poll_collecti
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
 	ret = rrr_py_persistent_receive_message (
-			&data->messages_pending,
-			&data->rrr_objects,
-			data->processing_socket,
+			fork,
 			read_from_processor_callback,
 			data
 	);
@@ -495,25 +493,14 @@ int read_from_source(struct python3_data *data) {
 	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
-	int result = 0;
 	ret |= rrr_py_persistent_receive_message (
-			&result,
-			&data->rrr_objects,
-			data->source_pipe,
+			fork,
 			read_from_processor_callback,
 			data
 	);
 
-	result = -result;
-
-	VL_DEBUG_MSG_3("Python3 instance %s generated %i source messages in the program\n",
-			INSTANCE_D_NAME(data->thread_data), result);
-
-	ret |= rrr_py_persistent_readonly_send_counter (
-			&data->rrr_objects,
-			data->source_pipe,
-			result
-	);
+	VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program\n",
+			INSTANCE_D_NAME(data->thread_data));
 
 	return ret;
 }

@@ -28,13 +28,14 @@ from twisted.trial.test import moduleself
 # 		self.length = l
 # 		self.data = d
 
-def vl_message_new(*_args):
-#t, c, tf, tt, dn, l, d : bytearray):
-	result = _args[0]
-	args = _args[1]
-	ret =  vl_message(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
-	result.put(ret)
-	return 0
+# def vl_message_new(*_args):
+# #t, c, tf, tt, dn, l, d : bytearray):
+# 	result = _args[0]
+# 	args = _args[1]
+# 	ret =  vl_message()
+# 	ret.set(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
+# 	result.put(ret)
+# 	return 0
 
 class rrr_result:
 	data = None

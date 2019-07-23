@@ -19,18 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_SOCKET_H
-#define RRR_PYTHON3_SOCKET_H
+#ifndef RRR_PYTHON3_SETTING_H
+#define RRR_PYTHON3_SETTING_H
 
-#include "rrr_socket.h"
+typedef struct PyObject Pyobject;
+struct rrr_socket_msg;
 
-struct Py_ssize_t;
-struct PyObject;
+struct rrr_setting_packed *rrr_python3_setting_get_setting (PyObject *self);
+PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg);
 
-const char *rrr_python3_module_socket_get_filename(PyObject *self);
-PyObject *rrr_python3_socket_new (const char *filename);
-int rrr_python3_socket_poll (PyObject *socket);
-int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message);
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, Py_ssize_t *result_count, PyObject *socket);
-
-#endif /* RRR_PYTHON3_SOCKET_H */
+#endif /* RRR_PYTHON3_SETTING_H */

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
@@ -29,6 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 
 #include "python3_module_common.h"
+#include "python3_vl_message.h"
+#include "python3_module.h"
+#include "python3_socket.h"
+#include "rrr_socket.h"
+#include "messages.h"
+#include "settings.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
@@ -65,31 +72,24 @@ static int rrr_python3_socket_f_init (PyObject *self, PyObject *args, PyObject *
 
 	printf ("rrr_python3_socket_f_init called\n");
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", valid_keys, &arg_filename)) {
-		VL_MSG_ERR("Could not parse arguments to socket __init__ python3 module: %s\n", strerror(errno));
-		ret = 1;
-		goto out;
+	__rrr_python3_socket_dealloc_internals(self);
+
+	if (args != NULL) {
+		if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", valid_keys, &arg_filename)) {
+			VL_MSG_ERR("Could not parse arguments to socket __init__ python3 module: %s\n", strerror(errno));
+			ret = 1;
+			goto out;
+		}
 	}
 
 	char *filename = NULL;
 	if (*arg_filename != '\0') {
-		int fd = open(arg_filename, O_CREAT, S_IRUSR|S_IWUSR);
-		if (fd == -1) {
-			VL_MSG_ERR("Could not open specified socket file %s: %s\n", arg_filename, strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		close (fd);
-		if (unlink (arg_filename) != 0) {
-			VL_MSG_ERR("Could not unlink file to be used for socket in python3 socket __init__ (%s): %s\n", arg_filename, strerror(errno));
-			ret = 1;
-			goto out;
-		}
-
+		// Connect to existing socket
 		filename = arg_filename;
 	}
 	else {
-		socket_data->socket_fd = socket(AF_UNIX, SOCK_STREAM|SOCK_NONBLOCK, 0);
+		// Create new socket
+		socket_data->socket_fd = socket(AF_UNIX, SOCK_SEQPACKET|SOCK_NONBLOCK, 0);
 		if (socket_data->socket_fd == -1) {
 			VL_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", strerror(errno));
 			ret = 1;
@@ -150,6 +150,36 @@ static PyObject *rrr_python3_socket_f_get_filename(PyObject *self, PyObject *arg
 	return (PyUnicode_FromString(socket_data->filename));
 }
 
+static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
+	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
+	int ret = 0;
+
+	struct rrr_socket_msg *message = NULL;
+	if (rrr_python3_vl_message_check(arg)) {
+		message = rrr_vl_message_safe_cast(rrr_python3_vl_message_get_message (arg));
+	}
+	else if (rrr_python3_setting_check(arg)) {
+		message = rrr_setting_safe_cast(rrr_python3_setting_get_setting (arg));
+	}
+	else {
+		VL_MSG_ERR("Received unknown object type in python3 socket send\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_python3_socket_send(self, message)) != 0) {
+		VL_MSG_ERR("Received error in python3 socket send function\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	if (ret != 0) {
+		Py_RETURN_FALSE;
+	}
+	Py_RETURN_TRUE;
+}
+
 const char *rrr_python3_socket_get_filename(PyObject *self) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
 	if (socket_data->filename == NULL) {
@@ -163,7 +193,13 @@ static PyMethodDef socket_methods[] = {
 				ml_name:	"get_filename",
 				ml_meth:	(PyCFunction) rrr_python3_socket_f_get_filename,
 				ml_flags:	METH_NOARGS,
-				ml_doc:		"Tests that basics for socket works"
+				ml_doc:		"Get filename of socket"
+		},
+		{
+				ml_name:	"send",
+				ml_meth:	(PyCFunction) rrr_python3_socket_f_send,
+				ml_flags:	METH_O,
+				ml_doc:		"Send a vl_message object on the socket"
 		},
 		{ NULL, NULL, 0, NULL }
 };
@@ -218,6 +254,165 @@ PyTypeObject rrr_python3_socket_type = {
 	    tp_version_tag:		0,
 	    tp_finalize:		NULL
 };
+
+PyObject *rrr_python3_socket_new (const char *filename) {
+	struct rrr_python3_socket_data *ret = PyObject_New(struct rrr_python3_socket_data, &rrr_python3_socket_type);
+	PyObject *args = NULL;
+
+	if (ret) {
+		args = PyTuple_New(1);
+		if (args == NULL) {
+			VL_MSG_ERR("Could not create tuple in rrr_python3_socket_new:\n");
+			PyErr_Print();
+			goto out;
+		}
+		if (filename != NULL && *filename != '\0') {
+			PyObject *str = PyUnicode_FromString(filename);
+			if (str == NULL) {
+				VL_MSG_ERR("Could not create unicode object from filename '%s' while creating new python3 socket:\n",
+						filename);
+				PyErr_Print();
+				goto out;
+			}
+			PyTuple_SET_ITEM(args, 0, str);
+		}
+		if (rrr_python3_socket_f_init((PyObject *) ret, args, NULL) != 0) {
+			Py_XDECREF(ret);
+			ret = NULL;
+			goto out;
+		}
+	}
+
+	out:
+	Py_XDECREF(args);
+	return (PyObject *) ret;
+}
+
+int rrr_python3_socket_poll (PyObject *socket) {
+	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
+	int ret = 0;
+
+	struct pollfd poll_data = {
+			socket_data->socket_fd,
+			POLLIN,
+			0
+	};
+
+	if ((ret = poll(&poll_data, 1, 1)) == -1) {
+		VL_MSG_ERR("Error from poll function in python3 unix socket: %s\n", strerror(errno));
+	}
+
+	return ret;
+}
+
+int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message) {
+	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
+	int ret = 0;
+
+	char buf[message->msg_size];
+	memcpy(buf, message, sizeof(buf));
+	struct rrr_socket_msg *msg_new = (struct rrr_socket_msg *) buf;
+
+	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(msg_new)) {
+		if (message->msg_size != sizeof(struct vl_message)) {
+			VL_BUG("Received a vl_message with wrong size parameter %li in  rrr_python3_socket_send\n", message->msg_size);
+		}
+		message_prepare_for_network((struct vl_message *) msg_new);
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(msg_new)) {
+		// The setting type is already (and always) packed for network with BE order
+	}
+	else {
+		VL_MSG_ERR("Received socket message of unkown type %u in rrr_python3_socket_send\n", message->msg_type);
+		ret = 1;
+		goto out;
+	}
+
+	ret = sendto(socket_data->socket_fd, &buf, sizeof(buf), MSG_DONTWAIT|MSG_EOR, NULL, 0);
+	if (ret != sizeof(buf)) {
+		VL_MSG_ERR("Error while sending message in python3 socket: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
+	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
+	int ret = 0;
+
+
+	*result = NULL;
+
+	int numitems = rrr_python3_socket_poll(socket);
+	if (numitems == -1) {
+		VL_MSG_ERR("Could not poll in python3 socket recv function\n");
+		ret = 1;
+		goto out;
+	}
+	else if (numitems == 0) {
+		goto out;
+	}
+
+	// For now we only support receiving one at a time
+	numitems = 1;
+
+	union {
+		struct rrr_socket_msg msg;
+		struct vl_message vl_message;
+		struct rrr_setting_packed setting;
+		char c[sizeof(struct rrr_setting_packed) + RRR_SETTINGS_MAX_DATA_SIZE];
+	} buf;
+
+	ret = recvfrom(socket_data->socket_fd, &buf, sizeof(buf), MSG_DONTWAIT, NULL, NULL);
+
+	if (ret >= (int) sizeof(buf.msg)) {
+		rrr_socket_msg_head_to_host(&buf.msg);
+		if (ret != (int)buf.msg.msg_size) {
+			VL_MSG_ERR("Warning: Received a message in python3 socket receive function which says it has %u bytes, but we read %i\n", buf.msg.msg_size, ret);
+			ret = 0;
+			goto out;
+		}
+		if (RRR_SOCKET_MSG_IS_VL_MESSAGE(&buf.msg)) {
+			ret = message_convert_endianess(&(buf.vl_message));
+			if (ret != 0) {
+				VL_MSG_ERR("Warning: Received message in python3 socket receive function with unknown endianess\n");
+				ret = 0;
+				goto out;
+			}
+			ret = message_checksum_check(&(buf.vl_message));
+			if (ret != 0) {
+				VL_MSG_ERR("Warning: Received message in python3 socket receive function with wrong checksum\n");
+				ret = 0;
+				goto out;
+			}
+		}
+		else if (RRR_SOCKET_MSG_IS_SETTING(&buf.msg)) {
+			rrr_settings_packed_convert_endianess (&buf.setting);
+		}
+	}
+	else if (ret == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = 0;
+			goto out;
+		}
+		else {
+			VL_MSG_ERR("Error in recvfrom in python3 socket receive function: %s\n", strerror(errno));
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		VL_MSG_ERR("Warning: Received message of unknown length %i in python3 socket receive function\n", ret);
+	}
+
+	*result = &buf.msg;
+
+	out:
+	return ret;
+}
 
 /*
 static PyObject *rrr_python3_socket_f_test (PyObject *self, PyObject *args, PyObject *kwds) {

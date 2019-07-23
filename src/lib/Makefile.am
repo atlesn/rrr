@@ -11,12 +11,12 @@ libvlogger_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LDFLAGS}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c ${encryption} \
 ip.c types.c version.c configuration.c settings.c instance_config.c \
-instances.c senders.c poll_helper.c modules.c ${mysql}
+instances.c senders.c poll_helper.c modules.c rrr_socket.c ${mysql}
 
 if VL_WITH_PYTHON3
 librrr_la_LIBADD = librrrpython3.la
 noinst_LTLIBRARIES = librrrpython3.la
-librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c
+librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
 endif

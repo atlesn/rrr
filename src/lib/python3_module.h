@@ -24,9 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 extern PyTypeObject rrr_python3_socket_type;
 extern PyTypeObject rrr_python3_vl_message_type;
+extern PyTypeObject rrr_python3_setting_type;
 
-#define rrr_python3_socket_check(op) (Py_TYPE(op) == &rrr_python3_socket_type)
-#define rrr_python3_vl_message_check(op) (Py_TYPE(op) == &rrr_python3_vl_message_type)
+static inline int rrr_python3_socket_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_socket_type); }
+static inline int rrr_python3_vl_message_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_vl_message_type); }
+static inline int rrr_python3_setting_check(PyObject *op) { return (Py_TYPE(op) == &rrr_python3_setting_type); }
 
 int rrr_python3_module_append_inittab(void);
 void rrr_python3_module_dump_dict_keys(void);

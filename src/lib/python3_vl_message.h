@@ -18,3 +18,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+#ifndef RRR_PYTHON3_VL_MESSAGE_H
+#define RRR_PYTHON3_VL_MESSAGE_H
+
+struct vl_message;
+struct PyObject;
+
+struct vl_message *rrr_python3_vl_message_get_message (PyObject *self);
+PyObject *rrr_python3_vl_message_new (void);
+PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg);
+
+#endif /* RRR_PYTHON3_VL_MESSAGE_H */
