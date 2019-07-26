@@ -1,4 +1,5 @@
 /src/tests/main
+/src/tests/isolated_python
 /src/modules/.libs
 /src/.libs
 /src/lib/.libs

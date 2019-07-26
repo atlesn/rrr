@@ -468,8 +468,10 @@ int read_from_source(struct python3_data *data) {
 			&callback_data
 	);
 
-	VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program\n",
-			INSTANCE_D_NAME(data->thread_data));
+	if (ret == 0) {
+		VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
 
 	return ret;
 }
@@ -509,6 +511,15 @@ static int thread_cancel_python3 (struct vl_thread *thread) {
 void debug_tstate (void *dummy) {
 	(void)(dummy);
 //	PyThreadState *current_tstate = _PyThreadState_UncheckedGet();
+}
+
+// Fork systen is locked in this context
+void child_exit_handler (pid_t pid, void *arg) {
+	struct python3_data *data = arg;
+	int res = rrr_py_invalidate_fork_unlocked(&data->rrr_objects, pid);
+	if (res == 0) {
+		VL_DEBUG_MSG_1("A fork was invalidated in child_exit_handler\n");
+	}
 }
 
 static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
@@ -577,9 +588,8 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 			int res;
 
 			if (sigchld_pending) {
-				if (rrr_py_handle_sigchld() == 0) {
-					sigchld_pending = 0;
-				}
+				rrr_py_handle_sigchld(child_exit_handler, data);
+				sigchld_pending = 0;
 			}
 
 			if ((res = read_from_processor_and_poll(data, &poll)) != 0) {
@@ -607,7 +617,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	out_message:
 	VL_DEBUG_MSG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
-	rrr_py_handle_sigchld();
+	rrr_py_handle_sigchld(child_exit_handler, data);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

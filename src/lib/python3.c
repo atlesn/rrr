@@ -121,8 +121,7 @@ int python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
 	return ret;
 }
 
-int rrr_py_handle_sigchld (void) {
-	int ret = 1; // Default = do not take signal
+void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg) {
 	struct python3_fork_zombie *zombie = NULL;
 	struct python3_fork_zombie *prev = NULL;
 
@@ -142,13 +141,14 @@ int rrr_py_handle_sigchld (void) {
 			if (WIFSIGNALED(wstatus)) {
 				int signal = WTERMSIG(wstatus);
 				VL_DEBUG_MSG_1("python3 child %i has was terminated by signal %i\n", res, signal);
+
+				goto remove_and_next;
 			}
+
 			if (WIFEXITED(wstatus)) {
 				int child_status = WEXITSTATUS(wstatus);
 				VL_DEBUG_MSG_1("python3 child %i has exited with status %i\n", res, child_status);
 
-				// Take signal
-				ret = 0;
 				goto remove_and_next;
 			}
 		}
@@ -169,6 +169,9 @@ int rrr_py_handle_sigchld (void) {
 			else {
 				prev->next = next;
 			}
+
+			child_exit_callback(zombie->pid, callback_arg);
+
 			free(zombie);
 
 			zombie = next;
@@ -180,8 +183,6 @@ int rrr_py_handle_sigchld (void) {
 	}
 
 	pthread_mutex_unlock (&fork_lock);
-
-	return ret;
 }
 
 void rrr_py_push_zombie_unlocked (pid_t pid) {
@@ -240,6 +241,21 @@ static void rrr_py_fork_destroy (struct python3_rrr_objects *rrr_objects, struct
 	VL_DEBUG_MSG_1 ("Python3 terminate fork %p pid %i (while terminating single fork)\n", fork, fork->pid);
 	rrr_py_fork_destroy_unlocked(rrr_objects, fork);
 	pthread_mutex_unlock (&fork_lock);
+}
+
+int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid) {
+	int ret = 1;
+
+	for (struct python3_fork *test = rrr_objects->first_fork; test != NULL; test = test->next) {
+		if (test->pid == pid) {
+			VL_DEBUG_MSG_1 ("Python3 invalidate fork %p pid %i\n", test, pid);
+			test->invalid = 1;
+			ret = 0;
+			break;
+		}
+	}
+
+	return ret;
 }
 
 void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
@@ -475,6 +491,7 @@ void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct pytho
 				goto out;
 			}
 			free(message);
+			message = NULL;
 			RRR_Py_XDECREF(result);
 			RRR_Py_XDECREF(arg);
 			result = NULL;
@@ -868,6 +885,11 @@ int rrr_py_persistent_receive_message (
 	struct rrr_socket_msg *message = NULL;
 
 	while (1) {
+		if (fork->invalid == 1) {
+			VL_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
+			ret = 1;
+			break;
+		}
 		ret = fork->recv(&message, fork->socket_main);
 		if (ret != 0) {
 			VL_MSG_ERR("Error while receiving message from python3 child\n");
@@ -904,6 +926,12 @@ int rrr_py_persistent_process_message (
 	int ret = 0;
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_process_message processing message\n");
+
+	if (fork->invalid == 1) {
+		VL_MSG_ERR("Fork was invalid in rrr_py_persistent_process_message, child has exited\n");
+		ret = 1;
+		goto out;
+	}
 
 	ret = fork->send(fork->socket_main, message);
 	if (ret != 0) {

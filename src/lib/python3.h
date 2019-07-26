@@ -48,6 +48,7 @@ struct python3_fork {
 	PyObject *socket_main;
 	PyObject *socket_child;
 	pid_t pid;
+	int invalid;
 
 	int (*poll)(PyObject *socket);
 	int (*recv)(struct rrr_socket_msg **result, PyObject *socket);
@@ -63,7 +64,8 @@ int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyTh
 int python3_swap_thread_out(struct python3_thread_state *tstate_holder);
 
 /* Asynchronous functions */
-int rrr_py_handle_sigchld(void);
+int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid);
+void rrr_py_handle_sigchld(void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg);
 void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects);
 int rrr_py_start_persistent_rw_thread (
 		struct python3_fork **result_fork,
