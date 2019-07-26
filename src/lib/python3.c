@@ -442,14 +442,16 @@ void __rrr_py_start_onetime_thread_rw_child (PyObject *function, struct python3_
 	result = PyObject_CallFunctionObjArgs(function, socket, arg, NULL);
 	VL_DEBUG_MSG_3("Python3 child pid %i calling one-time function has returned\n", getpid());
 	if (result == NULL) {
-		VL_MSG_ERR("Error while calling python3 user function:\n");
+		VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_onetime_thread_rw_child pid %i\n",
+				getpid());
 		PyErr_Print();
 		ret = 1;
 		goto out;
 
 	}
-	else if (!PyObject_IsTrue(result)) {
-		VL_MSG_ERR("Non-true returned from python3 child %i one-time function\n", getpid());
+	if (!PyObject_IsTrue(result)) {
+		VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_onetime_thread_rw_child pid %i\n",
+				getpid());
 		ret = 1;
 		goto out;
 	}
@@ -485,11 +487,21 @@ void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct pytho
 				goto out;
 			}
 			result = PyObject_CallFunctionObjArgs(function, socket, arg, NULL);
+			if (result == NULL) {
+				VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+						getpid());
+				PyErr_Print();
+				ret = 1;
+				goto out;
+
+			}
 			if (!PyObject_IsTrue(result)) {
-				VL_MSG_ERR("Non-true returned from python3 message process function\n");
+				VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+						getpid());
 				ret = 1;
 				goto out;
 			}
+
 			free(message);
 			message = NULL;
 			RRR_Py_XDECREF(result);
@@ -515,8 +527,18 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 	int ret = 0;
 	while (rrr_py_fork_running) {
 		result = PyObject_CallFunctionObjArgs(function, socket, NULL);
-		if (PyObject_IsTrue(result)) {
-			VL_MSG_ERR("Non-true returned from python3 message process function\n");
+		if (result == NULL) {
+			VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+					getpid());
+			PyErr_Print();
+			ret = 1;
+			goto out;
+
+		}
+		if (!PyObject_IsTrue(result)) {
+			VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+					getpid());
+			ret = 1;
 			goto out;
 		}
 		RRR_Py_XDECREF(result);
@@ -525,7 +547,8 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 	out:
 	RRR_Py_XDECREF(result);
 	if (VL_DEBUGLEVEL_1 || ret != 0) {
-		VL_DEBUG_MSG("Pytohn3 child persistent roprocess exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
+		VL_DEBUG_MSG("Pytohn3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
+				getpid(), ret, rrr_py_fork_running);
 	}
 }
 

@@ -96,11 +96,6 @@ static PyObject *rrr_python3_vl_message_f_set (PyObject *self, PyObject **args, 
 		goto out;
 	}
 
-	if (__rrr_python3_vl_message_set_data (self, args[5]) != 0) {
-		ret = 1;
-		goto out;
-	}
-
 	data->message.type = type;
 	data->message.class = class;
 	data->message.timestamp_from = timestamp_from;
