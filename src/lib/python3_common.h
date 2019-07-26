@@ -22,9 +22,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_COMMON_H
 #define RRR_PYTHON3_COMMON_H
 
+// #define RRR_PYTHON3_DEBUG_REFCOUNT
+
 #include <Python.h>
 
-/* Debug functions */
+static inline void RRR_Py_XDECREF (PyObject *obj) {
+	if ((obj) != NULL && (obj)->ob_refcnt == 0) {
+		VL_BUG("RRR_Py_XDECREF called with refcount being 0\n");
+	}
+#ifdef RRR_PYTHON3_DEBUG_REFCOUNT
+	VL_DEBUG_MSG("Py_XDECREF %p refcount %li\n", (obj), (obj) == NULL ? 0 : (obj)->ob_refcnt);
+#endif
+	Py_XDECREF(obj);
+}
+
+static inline void RRR_Py_INCREF (PyObject *obj) {
+	if ((obj) == NULL) {
+		VL_BUG("RRR_Py_INCREF called with NULL obj\n");
+	}
+#ifdef RRR_PYTHON3_DEBUG_REFCOUNT
+	VL_DEBUG_MSG("Py_INCREF %p refcount %li\n", (obj), (obj)->ob_refcnt);
+#endif
+	Py_INCREF(obj);
+}
+
+static inline void RRR_Py_DECREF (PyObject *obj) {
+	if ((obj) == NULL || (obj)->ob_refcnt == 0) {
+		VL_BUG("RRR_Py_DECREF called with NULL obj or refcount being 0\n");
+	}
+#ifdef RRR_PYTHON3_DEBUG_REFCOUNT
+	VL_DEBUG_MSG("Py_DECREF %p refcount %li\n", (obj), (obj)->ob_refcnt);
+#endif
+	Py_DECREF(obj);
+}
+
 void rrr_py_dump_global_modules(void);
 void rrr_py_dump_dict_entries (PyObject *dict);
 

@@ -342,7 +342,7 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
+		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		processed_entries++;

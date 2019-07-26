@@ -106,6 +106,7 @@ uint32_t crc32buf (const char *buf, int len) {
 
       for (int i = 0; i < len; i++) {
     	  crc32 = UPDC32(*(buf + i), crc32);
+//    	  printf ("CRC: %lu\n", crc32);
       }
 
       return ~crc32;

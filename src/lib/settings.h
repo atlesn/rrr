@@ -24,13 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "rrr_socket.h"
+#include "rrr_socket_msg.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2
+#define RRR_SETTINGS_TYPE_MAX 2
 
-#define RRR_SETTING_IS_STRING(setting) (setting->type==RRR_SETTINGS_TYPE_STRING)
-#define RRR_SETTING_IS_UINT(setting) (setting->type==RRR_SETTINGS_TYPE_UINT)
+#define RRR_SETTING_IS_STRING(setting) ((setting)->type==RRR_SETTINGS_TYPE_STRING)
+#define RRR_SETTING_IS_UINT(setting) ((setting)->type==RRR_SETTINGS_TYPE_UINT)
 
 #define RRR_SETTINGS_UINT_AS_TEXT_MAX 64
 
@@ -58,7 +59,7 @@ struct rrr_setting_packed {
 	vl_u32 type;
 	vl_u32 was_used;
 	vl_u32 data_size;
-	char var_data[1];
+	char data[RRR_SETTINGS_MAX_DATA_SIZE];
 } __attribute((packed));
 
 struct rrr_instance_settings {
@@ -80,6 +81,7 @@ static inline struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_p
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
 	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
 	ret->msg_size = sizeof(*setting);
+	ret->msg_value = 0;
 	return ret;
 }
 
@@ -103,6 +105,11 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name);
 int rrr_settings_check_all_used (struct rrr_instance_settings *settings);
 int rrr_settings_dump (struct rrr_instance_settings *settings);
+int rrr_settings_iterate_nolock (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+);
 int rrr_settings_iterate (
 		struct rrr_instance_settings *settings,
 		int (*callback)(struct rrr_setting *settings, void *callback_args),
@@ -113,6 +120,18 @@ int rrr_settings_iterate_packed (
 		int (*callback)(struct rrr_setting_packed *setting_packed, void *callback_arg),
 		void *callback_arg
 );
+void rrr_settings_update_used (
+		struct rrr_instance_settings *settings,
+		const char *name,
+		int was_used,
+		int (*iterator)(
+				struct rrr_instance_settings *settings,
+				int (*callback)(struct rrr_setting *settings, void *callback_args),
+				void *callback_args
+		)
+);
 int rrr_settings_packed_convert_endianess (struct rrr_setting_packed *setting_packed);
+void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message);
+int rrr_settings_packed_validate (const struct rrr_setting_packed *setting_packed);
 
 #endif /* RRR_SETTINGS_H */

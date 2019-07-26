@@ -1,26 +1,27 @@
-from rrr import *
+from rrr_helper import *
 import time
 
-def process(result : rrr_result, message: vl_message):
+def process(socket : rrr_socket, message: vl_message):
 	# modify the retrieved message as needed
 	message.timestamp_from = message.timestamp_from + 1
 	# queue the message to be sent back (optinal) for python to give to readers
-	result.put(message)
-	return 0
+	socket.send(message)
+	return True
 
-def source(result : rrr_result):
+def source(socket : rrr_socket):
 	# create a new message
-	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	message = vl_message(1, 2, 3, 4, 5)
+#, bytearray("abcdefg", encoding='utf8'))
+	print ("Source message created")
 	# queue the message to be sent back (optinal) for python to give to readers
-	result.put(message)
+	socket.send(message)
 	# sleep to limit output rate
 	time.sleep(1)
-	return 0
+	return True
 
-def config(result : rrr_result, settings : rrr_instance_settings):
-	# retrieve some custom settings from configuration file
-	print ("1: " + settings['custom_config_argument_1'])
-	print ("2: " + settings['custom_config_argument_2'])
-	# send settings back to update which have been read (optional)
-	result.put(settings)
-	return 0
+def config(socket : rrr_socket, setting : rrr_setting):
+	# retrieve a setting from configuration file
+	print ("Setting: " + setting.name + " - " + setting.get())
+	# send setting back to update which have been read (optional)
+	socket.send(setting)
+	return True

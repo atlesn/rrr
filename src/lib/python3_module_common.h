@@ -22,7 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_MODULE_COMMON_H
 #define RRR_PYTHON3_MODULE_COMMON_H
 
-#include "rrr_socket.h"
+#include <Python.h>
+#include <structmember.h>
+
+#include "rrr_socket_msg.h"
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"
@@ -52,12 +55,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_PY_ASSERT_IN_BOUNDS(name,bits) \
 	do {if (name > RRR_PY_PASTE(max_,bits)) { VL_MSG_ERR("Value of parameter " RRR_PY_QUOTE(name) " exceeds maximum in .set()\n"); ret = 1; }}while(0)
-
-#define RRR_PY_VL_MESSAGE_OFFSET(member) \
-		(offsetof(struct rrr_python3_vl_message_data, message) + offsetof(struct vl_message,member))
-
-#define RRR_PY_SETTING_OFFSET(member) \
-		(offsetof(struct rrr_python3_setting_data, setting) + offsetof(struct rrr_setting_packed,member))
 
 #define RRR_PY_DECLARE_GET_TEST_32(idx,name) \
 		unsigned long long name = RRR_PY_LONG_AS_32(args[idx]); \

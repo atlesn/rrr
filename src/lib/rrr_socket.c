@@ -20,86 +20,220 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stddef.h>
-#include <endian.h>
+#include <pthread.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
-#include "crc32.h"
+#include "../global.h"
 #include "rrr_socket.h"
 
-int rrr_socket_msg_head_to_host (struct rrr_socket_msg *message) {
-		if (RRR_SOCKET_MSG_IS_LE(message)) {
-			message->endian_two = le16toh(message->endian_two);
-			message->crc32 = le32toh(message->crc32);
-			message->msg_type = le16toh(message->msg_type);
-			message->msg_size = le32toh(message->msg_size);
-		}
-		else if (RRR_SOCKET_MSG_IS_BE(message)) {
-			message->endian_two = be16toh(message->endian_two);
-			message->crc32 = be32toh(message->crc32);
-			message->msg_type = be16toh(message->msg_type);
-			message->msg_size = be32toh(message->msg_size);
-		}
-		else {
-			VL_MSG_ERR("Unknown endianess in rrr_socket_msg_head_to_host\n");
-			return 1;
-		}
-		return 0;
+/*
+ * The meaning with this global tracking of sockets is to make sure that
+ * forked processes can close not-needed sockets.
+ *
+ * The forked process will have access to this global data in the state
+ * which it had when the fork was created. New sockets created in the
+ * main process can be added later, but they are not visible to
+ * the fork. Also, new sockets in the fork are not visible to main.
+ */
+
+struct rrr_socket_holder {
+	char creator[128];
+	struct rrr_socket_holder *next;
+	int fd;
+};
+
+static struct rrr_socket_holder *first_socket = NULL;
+static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
+
+int rrr_socket_with_lock_do (int (*callback)(void *arg), void *arg) {
+	int ret = 0;
+	pthread_mutex_lock(&socket_lock);
+	ret = callback(arg);
+	pthread_mutex_unlock(&socket_lock);
+	return ret;
 }
 
-void rrr_socket_msg_head_to_network (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size) {
-	if (msg_size < sizeof(*message)) {
-		VL_BUG("Size was too small in rrr_socket_msg_head_to_network\n");
+static void __rrr_socket_dump_unlocked (void) {
+	struct rrr_socket_holder *cur = first_socket;
+	while (cur) {
+		VL_DEBUG_MSG_7 ("fd %i pid %i creator %s\n", cur->fd, getpid(), cur->creator);
+		cur = cur->next;
 	}
-	message->crc32 = htobe32(message->crc32);
-	message->endian_two = htobe16(RRR_SOCKET_MSG_ENDIAN_BYTES);
-	message->msg_type = htobe16(type);
-	message->msg_size = htobe32(msg_size);
+	VL_DEBUG_MSG_7("---\n");
 }
 
-void rrr_socket_msg_checksum (
-	struct rrr_socket_msg *message,
-	ssize_t total_size
-) {
-	if (total_size < sizeof(*message)) {
-		VL_BUG("Size was too small in rrr_socket_msg_checksum\n");
+static void __rrr_socket_add_unlocked (int fd, const char *creator) {
+	if (strlen(creator) > 127) {
+		VL_BUG("Creator name too long in __rrr_socket_add_unlocked\n");
 	}
-	if (((void*) &message->crc32) != ((void*) message)) {
-		VL_BUG("CRC32 was not at beginning of message struct");
+	struct rrr_socket_holder *holder = malloc(sizeof(*holder));
+	holder->fd = fd;
+	holder->next = first_socket;
+	strcpy(holder->creator, creator);
+	first_socket = holder;
+
+	if (VL_DEBUGLEVEL_7) {
+		VL_DEBUG_MSG_7("rrr_socket add fd %i pid %i, sockets are now:\n", fd, getpid());
+		__rrr_socket_dump_unlocked();
 	}
-
-	void *start_pos = ((void *) message) + sizeof(message->crc32);
-	ssize_t checksum_data_length = total_size - sizeof(message->crc32);
-
-	vl_u32 result = crc32buf((char *) start_pos, checksum_data_length);
-	message->crc32 = htobe32(result);
 }
 
-int rrr_socket_msg_checksum_check (
-	struct rrr_socket_msg *message,
-	ssize_t total_size
-) {
-	// HEX dumper
-/*	for (unsigned int i = 0; i < sizeof(*message); i++) {
-		unsigned char *buf = (unsigned char *) message;
-		VL_DEBUG_MSG_3("%x-", *(buf+i));
+int rrr_socket_accept (int fd_in, struct sockaddr *addr, socklen_t *__restrict addr_len, const char *creator) {
+	int fd_out = 0;
+	pthread_mutex_lock(&socket_lock);
+	fd_out = accept(fd_in, addr, addr_len);
+	if (fd_out != -1) {
+		__rrr_socket_add_unlocked(fd_out, creator);
 	}
-	VL_DEBUG_MSG_3("\n");*/
+	pthread_mutex_unlock(&socket_lock);
+	return fd_out;
+}
 
-	vl_u32 checksum = message->crc32;
-	if (RRR_SOCKET_MSG_IS_LE(message)) {
-		checksum = le32toh(checksum);
+int rrr_socket_mkstemp (char *filename, const char *creator) {
+	int fd = 0;
+	pthread_mutex_lock(&socket_lock);
+	fd = mkstemp(filename);
+	if (fd != -1) {
+		__rrr_socket_add_unlocked(fd, creator);
 	}
-	else if (RRR_SOCKET_MSG_IS_BE(message)) {
-		checksum = be32toh(checksum);
+	pthread_mutex_unlock(&socket_lock);
+	return fd;
+}
+
+int rrr_socket (int domain, int type, int protocol, const char *creator) {
+	int fd = 0;
+	pthread_mutex_lock(&socket_lock);
+	fd = socket(domain, type, protocol);
+
+	if (fd != -1) {
+		__rrr_socket_add_unlocked(fd, creator);
+	}
+	pthread_mutex_unlock(&socket_lock);
+	return fd;
+}
+
+int rrr_socket_close (int fd) {
+	if (fd <= 0) {
+		VL_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
+	}
+
+	VL_DEBUG_MSG_7("rrr_socket_close fd %i pid %i\n", fd, getpid());
+
+	int ret = close(fd);
+
+	if (ret != 0) {
+		// A socket is sometimes closed by the other host
+		if (errno != EBADF) {
+			VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n", fd, strerror(errno));
+		}
+	}
+
+	pthread_mutex_lock(&socket_lock);
+
+	int did_free = 0;
+
+	__rrr_socket_dump_unlocked();
+
+	if (first_socket != NULL && first_socket->fd == fd) {
+		struct rrr_socket_holder *cur = first_socket;
+		first_socket = first_socket->next;
+		free(cur);
+		did_free = 1;
 	}
 	else {
-		VL_MSG_ERR("Unknown endian bytes %u found in message\n", message->endian_two);
-		return 1;
+		struct rrr_socket_holder *cur = first_socket;
+		while (cur) {
+			struct rrr_socket_holder *next = cur->next;
+
+			if (next->fd == fd) {
+				cur->next = next->next;
+				free (next);
+				did_free = 1;
+				break;
+			}
+
+			cur = next;
+		}
 	}
 
-	void *start_pos = ((void *) message) + sizeof(message->crc32);
-	ssize_t checksum_data_length = total_size - sizeof(message->crc32);
+	__rrr_socket_dump_unlocked();
 
-	int res = crc32cmp((char *) start_pos, checksum_data_length, checksum);
+	pthread_mutex_unlock(&socket_lock);
 
-	return (res == 0 ? 0 : 1);
+	if (did_free == 0) {
+		VL_BUG("rrr_socket_close called with fd %i which was not in the list\n", fd);
+	}
+
+	return ret;
 }
+
+int rrr_socket_close_all_except (int fd) {
+	int ret = 0;
+
+	if (fd < 0) {
+		VL_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
+	}
+
+	VL_DEBUG_MSG_7("rrr_socket_close_all_except fd %i pid %i\n", fd, getpid());
+
+	int err_count = 0;
+	int count = 0;
+
+	pthread_mutex_lock(&socket_lock);
+
+	struct rrr_socket_holder *found = NULL;
+
+	struct rrr_socket_holder *cur = first_socket;
+	while (cur) {
+		if (cur->fd == fd) {
+			if (found != NULL) {
+				VL_BUG("At least two equal fds found in rrr_socket_close_all_except: %i\n", fd);
+			}
+			found = cur;
+			goto next;
+		}
+
+		ret |= close(cur->fd);
+		if (ret != 0) {
+			err_count++;
+			VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close_all_except: %s\n", fd, strerror(errno));
+		}
+
+		count++;
+
+		next:
+		cur = cur->next;
+	}
+
+	if (found == NULL && fd != 0) {
+		VL_BUG ("rrr_socket_close_all_except called with fd %i which was not in the list\n", fd);
+	}
+
+	if (found != NULL) {
+		found->next = NULL;
+		first_socket = found;
+	}
+	else {
+		first_socket = NULL;
+	}
+
+	if (VL_DEBUGLEVEL_7) {
+		__rrr_socket_dump_unlocked();
+	}
+
+	pthread_mutex_unlock(&socket_lock);
+
+	VL_DEBUG_MSG_1("Closed %i sockets with %i errors pid %i\n", count, err_count, getpid());
+
+	return ret;
+}
+
+int rrr_socket_close_all (void) {
+	return rrr_socket_close_all_except(0);
+}
+

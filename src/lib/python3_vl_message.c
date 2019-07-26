@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_module_common.h"
 #include "python3_vl_message.h"
-#include "rrr_socket.h"
+#include "rrr_socket_msg.h"
 #include "messages.h"
 
 //static const unsigned long int max_8 = 0xff;
@@ -71,19 +71,19 @@ int __rrr_python3_vl_message_set_data (PyObject *self, PyObject *byte_data) {
 
 static PyObject *rrr_python3_vl_message_f_set_data (PyObject *self, PyObject *args) {
 	if (__rrr_python3_vl_message_set_data (self, args) != 0) {
-		Py_INCREF(Py_False);
-		return Py_False;
+		Py_RETURN_FALSE;
 	}
-	Py_INCREF(Py_True);
-	return Py_True;
+	Py_RETURN_TRUE;
 }
 
 static PyObject *rrr_python3_vl_message_f_set (PyObject *self, PyObject **args, Py_ssize_t arg_length) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 	int ret = 0;
 
-	if (arg_length != 6) {
-		VL_MSG_ERR("Wrong number of parameters to rrr_python3_vl_message_f_set. Got %li but expected 6.\n", arg_length);
+	if (arg_length != 5) {
+		VL_MSG_ERR("Wrong number of parameters to rrr_python3_vl_message_f_set. Got %li but expected 5.\n", arg_length);
+		ret = 1;
+		goto out;
 	}
 
 	RRR_PY_DECLARE_GET_TEST_32(0,type);
@@ -109,19 +109,59 @@ static PyObject *rrr_python3_vl_message_f_set (PyObject *self, PyObject **args, 
 
 	out:
 	if (ret) {
-		Py_INCREF(Py_False);
-		return Py_False;
+		Py_RETURN_FALSE;
 	}
-	Py_INCREF(Py_True);
-	return Py_True;
+	Py_RETURN_TRUE;
+}
+
+static PyObject *rrr_python3_vl_message_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
+	PyObject *self = PyType_GenericNew(type, args, kwds);
+	if (self == NULL) {
+		return NULL;
+	}
+
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+
+	memset (&data->message, '\0', sizeof(data->message));
+
+	return self;
 }
 
 // TODO : Check that args/kwds are empty
 static int rrr_python3_vl_message_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
-	(void)(args);
-	(void)(kwds);
+
 	memset (&data->message, '\0', sizeof(data->message));
+
+	if (kwds != NULL && PyDict_Size(kwds) != 0) {
+		VL_MSG_ERR("Keywords not supported in vl_message init\n");
+		return 1;
+	}
+
+	Py_ssize_t argc = PyTuple_Size(args);
+	if (argc != 0) {
+		if (argc != 5) {
+			VL_MSG_ERR("Wrong number of parameters to vl_messag init. Got %li but expected 5 or 0.\n", argc);
+			return 1;
+		}
+
+		PyObject *args_new[5] = {
+				PyTuple_GetItem(args, 0),
+				PyTuple_GetItem(args, 1),
+				PyTuple_GetItem(args, 2),
+				PyTuple_GetItem(args, 3),
+				PyTuple_GetItem(args, 4)
+		};
+
+		PyObject *res = rrr_python3_vl_message_f_set(self, args_new, 5);
+		if (res == NULL || !PyObject_IsTrue(res)) {
+			VL_MSG_ERR("Error from set function in vl_message init\n");
+			Py_XDECREF(res);
+			return 1;
+		}
+		Py_XDECREF(res);
+	}
+
 	return 0;
 }
 
@@ -156,6 +196,10 @@ static PyMethodDef vl_message_methods[] = {
 		},
 		{ NULL, NULL, 0, NULL }
 };
+
+struct rrr_python3_vl_message_data dummy;
+#define RRR_PY_VL_MESSAGE_OFFSET(member) \
+	(((void*) &(dummy.message.member)) - ((void*) &(dummy)))
 
 static PyMemberDef vl_message_members[] = {
 		{"endian_two",		RRR_PY_16,	RRR_PY_VL_MESSAGE_OFFSET(endian_two),		0, "Both endian bytes"},
@@ -207,7 +251,7 @@ PyTypeObject rrr_python3_vl_message_type = {
 	    tp_dictoffset:		0,
 	    tp_init:			rrr_python3_vl_message_f_init,
 	    tp_alloc:			PyType_GenericAlloc,
-	    tp_new:				PyType_GenericNew,
+	    tp_new:				rrr_python3_vl_message_f_new,
 	    tp_free:			NULL,
 	    tp_is_gc:			NULL,
 	    tp_bases:			NULL,
@@ -242,7 +286,7 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 
 	ret = PyObject_New(struct rrr_python3_vl_message_data, &rrr_python3_vl_message_type);
 	if (ret) {
-		memcpy(&ret->message, msg, sizeof(ret->message));
+		memcpy(&ret->message, msg, msg->msg_size);
 	}
 
 	return (PyObject *) ret;

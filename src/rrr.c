@@ -23,8 +23,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "main.h"
+#include "main_signals.h"
 #include "global.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -59,12 +61,81 @@ const char *module_library_paths[] = {
 
 static volatile int main_running = 1;
 
-void signal_interrupt (int s) {
+pthread_mutex_t signal_lock = PTHREAD_MUTEX_INITIALIZER;
 
-    if (s == SIGUSR1) {
+struct rrr_signal_handler *first_handler = NULL;
+
+struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg) {
+	pthread_mutex_lock(&signal_lock);
+	struct rrr_signal_handler *h = malloc(sizeof(*h));
+	h->handler = handler;
+	h->next = first_handler;
+	h->private_arg = private_arg;
+	first_handler = h;
+	pthread_mutex_unlock(&signal_lock);
+	return h;
+}
+
+void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
+	pthread_mutex_lock(&signal_lock);
+	int did_remove = 0;
+	if (first_handler == handler) {
+		first_handler = first_handler->next;
+		free(handler);
+		did_remove = 1;
+	}
+	else {
+		struct rrr_signal_handler *test = first_handler;
+		while (test) {
+			if (test->next == handler) {
+				test->next = test->next->next;
+				free(handler);
+				did_remove = 1;
+				break;
+			}
+			test = test->next;
+		}
+	}
+	if (did_remove != 1) {
+		VL_BUG("Attempted to remove signal handler which did not exist\n");
+	}
+	pthread_mutex_unlock(&signal_lock);
+}
+
+static struct rrr_signal_functions signal_functions = {
+		rrr_signal_handler_push,
+		rrr_signal_handler_remove
+};
+
+void signal_interrupt (int s) {
+    VL_DEBUG_MSG_1("Received signal %i\n", s);
+
+	struct rrr_signal_handler *test = first_handler;
+
+	int handler_res = 1;
+	while (test) {
+		printf ("-> calling handler\n");
+		int ret = test->handler(s, test->private_arg);
+		if (ret == 0) {
+			// Handlers may also return non-zero for signal to continue
+			handler_res = 0;
+			break;
+		}
+		test = test->next;
+	}
+
+	if (handler_res == 0) {
+		printf ("Signal processed by handler, stop\n");
+		return;
+	}
+
+	if (s == SIGCHLD) {
+		printf ("Received SIGCHLD\n");
+	}
+	else if (s == SIGUSR1) {
         main_running = 0;
     }
-    if (s == SIGPIPE) {
+    else if (s == SIGPIPE) {
         VL_MSG_ERR("Received SIGPIPE, ignoring\n");
     }
     else if (s == SIGTERM) {
@@ -74,10 +145,10 @@ void signal_interrupt (int s) {
         main_running = 0;
     }
 
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
-
     // Allow double ctrl+c to close program
-	signal(SIGINT, SIG_DFL);
+	if (s == SIGINT) {
+		signal(SIGINT, SIG_DFL);
+	}
 }
 
 int main (int argc, const char *argv[]) {
@@ -94,7 +165,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	if (instance_metadata_collection_new (&instances) != 0) {
+	if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_no_cleanup;
 	}
@@ -130,20 +201,21 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
-	threads_restart:
-
-	rrr_set_debuglevel_orig();
-	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
-		goto out_stop_threads;
-	}
-
 	// Initialzie dynamic_data thread data
 	struct sigaction action;
 	action.sa_handler = signal_interrupt;
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
 
-	sigaction (SIGTERM, &action, NULL);
+	threads_restart:
+
+	sigaction (SIGCHLD, &action, NULL);
+
+	rrr_set_debuglevel_orig();
+	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
+		goto out_stop_threads;
+	}
+
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 	sigaction (SIGPIPE, &action, NULL);
@@ -159,6 +231,7 @@ int main (int argc, const char *argv[]) {
 			thread_destroy_collection (collection);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
+				usleep(1000000);
 				goto threads_restart;
 			}
 			else {

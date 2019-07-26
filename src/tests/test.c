@@ -121,7 +121,7 @@ int main (int argc, const char **argv) {
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
-		if (instance_metadata_collection_new (&instances) != 0) {
+		if (instance_metadata_collection_new (&instances, NULL) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);

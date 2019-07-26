@@ -401,13 +401,11 @@ void flip_endianess_32(vl_u32 *value) {
 	*value = result;
 }
 
-int message_convert_endianess (
-		struct vl_message *message
-) {
-	if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message) != 0) {
-		return 1;
-	}
+int message_convert_endianess (struct vl_message *message) {
 	if (RRR_SOCKET_MSG_IS_LE(message)) {
+		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message) != 0) {
+			return 1;
+		}
 		message->type = le32toh(message->type);
 		message->class = le32toh(message->class);
 		message->timestamp_from = le64toh(message->timestamp_from);
@@ -416,6 +414,9 @@ int message_convert_endianess (
 		message->length = le32toh(message->length);
 	}
 	else if (RRR_SOCKET_MSG_IS_BE(message)) {
+		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message) != 0) {
+			return 1;
+		}
 		message->type = be32toh(message->type);
 		message->class = be32toh(message->class);
 		message->timestamp_from = be64toh(message->timestamp_from);
@@ -431,10 +432,20 @@ int message_convert_endianess (
 	return 0;
 }
 
-void message_prepare_for_network (
-	struct vl_message *message
-) {
-	rrr_socket_msg_head_to_network ((struct rrr_socket_msg *) message, RRR_SOCKET_MSG_TYPE_VL_MESSAGE, sizeof(*message));
+void message_prepare_for_network (struct vl_message *message) {
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) message,
+			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
+			sizeof(*message),
+			0
+	);
+	rrr_socket_msg_checksum (
+			(struct rrr_socket_msg *) message,
+			sizeof(*message)
+	);
+	rrr_socket_msg_head_to_network (
+			(struct rrr_socket_msg *) message
+	);
 
 	message->type = htobe32(message->type);
 	message->class = htobe32(message->class);
@@ -443,7 +454,6 @@ void message_prepare_for_network (
 	message->data_numeric = htobe64(message->data_numeric);
 	message->length = htobe32(message->length);
 
-	rrr_socket_msg_checksum((struct rrr_socket_msg *) message, sizeof(*message));
 
 	if (VL_DEBUGLEVEL_6) {
 		VL_DEBUG_MSG("Message prepared for network: ");
@@ -464,5 +474,28 @@ void message_prepare_for_network (
 struct vl_message *message_duplicate(struct vl_message *message) {
 	struct vl_message *ret = malloc(sizeof(*ret));
 	memcpy(ret, message, sizeof(*ret));
+	return ret;
+}
+
+int message_validate (const struct vl_message *message){
+	int ret = 0;
+
+	if (message->msg_size != sizeof(*message)) {
+		VL_MSG_ERR("Received a message in message_validate with invalid header size field (%u)\n", message->msg_size);
+		ret = 1;
+	}
+	if (!MSG_CLASS_OK(message)) {
+		VL_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
+		ret = 1;
+	}
+	if (!MSG_TYPE_OK(message)) {
+		VL_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
+		ret = 1;
+	}
+	if (!MSG_DATA_LENGTH_OK(message)) {
+		VL_MSG_ERR("Invalid data length %u in message to message_validate\n", message->length);
+		ret = 1;
+	}
+
 	return ret;
 }

@@ -22,15 +22,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_SOCKET_H
 #define RRR_PYTHON3_SOCKET_H
 
-#include "rrr_socket.h"
+#include <Python.h>
 
-struct Py_ssize_t;
-struct PyObject;
+struct rrr_socket_msg;
 
-const char *rrr_python3_module_socket_get_filename(PyObject *self);
+int rrr_python3_socket_get_fd (PyObject *self);
+int rrr_python3_socket_get_connected_fd (PyObject *self);
+const char *rrr_python3_socket_get_filename(PyObject *self);
 PyObject *rrr_python3_socket_new (const char *filename);
 int rrr_python3_socket_poll (PyObject *socket);
-int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message);
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, Py_ssize_t *result_count, PyObject *socket);
+int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message);
+int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket);
+int rrr_python3_socket_accept (PyObject *self);
+void rrr_python3_socket_close (PyObject *self);
 
 #endif /* RRR_PYTHON3_SOCKET_H */

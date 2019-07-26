@@ -19,18 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_SOCKET_H
-#define RRR_SOCKET_H
+#ifndef RRR_MAIN_SIGNALS_H
+#define RRR_MAIN_SIGNALS_H
 
-#include <sys/socket.h>
-#include <unistd.h>
+struct rrr_signal_handler {
+	struct rrr_signal_handler *next;
+	int (*handler)(int signal, void *private_arg);
+	void *private_arg;
+};
 
-int rrr_socket_with_lock_do (int (*callback)(void *arg), void *arg);
-int rrr_socket_accept (int fd_in, struct sockaddr *addr, socklen_t *__restrict addr_len, const char *creator);
-int rrr_socket_mkstemp (char *filename, const char *creator);
-int rrr_socket (int domain, int type, int protocol, const char *creator);
-int rrr_socket_close (int fd);
-int rrr_socket_close_all_except (int fd);
-int rrr_socket_close_all (void);
+struct rrr_signal_functions {
+	struct rrr_signal_handler *(*push_handler)(int (*hander)(int,void*), void *private_arg);
+	void (*remove_handler)(struct rrr_signal_handler *);
+};
 
-#endif /* RRR_SOCKET_H */
+#endif /* RRR_MAIN_SIGNALS_H */

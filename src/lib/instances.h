@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INSTANCES_H
 #define RRR_INSTANCES_H
 
+#include "../main_signals.h"
 #include "../global.h"
 #include "modules.h"
 #include "configuration.h"
@@ -36,6 +37,7 @@ struct instance_metadata {
 	struct instance_thread_data *thread_data;
 	struct instance_sender_collection senders;
 	struct rrr_instance_config *config;
+	struct rrr_signal_handler *signal_handler;
 	unsigned long int senders_count;
 };
 
@@ -45,6 +47,7 @@ struct instance_metadata {
 struct instance_metadata_collection {
 	int length;
 	struct instance_metadata *first_entry;
+	struct rrr_signal_functions *signal_functions;
 };
 
 struct instance_dynamic_data {
@@ -57,6 +60,7 @@ struct instance_dynamic_data {
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(void);
+	int (*signal_handler)(int s, void *priv);
 	struct instance_metadata_collection *all_instances;
 };
 
@@ -91,7 +95,7 @@ void instance_free_all_thread_data(struct instance_metadata_collection *target);
 int instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
 void instance_unload_all(struct instance_metadata_collection *target);
 void instance_metadata_collection_destroy (struct instance_metadata_collection *target);
-int instance_metadata_collection_new (struct instance_metadata_collection **target);
+int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions);
 
 int instance_add_senders (
 		struct instance_metadata_collection *instances,

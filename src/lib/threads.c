@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 //#define VL_THREAD_NO_WATCHDOGS
+#define VL_THREAD_FREEZE_LIMIT_FACTOR 1000
 
 struct vl_thread_ghost {
 	struct vl_thread_ghost *next;
@@ -536,7 +537,7 @@ void *__thread_watchdog_entry (void *arg) {
 			break;
 		}
 		else if (!rrr_global_config.no_watchdog_timers &&
-				(prevtime + VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 < nowtime)
+				(prevtime + (long long unsigned int) VL_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
 			if (time_get_64() - prev_loop_time > 100000) { // 100 ms
 				VL_MSG_ERR ("Thread %s/%p has been frozen but so has the watchdog, maybe we are debugging?\n", thread->name, thread);

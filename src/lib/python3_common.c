@@ -46,7 +46,7 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
 	return ret;
 
 	out_err_cleanup:
-	Py_XDECREF(ret);
+	RRR_Py_XDECREF(ret);
 
 	out_err:
 	return NULL;
@@ -55,7 +55,7 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
 PyObject *rrr_py_call_function_no_args(PyObject *function) {
 	PyObject *args = PyTuple_New(0);
 	PyObject *result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
+	RRR_Py_XDECREF(args);
 	if (result == NULL) {
 		PyErr_Print();
 	}
@@ -72,7 +72,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 
 	PyObject *args = PyTuple_New(0);
 	result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
+	RRR_Py_XDECREF(args);
 	if (result == NULL) {
 		VL_MSG_ERR("NULL result from function %s\n", symbol);
 		PyErr_Print();
@@ -80,7 +80,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 	}
 
 	out_cleanup:
-	Py_XDECREF(function);
+	RRR_Py_XDECREF(function);
 
 	return result;
 }
@@ -110,7 +110,7 @@ void rrr_py_dump_global_modules(void) {
 				VL_MSG_ERR ("Warning: __name__ not found in module object with index %i\n", i);
 			}
 
-			Py_XDECREF(name_obj);
+			RRR_Py_XDECREF(name_obj);
 		}
 	}
 }
@@ -129,5 +129,5 @@ void rrr_py_dump_dict_entries (PyObject *dict) {
 		printf ("-> [%i]: %s\n", i, key);
     }
 
-    Py_XDECREF(keys);
+    RRR_Py_XDECREF(keys);
 }

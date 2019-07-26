@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/socket.h>
 #include <poll.h>
 
 #ifdef VL_WITH_OPENSSL
@@ -307,7 +306,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 //	struct fifo_callback_args poll_data = {NULL, data, 0};
-	return ip_receive_messages(
+	return ip_receive_messages (
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
 			&data->crypt_data,

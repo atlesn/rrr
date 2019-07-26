@@ -73,14 +73,26 @@ void instance_unload_all(struct instance_metadata_collection *instances) {
 	}
 }
 
-void __instance_metadata_destroy (struct instance_metadata *target) {
+void __instance_metadata_destroy (
+		struct instance_metadata_collection *instances,
+		struct instance_metadata *target
+) {
 	instance_free_thread(target->thread_data);
 	senders_clear(&target->senders);
+
+	if (instances->signal_functions != NULL && target->signal_handler != NULL) {
+		instances->signal_functions->remove_handler(target->signal_handler);
+	}
+
 	free(target->dynamic_data);
 	free(target);
 }
 
-int __instance_metadata_new (struct instance_metadata **target, struct instance_dynamic_data *data) {
+int __instance_metadata_new (
+		struct instance_metadata_collection *instances,
+		struct instance_metadata **target,
+		struct instance_dynamic_data *data
+) {
 	int ret = 0;
 
 	struct instance_metadata *meta = malloc(sizeof(*meta));
@@ -96,6 +108,10 @@ int __instance_metadata_new (struct instance_metadata **target, struct instance_
 	meta->dynamic_data = data;
 	senders_init(&meta->senders);
 
+	if (instances->signal_functions != NULL && data->signal_handler != NULL) {
+		meta->signal_handler = instances->signal_functions->push_handler(data->signal_handler, meta);
+	}
+
 	*target = meta;
 
 	out:
@@ -110,7 +126,7 @@ struct instance_metadata *__instance_save (
 	VL_DEBUG_MSG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct instance_metadata *target;
-	if (__instance_metadata_new (&target, module) != 0) {
+	if (__instance_metadata_new (instances, &target, module) != 0) {
 		VL_MSG_ERR("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
@@ -301,7 +317,7 @@ void instance_metadata_collection_destroy (struct instance_metadata_collection *
 	while (meta != NULL) {
 		struct instance_metadata *next = meta->next;
 
-		__instance_metadata_destroy(meta);
+		__instance_metadata_destroy(target, meta);
 
 		meta = next;
 	}
@@ -309,7 +325,7 @@ void instance_metadata_collection_destroy (struct instance_metadata_collection *
 	free(target);
 }
 
-int instance_metadata_collection_new (struct instance_metadata_collection **target) {
+int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions) {
 	int ret = 0;
 
 	*target = malloc(sizeof(**target));
@@ -320,6 +336,8 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 		ret = 1;
 		goto out;
 	}
+
+	(*target)->signal_functions = signal_functions;
 
 	out:
 	return ret;
