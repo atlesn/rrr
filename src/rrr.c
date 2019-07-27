@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "main.h"
-#include "main_signals.h"
 #include "global.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -61,94 +60,34 @@ const char *module_library_paths[] = {
 
 static volatile int main_running = 1;
 
-pthread_mutex_t signal_lock = PTHREAD_MUTEX_INITIALIZER;
-
-struct rrr_signal_handler *first_handler = NULL;
-
-struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg) {
-	pthread_mutex_lock(&signal_lock);
-	struct rrr_signal_handler *h = malloc(sizeof(*h));
-	h->handler = handler;
-	h->next = first_handler;
-	h->private_arg = private_arg;
-	first_handler = h;
-	pthread_mutex_unlock(&signal_lock);
-	return h;
-}
-
-void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
-	pthread_mutex_lock(&signal_lock);
-	int did_remove = 0;
-	if (first_handler == handler) {
-		first_handler = first_handler->next;
-		free(handler);
-		did_remove = 1;
-	}
-	else {
-		struct rrr_signal_handler *test = first_handler;
-		while (test) {
-			if (test->next == handler) {
-				test->next = test->next->next;
-				free(handler);
-				did_remove = 1;
-				break;
-			}
-			test = test->next;
-		}
-	}
-	if (did_remove != 1) {
-		VL_BUG("Attempted to remove signal handler which did not exist\n");
-	}
-	pthread_mutex_unlock(&signal_lock);
-}
-
-static struct rrr_signal_functions signal_functions = {
-		rrr_signal_handler_push,
-		rrr_signal_handler_remove
-};
-
-void signal_interrupt (int s) {
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
-
-	struct rrr_signal_handler *test = first_handler;
-
-	int handler_res = 1;
-	while (test) {
-		printf ("-> calling handler\n");
-		int ret = test->handler(s, test->private_arg);
-		if (ret == 0) {
-			// Handlers may also return non-zero for signal to continue
-			handler_res = 0;
-			break;
-		}
-		test = test->next;
-	}
-
-	if (handler_res == 0) {
-		printf ("Signal processed by handler, stop\n");
-		return;
-	}
+int main_signal_handler(int s, void *arg) {
+	(void)(arg);
 
 	if (s == SIGCHLD) {
-		printf ("Received SIGCHLD\n");
+		VL_DEBUG_MSG_1("Received SIGCHLD\n");
 	}
 	else if (s == SIGUSR1) {
-        main_running = 0;
-    }
-    else if (s == SIGPIPE) {
-        VL_MSG_ERR("Received SIGPIPE, ignoring\n");
-    }
-    else if (s == SIGTERM) {
-    	exit(EXIT_FAILURE);
-    }
-    else {
-        main_running = 0;
-    }
+		main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
+	else if (s == SIGPIPE) {
+		VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+	}
+	else if (s == SIGTERM) {
+		exit(EXIT_FAILURE);
+	}
+	else {
+		// Also traps SIGINT
+		main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
 
-    // Allow double ctrl+c to close program
+	// Allow double ctrl+c to close program
 	if (s == SIGINT) {
 		signal(SIGINT, SIG_DFL);
 	}
+
+	return RRR_SIGNAL_NOT_HANDLED;
 }
 
 int main (int argc, const char *argv[]) {
@@ -157,24 +96,34 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	struct rrr_signal_handler *signal_handler = NULL;
 	struct vl_thread_collection *collection = NULL;
-	struct instance_metadata_collection *instances;
-	const char* config_string;
-	struct cmd_data cmd;
+	struct instance_metadata_collection *instances = NULL;
+	const char *config_string = NULL;
 	struct rrr_config *config = NULL;
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
+	struct cmd_data cmd;
+
+	struct rrr_signal_functions signal_functions = {
+			rrr_signal_handler_set_active,
+			rrr_signal_handler_push,
+			rrr_signal_handler_remove
+	};
+
+	signal_handler = signal_functions.push_handler(main_signal_handler, NULL);
+
 	if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_no_cleanup;
+		goto out_cleanup_signal;
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
-		goto out_no_cleanup;
+		goto out_cleanup_signal;
 	}
 
-	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
+	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
 
 	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL) {
@@ -203,22 +152,31 @@ int main (int argc, const char *argv[]) {
 
 	// Initialzie dynamic_data thread data
 	struct sigaction action;
-	action.sa_handler = signal_interrupt;
+	action.sa_handler = rrr_signal;
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
 
 	threads_restart:
 
+	// During preload stage, signals are temporarily deactivated.
+	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
+
+	// Handle forked children exiting
 	sigaction (SIGCHLD, &action, NULL);
+	// We generally ignore sigpipe and use NONBLOCK on all sockets
+	sigaction (SIGPIPE, &action, NULL);
+	// Used to set main_running = 0. The signal is set to default afterwards
+	// so that a second SIGINT will terminate the process
+	sigaction (SIGINT, &action, NULL);
+	// Used to set main_running = 0;
+	sigaction (SIGUSR1, &action, NULL);
+	// Exit immediately with EXIT_FAILURE
+	sigaction (SIGTERM, &action, NULL);
 
 	rrr_set_debuglevel_orig();
 	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
-
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
-	sigaction (SIGPIPE, &action, NULL);
 
 	while (main_running) {
 		usleep (100000);
@@ -267,7 +225,8 @@ int main (int argc, const char *argv[]) {
 
 		instance_metadata_collection_destroy(instances);
 
-	out_no_cleanup:
+	out_cleanup_signal:
+		rrr_signal_handler_remove(signal_handler);
 		if (ret == 0) {
 			VL_DEBUG_MSG_1("Exiting program without errors\n");
 		}

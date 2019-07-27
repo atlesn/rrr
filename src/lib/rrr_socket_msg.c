@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "crc32.h"
 
-void rrr_socket_msg_populate_head (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value) {
+void rrr_socket_msg_populate_head  (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value) {
 	if (msg_size < sizeof(*message)) {
 		VL_BUG("Size was too small in rrr_socket_msg_head_to_network\n");
 	}
@@ -117,7 +117,23 @@ int rrr_socket_msg_checksum_check (
 int rrr_socket_msg_head_validate (struct rrr_socket_msg *message) {
 	int ret = 0;
 
-	if (message->msg_type < RRR_SOCKET_MSG_TYPE_MIN || message->msg_type > RRR_SOCKET_MSG_TYPE_MAX) {
+	if (RRR_SOCKET_MSG_IS_CTRL(message)) {
+		// Clear all known control flags
+		vl_u16 type = message->msg_type;
+		type = type & ~(RRR_SOCKET_MSG_CTRL_F_ALL);
+		if (type != 0) {
+			VL_MSG_ERR("Unknown control flags in message: %u\n", type);
+			ret = 1;
+		}
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
+		ret = 0;
+	}
+	else {
+		ret = 1;
+	}
+
+	if (ret != 0) {
 		VL_MSG_ERR("Received message with invalid type %u in rrr_socket_msg_head_validate\n", message->msg_type);
 		ret = 1;
 	}

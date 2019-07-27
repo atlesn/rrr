@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../global.h"
+#include "../main.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
@@ -370,10 +371,10 @@ struct instance_thread_data *instance_init_thread(struct instance_thread_init_da
 	return data;
 }
 
-int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
+int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
 	struct instance_dynamic_data *module = data->init_data.module;
 
-	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	VL_DEBUG_MSG_1 ("Preloading thread %s\n", module->instance_name);
 	if (data->thread != NULL) {
 		VL_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
 		exit(EXIT_FAILURE);
@@ -389,8 +390,20 @@ int instance_start_thread(struct vl_thread_collection *collection, struct instan
 	);
 
 	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
+		VL_MSG_ERR ("Error while preloading thread for instance %s\n", module->instance_name);
 		free(data);
+		return 1;
+	}
+
+	return 0;
+}
+
+int instance_start_thread (struct instance_thread_data *data) {
+	struct instance_dynamic_data *module = data->init_data.module;
+
+	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	if (thread_start(data->thread) != 0) {
+		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
 		return 1;
 	}
 

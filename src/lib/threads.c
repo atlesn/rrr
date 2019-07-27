@@ -255,7 +255,7 @@ int __thread_is_in_collection (struct vl_thread_collection *collection, struct v
 	return ret;
 }
 
-int __thread_new_thread (struct vl_thread **target) {
+int __thread_allocate_thread (struct vl_thread **target) {
 	int ret = 0;
 	*target = NULL;
 
@@ -266,7 +266,7 @@ int __thread_new_thread (struct vl_thread **target) {
 		goto out;
 	}
 
-	VL_DEBUG_MSG_1 ("Initialize thread %p\n", thread);
+	VL_DEBUG_MSG_1 ("Allocate thread %p\n", thread);
 	memset(thread, '\0', sizeof(struct vl_thread));
 	pthread_mutex_init(&thread->mutex, NULL);
 
@@ -279,8 +279,7 @@ int __thread_new_thread (struct vl_thread **target) {
 void __thread_destroy (struct vl_thread *thread) {
 	thread_lock(thread);
 	if (thread->state != VL_THREAD_STATE_STOPPED) {
-		VL_MSG_ERR ("Attempted to free thread which was not STOPPED\n");
-		exit (EXIT_FAILURE);
+		VL_BUG("Attempted to free thread which was not STOPPED\n");
 	}
 	thread->state = VL_THREAD_STATE_FREE;
 	thread_unlock(thread);
@@ -647,9 +646,7 @@ void *__thread_watchdog_entry (void *arg) {
 }
 
 void __thread_cleanup(void *arg) {
-	struct vl_thread_start_data *start_data = arg;
-	struct vl_thread *thread = start_data->thread;
-	free(start_data);
+	struct vl_thread *thread = arg;
 
 	// Check if we have died slowly and need to clean something up
 	// from our parent which has abandoned us
@@ -667,12 +664,12 @@ void __thread_cleanup(void *arg) {
 }
 
 void *__thread_start_routine_intermediate(void *arg) {
-	struct vl_thread_start_data *start_data = arg;
+	struct vl_thread *thread = arg;
 
-	pthread_cleanup_push(thread_set_stopped, start_data->thread);
-	pthread_cleanup_push(__thread_cleanup, start_data);
+	pthread_cleanup_push(thread_set_stopped, thread);
+	pthread_cleanup_push(__thread_cleanup, thread);
 
-	start_data->start_routine(start_data);
+	thread->start_routine(thread);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -743,62 +740,10 @@ void threads_stop_and_join (
 	// Don't unlock, destroy does that
 }
 
-struct vl_thread *thread_preload_and_register (
-		struct vl_thread_collection *collection,
-		void *(*start_routine) (struct vl_thread_start_data *),
-		int (*preload_routine) (struct vl_thread_start_data *),
-		void (*poststop_routine) (const struct vl_thread *),
-		int (*cancel_function) (struct vl_thread *),
-		int start_priority,
-		void *arg, const char *name
-) {
-	struct vl_thread *thread = NULL;
-	struct vl_thread *watchdog_thread = NULL;
-	struct vl_thread_start_data *start_data = NULL;
+int thread_start (struct vl_thread *thread) {
+	int err = 0;
 
-	if (__thread_new_thread(&thread) != 0) {
-		VL_MSG_ERR("Could not allocate thread\n");
-		goto out_error;
-	}
-	__thread_collection_add_thread(collection, thread);
-
-	if (strlen(name) > sizeof(thread->name) - 5) {
-		VL_MSG_ERR ("Name for thread was too long: '%s'\n", name);
-		goto out_error;
-	}
-
-	thread->private_data = arg;
-	thread->cancel_function = cancel_function;
-	thread->poststop_routine = poststop_routine;
-	thread->watchdog_time = 0;
-	thread->signal = 0;
-	thread->start_priority = start_priority;
-	sprintf(thread->name, "%s", name);
-
-	if (__thread_new_thread(&watchdog_thread) != 0) {
-		VL_MSG_ERR("Could not allocate watchdog thread\n");
-		goto out_error;
-	}
-	__thread_collection_add_thread(collection, watchdog_thread);
-
-
-	thread_lock(thread);
-
-	// The thread frees *start_data with a pthread cleanup function
-	start_data = malloc(sizeof(*start_data));
-	start_data->private_arg = arg;
-	start_data->start_routine = start_routine;
-	start_data->thread = thread;
-
-	thread->state = VL_THREAD_STATE_INIT;
-
-	int err = (preload_routine != NULL ? preload_routine(start_data) : 0);
-	if (err != 0) {
-		VL_MSG_ERR ("Error while preloading thread\n");
-		goto out_error;
-	}
-
-	err = pthread_create(&thread->thread, NULL, __thread_start_routine_intermediate, start_data);
+	err = pthread_create(&thread->thread, NULL, __thread_start_routine_intermediate, thread);
 	if (err != 0) {
 		VL_MSG_ERR ("Error while starting thread: %s\n", strerror(err));
 		goto out_error;
@@ -810,19 +755,25 @@ struct vl_thread *thread_preload_and_register (
 
 #ifndef VL_THREAD_NO_WATCHDOGS
 	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
-	watchdog_data->watchdog_thread = watchdog_thread;
+	watchdog_data->watchdog_thread = thread->watchdog;
 	watchdog_data->watched_thread = thread;
 
-	sprintf(watchdog_thread->name, "WD: %s", name);
+	if (strlen(thread->name) > 55) {
+		VL_BUG("Name of thread too long");
+	}
 
-	err = pthread_create(&watchdog_thread->thread, NULL, __thread_watchdog_entry, watchdog_data);
+	// Do this two-stage to avoid compile warning, we check the length above
+	sprintf(thread->watchdog->name, "WD: ");
+	sprintf(thread->watchdog->name + strlen(thread->watchdog->name), "%s", thread->name);
+
+	err = pthread_create(&thread->watchdog->thread, NULL, __thread_watchdog_entry, watchdog_data);
 	if (err != 0) {
 		VL_MSG_ERR ("Error while starting watchdog thread: %s\n", strerror(err));
 		pthread_cancel(thread->thread);
 		goto out_error;
 	}
 
-	watchdog_thread->is_watchdog = 1;
+	thread->watchdog->is_watchdog = 1;
 
 	VL_DEBUG_MSG_1 ("Thread %s Watchdog started\n", thread->name);
 #endif
@@ -830,19 +781,81 @@ struct vl_thread *thread_preload_and_register (
 	// Thread tries to set a signal first and therefore can't proceed untill we unlock
 	thread_unlock(thread);
 
-	return thread;
+	return 0;
 
 	out_error:
 	if (thread != NULL) {
 		thread_unlock_if_locked(thread);
+	}
+	if (thread->watchdog != NULL) {
+		thread_unlock_if_locked(thread->watchdog);
+	}
+
+	return 1;
+}
+
+struct vl_thread *thread_preload_and_register (
+		struct vl_thread_collection *collection,
+		void *(*start_routine) (struct vl_thread *),
+		int (*preload_routine) (struct vl_thread *),
+		void (*poststop_routine) (const struct vl_thread *),
+		int (*cancel_function) (struct vl_thread *),
+		int start_priority,
+		void *arg, const char *name
+) {
+	struct vl_thread *thread = NULL;
+
+	if (__thread_allocate_thread(&thread) != 0) {
+		VL_MSG_ERR("Could not allocate thread\n");
+		goto out_error;
+	}
+	__thread_collection_add_thread(collection, thread);
+
+	if (strlen(name) > sizeof(thread->name) - 5) {
+		VL_MSG_ERR ("Name for thread was too long: '%s'\n", name);
+		goto out_error;
+	}
+
+	thread->private_data = arg;
+	thread->watchdog_time = 0;
+	thread->signal = 0;
+	thread->start_priority = start_priority;
+
+	thread->cancel_function = cancel_function;
+	thread->poststop_routine = poststop_routine;
+	thread->start_routine = start_routine;
+
+	sprintf(thread->name, "%s", name);
+
+	if (__thread_allocate_thread(&thread->watchdog) != 0) {
+		VL_MSG_ERR("Could not allocate watchdog thread\n");
+		goto out_error;
+	}
+	__thread_collection_add_thread(collection, thread->watchdog);
+
+	thread_lock(thread);
+
+	thread->state = VL_THREAD_STATE_INIT;
+
+	int err = (preload_routine != NULL ? preload_routine(thread) : 0);
+	if (err != 0) {
+		VL_MSG_ERR ("Error while preloading thread\n");
+		goto out_error;
+	}
+
+	// Thread tries to set a signal first and therefore can't proceed until we unlock
+	thread_unlock(thread);
+
+	return thread;
+
+	out_error:
+	if (thread != NULL) {
+		if (thread->watchdog != NULL) {
+			thread_unlock_if_locked(thread->watchdog);
+			__thread_destroy(thread->watchdog);
+		}
+		thread_unlock_if_locked(thread);
 		__thread_destroy(thread);
-	}
-	if (watchdog_thread != NULL) {
-		thread_unlock_if_locked(watchdog_thread);
-		__thread_destroy(watchdog_thread);
-	}
-	if (start_data != NULL) {
-		free(start_data);
 	}
 
 	return NULL;

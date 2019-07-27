@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INSTANCES_H
 #define RRR_INSTANCES_H
 
-#include "../main_signals.h"
 #include "../global.h"
 #include "modules.h"
 #include "configuration.h"
@@ -114,7 +113,8 @@ struct instance_metadata *instance_find (
 );
 void instance_free_thread(struct instance_thread_data *data);
 struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
-int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
+int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
+int instance_start_thread (struct instance_thread_data *data);
 int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths);
 
 #endif /* RRR_INSTANCES_H */

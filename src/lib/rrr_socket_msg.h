@@ -70,20 +70,32 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_IS_LE(msg)		(msg->endian_one == RRR_SOCKET_MSG_ENDIAN_LE)
 #define RRR_SOCKET_MSG_IS_BE(msg)		(msg->endian_one == RRR_SOCKET_MSG_ENDIAN_BE)
 
-#define RRR_SOCKET_MSG_TYPE_MIN			1
-#define RRR_SOCKET_MSG_TYPE_VALUE		1
-#define RRR_SOCKET_MSG_TYPE_VL_MESSAGE	2
-#define RRR_SOCKET_MSG_TYPE_SETTING		3
-#define RRR_SOCKET_MSG_TYPE_MAX			3
+// This is reserved for holding the type=control number
+#define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)
+// Acknowledgment for arrived packets on a socket to update in-flight-counter
+#define RRR_SOCKET_MSG_CTRL_F_ACK			(1<<1)
+#define RRR_SOCKET_MSG_CTRL_F_ALL			(RRR_SOCKET_MSG_CTRL_F_RESERVED|RRR_SOCKET_MSG_CTRL_F_ACK)
+#define RRR_SCOKET_MSG_CTRL_F_HAS(msg,flag)	(((msg)->msg_type & (flag)) == (flag))
 
-#define RRR_SOCKET_MSG_IS_VALUE(msg) \
-	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_VALUE)
+// All odd numbers are reserved for the control type
+#define RRR_SOCKET_MSG_TYPE_CTRL			1
+#define RRR_SOCKET_MSG_TYPE_VL_MESSAGE		2
+#define RRR_SOCKET_MSG_TYPE_CTRL_ACK		(RRR_SOCKET_MSG_TYPE_CTRL|RRR_SOCKET_MSG_CTRL_F_ACK)
+#define RRR_SOCKET_MSG_TYPE_SETTING			4
+
+// The control messages also contain flags in the type field
+#define RRR_SOCKET_MSG_IS_CTRL(msg) \
+	(((msg)->msg_type & RRR_SOCKET_MSG_TYPE_CTRL) == RRR_SOCKET_MSG_TYPE_CTRL)
+
 #define RRR_SOCKET_MSG_IS_VL_MESSAGE(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_VL_MESSAGE)
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 
 void rrr_socket_msg_populate_head (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value);
+static inline void rrr_socket_msg_populate_head_control_ack (struct rrr_socket_msg *message, vl_u64 message_count) {
+	 rrr_socket_msg_populate_head (message, RRR_SOCKET_MSG_TYPE_CTRL_ACK, sizeof(*message), message_count);
+}
 void rrr_socket_msg_checksum (
 	struct rrr_socket_msg *message,
 	ssize_t total_size
@@ -94,5 +106,6 @@ int rrr_socket_msg_checksum_check (
 	struct rrr_socket_msg *message,
 	ssize_t total_size
 );
+int rrr_socket_msg_head_validate (struct rrr_socket_msg *message);
 
 #endif /* RRR_SOCKET_MSG_H */

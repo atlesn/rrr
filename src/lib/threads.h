@@ -133,8 +133,13 @@ struct vl_thread {
 	int free_by_ghost;
 	int free_private_data_by_ghost;
 
+	// Start/stop routines
 	int (*cancel_function)(struct vl_thread *);
 	void (*poststop_routine)(const struct vl_thread *);
+	void *(*start_routine) (struct vl_thread *);
+
+	// Pointer to watchdog thread
+	struct vl_thread *watchdog;
 };
 
 struct vl_thread_collection {
@@ -145,11 +150,6 @@ struct vl_thread_collection {
 #define VL_THREADS_LOOP(target,collection) \
 	for(struct vl_thread *target = collection->first; target != NULL; target = target->next)
 
-struct vl_thread_start_data {
-	void *(*start_routine) (struct vl_thread_start_data *);
-	struct vl_thread *thread;
-	void *private_arg;
-};
 
 void thread_clear_ghosts(void);
 int thread_has_ghosts(void);
@@ -284,10 +284,14 @@ static inline void thread_set_stopped(void *arg) {
 	thread_set_state(thread, VL_THREAD_STATE_STOPPED);
 }
 
+int thread_start (
+		struct vl_thread *thread
+);
+
 struct vl_thread *thread_preload_and_register (
 		struct vl_thread_collection *collection,
-		void *(*start_routine) (struct vl_thread_start_data *),
-		int (*preload_routine) (struct vl_thread_start_data *),
+		void *(*start_routine) (struct vl_thread *),
+		int (*preload_routine) (struct vl_thread *),
 		void (*poststop_routine) (const struct vl_thread *),
 		int (*cancel_function) (struct vl_thread *),
 		int start_priority,

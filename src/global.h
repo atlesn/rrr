@@ -71,7 +71,8 @@ extern struct rrr_global_config rrr_global_config;
 #define __VL_DEBUGLEVEL_5	(1<<4)	// 16
 #define __VL_DEBUGLEVEL_6	(1<<5)	// 32
 #define __VL_DEBUGLEVEL_7	(1<<6)	// 64
-#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4|__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6)
+#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4| \
+		__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6|__VL_DEBUGLEVEL_7)
 
 #define VL_MSG_ERR(...) \
 	do {fprintf (stderr, __VA_ARGS__);}while(0)

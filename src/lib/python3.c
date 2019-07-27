@@ -185,14 +185,14 @@ void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callbac
 	pthread_mutex_unlock (&fork_lock);
 }
 
-void rrr_py_push_zombie_unlocked (pid_t pid) {
+static void __rrr_py_push_zombie_unlocked (pid_t pid) {
 	struct python3_fork_zombie *zombie = malloc(sizeof(*zombie));
 	zombie->pid = pid;
 	zombie->next = first_zombie;
 	first_zombie = zombie;
 }
 
-static void rrr_py_fork_destroy_unlocked (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
+static void __rrr_py_fork_destroy_unlocked (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
 	if (fork->pid > 0) {
 		kill(fork->pid, SIGTERM);
 	}
@@ -239,7 +239,7 @@ static void rrr_py_fork_destroy (struct python3_rrr_objects *rrr_objects, struct
 
 	pthread_mutex_lock (&fork_lock);
 	VL_DEBUG_MSG_1 ("Python3 terminate fork %p pid %i (while terminating single fork)\n", fork, fork->pid);
-	rrr_py_fork_destroy_unlocked(rrr_objects, fork);
+	__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
 	pthread_mutex_unlock (&fork_lock);
 }
 
@@ -292,7 +292,7 @@ void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
 		struct python3_fork *next = fork->next;
 
 		VL_DEBUG_MSG_1("Python3 terminate fork %p pid %i (while terminating all)\n", fork, fork->pid);
-		rrr_py_fork_destroy_unlocked(rrr_objects, fork);
+		__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
 
 		fork = next;
 		count++;
@@ -370,7 +370,7 @@ PyObject *__rrr_py_socket_message_to_pyobject (struct rrr_socket_msg *message) {
 	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		ret = rrr_python3_setting_new_from_setting (message);
 	}
-	else if (RRR_SOCKET_MSG_IS_VALUE(message)) {
+	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
 #if RRR_SOCKET_64_IS_LONG
 		ret = PyLong_FromLong(message->msg_value);
 #elif RRR_SOCKET_32_IS_LONG
@@ -525,6 +525,7 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 	PyObject *result = NULL;
 
 	int ret = 0;
+	int ack_check_interval = 25;
 	while (rrr_py_fork_running) {
 		result = PyObject_CallFunctionObjArgs(function, socket, NULL);
 		if (result == NULL) {
@@ -542,6 +543,19 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 			goto out;
 		}
 		RRR_Py_XDECREF(result);
+
+		if (--ack_check_interval == 0) {
+			struct rrr_socket_msg *result = NULL;
+			ret = rrr_python3_socket_recv(&result, socket);
+			if (ret != 0) {
+				VL_MSG_ERR("Error while checking for ACK packets in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+						getpid());
+			}
+			if (result != NULL) {
+				VL_BUG("Received non ACK-packet in read-only thread\n");
+			}
+			ack_check_interval = 25;
+		}
 	}
 
 	out:
@@ -631,7 +645,7 @@ static pid_t __rrr_py_fork_intermediate (
 	fork_data->pid = ret;
 
 	// Prepare to accept SIGCHLD when this fork exits
-	rrr_py_push_zombie_unlocked(ret);
+	__rrr_py_push_zombie_unlocked(ret);
 	pthread_mutex_unlock(&fork_lock);
 
 	return ret;
@@ -693,10 +707,11 @@ static int __rrr_py_start_persistent_ro_thread_intermediate (
 ) {
 	int ret = 0;
 
-	// The child should only have access to send()
+	// The child should only have access to send() but
+	// also need recv() to read ACK messages
 	fork->poll = NULL;
 	fork->send = rrr_python3_socket_send;
-	fork->recv = NULL;
+	fork->recv = rrr_python3_socket_recv;
 
 	pid_t pid = __rrr_py_fork_intermediate (
 			function,

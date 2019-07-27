@@ -17,7 +17,7 @@ def source(socket : rrr_socket):
 	if not socket.send(message):
 		return False
 	# sleep to limit output rate
-	time.sleep(0.1)
+	# time.sleep(0.001)
 	return True
 
 def config(socket : rrr_socket, setting : rrr_setting):

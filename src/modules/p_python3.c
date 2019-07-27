@@ -40,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/python3.h"
 #include "../global.h"
-#include "../main_signals.h"
 
 #define P_PYTHON3_MESSAGE_CACHE_MAX 100
 
@@ -76,8 +75,8 @@ struct python3_data {
 	int messages_pending;
 };
 
-static int thread_preload_python3 (struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static int thread_preload_python3 (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 	VL_ASSERT(VL_MODULE_PRELOAD_MEMORY_SIZE >= sizeof(*preload_data),python3_preload_data_size_ok);
 
@@ -513,7 +512,7 @@ void debug_tstate (void *dummy) {
 //	PyThreadState *current_tstate = _PyThreadState_UncheckedGet();
 }
 
-// Fork systen is locked in this context
+// Fork system is locked in this context
 void child_exit_handler (pid_t pid, void *arg) {
 	struct python3_data *data = arg;
 	int res = rrr_py_invalidate_fork_unlocked(&data->rrr_objects, pid);
@@ -522,13 +521,11 @@ void child_exit_handler (pid_t pid, void *arg) {
 	}
 }
 
-static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_python3 (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 	struct python3_preload_data *preload_data = thread_data->preload_data;
 	struct poll_collection poll;
-
-	thread_data->thread = start_data->thread;
 
 	VL_DEBUG_MSG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
@@ -538,7 +535,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 	// Set back to running again after we have no forks left from python
 	pthread_cleanup_push(python3_stop, data);
 	pthread_cleanup_push(debug_tstate,NULL);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
 	if (data_init(data, preload_data, thread_data) != 0) {
 		VL_MSG_ERR("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -547,9 +544,9 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1("python3 instance %s tstate: %p\n", INSTANCE_D_NAME(thread_data), data->tstate);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
@@ -570,7 +567,7 @@ static void *thread_entry_python3 (struct vl_thread_start_data *start_data) {
 		goto out_message;
 	}
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING_FORKED);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING_FORKED);
 
 	// Check after python3 has started, maybe the script uses some settings which will
 	// then be tagged as used to avoid warnings
