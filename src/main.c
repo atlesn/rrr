@@ -147,6 +147,7 @@ int main_start_threads (
 
 	// Preload threads. Signals must be disabled as the modules might write to
 	// the signal handler linked list
+
 	instances->signal_functions->set_active(RRR_SIGNALS_NOT_ACTIVE);
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {

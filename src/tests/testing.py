@@ -1,7 +1,7 @@
-from rrr import *
+from rrr_helper import *
 
-def process(result: rrr_result, message: vl_message):
+def process(socket: rrr_socket, message: vl_message):
 #	print ("timestamp: " + str(message.timestamp_from))
 	message.timestamp_from = message.timestamp_from + 1
-	result.put(message)
+	socket.send(message)
 	return 0

@@ -53,14 +53,12 @@ void data_cleanup(void *_data) {
 	data->dummy = 0;
 }
 
-static void *thread_entry_test_module (struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_test_module (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
 	struct vl_message *array_message = NULL;
 	struct vl_message *array_message_python3 = NULL;
-
-	thread_data->thread = start_data->thread;
 
 	data_init(data);
 
@@ -69,11 +67,11 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 /*	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
