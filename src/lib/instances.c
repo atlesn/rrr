@@ -266,8 +266,15 @@ int instance_add_senders (
 			&__add_sender_callback, &sender_data
 	);
 
-	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR) {
+	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR ||
+		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE
+	) {
 		if (senders_check_empty(&instance->senders)) {
+			if (instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE) {
+				VL_DEBUG_MSG_1("Module is flexible without senders specified\n");
+				ret = 0;
+				goto out;
+			}
 			VL_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
 					instance->dynamic_data->module_name, instance->dynamic_data->instance_name);
 			ret = 1;

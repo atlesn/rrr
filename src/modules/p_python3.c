@@ -380,10 +380,6 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 int python3_poll(struct python3_data *data, struct poll_collection *poll) {
 	int ret = 0;
 
-	if (data->process_function == NULL) {
-		return 0;
-	}
-
 	if ((ret = poll_do_poll_delete_simple (poll, data->thread_data, process_input_callback, 1000)) != 0) {
 		VL_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
 				ret, INSTANCE_D_NAME(data->thread_data));
@@ -618,13 +614,13 @@ static int threads_start(struct python3_data *data) {
 		}
 	}
 
-	if (thread_start(data->source_thread.thread) != 0) {
+	if (data->source_thread.thread != NULL && thread_start(data->source_thread.thread) != 0) {
 		VL_MSG_ERR("Could not start source read thread collection in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		exit(EXIT_FAILURE);
 	}
 
-	if (thread_start(data->process_thread.thread) != 0) {
+	if (data->process_thread.thread != NULL && thread_start(data->process_thread.thread) != 0) {
 		VL_MSG_ERR("Could not start process read thread collection in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		exit(EXIT_FAILURE);
@@ -702,14 +698,18 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 		goto out_message;
 	}
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
+	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK) != 0) {
 		VL_MSG_ERR("Python3 instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
-	if (poll_collection_count (&poll) > 0 && !data->process_function) {
-		VL_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
+	int no_polling = 1;
+	if (poll_collection_count (&poll) > 0) {
+		if (!data->process_function) {
+			VL_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
+			goto out_message;
+		}
+		no_polling = 0;
 	}
 
 	if (python3_start(data) != 0) {
@@ -749,10 +749,15 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 				sigchld_pending = 0;
 			}
 
-			if ((res = python3_poll(data, &poll)) != 0) {
-				VL_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
-						res, INSTANCE_D_NAME(thread_data));
-				break;
+			if (no_polling) {
+				usleep (10000);
+			}
+			else {
+				if ((res = python3_poll(data, &poll)) != 0) {
+					VL_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
+							res, INSTANCE_D_NAME(thread_data));
+					break;
+				}
 			}
 
 			if (thread_check_any_stopped (data->thread_collection) != 0) {
@@ -827,7 +832,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_PROCESSOR;
+	data->type = VL_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 	data->start_priority = VL_THREAD_START_PRIORITY_FORK;

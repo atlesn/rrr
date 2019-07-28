@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 //#define VL_THREAD_NO_WATCHDOGS
-#define VL_THREAD_FREEZE_LIMIT_FACTOR 1000
+#define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
 struct vl_thread_ghost {
 	struct vl_thread_ghost *next;
