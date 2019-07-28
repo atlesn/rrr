@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/socket.h>
 #include <poll.h>
 
 #ifdef VL_WITH_OPENSSL
@@ -307,7 +306,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 //	struct fifo_callback_args poll_data = {NULL, data, 0};
-	return ip_receive_messages(
+	return ip_receive_messages (
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
 			&data->crypt_data,
@@ -432,12 +431,10 @@ int start_receive_thread(struct instance_thread_data *thread_data) {
 	return 0;
 }
 
-static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_ipclient (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct ipclient_data* data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
-
-	thread_data->thread = start_data->thread;
 
 	if (data_init(data) != 0) {
 		VL_MSG_ERR("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -454,11 +451,11 @@ static void *thread_entry_ipclient(struct vl_thread_start_data *start_data) {
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
 #endif
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		VL_MSG_ERR("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);

@@ -36,6 +36,7 @@ struct instance_metadata {
 	struct instance_thread_data *thread_data;
 	struct instance_sender_collection senders;
 	struct rrr_instance_config *config;
+	struct rrr_signal_handler *signal_handler;
 	unsigned long int senders_count;
 };
 
@@ -45,6 +46,7 @@ struct instance_metadata {
 struct instance_metadata_collection {
 	int length;
 	struct instance_metadata *first_entry;
+	struct rrr_signal_functions *signal_functions;
 };
 
 struct instance_dynamic_data {
@@ -57,6 +59,7 @@ struct instance_dynamic_data {
 	void *dl_ptr;
 	void *private_data;
 	void (*unload)(void);
+	int (*signal_handler)(int s, void *priv);
 	struct instance_metadata_collection *all_instances;
 };
 
@@ -91,7 +94,7 @@ void instance_free_all_thread_data(struct instance_metadata_collection *target);
 int instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
 void instance_unload_all(struct instance_metadata_collection *target);
 void instance_metadata_collection_destroy (struct instance_metadata_collection *target);
-int instance_metadata_collection_new (struct instance_metadata_collection **target);
+int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions);
 
 int instance_add_senders (
 		struct instance_metadata_collection *instances,
@@ -110,7 +113,8 @@ struct instance_metadata *instance_find (
 );
 void instance_free_thread(struct instance_thread_data *data);
 struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
-int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
+int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
+int instance_start_thread (struct instance_thread_data *data);
 int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths);
 
 #endif /* RRR_INSTANCES_H */

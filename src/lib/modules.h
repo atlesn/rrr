@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_PROCESSOR 3
+#define VL_MODULE_TYPE_FLEXIBLE 4
 
 /*#define VL_POLL_RESULT_ERR -1
 #define VL_POLL_RESULT_OK 1
@@ -70,10 +71,10 @@ struct module_load_data {
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
 	// Preload function - Run before thread is started in main thread context
-	int (*preload)(struct vl_thread_start_data *);
+	int (*preload)(struct vl_thread *);
 
 	// Main function with a loop to run the thread
-	void *(*thread_entry)(struct vl_thread_start_data *);
+	void *(*thread_entry)(struct vl_thread *);
 
 	// Post stop function - Run after thread has finished from main thread context
 	void (*poststop)(const struct vl_thread *);

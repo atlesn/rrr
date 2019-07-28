@@ -210,11 +210,9 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 }
 
 
-static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_udpreader (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct udpreader_data *data = thread_data->private_data = thread_data->private_memory;
-
-	thread_data->thread = start_data->thread;
 
 	if (data_init(data) != 0) {
 		VL_MSG_ERR("Could not initalize data in udpreader instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -225,7 +223,7 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(type_data_cleanup, data->tmp_type_data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
 	int config_error = 0;
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -236,9 +234,9 @@ static void *thread_entry_udpreader(struct vl_thread_start_data *start_data) {
 		data->tmp_type_data = rrr_types_allocate_data(&data->definitions);
 	}
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (config_error) {
 		goto out_message;

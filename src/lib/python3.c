@@ -22,24 +22,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <fcntl.h>
 #include <stddef.h>
-#include <stddef.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "python3_socket.h"
+#include "python3_common.h"
+#include "python3_setting.h"
+#include "python3_vl_message.h"
+#include "python3_module.h"
 #include "settings.h"
-#include "messages.h"
+#include "rrr_socket.h"
+#include "rrr_socket_msg.h"
 #include "python3.h"
+#include "buffer.h"
 #include "../global.h"
 
+struct python3_fork_zombie {
+	struct python3_fork_zombie *next;
+	pid_t pid;
+};
+
+static struct python3_fork_zombie *first_zombie = NULL;
+static pthread_mutex_t fork_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
+static PyThreadState *main_python_tstate = NULL;
+static int python_users = 0;
+
 /*
- * GIL LOCKING MUST BE HANDLED BY THESE TWO FUNCTIONS, OTHER FUNCTIONS
- * DO NOT LOCK THEMSELVES. ALSO, THESE METHODS ARE NOT THREAD SAFE,
- * MUST ONLY BE USED BY ONE THREAD AT A TIME
+ * GIL LOCKING MUST BE HANDLED BY THESE TWO FUNCTIONS
  */
 
-pthread_mutex_t rrr_global_tstate_lock = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t rrr_global_tstate_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyThreadState *tstate) {
 	int ret = 0;
@@ -104,804 +122,902 @@ int python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
 	return ret;
 }
 
-int rrr_py_object_cache_init (struct python3_object_cache *cache, unsigned int max) {
-	int ret = 0;
+void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg) {
+	struct python3_fork_zombie *zombie = NULL;
+	struct python3_fork_zombie *prev = NULL;
 
-	memset (cache, '\0', sizeof(*cache));
+	pthread_mutex_lock (&fork_lock);
 
-	if (pthread_mutex_init(&cache->lock, NULL) != 0) {
-		VL_MSG_ERR("Could not initialize lock in rrr_py_object_cache_new\n");
-		ret = RRR_PYTHON3_OBJECT_CACHE_ERR;
+	prev = NULL;
+	zombie = first_zombie;
+	while (zombie != NULL) {
+		struct python3_fork_zombie *next = zombie->next;
+
+		int wstatus;
+		pid_t res = waitpid(zombie->pid, &wstatus, WNOHANG);
+		if (res == 0) {
+			// No state change
+		}
+		else if (res > 0) {
+			if (WIFSIGNALED(wstatus)) {
+				int signal = WTERMSIG(wstatus);
+				VL_DEBUG_MSG_1("python3 child %i has was terminated by signal %i\n", res, signal);
+
+				goto remove_and_next;
+			}
+
+			if (WIFEXITED(wstatus)) {
+				int child_status = WEXITSTATUS(wstatus);
+				VL_DEBUG_MSG_1("python3 child %i has exited with status %i\n", res, child_status);
+
+				goto remove_and_next;
+			}
+		}
+		else if (errno == ECHILD) {
+			VL_MSG_ERR("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? removing it.\n", zombie->pid);
+			goto remove_and_next;
+		}
+		else {
+			VL_MSG_ERR("Warning: python3 waitpid error for fork %i: %s\n", zombie->pid, strerror(errno));
+		}
+
+		goto next;
+
+		remove_and_next:
+			if (prev == NULL) {
+				first_zombie = next;
+			}
+			else {
+				prev->next = next;
+			}
+
+			child_exit_callback(zombie->pid, callback_arg);
+
+			free(zombie);
+
+			zombie = next;
+			continue; // <--- IMPORTANT
+
+		next:
+			prev = zombie;
+			zombie = next;
+	}
+
+	pthread_mutex_unlock (&fork_lock);
+}
+
+static void __rrr_py_push_zombie_unlocked (pid_t pid) {
+	struct python3_fork_zombie *zombie = malloc(sizeof(*zombie));
+	zombie->pid = pid;
+	zombie->next = first_zombie;
+	first_zombie = zombie;
+}
+
+static void __rrr_py_fork_destroy_unlocked (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
+	if (fork->pid > 0) {
+		kill(fork->pid, SIGTERM);
+	}
+
+	if (fork->socket_main != NULL) {
+		if (fork->socket_main->ob_refcnt != 1) {
+			VL_BUG("Refcount was not 1 before DECREF for socket_main in rrr_py_fork_destroy_unlocked\n");
+		}
+		RRR_Py_XDECREF(fork->socket_main);
+	}
+	if (fork->socket_child != NULL) {
+		if (fork->socket_child->ob_refcnt != 1) {
+			VL_BUG("Refcount was not 1 before DECREF for socket_child in rrr_py_fork_destroy_unlocked\n");
+		}
+		RRR_Py_XDECREF(fork->socket_child);
+	}
+
+	int found = 0;
+	if (rrr_objects->first_fork == fork) {
+		rrr_objects->first_fork = fork->next;
+		found = 1;
 	}
 	else {
-		cache->initialized = 1;
-		cache->max = max;
+		for (struct python3_fork *test = rrr_objects->first_fork; test != NULL; test = test->next) {
+			if (test->next == fork) {
+				test->next = fork->next;
+				found = 1;
+				break;
+			}
+		}
 	}
 
-	return ret;
+	if (found == 0) {
+		VL_BUG("Bug: Fork not found in rrr_py_fork_destroy\n");
+	}
+
+	free(fork);
 }
 
-void rrr_py_object_cache_destroy (struct python3_object_cache *cache) {
-	if (!cache->initialized)
+static void rrr_py_fork_destroy (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
+	if (fork == NULL) {
 		return;
-	struct python3_object_cache_entry *entry = cache->begin;
-	while (entry) {
-		struct python3_object_cache_entry *next = entry->next;
-		Py_XDECREF(entry->object);
-		free(entry);
-		entry = next;
 	}
-	pthread_mutex_destroy(&cache->lock);
-	cache->begin = NULL;
-	cache->initialized = 0;
+
+	pthread_mutex_lock (&fork_lock);
+	VL_DEBUG_MSG_1 ("Python3 terminate fork %p pid %i (while terminating single fork)\n", fork, fork->pid);
+	__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
+	pthread_mutex_unlock (&fork_lock);
 }
 
-int rrr_py_object_cache_push (struct python3_object_cache *cache, PyObject *object) {
-	int ret = RRR_PYTHON3_OBJECT_CACHE_OK;
-	int full = 0;
+int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid) {
+	int ret = 1;
 
-	pthread_mutex_lock(&cache->lock);
-	if (cache->entries > cache->max) {
-		full = 1;
+	for (struct python3_fork *test = rrr_objects->first_fork; test != NULL; test = test->next) {
+		if (test->pid == pid) {
+			VL_DEBUG_MSG_1 ("Python3 invalidate fork %p pid %i\n", test, pid);
+			test->invalid = 1;
+			ret = 0;
+			break;
+		}
 	}
-	pthread_mutex_unlock(&cache->lock);
-
-	if (full) {
-		Py_XDECREF(object);
-		return RRR_PYTHON3_OBJECT_CACHE_FULL;
-	}
-
-	struct python3_object_cache_entry *entry = malloc(sizeof(*entry));
-	if (entry == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_py_object_cache_push\n");
-		return RRR_PYTHON3_OBJECT_CACHE_ERR;
-	}
-
-	entry->object = object;
-
-	pthread_mutex_lock(&cache->lock);
-	entry->next = cache->begin;
-	cache->begin = entry;
-	cache->entries++;
-	pthread_mutex_unlock(&cache->lock);
 
 	return ret;
 }
 
-PyObject *rrr_py_object_cache_pop(struct python3_object_cache *cache) {
-	struct python3_object_cache_entry *entry = NULL;
+void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
+	int count = 0;
 
-	pthread_mutex_lock(&cache->lock);
-	if (cache->begin) {
-		entry = cache->begin;
-		cache->begin = entry->next;
-		cache->entries--;
+	struct python3_fork *fork = NULL;
+
+	// First, send soft signal (child may stop voluntarily)
+	pthread_mutex_lock (&fork_lock);
+	fork = rrr_objects->first_fork;
+	while (fork != NULL) {
+		if (fork->pid > 0) {
+			kill(fork->pid, SIGUSR1);
+		}
+		fork = fork->next;
 	}
-	pthread_mutex_unlock(&cache->lock);
+	pthread_mutex_unlock (&fork_lock);
+	usleep(500000);
 
-	if (!entry) {
+	// Then, send kill signal
+	pthread_mutex_lock (&fork_lock);
+	fork = rrr_objects->first_fork;
+	while (fork != NULL) {
+// TODO : Enable?
+//		kill(fork->pid, SIGKILL);
+		fork = fork->next;
+	}
+	pthread_mutex_unlock (&fork_lock);
+	usleep(100000);
+
+	pthread_mutex_lock (&fork_lock);
+	fork = rrr_objects->first_fork;
+	while (fork != NULL) {
+		struct python3_fork *next = fork->next;
+
+		VL_DEBUG_MSG_1("Python3 terminate fork %p pid %i (while terminating all)\n", fork, fork->pid);
+		__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
+
+		fork = next;
+		count++;
+	}
+
+	if (rrr_objects->first_fork != NULL) {
+		VL_BUG("Not all forks went away in rrr_py_terminate_threads");
+	}
+	pthread_mutex_unlock (&fork_lock);
+
+	VL_DEBUG_MSG_1("Terminated %i threads in python3 terminate threads\n", count);
+}
+
+static struct python3_fork *rrr_py_fork_new (struct python3_rrr_objects *rrr_objects) {
+	struct python3_fork *ret = malloc(sizeof(*ret));
+	PyObject *socket_main = NULL;
+	PyObject *socket_child = NULL;
+
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_py_fork_new\n");
 		return NULL;
 	}
 
-	PyObject *ret = entry->object;
-	free(entry);
-	return ret;
-}
+	memset(ret, '\0', sizeof(*ret));
 
-PyObject *rrr_py_import_object (PyObject *dictionary, const char *symbol) {
-	PyObject *res = PyDict_GetItemString(dictionary, symbol);
-	Py_XINCREF(res);
-	return res;
-}
-
-PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
-	PyObject *ret = rrr_py_import_object(dictionary, symbol);
-
-	if (ret == NULL) {
-		VL_MSG_ERR("Could not load %s function\n", symbol);
-		goto out_err;
+	// Create a new socket. It will bind() and listen()
+	socket_main = rrr_python3_socket_new(NULL);
+	if (socket_main == NULL) {
+		VL_MSG_ERR("Could not create socket in rrr_py_fork_new\n");
+		goto err;
 	}
 
-	if (!PyCallable_Check(ret)) {
-	        VL_MSG_ERR("%s was not a callable\n", symbol);
-        	goto out_err_cleanup;
+	// Create another socket. It will connect() to the first one
+	socket_child = rrr_python3_socket_new(rrr_python3_socket_get_filename(socket_main));
+	if (socket_child == NULL) {
+		VL_MSG_ERR("Could not create socket in rrr_py_fork_new\n");
+		goto err;
 	}
+
+	// Make the main socket accept connection
+	if (rrr_python3_socket_accept(socket_main) != 0) {
+		VL_MSG_ERR("Could not accept() on main socket in rrr_py_fork_new\n");
+		goto err;
+	}
+
+	ret->socket_main = socket_main;
+	ret->socket_child = socket_child;
+
+	pthread_mutex_lock (&fork_lock);
+	if (rrr_objects->first_fork == NULL) {
+		rrr_objects->first_fork = ret;
+	}
+	else {
+		ret->next = rrr_objects->first_fork;
+		rrr_objects->first_fork = ret;
+	}
+
+	pthread_mutex_unlock (&fork_lock);
 
 	return ret;
 
-	out_err_cleanup:
-	Py_XDECREF(ret);
+	err:
+	RRR_Py_XDECREF(socket_main);
+	RRR_Py_XDECREF(socket_child);
+	RRR_FREE_IF_NOT_NULL(ret);
 
-	out_err:
 	return NULL;
 }
 
-PyObject *rrr_py_call_function_no_args(PyObject *function) {
-	PyObject *args = PyTuple_New(0);
-	PyObject *result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
-	if (result == NULL) {
-		PyErr_Print();
+PyObject *__rrr_py_socket_message_to_pyobject (struct rrr_socket_msg *message) {
+	PyObject *ret = NULL;
+	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
+		ret = rrr_python3_vl_message_new_from_message (message);
 	}
-	return result;
-}
-
-PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const char *symbol) {
-	PyObject *result = NULL;
-
-	PyObject *function = rrr_py_import_function(dictionary, symbol);
-	if (function == NULL) {
-		goto out_cleanup;
+	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
+		ret = rrr_python3_setting_new_from_setting (message);
 	}
-
-	PyObject *args = PyTuple_New(0);
-	result = PyEval_CallObject(function, args);
-	Py_XDECREF(args);
-	if (result == NULL) {
-		VL_MSG_ERR("NULL result from function %s\n", symbol);
-		PyErr_Print();
-		goto out_cleanup;
+	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
+#if RRR_SOCKET_64_IS_LONG
+		ret = PyLong_FromLong(message->msg_value);
+#elif RRR_SOCKET_32_IS_LONG
+		ret = PyLong_FromLongLong(message->msg_value);
+#else
+		#error "RRR_SOCKET_64_IS_LONG or RRR_SOCKET_32_IS_LONG not set"
+#endif
 	}
-
-	out_cleanup:
-	Py_XDECREF(function);
-
-	return result;
-}
-
-int rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
-	int ret = 0;
-	PyObject *result = NULL;
-	PyObject *arglist = NULL;
-
-	if (rrr_objects->rrr_thread_terminate_all == NULL || rrr_objects->rrr_global_process_dict == NULL) {
-		ret = 0;
+	else {
+		VL_MSG_ERR("Unsupported socket message type %u received in __rrr_py_socket_message_to_pyobject\n", message->msg_type);
 		goto out;
 	}
 
-	arglist = Py_BuildValue("(O)",
-			rrr_objects->rrr_global_process_dict
-	);
+	out:
+	return ret;
+}
 
-	result = PyObject_CallObject(rrr_objects->rrr_thread_terminate_all, arglist);
+static int rrr_py_fork_running = 1;
+static void __rrr_py_fork_signal_handler (int s) {
+	if (s == SIGUSR1) {
+		rrr_py_fork_running = 0;
+	}
+	if (s == SIGPIPE) {
+        VL_MSG_ERR("Received SIGPIPE in fork, ignoring\n");
+	}
+}
 
+void __rrr_py_start_onetime_thread_rw_child (PyObject *function, struct python3_fork *fork) {
+	PyObject *socket = fork->socket_child;
+
+	PyObject *result = NULL;
+	struct rrr_socket_msg *message = NULL;
+	PyObject *arg = NULL;
+
+	int ret = 0;
+	int did_receive = 0;
+
+	int max_tries = 1000000;
+	while (did_receive == 0 && rrr_py_fork_running && --max_tries != 0) {
+		ret = fork->recv(&message, socket, 0);
+		if (ret != 0) {
+			VL_MSG_ERR("Error from python3 socket receive function in child\n");
+			ret = 1;
+			goto out;
+		}
+		if (message != NULL) {
+			did_receive = 1;
+		}
+		else {
+			usleep(1000);
+		}
+	}
+
+	if (max_tries == 0) {
+		VL_MSG_ERR("Receive timeout in child in __rrr_py_start_onetime_thread_rw_child\n");
+		ret = 1;
+		goto out;
+	}
+
+	VL_DEBUG_MSG_3("Python3 child pid %i converting message size %i\n", getpid(), ret);
+	arg = __rrr_py_socket_message_to_pyobject(message);
+	if (arg == NULL) {
+		VL_MSG_ERR("Unknown message type received in __rrr_py_start_onetime_thread_rw_child\n");
+		ret = 1;
+		goto out;
+	}
+
+	VL_DEBUG_MSG_3("Python3 child pid %i calling one-time function\n", getpid());
+	result = PyObject_CallFunctionObjArgs(function, socket, arg, NULL);
+	VL_DEBUG_MSG_3("Python3 child pid %i calling one-time function has returned\n", getpid());
 	if (result == NULL) {
+		VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_onetime_thread_rw_child pid %i\n",
+				getpid());
 		PyErr_Print();
-		PyObject *exp = NULL;
-		if ((exp = PyErr_Occurred()) == NULL) {
-			VL_MSG_ERR("Could not run python3 thread terminate function, and could not get exception: \n");
+		ret = 1;
+		goto out;
+
+	}
+	if (!PyObject_IsTrue(result)) {
+		VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_onetime_thread_rw_child pid %i\n",
+				getpid());
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	RRR_Py_XDECREF(arg);
+	RRR_Py_XDECREF(result);
+	if (VL_DEBUGLEVEL_1 || ret != 0) {
+		VL_DEBUG_MSG("Pytohn3 child onetime process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
+	}
+}
+
+struct persistent_rw_child_callback_data {
+	struct python3_fork *fork;
+	PyObject *function;
+};
+
+int __rrr_py_persistent_thread_rw_child_callback (struct fifo_callback_args *fifo_callback_data, char *data, unsigned long int size) {
+	PyObject *result = NULL;
+	PyObject *arg = NULL;
+
+	struct persistent_rw_child_callback_data *callback_data = fifo_callback_data->private_data;
+	PyObject *rrr_socket = callback_data->fork->socket_child;
+	struct rrr_socket_msg *message = (struct rrr_socket_msg *) data;
+
+	int ret = 0;
+
+	if (size != message->msg_size) {
+		VL_BUG("Size mismatch in __rrr_py_persistent_thread_rw_child_callback\n");
+	}
+
+	arg = __rrr_py_socket_message_to_pyobject(message);
+	if (arg == NULL) {
+		VL_MSG_ERR("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
+		ret = 1;
+		goto out;
+	}
+	result = PyObject_CallFunctionObjArgs(callback_data->function, rrr_socket, arg, NULL);
+	if (result == NULL) {
+		VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+				getpid());
+		PyErr_Print();
+		ret = 1;
+		goto out;
+
+	}
+	if (!PyObject_IsTrue(result)) {
+		VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+				getpid());
+		ret = 1;
+		goto out;
+	}
+
+	if (ret != 0) {
+		ret = FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
+	}
+
+	out:
+	free(message);
+	RRR_Py_XDECREF(result);
+	RRR_Py_XDECREF(arg);
+
+	return ret;
+}
+
+void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct python3_fork *fork) {
+	struct rrr_socket_msg *message = NULL;
+	struct fifo_buffer receive_buffer;
+	PyObject *rrr_socket = fork->socket_child;
+
+	if (fifo_buffer_init(&receive_buffer) != 0) {
+		VL_MSG_ERR("Could not initialize fifo buffer in __rrr_py_start_persistent_thread_rw_child\n");
+		goto out;
+	}
+
+	struct persistent_rw_child_callback_data child_callback_data = {
+			fork, function
+	};
+	struct fifo_callback_args fifo_callback_args = {
+			NULL, &child_callback_data, 0
+	};
+
+	int ret = 0;
+	while (rrr_py_fork_running) {
+		int max = 100;
+		while (rrr_py_fork_running && (--max != 0)) {
+			ret = fork->recv(&message, rrr_socket, 10);
+			if (ret != 0) {
+				VL_MSG_ERR("Error from socket receive function in python3 persistent rw child process\n");
+				goto out;
+			}
+			if (message == NULL) {
+				break;
+			}
+			fifo_buffer_write(&receive_buffer, (char*) message, message->msg_size);
+			message = NULL;
+		}
+
+		ret = fifo_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
+		if (ret != 0) {
+			VL_MSG_ERR("Error from fifo buffer in python3 persistent rw child process\n");
+			break;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	fifo_buffer_invalidate(&receive_buffer);
+
+	if (VL_DEBUGLEVEL_1 || ret != 0) {
+		VL_DEBUG_MSG("Pytohn3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
+	}
+}
+
+void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct python3_fork *fork) {
+	PyObject *socket = fork->socket_child;
+	PyObject *result = NULL;
+
+	int ret = 0;
+	int ack_check_interval = 25;
+	while (rrr_py_fork_running) {
+		result = PyObject_CallFunctionObjArgs(function, socket, NULL);
+		if (result == NULL) {
+			VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+					getpid());
 			PyErr_Print();
 			ret = 1;
 			goto out;
+
 		}
-	}
-
-	out:
-	Py_XDECREF(result);
-	Py_XDECREF(arglist);
-	return ret;
-}
-
-int __rrr_py_start_persistent_thread (
-		PyObject **result_process_pipe,
-		struct python3_rrr_objects *rrr_objects,
-		const char *module_name,
-		const char *function_name,
-		PyObject *start_method
-) {
-	int ret = 0;
-
-	*result_process_pipe = NULL;
-
-	PyObject *arglist = NULL;
-	PyObject *process_pipe = NULL;
-
-	VL_DEBUG_MSG_3("Start persistent thread of module %s function %s\n", module_name, function_name);
-
-	arglist = Py_BuildValue("Oss",
-			rrr_objects->rrr_global_process_dict,
-			module_name,
-			function_name
-	);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not prepare argument list while calling python3 object asynchronously:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	process_pipe = PyObject_CallObject(start_method, arglist);
-	if (process_pipe == NULL) {
-		VL_MSG_ERR("Could not run python3 thread starter: \n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-	Py_XDECREF(arglist);
-
-	arglist = Py_BuildValue("O",
-			process_pipe
-	);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not prepare argument list while calling getters for raw pipes:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	*result_process_pipe = process_pipe;
-
-	out:
-	if (ret != 0) {
-		Py_XDECREF(process_pipe);
-	}
-	Py_XDECREF(arglist);
-	return ret;
-}
-
-int rrr_py_start_persistent_thread (
-		PyObject **result_process_pipe,
-		struct python3_rrr_objects *rrr_objects,
-		const char *module_name,
-		const char *function_name
-) {
-	return __rrr_py_start_persistent_thread (
-			result_process_pipe,
-			rrr_objects,
-			module_name,
-			function_name,
-			rrr_objects->rrr_persistent_thread_start
-	);
-}
-
-int rrr_py_start_persistent_readonly_thread (
-		PyObject **result_process_pipe,
-		struct python3_rrr_objects *rrr_objects,
-		const char *module_name,
-		const char *function_name
-) {
-	return __rrr_py_start_persistent_thread (
-			result_process_pipe,
-			rrr_objects,
-			module_name,
-			function_name,
-			rrr_objects->rrr_persistent_thread_readonly_start
-	);
-}
-
-// First element of arglist must be function to call
-int rrr_py_call_object_async (
-		PyObject **result,
-		struct python3_rrr_objects *rrr_objects,
-		const char *module_name,
-		const char *function_name,
-		PyObject *arg
-) {
-	int ret = 0;
-
-	*result = NULL;
-
-	PyObject *arglist = NULL;
-	VL_DEBUG_MSG_3("Async call to module %s function %s\n", module_name, function_name);
-
-	arglist = Py_BuildValue("OssO",
-			rrr_objects->rrr_global_process_dict,
-			module_name,
-			function_name,
-			arg
-	);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not prepare argument list while calling python3 object asynchronously:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	*result = PyObject_CallObject(rrr_objects->rrr_onetime_thread_start, arglist);
-	if (*result == NULL) {
-		VL_MSG_ERR("Could not run python3 thread starter: \n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(arglist);
-	return ret;
-}
-
-struct rrr_py_settings_iterate_data {
-	PyObject *py_rrr_settings;
-	struct python3_rrr_objects *rrr_objects;
-	void *caller_data;
-};
-
-// rrr_setting is locked in this context
-int __rrr_py_settings_update_used_callback (struct rrr_setting *setting, void *arg) {
-	struct rrr_py_settings_iterate_data *callback_data = arg;
-	PyObject *arglist = NULL;
-	PyObject *result = NULL;
-	int ret = 0;
-
-	arglist = Py_BuildValue("(Os)",
-			callback_data->py_rrr_settings,
-			setting->name
-	);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not generate argument list while checking if setting was used in python3 settings class:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	result = PyObject_CallObject(callback_data->rrr_objects->rrr_settings_check_used, arglist);
-	if (result == NULL) {
-		VL_MSG_ERR("Could not check python3 settings was used property (1st time): \n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	int was_used = PyLong_AsLong(result);
-	if (was_used == -1) {
-		VL_MSG_ERR("Could not check python3 settings was used property (2nd time): \n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	if (was_used == 0 && setting->was_used == 1) {
-		VL_MSG_ERR("Warning: Was used property of settings %s changed from 1 to 0 after python3 config function\n",
-				setting->name);
-	}
-
-	setting->was_used = was_used;
-
-	out:
-	Py_XDECREF(result);
-	Py_XDECREF(arglist);
-	return ret;
-}
-
-// rrr_setting is locked in this context
-int __rrr_py_new_settings_callback (struct rrr_setting *setting, void *arg) {
-	struct rrr_py_settings_iterate_data *callback_data = arg;
-	PyObject *arglist = NULL;
-	PyObject *result = NULL;
-	int ret = 0;
-
-	if (RRR_SETTING_IS_UINT(setting)) {
-		unsigned long long value;
-		if (rrr_settings_setting_to_uint_nolock(&value, setting) != 0) {
-			VL_MSG_ERR("Bug: Could not convert unsigned integer to unsigned integer in __rrr_py_new_settings_callback\n");
-			exit(EXIT_FAILURE);
-		}
-		arglist = Py_BuildValue("(OsKi)",
-				callback_data->py_rrr_settings,
-				setting->name,
-				value,
-				setting->was_used
-		);
-	}
-	else {
-		char *value;
-		if (rrr_settings_setting_to_string_nolock(&value, setting) != 0) {
-			VL_MSG_ERR("Could not convert setting %s to string while adding to python3 settings class\n", setting->name);
+		if (!PyObject_IsTrue(result)) {
+			VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+					getpid());
 			ret = 1;
 			goto out;
 		}
-		arglist = Py_BuildValue("(Ossi)",
-				callback_data->py_rrr_settings,
-				setting->name,
-				value,
-				setting->was_used
-		);
-		free (value);
+		RRR_Py_XDECREF(result);
+
+		if (--ack_check_interval == 0) {
+			struct rrr_socket_msg *result = NULL;
+			ret = rrr_python3_socket_recv(&result, socket, 0);
+			if (ret != 0) {
+				VL_MSG_ERR("Error while checking for ACK packets in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+						getpid());
+			}
+			if (result != NULL) {
+				VL_BUG("Received non ACK-packet in read-only thread\n");
+			}
+			ack_check_interval = 25;
+		}
 	}
 
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not generate argument list while adding setting to python3 settings class:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
+	out:
+	RRR_Py_XDECREF(result);
+	if (VL_DEBUGLEVEL_1 || ret != 0) {
+		VL_DEBUG_MSG("Pytohn3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
+				getpid(), ret, rrr_py_fork_running);
+	}
+}
+
+static int __fork_callback(void *arg) {
+	(void)(arg);
+	int ret = fork();
+	if (ret > 0) {
+		printf ("=== FORK PID %i ========================================================================================\n", ret);
+	}
+	return ret;
+}
+
+static pid_t __rrr_py_fork_intermediate (
+		PyObject *function,
+		struct python3_fork *fork_data,
+		void (*child_method)(PyObject *function, struct python3_fork *fork)
+) {
+	pid_t ret = 0;
+
+	VL_DEBUG_MSG_1("Before fork child socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_child));
+	VL_DEBUG_MSG_1("Before fork main  socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_main));
+
+	PyOS_BeforeFork();
+	ret = rrr_socket_with_lock_do(__fork_callback, NULL);
+
+	if (ret == 0) {
+		goto child;
+	}
+	else {
+		PyOS_AfterFork_Parent();
+		if (ret < 0) {
+			VL_MSG_ERR("Could not fork python3: %s\n", strerror(errno));
+		}
+		goto out_main;
 	}
 
-	result = PyObject_CallObject(callback_data->rrr_objects->rrr_settings_set, arglist);
-	if (result == NULL) {
-		VL_MSG_ERR("Could not set python3 setting: \n");
-		PyErr_Print();
+	child:
+	PyOS_AfterFork_Child();
+	// Close sockets from main, we don't need them in the fork
+//	rrr_python3_socket_close(fork_data->socket_main);
+
+	VL_DEBUG_MSG_1("Child %i socket is %i\n", getpid(), rrr_python3_socket_get_connected_fd(fork_data->socket_child));
+	VL_DEBUG_MSG_1("Child closing sockets of main\n");
+	RRR_Py_XDECREF(fork_data->socket_main);
+
+	rrr_py_fork_running = 1;
+
+	struct sigaction action;
+	action.sa_handler = __rrr_py_fork_signal_handler;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	signal(SIGTERM, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGUSR1, SIG_DFL);
+	signal(SIGPIPE, SIG_DFL);
+
+	sigaction (SIGUSR1, &action, NULL);
+	sigaction (SIGPIPE, &action, NULL);
+
+	child_method(function, fork_data);
+
+	VL_DEBUG_MSG_1("Child %i closing sockets\n", getpid());
+	rrr_socket_close_all_except(rrr_python3_socket_get_connected_fd(fork_data->socket_child));
+	VL_DEBUG_MSG_1("Child %i decref socket\n", getpid());
+	RRR_Py_XDECREF(fork_data->socket_child);
+	VL_DEBUG_MSG_1("Child %i return\n", getpid());
+	exit(ret);
+
+	out_main:
+
+	// Close sockets from the fork, we don't need them in main
+//	rrr_python3_socket_close(fork_data->socket_child);
+
+	VL_DEBUG_MSG_1("Main closing sockets of child\n");
+	RRR_Py_XDECREF(fork_data->socket_child);
+	fork_data->socket_child = NULL;
+
+	pthread_mutex_lock(&fork_lock);
+	fork_data->pid = ret;
+
+	// Prepare to accept SIGCHLD when this fork exits
+	__rrr_py_push_zombie_unlocked(ret);
+	pthread_mutex_unlock(&fork_lock);
+
+	return ret;
+}
+
+static int __rrr_py_start_onetime_rw_thread_intermediate (
+		PyObject *function,
+		struct python3_fork *fork
+) {
+	int ret = 0;
+
+	fork->poll = rrr_python3_socket_poll;
+	fork->send = rrr_python3_socket_send;
+	fork->recv = rrr_python3_socket_recv;
+
+	pid_t pid = __rrr_py_fork_intermediate (
+			function,
+			fork,
+			__rrr_py_start_onetime_thread_rw_child
+	);
+
+	if (pid < 1) {
 		ret = 1;
 		goto out;
 	}
 
 	out:
-	Py_XDECREF(result);
-	Py_XDECREF(arglist);
 	return ret;
 }
 
-int __rrr_py_settings_iterate (
-		struct python3_rrr_objects *rrr_objects,
-		struct rrr_instance_settings *settings,
-		PyObject *py_rrr_settings,
-		int (*callback)(struct rrr_setting *setting, void *arg),
-		void *caller_data
+static int __rrr_py_start_persistent_rw_thread_intermediate (
+		PyObject *function,
+		struct python3_fork *fork
 ) {
-	struct rrr_py_settings_iterate_data callback_data = { py_rrr_settings, rrr_objects, caller_data };
-
-	return rrr_settings_iterate (
-			settings,
-			callback,
-			&callback_data
-	);
-}
-
-PyObject *rrr_py_new_settings(struct python3_rrr_objects *rrr_objects, struct rrr_instance_settings *settings) {
-	PyObject *py_rrr_settings = NULL;
 	int ret = 0;
 
-	py_rrr_settings = rrr_py_call_function_no_args(rrr_objects->rrr_settings_new);
-	if (py_rrr_settings == NULL) {
-		VL_MSG_ERR("Could not get new python rrr_settings class instance\n");
+	fork->poll = rrr_python3_socket_poll;
+	fork->send = rrr_python3_socket_send;
+	fork->recv = rrr_python3_socket_recv;
+
+	pid_t pid = __rrr_py_fork_intermediate (
+			function,
+			fork,
+			__rrr_py_start_persistent_thread_rw_child
+	);
+
+	if (pid < 1) {
 		ret = 1;
 		goto out;
 	}
 
-	ret = __rrr_py_settings_iterate  (
-			rrr_objects,
-			settings,
-			py_rrr_settings,
-			__rrr_py_new_settings_callback,
-			NULL
+	out:
+	return ret;
+}
+
+static int __rrr_py_start_persistent_ro_thread_intermediate (
+		PyObject *function,
+		struct python3_fork *fork
+) {
+	int ret = 0;
+
+	// The child should only have access to send() but
+	// also need recv() to read ACK messages
+	fork->poll = NULL;
+	fork->send = rrr_python3_socket_send;
+	fork->recv = rrr_python3_socket_recv;
+
+	pid_t pid = __rrr_py_fork_intermediate (
+			function,
+			fork,
+			__rrr_py_start_persistent_thread_ro_child
 	);
+
+	// Alter the fork struct so that main does not have access to send()
+	fork->poll = rrr_python3_socket_poll;
+	fork->send = NULL;
+	fork->recv = rrr_python3_socket_recv;
+
+	if (pid < 1) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_py_start_thread (
+		struct python3_fork **result_fork,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name,
+		int (*start_method)(PyObject *function, struct python3_fork *fork)
+) {
+	int ret = 0;
+
+	PyObject *module = NULL;
+	PyObject *module_dict = NULL;
+	PyObject *function = NULL;
+	PyObject *py_module_name = NULL;
+	struct python3_fork *fork = NULL;
+
+	*result_fork = NULL;
+	VL_DEBUG_MSG_3("Start thread of module %s function %s\n", module_name, function_name);
+
+	fork = rrr_py_fork_new(rrr_objects);
+	if (fork == NULL) {
+		VL_MSG_ERR("Could not start thread.\n");
+		ret = 1;
+		goto out;
+	}
+
+	printf ("New fork main  refcount: %li\n", fork->socket_main->ob_refcnt);
+	printf ("New fork child refcount: %li\n", fork->socket_child->ob_refcnt);
+
+	py_module_name = PyUnicode_FromString(module_name);
+	module = PyImport_GetModule(py_module_name);
+	printf ("Module %s already loaded? %p\n", module_name, module);
+	if (module == NULL && (module = PyImport_ImportModule(module_name)) == NULL) {
+		VL_MSG_ERR("Could not import module %s while starting thread:\n", module_name);
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+	printf ("Module %s loaded: %p\n", module_name, module);
+
+	if ((module_dict = PyModule_GetDict(module)) == NULL) { // Borrowed reference
+		VL_MSG_ERR("Could not get dictionary of module %s while starting thread:\n", module_name);
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+/*	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON3 DUMPING IMPORTED USER MODULE ===========================\n");
+		rrr_py_dump_dict_entries(module_dict);
+		printf ("=== PYTHON3 DUMPING IMPORTED USER MODULE END =======================\n\n");
+	}*/
+
+	if ((function = rrr_py_import_function(module_dict, function_name)) == NULL) {
+		VL_MSG_ERR("Could not get function %s from module %s while starting thread\n",
+				function_name, module_name);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = start_method(function, fork)) != 0) {
+		VL_MSG_ERR("Could not fork python3 with function %s from %s. Return value: %i\n",
+				function_name, module_name, ret);
+		ret = 1;
+		goto out;
+	}
+
+	*result_fork = fork;
+
+	out:
+	RRR_Py_XDECREF(py_module_name);
+	RRR_Py_XDECREF(function);
+	RRR_Py_XDECREF(module);
+	if (ret != 0) {
+		rrr_py_fork_destroy(rrr_objects, fork);
+	}
+	return ret;
+}
+
+int rrr_py_start_persistent_rw_thread (
+		struct python3_fork **result_fork,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name
+) {
+	return __rrr_py_start_thread (
+			result_fork,
+			rrr_objects,
+			module_name,
+			function_name,
+			__rrr_py_start_persistent_rw_thread_intermediate
+	);
+}
+
+int rrr_py_start_persistent_ro_thread (
+		struct python3_fork **result_fork,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name
+) {
+	return __rrr_py_start_thread (
+			result_fork,
+			rrr_objects,
+			module_name,
+			function_name,
+			__rrr_py_start_persistent_ro_thread_intermediate
+	);
+}
+
+int rrr_py_start_onetime_rw_thread (
+		struct rrr_socket_msg **result,
+		struct python3_rrr_objects *rrr_objects,
+		const char *module_name,
+		const char *function_name,
+		struct rrr_socket_msg *arg
+) {
+	int ret = 0;
+	struct python3_fork *fork = NULL;
+	struct rrr_socket_msg *message = NULL;
+
+	*result = NULL;
+
+	ret = __rrr_py_start_thread (
+			&fork,
+			rrr_objects,
+			module_name,
+			function_name,
+			__rrr_py_start_onetime_rw_thread_intermediate
+	);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Could not start onetime read-write thread with function %s from module %s\n",
+				function_name, module_name);
+		ret = 1;
+		goto out;
+	}
+
+	ret = fork->send(fork->socket_main, arg);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not send message to read-write thread with function %s from module %s\n",
+				function_name, module_name);
+		ret = 1;
+		goto out;
+	}
+
+	int max_attempts = 1000000;
+	while (--max_attempts != 0 && message == NULL) {
+		ret = fork->recv(&message, fork->socket_main, 10);
+		if (ret != 0) {
+			VL_MSG_ERR("Could not receive message from read-write thread with function %s from module %s\n",
+					function_name, module_name);
+			ret = 1;
+			goto out;
+		}
+
+		if (message != NULL) {
+			break;
+		}
+
+		usleep(1000);
+	}
+
+	if (message == NULL) {
+		VL_BUG("Did not receive a message back in rrr_py_start_onetime_rw_thread from function %s from module %s\n",
+				function_name, module_name);
+	}
+
+	*result = message;
 
 	out:
 	if (ret != 0) {
-		Py_XDECREF(py_rrr_settings);
-		py_rrr_settings = NULL;
+		RRR_FREE_IF_NOT_NULL(message);
 	}
-
-	return py_rrr_settings;
-}
-
-int rrr_py_settings_update_used (
-		struct python3_rrr_objects *rrr_objects,
-		struct rrr_instance_settings *settings,
-		PyObject *py_rrr_settings
-) {
-	return __rrr_py_settings_iterate  (
-			rrr_objects,
-			settings,
-			py_rrr_settings,
-			__rrr_py_settings_update_used_callback,
-			NULL
-	);
-}
-
-char dummy_data[MSG_DATA_MAX_LENGTH] = "a";
-PyObject *rrr_py_new_empty_message (struct python3_rrr_objects *rrr_objects) {
-	PyObject *ret = NULL;
-	PyObject *binary_data = NULL;
-	PyObject *arglist = NULL;
-
-	if (*dummy_data == 'a') {
-		memset(dummy_data, 'a', sizeof(dummy_data) - 1);
-		dummy_data[sizeof(dummy_data)-1] = '\0';
-	}
-
-	binary_data = PyByteArray_FromStringAndSize(dummy_data, sizeof(dummy_data));
-	if (binary_data == NULL) {
-		VL_MSG_ERR("Could not create python3 binary data: \n");
-		PyErr_Print();
-		goto out;
-	}
-
-	arglist = Py_BuildValue("(kkKKKkO)",
-			0,
-			0,
-			0,
-			0,
-			0,
-			0,
-			binary_data
-	);
-
-	int res = rrr_py_call_object_async(&ret, rrr_objects, "rrr_objects", "vl_message_new", arglist);
-	if (res != 0) {
-		VL_MSG_ERR("Could not create python3 message object: \n");
-		PyErr_Print();
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(arglist);
-	Py_XDECREF(binary_data);
-	return ret;
-}
-
-PyObject *__rrr_py_message_new_arglist(const struct vl_message *message) {
-	PyObject *binary_data = NULL;
-	PyObject *arglist = NULL;
-
-	binary_data = PyByteArray_FromStringAndSize(message->data, message->length);
-	if (binary_data == NULL) {
-		VL_MSG_ERR("Could not create python3 binary data: \n");
-		PyErr_Print();
-		goto out;
-	}
-
-	arglist = Py_BuildValue("kkKKKkO",
-			message->type,
-			message->class,
-			message->timestamp_from,
-			message->timestamp_to,
-			message->data_numeric,
-			message->length,
-			binary_data
-	);
-
-	out:
-	Py_XDECREF(binary_data);
-	return arglist;
-}
-
-PyObject *rrr_py_new_message (struct python3_rrr_objects *rrr_objects, const struct vl_message *message) {
-	PyObject *ret = NULL;
-	PyObject *arglist = NULL;
-
-	if ((arglist = __rrr_py_message_new_arglist(message)) == NULL) {
-		goto out;
-	}
-
-	int res = rrr_py_call_object_async(&ret, rrr_objects, "rrr_objects", "vl_message_new", arglist);
-	if (res != 0) {
-		VL_MSG_ERR("Could not create python3 message object in rrr_py_new_message: \n");
-		PyErr_Print();
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(arglist);
-	return ret;
-}
-
-int rrr_py_message_to_internal(struct vl_message **target, PyObject *py_message) {
-	int ret = 0;
-
-	PyObject *type = NULL;
-	PyObject *class = NULL;
-	PyObject *timestamp_from = NULL;
-	PyObject *timestamp_to = NULL;
-	PyObject *data_numeric = NULL;
-	PyObject *length = NULL;
-	PyObject *data = NULL;
-
-	*target = NULL;
-
-	if (strcmp(Py_TYPE(py_message)->tp_name, "vl_message") != 0) {
-		VL_MSG_ERR("Bug: rrr_py_message_to_internal was called with wrong object type '%s'\n", Py_TYPE(py_message)->tp_name);
-		exit (EXIT_FAILURE);
-	}
-
-	struct vl_message *result = malloc(sizeof(*result));
-	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_py_message_to_internal\n");
-		ret = 1;
-		goto out;
-	}
-
-	memset(result, '\0', sizeof(*result));
-
-	type = PyObject_GetAttrString(py_message, "type");
-	class = PyObject_GetAttrString(py_message, "m_class");
-	timestamp_from = PyObject_GetAttrString(py_message, "timestamp_from");
-	timestamp_to = PyObject_GetAttrString(py_message, "timestamp_to");
-	data_numeric  = PyObject_GetAttrString(py_message, "data_numeric");
-	length = PyObject_GetAttrString(py_message, "length");
-	data = PyObject_GetAttrString(py_message, "data");
-
-	if (type == NULL ||
-		class == NULL ||
-		timestamp_from == NULL ||
-		timestamp_to == NULL ||
-		data_numeric == NULL ||
-		length == NULL ||
-		data == NULL
-	) {
-		VL_MSG_ERR("Could not find all required paramenters in python3 vl_message struct\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (!PyByteArray_Check(data)) {
-		VL_MSG_ERR("Returned data in returned message from python3 process function was not a byte array\n");
-		ret = 1;
-		goto out;
-	}
-
-	Py_ssize_t returned_length = PyByteArray_Size(data);
-	if (returned_length > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR("Returned length of data field was too large (returned: %li, required: <=%i)",
-				returned_length, MSG_DATA_MAX_LENGTH);
-		ret = 1;
-		goto out;
-	}
-
-	char *returned_bytes = PyByteArray_AsString(data);
-	memcpy(result->data, returned_bytes, returned_length);
-
-	result->type = PyLong_AsUnsignedLong(type);
-	result->class = PyLong_AsUnsignedLong(class);
-	result->timestamp_from = PyLong_AsUnsignedLongLong(timestamp_from);
-	result->timestamp_to = PyLong_AsUnsignedLongLong(timestamp_to);
-	result->data_numeric = PyLong_AsUnsignedLongLong(data_numeric);
-	result->length = PyLong_AsUnsignedLong(length);
-
-	out:
-	if (ret == 0) {
-		*target = result;
-	}
-	else {
-		RRR_FREE_IF_NOT_NULL(result);
-	}
-
-	Py_XDECREF(type);
-	Py_XDECREF(class);
-	Py_XDECREF(timestamp_from);
-	Py_XDECREF(timestamp_to);
-	Py_XDECREF(data_numeric);
-	Py_XDECREF(length);
-	Py_XDECREF(data);
-
+	rrr_py_fork_destroy(rrr_objects, fork);
 	return ret;
 }
 
 int rrr_py_persistent_receive_message (
-		int *pending_counter,
-		struct python3_rrr_objects *rrr_objects,
-		PyObject *processor_pipe,
-		int (*callback)(PyObject *message, void *arg),
+		struct python3_fork *fork,
+		int (*callback)(struct rrr_socket_msg *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_receive_message getting message\n");
 
-	PyObject *res = NULL;
-//	PyObject *arglist = NULL;
+	struct rrr_socket_msg *message = NULL;
 
-	/*arglist = Py_BuildValue("(O)",
-			processor_pipe
-	);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not prepare argument list in rrr_py_persistent_receive_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}*/
-
-	int do_continue = 1;
-	while (do_continue) {
-		PYTHON3_PROFILE_START(recv_data,rrr_objects->accumulated_time_recv_message_nonblock);
-		res = PyObject_CallFunction(rrr_objects->rrr_persistent_thread_recv_data_nonblock, "O", processor_pipe);
-		if (res == NULL) {
-			PyObject *exc = PyErr_Occurred();
-			if (exc) {
-				printf ("%s\n", Py_TYPE(exc)->tp_name);
-			}
-			VL_MSG_ERR("Could not run python3 rrr_persistent_thread_recv_data_nonblock: \n");
-			PyErr_Print();
+	int counter = 0;
+	while (++counter <= 500) {
+		if (fork->invalid == 1) {
+			VL_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
+			ret = 1;
+			break;
+		}
+		ret = fork->recv(&message, fork->socket_main, 10);
+		if (ret != 0) {
+			VL_MSG_ERR("Error while receiving message from python3 child\n");
 			ret = 1;
 			goto out;
 		}
 
-		PYTHON3_PROFILE_STOP(recv_data);
+		if (message == NULL) {
+			break;
+		}
 
-//		VL_DEBUG_MSG_3("rrr_py_process_message received an object of type %s from process function\n", Py_TYPE(res)->tp_name);
+		// If ret == 0, callback has taken control of memory
+		// If ret != 0, there is an error and we must free memory
+		ret = callback(message, callback_arg);
+		if (ret != 0) {
+			VL_MSG_ERR("Error from callback function while receiving message from python3 child\n");
+			ret = 1;
+			goto out;
+		}
 
-		if (strcmp(Py_TYPE(res)->tp_name, "vl_message") == 0) {
-			ret = callback (res, callback_arg);
-			res = NULL;
-			(*pending_counter)--;
-		}
-		else if (strcmp(Py_TYPE(res)->tp_name, "NoneType") == 0) {
-			do_continue = 0;
-		}
-		else {
-			VL_BUG("Bug: rrr_persistent_thread_recv_data received an object of unknown type back from process function\n");
-		}
-		Py_XDECREF(res);
-	//	Py_XDECREF(arglist);
-		res = NULL;
+		message = NULL;
 	}
 
 	out:
-	Py_XDECREF(res);
-//	Py_XDECREF(arglist);
-	return ret;
-}
-
-int rrr_py_persistent_process_data (
-		PyObject *method,
-		PyObject *processor_pipe,
-		PyObject *arglist
-) {
-	int ret = 0;
-	PyObject *arglist_new = NULL;
-	PyObject *res = NULL;
-
-	arglist_new = Py_BuildValue("(OO)",
-			processor_pipe,
-			arglist
-	);
-
-	if (arglist_new == NULL) {
-		VL_MSG_ERR("Could not prepare argument list in rrr_py_persistent_receive_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-
-	res = PyObject_CallObject(method, arglist_new);
-	if (res == NULL) {
-		VL_MSG_ERR("Could not run python3 rrr_persistent_thread_send_data: \n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(res);
-	Py_XDECREF(arglist_new);
-	return ret;
-}
-
-int rrr_py_persistent_readonly_send_counter (
-		struct python3_rrr_objects *rrr_objects,
-		PyObject *processor_pipe,
-		int count
-) {
-	int ret = 0;
-	PyObject *counter = NULL;
-	PyObject *res = NULL;
-
-	counter = PyLong_FromLong(count);
-	if (counter == NULL) {
-		VL_MSG_ERR("Could not convert long to PyLong in rr_py_persistent_readonly_send_counter:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	res = PyObject_CallFunction(rrr_objects->rrr_persistent_thread_send_data, "OO", processor_pipe, counter);
-	if (res == NULL) {
-		VL_MSG_ERR("Could not call python function in rr_py_persistent_readonly_send_counter:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(res);
-	Py_XDECREF(counter);
+	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
 int rrr_py_persistent_process_message (
-		struct python3_rrr_objects *rrr_objects,
-		PyObject *processor_pipe,
-		PyObject *message
+		struct python3_fork *fork,
+		struct rrr_socket_msg *message
 ) {
 	int ret = 0;
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_process_message processing message\n");
 
-	if (message == NULL || processor_pipe == NULL) {
-		VL_BUG("Bug: Message or processor pipe was NULL in rrr_py_persistent_process_message\n");
+	if (fork->invalid == 1) {
+		VL_MSG_ERR("Fork was invalid in rrr_py_persistent_process_message, child has exited\n");
+		ret = 1;
+		goto out;
 	}
 
-	ret = rrr_py_persistent_process_data (rrr_objects->rrr_persistent_thread_send_data, processor_pipe, message);
+	ret = fork->send(fork->socket_main, message);
 	if (ret != 0) {
 		VL_MSG_ERR("Could not process new python3 message object in rrr_py_persistent_process_message\n");
 		goto out;
@@ -911,109 +1027,7 @@ int rrr_py_persistent_process_message (
 	return ret;
 }
 
-int rrr_py_persistent_process_new_messages (
-		struct python3_rrr_objects *rrr_objects,
-		PyObject *processor_pipe,
-		struct vl_message *messages[RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX],
-		int count
-) {
-	int ret = 0;
-	PyObject *arglist = NULL;
-	PyObject *message_arglist = NULL;
-	PyObject *pycount = NULL;
-
-	if (count == 0) {
-		goto out;
-	}
-
-	arglist = PyTuple_New(count + 2);
-	if (arglist == NULL) {
-		VL_MSG_ERR("Could not create PyTuple in rrr_py_persistent_process_new_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	pycount = PyLong_FromLong(count);
-	if (pycount == NULL) {
-		VL_MSG_ERR("Could not create PyLong in rrr_py_persistent_process_new_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	ret = PyTuple_SetItem(arglist, 0, processor_pipe); // Steals reference to processor_pipe
-	if (ret != 0) {
-		VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-	Py_INCREF(processor_pipe);
-
-	ret = PyTuple_SetItem(arglist, 1, pycount); // Steals reference to pycount
-	if (ret != 0) {
-		VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-	Py_INCREF(pycount);
-
-
-	for (int i = 0; i < count; i++) {
-		message_arglist = __rrr_py_message_new_arglist(messages[i]);
-		if (message_arglist == NULL) {
-			VL_MSG_ERR("Could not create message argument list in rrr_py_persistent_process_new_message:\n");
-			PyErr_Print();
-			ret = 1;
-			goto out;
-		}
-
-		ret = PyTuple_SetItem(arglist, i + 2, message_arglist); // Steals reference to message_arglist
-		if (ret != 0) {
-			VL_MSG_ERR("Could not set PyTuple item in rrr_py_persistent_process_new_message:\n");
-			PyErr_Print();
-			ret = 1;
-			goto out;
-		}
-		message_arglist = NULL;
-	}
-
-	ret = rrr_py_persistent_process_data(rrr_objects->rrr_persistent_thread_send_new_vl_message, processor_pipe, arglist);
-	if (ret != 0) {
-		VL_MSG_ERR("Could not process new python3 message object in rrr_py_persistent_process_new_message\n");
-		goto out;
-	}
-
-	out:
-	Py_XDECREF(message_arglist);
-	Py_XDECREF(arglist);;
-	Py_XDECREF(pycount);
-	return ret;
-}
-
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *rrr_objects) {
-	Py_XDECREF(rrr_objects->rrr_settings_class);
-	Py_XDECREF(rrr_objects->rrr_settings_get);
-	Py_XDECREF(rrr_objects->rrr_settings_set);
-	Py_XDECREF(rrr_objects->rrr_settings_check_used);
-	Py_XDECREF(rrr_objects->rrr_settings_new);
-
-	Py_XDECREF(rrr_objects->rrr_global_process_dict);
-
-	Py_XDECREF(rrr_objects->rrr_onetime_thread_start);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_start);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_readonly_start);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_send_data);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_send_new_vl_message);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_recv_data);
-	Py_XDECREF(rrr_objects->rrr_persistent_thread_recv_data_nonblock);
-	Py_XDECREF(rrr_objects->rrr_thread_terminate_all);
-
-	Py_XDECREF(rrr_objects->vl_message_class);
-	Py_XDECREF(rrr_objects->vl_message_new);
-
 	memset (rrr_objects, '\0', sizeof(*rrr_objects));
 }
 
@@ -1042,10 +1056,11 @@ int rrr_py_get_rrr_objects (
 		int module_paths_length
 ) {
 	PyObject *res = NULL;
-	PyObject *settings_class_dictionary = NULL;
-	char *rrr_py_start_thread_final = NULL;
+	PyObject *rrr_helper_module = NULL;
+	char *rrr_py_import_final = NULL;
 	int ret = 0;
 
+	// FIX IMPORT PATHS AND IMPORT STUFF. INITIALIZE GLOBAL OBJECTS.
 	int module_paths_total_size = 0;
 	for (int i = 0; i < module_paths_length; i++) {
 		module_paths_total_size += strlen(extra_module_paths[i]) + strlen("sys.path.append('')\n");
@@ -1057,7 +1072,18 @@ int rrr_py_get_rrr_objects (
 		sprintf(extra_module_paths_concat + strlen(extra_module_paths_concat), "sys.path.append('%s')\n", extra_module_paths[i]);
 	}
 
-	const char *rrr_py_start_thread_template =
+	if ((rrr_helper_module = PyImport_ImportModule("rrr_helper")) == NULL) {
+		VL_MSG_ERR("Could not add rrr_helper module to current thread state dict:\n");
+		PyErr_Print();
+		ret = 1;
+		goto out;
+	}
+
+	printf ("RRR helper module: %p refcount %li\n", rrr_helper_module, rrr_helper_module->ob_refcnt);
+//	Py_XDECREF(rrr_helper_module);
+
+	// RUN STARTUP CODE
+	const char *rrr_py_import_template =
 			"import sys\n"
 #ifdef RRR_PYTHON3_EXTRA_SYS_PATH
 			"sys.path.append('.')\n"
@@ -1072,116 +1098,133 @@ int rrr_py_get_rrr_objects (
 			"sys.path.append('" RRR_PYTHON3_SITE_PACKAGES_DIR "')\n"
 #endif /* RRR_PYTHON3_PKGDIR */
 			"%s"
-			"from rrr import *\n"
-			"rrr_global_process_dict = rrr_process_dict()\n"
-			"pipe_dummy, pipe_dummy_b = Pipe()\n"
+//			"import rrr_helper\n"
+//			"from rrr_helper import *\n"
 	;
 
-	rrr_py_start_thread_final = malloc(strlen(rrr_py_start_thread_template) + strlen(extra_module_paths_concat) + 1);
-	sprintf(rrr_py_start_thread_final, rrr_py_start_thread_template, extra_module_paths_concat);
-
-	if (VL_DEBUGLEVEL_1) {
-		printf ("=== PYTHON FIXED INITIAL CODE =====================================\n");
-		printf ("%s", rrr_py_start_thread_final);
-		printf ("=== PYTHON FIXED INITIAL CODE END =================================\n");
-	}
+	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
+	sprintf(rrr_py_import_final, rrr_py_import_template, extra_module_paths_concat);
 
 	memset (target, '\0', sizeof(*target));
 
-	res = PyRun_String(rrr_py_start_thread_final, Py_file_input, dictionary, dictionary);
+	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);
 	if (res == NULL) {
-		VL_MSG_ERR("Could run import sys: \n");
+		VL_MSG_ERR("Could not run initial python3 code to set up RRR environment: \n");
 		ret = 1;
 		PyErr_Print();
 		goto out;
 	}
-	Py_XDECREF(res);
+	RRR_Py_XDECREF(res);
 
-	// IMPORT RESULT QUEUE OBJECT
-	res = rrr_py_import_object(dictionary, "rrr_global_process_dict");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find rrr_global_process_dict object: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	target->rrr_global_process_dict = res;
-
-	// IMPORT SETTINGS OBJECT
-	res = rrr_py_import_object(dictionary, "rrr_instance_settings");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find rrr_instance_settings class: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	target->rrr_settings_class = res;
-
-	settings_class_dictionary = PyObject_GenericGetDict(target->rrr_settings_class, NULL);
-	if (settings_class_dictionary == NULL) {
-		VL_MSG_ERR("Could not get dictionary of rrr_instance_settings class: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
+	// DEBUG
+	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON3 DUMPING RRR HELPER MODULE ==============================\n");
+		rrr_python3_module_dump_dict_keys();
+		printf ("=== PYTHON3 DUMPING RRR HELPER MODULE END ==========================\n\n");
 	}
 
-	res = rrr_py_import_function(settings_class_dictionary, "get");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find rrr_settings_class.get function: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
+	if (VL_DEBUGLEVEL_1) {
+		printf ("=== PYTHON3 DUMPING GLOBAL MODULES =================================\n");
+		rrr_py_dump_global_modules();
+		printf ("=== PYTHON3 DUMPING GLOBAL MODULES END =============================\n\n");
 	}
-	target->rrr_settings_get = res;
-
-	res = rrr_py_import_function(settings_class_dictionary, "set");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find rrr_settings_class.set function: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	target->rrr_settings_set = res;
-
-	res = rrr_py_import_function(settings_class_dictionary, "check_used");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find rrr_settings_class.check_used function: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	target->rrr_settings_check_used = res;
-
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_settings_new, ret);
-
-	// IMPORT THREAD FUNCTIONS
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_onetime_thread_start, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_start, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_readonly_start, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_send_data, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_send_new_vl_message, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_recv_data, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_persistent_thread_recv_data_nonblock, ret);
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, rrr_thread_terminate_all, ret);
-
-	// IMPORT MESSAGE OBJECT
-	res = rrr_py_import_object(dictionary, "vl_message");
-	if (res == NULL) {
-		VL_MSG_ERR("Could not find vl_message class: \n");
-		ret = 1;
-		PyErr_Print();
-		goto out;
-	}
-	target->vl_message_class = res;
-
-	IMPORT_FUNCTION_OR_GOTO_OUT(target, dictionary, vl_message_new, ret);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(rrr_py_start_thread_final);
-	Py_XDECREF(settings_class_dictionary);
+	RRR_FREE_IF_NOT_NULL(rrr_py_import_final);
 	if (ret != 0) {
 		rrr_py_destroy_rrr_objects(target);
 	}
+
+	return ret;
+}
+
+void __rrr_py_global_lock(void) {
+	pthread_mutex_lock(&main_python_lock);
+}
+
+void __rrr_py_global_unlock(void *dummy) {
+	(void)(dummy);
+	pthread_mutex_unlock(&main_python_lock);
+}
+
+int __rrr_py_initialize_increment_users(void) {
+	int ret = 0;
+	__rrr_py_global_lock();
+
+	if (++python_users == 1) {
+		VL_DEBUG_MSG_1 ("python3 initialize\n");
+
+		if (rrr_python3_module_append_inittab() != 0) {
+			VL_MSG_ERR("Could not append python3 rrr_helper module to inittab before initializing\n");
+			ret = 1;
+			goto out;
+		}
+
+		//Py_NoSiteFlag = 1;
+		Py_InitializeEx(0); // 0 = no signal registering
+		//Py_NoSiteFlag = 0;
+
+#ifdef RRR_PYTHON_VERSION_LT_3_7
+		PyEval_InitThreads();
+#endif
+
+		main_python_tstate = PyEval_SaveThread();
+	}
+
+	out:
+	if (ret != 0) {
+		python_users--;
+	}
+	__rrr_py_global_unlock(NULL);
+	return ret;
+}
+
+void __rrr_py_finalize_decrement_users(void) {
+	__rrr_py_global_lock();
+
+	/* If we are not last, only clean up after ourselves. */
+	if (--python_users == 0) {
+		VL_DEBUG_MSG_1 ("python3 finalize\n");
+		PyEval_RestoreThread(main_python_tstate);
+		Py_Finalize();
+		main_python_tstate = NULL;
+	}
+	__rrr_py_global_unlock(NULL);
+}
+
+int rrr_py_with_global_tstate_do(int (*callback)(void *arg), void *arg) {
+	int ret = 0;
+	PyEval_RestoreThread(main_python_tstate);
+	ret = callback(arg);
+	PyEval_SaveThread();
+	return ret;
+}
+
+void rrr_py_destroy_thread_state(PyThreadState *tstate) {
+	__rrr_py_global_lock();
+	PyEval_RestoreThread(tstate);
+	Py_EndInterpreter(tstate);
+	PyThreadState_Swap(main_python_tstate);
+	PyEval_SaveThread();
+	__rrr_py_global_unlock(NULL);
+
+	__rrr_py_finalize_decrement_users();
+}
+
+PyThreadState *rrr_py_new_thread_state(void) {
+	PyThreadState *ret = NULL;
+
+	if (__rrr_py_initialize_increment_users() != 0) {
+		return NULL;
+	}
+
+	__rrr_py_global_lock();
+
+	PyEval_RestoreThread(main_python_tstate);
+	ret = Py_NewInterpreter();
+	PyEval_SaveThread();
+
+	__rrr_py_global_unlock(NULL);
 
 	return ret;
 }

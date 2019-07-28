@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -29,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <poll.h>
 
@@ -266,12 +264,10 @@ static int parse_config (struct ipserver_data *data, struct rrr_instance_config 
 	return ret;
 }
 
-static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_ipserver (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct ipserver_data* data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
-
-	thread_data->thread = start_data->thread;
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data)) != 0) {
@@ -289,11 +285,11 @@ static void *thread_entry_ipserver(struct vl_thread_start_data *start_data) {
 #ifdef VL_WITH_OPENSSL
 	pthread_cleanup_push(module_crypt_data_cleanup, &data->crypt_data);
 #endif
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		VL_MSG_ERR("Configuration parse failed for ipserver instance '%s'\n", thread_data->init_data.module->instance_name);

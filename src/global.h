@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <pthread.h>
+#include <stdlib.h>
 
 #ifndef VL_GLOBAL_H
 #define VL_GLOBAL_H
@@ -59,6 +60,7 @@ extern struct rrr_global_config rrr_global_config;
  * 4 - Debug locking, thread states and buffers (very high rate)
  * 5 - Alive-messages from some threads to see if they freeze (very high rate)
  * 6 - Debug hex prints (large outputs)
+ * 7 - Debug socket closing and opening (high rate at initialization)
  */
 
 #define __VL_DEBUGLEVEL_0	(0)		// 0
@@ -68,7 +70,9 @@ extern struct rrr_global_config rrr_global_config;
 #define __VL_DEBUGLEVEL_4	(1<<3)	// 8
 #define __VL_DEBUGLEVEL_5	(1<<4)	// 16
 #define __VL_DEBUGLEVEL_6	(1<<5)	// 32
-#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4|__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6)
+#define __VL_DEBUGLEVEL_7	(1<<6)	// 64
+#define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4| \
+		__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6|__VL_DEBUGLEVEL_7)
 
 #define VL_MSG_ERR(...) \
 	do {fprintf (stderr, __VA_ARGS__);}while(0)
@@ -89,7 +93,10 @@ extern struct rrr_global_config rrr_global_config;
 		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_5) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG_6(...) \
-		do { if ((global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0) { printf (__VA_ARGS__); }} while(0)
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0) { printf (__VA_ARGS__); }} while(0)
+
+#define VL_DEBUG_MSG_7(...) \
+		do { if ((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_7) != 0) { printf (__VA_ARGS__); }} while(0)
 
 #define VL_DEBUG_MSG(...) \
 	do { printf (__VA_ARGS__); } while(0)
@@ -111,6 +118,9 @@ extern struct rrr_global_config rrr_global_config;
 
 #define VL_DEBUGLEVEL_6 \
 		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_6) != 0)
+
+#define VL_DEBUGLEVEL_7 \
+		((rrr_global_config.debuglevel & __VL_DEBUGLEVEL_7) != 0)
 
 #define VL_DEBUGLEVEL \
 		(rrr_global_config.debuglevel)

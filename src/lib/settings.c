@@ -19,9 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "rrr_socket.h"
 #include "settings.h"
 #include "../global.h"
 
+#include <bits/endian.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -187,6 +189,8 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 		goto out_unlock;
 	}
 
+	memset (setting, '\0', sizeof(*setting));
+
 	if (__rrr_settings_set_setting_name(setting, name) != 0) {
 		goto out_unlock;
 	}
@@ -194,6 +198,7 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 	setting->data = new_data;
 	setting->data_size = size;
 	setting->type = type;
+	setting->was_used = 0;
 
 	out_unlock:
 	if (ret != 0) {
@@ -607,14 +612,12 @@ int rrr_settings_dump (struct rrr_instance_settings *settings) {
 	return ret;
 }
 
-int rrr_settings_iterate (
+int rrr_settings_iterate_nolock (
 		struct rrr_instance_settings *settings,
 		int (*callback)(struct rrr_setting *settings, void *callback_args),
 		void *callback_args
 ) {
 	int ret = 0;
-
-	__rrr_settings_lock(settings);
 
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		struct rrr_setting *setting = &settings->settings[i];
@@ -626,7 +629,208 @@ int rrr_settings_iterate (
 		}
 	}
 
+	return ret;
+}
+
+int rrr_settings_iterate (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+	ret = rrr_settings_iterate_nolock(settings, callback, callback_args);
 	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+struct rrr_settings_update_used_callback_data {
+	const char *name;
+	int was_used;
+	int did_update;
+};
+
+int __rrr_settings_update_used_callback (struct rrr_setting *settings, void *callback_args) {
+	struct rrr_settings_update_used_callback_data *data = callback_args;
+
+	if (strcmp (settings->name, data->name) == 0) {
+		if (settings->was_used == 1 && data->was_used == 0) {
+			VL_MSG_ERR("Warning: Setting %s was marked as used, but python3 config function changed it to not used\n", settings->name);
+		}
+		settings->was_used = data->was_used;
+		data->did_update = 1;
+	}
+
+	return 0;
+}
+
+// TODO : Support updating the actual value
+void rrr_settings_update_used (
+		struct rrr_instance_settings *settings,
+		const char *name,
+		int was_used,
+		int (*iterator)(
+				struct rrr_instance_settings *settings,
+				int (*callback)(struct rrr_setting *settings, void *callback_args),
+				void *callback_args
+		)
+) {
+	struct rrr_settings_update_used_callback_data callback_data = {
+			name, was_used, 0
+	};
+
+	iterator(settings, __rrr_settings_update_used_callback, &callback_data);
+
+	if (callback_data.did_update != 1) {
+		VL_MSG_ERR("Warning: Setting %s received from python3 config function was not originally set in configuration, discarding it.\n", name);
+	}
+}
+
+int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
+	int ret = 0;
+	struct rrr_setting_packed *result = NULL;
+
+	*target = NULL;
+
+	if (source->data_size > RRR_SETTINGS_MAX_DATA_SIZE) {
+		VL_MSG_ERR("Cannot pack setting %s with data size %u, size exceeds limit\n", source->name, source->data_size);
+		ret = 1;
+		goto out;
+	}
+
+	result = malloc(sizeof(*result));
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in  __rrr_setting_pack\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(result, '\0', sizeof(*result));
+
+	result->type = source->type;
+	result->was_used = source->was_used;
+	result->data_size = source->data_size;
+	memcpy(result->name, source->name, sizeof(result->name));
+	memcpy(result->data, source->data, source->data_size);
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+
+	return ret;
+}
+
+int rrr_settings_iterate_packed (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting_packed *setting_packed, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+		struct rrr_setting_packed *setting_packed = NULL;
+
+		if (__rrr_setting_pack(&setting_packed, setting) != 0) {
+			VL_MSG_ERR("Could not pack setting in rrr_settings_iterate_packed\n");
+			ret = 1;
+			goto out;
+		}
+
+		ret = callback(setting_packed, callback_arg);
+
+		free(setting_packed);
+
+		if (ret != 0) {
+			break;
+		}
+	}
+
+	out:
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_packed_convert_endianess (struct rrr_setting_packed *setting_packed) {
+	if (RRR_SOCKET_MSG_IS_LE(setting_packed)) {
+		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) setting_packed) != 0) {
+			return 1;
+		}
+		setting_packed->type = le32toh(setting_packed->type);
+		setting_packed->was_used = le32toh(setting_packed->was_used);
+		setting_packed->data_size = le32toh(setting_packed->data_size);
+	}
+	else if (RRR_SOCKET_MSG_IS_BE(setting_packed)) {
+		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) setting_packed) != 0) {
+			return 1;
+		}
+		setting_packed->type = be32toh(setting_packed->type);
+		setting_packed->was_used = be32toh(setting_packed->was_used);
+		setting_packed->data_size = be32toh(setting_packed->data_size);
+	}
+	else {
+		VL_MSG_ERR("Unknown endian bytes found in message\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message) {
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) message,
+			RRR_SOCKET_MSG_TYPE_SETTING,
+			sizeof(*message),
+			0
+	);
+	rrr_socket_msg_checksum (
+			(struct rrr_socket_msg *) message,
+			sizeof(*message)
+	);
+	rrr_socket_msg_head_to_network (
+			(struct rrr_socket_msg *) message
+	);
+
+	message->type = htobe32(message->type);
+	message->was_used = htobe32(message->was_used);
+	message->data_size = htobe32(message->data_size);
+}
+
+
+int rrr_settings_packed_validate (const struct rrr_setting_packed *setting) {
+	int ret = 0;
+
+	const char *end = setting->name + sizeof(setting->name) - 1;
+	int null_ok = 0;
+	for (const char *pos = setting->name; pos != end; pos++) {
+		if (*pos == '\0') {
+			null_ok = 1;
+		}
+	}
+
+	if (setting->msg_size != sizeof(*setting)) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid header size field (%u)\n", setting->msg_size);
+		ret = 1;
+	}
+	if (null_ok != 1) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate without terminating null-character in its name\n");
+		ret = 1;
+	}
+	if (setting->data_size > sizeof(setting->data)) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid data size field (%u)\n", setting->data_size);
+		ret = 1;
+	}
+	if (setting->type > RRR_SETTINGS_TYPE_MAX) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid type field (%u)\n", setting->type);
+		ret = 1;
+	}
 
 	return ret;
 }

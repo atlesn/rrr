@@ -73,15 +73,22 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 
 	memset (buffer, '\0', sizeof(*buffer));
 
-	buffer->invalid = 1;
+	ret = pthread_mutex_init (&buffer->write_mutex, NULL);
+	if (ret != 0) { goto out;}
+
+	ret = pthread_mutex_init (&buffer->mutex, NULL);
+	if (ret != 0) { goto out;}
+
+	ret = pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
+	if (ret != 0) { goto out;}
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->buffer_do_ratelimit = 0;
 	buffer->ratelimit.sleep_spin_time = 2000000;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
-	ret |= pthread_mutex_init (&buffer->mutex, NULL);
-	ret |= pthread_mutex_init (&buffer->write_mutex, NULL);
-	ret |= pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
+	pthread_mutex_lock(&buffer->write_mutex);
+	buffer->invalid = 1;
 
 	int sem_ret = sem_init(&buffer->new_data_available, 1, 0);
 	if (sem_ret != 0) {
@@ -92,8 +99,13 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 		ret = 1;
 	}
 
+	pthread_mutex_unlock(&buffer->write_mutex);
+
+	out:
 	if (ret == 0) {
+		pthread_mutex_lock(&buffer->write_mutex);
 		buffer->invalid = 0;
+		pthread_mutex_unlock(&buffer->write_mutex);
 	}
 	else {
 		ret = 1;
@@ -342,7 +354,7 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		VL_DEBUG_MSG_4 ("Read buffer entry %p, give away data %p\n", current, current->data);
+		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		processed_entries++;
@@ -370,6 +382,7 @@ int fifo_read_clear_forward (
 					}
 				}
 
+				ret = ret_tmp & ~(FIFO_SEARCH_STOP);
 				fifo_write_unlock(buffer);
 				free(current);
 				break;

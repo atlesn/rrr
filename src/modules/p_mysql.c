@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MYSQL_SQL_MAX 4096
 #define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
-#define PASTE(x,y) x ## _ ## y
+#define RRR_PY_PASTE(x,y) x ## _ ## y
 
 // TODO : Fix URI support
 
@@ -114,9 +114,9 @@ struct column_configurator {
 	(mysql_data->colplan > 0 && mysql_data->colplan <= COLUMN_PLAN_MAX)
 
 #define COLUMN_PLAN_MATCH(str,name) \
-	strcmp(str,PASTE(COLUMN_PLAN_NAME,name)) == 0
+	strcmp(str,RRR_PY_PASTE(COLUMN_PLAN_NAME,name)) == 0
 #define COLUMN_PLAN_INDEX(name) \
-	PASTE(COLUMN_PLAN,name)
+	RRR_PY_PASTE(COLUMN_PLAN,name)
 
 int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
 	for (int i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
@@ -1005,13 +1005,11 @@ int process_entries (struct instance_thread_data *thread_data) {
 	return ret;
 }
 
-static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_mysql (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 	struct poll_collection poll_ip;
-
-	thread_data->thread = start_data->thread;
 
 	if (data_init(data) != 0) {
 		VL_MSG_ERR("Could not initalize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -1026,11 +1024,11 @@ static void *thread_entry_mysql(struct vl_thread_start_data *start_data) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (start_mysql(data) != 0) {
 		goto out_message;

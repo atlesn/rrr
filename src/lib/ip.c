@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "../global.h"
 #include "messages.h"
+#include "rrr_socket.h"
 #include "vl_time.h"
 
 int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
@@ -119,9 +120,26 @@ int ip_receive_packets (
 		int res;
 
 		VL_DEBUG_MSG_5 ("ip polling data\n");
+
+		int max_retries = 100;
+
+		retry_poll:
 		res = poll(&fds, 1, 10);
 		if (res == -1) {
-			VL_MSG_ERR ("Error from poll when reading data from network: %s\n", strerror(errno));
+			if (--max_retries == 100) {
+				VL_MSG_ERR("Max retries for poll reached in ip_receive_packets for socket %i pid %i\n",
+						fd, getpid());
+				res = 1;
+				return 1;
+			}
+			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				usleep(10);
+				goto retry_poll;
+			}
+			else if (errno == EINTR) {
+				goto retry_poll;
+			}
+			VL_MSG_ERR ("Error from poll in ip_receive_packets: %s\n", strerror(errno));
 			return 1;
 		}
 		else if (!(fds.revents & POLLIN)) {
@@ -132,10 +150,28 @@ int ip_receive_packets (
 		memset(buffer, '\0', VL_IP_RECEIVE_MAX_SIZE);
 
 		VL_DEBUG_MSG_3 ("ip receiving data\n");
-		ssize_t count = recvfrom(fd, buffer, VL_IP_RECEIVE_MAX_SIZE, 0, &src_addr, &src_addr_len);
+
+		max_retries = 100;
+		ssize_t count;
+
+		retry_recv:
+		count = recvfrom(fd, buffer, VL_IP_RECEIVE_MAX_SIZE, 0, &src_addr, &src_addr_len);
 
 		if (count == -1) {
-			VL_MSG_ERR ("Error from recvfrom when reading d <sys/socket.h>ata from network: %s\n", strerror(errno));
+			if (--max_retries == 100) {
+				VL_MSG_ERR("Max retries for recvfrom reached in ip_receive_packets for socket %i pid %i\n",
+						fd, getpid());
+				res = 1;
+				return 1;
+			}
+			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				usleep(10);
+				goto retry_recv;
+			}
+			else if (errno == EINTR) {
+				goto retry_recv;
+			}
+			VL_MSG_ERR ("Error from recvfrom in ip_receive_packets: %s\n", strerror(errno));
 			return 1;
 		}
 
@@ -232,14 +268,14 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 		return 0;
 	}*/
 
-	if (message_checksum_check(&entry->data.message) != 0) {
-		VL_MSG_ERR ("Message checksum was invalid\n");
+	if (message_convert_endianess(&entry->data.message) != 0) {
+		VL_MSG_ERR ("Could not convert message endianess\n");
 		free (entry);
 		return 0;
 	}
 
-	if (message_convert_endianess(&entry->data.message) != 0) {
-		VL_MSG_ERR ("Could not convert message endianess\n");
+	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) &entry->data.message, sizeof(entry->data.message)) != 0) {
+		VL_MSG_ERR ("IP: Message checksum was invalid\n");
 		free (entry);
 		return 0;
 	}
@@ -304,8 +340,29 @@ int ip_send_message (
 
 	VL_DEBUG_MSG_3("ip: Final message to send ready\n");
 
-	if (sendto(info->fd, buf, sizeof(*final_message), 0, info->res->ai_addr,info->res->ai_addrlen) == -1) {
-		VL_MSG_ERR("ip: Error while sending packet to server: %s\n", strerror(errno));
+	ssize_t bytes;
+	int max_retries = 100;
+
+	retry:
+	if ((bytes = sendto(info->fd, buf, sizeof(*final_message), 0, info->res->ai_addr,info->res->ai_addrlen)) == -1) {
+		if (--max_retries == 100) {
+			VL_MSG_ERR("Max retries for sendto reached in ip_send_message for socket %i pid %i\n",
+					info->fd, getpid());
+			return 1;
+		}
+		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			usleep(10);
+			goto retry;
+		}
+		else if (errno == EINTR) {
+			goto retry;
+		}
+		VL_MSG_ERR ("Error from sendto in ip_send_message: %s\n", strerror(errno));
+		return 1;
+	}
+
+	if (bytes != sizeof(*final_message)) {
+		VL_MSG_ERR("All bytes were not sent in sendto in ip_send_message\n");
 		return 1;
 	}
 
@@ -329,13 +386,13 @@ int ip_send_message (
 void ip_network_cleanup (void *arg) {
 	struct ip_data *data = arg;
 	if (data->fd != 0) {
-		close(data->fd);
+		rrr_socket_close(data->fd);
 		data->fd = 0;
 	}
 }
 
 int ip_network_start (struct ip_data *data) {
-	int fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_UDP);
+	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s", strerror(errno));
 		goto out_error;
@@ -362,7 +419,7 @@ int ip_network_start (struct ip_data *data) {
 	return 0;
 
 	out_close_socket:
-	close(fd);
+	rrr_socket_close(fd);
 
 	out_error:
 	return 1;

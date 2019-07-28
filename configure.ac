@@ -1,15 +1,18 @@
-AC_INIT([Read Route Record], 0.9)
-AC_DEFINE([VL_CONFIG_VERSION], 0.9, [Full version])
+AC_INIT([Read Route Record], 0.11)
+AC_DEFINE([VL_CONFIG_VERSION], 0.11, [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
-AC_DEFINE([VL_CONFIG_VERSION_MINOR], 9, [Minor version])
+AC_DEFINE([VL_CONFIG_VERSION_MINOR], 11, [Minor version])
 AC_DEFINE([CMD_MAXIMUM_CMDLINE_ARGS], 16, [Max number of command line arguments])
 AC_DEFINE([RRR_TYPE_MAX_DEFINITIONS], 16, [Maximum number of type definitions int type arrays])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
+AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
+
+AC_CONFIG_SUBDIRS([src/blockdevlogger])
 
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
@@ -108,7 +111,7 @@ AS_IF([test "x$enable_python3" = xno], [
 ])
 
 AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
-AC_MSG_CHECKING([Checking encryption usage])
+AC_MSG_CHECKING([for encryption usage])
 AS_IF([test "x$with_encryption" = xno], [
 	AC_MSG_RESULT([Not compiling with encryption])
 ], [
@@ -195,5 +198,7 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile src/python/Makefile)
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile
+		src/python/Makefile misc/Makefile
+)
 AC_OUTPUT

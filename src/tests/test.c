@@ -63,19 +63,32 @@ int main_get_configuration_test_result(struct instance_metadata_collection *inst
 
 static volatile int main_running = 1;
 
-void signal_interrupt (int s) {
+int signal_interrupt (int s, void *arg) {
     main_running = 0;
+
+    (void)(arg);
 
     VL_DEBUG_MSG_1("Received signal %i\n", s);
 
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGUSR1, SIG_DFL);
+
+	return 0;
 }
 
 
 int main (int argc, const char **argv) {
+	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
+
+	struct rrr_signal_functions signal_functions = {
+			rrr_signal_handler_set_active,
+			rrr_signal_handler_push,
+			rrr_signal_handler_remove
+	};
+
+	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
 
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
@@ -121,7 +134,7 @@ int main (int argc, const char **argv) {
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
-		if (instance_metadata_collection_new (&instances) != 0) {
+		if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -152,9 +165,12 @@ int main (int argc, const char **argv) {
 	}
 
 	struct sigaction action;
-	action.sa_handler = signal_interrupt;
+	action.sa_handler = rrr_signal;
 	sigemptyset (&action.sa_mask);
 	action.sa_flags = 0;
+
+	// During preload stage, signals are temporarily deactivated.
+	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
 
 	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
@@ -181,5 +197,6 @@ int main (int argc, const char **argv) {
 	}
 
 	out:
+	rrr_signal_handler_remove(signal_handler);
 	return ret;
 }

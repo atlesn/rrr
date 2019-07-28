@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "main.h"
 #include "global.h"
@@ -59,25 +60,34 @@ const char *module_library_paths[] = {
 
 static volatile int main_running = 1;
 
-void signal_interrupt (int s) {
+int main_signal_handler(int s, void *arg) {
+	(void)(arg);
 
-    if (s == SIGUSR1) {
-        main_running = 0;
-    }
-    if (s == SIGPIPE) {
-        VL_MSG_ERR("Received SIGPIPE, ignoring\n");
-    }
-    else if (s == SIGTERM) {
-    	exit(EXIT_FAILURE);
-    }
-    else {
-        main_running = 0;
-    }
+	if (s == SIGCHLD) {
+		VL_DEBUG_MSG_1("Received SIGCHLD\n");
+	}
+	else if (s == SIGUSR1) {
+		main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
+	else if (s == SIGPIPE) {
+		VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+	}
+	else if (s == SIGTERM) {
+		exit(EXIT_FAILURE);
+	}
+	else {
+		// Also traps SIGINT
+		main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
 
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
+	// Allow double ctrl+c to close program
+	if (s == SIGINT) {
+		signal(SIGINT, SIG_DFL);
+	}
 
-    // Allow double ctrl+c to close program
-	signal(SIGINT, SIG_DFL);
+	return RRR_SIGNAL_NOT_HANDLED;
 }
 
 int main (int argc, const char *argv[]) {
@@ -86,24 +96,34 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	struct rrr_signal_handler *signal_handler = NULL;
 	struct vl_thread_collection *collection = NULL;
-	struct instance_metadata_collection *instances;
-	const char* config_string;
-	struct cmd_data cmd;
+	struct instance_metadata_collection *instances = NULL;
+	const char *config_string = NULL;
 	struct rrr_config *config = NULL;
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	if (instance_metadata_collection_new (&instances) != 0) {
+	struct cmd_data cmd;
+
+	struct rrr_signal_functions signal_functions = {
+			rrr_signal_handler_set_active,
+			rrr_signal_handler_push,
+			rrr_signal_handler_remove
+	};
+
+	signal_handler = signal_functions.push_handler(main_signal_handler, NULL);
+
+	if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_no_cleanup;
+		goto out_cleanup_signal;
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
-		goto out_no_cleanup;
+		goto out_cleanup_signal;
 	}
 
-	VL_DEBUG_MSG_1("voltagelogger debuglevel is: %u\n", VL_DEBUGLEVEL);
+	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
 
 	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL) {
@@ -130,23 +150,33 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
+	// Initialzie dynamic_data thread data
+	struct sigaction action;
+	action.sa_handler = rrr_signal;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
 	threads_restart:
+
+	// During preload stage, signals are temporarily deactivated.
+	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
+
+	// Handle forked children exiting
+	sigaction (SIGCHLD, &action, NULL);
+	// We generally ignore sigpipe and use NONBLOCK on all sockets
+	sigaction (SIGPIPE, &action, NULL);
+	// Used to set main_running = 0. The signal is set to default afterwards
+	// so that a second SIGINT will terminate the process
+	sigaction (SIGINT, &action, NULL);
+	// Used to set main_running = 0;
+	sigaction (SIGUSR1, &action, NULL);
+	// Exit immediately with EXIT_FAILURE
+	sigaction (SIGTERM, &action, NULL);
 
 	rrr_set_debuglevel_orig();
 	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
 		goto out_stop_threads;
 	}
-
-	// Initialzie dynamic_data thread data
-	struct sigaction action;
-	action.sa_handler = signal_interrupt;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
-	sigaction (SIGTERM, &action, NULL);
-	sigaction (SIGINT, &action, NULL);
-	sigaction (SIGUSR1, &action, NULL);
-	sigaction (SIGPIPE, &action, NULL);
 
 	while (main_running) {
 		usleep (100000);
@@ -159,6 +189,7 @@ int main (int argc, const char *argv[]) {
 			thread_destroy_collection (collection);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
+				usleep(1000000);
 				goto threads_restart;
 			}
 			else {
@@ -192,8 +223,15 @@ int main (int argc, const char *argv[]) {
 			rrr_config_destroy(config);
 		}
 
-	instance_metadata_collection_destroy(instances);
+		instance_metadata_collection_destroy(instances);
 
-	out_no_cleanup:
-	return ret;
+	out_cleanup_signal:
+		rrr_signal_handler_remove(signal_handler);
+		if (ret == 0) {
+			VL_DEBUG_MSG_1("Exiting program without errors\n");
+		}
+		else {
+			VL_DEBUG_MSG_1("Exiting program with errors\n");
+		}
+		return ret;
 }

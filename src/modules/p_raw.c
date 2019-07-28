@@ -56,24 +56,22 @@ void data_init(struct raw_data *data) {
 	memset (data, '\0', sizeof(*data));
 }
 
-static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_raw (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 
 	data_init(raw_data);
 
-	thread_data->thread = start_data->thread;
-
 	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 

@@ -262,7 +262,7 @@ int poll_do_poll_delete (
 			ret = 1;
 			break;
 		}
-		if (ret_tmp == FIFO_CALLBACK_ERR || ret_tmp == FIFO_GLOBAL_ERR) {
+		if ((ret_tmp & FIFO_CALLBACK_ERR) ==  FIFO_CALLBACK_ERR || (ret_tmp & FIFO_GLOBAL_ERR) == FIFO_GLOBAL_ERR) {
 			*faulty_instance = entry->thread_data;
 			ret = 1;
 			if (control_flags & RRR_POLL_BREAK_ON_ERR) {
@@ -329,7 +329,7 @@ int poll_add_from_thread_senders_and_count (
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data), INSTANCE_M_NAME(faulty_sender));
 		ret = 1;
 	}
-	else if (poll_collection_count(collection) == 0) {
+	else if (poll_collection_count(collection) == 0 && !((flags & RRR_POLL_NO_SENDERS_OK) == RRR_POLL_NO_SENDERS_OK)) {
 		VL_MSG_ERR ("Error: Senders were not set module %s instance %s\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
 		ret = 1;

@@ -1,3 +1,19 @@
+rrr (0.11) unstable; urgency=medium
+
+  * Performance improvements in python and misc fixes
+    * Improved signal handling with modules being able to register signal handlers
+    * Create native C python3 module with all-internal data types, replaces python scripts
+    * Include block device logger in package
+    * Misc. smaller fixes* 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 28 Jul 2019 13:11:05 +0200
+
+rrr (0.10) unstable; urgency=medium
+
+  * Include block device logger in package
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jul 2019 12:49:40 +0200
+
 rrr (0.9) unstable; urgency=medium
 
   * Improve python module, is now fairly usable. Must fix import paths.
