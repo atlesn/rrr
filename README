@@ -45,7 +45,7 @@ objects which resemble RRR internals are provided.
 
 A custom python program might look like this, checkout `man rrr.conf` on how to make it run.
 
-       from rrr import *
+       from rrr_helper import *
        import time
 
        def process(socket : rrr_socket, message: vl_message):
@@ -73,6 +73,8 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
             # send settings back to update which have been read (optional)
             socket.send(settings)
             return True
+
+The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
 ### udpreader (read arbitary UDP packets and create messages from them)
 The udpreader listens on a port and processes integers and blob data it receives, forwarding them
