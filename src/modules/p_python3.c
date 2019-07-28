@@ -356,9 +356,6 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
 
-	// Main loop calls python3_swap_thread_out, also in case of pthread_cancel
-	// python3_swap_thread_in(&python3_data->python3_thread_ctx, python3_data->tstate);
-
 	ret = rrr_py_persistent_process_message (
 			python3_data->processing_fork,
 			rrr_vl_message_safe_cast(message)
@@ -369,9 +366,6 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		ret = 1;
 		goto out;
 	}
-
-//	VL_DEBUG_MSG_3("python3 instance %s return from process input callback callback: %i\n", INSTANCE_D_NAME(python3_data->thread_data), ret);
-
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
 	return (ret == 0 ? 0 : FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR);
@@ -415,20 +409,15 @@ static int thread_cancel_python3 (struct vl_thread *thread) {
 
 	VL_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
 
-	/*if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
+	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
 		VL_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
 		PyErr_Print();
 		return 1;
-	}*/
+	}
 
 	VL_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
 
 	return 0;
-}
-
-void debug_tstate (void *dummy) {
-	(void)(dummy);
-//	PyThreadState *current_tstate = _PyThreadState_UncheckedGet();
 }
 
 // Fork system is locked in this context
@@ -678,7 +667,6 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(python3_stop, data);
-	pthread_cleanup_push(debug_tstate,NULL);
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(threads_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
@@ -773,7 +761,6 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 
 	rrr_py_handle_sigchld(child_exit_handler, data);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

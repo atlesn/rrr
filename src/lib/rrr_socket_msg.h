@@ -78,7 +78,6 @@ struct rrr_socket_msg {
 // All odd numbers are reserved for the control type
 #define RRR_SOCKET_MSG_TYPE_CTRL			1
 #define RRR_SOCKET_MSG_TYPE_VL_MESSAGE		2
-#define RRR_SOCKET_MSG_TYPE_CTRL_ACK		(RRR_SOCKET_MSG_TYPE_CTRL)
 #define RRR_SOCKET_MSG_TYPE_SETTING			4
 
 // The control messages also contain flags in the type field
@@ -91,9 +90,6 @@ struct rrr_socket_msg {
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 
 void rrr_socket_msg_populate_head (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value);
-static inline void rrr_socket_msg_populate_head_control_ack (struct rrr_socket_msg *message, vl_u64 message_count) {
-	 rrr_socket_msg_populate_head (message, RRR_SOCKET_MSG_TYPE_CTRL_ACK, sizeof(*message), message_count);
-}
 void rrr_socket_msg_checksum (
 	struct rrr_socket_msg *message,
 	ssize_t total_size

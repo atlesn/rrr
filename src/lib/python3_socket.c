@@ -383,8 +383,6 @@ PyObject *rrr_python3_socket_new (const char *filename) {
 	pthread_mutex_init(&new_socket->stats_lock, 0);
 	pthread_mutex_init(&new_socket->send_lock, 0);
 
-	// The sender at each end keeps track of these counters. The receiver sends
-	// ACK messages back at an interval.
 	new_socket->time_start = time_get_64();
 
 	args = PyTuple_New(1);
@@ -546,25 +544,6 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	}
 	pthread_mutex_unlock(&socket_data->stats_lock);
 
-/*	int max_retries = 1000000;
-	if (!RRR_SOCKET_MSG_IS_CTRL(msg_new)) {
-		while (1) {
-			if (--max_retries == 0) {
-				VL_MSG_ERR("Send timeout in python3 socket send\n");
-				ret = 1;
-				goto out;
-			}
-			int messages_in_flight = 0;
-			pthread_mutex_lock(&socket_data->stats_lock);
-			messages_in_flight = socket_data->messages_in_flight;
-			pthread_mutex_unlock(&socket_data->stats_lock);
-			if (messages_in_flight < RRR_PYTHON3_MAX_IN_FLIGHT) {
-				break;
-			}
-			usleep(1);
-		}
-	}*/
-
 	int max_retries = 1000000;
 
 	retry:
@@ -608,21 +587,8 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	pthread_mutex_unlock(&socket_data->stats_lock);
 	ret = 0;
 
-
-//	if (max_retries < 100000) {
-//		printf ("max retries: %i\n", max_retries);
-//	}
-
 	out:
 	return ret;
-}
-
-int __rrr_python3_socket_send_control_ack(PyObject *socket, vl_u64 message_count) {
-	struct rrr_socket_msg msg;
-
-	rrr_socket_msg_populate_head_control_ack(&msg, message_count);
-
-	return rrr_python3_socket_send(socket, &msg);
 }
 
 int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, int timeout) {
@@ -820,31 +786,3 @@ void rrr_python3_socket_close (PyObject *self) {
 		socket_data->socket_fd = 0;
 	}
 }
-
-/*
-static PyObject *rrr_python3_socket_f_test (PyObject *self, PyObject *args, PyObject *kwds) {
-	PyObject *ret = Py_None;
-	char *valid_keys[] = {"arg1", "arg2", NULL};
-
-	(void)(self);
-
-	int arg1 = 0;
-	char *arg2 = NULL; // Python manages memory
-	static char *arg2_default = "default argument 2";
-
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|s", valid_keys, &arg1, &arg2)) {
-		ret = NULL;
-		goto out;
-	}
-
-	if (arg2 == NULL) {
-		arg2 = arg2_default;
-	}
-
-	printf ("rrr_python3_f_test called: arg1: %i, arg2: %s\n", arg1, arg2);
-
-	out:
-	RRR_Py_INCREF(ret); // <-- Yes, INC is correct
-	return ret;
-}
-*/
