@@ -297,7 +297,7 @@ struct vl_thread *thread_preload_and_register (
 		int start_priority,
 		void *arg, const char *name
 );
-
+int thread_check_any_stopped (struct vl_thread_collection *collection);
 void thread_free_double_pointer(void *arg);
 void thread_free_single_pointer(void *arg);
 

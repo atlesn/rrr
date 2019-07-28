@@ -72,15 +72,13 @@ struct rrr_socket_msg {
 
 // This is reserved for holding the type=control number
 #define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)
-// Acknowledgment for arrived packets on a socket to update in-flight-counter
-#define RRR_SOCKET_MSG_CTRL_F_ACK			(1<<1)
-#define RRR_SOCKET_MSG_CTRL_F_ALL			(RRR_SOCKET_MSG_CTRL_F_RESERVED|RRR_SOCKET_MSG_CTRL_F_ACK)
+#define RRR_SOCKET_MSG_CTRL_F_ALL			(RRR_SOCKET_MSG_CTRL_F_RESERVED)
 #define RRR_SCOKET_MSG_CTRL_F_HAS(msg,flag)	(((msg)->msg_type & (flag)) == (flag))
 
 // All odd numbers are reserved for the control type
 #define RRR_SOCKET_MSG_TYPE_CTRL			1
 #define RRR_SOCKET_MSG_TYPE_VL_MESSAGE		2
-#define RRR_SOCKET_MSG_TYPE_CTRL_ACK		(RRR_SOCKET_MSG_TYPE_CTRL|RRR_SOCKET_MSG_CTRL_F_ACK)
+#define RRR_SOCKET_MSG_TYPE_CTRL_ACK		(RRR_SOCKET_MSG_TYPE_CTRL)
 #define RRR_SOCKET_MSG_TYPE_SETTING			4
 
 // The control messages also contain flags in the type field

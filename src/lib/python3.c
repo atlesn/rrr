@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "python3.h"
+#include "buffer.h"
 #include "../global.h"
 
 struct python3_fork_zombie {
@@ -410,7 +411,7 @@ void __rrr_py_start_onetime_thread_rw_child (PyObject *function, struct python3_
 
 	int max_tries = 1000000;
 	while (did_receive == 0 && rrr_py_fork_running && --max_tries != 0) {
-		ret = fork->recv(&message, socket);
+		ret = fork->recv(&message, socket, 0);
 		if (ret != 0) {
 			VL_MSG_ERR("Error from python3 socket receive function in child\n");
 			ret = 1;
@@ -465,56 +466,103 @@ void __rrr_py_start_onetime_thread_rw_child (PyObject *function, struct python3_
 	}
 }
 
-void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct python3_fork *fork) {
-	PyObject *socket = fork->socket_child;
+struct persistent_rw_child_callback_data {
+	struct python3_fork *fork;
+	PyObject *function;
+};
 
+int __rrr_py_persistent_thread_rw_child_callback (struct fifo_callback_args *fifo_callback_data, char *data, unsigned long int size) {
 	PyObject *result = NULL;
 	PyObject *arg = NULL;
+
+	struct persistent_rw_child_callback_data *callback_data = fifo_callback_data->private_data;
+	PyObject *rrr_socket = callback_data->fork->socket_child;
+	struct rrr_socket_msg *message = (struct rrr_socket_msg *) data;
+
+	int ret = 0;
+
+	if (size != message->msg_size) {
+		VL_BUG("Size mismatch in __rrr_py_persistent_thread_rw_child_callback\n");
+	}
+
+	arg = __rrr_py_socket_message_to_pyobject(message);
+	if (arg == NULL) {
+		VL_MSG_ERR("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
+		ret = 1;
+		goto out;
+	}
+	result = PyObject_CallFunctionObjArgs(callback_data->function, rrr_socket, arg, NULL);
+	if (result == NULL) {
+		VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+				getpid());
+		PyErr_Print();
+		ret = 1;
+		goto out;
+
+	}
+	if (!PyObject_IsTrue(result)) {
+		VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+				getpid());
+		ret = 1;
+		goto out;
+	}
+
+	if (ret != 0) {
+		ret = FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
+	}
+
+	out:
+	free(message);
+	RRR_Py_XDECREF(result);
+	RRR_Py_XDECREF(arg);
+
+	return ret;
+}
+
+void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct python3_fork *fork) {
 	struct rrr_socket_msg *message = NULL;
+	struct fifo_buffer receive_buffer;
+	PyObject *rrr_socket = fork->socket_child;
+
+	if (fifo_buffer_init(&receive_buffer) != 0) {
+		VL_MSG_ERR("Could not initialize fifo buffer in __rrr_py_start_persistent_thread_rw_child\n");
+		goto out;
+	}
+
+	struct persistent_rw_child_callback_data child_callback_data = {
+			fork, function
+	};
+	struct fifo_callback_args fifo_callback_args = {
+			NULL, &child_callback_data, 0
+	};
 
 	int ret = 0;
 	while (rrr_py_fork_running) {
-		ret = fork->recv(&message, socket);
-		if (ret != 0) {
-			VL_MSG_ERR("Error from socket receive function in python3 child process\n");
-			goto out;
-		}
-		if (message != NULL) {
-			arg = __rrr_py_socket_message_to_pyobject(message);
-			if (arg == NULL) {
-				VL_MSG_ERR("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
-				ret = 1;
+		int max = 100;
+		while (rrr_py_fork_running && (--max != 0)) {
+			ret = fork->recv(&message, rrr_socket, 10);
+			if (ret != 0) {
+				VL_MSG_ERR("Error from socket receive function in python3 persistent rw child process\n");
 				goto out;
 			}
-			result = PyObject_CallFunctionObjArgs(function, socket, arg, NULL);
-			if (result == NULL) {
-				VL_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
-						getpid());
-				PyErr_Print();
-				ret = 1;
-				goto out;
-
+			if (message == NULL) {
+				break;
 			}
-			if (!PyObject_IsTrue(result)) {
-				VL_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
-						getpid());
-				ret = 1;
-				goto out;
-			}
-
-			free(message);
+			fifo_buffer_write(&receive_buffer, (char*) message, message->msg_size);
 			message = NULL;
-			RRR_Py_XDECREF(result);
-			RRR_Py_XDECREF(arg);
-			result = NULL;
-			arg = NULL;
+		}
+
+		ret = fifo_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
+		if (ret != 0) {
+			VL_MSG_ERR("Error from fifo buffer in python3 persistent rw child process\n");
+			break;
 		}
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
-	RRR_Py_XDECREF(result);
-	RRR_Py_XDECREF(arg);
+	fifo_buffer_invalidate(&receive_buffer);
+
 	if (VL_DEBUGLEVEL_1 || ret != 0) {
 		VL_DEBUG_MSG("Pytohn3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
 	}
@@ -546,7 +594,7 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 
 		if (--ack_check_interval == 0) {
 			struct rrr_socket_msg *result = NULL;
-			ret = rrr_python3_socket_recv(&result, socket);
+			ret = rrr_python3_socket_recv(&result, socket, 0);
 			if (ret != 0) {
 				VL_MSG_ERR("Error while checking for ACK packets in __rrr_py_start_persistent_thread_ro_child pid %i\n",
 						getpid());
@@ -879,7 +927,7 @@ int rrr_py_start_onetime_rw_thread (
 
 	int max_attempts = 1000000;
 	while (--max_attempts != 0 && message == NULL) {
-		ret = fork->recv(&message, fork->socket_main);
+		ret = fork->recv(&message, fork->socket_main, 10);
 		if (ret != 0) {
 			VL_MSG_ERR("Could not receive message from read-write thread with function %s from module %s\n",
 					function_name, module_name);
@@ -918,17 +966,16 @@ int rrr_py_persistent_receive_message (
 
 	VL_DEBUG_MSG_3("rrr_py_persistent_receive_message getting message\n");
 
-	PyObject *res = NULL;
-
 	struct rrr_socket_msg *message = NULL;
 
-	while (1) {
+	int counter = 0;
+	while (++counter <= 500) {
 		if (fork->invalid == 1) {
 			VL_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
 			ret = 1;
 			break;
 		}
-		ret = fork->recv(&message, fork->socket_main);
+		ret = fork->recv(&message, fork->socket_main, 10);
 		if (ret != 0) {
 			VL_MSG_ERR("Error while receiving message from python3 child\n");
 			ret = 1;
@@ -953,7 +1000,6 @@ int rrr_py_persistent_receive_message (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
-	RRR_Py_XDECREF(res);
 	return ret;
 }
 

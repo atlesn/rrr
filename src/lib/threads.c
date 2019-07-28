@@ -861,6 +861,21 @@ struct vl_thread *thread_preload_and_register (
 	return NULL;
 }
 
+int thread_check_any_stopped (struct vl_thread_collection *collection) {
+	int ret = 0;
+	VL_THREADS_LOOP(thread,collection) {
+		if (
+				thread_get_state(thread) == VL_THREAD_STATE_STOPPED ||
+				thread_get_state(thread) == VL_THREAD_STATE_STOPPING ||
+				thread_is_ghost(thread)
+		) {
+			VL_DEBUG_MSG_1("Thread instance %s has stopped or is ghost\n", thread->name);
+			ret = 1;
+		}
+	}
+	return ret;
+}
+
 void thread_free_double_pointer(void *arg) {
 	struct vl_thread_double_pointer *data = arg;
 	RRR_FREE_IF_NOT_NULL(*(data->ptr));

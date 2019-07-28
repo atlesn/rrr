@@ -50,8 +50,8 @@ struct python3_fork {
 	pid_t pid;
 	int invalid;
 
-	int (*poll)(PyObject *socket);
-	int (*recv)(struct rrr_socket_msg **result, PyObject *socket);
+	int (*poll)(PyObject *socket, int timeout);
+	int (*recv)(struct rrr_socket_msg **result, PyObject *socket, int timeout);
 	int (*send)(PyObject *socket, struct rrr_socket_msg *message);
 };
 

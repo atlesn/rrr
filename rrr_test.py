@@ -7,6 +7,7 @@ def process(socket : rrr_socket, message: vl_message):
 	# queue the message to be sent back (optinal) for python to give to readers
 	if not socket.send(message):
 		return False
+#	time.sleep(1)
 	return True
 
 def source(socket : rrr_socket):
@@ -17,7 +18,7 @@ def source(socket : rrr_socket):
 	if not socket.send(message):
 		return False
 	# sleep to limit output rate
-	# time.sleep(0.001)
+	# time.sleep(0.01)
 	return True
 
 def config(socket : rrr_socket, setting : rrr_setting):

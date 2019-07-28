@@ -44,18 +44,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // TODO : Many of these functions may be used by other modules like ipclient/ipserver. Migrate functionality to rrr_socket.
 
-#define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 50
-#define RRR_PYTHON3_IN_FLIGHT_MAX 500
+#define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 10
+#define RRR_PYTHON3_MAX_IN_FLIGHT 50
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
 	int socket_fd;
 	int connected_fd;
-	int messages_received_not_acked;
-	int messages_in_flight;
-	int messages_in_flight_max;
-	long long int send_sleep_time;
 	char *filename;
+	int send_stats;
+	uint64_t time_start;
+	pthread_mutex_t stats_lock;
+	pthread_mutex_t send_lock;
 };
 
 static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
@@ -86,19 +86,6 @@ static PyObject *rrr_python3_socket_f_new (PyTypeObject *type, PyObject *args, P
 	if (self == NULL) {
 		return NULL;
 	}
-
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-
-	socket_data->filename = NULL;
-	socket_data->socket_fd = 0;
-	socket_data->connected_fd = 0;
-	socket_data->messages_received_not_acked = 0;
-
-	// The sender at each end keeps track of these counters. The receiver sends
-	// ACK messages back at an interval.
-	socket_data->messages_in_flight = 0;
-	socket_data->messages_in_flight_max = RRR_PYTHON3_IN_FLIGHT_MAX;
-	socket_data->send_sleep_time = 0;
 
 	return self;
 }
@@ -158,7 +145,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 		}
 	}
 
-	int new_socket = rrr_socket(AF_UNIX, SOCK_SEQPACKET|SOCK_NONBLOCK, 0, "rrr_python3_socket_f_start - socket");
+	int new_socket = rrr_socket(AF_UNIX, SOCK_SEQPACKET/*|O_NONBLOCK*/, 0, "rrr_python3_socket_f_start - socket");
 
 	if (new_socket == -1) {
 		VL_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", strerror(errno));
@@ -392,13 +379,13 @@ PyObject *rrr_python3_socket_new (const char *filename) {
 	new_socket->filename = NULL;
 	new_socket->socket_fd = 0;
 	new_socket->connected_fd = 0;
-	new_socket->messages_received_not_acked = 0;
+	new_socket->send_stats = 0;
+	pthread_mutex_init(&new_socket->stats_lock, 0);
+	pthread_mutex_init(&new_socket->send_lock, 0);
 
 	// The sender at each end keeps track of these counters. The receiver sends
 	// ACK messages back at an interval.
-	new_socket->messages_in_flight = 0;
-	new_socket->messages_in_flight_max = RRR_PYTHON3_IN_FLIGHT_MAX;
-	new_socket->send_sleep_time = 1;
+	new_socket->time_start = time_get_64();
 
 	args = PyTuple_New(1);
 	if (args == NULL) {
@@ -438,7 +425,7 @@ PyObject *rrr_python3_socket_new (const char *filename) {
 	return (PyObject *) new_socket;
 }
 
-int rrr_python3_socket_poll (PyObject *socket) {
+int rrr_python3_socket_poll (PyObject *socket, int timeout) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
@@ -457,15 +444,14 @@ int rrr_python3_socket_poll (PyObject *socket) {
 	int max_retries = 100;
 
 	retry:
-	if ((ret = poll(&poll_data, 1, 0)) == -1) {
+	if ((ret = poll(&poll_data, 1, timeout)) == -1) {
 		if (--max_retries == 100) {
 			VL_MSG_ERR("Max retries reached in rrr_python3_socket_poll for socket %i pid %i\n",
 					socket_data->connected_fd, getpid());
-			ret = 1;
+			ret = -1;
 			goto out;
 		}
 		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			usleep(10);
 			goto retry;
 		}
 		else if (errno == EINTR) {
@@ -473,7 +459,15 @@ int rrr_python3_socket_poll (PyObject *socket) {
 		}
 		VL_MSG_ERR("Error from poll function in python3 unix socket fd %i pid %i: %s\n",
 				socket_data->connected_fd, getpid(), strerror(errno));
-		ret = 1;
+		ret = -1;
+	}
+
+	if (ret != 0) {
+		VL_DEBUG_MSG_7 ("python3 socket poll on socket %s fd %i pid %i result %i\n",
+				rrr_python3_socket_get_filename(socket),
+				rrr_python3_socket_get_fd(socket),
+				getpid(), ret
+		);
 	}
 
 	out:
@@ -490,12 +484,10 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
-	VL_DEBUG_MSG_7 ("python3 socket send on socket %s fd %i pid %i size %u, in flight %i/%i sleep time %llu\n",
+	VL_DEBUG_MSG_7 ("python3 socket send on socket %s fd %i pid %i size %u\n",
 			rrr_python3_socket_get_filename(socket),
 			rrr_python3_socket_get_fd(socket),
-			getpid(), message->msg_size,
-			socket_data->messages_in_flight, socket_data->messages_in_flight_max,
-			socket_data->send_sleep_time
+			getpid(), message->msg_size
 	);
 
 	if (message->msg_size < sizeof(struct rrr_socket_msg) ||  message->msg_size > sizeof(union merged_buf)) {
@@ -539,29 +531,61 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		goto out;
 	}
 
-	if (socket_data->messages_in_flight >= socket_data->messages_in_flight_max) {
-		usleep(socket_data->send_sleep_time);
-	}
 
-	int max_retries = 100000;
-
+	pthread_mutex_lock(&socket_data->stats_lock);
 	uint64_t time_send_start = time_get_64();
+	if (time_send_start - socket_data->time_start > 1000000) {
+		VL_DEBUG_MSG_1 ("python3 socket send on socket %s fd %i pid %i messages %i\n",
+				rrr_python3_socket_get_filename(socket),
+				rrr_python3_socket_get_fd(socket),
+				getpid(),
+				socket_data->send_stats
+		);
+		socket_data->time_start = time_send_start;
+		socket_data->send_stats = 0;
+	}
+	pthread_mutex_unlock(&socket_data->stats_lock);
+
+/*	int max_retries = 1000000;
+	if (!RRR_SOCKET_MSG_IS_CTRL(msg_new)) {
+		while (1) {
+			if (--max_retries == 0) {
+				VL_MSG_ERR("Send timeout in python3 socket send\n");
+				ret = 1;
+				goto out;
+			}
+			int messages_in_flight = 0;
+			pthread_mutex_lock(&socket_data->stats_lock);
+			messages_in_flight = socket_data->messages_in_flight;
+			pthread_mutex_unlock(&socket_data->stats_lock);
+			if (messages_in_flight < RRR_PYTHON3_MAX_IN_FLIGHT) {
+				break;
+			}
+			usleep(1);
+		}
+	}*/
+
+	int max_retries = 1000000;
 
 	retry:
-	ret = sendto(socket_data->connected_fd, &buf, sizeof(buf), MSG_DONTWAIT|MSG_EOR, NULL, 0);
+	pthread_mutex_lock(&socket_data->send_lock);
+	ret = sendto(socket_data->connected_fd, &buf, sizeof(buf), MSG_EOR|MSG_DONTWAIT, NULL, 0);
+	pthread_mutex_unlock(&socket_data->send_lock);
 	if (ret != (int) sizeof(buf)) {
 		if (ret == -1) {
 			if (--max_retries == 0) {
 				VL_MSG_ERR("Max retries reached in rrr_python3_socket_send for socket %i pid %i\n",
-						socket_data->connected_fd, getpid());
+						socket_data->connected_fd, getpid()
+				);
 				ret = 1;
 				goto out;
 			}
 			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				usleep (1);
+				usleep(10);
 				goto retry;
 			}
 			else if (errno == EINTR) {
+				usleep(10);
 				goto retry;
 			}
 			else {
@@ -578,30 +602,12 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			goto out;
 		}
 	}
-	else {
 
-		socket_data->messages_in_flight++;
+	pthread_mutex_lock(&socket_data->stats_lock);
+	socket_data->send_stats++;
+	pthread_mutex_unlock(&socket_data->stats_lock);
+	ret = 0;
 
-		// Throttle send rate up
-		if (max_retries == 100000) {
-			socket_data->messages_in_flight_max++;
-			if (socket_data->messages_in_flight_max > RRR_PYTHON3_IN_FLIGHT_MAX) {
-				socket_data->messages_in_flight_max = RRR_PYTHON3_IN_FLIGHT_MAX;
-			}
-			socket_data->send_sleep_time -= 2;
-			if (socket_data->send_sleep_time < 0) {
-				socket_data->send_sleep_time = 0;
-			}
-		}
-		else {
-			// Throttle send rate down
-			socket_data->messages_in_flight_max = socket_data->messages_in_flight + 1;
-			uint64_t time_send_done = time_get_64();
-
-			socket_data->send_sleep_time = ((socket_data->send_sleep_time * 2) + (time_send_done - time_send_start)) / 3;
-		}
-		ret = 0;
-	}
 
 //	if (max_retries < 100000) {
 //		printf ("max retries: %i\n", max_retries);
@@ -619,7 +625,7 @@ int __rrr_python3_socket_send_control_ack(PyObject *socket, vl_u64 message_count
 	return rrr_python3_socket_send(socket, &msg);
 }
 
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
+int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, int timeout) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
@@ -633,7 +639,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 		goto out;
 	}
 
-	int numitems = rrr_python3_socket_poll(socket);
+	int numitems = rrr_python3_socket_poll(socket, timeout);
 	if (numitems == -1) {
 		VL_MSG_ERR("Could not poll in python3 socket recv function\n");
 		ret = 1;
@@ -642,6 +648,12 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 	else if (numitems == 0) {
 		goto out;
 	}
+
+	VL_DEBUG_MSG_7 ("python3 socket recv on socket %s fd %i pid %i poll result %i\n",
+			rrr_python3_socket_get_filename(socket),
+			rrr_python3_socket_get_fd(socket),
+			getpid(), numitems
+	);
 
 	// For now we only support receiving one at a time
 	numitems = 1;
@@ -657,12 +669,14 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 	int max_retries = 100;
 
 	retry:
-	ret = recvfrom(socket_data->connected_fd, buf, sizeof(*buf), MSG_DONTWAIT, NULL, NULL);
+	ret = recvfrom(socket_data->connected_fd, buf, sizeof(*buf), /*MSG_DONTWAIT*/0, NULL, NULL);
 
 	if (ret >= (int) sizeof(buf->msg)) {
-		VL_DEBUG_MSG_7("python3 socket recv message size %u fd %i pid %i not ACKed %i%%%i\n",
-				ret, socket_data->connected_fd, getpid(),
-				socket_data->messages_received_not_acked, RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL);
+		VL_DEBUG_MSG_7 ("python3 socket recv on socket %s fd %i pid %i size %u\n",
+				rrr_python3_socket_get_filename(socket),
+				rrr_python3_socket_get_fd(socket),
+				getpid(), ret
+		);
 
 		// We need to duplicate the head as the downstream structs do no convert
 		// if they find the head already having correct endianess
@@ -722,7 +736,6 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			ret = 1;
 			goto out;
 		}
-
 		if (RRR_SOCKET_MSG_IS_CTRL(&buf->msg)) {
 			if (rrr_socket_msg_head_validate(&buf->msg) != 0) {
 				VL_MSG_ERR("Received control message was invalid in python3 socket receive\n");
@@ -730,38 +743,11 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 				goto out;
 			}
 
-			if (RRR_SCOKET_MSG_CTRL_F_HAS(&buf->msg, RRR_SOCKET_MSG_CTRL_F_ACK)) {
-				socket_data->messages_in_flight -= buf->msg.msg_value;
-				VL_DEBUG_MSG_7("python3 socket receive ctrl ack message value %" PRIu64 " in flight is now %i/%i\n",
-					buf->msg.msg_value, socket_data->messages_in_flight, socket_data->messages_in_flight_max);
-				if (socket_data->messages_in_flight < 0) {
-					VL_BUG("Messages in flight was < 0 in python3 socket receive\n");
-				}
-			}
-			else {
-				// Above validate function should catch invalid flags
-				VL_BUG("Unknown flags in control message in python3 socket receive\n");
-			}
+			// Above validate function should catch invalid flags
+			VL_BUG("Unknown flags in control message in python3 socket receive\n");
 
 			// Do not return control messages to application
 			goto out_free;
-		}
-
-		socket_data->messages_received_not_acked++;
-		if (socket_data->messages_received_not_acked % RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL == 0) {
-			if (__rrr_python3_socket_send_control_ack(socket, socket_data->messages_received_not_acked) != 0) {
-				VL_MSG_ERR("Warning: ACK for %i messages could not be sent fd %i pid %i\n",
-						socket_data->messages_received_not_acked, socket_data->connected_fd, getpid());
-			}
-
-			VL_DEBUG_MSG_7 ("python3 socket send ACK for %i messages on socket %s fd %i pid %i\n",
-					socket_data->messages_received_not_acked,
-					rrr_python3_socket_get_filename(socket),
-					rrr_python3_socket_get_fd(socket),
-					getpid()
-			);
-
-			socket_data->messages_received_not_acked = 0;
 		}
 
 		ret = 0;
@@ -777,7 +763,6 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			goto out;
 		}
 		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			usleep(10);
 			goto retry;
 		}
 		else if (errno == EINTR) {
