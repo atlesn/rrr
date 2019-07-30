@@ -21,10 +21,14 @@ librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
 endif
 
+if VL_WITH_PERL5_XSI
+perl5_extrasources = perl5_xsi.c
+endif
+
 if VL_WITH_PERL5
 libadd_perl5 = librrrperl5.la
 noinst_perl5 = librrrperl5.la
-librrrperl5_la_SOURCES = perl5.c
+librrrperl5_la_SOURCES = perl5.c ${perl5_extrasources}
 librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 endif

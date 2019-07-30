@@ -25,10 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
+struct rrr_perl5_ctx {
+	PerlInterpreter *interpreter;
+};
+
 int rrr_perl5_init3(int argc, char **argv, char **env);
 int rrr_perl5_sys_term(void);
 
-PerlInterpreter *rrr_perl5_construct (int argc, char **argv, char **env);
-void rrr_perl5_destruct (PerlInterpreter *interpreter);
+void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
+int rrr_perl5_new_ctx (struct rrr_perl5_ctx **target);
+int rrr_perl5_ctx_parse(struct rrr_perl5_ctx *ctx, char *filename);
 
 #endif /* RRR_PERL5_H */

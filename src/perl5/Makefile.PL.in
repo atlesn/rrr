@@ -1,0 +1,6 @@
+use ExtUtils::MakeMaker;
+
+WriteMakefile (
+  NAME           => 'rrr::rrr_helper',
+  VERSION_FROM   => 'rrr_helper.pm',
+);

@@ -20,6 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <pthread.h>
+#include <errno.h>
+#include <string.h>
+#include <fcntl.h>
 
 #include "../lib/ip.h"
 #include "../lib/buffer.h"
@@ -36,9 +39,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <perl.h>
 
 struct perl5_data {
-	struct fifo_buffer storage;
 	struct instance_thread_data *thread_data;
-	PerlInterpreter *interpreter;
+
+	struct fifo_buffer storage;
+
+	struct rrr_perl5_ctx *source_ctx;
+	struct rrr_perl5_ctx *config_ctx;
+	struct rrr_perl5_ctx *process_ctx;
+
+	struct cmd_argv_copy *cmdline;
+
+	char *perl5_file;
+	char *source_sub;
+	char *process_sub;
+	char *config_sub;
 };
 
 int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
@@ -93,39 +107,57 @@ int data_init(struct perl5_data *data, struct instance_thread_data *thread_data)
 
 	ret |= fifo_buffer_init(&data->storage);
 
+	cmd_get_argv_copy(&data->cmdline, thread_data->init_data.cmd_data);
+
 	return ret;
 }
 
 int perl5_start(struct instance_thread_data *thread_data) {
 	struct perl5_data *data = thread_data->private_data;
 
-	PerlInterpreter *interpreter = NULL;
 	int ret = 0;
 
-	struct cmd_argv_copy *cmdline;
-	cmd_get_argv_copy(&cmdline, thread_data->init_data.cmd_data);
+	ret |= rrr_perl5_new_ctx(&data->config_ctx);
+	ret |= rrr_perl5_new_ctx(&data->source_ctx);
+	ret |= rrr_perl5_new_ctx(&data->process_ctx);
 
-	if ((interpreter = rrr_perl5_construct(cmdline->argc, cmdline->argv, NULL)) == NULL) {
-		VL_MSG_ERR("Could not construct perl5 interpreter in preload_perl5 instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_destroy_cmdline;
+	if (ret != 0) {
+		VL_MSG_ERR("Could not create perl5 context in perl5_start of instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
 	}
 
-	data->interpreter = interpreter;
+	ret |= rrr_perl5_ctx_parse(data->config_ctx, data->perl5_file);
+	ret |= rrr_perl5_ctx_parse(data->source_ctx, data->perl5_file);
+	ret |= rrr_perl5_ctx_parse(data->process_ctx, data->perl5_file);
 
-	out_destroy_cmdline:
-	cmd_destroy_argv_copy(cmdline);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not parse perl5 file in perl5_start of instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
+	out:
+	// Everything is cleaned up my perl5_stop, also in case of errors
 	return ret;
 }
 
 void perl5_stop(void *arg) {
 	struct perl5_data *data = arg;
 
-	if (data->interpreter != NULL) {
-		rrr_perl5_destruct(data->interpreter);
-		data->interpreter = NULL;
-	}
+	rrr_perl5_destroy_ctx(data->config_ctx);
+	rrr_perl5_destroy_ctx(data->source_ctx);
+	rrr_perl5_destroy_ctx(data->process_ctx);
+}
+
+void data_cleanup(void *arg) {
+	struct perl5_data *data = arg;
+	fifo_buffer_invalidate(&data->storage);
+	RRR_FREE_IF_NOT_NULL(data->perl5_file);
+	RRR_FREE_IF_NOT_NULL(data->source_sub);
+	RRR_FREE_IF_NOT_NULL(data->process_sub);
+	RRR_FREE_IF_NOT_NULL(data->config_sub);
+	cmd_destroy_argv_copy(data->cmdline);
 }
 
 void poststop_perl5 (const struct vl_thread *thread) {
@@ -133,9 +165,30 @@ void poststop_perl5 (const struct vl_thread *thread) {
 	rrr_perl5_sys_term();
 }
 
-void data_cleanup(void *arg) {
-	struct perl5_data *data = arg;
-	fifo_buffer_invalidate(&data->storage);
+int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	ret = rrr_instance_config_get_string_noconvert_silent (&data->perl5_file, config, "perl5_file");
+
+	if (ret != 0) {
+		VL_MSG_ERR("No perl5_file specified for perl5 instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	rrr_instance_config_get_string_noconvert_silent (&data->source_sub, config, "perl5_source_sub");
+	rrr_instance_config_get_string_noconvert_silent (&data->process_sub, config, "perl5_process_sub");
+	rrr_instance_config_get_string_noconvert_silent (&data->config_sub, config, "perl5_config_sub");
+
+	if (data->source_sub == NULL && data->process_sub == NULL) {
+		VL_MSG_ERR("No source or processor sub defined for perl5 instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_perl5 (struct vl_thread *thread) {
@@ -158,6 +211,10 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		goto out_message;
+	}
+
 	if (perl5_start(thread_data) != 0) {
 		pthread_exit(0);
 	}
@@ -169,13 +226,27 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 		goto out_message;
 	}
 
+	int no_polling = 1;
+	if (poll_collection_count (&poll) > 0) {
+		if (!data->process_sub) {
+			VL_MSG_ERR("Perl5 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
+			goto out_message;
+		}
+		no_polling = 0;
+	}
+
 	VL_DEBUG_MSG_1 ("perl5 started thread %p\n", thread_data);
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-			break;
+		if (no_polling == 0) {
+			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
+				break;
+			}
+		}
+		else {
+			usleep (50000);
 		}
 	}
 
@@ -215,7 +286,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_PROCESSOR;
+	data->type = VL_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }

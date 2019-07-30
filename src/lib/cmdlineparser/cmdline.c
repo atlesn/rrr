@@ -233,9 +233,14 @@ void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
 }
 
 void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
-	for (int i = 0; i < target->argc; i++) {
+	if (target == NULL) {
+		return;
+	}
+	// We always have an extra pointer to hold NULL, hence the <=
+	for (int i = 0; i <= target->argc; i++) {
 		free(target->argv[i]);
 	}
+	free(target->argv);
 	free(target);
 }
 
