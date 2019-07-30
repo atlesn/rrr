@@ -38,8 +38,6 @@ AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the pyt
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with the python debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
-# `perl -MExtUtils::Embed -e ccopts -e ldopts` -DPERL_NO_SHORT_NAMES
-
 AM_CONDITIONAL([VL_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
@@ -74,12 +72,6 @@ AS_IF([test "x$enable_perl5" = xno], [
 	PERL5_LDFLAGS=`perl -MExtUtils::Embed -e ldopts`
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
-	OLD_CFLAGS=${CFLAGS}
-	OLD_LDFLAGS=${LDFLAGS}
-
-	CFLAGS=${PERL5_CFLAGS}
-	LDFLAGS=${PERL5_LDFLAGS}
-
 	AC_MSG_CHECKING([perl5 compilation and linking])
 	AC_LANG_CONFTEST([
 		AC_LANG_SOURCE([[
@@ -108,9 +100,6 @@ AS_IF([test "x$enable_perl5" = xno], [
 	else
 		AC_MSG_ERROR([Test of perl5 compilation failed, make sure libperl-dev is installed.])
 	fi
-
-	CFLAGS=${OLD_CFLAGS}
-	LDFLAGS=${OLD_LDFLAGS}
 
 	AC_SUBST([PERL5_CFLAGS])
 	AC_SUBST([PERL5_LDFLAGS])
