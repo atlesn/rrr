@@ -58,6 +58,6 @@ int main_start_threads (
 );
 
 void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances);
-int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[]);
+int main_parse_cmd_arguments(struct cmd_data* cmd);
 
 #endif /* RRR_MAIN_H */

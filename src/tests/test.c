@@ -105,9 +105,9 @@ int main (int argc, const char **argv) {
 		goto out;
 	}
 
-	struct cmd_data cmd;
+	struct cmd_data cmd = cmd_new(argc, argv);
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd, argc, argv) != 0) {
+		if (main_parse_cmd_arguments(&cmd) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);

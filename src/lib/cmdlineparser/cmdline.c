@@ -38,6 +38,8 @@ static const char *cmd_help = "help";
 
 void cmd_init(struct cmd_data *data) {
 	data->command = NULL;
+	data->program = NULL;
+
 	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i++) {
 		data->args[i] = NULL;
 		data->args_used[i] = 0;
@@ -212,13 +214,46 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	}
 }
 
-int cmd_parse(struct cmd_data *data, int argc, const char *argv[], cmd_conf config) {
+void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
+	struct cmd_argv_copy *ret = malloc(sizeof(*ret));
+
+	*target = NULL;
+
+	ret->argv = malloc(sizeof(char*) * (data->argc + 1));
+	ret->argc = data->argc;
+
+	int i;
+	for (i = 0; i < data->argc; i++) {
+		ret->argv[i] = malloc(strlen(data->argv[i]) + 1);
+		strcpy(ret->argv[i], data->argv[i]);
+	}
+	ret->argv[i] = NULL;
+
+	*target = ret;
+}
+
+void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
+	for (int i = 0; i < target->argc; i++) {
+		free(target->argv[i]);
+	}
+	free(target);
+}
+
+struct cmd_data cmd_new(int argc, const char *argv[]) {
+	struct cmd_data ret = {
+			.argc = argc,
+			.argv = argv
+	};
+	return ret;
+}
+
+int cmd_parse(struct cmd_data *data, cmd_conf config) {
 	cmd_init(data);
 
-	data->program = argv[0];
+	data->program = data->argv[0];
 	data->command = cmd_help;
 
-	if (argc <= 1) {
+	if (data->argc <= 1) {
 		return 0;
 	}
 
@@ -228,8 +263,8 @@ int cmd_parse(struct cmd_data *data, int argc, const char *argv[], cmd_conf conf
 		data->command = cmd_blank_argument;
 		argc_begin = 1;
 	}
-	else if (argc > 1) {
-		data->command = argv[1];
+	else if (data->argc > 1) {
+		data->command = data->argv[1];
 	}
 
 	// Initialize all to empty strings
@@ -239,8 +274,8 @@ int cmd_parse(struct cmd_data *data, int argc, const char *argv[], cmd_conf conf
 
 	// Store pointers to all arguments
 	int arg_pos = argc_begin;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && arg_pos < argc; i++) {
-		data->args[i] = argv[arg_pos];
+	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && arg_pos < data->argc; i++) {
+		data->args[i] = data->argv[arg_pos];
 		arg_pos++;
 	}
 

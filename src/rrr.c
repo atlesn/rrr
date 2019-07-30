@@ -104,7 +104,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	struct cmd_data cmd;
+	struct cmd_data cmd = cmd_new(argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
 			rrr_signal_handler_set_active,
@@ -119,7 +119,7 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
-	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
 		goto out_cleanup_signal;
 	}
 

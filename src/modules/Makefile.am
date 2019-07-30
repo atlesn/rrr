@@ -9,22 +9,30 @@ endif
 
 if VL_WITH_PYTHON3
 python3 = python3.la
-python3_la_LDFLAGS = ${module_ldflags}
-#${PYTHON3_LDFLAGS}
-python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_SOURCES = p_python3.c
+python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
+# Python3 libraries are linked in librrr
+python3_la_LDFLAGS = ${module_ldflags}
 endif
 
 if RRR_WITH_USB
 voltmonitor = voltmonitor.la
-voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
 voltmonitor_la_SOURCES = src_voltmonitor.c
+voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
+endif
+
+if VL_WITH_PERL5
+perl5 = perl5.la
+perl5_la_SOURCES = p_perl5.c
+perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
+# Perl5 libraries are linked in librrr
+perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
 	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
 	duplicator.la \
-	${mysql} ${python3} ${voltmonitor}
+	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
