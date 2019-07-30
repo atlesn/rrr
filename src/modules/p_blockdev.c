@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <unistd.h>
 #include <inttypes.h>
-#include <bdl/bdl.h>
 
+#include "../blockdevlogger/src/include/bdl.h"
 #include "../lib/poll_helper.h"
 #include "../lib/settings.h"
 #include "../lib/instance_config.h"

@@ -293,6 +293,6 @@ AS_IF([test "x$with_mysql" = xno], [
 ])
 
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile
-		src/python/Makefile src/perl5/Makefile.PL src/perl5/Makefile misc/Makefile
+		src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
 )
 AC_OUTPUT
