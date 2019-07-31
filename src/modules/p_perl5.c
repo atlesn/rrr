@@ -137,6 +137,16 @@ int perl5_start(struct instance_thread_data *thread_data) {
 		goto out;
 	}
 
+	ret |= rrr_perl5_ctx_run(data->config_ctx);
+	ret |= rrr_perl5_ctx_run(data->source_ctx);
+	ret |= rrr_perl5_ctx_run(data->process_ctx);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Could not run perl5 file in perl5_start of instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
 	out:
 	// Everything is cleaned up my perl5_stop, also in case of errors
 	return ret;
@@ -188,6 +198,36 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	}
 
 	out:
+	return ret;
+}
+
+int process_messages_callback (FIFO_CALLBACK_ARGS) {
+	int ret = 0;
+
+	(void)(size);
+
+	struct perl5_data *perl5_data = callback_data->private_data;
+	struct rrr_perl5_ctx *ctx = perl5_data->process_ctx;
+	struct vl_message *message = (struct vl_message *) data;
+
+	HV *hv_message;
+	rrr_perl5_message_to_hv(ctx, &hv_message, message);
+	rrr_perl5_call_blessed_hvref(ctx, perl5_data->process_sub, "rrr::rrr_helper::rrr_message", hv_message);
+
+	return ret;
+}
+
+int process_messages (struct perl5_data *data) {
+
+	if (data->process_sub == NULL || *(data->process_sub) == '\0') {
+		return 0;
+	}
+
+	int ret = 0;
+
+	struct fifo_callback_args fifo_args = { data->thread_data, data, 0};
+	ret = fifo_read_clear_forward(&data->storage, NULL, process_messages_callback, &fifo_args, 30);
+
 	return ret;
 }
 
@@ -247,6 +287,12 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 		}
 		else {
 			usleep (50000);
+		}
+
+		if (process_messages(data) != 0) {
+			VL_MSG_ERR("Error returned from process_messages in perl5 instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
 		}
 	}
 

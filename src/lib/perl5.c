@@ -25,7 +25,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
+#include "../../build_directory.h"
 #include "perl5.h"
+#include "messages.h"
+#include "rrr_socket_msg.h"
+
+#define RRR_PERL5_BUILD_LIB_PATH_1 \
+	RRR_BUILD_DIR "/debian/rrr/usr/lib/x86_64-linux-gnu/perl5/5.26/"
+
+#define RRR_PERL5_BUILD_LIB_PATH_2 \
+	RRR_BUILD_DIR "/"
 
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static int perl5_users = 0;
@@ -131,7 +140,7 @@ static void __rrr_perl5_xs_init(pTHX) {
 	xs_init(my_perl);
 }
 
-int rrr_perl5_ctx_parse(struct rrr_perl5_ctx *ctx, char *filename) {
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	int ret = 0;
 
 	PERL_SET_CONTEXT(ctx->interpreter);
@@ -146,12 +155,108 @@ int rrr_perl5_ctx_parse(struct rrr_perl5_ctx *ctx, char *filename) {
 	}
 	close(fd);
 
-	char *args[] = { "", filename, NULL };
-	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 2, args, (char**) NULL) != 0) {
+	char *args[] = {
+			"",
+			"-I" RRR_PERL5_BUILD_LIB_PATH_1,
+			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
+			filename,
+			NULL
+	};
+
+	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 4, args, (char**) NULL) != 0) {
 		VL_MSG_ERR("Could not parse perl5 file %s\n", filename);
+		ret = 1;
 		goto out;
 	}
 
 	out:
+	return ret;
+}
+
+
+int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx) {
+	PERL_SET_CONTEXT(ctx->interpreter);
+	return perl_run(ctx->interpreter);
+}
+
+int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv) {
+	int ret = 0;
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+
+    HV *stash = gv_stashpv(class, GV_ADD);
+    if (stash == NULL) {
+    	VL_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
+    }
+
+    SV *ref = newRV_noinc((SV*) hv);
+    if (ref == NULL) {
+    	VL_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
+    }
+
+    SV *blessed_ref = sv_bless(ref, stash);
+    if (blessed_ref == NULL) {
+    	VL_BUG("No blessed ref SV returned in rrr_perl5_call_blessed_hvref\n");
+    }
+
+    printf ("A: Blessed a reference, package is %s\n", HvNAME(stash));
+    printf ("B: Blessed a reference, package is %s\n", HvNAME(SvSTASH(SvRV(blessed_ref))));
+
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	EXTEND(SP, 3);
+	PUSHs(sv_2mortal(blessed_ref));
+	PUTBACK;
+	call_pv(sub, G_DISCARD);
+	FREETMPS;
+	LEAVE;
+
+	SvREFCNT_dec(ref);
+
+	return ret;
+}
+
+int rrr_perl5_message_to_hv (struct rrr_perl5_ctx *ctx, HV **target, struct vl_message *message) {
+	int ret = 0;
+
+	if (!RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
+		VL_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
+	}
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+/*
+	vl_u32 type;
+	vl_u32 class;
+	vl_u64 timestamp_from;
+	vl_u64 timestamp_to;
+	vl_u64 data_numeric;
+
+	vl_u32 length;
+*/
+
+    SV *type = newSVuv(message->type);
+    SV *class = newSVuv(message->class);
+    SV *timestamp_from = newSVuv(message->timestamp_from);
+    SV *timestamp_to = newSVuv(message->timestamp_to);
+    SV *data_numeric = newSVuv(message->data_numeric);
+    SV *length = newSVuv(message->length);
+    SV *data = newSVpv(message->data, message->length);
+
+    HV *hv = newHV();
+
+    hv_store(hv, "type", strlen("type"), type, 0);
+    hv_store(hv, "class", strlen("class"), class, 0);
+    hv_store(hv, "timestamp_from", strlen("timestamp_from"), timestamp_from, 0);
+    hv_store(hv, "timestamp_to", strlen("timestamp_to"), timestamp_to, 0);
+    hv_store(hv, "data_numeric", strlen("data_numeric"), data_numeric, 0);
+    hv_store(hv, "length", strlen("length"), length, 0);
+    hv_store(hv, "data", strlen("data"), data, 0);
+
+    *target = hv;
+
 	return ret;
 }

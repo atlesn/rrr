@@ -1,13 +1,31 @@
 #!/usr/bin/perl -w
 
-use rrr::rrr_helper::rrr_socket qw(rand);
+package main;
 
-print "Perl works!\n" . rand() . "\n";
+use rrr::rrr_helper;
+use rrr::rrr_helper::rrr_socket;
 
-foreach my $entry ( keys %rrr::rrr_helper::rrr_socket:: ) {
-	print "Entry: $entry\n";
-	no strict 'refs';
-	if (defined &{"rrr::rrr_helper::rrr_socket::$entry"}) {
-		print "sub $entry is defined\n" ;
-	}
+print "Perl works!\n";
+
+my %message = (
+	"timestamp_from" => 10
+);
+
+process(\%message);
+
+sub print_value {
+	my $self = shift;
+	my $key = shift;
+
+	print "$key: " . $self->{$key} . "\n";
+}
+
+sub process {
+	my $message = shift;
+
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} + 3;
+
+	print_value($message, 'timestamp_from');
+
+	return 0;
 }

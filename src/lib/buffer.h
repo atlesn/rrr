@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define FIFO_GLOBAL_ERR -1
 #define FIFO_CALLBACK_ERR 1
 
+#define FIFO_CALLBACK_ARGS \
+	struct fifo_callback_args *callback_data, char *data, unsigned long int size
+
 struct fifo_callback_args {
 	void *source;
 	void *private_data;
@@ -255,14 +258,14 @@ static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wa
 
 int fifo_search (
 	struct fifo_buffer *buffer,
-	int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+	int (*callback)(FIFO_CALLBACK_ARGS),
 	struct fifo_callback_args *callback_data,
 	unsigned int wait_milliseconds
 );
 int fifo_read_minimum (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		int (*callback)(FIFO_CALLBACK_ARGS),
 		struct fifo_callback_args *callback_data,
 		uint64_t minimum_order,
 		unsigned int wait_milliseconds
@@ -274,13 +277,14 @@ int fifo_clear_order_lt (
 int fifo_read_clear_forward (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,
-		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		int (*callback)(FIFO_CALLBACK_ARGS),
 		struct fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
 void fifo_read (
 		struct fifo_buffer *buffer,
-		int (*callback)(char *data, unsigned long int size),
+		int (*callback)(FIFO_CALLBACK_ARGS),
+		struct fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
 

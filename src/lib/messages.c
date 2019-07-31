@@ -167,6 +167,8 @@ int init_empty_message (
 ) {
 	memset(result, '\0', sizeof(*result));
 
+	rrr_socket_msg_populate_head((struct rrr_socket_msg *) result, RRR_SOCKET_MSG_TYPE_VL_MESSAGE, sizeof(*result), 0);
+
 	result->type = type;
 	result->class = class;
 	result->timestamp_from = timestamp_from;

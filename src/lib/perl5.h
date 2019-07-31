@@ -22,8 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PERL5_H
 #define RRR_PERL5_H
 
-#include <EXTERN.h>
-#include <perl.h>
+typedef struct hv HV;
+typedef struct interpreter PerlInterpreter;
+struct vl_message;
 
 struct rrr_perl5_ctx {
 	PerlInterpreter *interpreter;
@@ -34,6 +35,9 @@ int rrr_perl5_sys_term(void);
 
 void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_new_ctx (struct rrr_perl5_ctx **target);
-int rrr_perl5_ctx_parse(struct rrr_perl5_ctx *ctx, char *filename);
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename);
+int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
+int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
+int rrr_perl5_message_to_hv (struct rrr_perl5_ctx *ctx, HV **target, struct vl_message *message);
 
 #endif /* RRR_PERL5_H */

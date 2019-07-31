@@ -1,5 +1,9 @@
 package rrr::rrr_helper;
-BEGIN { our $VERSION = 0.12 }
+
+BEGIN {
+	print ("rrr_helper works\n");
+};
+
 1;
 
 =encoding utf8
