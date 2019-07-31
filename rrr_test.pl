@@ -20,12 +20,21 @@ sub print_value {
 	print "$key: " . $self->{$key} . "\n";
 }
 
+sub source {
+	my $message = shift;
+
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} - 3;
+
+	return 0;
+}
+
 sub process {
 	my $message = shift;
 
 	$message->{'timestamp_from'} = $message->{'timestamp_from'} + 3;
 
-	print_value($message, 'timestamp_from');
+#	print_value($message, 'timestamp_from');
+#	print_value($message, 'data');
 
 	return 0;
 }

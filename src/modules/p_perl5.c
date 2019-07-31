@@ -43,9 +43,7 @@ struct perl5_data {
 
 	struct fifo_buffer storage;
 
-	struct rrr_perl5_ctx *source_ctx;
-	struct rrr_perl5_ctx *config_ctx;
-	struct rrr_perl5_ctx *process_ctx;
+	struct rrr_perl5_ctx *ctx;
 
 	struct cmd_argv_copy *cmdline;
 
@@ -61,19 +59,6 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	if (fifo_read_clear_forward(&perl5_data->storage, NULL, callback, poll_data, wait_milliseconds) == FIFO_GLOBAL_ERR) {
 		return 1;
 	}
-
-	return 0;
-}
-
-int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = caller_data->private_data;
-	struct perl5_data *perl5_data = thread_data->private_data;
-	struct vl_message *message = (struct vl_message *) data;
-
-	VL_DEBUG_MSG_3 ("perl5 instance %s Result from buffer: %s measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
-
-	fifo_buffer_write(&perl5_data->storage, data, size);
 
 	return 0;
 }
@@ -117,9 +102,7 @@ int perl5_start(struct instance_thread_data *thread_data) {
 
 	int ret = 0;
 
-	ret |= rrr_perl5_new_ctx(&data->config_ctx);
-	ret |= rrr_perl5_new_ctx(&data->source_ctx);
-	ret |= rrr_perl5_new_ctx(&data->process_ctx);
+	ret |= rrr_perl5_new_ctx(&data->ctx);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not create perl5 context in perl5_start of instance %s\n",
@@ -127,9 +110,7 @@ int perl5_start(struct instance_thread_data *thread_data) {
 		goto out;
 	}
 
-	ret |= rrr_perl5_ctx_parse(data->config_ctx, data->perl5_file);
-	ret |= rrr_perl5_ctx_parse(data->source_ctx, data->perl5_file);
-	ret |= rrr_perl5_ctx_parse(data->process_ctx, data->perl5_file);
+	ret |= rrr_perl5_ctx_parse(data->ctx, data->perl5_file);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not parse perl5 file in perl5_start of instance %s\n",
@@ -137,9 +118,7 @@ int perl5_start(struct instance_thread_data *thread_data) {
 		goto out;
 	}
 
-	ret |= rrr_perl5_ctx_run(data->config_ctx);
-	ret |= rrr_perl5_ctx_run(data->source_ctx);
-	ret |= rrr_perl5_ctx_run(data->process_ctx);
+	ret |= rrr_perl5_ctx_run(data->ctx);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not run perl5 file in perl5_start of instance %s\n",
@@ -155,9 +134,7 @@ int perl5_start(struct instance_thread_data *thread_data) {
 void perl5_stop(void *arg) {
 	struct perl5_data *data = arg;
 
-	rrr_perl5_destroy_ctx(data->config_ctx);
-	rrr_perl5_destroy_ctx(data->source_ctx);
-	rrr_perl5_destroy_ctx(data->process_ctx);
+	rrr_perl5_destroy_ctx(data->ctx);
 }
 
 void data_cleanup(void *arg) {
@@ -201,34 +178,82 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-int process_messages_callback (FIFO_CALLBACK_ARGS) {
+int spawn_messages (struct perl5_data *perl5_data) {
+	int ret = 0;
+	struct vl_message *message = NULL;
+
+	struct rrr_perl5_ctx *ctx = perl5_data->ctx;
+
+	struct rrr_perl5_message_hv *hv_message = rrr_perl5_allocate_message_hv(ctx);
+
+	for (int i = 0; i < 50; i++) {
+		uint64_t now_time = time_get_64();
+		char data_buf[64];
+		sprintf(data_buf, "%" PRIu64, now_time);
+
+		message = malloc(sizeof(*message));
+		if (message == NULL) {
+			VL_MSG_ERR("Could not allocate memory in perl5 spawn_messages\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (init_message (
+				MSG_TYPE_MSG,
+				MSG_CLASS_POINT,
+				now_time,
+				now_time,
+				0,
+				data_buf,
+				strlen(data_buf) + 1,
+				message
+		) != 0) {
+			VL_MSG_ERR("Could not initialize message in perl5 spawn_messages of instance %s\n",
+					INSTANCE_D_NAME(perl5_data->thread_data));
+			ret = 1;
+			goto out;
+		}
+
+		rrr_perl5_message_to_hv(hv_message, ctx, message);
+		rrr_perl5_call_blessed_hvref(ctx, perl5_data->source_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
+		rrr_perl5_hv_to_message(message, ctx, hv_message);
+
+		fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
+
+		message = NULL;
+	}
+
+	out:
+	rrr_perl5_destruct_message_hv (ctx, hv_message);
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
+int process_message (struct perl5_data *perl5_data, struct vl_message *message) {
 	int ret = 0;
 
-	(void)(size);
+	struct rrr_perl5_ctx *ctx = perl5_data->ctx;
 
-	struct perl5_data *perl5_data = callback_data->private_data;
-	struct rrr_perl5_ctx *ctx = perl5_data->process_ctx;
-	struct vl_message *message = (struct vl_message *) data;
+	struct rrr_perl5_message_hv *hv_message;
+	rrr_perl5_message_to_new_hv(&hv_message, ctx, message);
+	rrr_perl5_call_blessed_hvref(ctx, perl5_data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
+	rrr_perl5_hv_to_message(message, ctx, hv_message);
+	rrr_perl5_destruct_message_hv (ctx, hv_message);
 
-	HV *hv_message;
-	rrr_perl5_message_to_hv(ctx, &hv_message, message);
-	rrr_perl5_call_blessed_hvref(ctx, perl5_data->process_sub, "rrr::rrr_helper::rrr_message", hv_message);
+	fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
 
 	return ret;
 }
 
-int process_messages (struct perl5_data *data) {
+int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = caller_data->private_data;
+	struct perl5_data *perl5_data = thread_data->private_data;
+	struct vl_message *message = (struct vl_message *) data;
 
-	if (data->process_sub == NULL || *(data->process_sub) == '\0') {
-		return 0;
-	}
+	VL_DEBUG_MSG_3 ("perl5 instance %s Result from buffer: %s measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
 
-	int ret = 0;
-
-	struct fifo_callback_args fifo_args = { data->thread_data, data, 0};
-	ret = fifo_read_clear_forward(&data->storage, NULL, process_messages_callback, &fifo_args, 30);
-
-	return ret;
+	return process_message(perl5_data, message);
 }
 
 static void *thread_entry_perl5 (struct vl_thread *thread) {
@@ -275,6 +300,8 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 		no_polling = 0;
 	}
 
+	int no_spawning = (data->source_sub == NULL || *(data->source_sub) == '\0' ? 1 : 0);
+
 	VL_DEBUG_MSG_1 ("perl5 started thread %p\n", thread_data);
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -289,10 +316,10 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 			usleep (50000);
 		}
 
-		if (process_messages(data) != 0) {
-			VL_MSG_ERR("Error returned from process_messages in perl5 instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
+		if (no_spawning == 0) {
+			if (spawn_messages(data) != 0) {
+				break;
+			}
 		}
 	}
 
