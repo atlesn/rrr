@@ -63,6 +63,15 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return 0;
 }
 
+static int send_message_from_xsub (struct vl_message *message, void *private_data) {
+	struct perl5_data *perl5_data = private_data;
+	int ret = 0;
+
+	fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
+
+	return ret;
+}
+
 int preload_perl5 (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = (struct instance_thread_data *) thread->private_data;
 
@@ -102,7 +111,7 @@ int perl5_start(struct instance_thread_data *thread_data) {
 
 	int ret = 0;
 
-	ret |= rrr_perl5_new_ctx(&data->ctx);
+	ret |= rrr_perl5_new_ctx(&data->ctx, data, send_message_from_xsub);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not create perl5 context in perl5_start of instance %s\n",
@@ -235,13 +244,32 @@ int process_message (struct perl5_data *perl5_data, struct vl_message *message) 
 	struct rrr_perl5_ctx *ctx = perl5_data->ctx;
 
 	struct rrr_perl5_message_hv *hv_message;
-	rrr_perl5_message_to_new_hv(&hv_message, ctx, message);
-	rrr_perl5_call_blessed_hvref(ctx, perl5_data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
-	rrr_perl5_hv_to_message(message, ctx, hv_message);
-	rrr_perl5_destruct_message_hv (ctx, hv_message);
+
+	ret |= rrr_perl5_message_to_new_hv(&hv_message, ctx, message);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not create rrr_perl5_message_hv struct in process_message of perl5 instance %s\n",
+				INSTANCE_D_NAME(perl5_data->thread_data));
+		goto out;
+	}
+
+	ret |= rrr_perl5_call_blessed_hvref(ctx, perl5_data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not call process function in process_message of perl5 instance %s\n",
+				INSTANCE_D_NAME(perl5_data->thread_data));
+		goto out;
+	}
+
+	ret |= rrr_perl5_hv_to_message(message, ctx, hv_message);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not convertrrr_perl5_message_hv struct to message in process_message of perl5 instance %s\n",
+				INSTANCE_D_NAME(perl5_data->thread_data));
+		goto out;
+	}
 
 	fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
 
+	out:
+	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
 }
 

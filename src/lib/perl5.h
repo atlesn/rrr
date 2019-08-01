@@ -28,7 +28,11 @@ typedef struct interpreter PerlInterpreter;
 struct vl_message;
 
 struct rrr_perl5_ctx {
+	struct rrr_perl5_ctx *next;
 	PerlInterpreter *interpreter;
+	void *private_data;
+
+	int (*send_message)(struct vl_message *message, void *private_data);
 };
 
 struct rrr_perl5_message_hv {
@@ -46,7 +50,11 @@ int rrr_perl5_init3(int argc, char **argv, char **env);
 int rrr_perl5_sys_term(void);
 
 void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
-int rrr_perl5_new_ctx (struct rrr_perl5_ctx **target);
+int rrr_perl5_new_ctx (
+		struct rrr_perl5_ctx **target,
+		void *private_data,
+		int (*send_message) (struct vl_message *message, void *private_data)
+);
 int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename);
 int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
@@ -72,4 +80,8 @@ int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_ctx *ctx,
 		struct vl_message *message
 );
+
+/* Called from XSUB */
+int rrr_perl5_message_send (HV *message);
+
 #endif /* RRR_PERL5_H */

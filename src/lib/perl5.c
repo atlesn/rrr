@@ -31,44 +31,57 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
-	RRR_BUILD_DIR "/debian/rrr/usr/lib/x86_64-linux-gnu/perl5/5.26/"
+	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"
 
 #define RRR_PERL5_BUILD_LIB_PATH_2 \
-	RRR_BUILD_DIR "/"
+	RRR_BUILD_DIR "/src/perl5/xsub/lib/"
 
-static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
+#define RRR_PERL5_BUILD_LIB_PATH_3 \
+	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/auto/rrr/rrr_helper/rrr_message/"
+
+static pthread_mutex_t perl5_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t perl5_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static int perl5_users = 0;
+static struct rrr_perl5_ctx *first_ctx = NULL;
 
-static void __rrr_perl5_global_lock(void) {
-	pthread_mutex_lock(&main_python_lock);
+static void __rrr_perl5_init_lock(void) {
+	pthread_mutex_lock(&perl5_init_lock);
 }
 
-static void __rrr_perl5_global_unlock(void) {
-	pthread_mutex_unlock(&main_python_lock);
+static void __rrr_perl5_init_unlock(void) {
+	pthread_mutex_unlock(&perl5_init_lock);
+}
+
+static void __rrr_perl5_ctx_lock(void) {
+	pthread_mutex_lock(&perl5_ctx_lock);
+}
+
+static void __rrr_perl5_ctx_unlock(void) {
+	pthread_mutex_unlock(&perl5_ctx_lock);
 }
 
 int rrr_perl5_init3(int argc, char **argv, char **env) {
-	__rrr_perl5_global_lock();
+	__rrr_perl5_init_lock();
 	if (++perl5_users == 1) {
 		PERL_SYS_INIT3(&argc, &argv, &env);
 	}
-	__rrr_perl5_global_unlock();
+	__rrr_perl5_init_unlock();
 	return 0;
 }
 
 int rrr_perl5_sys_term(void) {
-	__rrr_perl5_global_lock();
+	__rrr_perl5_init_lock();
 	if (--perl5_users == 0) {
 		PERL_SYS_TERM();
 	}
-	__rrr_perl5_global_unlock();
+	__rrr_perl5_init_unlock();
 	return 0;
 }
 
 static PerlInterpreter *__rrr_perl5_construct(void) {
 	PerlInterpreter *ret = NULL;
 
-	__rrr_perl5_global_lock();
+	__rrr_perl5_init_lock();
 
 	ret = perl_alloc();
 	if (ret == NULL) {
@@ -80,7 +93,7 @@ static PerlInterpreter *__rrr_perl5_construct(void) {
 //	PL_exit_flags |= PERL_EXIT_DESTRUCT_END;
 
 	out_unlock:
-	__rrr_perl5_global_unlock();
+	__rrr_perl5_init_unlock();
 
 	out:
 	return ret;
@@ -91,10 +104,63 @@ static void __rrr_perl5_destruct (PerlInterpreter *interpreter) {
 		return;
 	}
 
-	__rrr_perl5_global_lock();
+	__rrr_perl5_init_lock();
 	perl_destruct(interpreter);
 	perl_free(interpreter);
-	__rrr_perl5_global_unlock();
+	__rrr_perl5_init_unlock();
+}
+
+static void __rrr_perl5_push_ctx (struct rrr_perl5_ctx *ctx) {
+	__rrr_perl5_ctx_lock();
+
+	ctx->next = first_ctx;
+	first_ctx = ctx;
+
+	__rrr_perl5_ctx_unlock();
+}
+
+static void __rrr_perl5_remove_ctx (struct rrr_perl5_ctx *ctx) {
+	__rrr_perl5_ctx_lock();
+
+	if (first_ctx == ctx) {
+		first_ctx = first_ctx->next;
+		goto out;
+	}
+
+	struct rrr_perl5_ctx *test = first_ctx;
+	while (test) {
+		if (test->next == ctx) {
+			test->next = test->next->next;
+			goto out;
+		}
+		test = test->next;
+	}
+
+	VL_BUG("Context not found in __rrr_perl5_remove_ctx\n");
+
+	out:
+	__rrr_perl5_ctx_unlock();
+}
+
+static struct rrr_perl5_ctx *__rrr_perl5_find_ctx (const PerlInterpreter *interpreter) {
+	__rrr_perl5_ctx_lock();
+
+	struct rrr_perl5_ctx *ret = NULL;
+	struct rrr_perl5_ctx *test = first_ctx;
+
+	while (test) {
+		if (test->interpreter == interpreter) {
+			ret = test;
+			goto out;
+		}
+		test = test->next;
+	}
+
+	VL_BUG("Context not found in __rrr_perl5_find_ctx\n");
+
+	out:
+	__rrr_perl5_ctx_unlock();
+	return ret;
 }
 
 void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
@@ -102,10 +168,15 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 		return;
 	}
 	__rrr_perl5_destruct(ctx->interpreter);
+	__rrr_perl5_remove_ctx(ctx);
 	free(ctx);
 }
 
-int rrr_perl5_new_ctx (struct rrr_perl5_ctx **target) {
+int rrr_perl5_new_ctx (
+		struct rrr_perl5_ctx **target,
+		void *private_data,
+		int (*send_message) (struct vl_message *message, void *private_data)
+) {
 	int ret = 0;
 	struct rrr_perl5_ctx *ctx = NULL;
 
@@ -123,6 +194,11 @@ int rrr_perl5_new_ctx (struct rrr_perl5_ctx **target) {
 		ret = 1;
 		goto out;
 	}
+
+	ctx->private_data = private_data;
+	ctx->send_message = send_message;
+
+	__rrr_perl5_push_ctx(ctx);
 
 	*target = ctx;
 
@@ -159,11 +235,12 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 			"",
 			"-I" RRR_PERL5_BUILD_LIB_PATH_1,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
+			"-I" RRR_PERL5_BUILD_LIB_PATH_3,
 			filename,
 			NULL
 	};
 
-	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 4, args, (char**) NULL) != 0) {
+	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 5, args, (char**) NULL) != 0) {
 		VL_MSG_ERR("Could not parse perl5 file %s\n", filename);
 		ret = 1;
 		goto out;
@@ -227,7 +304,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	do {if (sv != NULL) { SvREFCNT_dec(sv); }} while (0)
 
 
-struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
+struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
@@ -237,7 +314,16 @@ struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx
     	goto out;
     }
 
-    message_hv->hv = newHV();
+    int use_old_data;
+    if (hv != NULL) {
+    	use_old_data = 1;
+    }
+    else {
+    	hv = newHV();
+    	use_old_data = 0;
+    }
+
+	message_hv->hv = hv;
 
     SV **tmp;
 
@@ -259,14 +345,24 @@ struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx
     tmp = hv_fetch(message_hv->hv, "length", strlen("length"), 1);
     message_hv->length = *tmp;
 
-    message_hv->data = newSV(18); // Conservative size
-    SvUTF8_off(message_hv->data);
-    sv_setpvn(message_hv->data, "0", 1);
-    tmp = hv_store(message_hv->hv, "data", strlen("data"), message_hv->data, 0);
+    if (use_old_data) {
+        tmp = hv_fetch(message_hv->hv, "data", strlen("data"), 1);
+    }
+    else {
+    	message_hv->data = newSV(0);
+        SvUTF8_off(message_hv->data);
+    	sv_setpvn(message_hv->data, "0", 1);
+        tmp = hv_store(message_hv->hv, "data", strlen("data"), message_hv->data, 0);
+    }
+
     message_hv->data = *tmp;
 
     out:
     return message_hv;
+}
+
+struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
+	return __rrr_perl5_allocate_message_hv(ctx, NULL);
 }
 
 void rrr_perl5_destruct_message_hv (
@@ -309,6 +405,7 @@ int rrr_perl5_hv_to_message (
 		goto out;
 	}
 
+//	printf ("SvLEN: %lu SvUV(length): %lu\n", SvLEN(source->data), SvUV(source->length));
 	if (SvLEN(source->data) < target->length) {
 		VL_MSG_ERR("Data length returned from perl5 function was shorter than given length in length field\n");
 		ret = 1;
@@ -383,4 +480,24 @@ int rrr_perl5_message_to_new_hv (
 		rrr_perl5_destruct_message_hv(ctx, message_hv);
 	}
     return ret;
+}
+
+int rrr_perl5_message_send (HV *hv) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
+
+	SvREFCNT_inc(hv);
+
+	struct rrr_perl5_message_hv *message_new_hv = __rrr_perl5_allocate_message_hv (ctx, hv);
+	struct vl_message *message_new = message_new_reading(0, 0);
+	if (rrr_perl5_hv_to_message(message_new, ctx, message_new_hv) != 0) {
+		return FALSE;
+	}
+
+	// Takes ownership of memory
+	ctx->send_message(message_new, ctx->private_data);
+
+	rrr_perl5_destruct_message_hv(ctx, message_new_hv);
+
+	return TRUE;
 }

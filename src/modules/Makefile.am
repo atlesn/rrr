@@ -51,7 +51,7 @@ ipclient_la_SOURCES = p_ipclient.c
 ipserver_la_LDFLAGS = ${module_ldflags}
 ipserver_la_SOURCES = p_ipserver.c
 
-blockdev_la_LDFLAGS = ${module_ldflags} -lbdl
+blockdev_la_LDFLAGS = ${module_ldflags} -L${top_srcdir}/src/blockdevlogger/src/lib/.libs -lbdl
 blockdev_la_SOURCES = p_blockdev.c
 
 controller_la_LDFLAGS = ${module_ldflags}
