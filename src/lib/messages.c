@@ -174,7 +174,6 @@ int init_empty_message (
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
-	result->endian_two = RRR_SOCKET_MSG_ENDIAN_BYTES;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {

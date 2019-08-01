@@ -653,8 +653,8 @@ int rrr_perl5_hv_to_message (
 	}
 
 	STRLEN len = target->length;
-	char *data_str = SvPV(source->data, len);
-	strncpy(target->data, data_str, target->length);
+	char *data_str = sv_2pvbyte(source->data, &len);
+	memcpy(target->data, data_str, target->length);
 
 	out:
 	if (ret != 0) {
