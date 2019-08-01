@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 
 #include "main.h"
+#include "lib/common.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -32,79 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef VL_WITH_OPENSSL
 #include "lib/crypt.h"
 #endif
-
-static int signal_handlers_active = 0;
-static struct rrr_signal_handler *first_handler = NULL;
-pthread_mutex_t signal_lock = PTHREAD_MUTEX_INITIALIZER;
-
-void rrr_signal_handler_set_active (int active) {
-	pthread_mutex_lock(&signal_lock);
-	signal_handlers_active = active;
-	pthread_mutex_unlock(&signal_lock);
-}
-
-struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg) {
-	struct rrr_signal_handler *h = malloc(sizeof(*h));
-	h->handler = handler;
-	h->private_arg = private_arg;
-
-	pthread_mutex_lock(&signal_lock);
-	h->next = first_handler;
-	first_handler = h;
-	pthread_mutex_unlock(&signal_lock);
-	return h;
-}
-
-void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
-	pthread_mutex_lock(&signal_lock);
-	int did_remove = 0;
-	if (first_handler == handler) {
-		first_handler = first_handler->next;
-		free(handler);
-		did_remove = 1;
-	}
-	else {
-		struct rrr_signal_handler *test = first_handler;
-		while (test) {
-			if (test->next == handler) {
-				test->next = test->next->next;
-				free(handler);
-				did_remove = 1;
-				break;
-			}
-			test = test->next;
-		}
-	}
-	if (did_remove != 1) {
-		VL_BUG("Attempted to remove signal handler which did not exist\n");
-	}
-	pthread_mutex_unlock(&signal_lock);
-}
-
-void rrr_signal (int s) {
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
-
-	struct rrr_signal_handler *test = first_handler;
-
-	if (signal_handlers_active == 1) {
-		int handler_res = 1;
-		while (test) {
-			printf ("-> calling handler\n");
-			int ret = test->handler(s, test->private_arg);
-			if (ret == 0) {
-				// Handlers may also return non-zero for signal to continue
-				handler_res = 0;
-				break;
-			}
-			test = test->next;
-		}
-
-		if (handler_res == 0) {
-			printf ("Signal processed by handler, stop\n");
-			return;
-		}
-	}
-}
 
 int main_start_threads (
 		struct vl_thread_collection **thread_collection,

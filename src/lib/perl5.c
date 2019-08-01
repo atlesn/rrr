@@ -21,13 +21,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 #include <EXTERN.h>
 #include <perl.h>
 
 #include "../../build_directory.h"
+#include "common.h"
 #include "perl5.h"
 #include "messages.h"
+#include "settings.h"
 #include "rrr_socket_msg.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
@@ -39,9 +42,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PERL5_BUILD_LIB_PATH_3 \
 	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/auto/rrr/rrr_helper/rrr_message/"
 
+#define RRR_PERL5_BUILD_LIB_PATH_4 \
+	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/auto/rrr/rrr_helper/rrr_settings/"
+
 static pthread_mutex_t perl5_init_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t perl5_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static int perl5_users = 0;
+static int perl5_initialized = 0;
 static struct rrr_perl5_ctx *first_ctx = NULL;
 
 static void __rrr_perl5_init_lock(void) {
@@ -60,20 +67,49 @@ static void __rrr_perl5_ctx_unlock(void) {
 	pthread_mutex_unlock(&perl5_ctx_lock);
 }
 
+void rrr_perl5_program_exit_sys_term (void *arg) {
+	__rrr_perl5_init_lock();
+
+	(void)(arg);
+
+	if (perl5_initialized != 1) {
+		VL_BUG("perl5_initialized was not 1 in rrr_perl5_program_exit_sys_term\n");
+	}
+
+	if (perl5_users == 0) {
+		VL_DEBUG_MSG_1("Perl5 cleaning up at program exit with PERL_SYS_TERM\n");
+		PERL_SYS_TERM();
+		perl5_initialized = 0;
+	}
+	else {
+		// This might happen if a perl5 thread is ghost
+		VL_MSG_ERR("Warning: perl5 users was not 0 at program exit in rrr_perl5_program_exit_sys_term\n");
+	}
+
+	__rrr_perl5_init_unlock();
+}
+
 int rrr_perl5_init3(int argc, char **argv, char **env) {
 	__rrr_perl5_init_lock();
-	if (++perl5_users == 1) {
+
+	if (++perl5_users == 1 && perl5_initialized == 0) {
+		// We do not cart PERL_SYS_TERM untill RRR actually exits
+		rrr_exit_cleanup_method_push(rrr_perl5_program_exit_sys_term, NULL);
 		PERL_SYS_INIT3(&argc, &argv, &env);
+		perl5_initialized = 1;
 	}
+
 	__rrr_perl5_init_unlock();
 	return 0;
 }
 
 int rrr_perl5_sys_term(void) {
 	__rrr_perl5_init_lock();
+
 	if (--perl5_users == 0) {
-		PERL_SYS_TERM();
+		VL_DEBUG_MSG_1("Last perl5 user done\n");
 	}
+
 	__rrr_perl5_init_unlock();
 	return 0;
 }
@@ -175,7 +211,9 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct vl_message *message, void *private_data)
+		int (*send_message) (struct vl_message *message, void *private_data),
+		char *(*get_setting) (const char *key, void *private_data),
+		int (*set_setting) (const char *key, const char *value, void *private_data)
 ) {
 	int ret = 0;
 	struct rrr_perl5_ctx *ctx = NULL;
@@ -197,6 +235,8 @@ int rrr_perl5_new_ctx (
 
 	ctx->private_data = private_data;
 	ctx->send_message = send_message;
+	ctx->get_setting = get_setting;
+	ctx->set_setting = set_setting;
 
 	__rrr_perl5_push_ctx(ctx);
 
@@ -236,11 +276,12 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 			"-I" RRR_PERL5_BUILD_LIB_PATH_1,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_3,
+			"-I" RRR_PERL5_BUILD_LIB_PATH_4,
 			filename,
 			NULL
 	};
 
-	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 5, args, (char**) NULL) != 0) {
+	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 6, args, (char**) NULL) != 0) {
 		VL_MSG_ERR("Could not parse perl5 file %s\n", filename);
 		ret = 1;
 		goto out;
@@ -259,6 +300,8 @@ int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv) {
 	int ret = 0;
 
+	SV *err_tmp = NULL;
+	SV *ret_tmp = NULL;
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
@@ -284,10 +327,35 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	ENTER;
 	SAVETMPS;
 	PUSHMARK(SP);
-	EXTEND(SP, 3);
+	EXTEND(SP, 1);
 	PUSHs(sv_2mortal(blessed_ref));
 	PUTBACK;
-	call_pv(sub, G_DISCARD);
+
+	int numitems = call_pv(sub, G_SCALAR|G_EVAL);
+
+	SPAGAIN;
+
+	err_tmp = ERRSV;
+
+	if (SvTRUE(err_tmp)) {
+		VL_MSG_ERR("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
+		ret_tmp = POPs;
+		ret = 1;
+	}
+	else if (numitems == 1) {
+		// Perl subs should return 1 on success
+		ret_tmp = POPs;
+		if (!SvTRUE(ret_tmp)) {
+			VL_MSG_ERR("perl5 sub %s did not return true (false/0)\n", sub);
+			ret = 1;
+		}
+	}
+	else {
+		VL_MSG_ERR("No return value from perl5 sub %s\n", sub);
+		ret = 1;
+	}
+
+	PUTBACK;
 	FREETMPS;
 	LEAVE;
 
@@ -301,7 +369,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
         a ## b
 */
 #define SV_DEC_UNLESS_NULL(sv) \
-	do {if (sv != NULL) { SvREFCNT_dec(sv); }} while (0)
+	do {if (sv != NULL) { SvREFCNT_dec((SV*)sv); }} while (0)
 
 
 struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
@@ -363,6 +431,178 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
 struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
 	return __rrr_perl5_allocate_message_hv(ctx, NULL);
+}
+
+void rrr_perl5_destruct_settings_hv (
+		struct rrr_perl5_ctx *ctx,
+		struct rrr_perl5_settings_hv *source
+) {
+	if (source == NULL) {
+		return;
+	}
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+
+	SV_DEC_UNLESS_NULL(source->hv);
+	source->hv = NULL;
+
+	RRR_FREE_IF_NOT_NULL(source->entries);
+
+	for (int i = 0; i < source->allocated_entries; i++) {
+		RRR_FREE_IF_NOT_NULL(source->keys[i]);
+	}
+
+	RRR_FREE_IF_NOT_NULL(source->keys);
+	source->allocated_entries = 0;
+	source->used_entries = 0;
+
+	free(source);
+}
+
+/*
+struct rrr_perl5_settings_to_hv_callback_args {
+	struct rrr_perl5_ctx *ctx;
+	struct rrr_perl5_settings_hv *settings_hv;
+};
+
+static int __rrr_perl5_settings_to_hv_expand(struct rrr_perl5_settings_hv *settings_hv) {
+	int ret = 0;
+
+    if (settings_hv->allocated_entries > settings_hv->used_entries) {
+    	goto out;
+    }
+
+    SV **new_entries = reallocarray (
+			settings_hv->entries,
+			settings_hv->allocated_entries + 1,
+			sizeof(*(settings_hv->entries))
+	);
+	if (new_entries == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_perl5_settings_to_hv_expand\n");
+		ret = 1;
+		goto out;
+	}
+	settings_hv->entries = new_entries;
+
+	char **new_keys = reallocarray (
+			settings_hv->keys,
+			settings_hv->allocated_entries + 1,
+			sizeof(*(settings_hv->keys))
+	);
+	if (new_keys == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_perl5_settings_to_hv_expand\n");
+		ret = 1;
+		goto out;
+	}
+	settings_hv->keys = new_keys;
+
+	settings_hv->allocated_entries++;
+
+	out:
+	return ret;
+}
+
+static int __rrr_perl5_settings_to_hv_callback (
+		struct rrr_setting *setting,
+		void *arg
+) {
+	int ret = 0;
+
+	SV *new_entry;
+	SV **tmp;
+	char *new_key;
+	char *new_value;
+
+	struct rrr_perl5_settings_to_hv_callback_args *args = arg;
+	struct rrr_perl5_ctx *ctx = args->ctx;
+	struct rrr_perl5_settings_hv *settings_hv = args->settings_hv;
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+
+    if (__rrr_perl5_settings_to_hv_expand(settings_hv) != 0) {
+    	ret = 1;
+    	goto out;
+    }
+
+    new_key = malloc(strlen(setting->name) + 1);
+    if (new_key == NULL) {
+    	VL_MSG_ERR("Could not allocate memory in __rrr_perl5_settings_to_hv_callback\n");
+    	ret = 1;
+    	goto out;
+    }
+
+    if (rrr_settings_setting_to_string_nolock(&new_value, setting) != 0) {
+    	VL_MSG_ERR("Could not get value of setting in __rrr_perl5_settings_to_hv_callback\n");
+    	ret = 1;
+    	goto out;
+    }
+
+	new_entry = newSV(strlen(new_value));
+	sv_setpvn(new_entry, new_value, strlen(new_value));
+    tmp = hv_store(settings_hv->hv, new_key, strlen(new_key), new_entry, 0);
+    if (tmp == NULL) {
+    	VL_MSG_ERR("Could not store entry into hv in __rrr_perl5_settings_to_hv_callback\n");
+    	ret = 1;
+    	goto out;
+    }
+
+    settings_hv->entries[settings_hv->used_entries] = *tmp;
+    settings_hv->keys[settings_hv->used_entries] = new_key;
+
+    settings_hv->used_entries++;
+
+    new_entry = NULL;
+    new_key = NULL;
+
+    out:
+	SV_DEC_UNLESS_NULL(new_entry);
+	RRR_FREE_IF_NOT_NULL(new_key);
+	RRR_FREE_IF_NOT_NULL(new_value);
+    return ret;
+}
+*/
+
+int rrr_perl5_settings_to_hv (
+		struct rrr_perl5_settings_hv **target,
+		struct rrr_perl5_ctx *ctx,
+		struct rrr_instance_settings *source
+) {
+	int ret = 0;
+
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+
+	struct rrr_perl5_settings_hv *settings_hv = malloc(sizeof(*settings_hv));
+	if (settings_hv == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_perl5_config_to_hv\n");
+		ret = 1;
+		goto out;
+	}
+	memset (settings_hv, '\0', sizeof(*settings_hv));
+
+	settings_hv->hv = newHV();
+
+/* TODO:	We don't actually fill up the HV but instead force the user to utilize the
+ * 			get()-method so that we can update was_used-parameter, maybe delete the following
+
+	struct rrr_perl5_settings_to_hv_callback_args callback_args = {
+			ctx, settings_hv
+	};
+	ret = rrr_settings_iterate(source, __rrr_perl5_settings_to_hv_callback, &callback_args);
+	if (ret != 0) {
+		VL_MSG_ERR("Error while converting instance settings to hv in perl5\n");
+		goto out;
+	}*/
+
+	*target = settings_hv;
+
+	out:
+	if (ret != 0) {
+		rrr_perl5_destruct_settings_hv(ctx, settings_hv);
+	}
+	return ret;
 }
 
 void rrr_perl5_destruct_message_hv (
@@ -500,4 +740,33 @@ int rrr_perl5_message_send (HV *hv) {
 	rrr_perl5_destruct_message_hv(ctx, message_new_hv);
 
 	return TRUE;
+}
+
+SV *rrr_perl5_settings_get (HV *settings, const char *key) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
+
+	char *value = ctx->get_setting(key, ctx->private_data);
+	SV *ret = NULL;
+
+	if (value != NULL) {
+		ret = newSVpv(value, strlen(value));
+	}
+	else {
+		ret = newSV(0);
+		sv_set_undef(ret);
+	}
+
+	RRR_FREE_IF_NOT_NULL(value);
+
+	return ret;
+}
+
+int rrr_perl5_settings_set (HV *settings, const char *key, const char *value) {
+	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
+	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
+
+	int ret = ctx->set_setting(key, value, ctx->private_data);
+
+	return (ret == 0 ? TRUE : FALSE);
 }

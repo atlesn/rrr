@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "global.h"
+#include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -227,6 +228,7 @@ int main (int argc, const char *argv[]) {
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);
+		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
 			VL_DEBUG_MSG_1("Exiting program without errors\n");
 		}

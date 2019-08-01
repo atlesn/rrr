@@ -10,7 +10,7 @@ lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LDFLAGS}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c ${encryption} \
-ip.c types.c version.c configuration.c settings.c instance_config.c \
+ip.c types.c version.c configuration.c settings.c instance_config.c common.c \
 instances.c senders.c poll_helper.c modules.c rrr_socket.c rrr_socket_msg.c ${mysql}
 
 if VL_WITH_PYTHON3

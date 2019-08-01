@@ -53,7 +53,7 @@ struct perl5_data {
 	char *config_sub;
 };
 
-int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
+int poll_delete(RRR_MODULE_POLL_SIGNATURE) {
 	struct perl5_data *perl5_data = data->private_data;
 
 	if (fifo_read_clear_forward(&perl5_data->storage, NULL, callback, poll_data, wait_milliseconds) == FIFO_GLOBAL_ERR) {
@@ -63,11 +63,38 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return 0;
 }
 
-static int send_message_from_xsub (struct vl_message *message, void *private_data) {
+static int xsub_send_message(struct vl_message *message, void *private_data) {
 	struct perl5_data *perl5_data = private_data;
 	int ret = 0;
 
 	fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
+
+	return ret;
+}
+
+static char *xsub_get_setting(const char *key, void *private_data) {
+	struct perl5_data *perl5_data = private_data;
+	struct rrr_instance_settings *settings = perl5_data->thread_data->init_data.instance_config->settings;
+
+	char *value = NULL;
+	if (rrr_settings_get_string_noconvert_silent(&value, settings, key)) {
+		VL_MSG_ERR("Warning: Setting '%s', requested by perl5 program in instance %s, could not be retrieved\n",
+				key, INSTANCE_D_NAME(perl5_data->thread_data));
+		return NULL;
+	}
+
+	return value;
+}
+
+static int xsub_set_setting(const char *key, const char *value, void *private_data) {
+	struct perl5_data *perl5_data = private_data;
+	struct rrr_instance_settings *settings = perl5_data->thread_data->init_data.instance_config->settings;
+
+	int ret = rrr_settings_replace_string(settings, key, value);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not update settings key '%s' as requested by perl5 program in instance %s\n",
+				key, INSTANCE_D_NAME(perl5_data->thread_data));
+	}
 
 	return ret;
 }
@@ -111,7 +138,13 @@ int perl5_start(struct instance_thread_data *thread_data) {
 
 	int ret = 0;
 
-	ret |= rrr_perl5_new_ctx(&data->ctx, data, send_message_from_xsub);
+	ret |= rrr_perl5_new_ctx (
+			&data->ctx,
+			data,
+			xsub_send_message,
+			xsub_get_setting,
+			xsub_set_setting
+	);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not create perl5 context in perl5_start of instance %s\n",
@@ -156,7 +189,7 @@ void data_cleanup(void *arg) {
 	cmd_destroy_argv_copy(data->cmdline);
 }
 
-void poststop_perl5 (const struct vl_thread *thread) {
+void poststop_perl5(const struct vl_thread *thread) {
 	(void)(thread);
 	rrr_perl5_sys_term();
 }
@@ -187,7 +220,7 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-int spawn_messages (struct perl5_data *perl5_data) {
+int spawn_messages(struct perl5_data *perl5_data) {
 	int ret = 0;
 	struct vl_message *message = NULL;
 
@@ -238,7 +271,7 @@ int spawn_messages (struct perl5_data *perl5_data) {
 	return ret;
 }
 
-int process_message (struct perl5_data *perl5_data, struct vl_message *message) {
+int process_message(struct perl5_data *perl5_data, struct vl_message *message) {
 	int ret = 0;
 
 	struct rrr_perl5_ctx *ctx = perl5_data->ctx;
@@ -284,7 +317,41 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	return process_message(perl5_data, message);
 }
 
-static void *thread_entry_perl5 (struct vl_thread *thread) {
+int send_config(struct perl5_data *data) {
+	int ret = 0;
+
+	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
+	struct rrr_perl5_settings_hv *settings_hv = NULL;
+
+	if (data->config_sub == NULL || *(data->config_sub) == '\0') {
+		goto out;
+	}
+
+	if ((ret = rrr_perl5_settings_to_hv(&settings_hv, data->ctx, settings)) != 0) {
+		VL_MSG_ERR("Could not convert settings of perl5 instance %s to hash value\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_perl5_call_blessed_hvref(
+			data->ctx,
+			data->config_sub,
+			"rrr::rrr_helper::rrr_settings",
+			settings_hv->hv
+	)) != 0) {
+		VL_MSG_ERR("Error while sending settings to sub %s in perl5 instance %s\n",
+				data->config_sub, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	rrr_perl5_destruct_settings_hv(data->ctx, settings_hv);
+	return ret;
+}
+
+static void *thread_entry_perl5(struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
@@ -309,6 +376,12 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 	}
 
 	if (perl5_start(thread_data) != 0) {
+		pthread_exit(0);
+	}
+
+	if (send_config(data) != 0) {
+		VL_MSG_ERR("Could not send config to perl5 program in instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -361,7 +434,7 @@ static void *thread_entry_perl5 (struct vl_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int test_config(struct rrr_instance_config *config) {
 	VL_DEBUG_MSG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }

@@ -1,10 +1,9 @@
 package rrr::rrr_helper;
 
 BEGIN {
-	print ("rrr_helper works\n");
 };
 
-1;
+return 1;
 
 =encoding utf8
 
