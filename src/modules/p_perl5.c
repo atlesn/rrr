@@ -228,6 +228,7 @@ int spawn_messages(struct perl5_data *perl5_data) {
 
 	struct rrr_perl5_message_hv *hv_message = rrr_perl5_allocate_message_hv(ctx);
 
+	uint64_t time_start = time_get_64();
 	for (int i = 0; i < 50; i++) {
 		uint64_t now_time = time_get_64();
 		char data_buf[64];
@@ -263,6 +264,12 @@ int spawn_messages(struct perl5_data *perl5_data) {
 		fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
 
 		message = NULL;
+
+		uint64_t time_end = time_get_64();
+		if (time_end - time_start > 10000) { // 10 ms
+			// If the source function is slow or sleeps, break the loop
+			break;
+		}
 	}
 
 	out:

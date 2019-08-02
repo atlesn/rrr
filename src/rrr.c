@@ -77,15 +77,15 @@ int main_signal_handler(int s, void *arg) {
 	else if (s == SIGTERM) {
 		exit(EXIT_FAILURE);
 	}
-	else {
-		// Also traps SIGINT
+	else if (s == SIGINT) {
+		// Allow double ctrl+c to close program
+		if (s == SIGINT) {
+			VL_MSG_ERR("Received SIGINT\n");
+			signal(SIGINT, SIG_DFL);
+		}
+
 		main_running = 0;
 		return RRR_SIGNAL_HANDLED;
-	}
-
-	// Allow double ctrl+c to close program
-	if (s == SIGINT) {
-		signal(SIGINT, SIG_DFL);
 	}
 
 	return RRR_SIGNAL_NOT_HANDLED;

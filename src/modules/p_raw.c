@@ -43,8 +43,8 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct raw_data *raw_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u %s measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u data %s timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->data, reading->timestamp_from, reading->data_numeric, size);
 
 	raw_data->message_count++;
 

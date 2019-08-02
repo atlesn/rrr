@@ -6,46 +6,53 @@ use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
 
-print "Perl works!\n";
-
-sub print_value {
-	my $self = shift;
-	my $key = shift;
-
-	print "$key: " . $self->{$key} . "\n";
-}
+my $global_settings = undef;
 
 sub config {
+	# Get the rrr_settings-object. Has get(key) and set(key,value) methods.
 	my $settings = shift;
 
-	print "abcdef: " . $settings->get("abcdef") . "\n";
+	# If needed, save the settings object
+	$global_settings = $settings;
 
-	$settings->set("ghi", "789");
+	# Custom settings from the configuration file must be read to avoid warning messages
+	print "my_custom_setting is: " . $settings->get("my_custom_setting") . "\n";
 
-	print "ghi: " . $settings->get("ghi") . "\n";
+	# Set a custom setting
+	$settings->set("my_new_setting", "5");
+	print "my_new_setting is: " . $settings->get("my_new_setting") . "\n";
 
 	return 1;
 }
 
 sub source {
+	# Receive a template message
 	my $message = shift;
 
-	$message->{'timestamp_from'} = $message->{'timestamp_from'} - 3;
+	# Do some modifications
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
 
+	print "source:  new timestamp of message is: " . $message->{'timestamp_from'} . "\n";
+
+	# Sleep to ratelimit
+	sleep 1;
+
+	# Return 1 for success and 0 for error
 	return 1;
 }
 
 sub process {
+	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	$message->{'timestamp_from'} = $message->{'timestamp_from'} + 3;
+	# Do some modifications to the message
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
 
-	for ($i = 0; $i < 2; $i++) {
-		$message->send();
-	}
+	print "process: new timestamp of message is: " . $message->{'timestamp_from'} . "\n";
 
-#	print_value($message, 'timestamp_from');
-#	print_value($message, 'data');
+	# This can be used to duplicate a message, no need if we are not duplicating
+	# $message->send();
 
+	# Return 1 for success and 0 for error
 	return 1;
 }
