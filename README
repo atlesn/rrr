@@ -76,7 +76,7 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
-### perl5 (generate and/or modify messages by a custom python program)
+### perl5 (generate and/or modify messages by a custom perl script)
 The perl5 module makes it possible to process and generate messages in a custom 
 written perl script. The first and only argument to the source- and generate-functions
 is always a message. Modifications to the message in the script will be done to the
