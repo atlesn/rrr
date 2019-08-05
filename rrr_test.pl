@@ -16,11 +16,10 @@ sub config {
 	$global_settings = $settings;
 
 	# Custom settings from the configuration file must be read to avoid warning messages
-	print "my_custom_setting is: " . $settings->get("my_custom_setting") . "\n";
+	# print "my_custom_setting is: " . $settings->get("my_custom_setting") . "\n";
 
 	# Set a custom setting
 	$settings->set("my_new_setting", "5");
-	print "my_new_setting is: " . $settings->get("my_new_setting") . "\n";
 
 	return 1;
 }
