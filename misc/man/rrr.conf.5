@@ -443,7 +443,95 @@ def config(result : rrr_result, settings : rrr_instance_settings):
 	result.put(settings)
 	return 0
 .fi
+.SS perl5 (P)
+The perl5 module makes it possible to process and generate messages in a custom 
+perl script. The first and only argument to the source- and generate-functions
+is always a message. Modifications to the message in the script will be done to the
+original message, hence there is no need to return the message. A message can however
+be duplicated one or more times by calling it's send()-method.
+.PP
+.Bl -tag -width -indent
+.It perl5_file=FILENAME
+Path and filename of the perl script to use. The script is run once when the program starts,
+which means that code may be added outside the three subroutines mentioned below.
+.It perl5_source_sub=SUBROUTINE NAME
+Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object and modifies
+it to generate a new message. Called continiously.
+.It perl5_process_sub=SUBROUTINE NAME
+Optional name of a subroutine which receives an rrr::rrr_helper::rrr_message object from the senders
+of the current instance. The message may be modified or left alone.
+.It perl5_config_sub=SUBROUTINE NAME
+Optional name of a subroutine which receives an rrr::rrr_helper::rrr_settings object when the program
+is started. Any settings from the instance definition in the configuration file can be read from
+this object, also custom settings. Settings may also be modified and new settings can be added. The
+settings object may also be stored in the script to be read from or modified from the source- and 
+generate-subroutines.
+.El
+.PP
+There must always be either a source- or process subroutine specified, or both. If a process subroutine
+is specified, there must also be at least one sender specified.
+.PP
+Below follows an example perl script.
+.PP
+.nf
+#!/usr/bin/perl -w
 
+package main;
+
+use rrr::rrr_helper;
+use rrr::rrr_helper::rrr_message;
+use rrr::rrr_helper::rrr_settings;
+
+my $global_settings = undef;
+
+sub config {
+	# Get the rrr_settings-object. Has get(key) and set(key,value) methods.
+	my $settings = shift;
+
+	# If needed, save the settings object
+	$global_settings = $settings;
+
+	# Custom settings from the configuration file must be read to avoid warning messages
+	# print "my_custom_setting is: " . $settings->get("my_custom_setting") . "\\n";
+
+	# Set a custom setting
+	$settings->set("my_new_setting", "5");
+
+	return 1;
+}
+
+sub source {
+	# Receive a newly generated template message
+	my $message = shift;
+
+	# Do some modifications
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
+
+	# print "source:  new timestamp of message is: " . $message->{'timestamp_from'} . "\\n";
+
+	# Sleep to ratelimit
+	sleep 1;
+
+	# Return 1 for success and 0 for error
+	return 1;
+}
+
+sub process {
+	# Get a message from senders of the perl5 instance
+	my $message = shift;
+
+	# Do some modifications to the message
+	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
+
+	# print "process: new timestamp of message is: " . $message->{'timestamp_from'} . "\\n";
+
+	# This can be used to duplicate a message, no need if we are not duplicating
+	# $message->send();
+
+	# Return 1 for success and 0 for error
+	return 1;
+}
+.fi
 .SS raw (P)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.

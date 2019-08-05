@@ -1,3 +1,9 @@
+rrr (0.12) unstable; urgency=medium
+
+  * New perl5 module with source, process and config functions
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 02 Aug 2019 09:22:01 +0200
+
 rrr (0.11) unstable; urgency=medium
 
   * Performance improvements in python and misc fixes

@@ -424,7 +424,8 @@ int fifo_read_clear_forward (
  */
 void fifo_read (
 		struct fifo_buffer *buffer,
-		int (*callback)(char *data, unsigned long int size),
+		int (*callback)(FIFO_CALLBACK_ARGS),
+		struct fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 ) {
 	fifo_wait_for_data(buffer, wait_milliseconds);
@@ -434,7 +435,7 @@ void fifo_read (
 
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
-		int ret_tmp = callback(first->data, first->size);
+		int ret_tmp = callback(callback_data, first->data, first->size);
 		if (ret_tmp != 0) {
 			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
 				break;
@@ -459,6 +460,7 @@ void fifo_read (
  * Only elements with an order value higher than minimum_order are read. If the
  * callback function produces an error, we stop.
  */
+
 int fifo_read_minimum (
 		struct fifo_buffer *buffer,
 		struct fifo_buffer_entry *last_element,

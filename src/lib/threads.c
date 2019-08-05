@@ -37,6 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 //#define VL_THREAD_NO_WATCHDOGS
+
+// Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
 struct vl_thread_ghost {
@@ -584,7 +586,7 @@ void *__thread_watchdog_entry (void *arg) {
 	uint64_t prevtime = time_get_64();
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
-		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
+		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
 			VL_MSG_ERR ("Thread %s/%p not responding to kill. State is now %i. Killing it harder.\n", thread->name, thread, thread->state);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
@@ -606,7 +608,7 @@ void *__thread_watchdog_entry (void *arg) {
 	prevtime = time_get_64();
 	while (thread_get_state(thread) != VL_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = time_get_64();
-		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 < nowtime) {
+		if (prevtime + VL_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
 			VL_MSG_ERR ("Thread %s/%p not responding to cancellation, try again .\n", thread->name, thread);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);

@@ -96,7 +96,9 @@ int rrr_settings_traverse_split_commas_silent_fail (struct rrr_instance_settings
 int rrr_settings_split_commas_to_array (struct rrr_settings_list **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name);
+int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value);
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value);
+int rrr_settings_replace_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
 int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
 int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting);
 int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting);

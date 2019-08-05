@@ -58,9 +58,21 @@ struct cmd_data {
 	const char *args[CMD_ARGUMENT_MAXIMUM];
 	int args_used[CMD_ARGUMENT_MAXIMUM];
 	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAXIMUM];
+
+	const int argc;
+	const char **argv;
 };
 
-int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);
+struct cmd_argv_copy {
+	int argc;
+	char **argv;
+};
+
+void cmd_get_argv_copy			(struct cmd_argv_copy **target, struct cmd_data *data);
+void cmd_destroy_argv_copy		(struct cmd_argv_copy *target);
+
+struct cmd_data cmd_new			(int argc, const char *argv[]);
+int cmd_parse					(struct cmd_data *data, cmd_conf config);
 int cmd_match					(struct cmd_data *data, const char *test);
 
 int cmd_convert_hex_byte		(const char *value, char *result);

@@ -167,12 +167,13 @@ int init_empty_message (
 ) {
 	memset(result, '\0', sizeof(*result));
 
+	rrr_socket_msg_populate_head((struct rrr_socket_msg *) result, RRR_SOCKET_MSG_TYPE_VL_MESSAGE, sizeof(*result), 0);
+
 	result->type = type;
 	result->class = class;
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
-	result->endian_two = RRR_SOCKET_MSG_ENDIAN_BYTES;
 
 	// Always have a \0 at the end
 	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {

@@ -129,8 +129,17 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_sett
 	return NULL;
 }
 
-struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name) {
+struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name, int return_existing) {
 	struct rrr_setting *ret = NULL;
+
+	if ((ret = __rrr_settings_find_setting_nolock(target, name)) != NULL) {
+		if (return_existing) {
+			return ret;
+		}
+
+		VL_MSG_ERR("Settings name %s defined twice\n", name);
+		return NULL;
+	}
 
 	if (target->settings_count > target->settings_max) {
 		VL_MSG_ERR("BUG: setting_count was > settings_max");
@@ -140,11 +149,6 @@ struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings 
 	if (target->settings_count == target->settings_max) {
 		VL_MSG_ERR("Could not reserve setting because the maximum number of settings (%d) was reached",
 				target->settings_max);
-		return NULL;
-	}
-
-	if (__rrr_settings_find_setting_nolock(target, name) != NULL) {
-		VL_MSG_ERR("Settings name %s defined twice\n", name);
 		return NULL;
 	}
 
@@ -167,7 +171,14 @@ int __rrr_settings_set_setting_name(struct rrr_setting *setting, const char *nam
 	return 0;
 }
 
-int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *name, const void *old_data, const int size, rrr_setting_type type) {
+int __rrr_settings_add_raw (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const void *old_data,
+		const int size,
+		rrr_setting_type type,
+		int replace_existing
+) {
 	int ret = 0;
 
 	void *new_data = malloc(size);
@@ -182,7 +193,7 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 
 	__rrr_settings_lock(target);
 
-	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target, name);
+	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target, name, replace_existing);
 	if (setting == NULL) {
 		VL_MSG_ERR("Could not create setting struct for %s\n", name);
 		ret = 1;
@@ -409,18 +420,32 @@ int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, s
 	return ret;
 }
 
+int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value) {
+	const void *data = value;
+	int size = strlen(value) + 1;
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 1);
+}
+
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value) {
 	const void *data = value;
 	int size = strlen(value) + 1;
 
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING);
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 0);
+}
+
+int rrr_settings_replace_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
+	const void *data = &value;
+	int size = sizeof(rrr_setting_uint);
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 1);
 }
 
 int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
 	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT);
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 0);
 }
 
 int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting) {

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../main.h"
 #include "../global.h"
 #include "../../build_timestamp.h"
+#include "../lib/common.h"
 #include "../lib/configuration.h"
 #include "../lib/version.h"
 #include "../lib/instances.h"
@@ -105,9 +106,9 @@ int main (int argc, const char **argv) {
 		goto out;
 	}
 
-	struct cmd_data cmd;
+	struct cmd_data cmd = cmd_new(argc, argv);
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd, argc, argv) != 0) {
+		if (main_parse_cmd_arguments(&cmd) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -198,5 +199,6 @@ int main (int argc, const char **argv) {
 
 	out:
 	rrr_signal_handler_remove(signal_handler);
+	rrr_exit_cleanup_methods_run_and_free();
 	return ret;
 }

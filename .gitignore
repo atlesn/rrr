@@ -44,6 +44,14 @@ src/vlogger
 *.lai
 .dirstamp
 
+# perl
+blib
+Makefile.PL
+MYMETA.json
+MYMETA.yml
+pm_to_blib
+src/lib/perl5_xsi.c
+
 # python
 /src/python/__pycache__/
 /src/tests/__pycache__/

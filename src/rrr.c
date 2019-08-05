@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "main.h"
 #include "global.h"
+#include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -76,15 +77,15 @@ int main_signal_handler(int s, void *arg) {
 	else if (s == SIGTERM) {
 		exit(EXIT_FAILURE);
 	}
-	else {
-		// Also traps SIGINT
+	else if (s == SIGINT) {
+		// Allow double ctrl+c to close program
+		if (s == SIGINT) {
+			VL_MSG_ERR("Received SIGINT\n");
+			signal(SIGINT, SIG_DFL);
+		}
+
 		main_running = 0;
 		return RRR_SIGNAL_HANDLED;
-	}
-
-	// Allow double ctrl+c to close program
-	if (s == SIGINT) {
-		signal(SIGINT, SIG_DFL);
 	}
 
 	return RRR_SIGNAL_NOT_HANDLED;
@@ -104,7 +105,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	struct cmd_data cmd;
+	struct cmd_data cmd = cmd_new(argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
 			rrr_signal_handler_set_active,
@@ -119,7 +120,7 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
-	if ((ret = main_parse_cmd_arguments(&cmd, argc, argv)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
 		goto out_cleanup_signal;
 	}
 
@@ -227,6 +228,7 @@ int main (int argc, const char *argv[]) {
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);
+		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
 			VL_DEBUG_MSG_1("Exiting program without errors\n");
 		}
