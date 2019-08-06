@@ -484,7 +484,7 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 	VL_DEBUG_MSG_2 ("ipclient restarting network\n");
 	stop_receive_thread(thread_data);
 	ip_network_cleanup(&data->ip);
-	if (ip_network_start(&data->ip) != 0) {
+	if (ip_network_start_udp_ipv4(&data->ip) != 0) {
 		update_watchdog_time(thread_data->thread);
 		usleep (1000000);
 		goto network_restart;

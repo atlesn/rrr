@@ -22,10 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_COMMON_H
 #define RRR_MQTT_COMMON_H
 
-struct rrr_mqtt_data {
-};
+#include "mqtt_connection.h"
 
-struct rrr_mqtt_connection {
+struct rrr_mqtt_data {
+	struct rrr_mqtt_connection_collection connections;
 };
 
 #define RRR_MQTT_PACKET_TYPE_HANDLER_DEFINITION \
@@ -37,5 +37,8 @@ struct rrr_mqtt_p_type_properties {
 	uint8_t flags;
 	int (*handler)(RRR_MQTT_PACKET_TYPE_HANDLER_DEFINITION);
 };
+
+void rrr_mqtt_data_destroy (struct rrr_mqtt_data *data);
+int rrr_mqtt_data_init (struct rrr_mqtt_data *data);
 
 #endif /* RRR_MQTT_COMMON_H */

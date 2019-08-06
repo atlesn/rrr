@@ -122,6 +122,7 @@ int ip_send_message (
 		struct ip_stats *stats
 );
 void ip_network_cleanup (void *arg);
-int ip_network_start (struct ip_data *data);
+int ip_network_start_udp_ipv4 (struct ip_data *data);
+int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections);
 
 #endif

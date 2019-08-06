@@ -391,10 +391,10 @@ void ip_network_cleanup (void *arg) {
 	}
 }
 
-int ip_network_start (struct ip_data *data) {
+int ip_network_start_udp_ipv4 (struct ip_data *data) {
 	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
 	if (fd == -1) {
-		VL_MSG_ERR ("Could not create socket: %s", strerror(errno));
+		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
 	}
 
@@ -411,6 +411,45 @@ int ip_network_start (struct ip_data *data) {
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
 		VL_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
+		goto out_close_socket;
+	}
+
+	data->fd = fd;
+
+	return 0;
+
+	out_close_socket:
+	rrr_socket_close(fd);
+
+	out_error:
+	return 1;
+}
+
+int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
+	int fd = rrr_socket(AF_INET6, SOCK_CLOEXEC|SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
+	if (fd == -1) {
+		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
+		goto out_error;
+	}
+
+	if (data->port < 1 || data->port > 65535) {
+		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		goto out_close_socket;
+	}
+
+	struct sockaddr_in6 si;
+	memset(&si, '\0', sizeof(si));
+	si.sin6_family = AF_INET6;
+	si.sin6_port = htons(data->port);
+	si.sin6_addr = in6addr_any;
+
+	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
+		VL_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
+		goto out_close_socket;
+	}
+
+	if (listen (fd, max_connections) < 0) {
+		VL_MSG_ERR ("Could not listen to port %d: %s", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 

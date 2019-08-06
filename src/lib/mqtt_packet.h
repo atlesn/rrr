@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 #include <stdio.h>
+
+#include "buffer.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -62,7 +64,7 @@ struct rrr_mqtt_property_definition {
 	const char *name;
 };
 
-static const struct rrr_mqtt_property_definition property_definitions = {
+static const struct rrr_mqtt_property_definition property_definitions[] = {
 		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x01, "Payload format indicator"},
 		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x02, "Message expiry interval"},
 		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x03, "Content type"},
@@ -94,6 +96,8 @@ static const struct rrr_mqtt_property_definition property_definitions = {
 };
 
 struct rrr_mqtt_property {
+	struct rrr_mqtt_property *next;
+
 	/* Some properties have two values */
 	struct rrr_mqtt_property *sibling;
 	const struct rrr_property_definition *definition;
@@ -125,6 +129,17 @@ struct rrr_mqtt_rx_data {
 	struct rrr_mqtt_property_collection *properties;
 };
 
+struct mqtt_packet_internal {
+	uint8_t type;
+	ssize_t data_length;
+	char *data;
+};
+
+struct rrr_mqtt_packet_queue {
+	/* Must be first */
+	struct fifo_buffer buffer;
+};
+
 struct rrr_mqtt_p_connect {
 	uint16_t name_length;
 	char name[RRR_MQTT_PROTOCOL_NAME_LENGTH];
@@ -132,7 +147,6 @@ struct rrr_mqtt_p_connect {
 	uint8_t connect_flags;
 	uint16_t keep_alive;
 	uint8_t property_length;
-	struct rrr_mqtt_property_session_expiry session_expiry;
 	char properties[1];
 } __attribute__((packed));
 

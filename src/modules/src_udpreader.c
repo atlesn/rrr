@@ -247,7 +247,7 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 	pthread_cleanup_push(ip_network_cleanup, &data->ip);
 
 	data->ip.port = data->listen_port;
-	if (ip_network_start(&data->ip) != 0) {
+	if (ip_network_start_udp_ipv4(&data->ip) != 0) {
 		VL_MSG_ERR("Could not initialize network in udpreader\n");
 		pthread_exit(0);
 	}

@@ -316,7 +316,7 @@ static void *thread_entry_ipserver (struct vl_thread *thread) {
 
 	network_restart:
 	ip_network_cleanup(&data->ip);
-	ip_network_start(&data->ip);
+	ip_network_start_udp_ipv4(&data->ip);
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);

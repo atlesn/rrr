@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_PROCESSOR 3
 #define VL_MODULE_TYPE_FLEXIBLE 4
+#define VL_MODULE_TYPE_DEADEND 4
 
 /*#define VL_POLL_RESULT_ERR -1
 #define VL_POLL_RESULT_OK 1
