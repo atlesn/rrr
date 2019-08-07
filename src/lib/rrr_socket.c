@@ -190,6 +190,8 @@ int rrr_socket_close_all_except (int fd) {
 
 	struct rrr_socket_holder *cur = first_socket;
 	while (cur) {
+		struct rrr_socket_holder *next = cur->next;
+
 		if (cur->fd == fd) {
 			if (found != NULL) {
 				VL_BUG("At least two equal fds found in rrr_socket_close_all_except: %i\n", fd);
@@ -204,10 +206,11 @@ int rrr_socket_close_all_except (int fd) {
 			VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close_all_except: %s\n", fd, strerror(errno));
 		}
 
+		free(cur);
 		count++;
 
 		next:
-		cur = cur->next;
+		cur = next;
 	}
 
 	if (found == NULL && fd != 0) {

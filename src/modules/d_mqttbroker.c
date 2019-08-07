@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_CONNECTIONS 100
 
 struct mqtt_data {
+	struct instance_thread_data *thread_data;
 	struct fifo_buffer local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
 	rrr_setting_uint server_port;
@@ -72,9 +73,14 @@ static void data_cleanup(void *arg) {
 	rrr_mqtt_broker_destroy(data->mqtt_broker_data);
 }
 
-static int data_init(struct mqtt_data *data) {
+static int data_init (
+		struct mqtt_data *data,
+		struct instance_thread_data *thread_data
+) {
 	memset(data, '\0', sizeof(*data));
 	int ret = 0;
+
+	data->thread_data = thread_data;
 
 	ret |= fifo_buffer_init(&data->local_buffer);
 
@@ -83,7 +89,7 @@ static int data_init(struct mqtt_data *data) {
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_broker_new(&data->mqtt_broker_data)) != 0) {
+	if ((ret = rrr_mqtt_broker_new(&data->mqtt_broker_data, INSTANCE_D_NAME(thread_data))) != 0) {
 		VL_MSG_ERR("Could not create new mqtt broker\n");
 		goto out;
 	}
@@ -129,7 +135,7 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 	struct poll_collection poll;
 
 	int init_ret = 0;
-	if ((init_ret = data_init(data)) != 0) {
+	if ((init_ret = data_init(data, thread_data)) != 0) {
 		VL_MSG_ERR("Could not initalize data in mqtt instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
@@ -172,6 +178,11 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 			break;
 		}
 
+		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
+			VL_MSG_ERR("Error from MQTT broker while running tasks\n");
+			break;
+		}
+
 		usleep (5000); // 50 ms
 	}
 
@@ -184,18 +195,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
-	struct mqtt_data data;
-	int ret = 0;
-	if ((ret = data_init(&data)) != 0) {
-		goto err;
-	}
-	ret = parse_config(&data, config);
-	data_cleanup(&data);
-	err:
-	return ret;
-}
-
 static struct module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt,
@@ -204,7 +203,7 @@ static struct module_operations module_operations = {
 		NULL,
 		NULL,
 		NULL,
-		test_config,
+		NULL,
 		NULL,
 		NULL
 };

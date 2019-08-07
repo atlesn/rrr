@@ -47,13 +47,17 @@ struct rrr_mqtt_broker_data {
 	struct rrr_mqtt_listen_fd_collection listen_fds;
 };
 
+int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
-int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker);
+int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker, const char *client_name);
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
 		int port,
 		int max_connections
 );
 void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker);
+
+/* Run all tasks in sequence, call repeatedly for non-threaded operation */
+int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data);
 
 #endif /* RRR_MQTT_BROKER_H */

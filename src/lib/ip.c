@@ -444,12 +444,12 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 	si.sin6_addr = in6addr_any;
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		VL_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
+		VL_MSG_ERR ("Could not bind to port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
 	if (listen (fd, max_connections) < 0) {
-		VL_MSG_ERR ("Could not listen to port %d: %s", data->port, strerror(errno));
+		VL_MSG_ERR ("Could not listen to port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -462,4 +462,70 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 
 	out_error:
 	return 1;
+}
+
+int ip_close (struct ip_data *data) {
+	if (data->fd == 0) {
+		VL_BUG("Received zero-value FD in ip_close\n");
+	}
+	int ret = rrr_socket_close(data->fd);
+
+	data->fd = 0;
+
+	return ret;
+}
+
+int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator) {
+	int ret = 0;
+
+	struct sockaddr sockaddr_tmp = {0};
+	socklen_t socklen_tmp = sizeof(sockaddr_tmp);
+	struct ip_accept_data *res = NULL;
+
+	*accept_data = NULL;
+
+	ret = rrr_socket_accept(listen_data->fd, &sockaddr_tmp, &socklen_tmp, creator);
+	if (ret == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = 0;
+			goto out;
+		}
+		else {
+			VL_MSG_ERR("Error in ip_accept: %s\n", strerror(errno));
+			ret = 1;
+			goto out;
+		}
+	}
+
+	res = malloc(sizeof(*res));
+	if (res == NULL) {
+		VL_MSG_ERR("Could not allocate memory in ip_accept\n");
+		ret = 1;
+		goto out;
+	}
+	memset (res, '\0', sizeof(*res));
+
+	if (sockaddr_tmp.sa_family != AF_INET && sockaddr_tmp.sa_family != AF_INET6) {
+		VL_BUG("Non AF_INET/AF_INET6 from accept() in ip_accept\n");
+	}
+
+	res->ip_data.fd = ret;
+	res->addr = sockaddr_tmp;
+	res->len = socklen_tmp;
+
+	{
+		struct sockaddr_in client_tmp;
+		socklen_t len_tmp = sizeof(client_tmp);
+		getpeername(res->ip_data.fd, (struct sockaddr *) &client_tmp, &len_tmp);
+	    res->ip_data.port = ntohs (client_tmp.sin_port);
+	}
+
+	ret = 0;
+	*accept_data = res;
+	res = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(res);
+
+	return ret;
 }

@@ -22,23 +22,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_COMMON_H
 #define RRR_MQTT_COMMON_H
 
+#include <stdio.h>
+
 #include "mqtt_connection.h"
+
+#define RRR_MQTT_DATA_CLIENT_NAME_LENGTH 64
+#define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE 4096
+
+struct ip_accept_data;
+struct rrr_mqtt_packet_internal;
+struct rrr_mqtt_data;
+
+#define RRR_MQTT_TYPE_HANDLER_DEFINITION \
+		struct rrr_mqtt_data *data, struct rrr_mqtt_packet_internal *packet
+
+struct rrr_mqtt_type_handler_properties {
+	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
+};
 
 struct rrr_mqtt_data {
 	struct rrr_mqtt_connection_collection connections;
+	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
+	const struct rrr_mqtt_type_handler_properties *handler_properties;
 };
 
-#define RRR_MQTT_PACKET_TYPE_HANDLER_DEFINITION \
-	struct rrr_mqtt_data *mqtt_data, struct rrr_mqtt_connection *mqtt_conn, struct rrr_mqtt_rx_data *rx_data
-
-struct rrr_mqtt_p_type_properties {
-	/* If has_reserved_flags is non-zero, a packet must have the exact specified flags set to be valid */
-	uint8_t has_reserved_flags;
-	uint8_t flags;
-	int (*handler)(RRR_MQTT_PACKET_TYPE_HANDLER_DEFINITION);
-};
-
-void rrr_mqtt_data_destroy (struct rrr_mqtt_data *data);
-int rrr_mqtt_data_init (struct rrr_mqtt_data *data);
+void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
+		const char *client_name,
+		const struct rrr_mqtt_type_handler_properties *handler_properties
+);
+int rrr_mqtt_common_data_register_connection (
+		struct rrr_mqtt_data *data,
+		const struct ip_accept_data *accept_data
+);
+int rrr_mqtt_common_read_and_parse (struct rrr_mqtt_data *data);
 
 #endif /* RRR_MQTT_COMMON_H */

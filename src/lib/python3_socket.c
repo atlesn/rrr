@@ -459,7 +459,13 @@ int rrr_python3_socket_poll (PyObject *socket, int timeout) {
 				socket_data->connected_fd, getpid(), strerror(errno));
 		ret = -1;
 	}
-
+/* TODO : Implement check of pollfd.revents
+	if ((pollfd.revents & (POLLERR|POLLNVAL)) > 0) {
+		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
+		ret = 1;
+		goto out_unlock;
+	}
+*/
 	if (ret != 0) {
 		VL_DEBUG_MSG_7 ("python3 socket poll on socket %s fd %i pid %i result %i\n",
 				rrr_python3_socket_get_filename(socket),

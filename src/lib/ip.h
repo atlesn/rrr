@@ -81,6 +81,12 @@ struct ip_data {
 	unsigned int port;
 };
 
+struct ip_accept_data {
+	struct sockaddr addr;
+	socklen_t len;
+	struct ip_data ip_data;
+};
+
 #define VL_IP_STATS_UPDATE_OK 0		// Stats was updated
 #define VL_IP_STATS_UPDATE_ERR 1	// Error
 #define VL_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
@@ -124,5 +130,7 @@ int ip_send_message (
 void ip_network_cleanup (void *arg);
 int ip_network_start_udp_ipv4 (struct ip_data *data);
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections);
+int ip_close (struct ip_data *data);
+int ip_accept (struct ip_accept_data **accept_data, struct ip_data *data, const char *creator);
 
 #endif

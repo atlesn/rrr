@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 
 #include "buffer.h"
+#include "ip.h"
 #include "mqtt_packet.h"
 
 #define RRR_MQTT_CONNECTION_TYPE_IPV4 4
@@ -39,12 +40,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED	4
 #define RRR_MQTT_CONNECTION_STATE_CLOSED						5
 
+struct rrr_mqtt_connection_read_session {
+	/*
+	 * A packet processing action might be temporarily paused if the payload
+	 * is large (exceeds step_size_limit is < 0). It will resume in the next process tick.
+	 *
+	 * When rx_buf_wpos reaches target_size, the retrieval is complete and the processing
+	 * of the packet may begin.
+	 */
+	int packet_complete;
+
+	ssize_t step_size_limit;
+
+	ssize_t target_size;
+
+	char *rx_buf;
+	ssize_t rx_buf_size;
+	ssize_t rx_buf_wpos;
+};
+
 struct rrr_mqtt_connection {
 	struct rrr_mqtt_connection *next;
 
 	pthread_mutex_t lock;
 
-	int fd;
+	struct ip_data ip_data;
 
 	uint64_t connect_time;
 	uint64_t last_seen_time;
@@ -53,10 +73,14 @@ struct rrr_mqtt_connection {
 
 	int state;
 
+	struct rrr_mqtt_connection_read_session read_session;
+	struct rrr_mqtt_p_parse_session parse_session;
+
 	struct rrr_mqtt_packet_queue send_queue;
 	struct rrr_mqtt_packet_queue receive_queue;
 	struct rrr_mqtt_packet_queue wait_for_ack_queue;
 
+	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
 	union {
 		struct sockaddr_in remote_in;
@@ -68,6 +92,9 @@ struct rrr_mqtt_connection_collection {
 	struct rrr_mqtt_connection *first;
 	int invalid;
 	pthread_mutex_t lock;
+	int readers;
+	int writers_waiting;
+	int write_locked;
 };
 
 int rrr_mqtt_connection_send_disconnect_and_close (struct rrr_mqtt_connection *connection);
@@ -76,8 +103,32 @@ int rrr_mqtt_connection_collection_init (struct rrr_mqtt_connection_collection *
 int rrr_mqtt_connection_collection_new_connection (
 		struct rrr_mqtt_connection **connection,
 		struct rrr_mqtt_connection_collection *connections,
-		int fd,
-		int type
+		const struct ip_data *ip_data,
+		const struct sockaddr *remote_addr
+);
+
+#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_OK 0
+#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR 1
+#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR_DESTROY 2
+
+int rrr_mqtt_connection_collection_iterate (
+		struct rrr_mqtt_connection_collection *connections,
+		int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
+		void *callback_arg
+);
+
+#define RRR_MQTT_CONNECTION_OK 0
+#define RRR_MQTT_CONNECTION_ERR 1
+#define RRR_MQTT_CONNECTION_BUSY 2
+#define RRR_MQTT_CONNECTION_STEP_LIMIT 3
+
+int rrr_mqtt_connection_read (
+		struct rrr_mqtt_connection *connection,
+		int read_step_max_size
+);
+int rrr_mqtt_connection_parse (
+		struct rrr_mqtt_connection *connection,
+		const struct rrr_mqtt_p_type_properties *type_properties
 );
 
 #endif /* RRR_MQTT_CONNECTION_H */
