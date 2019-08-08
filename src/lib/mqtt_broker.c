@@ -267,6 +267,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 };
 
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
+	/* Caller should make sure that no more connections are accepted at this point */
 	__rrr_mqtt_broker_destroy_listen_fds(&broker->listen_fds);
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
 	free(broker);

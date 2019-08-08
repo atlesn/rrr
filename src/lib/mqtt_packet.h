@@ -29,11 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
-#define RRR_MQTT_PROTOCOL_NAME "MQTT"
-#define RRR_MQTT_PROTOCOL_NAME_LENGTH 4
+#define RRR_MQTT_VERSION_3_1		3
+#define RRR_MQTT_VERSION_3_1_1		4
+#define RRR_MQTT_VERSION_5			5
 
-#define RRR_MQTT_VERSION_3 3
-#define RRR_MQTT_VERSION_5 5
+struct rrr_mqtt_packet_protocol_version {
+	uint8_t id;
+	const char *name;
+};
 
 struct rrr_mqtt_p_header {
 	uint8_t type;
@@ -49,6 +52,34 @@ struct rrr_mqtt_properties_header {
 	};
 };
 
+struct rrr_mqtt_property_definition {
+	int type;
+	uint8_t identifier;
+
+	/* Human readable name */
+	const char *name;
+};
+
+struct rrr_mqtt_property {
+	struct rrr_mqtt_property *next;
+
+	int order;
+
+	/* Some properties have two values */
+	struct rrr_mqtt_property *sibling;
+	const struct rrr_mqtt_property_definition *definition;
+	uint8_t internal_data_type;
+	ssize_t length;
+	char *data;
+};
+
+/* Properties are stored in the order of which they appear in the packets */
+struct rrr_mqtt_property_collection {
+	struct rrr_mqtt_property *first;
+	struct rrr_mqtt_property *last;
+	int count;
+};
+
 #define RRR_MQTT_P_PARSE_STATUS_NONE					0
 #define RRR_MQTT_P_PARSE_STATUS_FIXED_HEADER_DONE		(1<<0)
 #define RRR_MQTT_P_PARSE_STATUS_VARIABLE_HEADER_DONE	(1<<1)
@@ -59,7 +90,6 @@ struct rrr_mqtt_properties_header {
 struct rrr_mqtt_p_parse_session {
 	int status;
 	const char *buf;
-	const struct rrr_mqtt_p_type_properties *type_properties;
 
 	ssize_t variable_header_pos;
 	ssize_t payload_pos;
@@ -69,6 +99,11 @@ struct rrr_mqtt_p_parse_session {
 
 	uint8_t type;
 	uint8_t type_flags;
+	const struct rrr_mqtt_packet_protocol_version *protocol_version;
+	uint8_t connect_flags;
+	uint16_t keep_alive;
+
+	struct rrr_mqtt_property_collection properties;
 };
 
 #define RRR_MQTT_P_PARSE_FIXED_HEADER_IS_DONE(s) \
@@ -81,9 +116,10 @@ struct rrr_mqtt_p_parse_session {
 	(((s)->status & RRR_MQTT_P_PARSE_STATUS_COMPLETE) > 0)
 #define RRR_MQTT_P_PARSE_IS_ERR(s) \
 	(((s)->status & RRR_MQTT_P_PARSE_STATUS_ERR) > 0)
-
 #define RRR_MQTT_P_PARSE_STATUS_SET(s,f) \
 	((s)->status |= (f))
+#define RRR_MQTT_P_PARSE_STATUS_SET_ERR(s) \
+	RRR_MQTT_P_PARSE_STATUS_SET(s,RRR_MQTT_P_PARSE_STATUS_ERR)
 
 #define RRR_MQTT_PACKET_TYPE_PARSER_DEFINITION \
 		struct rrr_mqtt_p_parse_session *session
@@ -93,69 +129,6 @@ struct rrr_mqtt_p_type_parser_properties {
 	uint8_t has_reserved_flags;
 	uint8_t flags;
 	int (*parser)(RRR_MQTT_PACKET_TYPE_PARSER_DEFINITION);
-};
-
-#define RRR_MQTT_PROPERTY_DATA_TYPE_ONE 1
-#define RRR_MQTT_PROPERTY_DATA_TYPE_TWO 2
-#define RRR_MQTT_PROPERTY_DATA_TYPE_FOUR 4
-#define RRR_MQTT_PROPERTY_DATA_TYPE_VINT 5
-#define RRR_MQTT_PROPERTY_DATA_TYPE_BLOB 6
-#define RRR_MQTT_PROPERTY_DATA_TYPE_UTF8 7
-#define RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8 8
-
-struct rrr_mqtt_property_definition {
-	int type;
-	uint8_t identifier;
-
-	/* Human readable name */
-	const char *name;
-};
-
-static const struct rrr_mqtt_property_definition property_definitions[] = {
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x01, "Payload format indicator"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x02, "Message expiry interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x03, "Content type"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x08, "Response topic"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,	0x09, "Correlation data"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_VINT,	0x0B, "Subscription identifier"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x11, "Session expiry interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x12, "Assigned client identifier"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x13, "Server keep-alive"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x15, "Authentication method"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_BLOB,	0x16, "Authentication data"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x17, "Request problem information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x18, "Will delay interval"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x19, "Request response information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1A, "Response information"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1C, "Server reference"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_UTF8,	0x1F, "Reason string"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x21, "Receive maximum"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x22, "Topic alias maximum"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_TWO,	0x23, "Topic alias"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x24, "Maximum QoS"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x25, "Retain available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8,	0x26, "User property"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_FOUR,	0x27, "Maximum packet size"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x28, "Wildcard subscription available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x29, "Subscription identifier available"},
-		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x2A, "Shared subscription available"},
-		{0, 0, NULL}
-};
-
-struct rrr_mqtt_property {
-	struct rrr_mqtt_property *next;
-
-	/* Some properties have two values */
-	struct rrr_mqtt_property *sibling;
-	const struct rrr_property_definition *definition;
-	uint8_t data_type;
-	ssize_t length;
-	char *data;
-};
-
-struct rrr_mqtt_property_collection {
-	struct rrr_mqtt_property *first;
-	int count;
 };
 
 struct rrr_mqtt_packet_internal {
@@ -169,16 +142,6 @@ struct rrr_mqtt_packet_queue {
 	/* Must be first */
 	struct fifo_buffer buffer;
 };
-
-struct rrr_mqtt_p_connect {
-	uint16_t name_length;
-	char name[RRR_MQTT_PROTOCOL_NAME_LENGTH];
-	uint8_t version;
-	uint8_t connect_flags;
-	uint16_t keep_alive;
-	uint8_t property_length;
-	char properties[1];
-} __attribute__((packed));
 
 #define RRR_MQTT_P_TYPE_RESERVED	0
 #define RRR_MQTT_P_TYPE_CONNECT		1
@@ -197,17 +160,17 @@ struct rrr_mqtt_p_connect {
 #define RRR_MQTT_P_TYPE_DISCONNECT	14
 #define RRR_MQTT_P_TYPE_AUTH		15
 
-#define RRR_MQTT_P_GET_TYPE(p)			((p)->type & (0xF << 4))
-#define RRR_MQTT_P_GET_TYPE_FLAGS(p)	((p)->type & (0xF))
+#define RRR_MQTT_P_GET_TYPE(p)			(((p)->type & ((uint8_t) 0xF << 4)) >> 4)
+#define RRR_MQTT_P_GET_TYPE_FLAGS(p)	((p)->type & ((uint8_t) 0xF))
 
 
 #define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			((1<<0) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		((1<<1) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_FLAG(p)		((1<<2) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)			(((1<<3)|(1<<4)) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)		((1<<5) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		((1<<6) & (p)->connect_flags)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		((1<<7) & (p)->connect_flags)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) & (p)->connect_flags) >> 1)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL(p)		(((1<<2) & (p)->connect_flags) >> 2)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)			((((1<<4)|(1<<3)) & (p)->connect_flags) >> 3)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)		(((1<<5) & (p)->connect_flags) >> 5)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) & (p)->connect_flags) >> 6)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) & (p)->connect_flags) >> 7)
 
 void rrr_mqtt_packet_parse_session_destroy (
 		struct rrr_mqtt_p_parse_session *session
@@ -215,8 +178,7 @@ void rrr_mqtt_packet_parse_session_destroy (
 void rrr_mqtt_packet_parse_session_init (
 		struct rrr_mqtt_p_parse_session *session,
 		const char *buf,
-		ssize_t buf_size,
-		const struct rrr_mqtt_p_type_properties *type_properties
+		ssize_t buf_size
 );
 int rrr_mqtt_packet_parse (
 		struct rrr_mqtt_p_parse_session *session

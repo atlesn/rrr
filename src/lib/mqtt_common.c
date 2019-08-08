@@ -91,19 +91,33 @@ struct read_and_parse_callback_data {
 int __rrr_mqtt_common_read_and_parse_callback (struct rrr_mqtt_connection *connection, void *arg) {
 	struct read_and_parse_callback_data *callback_data = arg;
 
+	(void)(callback_data);
+
 	int ret = 0;
 
 	while (ret == 0) {
 		ret = rrr_mqtt_connection_read (connection, RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE);
 	}
 
-	if (ret == RRR_MQTT_CONNECTION_ERR) {
-		VL_MSG_ERR("Error while reading data from mqtt client, destroying connection.\n");
-		ret = RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR_DESTROY;
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) > 0) {
+		VL_MSG_ERR("Internal error while reading data from mqtt client. Closing down server.\n");
+		ret =  RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 		goto out;
 	}
 
-	ret = rrr_mqtt_connection_parse (connection, callback_data->data->handler_properties);
+	if ((ret & (RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR)) > 0) {
+		VL_MSG_ERR("Error while reading data from mqtt client, destroying connection.\n");
+		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
+
+	ret = rrr_mqtt_connection_parse (connection);
+
+	if (connection->read_session.packet_complete == 1 && !RRR_MQTT_P_PARSE_IS_COMPLETE(&connection->parse_session)) {
+		VL_MSG_ERR("Reading is done for a packet but parsing did not complete. Closing connection.\n");
+		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
 
 	out:
 	return ret;
@@ -115,6 +129,15 @@ int rrr_mqtt_common_read_and_parse (struct rrr_mqtt_data *data) {
 	struct read_and_parse_callback_data callback_data = { data };
 
 	ret = rrr_mqtt_connection_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse_callback, &callback_data);
+
+	if ((ret & (RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION)) > 0) {
+		VL_MSG_ERR("Soft error in rrr_mqtt_common_read_and_parse (one or more connections had to be closed)\n");
+		ret = 0;
+	}
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) > 0) {
+		VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_and_parse\n");
+		ret = 1;
+	}
 
 	return ret;
 }

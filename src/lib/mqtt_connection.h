@@ -107,9 +107,12 @@ int rrr_mqtt_connection_collection_new_connection (
 		const struct sockaddr *remote_addr
 );
 
-#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_OK 0
-#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR 1
-#define RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR_DESTROY 2
+#define RRR_MQTT_CONNECTION_OK					0
+#define RRR_MQTT_CONNECTION_INTERNAL_ERROR		(1<<0)
+#define RRR_MQTT_CONNECTION_DESTROY_CONNECTION	(1<<1)
+#define RRR_MQTT_CONNECTION_SOFT_ERROR			(1<<2)
+#define RRR_MQTT_CONNECTION_BUSY				(1<<3)
+#define RRR_MQTT_CONNECTION_STEP_LIMIT			(1<<4)
 
 int rrr_mqtt_connection_collection_iterate (
 		struct rrr_mqtt_connection_collection *connections,
@@ -117,18 +120,12 @@ int rrr_mqtt_connection_collection_iterate (
 		void *callback_arg
 );
 
-#define RRR_MQTT_CONNECTION_OK 0
-#define RRR_MQTT_CONNECTION_ERR 1
-#define RRR_MQTT_CONNECTION_BUSY 2
-#define RRR_MQTT_CONNECTION_STEP_LIMIT 3
-
 int rrr_mqtt_connection_read (
 		struct rrr_mqtt_connection *connection,
 		int read_step_max_size
 );
 int rrr_mqtt_connection_parse (
-		struct rrr_mqtt_connection *connection,
-		const struct rrr_mqtt_p_type_properties *type_properties
+		struct rrr_mqtt_connection *connection
 );
 
 #endif /* RRR_MQTT_CONNECTION_H */

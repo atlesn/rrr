@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <poll.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 
 #include "ip.h"
@@ -182,6 +183,8 @@ int __rrr_mqtt_connection_collection_write_to_read_lock (struct rrr_mqtt_connect
 
 	connections->readers++;
 	connections->write_locked = 0;
+
+	pthread_mutex_unlock(&connections->lock);
 
 	out:
 	return ret;
@@ -405,7 +408,7 @@ int rrr_mqtt_connection_collection_iterate (
 	int ret = 0;
 	int callback_ret = 0;
 
-	if (( ret = __rrr_mqtt_connection_collection_read_lock(connections)) != 0) {
+	if ((ret = __rrr_mqtt_connection_collection_read_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate\n");
 		goto out;
 	}
@@ -414,10 +417,10 @@ int rrr_mqtt_connection_collection_iterate (
 	struct rrr_mqtt_connection *prev = NULL;
 	while (cur) {
 		int ret_tmp = callback(cur, callback_arg);
-		if (ret_tmp != RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_OK) {
+		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
 			VL_MSG_ERR("Error returned from callback in rrr_mqtt_connection_collection_iterate\n");
 
-			if (ret_tmp == RRR_MQTT_CONNECTION_COLLECTION_ITERATE_RESULT_ERR_DESTROY) {
+			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) > 0) {
 				VL_MSG_ERR("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
 
 				if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
@@ -437,19 +440,30 @@ int rrr_mqtt_connection_collection_iterate (
 				}
 
 				// Will not be processed again, it is set to prev->next at the end of the while loop
-				cur = prev;
+				if (prev != NULL) {
+					cur = prev;
+				}
+				else {
+					cur = next;
+				}
 
 				if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 					VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate\n");
 					goto out;
 				}
-			}
 
-			callback_ret = 1;
+				callback_ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
+			}
+			if ((ret_tmp & RRR_MQTT_CONNECTION_INTERNAL_ERROR) > 0) {
+				callback_ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			}
 		}
 
-		prev = cur;
-		cur = cur->next;
+		/* If the current connection was last in the list and then destroyed, cur will be NULL */
+		if (cur != NULL) {
+			prev = cur;
+			cur = cur->next;
+		}
 	}
 
 	if ((ret = __rrr_mqtt_connection_collection_read_unlock(connections)) != 0) {
@@ -475,51 +489,69 @@ int rrr_mqtt_connection_read (
 
 	struct rrr_mqtt_connection_read_session *read_session = &connection->read_session;
 
+	if (read_session->packet_complete == 1) {
+		if (read_session->rx_buf_wpos != read_session->target_size) {
+			VL_BUG("packet complete was 1 but read size was not target size in rrr_mqtt_connection_read\n");
+		}
+		ret = RRR_MQTT_CONNECTION_BUSY;
+		goto out_unlock;
+	}
+
 	if (read_session->rx_buf_wpos > read_session->target_size) {
 		VL_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_read\n");
-		ret = RRR_MQTT_CONNECTION_ERR;
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 		goto out_unlock;
 	}
 
 	struct pollfd pollfd = { connection->ip_data.fd, POLLIN, 0 };
-	int bytes = 0;
+	ssize_t bytes = 0;
+	ssize_t items = 0;
+	int bytes_int = 0;
 
 	poll_retry:
 
-	bytes = poll(&pollfd, 1, 0);
-	if (bytes == -1) {
+	items = poll(&pollfd, 1, 0);
+	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			ret = RRR_MQTT_CONNECTION_OK;
+			ret = RRR_MQTT_CONNECTION_BUSY;
 			goto out_unlock;
 		}
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
 		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
-		ret = RRR_MQTT_CONNECTION_ERR;
+		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) > 0) {
 		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
-		ret = RRR_MQTT_CONNECTION_ERR;
+		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
-	else if (bytes == 0) {
+	else if (items == 0) {
+		ret = RRR_MQTT_CONNECTION_BUSY;
 		goto out_unlock;
 	}
+
+	if (ioctl (connection->ip_data.fd, FIONREAD, &bytes_int) != 0) {
+		VL_MSG_ERR("Error from ioctl in rrr_mqtt_connection_read: %s\n", strerror(errno));
+		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		goto out_unlock;
+	}
+
+	bytes = bytes_int;
 
 	/* Check for new read session */
 	if (read_session->rx_buf == NULL) {
 		if (bytes < 2) {
-			VL_MSG_ERR("Received less than 2 from mqtt client\n");
-			ret = RRR_MQTT_CONNECTION_ERR;
+			VL_MSG_ERR("Received less than 2 bytes in first packet on connection\n");
+			ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 			goto out_unlock;
 		}
-
 		read_session->rx_buf = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
 		if (read_session->rx_buf == NULL) {
 			VL_MSG_ERR("Could not allocate memory in rrr_mqtt_connection_read\n");
-			ret = RRR_MQTT_CONNECTION_ERR;
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 			goto out_unlock;
 		}
 		read_session->rx_buf_size = read_step_max_size;
@@ -536,7 +568,7 @@ int rrr_mqtt_connection_read (
 		char *new_buf = realloc(read_session->rx_buf, new_size);
 		if (new_buf == NULL) {
 			VL_MSG_ERR("Could not re-allocate memory in rrr_mqtt_connection_read\n");
-			ret = RRR_MQTT_CONNECTION_ERR;
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 			goto out_unlock;
 		}
 		read_session->rx_buf = new_buf;
@@ -563,11 +595,11 @@ int rrr_mqtt_connection_read (
 	 */
 	if (to_read_bytes == 0) {
 		read_session->packet_complete = 1;
+		ret = RRR_MQTT_CONNECTION_BUSY;
 		goto out_unlock;
 	}
 
 	/* Read */
-	struct sockaddr client;
 	read_retry:
 	bytes = read (
 			connection->ip_data.fd,
@@ -580,13 +612,13 @@ int rrr_mqtt_connection_read (
 			goto read_retry;
 		}
 		VL_MSG_ERR("Error from read in rrr_mqtt_connection_read: %s\n", strerror(errno));
-		ret = RRR_MQTT_CONNECTION_ERR;
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 		goto out_unlock;
 	}
 
 	if (bytes == 0) {
 		VL_MSG_ERR("Bytes was 0 after read in rrr_mqtt_connection_read, despite polling first\n");
-		ret = RRR_MQTT_CONNECTION_ERR;
+		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
 
@@ -614,8 +646,7 @@ int rrr_mqtt_connection_read (
 }
 
 int rrr_mqtt_connection_parse (
-		struct rrr_mqtt_connection *connection,
-		const struct rrr_mqtt_p_type_properties *type_properties
+		struct rrr_mqtt_connection *connection
 ) {
 	int ret = 0;
 
@@ -630,17 +661,24 @@ int rrr_mqtt_connection_parse (
 			rrr_mqtt_packet_parse_session_init (
 					&connection->parse_session,
 					connection->read_session.rx_buf,
-					connection->read_session.rx_buf_wpos,
-					type_properties
+					connection->read_session.rx_buf_wpos
 			);
 		}
 
 		ret = rrr_mqtt_packet_parse (&connection->parse_session);
+		if (RRR_MQTT_P_PARSE_IS_ERR(&connection->parse_session)) {
+			/* Error which was the remote's fault, close connection */
+			ret = RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+			goto out_unlock;
+		}
 		if (RRR_MQTT_P_PARSE_FIXED_HEADER_IS_DONE(&connection->parse_session)) {
 			connection->read_session.target_size = connection->parse_session.target_size;
-			if (connection->read_session.rx_buf_wpos > connection->read_session.target_size) {
+			if (connection->read_session.rx_buf_wpos == connection->read_session.target_size) {
+				connection->read_session.packet_complete = 1;
+			}
+			else if (connection->read_session.rx_buf_wpos > connection->read_session.target_size) {
 				VL_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_parse\n");
-				ret = RRR_MQTT_CONNECTION_ERR;
+				ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
 				goto out_unlock;
 			}
 		}
