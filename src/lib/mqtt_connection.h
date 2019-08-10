@@ -76,9 +76,9 @@ struct rrr_mqtt_connection {
 	struct rrr_mqtt_connection_read_session read_session;
 	struct rrr_mqtt_p_parse_session parse_session;
 
-	struct rrr_mqtt_packet_queue send_queue;
-	struct rrr_mqtt_packet_queue receive_queue;
-	struct rrr_mqtt_packet_queue wait_for_ack_queue;
+	struct rrr_mqtt_p_queue send_queue;
+	struct rrr_mqtt_p_queue receive_queue;
+	struct rrr_mqtt_p_queue wait_for_ack_queue;
 
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6

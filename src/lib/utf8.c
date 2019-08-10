@@ -23,27 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "utf8.h"
 
-static int __rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end) {
-	if (*pos >= end) {
-		return 0;
-	}
-
-	uint8_t c = **pos;
-	uint8_t d = 0;
-	uint8_t e = 0;
-	uint8_t f = 0;
-	(*pos)++;
-
-	if (c <= 0x7F) {
-		*result = c;
-		return 0;
-	}
-
+static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const char **pos, const char *end) {
 	if (*pos >= end) {
 		return 1;
 	}
 
-	d = **pos;
+	uint8_t d = **pos;
 	(*pos)++;
 
 	if (c >= 0xC2 && c <= 0xDF && d >= 0x80 && d <= 0xBF) {
@@ -58,7 +43,7 @@ static int __rrr_utf8_get_character (uint32_t *result, const char **pos, const c
 		return 1;
 	}
 
-	e = **pos;
+	uint8_t e = **pos;
 	(*pos)++;
 
 	if (	(c == 0xE0              && d >= 0xA0 && d <= 0xBF && e >= 0x80 && e <= 0xBF) ||
@@ -78,7 +63,7 @@ static int __rrr_utf8_get_character (uint32_t *result, const char **pos, const c
 		return 1;
 	}
 
-	f = **pos;
+	uint8_t f = **pos;
 	(*pos)++;
 
 	if (	(c == 0xF0              && d >= 0x90 && d <= 0xBF && e >= 0x80 && e <= 0xBF && f >= 0x80 && f <= 0xBF) ||
@@ -97,16 +82,32 @@ static int __rrr_utf8_get_character (uint32_t *result, const char **pos, const c
 	return 1;
 }
 
+static inline int __rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end) {
+	if (*pos >= end) {
+		return 0;
+	}
+
+	uint8_t c = **pos;
+	(*pos)++;
+
+	if (c <= 0x7F) {
+		*result = c;
+		return 0;
+	}
+
+	return __rrr_utf8_get_character_continue (result, c, pos, end);
+}
+
 int rrr_utf8_validate (const char *buf, int len) {
 	int ret = 0;
 
 	const char *pos = buf;
 	const char *end = buf + len;
 
+	uint32_t result = 0;
 	do {
-		uint32_t result;
 		ret = __rrr_utf8_get_character (&result, &pos, end);
-	} while (ret == 0);
+	} while (ret == 0 && !(ret == 0 && result == 0));
 
 	return ret;
 }
@@ -122,10 +123,10 @@ int rrr_utf8_validate_and_iterate (
 	const char *pos = buf;
 	const char *end = buf + len;
 
+	uint32_t result = 0;
 	do {
-		uint32_t result = 0;
 		ret = __rrr_utf8_get_character (&result, &pos, end);
-		if (ret != 0) {
+		if (ret != 0 || (ret == 0 && result == 0)) {
 			return ret;
 		}
 		if ((ret = callback(result, callback_arg)) != 0) {
