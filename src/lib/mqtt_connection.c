@@ -212,6 +212,13 @@ int rrr_mqtt_connection_send_disconnect_and_close (struct rrr_mqtt_connection *c
 	return 0;
 }
 
+static void __rrr_mqtt_connection_reset_sessions (struct rrr_mqtt_connection *connection) {
+	RRR_FREE_IF_NOT_NULL(connection->read_session.rx_buf);
+	rrr_mqtt_parse_session_destroy(&connection->parse_session);
+	connection->read_complete = 0;
+	connection->parse_complete = 0;
+}
+
 static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connection) {
 	if (connection == NULL) {
 		VL_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
@@ -233,10 +240,12 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 
 	fifo_buffer_invalidate(&connection->receive_queue.buffer);
 	fifo_buffer_invalidate(&connection->send_queue.buffer);
-	fifo_buffer_invalidate(&connection->wait_for_ack_queue.buffer);
 
-	RRR_FREE_IF_NOT_NULL(connection->read_session.rx_buf);
-	rrr_mqtt_parse_session_destroy(&connection->parse_session);
+	__rrr_mqtt_connection_reset_sessions (connection);
+
+	if (connection->client_id != NULL) {
+		free(connection->client_id);
+	}
 
 	pthread_mutex_destroy (&connection->lock);
 
@@ -269,7 +278,6 @@ static int __rrr_mqtt_connection_new (
 
 	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_decref);
 	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_decref);
-	ret |= fifo_buffer_init_custom_free(&res->wait_for_ack_queue.buffer,rrr_mqtt_p_decref);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
@@ -401,6 +409,51 @@ int rrr_mqtt_connection_collection_new_connection (
 	return ret;
 }
 
+int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
+		struct rrr_mqtt_connection_collection *connections,
+		int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+	int callback_ret = 0;
+
+	if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
+		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+		goto out;
+	}
+
+	struct rrr_mqtt_connection *cur = connections->first;
+	while (cur) {
+		int ret_tmp = callback(cur, callback_arg);
+		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
+			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
+				VL_BUG("Destroy connection flag not allowed in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+			}
+			if ((ret_tmp & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+				callback_ret |= ret_tmp;
+				break;
+			}
+			if ((ret_tmp & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
+				callback_ret |= ret_tmp;
+				break;
+			}
+
+			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+		}
+
+		cur = cur->next;
+	}
+
+	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
+		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+		goto out;
+	}
+
+	out:
+	return (ret | callback_ret);
+}
+
 int rrr_mqtt_connection_collection_iterate (
 	struct rrr_mqtt_connection_collection *connections,
 	int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
@@ -421,7 +474,7 @@ int rrr_mqtt_connection_collection_iterate (
 		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
 			VL_MSG_ERR("Error returned from callback in rrr_mqtt_connection_collection_iterate\n");
 
-			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) > 0) {
+			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
 				VL_MSG_ERR("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
 
 				if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
@@ -455,9 +508,17 @@ int rrr_mqtt_connection_collection_iterate (
 
 				callback_ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
 			}
-			if ((ret_tmp & RRR_MQTT_CONNECTION_INTERNAL_ERROR) > 0) {
-				callback_ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			if ((ret_tmp & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+				callback_ret |= ret_tmp;
+				break;
 			}
+			if ((ret_tmp & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
+				callback_ret |= ret_tmp;
+				break;
+			}
+
+			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
 		}
 
 		/* If the current connection was last in the list and then destroyed, cur will be NULL */
@@ -490,7 +551,7 @@ int rrr_mqtt_connection_read (
 
 	struct rrr_mqtt_connection_read_session *read_session = &connection->read_session;
 
-	if (read_session->packet_complete == 1) {
+	if (connection->read_complete == 1) {
 		if (read_session->rx_buf_wpos != read_session->target_size) {
 			VL_BUG("packet complete was 1 but read size was not target size in rrr_mqtt_connection_read\n");
 		}
@@ -524,7 +585,7 @@ int rrr_mqtt_connection_read (
 		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
-	else if ((pollfd.revents & (POLLERR|POLLNVAL)) > 0) {
+	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
 		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
 		ret = RRR_MQTT_CONNECTION_SOFT_ERROR | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out_unlock;
@@ -586,7 +647,7 @@ int rrr_mqtt_connection_read (
 		VL_BUG("to_read_bytes was < 0 in rrr_mqtt_connection_read\n");
 	}
 
-	if (read_session->packet_complete == 1 && to_read_bytes != 0) {
+	if (connection->read_complete == 1 && to_read_bytes != 0) {
 		VL_BUG("packet_complete was 1 but to_read_bytes was not zero\n");
 	}
 
@@ -595,7 +656,7 @@ int rrr_mqtt_connection_read (
 	 * until somebody else has reset the receive buffer
 	 */
 	if (to_read_bytes == 0) {
-		read_session->packet_complete = 1;
+		connection->read_complete = 1;
 		ret = RRR_MQTT_CONNECTION_BUSY;
 		goto out_unlock;
 	}
@@ -631,7 +692,7 @@ int rrr_mqtt_connection_read (
 	}
 
 	if (read_session->rx_buf_wpos == read_session->target_size) {
-		read_session->packet_complete = 1;
+		connection->read_complete = 1;
 	}
 
 	if (read_session->step_size_limit < 0) {
@@ -675,7 +736,7 @@ int rrr_mqtt_connection_parse (
 		if (RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(&connection->parse_session)) {
 			connection->read_session.target_size = connection->parse_session.target_size;
 			if (connection->read_session.rx_buf_wpos == connection->read_session.target_size) {
-				connection->read_session.packet_complete = 1;
+				connection->read_complete = 1;
 			}
 			else if (connection->read_session.rx_buf_wpos > connection->read_session.target_size) {
 				VL_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_parse\n");
@@ -684,12 +745,7 @@ int rrr_mqtt_connection_parse (
 			}
 		}
 		if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
-			struct rrr_mqtt_p_packet *packet;
-			ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
-			if (rrr_mqtt_p_get_refcount(packet) != 1) {
-				VL_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
-			}
-			fifo_buffer_write(&connection->receive_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
+			connection->parse_complete = 1;
 		}
 	}
 
@@ -697,5 +753,225 @@ int rrr_mqtt_connection_parse (
 	pthread_mutex_unlock(&connection->lock);
 
 	out_nolock:
+	return ret;
+}
+
+int rrr_mqtt_connection_check_finalize (
+		struct rrr_mqtt_connection *connection
+) {
+	int ret = 0;
+
+	/* There can be multiple parse threads, make sure we do not block */
+	if (pthread_mutex_trylock(&connection->lock) != 0) {
+		ret = RRR_MQTT_CONNECTION_BUSY;
+		goto out_nolock;
+	}
+
+	if (connection->read_complete == 1) {
+		if (connection->parse_complete != 1) {
+			VL_MSG_ERR("Reading is done for a packet but parsing did not complete. Closing connection.\n");
+			ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+			goto out_unlock;
+		}
+
+		struct rrr_mqtt_p_packet *packet;
+		ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
+		if (rrr_mqtt_p_get_refcount(packet) != 1) {
+			VL_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
+		}
+
+		fifo_buffer_write(&connection->receive_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
+
+		__rrr_mqtt_connection_reset_sessions(connection);
+	}
+
+	out_unlock:
+		pthread_mutex_unlock(&connection->lock);
+
+	out_nolock:
+		return ret;
+}
+
+int rrr_mqtt_connection_read_and_parse (
+		struct rrr_mqtt_connection *connection,
+		void *arg
+) {
+	int ret = RRR_MQTT_CONNECTION_OK;
+
+	if (arg != NULL) {
+		VL_BUG("rrr_mqtt_connection_read_and_parse received non-null custom argument\n");
+	}
+
+	// Do not block while reading a large message, read only 4K each time. This also
+	// goes for threaded reading, the connection lock must be released often to allow
+	// for other iterators to check stuff.
+	ret = rrr_mqtt_connection_read (connection, RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE);
+
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error while reading data from mqtt client. Closing down server.\n");
+		ret =  RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	if ((ret & (RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR)) != 0) {
+		VL_MSG_ERR("Error while reading data from mqtt client, destroying connection.\n");
+		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
+
+	ret = rrr_mqtt_connection_parse (connection);
+
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error while parsing data from mqtt client. Closing down server.\n");
+		ret =  RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	if ((ret & (RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR)) != 0) {
+		VL_MSG_ERR("Error while parsing data from mqtt client, destroying connection.\n");
+		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
+
+	ret = rrr_mqtt_connection_check_finalize (connection);
+
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error while finalizing data from mqtt client. Closing down server.\n");
+		ret =  RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	if ((ret & (RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR)) != 0) {
+		VL_MSG_ERR("Error while finalizing data from mqtt client, destroying connection.\n");
+		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+struct handle_packets_callback {
+	struct rrr_mqtt_data *data;
+	struct rrr_mqtt_connection *connection;
+	int handler_return;
+};
+
+static int __rrr_mqtt_connection_handle_packets_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
+	int ret = FIFO_OK;
+
+	(void)(size);
+
+	struct handle_packets_callback *handle_packets_data = callback_data->private_data;
+	struct rrr_mqtt_data *mqtt_data = handle_packets_data->data;
+	struct rrr_mqtt_connection *connection = handle_packets_data->connection;
+	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
+
+	if (mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler == NULL) {
+		VL_MSG_ERR("No handler specified for packet type %i\n", RRR_MQTT_P_GET_TYPE(packet));
+		return FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+	}
+
+	int tmp = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, connection, packet);
+
+	printf ("handler return: %i\n", handle_packets_data->handler_return);
+
+	if (tmp != RRR_MQTT_CONNECTION_OK) {
+		tmp = tmp & ~(RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION);
+		if (tmp == 0) {
+			handle_packets_data->handler_return = RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		}
+		else {
+			handle_packets_data->handler_return = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		}
+
+		ret = FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+	}
+
+	return ret;
+}
+
+int rrr_mqtt_connection_handle_packets (
+		struct rrr_mqtt_connection *connection,
+		void *arg
+) {
+	int ret = RRR_MQTT_CONNECTION_OK;
+
+	/* There can be multiple parse threads, make sure we do not block */
+	if (pthread_mutex_trylock(&connection->lock) != 0) {
+		ret = RRR_MQTT_CONNECTION_BUSY;
+		goto out_nolock;
+	}
+
+	struct rrr_mqtt_data *data = arg;
+
+	struct handle_packets_callback callback_data = {
+			data, connection, RRR_MQTT_CONNECTION_OK
+	};
+
+	struct fifo_callback_args fifo_callback_data = {
+			NULL, &callback_data, 0
+	};
+
+	ret = fifo_read_clear_forward (
+			&connection->receive_queue.buffer,
+			NULL,
+			__rrr_mqtt_connection_handle_packets_callback,
+			&fifo_callback_data,
+			0
+	);
+
+	if (ret == FIFO_GLOBAL_ERR) {
+		VL_MSG_ERR("Buffer error while handling mqtt packets from client, must exit.\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+	else if (ret != FIFO_OK) {
+		ret = callback_data.handler_return;
+		ret = ret & ~(RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION);
+		if (ret != 0) {
+			VL_MSG_ERR("Internal error while handling packets from mqtt client, must exit. Return is %i.\n", ret);
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			goto out;
+		}
+		VL_MSG_ERR("Soft error while handling packets from mqtt client, destroying connection.\n");
+		ret |= (RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION);
+	}
+
+	out:
+	pthread_mutex_unlock(&connection->lock);
+
+	out_nolock:
+	return ret;
+}
+
+int rrr_mqtt_connection_collection_read_parse_handle (
+		struct rrr_mqtt_connection_collection *connections,
+		struct rrr_mqtt_data *mqtt_data
+) {
+	int ret = 0;
+
+	ret = rrr_mqtt_connection_collection_iterate(connections, rrr_mqtt_connection_read_and_parse, NULL);
+
+	if ((ret & (RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION)) != 0) {
+		VL_MSG_ERR("Soft error in rrr_mqtt_connection_collection_read_parse_handle  (one or more connections had to be closed)\n");
+		ret = 0;
+	}
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error received in rrr_mqtt_connection_collection_read_parse_handle \n");
+		ret = 1;
+	}
+
+	ret = rrr_mqtt_connection_collection_iterate(connections, rrr_mqtt_connection_handle_packets, mqtt_data);
+
+	if ((ret & (RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION)) != 0) {
+		VL_MSG_ERR("Soft error in rrr_mqtt_connection_collection_read_parse_handle  while handling packets (one or more connections had to be closed)\n");
+		ret = 0;
+	}
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error received in rrr_mqtt_connection_collection_read_parse_handle  while handling packets\n");
+		ret = 1;
+	}
+
 	return ret;
 }

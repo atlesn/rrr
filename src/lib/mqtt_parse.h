@@ -59,12 +59,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_MQTT_PARSE_STATUS_SET(s,RRR_MQTT_PARSE_STATUS_ERR)
 
 struct rrr_mqtt_p_packet;
+struct rrr_mqtt_p_type_properties;
 
 struct rrr_mqtt_p_parse_session {
 	int status;
 	const char *buf;
 
 	int header_parse_attempts;
+	const struct rrr_mqtt_p_type_properties *type_properties;
 	struct rrr_mqtt_p_packet *packet;
 
 	ssize_t variable_header_pos;

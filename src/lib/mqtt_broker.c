@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_common.h"
 #include "mqtt_broker.h"
+#include "mqtt_session.h"
+#include "mqtt_session_ram.h"
 
 static void __rrr_mqtt_broker_destroy_listen_fds_elements (struct rrr_mqtt_listen_fd_collection *fds) {
 	pthread_mutex_lock(&fds->lock);
@@ -201,10 +203,180 @@ void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker) {
 	__rrr_mqtt_broker_destroy_listen_fds_elements (&broker->listen_fds);
 }
 
-static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
+struct validate_client_id_callback_data {
+	struct rrr_mqtt_connection *orig_connection;
+	const char *client_id;
+};
+
+static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_connection *connection, void *arg) {
+	struct validate_client_id_callback_data *data = arg;
+
+	if (data->orig_connection == connection) {
+		// Don't validate ourselves (would have been stupid)
+		return RRR_MQTT_CONNECTION_OK;
+	}
+
+	int ret = RRR_MQTT_CONNECTION_OK;
+
+	pthread_mutex_lock(&connection->lock);
+
+	if (connection->state == RRR_MQTT_CONNECTION_STATE_CLOSED) {
+		// Equal name with a CLOSED connection is OK
+		ret = RRR_MQTT_CONNECTION_OK;
+		goto out;
+	}
+
+	/* client_id is not set in the connection untill CONNECT packet is handled */
+	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
+		ret = RRR_MQTT_CONNECTION_ITERATE_STOP;
+		goto out;
+	}
+
+	out:
+	pthread_mutex_unlock(&connection->lock);
+
 	return ret;
 }
+
+/* If the client specifies a Client ID, we do not accept duplicates or IDs beginning
+ * with RRR_MQTT_BROKER_CLIENT_PREFIX. We do, however, accept IDs beginning with the
+ * prefix if a session with this prefix already exists. */
+static int __rrr_mqtt_broker_check_unique_client_id (
+		const char *client_id,
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_broker_data *broker
+) {
+	int ret = 0;
+
+	struct validate_client_id_callback_data callback_data = { connection, client_id };
+
+	/* We need to hold write lock to verify the client ID to avoid races*/
+	ret = rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
+			&broker->mqtt_data.connections,
+			__rrr_mqtt_broker_check_unique_client_id_callback,
+			&callback_data
+	);
+
+	if ((ret & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
+		VL_MSG_ERR("Client id %s was already used in an active connection\n", client_id);
+		return RRR_MQTT_CONNECTION_SOFT_ERROR | (ret & ~RRR_MQTT_CONNECTION_ITERATE_STOP);
+	}
+
+	return ret;
+}
+
+static int __rrr_mqtt_broker_generate_unique_client_id (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_broker_data *broker
+) {
+	int ret = 0;
+	uint32_t serial = 0;
+
+	char *result = malloc(64);
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_broker_generate_client_id\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+	memcpy (result, '\0', 64);
+
+	// Result MUST be set now before iterating so that the client id is
+	// visible to any other threads. On error, the connection destroy
+	// function will free this memory
+	connection->client_id = result;
+
+	int retries = RRR_MQTT_MAX_GENERATED_CLIENT_IDS;
+	while (--retries >= 0) {
+		pthread_mutex_lock(&broker->client_serial_lock);
+		serial = ++(broker->client_serial);
+		pthread_mutex_unlock(&broker->client_serial_lock);
+
+		sprintf(result, RRR_MQTT_BROKER_CLIENT_PREFIX "%u", serial);
+
+		ret = __rrr_mqtt_broker_check_unique_client_id (result, connection, broker);
+
+		if (ret != 0) {
+			ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
+			if (ret == 0) {
+				continue;
+			}
+
+			VL_MSG_ERR("Error while validating client ID in __rrr_mqtt_broker_generate_unique_client_id: %i\n", ret);
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			goto out;
+		}
+	}
+
+	if (retries <= 0) {
+		VL_MSG_ERR("Number of clients reached maximum in __rrr_mqtt_broker_generate_unique_client_id\n");
+		ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+		goto out;
+	}
+
+	out:
+	return RRR_MQTT_CONNECTION_OK;
+}
+
+static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	int ret = RRR_MQTT_CONNECTION_OK;
+
+	struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
+	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
+
+	if (connection->client_id != NULL) {
+		VL_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
+	}
+
+	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
+		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
+		ret = __rrr_mqtt_broker_generate_unique_client_id (connection, broker);
+		if (ret != RRR_MQTT_CONNECTION_OK) {
+			ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
+			if (ret == 0) {
+				ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+			}
+			else {
+				VL_MSG_ERR("Could not generate client identifier in rrr_mqtt_p_handler_connect, result is %i\n", ret);
+				ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			}
+			goto out;
+		}
+	}
+	else {
+		char buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)+1];
+		strncpy(buf, connect->client_identifier, strlen(RRR_MQTT_BROKER_CLIENT_PREFIX));
+		buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)] = '\0';
+
+		if (strcmp(buf, RRR_MQTT_BROKER_CLIENT_PREFIX) == 0) {
+			// TODO : Check if client ID exists in sessions
+			VL_MSG_ERR("Client ID cannot begin with '" RRR_MQTT_BROKER_CLIENT_PREFIX "'\n");
+			ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = __rrr_mqtt_broker_check_unique_client_id (connect->client_identifier, connection, broker);
+		if (ret != 0) {
+			 ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
+			 if (ret != 0) {
+					VL_MSG_ERR("Error while checking for unique client ID in rrr_mqtt_p_handler_connect\n");
+					goto out;
+			 }
+			 VL_MSG_ERR("Client id '%s' from mqtt CONNECT packet was not unique\n", connect->client_identifier);
+			 ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+			 goto out;
+		}
+
+		connection->client_id = malloc(strlen(connect->client_identifier) + 1);
+		strcpy(connection->client_id, connect->client_identifier);
+	}
+
+	printf ("CONNECT: Using client ID %s\n", connect->client_identifier);
+
+	out:
+	RRR_MQTT_P_DECREF(packet);
+	return ret;
+}
+
 static int rrr_mqtt_p_handler_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
 	return ret;
@@ -270,6 +442,7 @@ void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	__rrr_mqtt_broker_destroy_listen_fds(&broker->listen_fds);
 	rrr_mqtt_common_data_destroy(&broker->mqtt_data);
+	pthread_mutex_destroy(&broker->client_serial_lock);
 	free(broker);
 }
 
@@ -287,7 +460,13 @@ int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker, const char *clien
 
 	memset (res, '\0', sizeof(*res));
 
-	if ((ret = rrr_mqtt_common_data_init (&res->mqtt_data, client_name, handler_properties)) != 0) {
+	if ((ret = rrr_mqtt_common_data_init (
+			&res->mqtt_data,
+			client_name,
+			handler_properties,
+			rrr_mqtt_session_collection_ram_new,
+			NULL
+	)) != 0) {
 		VL_MSG_ERR("Could not initialize mqtt data in rrr_mqtt_broker_new\n");
 		goto out_free;
 	}
@@ -297,8 +476,15 @@ int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker, const char *clien
 		goto out_destroy_data;
 	}
 
+	if ((ret = pthread_mutex_init(&res->client_serial_lock, 0)) != 0) {
+		VL_MSG_ERR("Could not initialize lock for client serial number in rrr_mqtt_broker_new\n");
+		goto out_destroy_listen_fds;
+	}
+
 	goto out_success;
 
+	out_destroy_listen_fds:
+		__rrr_mqtt_broker_destroy_listen_fds(&res->listen_fds);
 	out_destroy_data:
 		rrr_mqtt_common_data_destroy(&res->mqtt_data);
 	out_free:
@@ -359,14 +545,6 @@ int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data) {
 	return ret;
 }
 
-int rrr_mqtt_broker_receive_data (struct rrr_mqtt_broker_data *data) {
-	int ret = 0;
-
-	return rrr_mqtt_common_read_and_parse (&data->mqtt_data);
-
-	return ret;
-}
-
 int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 	int ret = 0;
 
@@ -374,7 +552,7 @@ int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_broker_receive_data(data)) != 0) {
+	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data)) != 0) {
 		goto out;
 	}
 

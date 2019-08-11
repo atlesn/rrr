@@ -32,9 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct ip_accept_data;
 struct rrr_mqtt_packet_internal;
 struct rrr_mqtt_data;
+struct rrr_mqtt_session_collection;
 
 #define RRR_MQTT_TYPE_HANDLER_DEFINITION \
-		struct rrr_mqtt_data *data, struct rrr_mqtt_packet_internal *packet
+		struct rrr_mqtt_data *mqtt_data, \
+		struct rrr_mqtt_connection *connection, \
+		struct rrr_mqtt_p_packet *packet
 
 struct rrr_mqtt_type_handler_properties {
 	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
@@ -44,17 +47,20 @@ struct rrr_mqtt_data {
 	struct rrr_mqtt_connection_collection connections;
 	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
+	struct rrr_mqtt_session_collection *sessions;
 };
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const char *client_name,
-		const struct rrr_mqtt_type_handler_properties *handler_properties
+		const struct rrr_mqtt_type_handler_properties *handler_properties,
+		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
+		void *session_initializer_arg
 );
 int rrr_mqtt_common_data_register_connection (
 		struct rrr_mqtt_data *data,
 		const struct ip_accept_data *accept_data
 );
-int rrr_mqtt_common_read_and_parse (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data);
 
 #endif /* RRR_MQTT_COMMON_H */

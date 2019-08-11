@@ -34,14 +34,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_VERSION_3_1_1		4
 #define RRR_MQTT_VERSION_5			5
 
+struct rrr_mqtt_connection;
 struct rrr_mqtt_p_type_properties;
 struct rrr_mqtt_p_protocol_version;
 struct rrr_mqtt_p_parse_session;
 struct rrr_mqtt_p_packet;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
-		struct rrr_mqtt_p_type_properties *type_properties, \
-		struct rrr_mqtt_p_protocol_version *protocol_version
+		const struct rrr_mqtt_p_type_properties *type_properties, \
+		const struct rrr_mqtt_p_protocol_version *protocol_version
 
 #define RRR_MQTT_P_TYPE_FREE_DEFINITION \
 		struct rrr_mqtt_p_packet *packet
@@ -59,6 +60,7 @@ struct rrr_mqtt_p_header {
 struct rrr_mqtt_p_type_properties {
 	/* If has_reserved_flags is non-zero, a packet must have the exact specified flags set to be valid */
 	uint8_t type_id;
+	uint8_t complementary_id; // Used for ACK packets. Zero means non-ack packet.
 	const char *name;
 	uint8_t has_reserved_flags;
 	uint8_t flags;
@@ -70,8 +72,11 @@ struct rrr_mqtt_p_type_properties {
 
 #define RRR_MQTT_P_PACKET_HEADER								\
 	int users;													\
-	struct rrr_mqtt_p_packet *next;								\
 	pthread_mutex_t lock;										\
+	uint8_t type_flags;											\
+	uint16_t packet_identifier;									\
+	uint64_t create_time;										\
+	uint64_t last_attempt;										\
 	const struct rrr_mqtt_p_protocol_version *protocol_version;	\
 	const struct rrr_mqtt_p_type_properties *type_properties
 
@@ -159,8 +164,8 @@ struct rrr_mqtt_p_packet_disconnect {
 struct rrr_mqtt_p_packet_auth {
 	RRR_MQTT_P_PACKET_HEADER;
 };
+
 struct rrr_mqtt_p_queue {
-	/* Must be first */
 	struct fifo_buffer buffer;
 };
 
@@ -181,9 +186,13 @@ struct rrr_mqtt_p_queue {
 #define RRR_MQTT_P_TYPE_DISCONNECT	14
 #define RRR_MQTT_P_TYPE_AUTH		15
 
-#define RRR_MQTT_P_GET_TYPE(p)			(((p)->type & ((uint8_t) 0xF << 4)) >> 4)
-#define RRR_MQTT_P_GET_TYPE_FLAGS(p)	((p)->type & ((uint8_t) 0xF))
+#define RRR_MQTT_P_GET_TYPE(p)			((p)->type_properties->type_id)
+#define RRR_MQTT_P_GET_TYPE_FLAGS(p)	((p)->type_flags)
+#define RRR_MQTT_P_GET_IDENTIFIER(p)	((p)->packet_identifier)
+#define RRR_MQTT_P_GET_TYPE_NAME(p)		((p)->type_properties->name)
 #define RRR_MQTT_P_GET_SIZE(p)			((p)->type_properties->packet_size)
+#define RRR_MQTT_P_GET_COMPLEMENTARY(p)	((p)->type_properties->complementary_id)
+#define RRR_MQTT_P_IS_ACK(p)			((p)->type_properties->complementary_id == 0)
 
 #define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			((1<<0) & (p)->connect_flags)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) & (p)->connect_flags) >> 1)

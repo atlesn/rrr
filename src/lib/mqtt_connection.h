@@ -41,6 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED	4
 #define RRR_MQTT_CONNECTION_STATE_CLOSED						5
 
+struct rrr_mqtt_data;
+
 struct rrr_mqtt_connection_read_session {
 	/*
 	 * A packet processing action might be temporarily paused if the payload
@@ -49,7 +51,6 @@ struct rrr_mqtt_connection_read_session {
 	 * When rx_buf_wpos reaches target_size, the retrieval is complete and the processing
 	 * of the packet may begin.
 	 */
-	int packet_complete;
 
 	ssize_t step_size_limit;
 
@@ -79,7 +80,9 @@ struct rrr_mqtt_connection {
 
 	struct rrr_mqtt_p_queue send_queue;
 	struct rrr_mqtt_p_queue receive_queue;
-	struct rrr_mqtt_p_queue wait_for_ack_queue;
+
+	int read_complete;
+	int parse_complete;
 
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
@@ -98,8 +101,12 @@ struct rrr_mqtt_connection_collection {
 	int write_locked;
 };
 
+// Can ONLY be used when holding collection iterator read lock
 int rrr_mqtt_connection_send_disconnect_and_close (struct rrr_mqtt_connection *connection);
+
+// Can ONLY be used at program exit when only one thread is running
 void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collection *connections);
+
 int rrr_mqtt_connection_collection_init (struct rrr_mqtt_connection_collection *connections);
 int rrr_mqtt_connection_collection_new_connection (
 		struct rrr_mqtt_connection **connection,
@@ -114,19 +121,52 @@ int rrr_mqtt_connection_collection_new_connection (
 #define RRR_MQTT_CONNECTION_SOFT_ERROR			(1<<2)
 #define RRR_MQTT_CONNECTION_BUSY				(1<<3)
 #define RRR_MQTT_CONNECTION_STEP_LIMIT			(1<<4)
+#define RRR_MQTT_CONNECTION_ITERATE_STOP		(1<<5)
 
+// It is possible while being in a callback function for the collection iterator
+// to convert the held read lock to a write lock, in case this function is called
+// to iterate again with write lock held. Before returning, the write lock is
+// converted back to read lock. Returning RRR_MQTT_CONNECTION_DESTROY_CONNECTION
+// from a callback of this function IS NOT allowed.
+int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
+		struct rrr_mqtt_connection_collection *connections,
+		int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
+		void *callback_arg
+);
+
+// Normal iterator, holds read lock. Connections must be destroyed ONLY by returning
+// RRR_MQTT_CONNECTION_DESTROY_CONNECTION from a callback function of this iterator.
+// This does not apply when program is closing and the collection is to be destroyed.
+
+// One MUST NOT work with ANY connections outside iterator callback-context
+
+// If it is wanted to only work with one single connection, one must create a custom
+// callback function and a callback data structure to search for a specific connection
+// and do something with it. It is then possible to detect if the connection
+// actually did exist or if it was destroyed in the meantime before we called the
+// iterator.
 int rrr_mqtt_connection_collection_iterate (
 		struct rrr_mqtt_connection_collection *connections,
 		int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
 		void *callback_arg
 );
 
-int rrr_mqtt_connection_read (
+// These functions may be called asynchronously, BUT they must ONLY be used as callbacks
+// for the iterator above. It is and error to use these functions as callback for
+// rrr_mqtt_connection_collection_iterate_reenter_read_to_write
+int rrr_mqtt_connection_read_and_parse (
 		struct rrr_mqtt_connection *connection,
-		int read_step_max_size
+		void *arg
 );
-int rrr_mqtt_connection_parse (
-		struct rrr_mqtt_connection *connection
+int rrr_mqtt_connection_handle_packets (
+		struct rrr_mqtt_connection *connection,
+		void *arg
+);
+
+// Iterate connections and do basically everything. mqtt_data is needed for handling packets.
+int rrr_mqtt_connection_collection_read_parse_handle (
+		struct rrr_mqtt_connection_collection *connections,
+		struct rrr_mqtt_data *mqtt_data
 );
 
 #endif /* RRR_MQTT_CONNECTION_H */

@@ -83,6 +83,8 @@ static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const
 }
 
 static inline int __rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end) {
+	*result = 0;
+
 	if (*pos >= end) {
 		return 0;
 	}

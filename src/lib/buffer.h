@@ -258,11 +258,14 @@ static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wa
 #define FIFO_SEARCH_GIVE	(1 << 2)
 #define FIFO_SEARCH_FREE	(1 << 3)
 
+int fifo_buffer_clear (
+		struct fifo_buffer *buffer
+);
 int fifo_search (
-	struct fifo_buffer *buffer,
-	int (*callback)(FIFO_CALLBACK_ARGS),
-	struct fifo_callback_args *callback_data,
-	unsigned int wait_milliseconds
+		struct fifo_buffer *buffer,
+		int (*callback)(FIFO_CALLBACK_ARGS),
+		struct fifo_callback_args *callback_data,
+		unsigned int wait_milliseconds
 );
 int fifo_read_minimum (
 		struct fifo_buffer *buffer,

@@ -134,6 +134,40 @@ void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 }
 
 /*
+ * Remove all entries from a buffer
+ */
+int fifo_buffer_clear(struct fifo_buffer *buffer) {
+	fifo_write_lock(buffer);
+	if (buffer->invalid) {
+		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
+		fifo_write_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
+	}
+
+	struct fifo_buffer_entry *entry = buffer->gptr_first;
+	int freed_counter = 0;
+	while (entry != NULL) {
+		struct fifo_buffer_entry *next = entry->next;
+		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+
+		buffer->free_entry (entry->data);
+		free (entry);
+		freed_counter++;
+		entry = next;
+	}
+
+	VL_DEBUG_MSG_1 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+
+	buffer->gptr_first = NULL;
+	buffer->gptr_last = NULL;
+	buffer->entry_count = 0;
+
+	fifo_write_unlock(buffer);
+
+	return FIFO_OK;
+}
+
+/*
  * Search entries and act according to the return value of the callback function. We
  * can delete entries or stop looping. See buffer.h . The callback function is expected
  * to take control of the memory of an entry which fifo_search deletes, if not
@@ -400,7 +434,7 @@ int fifo_read_clear_forward (
 			}
 			if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {
 				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
-				ret = 1;
+				ret = FIFO_CALLBACK_ERR;
 			}
 			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR);
 			if (ret_tmp != 0) {
