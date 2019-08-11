@@ -100,6 +100,8 @@ struct fifo_buffer {
 
 	struct fifo_buffer_ratelimit ratelimit;
 
+	void *free_entry;
+
 	sem_t new_data_available;
 };
 
@@ -295,5 +297,6 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 int fifo_buffer_init(struct fifo_buffer *buffer);
+int fifo_buffer_init_custom_free(struct fifo_buffer *buffer, void (*custom_free)(void *arg));
 
 #endif

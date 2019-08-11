@@ -51,7 +51,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 		struct fifo_buffer_entry *next = entry->next;
 		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
-		free (entry->data);
+		buffer->free_entry (entry->data);
 		free (entry);
 		freed_counter++;
 		entry = next;
@@ -105,12 +105,23 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 	if (ret == 0) {
 		pthread_mutex_lock(&buffer->write_mutex);
 		buffer->invalid = 0;
+		buffer->free_entry = free;
 		pthread_mutex_unlock(&buffer->write_mutex);
 	}
 	else {
 		ret = 1;
 	}
 
+	return ret;
+}
+
+int fifo_buffer_init_custom_free(struct fifo_buffer *buffer, void (*custom_free)(void *arg)) {
+	int ret = fifo_buffer_init(buffer);
+	if (ret == 0) {
+		pthread_mutex_lock(&buffer->write_mutex);
+		buffer->free_entry = custom_free;
+		pthread_mutex_unlock(&buffer->write_mutex);
+	}
 	return ret;
 }
 
@@ -177,7 +188,7 @@ int fifo_search (
 			cleared_entries++;
 
 			if ((actions & FIFO_SEARCH_FREE) != 0) {
-				free(entry->data);
+				buffer->free_entry(entry->data);
 			}
 			VL_DEBUG_MSG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
 			free(entry);
@@ -257,7 +268,7 @@ int fifo_clear_order_lt (
 
 			VL_DEBUG_MSG_4 ("Buffer free entry %p in ordered clear with data %p order %" PRIu64 "\n", entry, entry->data, entry->order);
 
-			free(entry->data);
+			buffer->free_entry(entry->data);
 			free(entry);
 		}
 	}
@@ -364,7 +375,7 @@ int fifo_read_clear_forward (
 			}
 			if ((ret_tmp & FIFO_SEARCH_FREE) != 0) {
 					// Entry has not been processed and/or freed callback (for some reason)
-					free(current->data);
+					buffer->free_entry(current->data);
 			}
 			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
 				// Stop processing and put the rest back into the buffer
@@ -660,7 +671,7 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 
 	if (buffer->invalid) {
 		fifo_write_unlock(buffer);
-		free(entry->data);
+		buffer->free_entry(entry->data);
 		free(entry);
 		return;
 	}
@@ -703,7 +714,7 @@ void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char 
 
 	if (buffer->invalid) {
 		fifo_write_unlock(buffer);
-		free(entry->data);
+		buffer->free_entry(entry->data);
 		free(entry);
 		return;
 	}
