@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 #include "mqtt_packet.h"
+#include "mqtt_parse.h"
 
 int __rrr_mqtt_connection_collection_read_lock (struct rrr_mqtt_connection_collection *connections) {
 	int ret = 0;
@@ -235,7 +236,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 	fifo_buffer_invalidate(&connection->wait_for_ack_queue.buffer);
 
 	RRR_FREE_IF_NOT_NULL(connection->read_session.rx_buf);
-	rrr_mqtt_packet_parse_session_destroy(&connection->parse_session);
+	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 
 	pthread_mutex_destroy (&connection->lock);
 
@@ -266,9 +267,9 @@ static int __rrr_mqtt_connection_new (
 		goto out;
 	}
 
-	ret |= fifo_buffer_init(&res->receive_queue.buffer);
-	ret |= fifo_buffer_init(&res->send_queue.buffer);
-	ret |= fifo_buffer_init(&res->wait_for_ack_queue.buffer);
+	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_decref);
+	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_decref);
+	ret |= fifo_buffer_init_custom_free(&res->wait_for_ack_queue.buffer,rrr_mqtt_p_decref);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
@@ -658,7 +659,7 @@ int rrr_mqtt_connection_parse (
 
 	if (connection->read_session.rx_buf != NULL) {
 		if (connection->parse_session.buf == NULL) {
-			rrr_mqtt_packet_parse_session_init (
+			rrr_mqtt_parse_session_init (
 					&connection->parse_session,
 					connection->read_session.rx_buf,
 					connection->read_session.rx_buf_wpos
@@ -666,12 +667,12 @@ int rrr_mqtt_connection_parse (
 		}
 
 		ret = rrr_mqtt_packet_parse (&connection->parse_session);
-		if (RRR_MQTT_P_PARSE_IS_ERR(&connection->parse_session)) {
+		if (RRR_MQTT_PARSE_IS_ERR(&connection->parse_session)) {
 			/* Error which was the remote's fault, close connection */
 			ret = RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 			goto out_unlock;
 		}
-		if (RRR_MQTT_P_PARSE_FIXED_HEADER_IS_DONE(&connection->parse_session)) {
+		if (RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(&connection->parse_session)) {
 			connection->read_session.target_size = connection->parse_session.target_size;
 			if (connection->read_session.rx_buf_wpos == connection->read_session.target_size) {
 				connection->read_session.packet_complete = 1;
@@ -682,10 +683,13 @@ int rrr_mqtt_connection_parse (
 				goto out_unlock;
 			}
 		}
-		if (RRR_MQTT_P_PARSE_IS_COMPLETE(&connection->parse_session)) {
-			struct rrr_mqtt_packet_internal *packet;
+		if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
+			struct rrr_mqtt_p_packet *packet;
 			ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
-			abort();
+			if (rrr_mqtt_p_get_refcount(packet) != 1) {
+				VL_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
+			}
+			fifo_buffer_write(&connection->receive_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
 		}
 	}
 

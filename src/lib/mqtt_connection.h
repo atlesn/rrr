@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "ip.h"
 #include "mqtt_packet.h"
+#include "mqtt_parse.h"
 
 #define RRR_MQTT_CONNECTION_TYPE_IPV4 4
 #define RRR_MQTT_CONNECTION_TYPE_IPV6 6

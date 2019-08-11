@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "buffer.h"
+#include "mqtt_property.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -33,8 +34,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_VERSION_3_1_1		4
 #define RRR_MQTT_VERSION_5			5
 
-struct rrr_mqtt_p_packet;
+struct rrr_mqtt_p_type_properties;
+struct rrr_mqtt_p_protocol_version;
 struct rrr_mqtt_p_parse_session;
+struct rrr_mqtt_p_packet;
+
+#define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
+		struct rrr_mqtt_p_type_properties *type_properties, \
+		struct rrr_mqtt_p_protocol_version *protocol_version
+
+#define RRR_MQTT_P_TYPE_FREE_DEFINITION \
+		struct rrr_mqtt_p_packet *packet
 
 struct rrr_mqtt_p_protocol_version {
 	uint8_t id;
@@ -46,83 +56,15 @@ struct rrr_mqtt_p_header {
 	uint8_t length[4];
 } __attribute__((packed));
 
-struct rrr_mqtt_p_properties_header {
-	/* Data starts at .data[.length_decoded] */
-	uint32_t length_decoded;
-	union {
-		uint8_t length[4];
-		char data[5];
-	};
-};
-
-struct rrr_mqtt_p_property_definition {
-	int type;
-	uint8_t identifier;
-
-	/* Human readable name */
-	const char *name;
-};
-
-struct rrr_mqtt_p_property {
-	struct rrr_mqtt_p_property *next;
-
-	int order;
-
-	/* Some properties have two values */
-	struct rrr_mqtt_p_property *sibling;
-	const struct rrr_mqtt_p_property_definition *definition;
-	uint8_t internal_data_type;
-	ssize_t length;
-	char *data;
-};
-
-/* Properties are stored in the order of which they appear in the packets */
-struct rrr_mqtt_p_property_collection {
-	struct rrr_mqtt_p_property *first;
-	struct rrr_mqtt_p_property *last;
-	int count;
-};
-
-#define RRR_MQTT_P_PARSE_STATUS_NONE					0
-#define RRR_MQTT_P_PARSE_STATUS_FIXED_HEADER_DONE		(1<<0)
-#define RRR_MQTT_P_PARSE_STATUS_VARIABLE_HEADER_DONE	(1<<1)
-#define RRR_MQTT_P_PARSE_STATUS_PAYLOAD_DONE			(1<<2)
-#define RRR_MQTT_P_PARSE_STATUS_COMPLETE				(1<<3)
-#define RRR_MQTT_P_PARSE_STATUS_ERR						(1<<15)
-
-#define RRR_MQTT_P_PARSE_FIXED_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_P_PARSE_STATUS_FIXED_HEADER_DONE) > 0)
-#define RRR_MQTT_P_PARSE_VARIABLE_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_P_PARSE_STATUS_VARIABLE_HEADER_DONE) > 0)
-#define RRR_MQTT_P_PARSE_PAYLOAD_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_P_PARSE_STATUS_PAYLOAD_DONE) > 0)
-#define RRR_MQTT_P_PARSE_IS_COMPLETE(s) \
-	(((s)->status & RRR_MQTT_P_PARSE_STATUS_COMPLETE) > 0)
-#define RRR_MQTT_P_PARSE_IS_ERR(s) \
-	(((s)->status & RRR_MQTT_P_PARSE_STATUS_ERR) > 0)
-#define RRR_MQTT_P_PARSE_STATUS_SET(s,f) \
-	((s)->status |= (f))
-#define RRR_MQTT_P_PARSE_STATUS_SET_ERR(s) \
-	RRR_MQTT_P_PARSE_STATUS_SET(s,RRR_MQTT_P_PARSE_STATUS_ERR)
-
-#define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
-		struct rrr_mqtt_p_type_properties *type_properties, \
-		struct rrr_mqtt_p_protocol_version *protocol_version
-
-#define RRR_MQTT_P_TYPE_PARSER_DEFINITION \
-		struct rrr_mqtt_p_parse_session *session
-
-#define RRR_MQTT_P_TYPE_FREE_DEFINITION \
-		struct rrr_mqtt_p_packet *packet
-
 struct rrr_mqtt_p_type_properties {
 	/* If has_reserved_flags is non-zero, a packet must have the exact specified flags set to be valid */
 	uint8_t type_id;
+	const char *name;
 	uint8_t has_reserved_flags;
 	uint8_t flags;
 	ssize_t packet_size;
 	struct rrr_mqtt_p_packet *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
-	int (*parse)(RRR_MQTT_P_TYPE_PARSER_DEFINITION);
+	int (*parse)(struct rrr_mqtt_p_parse_session *session);
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
 };
 
@@ -144,14 +86,15 @@ struct rrr_mqtt_p_packet {
 		pthread_mutex_unlock(&p->lock);		\
 	} while (0)
 
-#define RRR_MQTT_P_DECREF(p)				\
-	do {									\
-		pthread_mutex_lock(&p->lock);		\
-		--p->users;							\
-		pthread_mutex_unlock(&p->lock);		\
-		if (p->users == 0) {				\
-			p->type_properties->free(p);	\
-		}									\
+#define RRR_MQTT_P_DECREF(p)					\
+	do {										\
+		pthread_mutex_lock(&(p)->lock);			\
+		--(p)->users;							\
+		pthread_mutex_unlock(&(p)->lock);		\
+		if ((p)->users == 0) {					\
+			pthread_mutex_destroy(&(p)->lock);	\
+			(p)->type_properties->free(p);		\
+		}										\
 	} while (0)
 
 struct rrr_mqtt_p_packet_connect {
@@ -216,24 +159,6 @@ struct rrr_mqtt_p_packet_disconnect {
 struct rrr_mqtt_p_packet_auth {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-
-struct rrr_mqtt_p_parse_session {
-	int status;
-	const char *buf;
-
-	int header_parse_attempts;
-	struct rrr_mqtt_p_packet *packet;
-
-	ssize_t variable_header_pos;
-	ssize_t payload_pos;
-
-	ssize_t buf_size;
-	ssize_t target_size;
-
-	uint8_t type;
-	uint8_t type_flags;
-};
-
 struct rrr_mqtt_p_queue {
 	/* Must be first */
 	struct fifo_buffer buffer;
@@ -258,6 +183,7 @@ struct rrr_mqtt_p_queue {
 
 #define RRR_MQTT_P_GET_TYPE(p)			(((p)->type & ((uint8_t) 0xF << 4)) >> 4)
 #define RRR_MQTT_P_GET_TYPE_FLAGS(p)	((p)->type & ((uint8_t) 0xF))
+#define RRR_MQTT_P_GET_SIZE(p)			((p)->type_properties->packet_size)
 
 #define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			((1<<0) & (p)->connect_flags)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) & (p)->connect_flags) >> 1)
@@ -267,20 +193,16 @@ struct rrr_mqtt_p_queue {
 #define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) & (p)->connect_flags) >> 6)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) & (p)->connect_flags) >> 7)
 
-void rrr_mqtt_packet_parse_session_destroy (
-		struct rrr_mqtt_p_parse_session *session
-);
-void rrr_mqtt_packet_parse_session_init (
-		struct rrr_mqtt_p_parse_session *session,
-		const char *buf,
-		ssize_t buf_size
-);
-int rrr_mqtt_packet_parse (
-		struct rrr_mqtt_p_parse_session *session
-);
-int rrr_mqtt_packet_parse_finalize (
-		struct rrr_mqtt_p_packet **packet,
-		struct rrr_mqtt_p_parse_session *session
-);
+
+const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8_t id);
+const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_properties (uint8_t id);
+void rrr_mqtt_p_decref (void *packet);
+static inline int rrr_mqtt_p_get_refcount (struct rrr_mqtt_p_packet *packet) {
+	int ret = 0;
+	pthread_mutex_lock(&packet->lock);
+	ret = packet->users;
+	pthread_mutex_unlock(&packet->lock);
+	return ret;
+}
 
 #endif /* RRR_MQTT_PACKET_H */

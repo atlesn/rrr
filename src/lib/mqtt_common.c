@@ -113,7 +113,7 @@ int __rrr_mqtt_common_read_and_parse_callback (struct rrr_mqtt_connection *conne
 
 	ret = rrr_mqtt_connection_parse (connection);
 
-	if (connection->read_session.packet_complete == 1 && !RRR_MQTT_P_PARSE_IS_COMPLETE(&connection->parse_session)) {
+	if (connection->read_session.packet_complete == 1 && !RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
 		VL_MSG_ERR("Reading is done for a packet but parsing did not complete. Closing connection.\n");
 		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
 		goto out;

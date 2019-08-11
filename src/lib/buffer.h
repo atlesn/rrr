@@ -100,7 +100,7 @@ struct fifo_buffer {
 
 	struct fifo_buffer_ratelimit ratelimit;
 
-	void *free_entry;
+	void (*free_entry)(void *arg);
 
 	sem_t new_data_available;
 };
