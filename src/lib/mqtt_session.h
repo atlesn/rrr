@@ -55,10 +55,12 @@ struct rrr_mqtt_session_collection_methods {
 
 	// Get a new or old session based on client id. If an old session
 	// was used, session_present is set to 1
-	struct rrr_mqtt_session *(*get_session) (
+	int (*get_session) (
+			struct rrr_mqtt_session **target,
 			struct rrr_mqtt_session_collection *collection,
 			const char *client_id,
-			int *session_present
+			int *session_present,
+			int no_creation
 	);
 
 	// SESSION METHODS

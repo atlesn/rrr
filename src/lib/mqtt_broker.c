@@ -208,7 +208,7 @@ struct validate_client_id_callback_data {
 	const char *client_id;
 };
 
-static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_connection *connection, void *arg) {
+static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (struct rrr_mqtt_connection *connection, void *arg) {
 	struct validate_client_id_callback_data *data = arg;
 
 	if (data->orig_connection == connection) {
@@ -226,10 +226,23 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_co
 		goto out;
 	}
 
-	/* client_id is not set in the connection untill CONNECT packet is handled */
+	/* client_id is not set in the connection until CONNECT packet is handled */
 	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
-		ret = RRR_MQTT_CONNECTION_ITERATE_STOP;
-		goto out;
+		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
+		ret = rrr_mqtt_connection_send_disconnect_and_close_unlocked(connection);
+		if (ret != RRR_MQTT_CONNECTION_OK) {
+			// On soft error, we cannot be sure that the existing client was actually
+			// disconnected, and we must disallow the new connection
+			if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
+				VL_MSG_ERR("Soft error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
+				ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
+			}
+			if (ret != RRR_MQTT_CONNECTION_OK) {
+				VL_MSG_ERR("Internal error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
+				ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			}
+			ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
+		}
 	}
 
 	out:
@@ -240,8 +253,9 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_co
 
 /* If the client specifies a Client ID, we do not accept duplicates or IDs beginning
  * with RRR_MQTT_BROKER_CLIENT_PREFIX. We do, however, accept IDs beginning with the
- * prefix if a session with this prefix already exists. */
-static int __rrr_mqtt_broker_check_unique_client_id (
+ * prefix if a session with this prefix already exists. If a new connection with an
+ * existing client ID appears, the old client is to be disconnected. */
+static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect (
 		const char *client_id,
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_broker_data *broker
@@ -253,13 +267,24 @@ static int __rrr_mqtt_broker_check_unique_client_id (
 	/* We need to hold write lock to verify the client ID to avoid races*/
 	ret = rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 			&broker->mqtt_data.connections,
-			__rrr_mqtt_broker_check_unique_client_id_callback,
+			__rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback,
 			&callback_data
 	);
 
-	if ((ret & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
-		VL_MSG_ERR("Client id %s was already used in an active connection\n", client_id);
-		return RRR_MQTT_CONNECTION_SOFT_ERROR | (ret & ~RRR_MQTT_CONNECTION_ITERATE_STOP);
+	if (ret != RRR_MQTT_CONNECTION_OK) {
+		if ((ret & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
+			VL_DEBUG_MSG_1("Client id %s was already used in an active connection, the old one was disconnected\n", client_id);
+			ret = (ret & ~RRR_MQTT_CONNECTION_ITERATE_STOP);
+		}
+		if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while checking for unique client ID %s, must disconnect the client\n", client_id);
+			ret = (ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR);
+		}
+		if (ret != 0) {
+			VL_MSG_ERR("Internal error while checking for unique client ID %s, must close the server.\n", client_id);
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		}
+		ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
 	}
 
 	return ret;
@@ -278,7 +303,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 		goto out;
 	}
-	memcpy (result, '\0', 64);
+	memset (result, '\0', 64);
 
 	// Result MUST be set now before iterating so that the client id is
 	// visible to any other threads. On error, the connection destroy
@@ -293,7 +318,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 
 		sprintf(result, RRR_MQTT_BROKER_CLIENT_PREFIX "%u", serial);
 
-		ret = __rrr_mqtt_broker_check_unique_client_id (result, connection, broker);
+		ret = __rrr_mqtt_broker_check_unique_client_id_or_disconnect (result, connection, broker);
 
 		if (ret != 0) {
 			ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
@@ -323,9 +348,15 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
 
+	int session_present = 0;
+	struct rrr_mqtt_session *session = NULL;
+	struct rrr_mqtt_p_packet_connack *connack = NULL;
+
 	if (connection->client_id != NULL) {
 		VL_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
 	}
+
+	connack = (struct rrr_mqtt_p_packet_connack *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_CONNACK, connect->protocol_version);
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
 		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
@@ -343,18 +374,30 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 	}
 	else {
-		char buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)+1];
-		strncpy(buf, connect->client_identifier, strlen(RRR_MQTT_BROKER_CLIENT_PREFIX));
-		buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)] = '\0';
+		if (strlen(connect->client_identifier) >= strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)) {
+			char buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)+1];
+			strncpy(buf, connect->client_identifier, strlen(RRR_MQTT_BROKER_CLIENT_PREFIX));
+			buf[strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)] = '\0';
 
-		if (strcmp(buf, RRR_MQTT_BROKER_CLIENT_PREFIX) == 0) {
-			// TODO : Check if client ID exists in sessions
-			VL_MSG_ERR("Client ID cannot begin with '" RRR_MQTT_BROKER_CLIENT_PREFIX "'\n");
-			ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
-			goto out;
+			// Disallow client ID prefix which we use for generating random client IDs unless session already exists
+			if (strcmp(buf, RRR_MQTT_BROKER_CLIENT_PREFIX) == 0) {
+				ret = mqtt_data->sessions->methods->get_session(&session, mqtt_data->sessions, connect->client_identifier, &session_present, 1);
+				if (ret != RRR_MQTT_SESSION_OK) {
+					if (ret )
+					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+					VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect A\n");
+					goto out;
+				}
+				if (session == NULL) {
+					VL_MSG_ERR("Client ID cannot begin with '" RRR_MQTT_BROKER_CLIENT_PREFIX "'\n");
+					ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+					goto out;
+				}
+			}
 		}
 
-		ret = __rrr_mqtt_broker_check_unique_client_id (connect->client_identifier, connection, broker);
+		// If client ID is already used for active connection, reject it
+		ret = __rrr_mqtt_broker_check_unique_client_id_or_disconnect (connect->client_identifier, connection, broker);
 		if (ret != 0) {
 			 ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
 			 if (ret != 0) {
@@ -372,7 +415,49 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	printf ("CONNECT: Using client ID %s\n", connect->client_identifier);
 
+	if (session == NULL) {
+		// Set session not present
+
+		ret = mqtt_data->sessions->methods->get_session(&session, mqtt_data->sessions, connect->client_identifier, &session_present, 0);
+		if (ret != RRR_MQTT_SESSION_OK || session == NULL) {
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect B\n");
+			goto out;
+		}
+	}
+
+	/*
+	 * 	int (*init_session) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			uint32_t session_expiry,
+			uint32_t retry_interval,
+			uint32_t max_in_flight,
+			int clean_session,
+			int *session_was_present
+	);
+	 */
+
+	ret = mqtt_data->sessions->methods->init_session(mqtt_data->sessions, &session, 60, 5, 10, RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect), &session_present);
+	if (ret != RRR_MQTT_SESSION_OK) {
+		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {
+
+		}
+	}
+	connack->ack_flags = session_present;
+
+	connection->state = RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED;
+	ret = rrr_mqtt_connection_queue_outbound_packet_iterator_ctx(connection, (struct rrr_mqtt_p_packet *) connack);
+	// The handler will take care of the memory of the packet regardless of errors
+	connack = NULL;
+
+	if (ret != 0) {
+		VL_MSG_ERR("Error occured while queing CONNACK for sending in rrr_mqtt_p_handler_connect\n");
+		goto out;
+	}
+
 	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }

@@ -12,7 +12,7 @@ librrr_la_LDFLAGS = -lpthread -ldl ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LD
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c ${encryption} \
 ip.c types.c version.c configuration.c settings.c instance_config.c common.c \
 mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
-mqtt_session.c mqtt_session_ram.c utf8.c \
+mqtt_session.c mqtt_session_ram.c mqtt_assemble.c utf8.c \
 instances.c senders.c poll_helper.c modules.c rrr_socket.c rrr_socket_msg.c ${mysql}
 
 if VL_WITH_PYTHON3

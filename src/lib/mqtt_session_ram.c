@@ -65,39 +65,60 @@ static int __rrr_mqtt_session_collection_ram_maintain (struct rrr_mqtt_session_c
 	return 0;
 }
 
-static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_create_session (
+int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
+		struct rrr_mqtt_session_ram **target,
+		struct rrr_mqtt_session_collection_ram_data *data,
 		const char *client_id
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
+	int ret = RRR_MQTT_SESSION_OK;
+
+	*target = NULL;
 
 	result = malloc(sizeof(*result));
 	if (result == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked A\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
 	}
 	memset(result, '\0', sizeof(*result));
 
 	if (fifo_buffer_init_custom_free(&result->send_queue.buffer, rrr_mqtt_p_decref) != 0) {
 		VL_MSG_ERR("Could not initialize buffer in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out_free_result;
 	}
 
 	result->client_id = malloc(strlen(client_id) + 1);
 	if (result->client_id == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked B\n");
-		goto out_free_result;
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_buffer;
 	}
 	strcpy (result->client_id, client_id);
 
 	result->users = 1;
 
+	result->next = data->first_session;
+	data->first_session = result;
+
+	*target = result;
+
 	goto out;
 
+	out_destroy_buffer:
+	fifo_buffer_invalidate(&result->send_queue.buffer);
+//	TODO : Implement
+//	fifo_buffer_destroy(&result->send_queue.buffer);
+
 	out_free_result:
-	RRR_FREE_IF_NOT_NULL(result);
+	if (result != NULL) {
+		RRR_FREE_IF_NOT_NULL(result->client_id);
+		RRR_FREE_IF_NOT_NULL(result);
+	}
 
 	out:
-	return result;
+	return ret;
 }
 
 static void __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *session) {
@@ -191,17 +212,26 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 			}
 			result = test;
 		}
+		test = test->next;
 	}
 
 	return result;
 }
 
-static struct rrr_mqtt_session *__rrr_mqtt_session_collection_ram_get_session (
+static int __rrr_mqtt_session_collection_ram_get_session (
+		struct rrr_mqtt_session **target,
 		struct rrr_mqtt_session_collection *sessions,
 		const char *client_id,
-		int *session_present
+		int *session_present,
+		int no_creation
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
+
+	int ret = RRR_MQTT_SESSION_OK;
+
+	*target = NULL;
+	*session_present = 0;
+
 	struct rrr_mqtt_session_ram *result = NULL;
 
 	pthread_mutex_lock(&data->lock);
@@ -210,13 +240,20 @@ static struct rrr_mqtt_session *__rrr_mqtt_session_collection_ram_get_session (
 	if (result != NULL) {
 		*session_present = 1;
 	}
-	else {
-		result = __rrr_mqtt_session_collection_ram_create_session (client_id);
-		*session_present = 0;
+	else if (no_creation == 0) {
+		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (&result, data, client_id);
+		if (ret != RRR_MQTT_SESSION_OK) {
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out_unlock;
+		}
 	}
+
+	*target = (struct rrr_mqtt_session *) result;
+
+	out_unlock:
 	pthread_mutex_unlock(&data->lock);
 
-	return (result != NULL ? &result->session : NULL);
+	return ret;
 }
 
 static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_find_and_incref (
@@ -500,7 +537,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	return RRR_MQTT_SESSION_DELETED;
 }
 
-const struct rrr_mqtt_session_collection_methods methods[] = {
+const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,
@@ -522,7 +559,7 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 	struct rrr_mqtt_session_collection *res = NULL;
 	if (rrr_mqtt_session_collection_new (
 			&res,
-			methods
+			&methods
 	) != 0) {
 		VL_MSG_ERR("Could not create session collection in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;

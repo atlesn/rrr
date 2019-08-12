@@ -501,6 +501,8 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session) {
 	}
 
 	// ALLOCATE PACKET
+	// NOTE: We do not deallocate the packet here on error, it is done when the parse session is
+	//       destroyed
 	session->packet = session->type_properties->allocate(session->type_properties, protocol_version);
 	connect = (struct rrr_mqtt_p_packet_connect *) session->packet;
 

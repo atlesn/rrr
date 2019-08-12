@@ -101,8 +101,8 @@ struct rrr_mqtt_connection_collection {
 	int write_locked;
 };
 
-// Can ONLY be used when holding collection iterator read lock
-int rrr_mqtt_connection_send_disconnect_and_close (struct rrr_mqtt_connection *connection);
+// Can ONLY be used when holding collection iterator read or write lock AND lock on the connection
+int rrr_mqtt_connection_send_disconnect_and_close_unlocked (struct rrr_mqtt_connection *connection);
 
 // Can ONLY be used at program exit when only one thread is running
 void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collection *connections);
@@ -135,7 +135,7 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 );
 
 // Normal iterator, holds read lock. Connections must be destroyed ONLY by returning
-// RRR_MQTT_CONNECTION_DESTROY_CONNECTION from a callback function of this iterator.
+// RRR_MQTT_CONNECTION_DESTROY_CONNECTION from a callback function of an iterator.
 // This does not apply when program is closing and the collection is to be destroyed.
 
 // One MUST NOT work with ANY connections outside iterator callback-context
@@ -151,7 +151,7 @@ int rrr_mqtt_connection_collection_iterate (
 		void *callback_arg
 );
 
-// These functions may be called asynchronously, BUT they must ONLY be used as callbacks
+// These functions may be called asynchronously, BUT they MUST ONLY be used as callbacks
 // for the iterator above. It is and error to use these functions as callback for
 // rrr_mqtt_connection_collection_iterate_reenter_read_to_write
 int rrr_mqtt_connection_read_and_parse (
@@ -162,6 +162,37 @@ int rrr_mqtt_connection_handle_packets (
 		struct rrr_mqtt_connection *connection,
 		void *arg
 );
+
+// These functions MUST also be used ONLY in iterator context. Functions with the
+// connection/packet argument pair is also supported by the iterator_ctx_do-function
+// which can use these as callbacks. This keeps us from writing callbacks for some
+// common operations.
+int rrr_mqtt_connection_queue_outbound_packet_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
+);
+
+// Special iterator for functions which accept connection/packet arguments. The callback
+// is called exactly one time, and then with the provided connection as argument. The
+// return value from the callback is returned. If the connection was destroyed recently,
+// the callback is not called and a soft error is returned.
+int rrr_mqtt_connection_with_iterator_ctx_do (
+		struct rrr_mqtt_connection_collection *connections,
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet,
+		int (*callback)(struct rrr_mqtt_connection *connection, struct rrr_mqtt_p_packet *packet)
+);
+
+// Helper functions to wrap connection/packet argument pair functions into iterator context. Might
+// deadlock if already in iterator context, use the XXX_iterator_ctx-functions above if you already
+// are in iterator context
+static int rrr_mqtt_connection_queue_outbound_packet (
+		struct rrr_mqtt_connection_collection *connections,
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
+) {
+	return rrr_mqtt_connection_with_iterator_ctx_do(connections, connection, packet, rrr_mqtt_connection_queue_outbound_packet_iterator_ctx);
+}
 
 // Iterate connections and do basically everything. mqtt_data is needed for handling packets.
 int rrr_mqtt_connection_collection_read_parse_handle (

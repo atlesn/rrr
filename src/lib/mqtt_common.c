@@ -37,7 +37,7 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	}
 
 	if (data->sessions != NULL) {
-		data->sessions->destroy(data->sessions);
+		data->sessions->methods->destroy(data->sessions);
 	}
 
 	*(data->client_name) = '\0';
