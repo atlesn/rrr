@@ -163,6 +163,8 @@ static void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 	}
 }
 
+// TODO : Allow to call this function while holding read lock
+
 static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	if (buffer->write_queue_entry_count == 0) {
@@ -178,12 +180,16 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 	if (entry_count == 0) {
 		fifo_write_lock(buffer);
 		__fifo_merge_write_queue_nolock(buffer);
-		fifo_write_unlock(buffer);
 	}
 	else if (fifo_write_trylock(buffer) == 0) {
 		__fifo_merge_write_queue_nolock(buffer);
-		fifo_write_unlock(buffer);
 	}
+	else {
+		return;
+	}
+
+	fifo_write_unlock(buffer);
+	__fifo_buffer_set_data_available(buffer);
 }
 
 /*
