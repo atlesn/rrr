@@ -28,6 +28,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "../global.h"
 
+static void __fifo_merge_write_queue_nolock(struct fifo_buffer *buffer) {
+	// Merge write queue and buffer
+	if (buffer->gptr_last == NULL) {
+		buffer->gptr_first = buffer->gptr_write_queue_first;
+		buffer->gptr_last = buffer->gptr_write_queue_last;
+	}
+	else {
+		buffer->gptr_last->next = buffer->gptr_write_queue_first;
+		buffer->gptr_last = buffer->gptr_write_queue_last;
+	}
+
+	int merge_entries = 0;
+	int merge_result = 0;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	merge_entries = buffer->write_queue_entry_count;
+	buffer->entry_count += buffer->write_queue_entry_count;
+	buffer->write_queue_entry_count = 0;
+	merge_result = buffer->entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+//	VL_DEBUG_MSG_4("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+//			buffer, merge_entries, merge_result);
+	VL_DEBUG_MSG_1("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+			buffer, merge_entries, merge_result);
+}
+
 /*
  * Set the invalid flag on the buffer, preventing new readers and writers from
  * using the buffer. After already initiated reads and writes have completed,
@@ -45,6 +72,9 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 		pthread_mutex_unlock (&buffer->mutex);
 		pthread_mutex_lock (&buffer->mutex);
 	}
+
+	__fifo_merge_write_queue_nolock(buffer);
+
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	int freed_counter = 0;
 	while (entry != NULL) {
@@ -62,7 +92,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
-	pthread_mutex_destroy (&buffer->write_mutex);
+	pthread_mutex_destroy (&buffer->write_queue_mutex);
 	pthread_mutex_destroy (&buffer->ratelimit_mutex);
 	sem_destroy(&buffer->new_data_available);
 	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
@@ -73,7 +103,7 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 
 	memset (buffer, '\0', sizeof(*buffer));
 
-	ret = pthread_mutex_init (&buffer->write_mutex, NULL);
+	ret = pthread_mutex_init (&buffer->write_queue_mutex, NULL);
 	if (ret != 0) { goto out;}
 
 	ret = pthread_mutex_init (&buffer->mutex, NULL);
@@ -87,7 +117,7 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 	buffer->ratelimit.sleep_spin_time = 2000000;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
-	pthread_mutex_lock(&buffer->write_mutex);
+	pthread_mutex_lock(&buffer->mutex);
 	buffer->invalid = 1;
 
 	int sem_ret = sem_init(&buffer->new_data_available, 1, 0);
@@ -99,14 +129,14 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 		ret = 1;
 	}
 
-	pthread_mutex_unlock(&buffer->write_mutex);
+	pthread_mutex_unlock(&buffer->mutex);
 
 	out:
 	if (ret == 0) {
-		pthread_mutex_lock(&buffer->write_mutex);
+		pthread_mutex_lock(&buffer->mutex);
 		buffer->invalid = 0;
 		buffer->free_entry = free;
-		pthread_mutex_unlock(&buffer->write_mutex);
+		pthread_mutex_unlock(&buffer->mutex);
 	}
 	else {
 		ret = 1;
@@ -118,18 +148,41 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 int fifo_buffer_init_custom_free(struct fifo_buffer *buffer, void (*custom_free)(void *arg)) {
 	int ret = fifo_buffer_init(buffer);
 	if (ret == 0) {
-		pthread_mutex_lock(&buffer->write_mutex);
+		pthread_mutex_lock(&buffer->mutex);
 		buffer->free_entry = custom_free;
-		pthread_mutex_unlock(&buffer->write_mutex);
+		pthread_mutex_unlock(&buffer->mutex);
 	}
 	return ret;
 }
 
-void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
+static void __fifo_buffer_set_data_available(struct fifo_buffer *buffer) {
 	int sem_status = 0;
 	sem_getvalue(&buffer->new_data_available, &sem_status);
 	if (sem_status == 0) {
 		sem_post(&buffer->new_data_available);
+	}
+}
+
+static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	if (buffer->write_queue_entry_count == 0) {
+		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+		return;
+	}
+
+	int entry_count = buffer->entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	// If the buffer is empty, we force a merge with the write queue. If
+	// not, we only merge if we happen to obtain a write lock immediately
+	if (entry_count == 0) {
+		fifo_write_lock(buffer);
+		__fifo_merge_write_queue_nolock(buffer);
+		fifo_write_unlock(buffer);
+	}
+	else if (fifo_write_trylock(buffer) == 0) {
+		__fifo_merge_write_queue_nolock(buffer);
+		fifo_write_unlock(buffer);
 	}
 }
 
@@ -143,6 +196,8 @@ int fifo_buffer_clear(struct fifo_buffer *buffer) {
 		fifo_write_unlock(buffer);
 		return FIFO_GLOBAL_ERR;
 	}
+
+	__fifo_merge_write_queue_nolock(buffer);
 
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	int freed_counter = 0;
@@ -179,6 +234,7 @@ int fifo_search (
 	struct fifo_callback_args *callback_data,
 	unsigned int wait_milliseconds
 ) {
+	__fifo_attempt_write_queue_merge(buffer);
 	fifo_wait_for_data(buffer, wait_milliseconds);
 
 	fifo_write_lock(buffer);
@@ -187,6 +243,8 @@ int fifo_search (
 		fifo_write_unlock(buffer);
 		return FIFO_GLOBAL_ERR;
 	}
+
+	__fifo_merge_write_queue_nolock(buffer);
 
 	int err = 0;
 	int cleared_entries = 0;
@@ -269,6 +327,8 @@ int fifo_clear_order_lt (
 		fifo_write_unlock(buffer);
 		return FIFO_GLOBAL_ERR;
 	}
+
+	__fifo_merge_write_queue_nolock(buffer);
 
 	int cleared_entries = 0;
 
@@ -359,6 +419,8 @@ int fifo_read_clear_forward (
 		fifo_write_unlock(buffer);
 		return FIFO_GLOBAL_ERR;
 	}
+
+	__fifo_merge_write_queue_nolock(buffer);
 
 	struct fifo_buffer_entry *current = buffer->gptr_first;
 	struct fifo_buffer_entry *stop = NULL;
@@ -464,10 +526,8 @@ int fifo_read_clear_forward (
  * This reading method blocks writers but allow other readers to traverse at the
  * same time. The callback function must not free the data or store it's pointer.
  * This function does not check FIFO_MAX_READS.
- *
- * TODO : Possibly unused function
  */
-void fifo_read (
+int fifo_read (
 		struct fifo_buffer *buffer,
 		int (*callback)(FIFO_CALLBACK_ARGS),
 		struct fifo_callback_args *callback_data,
@@ -476,7 +536,16 @@ void fifo_read (
 	fifo_wait_for_data(buffer, wait_milliseconds);
 
 	fifo_read_lock(buffer);
-	if (buffer->invalid) { fifo_read_unlock(buffer); return; }
+	if (buffer->invalid) {
+		fifo_read_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
+	}
+
+	fifo_read_unlock(buffer);
+	__fifo_attempt_write_queue_merge(buffer);
+	fifo_read_lock(buffer);
+
+	int ret = FIFO_OK;
 
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 	while (first != NULL) {
@@ -488,6 +557,13 @@ void fifo_read (
 			else if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
 				VL_BUG("Bug: FIFO_SEARCH_GIVE or FIFO_SEARCH_FREE returned to fifo_read\n");
 			}
+			else if (ret_tmp == FIFO_GLOBAL_ERR) {
+				ret = FIFO_GLOBAL_ERR;
+				break;
+			}
+			else {
+				ret |= ret_tmp;
+			}
 		}
 		first = first->next;
 	}
@@ -497,6 +573,8 @@ void fifo_read (
 	}
 
 	fifo_read_unlock(buffer);
+
+	return ret;
 }
 
 /*
@@ -517,7 +595,15 @@ int fifo_read_minimum (
 	fifo_wait_for_data(buffer, wait_milliseconds);
 
 	fifo_read_lock(buffer);
-	if (buffer->invalid) { fifo_read_unlock(buffer); return FIFO_GLOBAL_ERR; }
+	if (buffer->invalid) {
+		fifo_read_unlock(buffer);
+		return FIFO_GLOBAL_ERR;
+	}
+
+	fifo_read_unlock(buffer);
+	__fifo_attempt_write_queue_merge(buffer);
+	fifo_read_lock(buffer);
+
 	int res = 0;
 	struct fifo_buffer_entry *first = buffer->gptr_first;
 
@@ -568,7 +654,7 @@ void __fifo_buffer_do_ratelimit(struct fifo_buffer *buffer) {
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 
 	long long unsigned int spin_time =
-			ratelimit->sleep_spin_time + (buffer->entry_count * buffer->entry_count);
+			ratelimit->sleep_spin_time + (buffer->entry_count * buffer->entry_count * buffer->write_queue_entry_count * buffer->write_queue_entry_count);
 	/*
 	 * If the spin loop is longer than some time period we switch to sleeping instead. We then
 	 * sleep one time for 9 entries before we loop again and measure the time once more. The 10th
@@ -638,7 +724,7 @@ void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
 
 	if (ratelimit->prev_time == 0) {
 		ratelimit->prev_time = time_now;
-		ratelimit->prev_entry_count = buffer->entry_count;
+		ratelimit->prev_entry_count = buffer->entry_count + buffer->write_queue_entry_count;
 		goto out_unlock;
 	}
 
@@ -647,7 +733,7 @@ void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
 		goto out_unlock;
 	}
 
-	int entry_diff = ratelimit->prev_entry_count - buffer->entry_count;
+	int entry_diff = ratelimit->prev_entry_count - buffer->entry_count - buffer->write_queue_entry_count;
 
 	if (entry_diff > 0) {
 		// Readers are faster
@@ -684,7 +770,7 @@ void __fifo_buffer_update_ratelimit(struct fifo_buffer *buffer) {
 	);
 
 	ratelimit->prev_time = time_now;
-	ratelimit->prev_entry_count = buffer->entry_count;
+	ratelimit->prev_entry_count = buffer->entry_count + buffer->write_queue_entry_count;
 
 	out_unlock:
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
@@ -735,9 +821,55 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 }
 
 /*
+ * This writing method will write entries to the temporary write queue. This will not block
+ * if there are readers or an ordinary writer on the buffer. The read functions will, each time
+ * they run, check if there are no other readers, and if so, they will push the delayed entries
+ * to the end of the buffer. Some read functions hold write lock anyway, and these will always
+ * merge in the write queue.
+ */
+void fifo_buffer_delayed_write (struct fifo_buffer *buffer, char *data, unsigned long int size) {
+	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
+	memset (entry, '\0', sizeof(*entry));
+	entry->data = data;
+	entry->size = size;
+
+	{
+		pthread_mutex_lock (&buffer->mutex);
+		if (buffer->invalid) {
+			pthread_mutex_unlock (&buffer->mutex);
+			buffer->free_entry(entry->data);
+			free(entry);
+			return;
+		}
+		pthread_mutex_unlock (&buffer->mutex);
+	}
+	{
+		pthread_mutex_lock (&buffer->write_queue_mutex);
+
+		if (buffer->gptr_write_queue_first == NULL) {
+			buffer->gptr_write_queue_last = entry;
+			buffer->gptr_write_queue_first = entry;
+		}
+		else {
+			buffer->gptr_write_queue_last->next = entry;
+			buffer->gptr_write_queue_last = entry;
+		}
+		{
+			pthread_mutex_lock(&buffer->ratelimit_mutex);
+			buffer->write_queue_entry_count++;
+			pthread_mutex_unlock(&buffer->ratelimit_mutex);
+		}
+
+		pthread_mutex_unlock (&buffer->write_queue_mutex);
+	}
+
+	__fifo_buffer_do_ratelimit(buffer);
+}
+
+/*
  * This write method insert data in order according to the order 8-byte value.
  */
-void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size) {
+void fifo_buffer_write_ordered (struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size) {
 	struct fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	memset (entry, '\0', sizeof(*entry));
 	entry->data = data;

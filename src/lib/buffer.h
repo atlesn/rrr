@@ -86,9 +86,14 @@ struct fifo_buffer_ratelimit {
 struct fifo_buffer {
 	struct fifo_buffer_entry *gptr_first;
 	struct fifo_buffer_entry *gptr_last;
+
+	struct fifo_buffer_entry *gptr_write_queue_first;
+	struct fifo_buffer_entry *gptr_write_queue_last;
+
 	pthread_mutex_t mutex;
-	pthread_mutex_t write_mutex;
+	pthread_mutex_t write_queue_mutex;
 	pthread_mutex_t ratelimit_mutex;
+
 	int readers;
 	int writers;
 	int writer_waiting;
@@ -97,6 +102,7 @@ struct fifo_buffer {
 
 	int buffer_do_ratelimit;
 	int entry_count;
+	int write_queue_entry_count;
 
 	struct fifo_buffer_ratelimit ratelimit;
 
@@ -127,14 +133,14 @@ static inline void fifo_write_lock(struct fifo_buffer *buffer) {
 	while (ok != 2) {
 		if (ok == 0) {
 			VL_DEBUG_MSG_4("Buffer %p write lock wait for write mutex\n", buffer);
-			pthread_mutex_lock(&buffer->write_mutex);
+			pthread_mutex_lock(&buffer->mutex);
 			VL_DEBUG_MSG_4("Buffer %p write lock wait for writer waiting %i\n", buffer, buffer->writer_waiting);
 			if (buffer->writer_waiting == 0) {
 				buffer->writer_waiting = 1;
 				ok = 1;
 			}
 			VL_DEBUG_MSG_4("Buffer %p write lock unlock write mutex\n", buffer);
-			pthread_mutex_unlock(&buffer->write_mutex);
+			pthread_mutex_unlock(&buffer->mutex);
 		}
 
 		if (ok == 1) {
@@ -157,15 +163,42 @@ static inline void fifo_write_lock(struct fifo_buffer *buffer) {
 	}
 
 	VL_DEBUG_MSG_4("Buffer %p write lock wait for write mutex end\n", buffer);
-	pthread_mutex_lock(&buffer->write_mutex);
+	pthread_mutex_lock(&buffer->mutex);
 	buffer->writer_waiting = 0;
 	VL_DEBUG_MSG_4("Buffer %p write lock unlock write mutex end\n", buffer);
-	pthread_mutex_unlock(&buffer->write_mutex);
+	pthread_mutex_unlock(&buffer->mutex);
+}
+
+static inline int fifo_write_trylock(struct fifo_buffer *buffer) {
+	int ok = 0;
+
+	pthread_mutex_lock(&buffer->mutex);
+	if (buffer->writer_waiting == 0) {
+		ok = 1;
+	}
+	pthread_mutex_unlock(&buffer->mutex);
+
+	if (ok == 0) {
+		return 1;
+	}
+
+	pthread_mutex_lock(&buffer->mutex);
+	if (buffer->readers == 0 && buffer->writers == 0) {
+//		VL_DEBUG_MSG_4("Buffer %p write lock obtained\n", buffer);
+		VL_DEBUG_MSG_4("Buffer %p write lock obtained in trylock\n", buffer);
+		ok = 2;
+		buffer->writers = 1;
+	}
+	pthread_mutex_unlock(&buffer->mutex);
+
+	return (ok == 2 ? 0 : 1);
 }
 
 static inline void fifo_write_unlock(struct fifo_buffer *buffer) {
 	VL_DEBUG_MSG_4("Buffer %p write unlock\n", buffer);
+	pthread_mutex_lock(&buffer->mutex);
 	buffer->writers = 0;
+	pthread_mutex_unlock(&buffer->mutex);
 }
 
 static inline void fifo_read_lock(struct fifo_buffer *buffer) {
@@ -286,7 +319,7 @@ int fifo_read_clear_forward (
 		struct fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
-void fifo_read (
+int fifo_read (
 		struct fifo_buffer *buffer,
 		int (*callback)(FIFO_CALLBACK_ARGS),
 		struct fifo_callback_args *callback_data,
