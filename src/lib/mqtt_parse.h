@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE	(1<<1)
 #define RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE			(1<<2)
 #define RRR_MQTT_PARSE_STATUS_COMPLETE				(1<<3)
+#define RRR_MQTT_PARSE_STATUS_PAYLOAD_TO_PACKET	(1<<4)
 #define RRR_MQTT_PARSE_STATUS_ERR					(1<<15)
 
 #define RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(s) \
@@ -45,6 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_PARSE_PAYLOAD_IS_DONE(s) \
 	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE) > 0)
+
+#define RRR_MQTT_PARSE_PAYLOAD_IS_MOVE_PAYLOAD_PACKET(s) \
+	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_TO_PACKET) > 0)
 
 #define RRR_MQTT_PARSE_IS_COMPLETE(s) \
 	(((s)->status & RRR_MQTT_PARSE_STATUS_COMPLETE) > 0)
@@ -60,6 +64,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_p_packet;
 struct rrr_mqtt_p_type_properties;
+struct rrr_mqtt_p_protocol_version;
 
 struct rrr_mqtt_p_parse_session {
 	int status;
@@ -67,6 +72,8 @@ struct rrr_mqtt_p_parse_session {
 
 	int header_parse_attempts;
 	const struct rrr_mqtt_p_type_properties *type_properties;
+	const struct rrr_mqtt_p_protocol_version *protocol_version;
+
 	struct rrr_mqtt_p_packet *packet;
 
 	ssize_t variable_header_pos;
@@ -101,7 +108,8 @@ void rrr_mqtt_parse_session_destroy (
 void rrr_mqtt_parse_session_init (
 		struct rrr_mqtt_p_parse_session *session,
 		const char *buf,
-		ssize_t buf_size
+		ssize_t buf_size,
+		const struct rrr_mqtt_p_protocol_version *protocol_version
 );
 int rrr_mqtt_packet_parse (
 		struct rrr_mqtt_p_parse_session *session

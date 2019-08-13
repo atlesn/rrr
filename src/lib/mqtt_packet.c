@@ -97,6 +97,17 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE
 	return ret;
 }
 
+static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_publish (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) ret;
+
+	if (ret != NULL) {
+		rrr_mqtt_packet_property_collection_init(&publish->properties);
+	}
+
+	return ret;
+}
+
 static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
 
@@ -119,7 +130,10 @@ static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	free(packet);
+	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) packet;
+	rrr_mqtt_packet_property_collection_destroy(&publish->properties);
+	RRR_FREE_IF_NOT_NULL(publish->topic);
+	free(publish);
 }
 
 static void __rrr_mqtt_p_free_puback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
@@ -176,7 +190,7 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 	{0,  0, "RESERVED",		1, 0, 0,											NULL,							NULL,						NULL,							NULL},
 	{1,  0, "CONNECT",		1, 0, sizeof(struct rrr_mqtt_p_packet_connect),		rrr_mqtt_p_allocate_connect,	rrr_mqtt_parse_connect,		rrr_mqtt_assemble_connect,		__rrr_mqtt_p_free_connect},
 	{2,  1, "CONNACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_connack), 	rrr_mqtt_p_allocate_connack,	rrr_mqtt_parse_connack,		rrr_mqtt_assemble_connack,		__rrr_mqtt_p_free_connack},
-	{3,  0, "PUBLISH",		0, 0, sizeof(struct rrr_mqtt_p_packet_publish),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_publish,		rrr_mqtt_assemble_publish,		__rrr_mqtt_p_free_publish},
+	{3,  0, "PUBLISH",		0, 0, sizeof(struct rrr_mqtt_p_packet_publish),		rrr_mqtt_p_allocate_publish,	rrr_mqtt_parse_publish,		rrr_mqtt_assemble_publish,		__rrr_mqtt_p_free_publish},
 	{4,  3, "PUBACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_puback),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_puback,		rrr_mqtt_assemble_puback,		__rrr_mqtt_p_free_puback},
 	{5,  3, "PUBREC",		1, 0, sizeof(struct rrr_mqtt_p_packet_pubrec),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrec,		rrr_mqtt_assemble_pubrec,		__rrr_mqtt_p_free_pubrec},
 	{6,  5, "PUBREL",		1, 2, sizeof(struct rrr_mqtt_p_packet_pubrel),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrel,		rrr_mqtt_assemble_pubrel,		__rrr_mqtt_p_free_pubrel},

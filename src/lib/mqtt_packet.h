@@ -38,6 +38,7 @@ struct rrr_mqtt_connection;
 struct rrr_mqtt_p_type_properties;
 struct rrr_mqtt_p_protocol_version;
 struct rrr_mqtt_p_parse_session;
+struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_p_packet;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
@@ -76,6 +77,15 @@ struct rrr_mqtt_p_type_properties {
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
 };
 
+// Assembled data is either generated when sending a newly created packet,
+// or it is saved when reading from network (if the packet type parser requires it).
+
+// When sending data, if the payload pointer is non-NULL, we append this directly after
+// assembled_data. A packet type which does this should ensure that, after parsing, the
+// assembled_data_size value is reduced to the length of the variable header if it also
+// stores the payload data (will be the case for received packets). Payload data
+// memory might however also be managed elsewhere for locally created packets.
+
 #define RRR_MQTT_P_PACKET_HEADER								\
 	int users;													\
 	pthread_mutex_t lock;										\
@@ -85,6 +95,8 @@ struct rrr_mqtt_p_type_properties {
 	uint64_t last_attempt;										\
 	char *assembled_data;										\
 	ssize_t assembled_data_size;								\
+	const char *payload_pointer;								\
+	ssize_t payload_size;										\
 	const struct rrr_mqtt_p_protocol_version *protocol_version;	\
 	const struct rrr_mqtt_p_type_properties *type_properties
 
@@ -174,7 +186,22 @@ struct rrr_mqtt_p_packet_connack {
 
 struct rrr_mqtt_p_packet_publish {
 	RRR_MQTT_P_PACKET_HEADER;
+
+	/* These are also accessible through packet type flags but we cache them here */
+	uint8_t dup;
+	uint8_t qos;
+	uint8_t retain;
+
+	char *topic;
+
+	// For version 5
+	struct rrr_mqtt_p_property_collection properties;
 };
+
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)			(((1<<0) & (p)->type_flags))
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)				((((1<<2)|(1<<1)) & (p)->type_flags) >> 2)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)				(((1<<3) & (p)->type_flags) >> 3)
+
 struct rrr_mqtt_p_packet_puback {
 	RRR_MQTT_P_PACKET_HEADER;
 };

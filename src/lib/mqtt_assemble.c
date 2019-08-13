@@ -19,104 +19,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <inttypes.h>
 
 #include "mqtt_assemble.h"
 #include "mqtt_packet.h"
-
-#define RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE 1024
-
-struct rrr_mqtt_assemble_session {
-	char *buf;
-	char *wpos;
-	char *end;
-	ssize_t buf_size;
-};
-
-static int __rrr_mqtt_assemble_buf_init (struct rrr_mqtt_assemble_session *session) {
-	memset(session, '\0', sizeof(*session));
-	session->buf = malloc(RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE);
-	if (session->buf == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_assemble_buf_init\n");
-		return RRR_MQTT_ASSEMBLE_ERR;
-	}
-	session->buf_size = RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE;
-	session->wpos = session->buf;
-	session->end = session->buf + RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE;
-	return RRR_MQTT_ASSEMBLE_OK;
-}
-
-static void __rrr_mqtt_assemble_buf_destroy (struct rrr_mqtt_assemble_session *session) {
-	RRR_FREE_IF_NOT_NULL(session->buf);
-}
-
-static int __rrr_mqtt_assemble_buf_ensure (struct rrr_mqtt_assemble_session *session, ssize_t size) {
-	if (session->wpos + size < session->end) {
-		return RRR_MQTT_ASSEMBLE_OK;
-	}
-
-	size = (size < RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE ? RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE : size);
-
-	char *tmp = realloc(session->buf, session->buf_size + RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE);
-	if (tmp == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_assemble_buf_init\n");
-		return RRR_MQTT_ASSEMBLE_ERR;
-	}
-
-	ssize_t wpos = session->wpos - session->buf;
-	ssize_t end = session->end - session->buf;
-
-	session->buf = tmp;
-	session->buf_size += RRR_MQTT_ASSEMBLE_BUF_INCREMENT_SIZE;
-	session->wpos = session->buf + wpos;
-	session->end = session->buf + end;
-
-	return RRR_MQTT_ASSEMBLE_OK;
-}
-
-static char *__rrr_mqtt_assemble_extract_buffer (struct rrr_mqtt_assemble_session *session) {
-	char *ret = session->buf;
-	session->buf = NULL;
-	return ret;
-}
-
-static int __rrr_mqtt_assemble_buf_put_raw (struct rrr_mqtt_assemble_session *session, void *data, ssize_t size) {
-	if (__rrr_mqtt_assemble_buf_ensure (session, size) != RRR_MQTT_ASSEMBLE_OK) {
-		return RRR_MQTT_ASSEMBLE_ERR;
-	}
-
-	memcpy(session->wpos, data, size);
-	session->wpos += size;
-
-	return RRR_MQTT_ASSEMBLE_OK;
-}
+#include "mqtt_payload_buf.h"
+#include "../global.h"
 
 #define BUF_INIT() 																	\
 		int ret = RRR_MQTT_ASSEMBLE_OK;												\
 		*size = 0;																	\
 		*target = NULL;																\
-		struct rrr_mqtt_assemble_session session;									\
-		do {if (__rrr_mqtt_assemble_buf_init(&session) != RRR_MQTT_ASSEMBLE_OK) {	\
+		struct rrr_mqtt_payload_buf_session session;								\
+		do {if (rrr_mqtt_payload_buf_init(&session) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
 			return RRR_MQTT_ASSEMBLE_ERR;											\
 		}} while(0)
 
 #define PUT_RAW(data,size)	do {																\
-		if (__rrr_mqtt_assemble_buf_put_raw (&session, data, size) != RRR_MQTT_ASSEMBLE_OK) {	\
+		if (rrr_mqtt_payload_buf_put_raw (&session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
 			ret = RRR_MQTT_ASSEMBLE_ERR;														\
 			goto out;																			\
 		}} while (0)
 
 #define PUT_BYTE(byte) do {																		\
 		uint8_t data = (byte);																	\
-		if (__rrr_mqtt_assemble_buf_put_raw (&session, &data, 1) != RRR_MQTT_ASSEMBLE_OK) {		\
+		if (rrr_mqtt_payload_buf_put_raw (&session, &data, 1) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
 			ret = RRR_MQTT_ASSEMBLE_ERR;														\
 			goto out;																			\
 		}} while (0)
 
 #define PUT_NOTHING(count) do {																\
-		if (__rrr_mqtt_assemble_buf_ensure (&session, count) != RRR_MQTT_ASSEMBLE_OK) {		\
+		if (rrr_mqtt_payload_buf_ensure (&session, count) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
 			return RRR_MQTT_ASSEMBLE_ERR;													\
 		}																					\
 		session.wpos += count;																\
@@ -125,22 +58,22 @@ static int __rrr_mqtt_assemble_buf_put_raw (struct rrr_mqtt_assemble_session *se
 #define BUF_DESTROY_AND_RETURN()									\
 		out:														\
 		*size = session.wpos - session.buf;							\
-		*target = __rrr_mqtt_assemble_extract_buffer(&session);		\
-		__rrr_mqtt_assemble_buf_destroy (&session);					\
+		*target = rrr_mqtt_payload_buf_extract_buffer(&session);	\
+		rrr_mqtt_payload_buf_destroy (&session);					\
 		return ret
 
-#define PUT_HEADER(rem_length) do {																	\
-		if (RRR_MQTT_P_IS_RESERVED_FLAGS(packet) &&													\
-			RRR_MQTT_P_GET_PROP_FLAGS(packet) != RRR_MQTT_P_GET_TYPE_FLAGS(packet)					\
-		) {																							\
-			VL_BUG("Illegal flags %u for packet type %s in rrr_mqtt_assemble_fixed_header\n",		\
-			RRR_MQTT_P_GET_TYPE_FLAGS(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));					\
-		}																							\
-		uint8_t _type_and_flags = RRR_MQTT_P_GET_TYPE(packet) << 4 |								\
-			RRR_MQTT_P_GET_TYPE_FLAGS(packet);														\
-		uint8_t _remaining_length = rem_length;														\
-		PUT_RAW(&_type_and_flags, sizeof(_type_and_flags));											\
-		PUT_RAW(&_remaining_length, sizeof(_remaining_length));										\
+#define PUT_HEADER(rem_length) do {																\
+		if (RRR_MQTT_P_IS_RESERVED_FLAGS(packet) &&												\
+			RRR_MQTT_P_GET_PROP_FLAGS(packet) != RRR_MQTT_P_GET_TYPE_FLAGS(packet)				\
+		) {																						\
+			VL_BUG("Illegal flags %u for packet type %s in rrr_mqtt_assemble PUT_HEADER\n",		\
+			RRR_MQTT_P_GET_TYPE_FLAGS(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));				\
+		}																						\
+		uint8_t _type_and_flags = RRR_MQTT_P_GET_TYPE(packet) << 4 |							\
+			RRR_MQTT_P_GET_TYPE_FLAGS(packet);													\
+		uint8_t _remaining_length = rem_length;													\
+		PUT_RAW(&_type_and_flags, sizeof(_type_and_flags));										\
+		PUT_RAW(&_remaining_length, sizeof(_remaining_length));									\
 		} while (0)
 
 #define START_VARIABLE_HEADER() do {									\

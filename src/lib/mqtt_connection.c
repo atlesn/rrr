@@ -794,9 +794,11 @@ int rrr_mqtt_connection_parse (
 			rrr_mqtt_parse_session_init (
 					&connection->parse_session,
 					connection->read_session.rx_buf,
-					connection->read_session.rx_buf_wpos
+					connection->read_session.rx_buf_wpos,
+					connection->protocol_version
 			);
 		}
+		connection->parse_session.buf_size = connection->read_session.rx_buf_wpos;
 
 		ret = rrr_mqtt_packet_parse (&connection->parse_session);
 		if (RRR_MQTT_PARSE_IS_ERR(&connection->parse_session)) {
@@ -816,7 +818,28 @@ int rrr_mqtt_connection_parse (
 			}
 		}
 		if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
+			if (RRR_MQTT_PARSE_PAYLOAD_IS_MOVE_PAYLOAD_PACKET(&connection->parse_session)) {
+				connection->parse_session.packet->assembled_data =
+						connection->read_session.rx_buf;
+
+				connection->parse_session.packet->assembled_data_size =
+						connection->parse_session.payload_pos;
+
+				connection->parse_session.packet->payload_pointer =
+						connection->parse_session.packet->assembled_data + connection->parse_session.payload_pos;
+
+				connection->parse_session.packet->payload_size =
+						connection->read_session.rx_buf_wpos - connection->parse_session.payload_pos;
+
+				// TODO : The receive buffer might be larger than what's acutally needed to store the payload, consider
+				//        to realloc it
+
+				connection->read_session.rx_buf = NULL;
+				connection->read_session.rx_buf_size = 0;
+				connection->read_session.rx_buf_wpos = 0;
+			}
 			connection->parse_complete = 1;
+			connection->read_session.target_size = 0;
 		}
 	}
 
@@ -1056,6 +1079,36 @@ struct connection_send_packets_callback_data {
 	struct rrr_mqtt_data *mqtt_data;
 };
 
+static int __rrr_mqtt_connection_write (struct rrr_mqtt_connection *connection, const char *data, ssize_t data_size) {
+	int ret = 0;
+	ssize_t bytes = 0;
+
+	retry:
+	bytes = write (connection->ip_data.fd, data, data_size);
+	if (bytes != data_size) {
+		if (bytes == -1) {
+			if (errno == EINTR) {
+				goto retry;
+			}
+			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				ret = RRR_MQTT_CONNECTION_BUSY;
+				goto out;
+			}
+			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write: %s\n",
+					strerror(errno));
+		}
+		else if (bytes != data_size) {
+			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write, only %li of %li bytes were sent\n",
+					bytes, data_size);
+			ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 	struct connection_send_packets_callback_data *packets_callback_data = callback_data->private_data;
 	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
@@ -1098,26 +1151,22 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 	// connection state, but in that case, the program will crash after the write when updating
 	// the connection state. It is a bug to call this function with a non-timely packet.
 
-	retry:
-	bytes = write (connection->ip_data.fd, packet->assembled_data, packet->assembled_data_size);
-	if (bytes != packet->assembled_data_size) {
-		if (bytes == -1) {
-			if (errno == EINTR) {
-				goto retry;
-			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				ret = RRR_MQTT_CONNECTION_BUSY;
-				goto out_unlock;
-			}
-			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_send_packets_callback: %s\n",
-					strerror(errno));
+	if ((ret = __rrr_mqtt_connection_write (connection, packet->assembled_data, packet->assembled_data_size)) != 0) {
+		VL_MSG_ERR("Error while sending assembled data in __rrr_mqtt_connection_send_packets_callback\n");
+		goto out_unlock;
+	}
+
+	if (packet->payload_pointer != NULL) {
+		if (packet->payload_size == 0) {
+			VL_BUG("Payload size was 0 but payload pointer was not NULL in __rrr_mqtt_connection_send_packets_callback\n");
 		}
-		else if (bytes != packet->assembled_data_size) {
-			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_send_packets_callback, only %li of %li bytes were sent\n",
-					bytes, packet->assembled_data_size);
-			ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
+		if ((ret = __rrr_mqtt_connection_write (connection, packet->payload_pointer, packet->payload_size)) != 0) {
+			VL_MSG_ERR("Error while sending payload data in __rrr_mqtt_connection_send_packets_callback\n");
 			goto out_unlock;
 		}
+	}
+	else if (packet->payload_size != 0) {
+		VL_BUG("Payload pointer was NULL but payload size was not 0 in __rrr_mqtt_connection_send_packets_callback\n");
 	}
 
 	packet->last_attempt = time_get_64();
