@@ -70,7 +70,7 @@ struct rrr_mqtt_p_type_properties {
 
 	// We do not use function argument macros for these two to avoid including the header files
 	int (*parse)(struct rrr_mqtt_p_parse_session *session);
-	int (*assemble)(char *target, ssize_t *size, struct rrr_mqtt_p_packet *packet);
+	int (*assemble)(char **target, ssize_t *size, struct rrr_mqtt_p_packet *packet);
 
 	// DO NOT use the free-functions directly, ALWAYS use the RRR_MQTT_P_DECREF-macro
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
@@ -113,22 +113,22 @@ struct rrr_mqtt_p_packet {
 		pthread_mutex_unlock(&(p)->lock);	\
 	} while (0)
 
-#define RRR_MQTT_P_DECREF(p)							\
-	do {												\
-		pthread_mutex_lock(&(p)->lock);					\
-		--(p)->users;									\
-		pthread_mutex_unlock(&(p)->lock);				\
-		if ((p)->users == 0) {							\
-			RRR_FREE_IF_NOT_NULL((p)->assembled_data);	\
-			pthread_mutex_destroy(&(p)->lock);			\
-			RRR_MQTT_P_GET_FREE(p)(p);					\
-			(p) = NULL;									\
-		}												\
+#define RRR_MQTT_P_DECREF(p)										\
+	do {															\
+		pthread_mutex_lock(&(p)->lock);								\
+		--(p)->users;												\
+		pthread_mutex_unlock(&(p)->lock);							\
+		if ((p)->users == 0) {										\
+			RRR_FREE_IF_NOT_NULL((p)->assembled_data);				\
+			pthread_mutex_destroy(&(p)->lock);						\
+			RRR_MQTT_P_GET_FREE(p)((struct rrr_mqtt_p_packet *)p);	\
+			(p) = NULL;												\
+		}															\
 	} while (0)
 
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	do {									\
-		if (p != NULL) {					\
+		if ((p) != NULL) {					\
 			RRR_MQTT_P_DECREF(p);			\
 		}									\
 	} while(0)
@@ -207,6 +207,11 @@ struct rrr_mqtt_p_packet_pingresp {
 };
 struct rrr_mqtt_p_packet_disconnect {
 	RRR_MQTT_P_PACKET_HEADER;
+
+	uint8_t disconnect_reason_code;
+
+	// For version 5
+	struct rrr_mqtt_p_property_collection properties;
 };
 struct rrr_mqtt_p_packet_auth {
 	RRR_MQTT_P_PACKET_HEADER;

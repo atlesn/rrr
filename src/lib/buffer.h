@@ -328,6 +328,7 @@ int fifo_read (
 
 //void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
 void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int size);
+void fifo_buffer_delayed_write (struct fifo_buffer *buffer, char *data, unsigned long int size);
 void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size);
 
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);

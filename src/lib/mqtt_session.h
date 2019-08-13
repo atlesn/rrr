@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_mqtt_p_packet;
+struct rrr_mqtt_session_collection;
+struct rrr_mqtt_session_collection_methods;
 
 // This struct should NOT contain ANY dynamically OR statically allocated data. The
 // sessions are merely identified by their pointer value. The struct may be freed

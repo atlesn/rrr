@@ -194,22 +194,50 @@ int __rrr_mqtt_connection_collection_write_to_read_lock (struct rrr_mqtt_connect
 	return ret;
 }
 
-int rrr_mqtt_connection_send_disconnect_and_close_unlocked (struct rrr_mqtt_connection *connection) {
-	if (connection->state == RRR_MQTT_CONNECTION_STATE_CLOSED) {
-		VL_BUG("State of connection was already CLOSED in __rrr_mqtt_connection_destroy\n");
+int rrr_mqtt_connection_send_disconnect_iterator_ctx (struct rrr_mqtt_connection *connection) {
+	int ret = RRR_MQTT_CONNECTION_OK;
+
+	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) rrr_mqtt_p_allocate (
+			RRR_MQTT_P_TYPE_DISCONNECT,
+			connection->protocol_version
+	);
+	if (disconnect == NULL) {
+		VL_MSG_ERR("Could not allocate DISCONNECT packet in rrr_mqtt_connection_send_disconnect_unlocked\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
 	}
-	if (connection->ip_data.fd == 0) {
-		VL_BUG("FD was zero in __rrr_mqtt_connection_destroy\n");
+
+	// If a CONNACK is sent, we must not sent DISCONNECT packet
+	if (RRR_MQTT_CONNECTION_STATE_SEND_DISCONNECT_ALLOWED(connection)) {
+		// TODO : Set V5 disconnect reason
+
+		// Outbound queue packet handler will decref the packet also upon errors
+		RRR_MQTT_P_INCREF(disconnect); // count to 2 users
+		if ((ret = rrr_mqtt_connection_queue_outbound_packet_iterator_ctx ( // count to 1 users
+				connection,
+				(struct rrr_mqtt_p_packet *) disconnect
+		)) != RRR_MQTT_CONNECTION_OK) {
+			VL_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_connection_send_disconnect_and_close_unlocked\n");
+			goto send_disconnect_out;
+		}
+
+		send_disconnect_out:
+		if (ret != RRR_MQTT_CONNECTION_OK) {
+			goto out;
+		}
 	}
 
-	// TODO : Send close packet
+	if ((ret = rrr_mqtt_connection_update_state_iterator_ctx (
+			connection,
+			(struct rrr_mqtt_p_packet *) disconnect
+	)) != RRR_MQTT_CONNECTION_OK) {
+		VL_MSG_ERR("Could not update connection state in rrr_mqtt_connection_send_disconnect_unlocked\n");
+		goto out;
+	}
 
-	printf ("mqtt connection close connection fd %i\n", connection->ip_data.fd);
-
-	ip_close(&connection->ip_data);
-	connection->state = RRR_MQTT_CONNECTION_STATE_CLOSED;
-
-	return RRR_MQTT_CONNECTION_OK;
+	out:
+	RRR_MQTT_P_DECREF(disconnect); // count to 1 users (0 upon error in outbound pakcet queue)
+	return ret;
 }
 
 static void __rrr_mqtt_connection_reset_sessions (struct rrr_mqtt_connection *connection) {
@@ -219,20 +247,29 @@ static void __rrr_mqtt_connection_reset_sessions (struct rrr_mqtt_connection *co
 	connection->parse_complete = 0;
 }
 
+static void __rrr_mqtt_connection_close (
+		struct rrr_mqtt_connection *connection
+) {
+	printf ("mqtt connection close connection fd %i\n", connection->ip_data.fd);
+
+	if (connection->ip_data.fd == 0) {
+		VL_BUG("FD was zero in __rrr_mqtt_connection_destroy\n");
+	}
+
+	ip_close(&connection->ip_data);
+	connection->__state = RRR_MQTT_CONNECTION_STATE_CLOSED;
+}
+
+
 static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connection) {
 	if (connection == NULL) {
 		VL_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
 	}
 
 	pthread_mutex_lock(&connection->lock);
-	if (connection->state != RRR_MQTT_CONNECTION_STATE_CLOSED) {
-		if (connection->ip_data.fd == 0) {
-			VL_BUG("Connection was not closed but FD was zero in __rrr_mqtt_connection_destroy\n");
-		}
-
-		if (rrr_mqtt_connection_send_disconnect_and_close_unlocked(connection) != 0) {
-			VL_MSG_ERR("Warning: Error while sending disconnect packet while destroying connection\n");
-		}
+	if (!RRR_MQTT_CONNECTION_STATE_IS_CLOSED(connection)) {
+		__rrr_mqtt_connection_close (connection);
+		connection->__state = RRR_MQTT_CONNECTION_STATE_CLOSED;
 	}
 
 	fifo_buffer_invalidate(&connection->receive_queue.buffer);
@@ -285,6 +322,7 @@ static int __rrr_mqtt_connection_new (
 
 	res->ip_data = *ip_data;
 	res->connect_time = res->last_seen_time = time_get_64();
+	res->__state = RRR_MQTT_CONNECTION_STATE_NEW;
 
 	switch (remote_addr->sa_family) {
 		case AF_INET: {
@@ -470,7 +508,7 @@ static int __rrr_mqtt_connection_collection_in_iterator_destroy_connection (
 
 	__rrr_mqtt_connection_destroy(*cur);
 
-	if (prev != NULL) {
+	if ((*prev) != NULL) {
 		(*prev)->next = next;
 	}
 	else {
@@ -532,6 +570,10 @@ int rrr_mqtt_connection_collection_iterate (
 				VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
 				callback_ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
 				ret_tmp = ret_tmp & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
+			}
+
+			if ((ret_tmp & RRR_MQTT_CONNECTION_BUSY) != 0) {
+				ret_tmp = ret_tmp & ~RRR_MQTT_CONNECTION_BUSY;
 			}
 
 			if ((ret_tmp & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
@@ -974,46 +1016,6 @@ int rrr_mqtt_connection_handle_packets (
 	return ret;
 }
 
-static void __rrr_mqtt_connection_handle_connection_state (
-		int *new_connection_state,
-		struct rrr_mqtt_connection *connection,
-		struct rrr_mqtt_p_packet *packet
-) {
-	uint8_t packet_type = RRR_MQTT_P_GET_TYPE(packet);
-
-	*new_connection_state = connection->state;
-
-	if (	connection->state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED ||
-			connection->state == RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED
-	) {
-		if (packet_type == RRR_MQTT_P_TYPE_CONNECT ||
-			packet_type == RRR_MQTT_P_TYPE_CONNACK
-		) {
-			VL_BUG("Tried to send packet of type %s while connection was in ESTABLISHED state which is not allowed\n",
-					RRR_MQTT_P_GET_TYPE_NAME(packet));
-		}
-	}
-	else if (connection->state == RRR_MQTT_CONNECTION_STATE_NEW) {
-		if (packet_type != RRR_MQTT_P_TYPE_CONNECT &&
-			packet_type != RRR_MQTT_P_TYPE_CONNACK
-		) {
-			VL_BUG("Tried to send packet of type %s while connection was still in NEW state when only CONNECT and CONNACK are allowed\n",
-					RRR_MQTT_P_GET_TYPE_NAME(packet));
-		}
-		*new_connection_state = RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED;
-	}
-	else if (connection->state == RRR_MQTT_CONNECTION_STATE_AUTHENTICATING) {
-		VL_BUG("Authentication connection state not implemented in __rrr_mqtt_connection_handle_connection_state\n");
-	}
-	else {
-		VL_BUG("Unknown connection state %i in __rrr_mqtt_connection_handle_connection_state", connection->state);
-	}
-
-	if (packet_type == RRR_MQTT_P_TYPE_DISCONNECT) {
-		*new_connection_state = RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED;
-	}
-}
-
 int rrr_mqtt_connection_housekeeping (
 		struct rrr_mqtt_connection *connection,
 		void *arg
@@ -1026,10 +1028,15 @@ int rrr_mqtt_connection_housekeeping (
 		goto out_nolock;
 	}
 
-	struct rrr_mqtt_data *data = arg;
+	(void)(arg);
 
-	if (connection->state == RRR_MQTT_CONNECTION_STATE_CLOSED) {
-		VL_DEBUG_MSG_1("Cleaning up connection which was closed\n");
+//	struct rrr_mqtt_data *data = arg;
+
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
+		VL_DEBUG_MSG_1("Cleaning up connection which is to be closed\n");
+
+		__rrr_mqtt_connection_close(connection);
+
 		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out;
 	}
@@ -1050,7 +1057,7 @@ struct connection_send_packets_callback_data {
 };
 
 static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
-	struct connection_send_packets_callback_data *packets_callback_data = &callback_data->private_data;
+	struct connection_send_packets_callback_data *packets_callback_data = callback_data->private_data;
 	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
 	struct rrr_mqtt_connection *connection = packets_callback_data->connection;
 
@@ -1085,10 +1092,11 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 		network_data = NULL;
 	}
 
-	int new_connection_state = 0;
-	__rrr_mqtt_connection_handle_connection_state(&new_connection_state, connection, packet);
-
 	ssize_t bytes = 0;
+
+	// It is possible here to actually send a packet which is not allowed in the current
+	// connection state, but in that case, the program will crash after the write when updating
+	// the connection state. It is a bug to call this function with a non-timely packet.
 
 	retry:
 	bytes = write (connection->ip_data.fd, packet->assembled_data, packet->assembled_data_size);
@@ -1105,7 +1113,7 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 					strerror(errno));
 		}
 		else if (bytes != packet->assembled_data_size) {
-			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_send_packets_callback, only %i of %i bytes were sent\n",
+			VL_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_send_packets_callback, only %li of %li bytes were sent\n",
 					bytes, packet->assembled_data_size);
 			ret = RRR_MQTT_CONNECTION_SOFT_ERROR;
 			goto out_unlock;
@@ -1113,7 +1121,7 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 	}
 
 	packet->last_attempt = time_get_64();
-	connection->state = new_connection_state;
+	rrr_mqtt_connection_update_state_iterator_ctx(connection, packet);
 
 	out_unlock:
 	pthread_mutex_unlock(&packet->lock);
@@ -1133,9 +1141,7 @@ int rrr_mqtt_connection_send_packets (
 		goto out_nolock;
 	}
 
-	if (	connection->state == RRR_MQTT_CONNECTION_STATE_CLOSED ||
-			connection->state == RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED
-	) {
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
 		ret = RRR_MQTT_CONNECTION_BUSY;
 		goto out;
 	}
@@ -1148,7 +1154,7 @@ int rrr_mqtt_connection_send_packets (
 	// We use fifo_read because it only holds read-lock on the buffer. We do not immediately delete sent
 	// packets, and it is also not possible while traversing with fifo_read. Sent packets are deleted
 	// while doing housekeeping. We only send packets which previously has not been attempted sent.
-	ret = fifo_read(&connection->send_queue, __rrr_mqtt_connection_send_packets_callback, &fifo_callback_args, 0);
+	ret = fifo_read(&connection->send_queue.buffer, __rrr_mqtt_connection_send_packets_callback, &fifo_callback_args, 0);
 	if (ret != FIFO_OK) {
 		if (ret == FIFO_CALLBACK_ERR) {
 			VL_MSG_ERR("Soft error while handling send queue in rrr_mqtt_connection_send_packets\n");
@@ -1167,11 +1173,89 @@ int rrr_mqtt_connection_send_packets (
 	return ret;
 }
 
+// This function is expected to always take care of packet memory/refcount, also in case of errors
 int rrr_mqtt_connection_queue_outbound_packet_iterator_ctx (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 ) {
 	fifo_buffer_delayed_write(&connection->send_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
+	return RRR_MQTT_CONNECTION_OK;
+}
+
+int rrr_mqtt_connection_set_protocol_version_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
+) {
+	if (RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_CONNECT) {
+		VL_BUG("Tried to set protocol version with non-CONNECT packet of type %s in rrr_mqtt_connection_set_protocol_version_iterator_ctx\n",
+				RRR_MQTT_P_GET_TYPE_NAME(packet));
+	}
+	if (connection->protocol_version != NULL) {
+		VL_BUG("Tried to set protocol version two times in rrr_mqtt_connection_set_protocol_version_iterator_ctx\n");
+	}
+
+	connection->protocol_version = packet->protocol_version;
+
+	return RRR_MQTT_CONNECTION_OK;
+}
+
+int rrr_mqtt_connection_update_state_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
+) {
+	uint8_t packet_type = RRR_MQTT_P_GET_TYPE(packet);
+
+	int new_connection_state = connection->__state;
+
+	if (connection->__state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED) {
+		if (packet_type == RRR_MQTT_P_TYPE_CONNECT ||
+			packet_type == RRR_MQTT_P_TYPE_CONNACK
+		) {
+			VL_BUG("Tried to handle packet of type %s while connection was in ESTABLISHED state which is not allowed\n",
+					RRR_MQTT_P_GET_TYPE_NAME(packet));
+		}
+	}
+	else if (connection->__state == RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED) {
+		// A disconnect packet is not actually sent if we are in CONNECT_SENT_OR_RECEIVED
+		// state, rrr_mqtt_connection_send_disconnect_iterator_ctx takes care of checking
+		// that. This might happen if a client with the same client ID as an existing connection
+		// connects and the existing connection should be closed but it has not yet transitioned
+		// into ESTABLISHED state
+		if (packet_type != RRR_MQTT_P_TYPE_CONNECT &&
+			packet_type != RRR_MQTT_P_TYPE_CONNACK &&
+			packet_type != RRR_MQTT_P_TYPE_DISCONNECT
+		) {
+			VL_BUG("Tried to handle packet of type %s while connection was in CONNECT_SENT_OR_RECEIVED state when only CONNECT and CONNACK are allowed\n",
+					RRR_MQTT_P_GET_TYPE_NAME(packet));
+		}
+		new_connection_state = RRR_MQTT_CONNECTION_STATE_ESTABLISHED;
+	}
+	else if (connection->__state == RRR_MQTT_CONNECTION_STATE_NEW) {
+		if (packet_type != RRR_MQTT_P_TYPE_CONNECT &&
+			packet_type != RRR_MQTT_P_TYPE_CONNACK
+		) {
+			VL_BUG("Tried to handle packet of type %s while connection was still in NEW state when only CONNECT and CONNACK are allowed\n",
+					RRR_MQTT_P_GET_TYPE_NAME(packet));
+		}
+		new_connection_state = RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED;
+	}
+	else if (connection->__state == RRR_MQTT_CONNECTION_STATE_AUTHENTICATING) {
+		VL_BUG("Authentication connection state not implemented in rrr_mqtt_connection_update_state_iterator_ctx\n");
+	}
+	else {
+		VL_BUG("Unknown connection state %i in rrr_mqtt_connection_update_state_iterator_ctx", connection->__state);
+	}
+
+	/* Setting connection to disconnected is allowed at any time. An actual DISCONNECT packet
+	 * will however not be sent, for instance if a CONNACK with non-zero result has been sent
+	 * first. The send_disconnect-function checks wether it should send the packet or not.
+	 * After DISCONNECT state is set, housekeeping will close the network socket. */
+	if (packet_type == RRR_MQTT_P_TYPE_DISCONNECT) {
+		new_connection_state = RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED;
+	}
+
+	connection->__state = new_connection_state;
+
 	return RRR_MQTT_CONNECTION_OK;
 }
 
@@ -1207,7 +1291,9 @@ int rrr_mqtt_connection_with_iterator_ctx_do (
 		goto out_unlock;
 	}
 
+	pthread_mutex_lock(&connection->lock);
 	callback_ret = callback(connection, packet);
+	pthread_mutex_unlock(&connection->lock);
 
 	if ((callback_ret & RRR_MQTT_CONNECTION_ITERATE_STOP) != 0) {
 		VL_MSG_ERR("Warning: Callback of rrr_mqtt_connection_with_iterator_ctx_do returned RRR_MQTT_CONNECTION_ITERATE_STOP, which cannot be handled\n");
@@ -1270,6 +1356,17 @@ int rrr_mqtt_connection_collection_read_parse_handle (
 	}
 	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
 		VL_MSG_ERR("Internal error received in rrr_mqtt_connection_collection_read_parse_handle while doing housekeeping\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+	}
+
+	ret = rrr_mqtt_connection_collection_iterate(connections, rrr_mqtt_connection_send_packets, mqtt_data);
+
+	if ((ret & (RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION)) != 0) {
+		VL_MSG_ERR("Soft error in rrr_mqtt_connection_collection_read_parse_handle while sending packets (one or more connections had to be closed)\n");
+		ret = RRR_MQTT_CONNECTION_OK;
+	}
+	if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
+		VL_MSG_ERR("Internal error received in rrr_mqtt_connection_collection_read_parse_handle while sending packets\n");
 		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 	}
 

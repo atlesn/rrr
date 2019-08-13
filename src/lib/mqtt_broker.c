@@ -220,7 +220,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 
 	pthread_mutex_lock(&connection->lock);
 
-	if (connection->state == RRR_MQTT_CONNECTION_STATE_CLOSED) {
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
 		// Equal name with a CLOSED connection is OK
 		ret = RRR_MQTT_CONNECTION_OK;
 		goto out;
@@ -229,7 +229,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 	/* client_id is not set in the connection until CONNECT packet is handled */
 	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
 		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
-		ret = rrr_mqtt_connection_send_disconnect_and_close_unlocked(connection);
+		ret = rrr_mqtt_connection_send_disconnect_iterator_ctx(connection);
 		if (ret != RRR_MQTT_CONNECTION_OK) {
 			// On soft error, we cannot be sure that the existing client was actually
 			// disconnected, and we must disallow the new connection
@@ -446,7 +446,8 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 	connack->ack_flags = session_present;
 
-	connection->state = RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED;
+	rrr_mqtt_connection_update_state_iterator_ctx(connection, packet);
+
 	ret = rrr_mqtt_connection_queue_outbound_packet_iterator_ctx(connection, (struct rrr_mqtt_p_packet *) connack);
 	// The handler will take care of the memory of the packet regardless of errors
 	connack = NULL;

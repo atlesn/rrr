@@ -122,7 +122,7 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 }
 
 static void __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *session) {
-	if (--(session->users) > 1) {
+	if (--(session->users) >= 1) {
 		return;
 	}
 	if (session->users < 0) {
@@ -270,6 +270,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 			found = test;
 			break;
 		}
+		test = test->next;
 	}
 	pthread_mutex_unlock(&data->lock);
 

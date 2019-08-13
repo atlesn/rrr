@@ -86,6 +86,17 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connack (RRR_MQTT_P_TYPE_AL
 	return ret;
 }
 
+static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) ret;
+
+	if (ret != NULL) {
+		rrr_mqtt_packet_property_collection_init(&disconnect->properties);
+	}
+
+	return ret;
+}
+
 static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
 
@@ -103,9 +114,7 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) packet;
-
 	rrr_mqtt_packet_property_collection_destroy(&connack->properties);
-
 	free(connack);
 }
 
@@ -154,7 +163,9 @@ static void __rrr_mqtt_p_free_pingresp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_disconnect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	free(packet);
+	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) packet;
+	rrr_mqtt_packet_property_collection_destroy(&disconnect->properties);
+	free(disconnect);
 }
 
 static void __rrr_mqtt_p_free_auth (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
@@ -176,7 +187,7 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 	{11, 10,"UNSUBACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_unsuback),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_unsuback,	rrr_mqtt_assemble_unsuback,		__rrr_mqtt_p_free_unsuback},
 	{12, 0, "PINGREQ",		1, 0, sizeof(struct rrr_mqtt_p_packet_pingreq),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingreq,		rrr_mqtt_assemble_pingreq,		__rrr_mqtt_p_free_pingreq},
 	{13, 12,"PINGRESP",		1, 0, sizeof(struct rrr_mqtt_p_packet_pingresp),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingresp,	rrr_mqtt_assemble_pingresp,		__rrr_mqtt_p_free_pingresp},
-	{14, 0,	"DISCONNECT",	1, 0, sizeof(struct rrr_mqtt_p_packet_disconnect),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_disconnect,	rrr_mqtt_assemble_disconnect,	__rrr_mqtt_p_free_disconnect},
+	{14, 0,	"DISCONNECT",	1, 0, sizeof(struct rrr_mqtt_p_packet_disconnect),	rrr_mqtt_p_allocate_disconnect,	rrr_mqtt_parse_disconnect,	rrr_mqtt_assemble_disconnect,	__rrr_mqtt_p_free_disconnect},
 	{15, 0,	"AUTH",			1, 0, sizeof(struct rrr_mqtt_p_packet_auth),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_auth,		rrr_mqtt_assemble_auth,			__rrr_mqtt_p_free_auth}
 };
 

@@ -41,6 +41,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED	4
 #define RRR_MQTT_CONNECTION_STATE_CLOSED						5
 
+#define RRR_MQTT_CONNECTION_OK					0
+#define RRR_MQTT_CONNECTION_INTERNAL_ERROR		(1<<0)
+#define RRR_MQTT_CONNECTION_DESTROY_CONNECTION	(1<<1)
+#define RRR_MQTT_CONNECTION_SOFT_ERROR			(1<<2)
+#define RRR_MQTT_CONNECTION_BUSY				(1<<3)
+#define RRR_MQTT_CONNECTION_STEP_LIMIT			(1<<4)
+#define RRR_MQTT_CONNECTION_ITERATE_STOP		(1<<5)
+
 struct rrr_mqtt_data;
 
 struct rrr_mqtt_connection_read_session {
@@ -72,8 +80,9 @@ struct rrr_mqtt_connection {
 	uint64_t last_seen_time;
 
 	char *client_id;
+	const struct rrr_mqtt_p_protocol_version *protocol_version;
 
-	int state;
+	int __state;
 
 	struct rrr_mqtt_connection_read_session read_session;
 	struct rrr_mqtt_p_parse_session parse_session;
@@ -92,6 +101,25 @@ struct rrr_mqtt_connection {
 	};
 };
 
+#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED || (c)->__state == RRR_MQTT_CONNECTION_STATE_CLOSED)
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_CONNECT_ALLOWED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_NEW)
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_NEW)
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED || (c)->__state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED)
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_DISCONNECT_ALLOWED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED)
+
+#define RRR_MQTT_CONNECTION_STATE_IS_CLOSED(c) \
+	((c)->__state == RRR_MQTT_CONNECTION_STATE_CLOSED)
+
+
 struct rrr_mqtt_connection_collection {
 	struct rrr_mqtt_connection *first;
 	int invalid;
@@ -100,9 +128,6 @@ struct rrr_mqtt_connection_collection {
 	int writers_waiting;
 	int write_locked;
 };
-
-// Can ONLY be used when holding collection iterator read or write lock AND lock on the connection
-int rrr_mqtt_connection_send_disconnect_and_close_unlocked (struct rrr_mqtt_connection *connection);
 
 // Can ONLY be used at program exit when only one thread is running
 void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collection *connections);
@@ -114,14 +139,6 @@ int rrr_mqtt_connection_collection_new_connection (
 		const struct ip_data *ip_data,
 		const struct sockaddr *remote_addr
 );
-
-#define RRR_MQTT_CONNECTION_OK					0
-#define RRR_MQTT_CONNECTION_INTERNAL_ERROR		(1<<0)
-#define RRR_MQTT_CONNECTION_DESTROY_CONNECTION	(1<<1)
-#define RRR_MQTT_CONNECTION_SOFT_ERROR			(1<<2)
-#define RRR_MQTT_CONNECTION_BUSY				(1<<3)
-#define RRR_MQTT_CONNECTION_STEP_LIMIT			(1<<4)
-#define RRR_MQTT_CONNECTION_ITERATE_STOP		(1<<5)
 
 // It is possible while being in a callback function for the collection iterator
 // to convert the held read lock to a write lock, in case this function is called
@@ -163,14 +180,23 @@ int rrr_mqtt_connection_handle_packets (
 		void *arg
 );
 
-// These functions MUST also be used ONLY in iterator context. Functions with the
-// connection/packet argument pair is also supported by the iterator_ctx_do-function
-// which can use these as callbacks. This keeps us from writing callbacks for some
-// common operations.
+// These functions MUST also be used ONLY in iterator context. The connection lock
+// MUST also be held when calling them.
+//
+// Functions with the connection/packet argument pair is also supported by the
+// iterator_ctx_do-function which can use these as callbacks.
 int rrr_mqtt_connection_queue_outbound_packet_iterator_ctx (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );
+int rrr_mqtt_connection_update_state_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
+);
+int rrr_mqtt_connection_send_disconnect_iterator_ctx (
+		struct rrr_mqtt_connection *connection
+);
+
 
 // Special iterator for functions which accept connection/packet arguments. The callback
 // is called exactly one time, and then with the provided connection as argument. The

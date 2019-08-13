@@ -172,7 +172,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		uint8_t zero = 0;
 		PUT_BYTE(zero);
 
-		// TODO : Replace zero bytewith connack properties
+		// TODO : Replace zero byte with connack properties
 
 		END_VARIABLE_HEADER();
 	}
@@ -241,8 +241,25 @@ int rrr_mqtt_assemble_pingresp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) packet;
+
+	BUF_INIT();
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		START_VARIABLE_HEADER();
+		PUT_BYTE(disconnect->disconnect_reason_code);
+		uint8_t zero = 0;
+		PUT_BYTE(zero);
+
+		// TODO : Replace zero byte with disconnect properties
+
+		END_VARIABLE_HEADER();
+	}
+	else {
+		PUT_HEADER(0);
+	}
+
+	BUF_DESTROY_AND_RETURN();
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {

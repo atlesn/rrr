@@ -39,6 +39,9 @@ static void __fifo_merge_write_queue_nolock(struct fifo_buffer *buffer) {
 		buffer->gptr_last = buffer->gptr_write_queue_last;
 	}
 
+	buffer->gptr_write_queue_first = NULL;
+	buffer->gptr_write_queue_last = NULL;
+
 	int merge_entries = 0;
 	int merge_result = 0;
 
