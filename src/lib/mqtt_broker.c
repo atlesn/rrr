@@ -628,7 +628,8 @@ int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker, const char *clien
 			client_name,
 			handler_properties,
 			rrr_mqtt_session_collection_ram_new,
-			NULL
+			NULL,
+			RRR_MQTT_BROKER_CLOSE_WAIT_TIME * 1000000
 	)) != 0) {
 		VL_MSG_ERR("Could not initialize mqtt data in rrr_mqtt_broker_new\n");
 		goto out_free;

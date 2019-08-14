@@ -296,7 +296,8 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 static int __rrr_mqtt_connection_new (
 		struct rrr_mqtt_connection **connection,
 		const struct ip_data *ip_data,
-		const struct sockaddr *remote_addr
+		const struct sockaddr *remote_addr,
+		uint64_t close_wait_time_usec
 ) {
 	int ret = RRR_MQTT_CONNECTION_OK;
 
@@ -328,6 +329,7 @@ static int __rrr_mqtt_connection_new (
 
 	res->ip_data = *ip_data;
 	res->connect_time = res->last_seen_time = time_get_64();
+	res->close_wait_time_usec = close_wait_time_usec;
 
 	switch (remote_addr->sa_family) {
 		case AF_INET: {
@@ -413,7 +415,8 @@ int rrr_mqtt_connection_collection_new_connection (
 		struct rrr_mqtt_connection **connection,
 		struct rrr_mqtt_connection_collection *connections,
 		const struct ip_data *ip_data,
-		const struct sockaddr *remote_addr
+		const struct sockaddr *remote_addr,
+		uint64_t close_wait_time_usec
 ) {
 	int ret = RRR_MQTT_CONNECTION_OK;
 	struct rrr_mqtt_connection *res = NULL;
@@ -428,7 +431,7 @@ int rrr_mqtt_connection_collection_new_connection (
 		VL_BUG("FD was < 1 in rrr_mqtt_connection_collection_new_connection\n");
 	}
 
-	if ((ret = __rrr_mqtt_connection_new(&res, ip_data, remote_addr)) != RRR_MQTT_CONNECTION_OK) {
+	if ((ret = __rrr_mqtt_connection_new(&res, ip_data, remote_addr, close_wait_time_usec)) != RRR_MQTT_CONNECTION_OK) {
 		VL_MSG_ERR("Could not create new connection in rrr_mqtt_connection_collection_new_connection\n");
 		goto out_nolock;
 	}
@@ -509,6 +512,20 @@ static int __rrr_mqtt_connection_collection_in_iterator_destroy_connection (
 		goto out;
 	}
 
+	if ((*cur)->close_wait_time_usec > 0) {
+		uint64_t time_now = time_get_64();
+		if ((*cur)->close_wait_start == 0) {
+			(*cur)->close_wait_start = time_now;
+			VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, starting timer\n");
+		}
+		if (time_now - (*cur)->close_wait_start < (*cur)->close_wait_time_usec) {
+/*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
+					(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
+			goto out_unlock;
+		}
+		VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, timer done\n");
+	}
+
 	struct rrr_mqtt_connection *next = (*cur)->next;
 
 	__rrr_mqtt_connection_destroy(*cur);
@@ -528,6 +545,7 @@ static int __rrr_mqtt_connection_collection_in_iterator_destroy_connection (
 		(*cur) = next;
 	}
 
+	out_unlock:
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		VL_MSG_ERR("__rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
 		goto out;
@@ -556,7 +574,7 @@ int rrr_mqtt_connection_collection_iterate (
 		int ret_tmp = callback(cur, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
 			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
-				VL_DEBUG_MSG_1("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
+//				VL_DEBUG_MSG_1("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
 
 				if ((ret = __rrr_mqtt_connection_collection_in_iterator_destroy_connection (
 						connections,
@@ -920,6 +938,10 @@ int rrr_mqtt_connection_read_and_parse (
 		VL_BUG("rrr_mqtt_connection_read_and_parse received non-null custom argument\n");
 	}
 
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
+		goto out;
+	}
+
 	// Do not block while reading a large message, read only 4K each time. This also
 	// goes for threaded reading, the connection lock must be released often to allow
 	// for other iterators to check stuff.
@@ -1124,11 +1146,8 @@ int rrr_mqtt_connection_housekeeping (
 
 //	struct rrr_mqtt_data *data = arg;
 
-	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
-		VL_DEBUG_MSG_1("Cleaning up connection which is to be closed\n");
-
-		__rrr_mqtt_connection_close(connection);
-
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECT_WAIT(connection)) {
+//		VL_DEBUG_MSG_1("Cleaning up connection which is to be closed\n");
 		ret = RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		goto out;
 	}
@@ -1421,7 +1440,7 @@ int rrr_mqtt_connection_iterator_ctx_update_state (
 		RRR_MQTT_CONNECTION_STATE_SET (connection,
 				RRR_MQTT_P_CONNACK_GET_REASON_V5(packet) == RRR_MQTT_P_5_REASON_OK
 					? RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED | RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED
-					: RRR_MQTT_CONNECTION_STATE_DISCONNECTED
+					: RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT
 		);
 	}
 	else if (packet_type == RRR_MQTT_P_TYPE_DISCONNECT) {
@@ -1434,7 +1453,7 @@ int rrr_mqtt_connection_iterator_ctx_update_state (
 			VL_MSG_ERR("Received DISCONNECT while not allowed\n");
 			return RRR_MQTT_CONNECTION_SOFT_ERROR;
 		}
-		RRR_MQTT_CONNECTION_STATE_SET (connection, RRR_MQTT_CONNECTION_STATE_DISCONNECTED);
+		RRR_MQTT_CONNECTION_STATE_SET (connection, RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT);
 	}
 	else {
 		VL_BUG("Unknown control packet %u in rrr_mqtt_connection_update_state_iterator_ctx\n", packet_type);

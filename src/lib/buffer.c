@@ -52,10 +52,10 @@ static void __fifo_merge_write_queue_nolock(struct fifo_buffer *buffer) {
 	merge_result = buffer->entry_count;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
-//	VL_DEBUG_MSG_4("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
-//			buffer, merge_entries, merge_result);
-	VL_DEBUG_MSG_1("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+	VL_DEBUG_MSG_3("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
 			buffer, merge_entries, merge_result);
+//	VL_DEBUG_MSG_1("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+//			buffer, merge_entries, merge_result);
 }
 
 /*

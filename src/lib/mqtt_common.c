@@ -48,7 +48,8 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const char *client_name,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
-		void *session_initializer_arg
+		void *session_initializer_arg,
+		uint64_t close_wait_time_usec
 ) {
 	int ret = 0;
 
@@ -60,6 +61,7 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		goto out;
 	}
 
+	data->close_wait_time_usec = close_wait_time_usec;
 	data->handler_properties = handler_properties;
 	strcpy(data->client_name, client_name);
 
@@ -96,7 +98,8 @@ int rrr_mqtt_common_data_register_connection (
 			&connection,
 			&data->connections,
 			&accept_data->ip_data,
-			&accept_data->addr
+			&accept_data->addr,
+			data->close_wait_time_usec
 	);
 
 	return ret;

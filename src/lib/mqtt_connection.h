@@ -86,6 +86,9 @@ struct rrr_mqtt_connection {
 	int read_complete;
 	int parse_complete;
 
+	uint64_t close_wait_time_usec;
+	uint64_t close_wait_start;
+
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
 	union {
@@ -104,8 +107,11 @@ struct rrr_mqtt_connection {
 // It is not always possible to destroy a connection immediately when we
 // send a disconnect packet (or pretend to). This flags tells housekeeping
 // to destroy the connection, and also blocks further usage.
-#define RRR_MQTT_CONNECTION_STATE_DISCONNECTED				(1<<4)
-#define RRR_MQTT_CONNECTION_STATE_CLOSED					(1<<5)
+#define RRR_MQTT_CONNECTION_STATE_DISCONNECTED_				(1<<4)
+// After disconnecting, we wait a bit before close()-ing to let the client close first. The
+// broker sets the timeout for this, the client sets it to 0.
+#define RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT			(1<<5)
+#define RRR_MQTT_CONNECTION_STATE_CLOSED					(1<<6)
 
 #define RRR_MQTT_CONNECTION_STATE_CONNECT_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONNECTION_STATE_NEW)
@@ -123,7 +129,6 @@ struct rrr_mqtt_connection {
 							RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED		\
 	)) != 0)
 
-
 #define RRR_MQTT_CONNECTION_STATE_SEND_ANY_IS_ALLOWED(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED) != 0)
 
@@ -139,8 +144,14 @@ struct rrr_mqtt_connection {
 #define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONNECTION_STATE_NEW)
 
-#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(c) \
-	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED) != 0)
+#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECT_WAIT(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED_) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(c) \
+	(((c)->state_flags & (RRR_MQTT_CONNECTION_STATE_DISCONNECTED_|RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT)) != 0)
 
 #define RRR_MQTT_CONNECTION_STATE_IS_CLOSED(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_CLOSED) != 0)
@@ -171,7 +182,8 @@ int rrr_mqtt_connection_collection_new_connection (
 		struct rrr_mqtt_connection **connection,
 		struct rrr_mqtt_connection_collection *connections,
 		const struct ip_data *ip_data,
-		const struct sockaddr *remote_addr
+		const struct sockaddr *remote_addr,
+		uint64_t close_wait_time_usec
 );
 
 // It is possible while being in a callback function for the collection iterator

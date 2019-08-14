@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	10
 #define RRR_MQTT_BROKER_SESSION_EXPIRY	60
 #define RRR_MQTT_BROKER_RETRY_INTERVAL	5
+#define RRR_MQTT_BROKER_CLOSE_WAIT_TIME 3
 
 struct rrr_mqtt_listen_fd {
 	struct rrr_mqtt_listen_fd *next;

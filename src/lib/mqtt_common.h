@@ -48,6 +48,7 @@ struct rrr_mqtt_data {
 	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
 	struct rrr_mqtt_session_collection *sessions;
+	uint64_t close_wait_time_usec;
 };
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
@@ -55,7 +56,8 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const char *client_name,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
-		void *session_initializer_arg
+		void *session_initializer_arg,
+		uint64_t close_wait_time_usec
 );
 int rrr_mqtt_common_data_register_connection (
 		struct rrr_mqtt_data *data,
