@@ -282,7 +282,10 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 		VL_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
 	}
 
-	RRR_MQTT_CONNECTION_LOCK(connection);
+	if (RRR_MQTT_CONNECTION_TRYLOCK(connection) == 0) {
+		VL_BUG("Connection lock was not held in __rrr_mqtt_connection_destroy");
+	}
+
 	if (!RRR_MQTT_CONNECTION_STATE_IS_CLOSED(connection)) {
 		__rrr_mqtt_connection_close (connection);
 	}
@@ -324,8 +327,9 @@ static int __rrr_mqtt_connection_new (
 
 	if ((ret = pthread_mutex_init (&res->lock, 0)) != 0) {
 		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_connection_new\n");
-		goto out;
+		goto out_free;
 	}
+	RRR_MQTT_CONNECTION_LOCK(res);
 
 	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_decref);
 	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_decref);
@@ -333,7 +337,7 @@ static int __rrr_mqtt_connection_new (
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
-		goto out;
+		goto out_destroy_mutex;
 	}
 
 	res->ip_data = *ip_data;
@@ -358,15 +362,20 @@ static int __rrr_mqtt_connection_new (
 		}
 	}
 
-	out:
-	if (ret == RRR_MQTT_CONNECTION_OK) {
-		*connection = res;
-	}
-	else if (res != NULL) {
-		__rrr_mqtt_connection_destroy(res);
-	}
+	*connection = res;
+	RRR_MQTT_CONNECTION_UNLOCK(res);
 
-	return ret;
+	goto out;
+
+	out_destroy_mutex:
+		RRR_MQTT_CONNECTION_UNLOCK(res);
+		pthread_mutex_destroy(&res->lock);
+
+	out_free:
+		free(res);
+
+	out:
+		return ret;
 }
 
 void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collection *connections) {
@@ -383,6 +392,7 @@ void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collecti
 	struct rrr_mqtt_connection *cur = connections->first;
 	while (cur) {
 		struct rrr_mqtt_connection *next = cur->next;
+		RRR_MQTT_CONNECTION_LOCK(cur);
 		__rrr_mqtt_connection_destroy (cur);
 		cur = next;
 	}
@@ -515,11 +525,15 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 		struct rrr_mqtt_connection **cur
 ) {
 	int ret = RRR_MQTT_CONNECTION_OK;
+	struct rrr_mqtt_connection *to_unlock = NULL;
 
 	if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection while locking\n");
 		goto out;
 	}
+
+	RRR_MQTT_CONNECTION_LOCK(*cur);
+	to_unlock = *cur;
 
 	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(*cur)) {
 		VL_BUG("Connection state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
@@ -553,6 +567,7 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 	struct rrr_mqtt_connection *next = (*cur)->next;
 
 	__rrr_mqtt_connection_destroy(*cur);
+	to_unlock = NULL;
 
 	if ((*prev) != NULL) {
 		(*prev)->next = next;
@@ -564,6 +579,10 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 	}
 
 	out_unlock:
+	if (to_unlock != NULL) {
+		RRR_MQTT_CONNECTION_UNLOCK(to_unlock);
+	}
+
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection while unlocking\n");
 		goto out;
