@@ -446,23 +446,23 @@ static int __rrr_mqtt_session_ram_iterate_retries_callback (FIFO_CALLBACK_ARGS) 
 	struct iterate_retries_callback_data *retries_callback_data = callback_data->private_data;
 	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
 
-	pthread_mutex_lock(&packet->lock);
+	RRR_MQTT_P_LOCK(packet);
 
 	if (	retries_callback_data->force == 1 ||
 			time_get_64() - packet->last_attempt > retries_callback_data->retry_interval_millis
 	) {
-		pthread_mutex_unlock(&packet->lock);
+		RRR_MQTT_P_UNLOCK(packet);
 		ret = retries_callback_data->callback(packet, retries_callback_data->callback_arg);
 		if (ret != 0) {
 			retries_callback_data->callback_return = ret;
 			ret = FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
 			goto out_nolock;
 		}
-		pthread_mutex_lock(&packet->lock);
+		RRR_MQTT_P_LOCK(packet);
 		packet->last_attempt = time_get_64();
 	}
 
-	pthread_mutex_unlock(&packet->lock);
+	RRR_MQTT_P_UNLOCK(packet);
 
 	out_nolock:
 	return ret;

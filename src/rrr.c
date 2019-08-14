@@ -92,7 +92,7 @@ int main_signal_handler(int s, void *arg) {
 	return RRR_SIGNAL_NOT_HANDLED;
 }
 
-	int main (int argc, const char *argv[]) {
+ int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);

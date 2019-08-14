@@ -31,7 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
-#define RRR_MQTT_MAX_GENERATED_CLIENT_IDS 65535
+#define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
+
+#define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	10
+#define RRR_MQTT_BROKER_SESSION_EXPIRY	60
+#define RRR_MQTT_BROKER_RETRY_INTERVAL	5
 
 struct rrr_mqtt_listen_fd {
 	struct rrr_mqtt_listen_fd *next;

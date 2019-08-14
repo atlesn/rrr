@@ -34,13 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECTION_TYPE_IPV4 4
 #define RRR_MQTT_CONNECTION_TYPE_IPV6 6
 
-#define RRR_MQTT_CONNECTION_STATE_NEW							0
-#define RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED		1
-#define RRR_MQTT_CONNECTION_STATE_AUTHENTICATING				2
-#define RRR_MQTT_CONNECTION_STATE_ESTABLISHED					3
-#define RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED	4
-#define RRR_MQTT_CONNECTION_STATE_CLOSED						5
-
 #define RRR_MQTT_CONNECTION_OK					0
 #define RRR_MQTT_CONNECTION_INTERNAL_ERROR		(1<<0)
 #define RRR_MQTT_CONNECTION_DESTROY_CONNECTION	(1<<1)
@@ -72,7 +65,7 @@ struct rrr_mqtt_connection_read_session {
 struct rrr_mqtt_connection {
 	struct rrr_mqtt_connection *next;
 
-	pthread_mutex_t lock;
+	pthread_mutex_t __lock;
 
 	struct ip_data ip_data;
 
@@ -82,7 +75,7 @@ struct rrr_mqtt_connection {
 	char *client_id;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 
-	int __state;
+	uint32_t state_flags;
 
 	struct rrr_mqtt_connection_read_session read_session;
 	struct rrr_mqtt_p_parse_session parse_session;
@@ -101,24 +94,57 @@ struct rrr_mqtt_connection {
 	};
 };
 
+#define RRR_MQTT_CONNECTION_STATE_NEW						(0)
+#define RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED		(1<<0)
+#define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED	(1<<1)
+#define RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED			(1<<2)
+#define RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED		(1<<3)
+#define RRR_MQTT_CONNECTION_STATE_DISCONNECTED				(1<<4)
+#define RRR_MQTT_CONNECTION_STATE_CLOSED					(1<<5)
+
+#define RRR_MQTT_CONNECTION_STATE_CONNECT_ALLOWED(c) \
+	((c)->state_flags == RRR_MQTT_CONNECTION_STATE_NEW)
+
+#define RRR_MQTT_CONNECTION_STATE_SET(c,f) \
+	(c)->state_flags = (f)
+
+#define RRR_MQTT_CONNECTION_STATE_OR(c) \
+	(c)->state_flags |= c
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_IS_BUSY_CLIENT_ID(c)						\
+	(((c)->state_flags & (	RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED|		\
+							RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED|	\
+							RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED|			\
+							RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED		\
+	)) != 0)
+
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_ANY_IS_ALLOWED(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_IS_ALLOWED(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_IS_ALLOWED(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_IS_ALLOWED(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED) != 0)
+
 #define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_DISCONNECT_SENT_OR_RECEIVED || (c)->__state == RRR_MQTT_CONNECTION_STATE_CLOSED)
-
-#define RRR_MQTT_CONNECTION_STATE_SEND_CONNECT_ALLOWED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_NEW)
-
-#define RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_NEW)
-
-#define RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_CONNECT_SENT_OR_RECEIVED || (c)->__state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED)
-
-#define RRR_MQTT_CONNECTION_STATE_SEND_DISCONNECT_ALLOWED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_ESTABLISHED)
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED) != 0)
 
 #define RRR_MQTT_CONNECTION_STATE_IS_CLOSED(c) \
-	((c)->__state == RRR_MQTT_CONNECTION_STATE_CLOSED)
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_CLOSED) != 0)
 
+#define RRR_MQTT_CONNECTION_LOCK(c) \
+	pthread_mutex_lock(&((c)->__lock))
+
+#define RRR_MQTT_CONNECTION_UNLOCK(c) \
+	pthread_mutex_unlock(&((c)->__lock))
+
+#define RRR_MQTT_CONNECTION_TRYLOCK(c) \
+	pthread_mutex_trylock(&((c)->__lock))
 
 struct rrr_mqtt_connection_collection {
 	struct rrr_mqtt_connection *first;
@@ -154,6 +180,7 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 // Normal iterator, holds read lock. Connections must be destroyed ONLY by returning
 // RRR_MQTT_CONNECTION_DESTROY_CONNECTION from a callback function of an iterator.
 // This does not apply when program is closing and the collection is to be destroyed.
+// The iterator will temporarily obtain write lock when destroying a connection.
 
 // One MUST NOT work with ANY connections outside iterator callback-context
 
@@ -162,6 +189,9 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 // and do something with it. It is then possible to detect if the connection
 // actually did exist or if it was destroyed in the meantime before we called the
 // iterator.
+
+// Functions with connection/packet argument pair can be used as callback
+// for the rrr_mqtt_connection_with_iterator_ctx_do-function.
 int rrr_mqtt_connection_collection_iterate (
 		struct rrr_mqtt_connection_collection *connections,
 		int (*callback)(struct rrr_mqtt_connection *connection, void *callback_arg),
@@ -180,21 +210,43 @@ int rrr_mqtt_connection_handle_packets (
 		void *arg
 );
 
-// These functions MUST also be used ONLY in iterator context. The connection lock
-// MUST also be held when calling them.
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+// The iterator_ctx-functions MUST also be used ONLY in iterator context. The connection lock
+// AND packet lock (if packet argument present) MUST also be held when calling them.
 //
 // Functions with the connection/packet argument pair is also supported by the
 // iterator_ctx_do-function which can use these as callbacks.
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/* To call the outbound packet function safely, we MUST first incref the packet as the FIFO buffer
+ * upon errors immediately will decref the packet, and the lock would then be destroyed. It is also
+ * possible that another thread reads from the buffer before we continue and decrefs the packet.
+ * Caller needs to hold the packet data lock to call the iterator_ctx function, and it cannot be
+ * unlocked again if the packet is destroyed. */
 int rrr_mqtt_connection_queue_outbound_packet_iterator_ctx (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );
-int rrr_mqtt_connection_update_state_iterator_ctx (
+int rrr_mqtt_connection_set_protocol_version_iterator_ctx (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );
+
+#define RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN	1
+#define RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_OUT	2
+
+int rrr_mqtt_connection_update_state_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet,
+		int direction
+);
 int rrr_mqtt_connection_send_disconnect_iterator_ctx (
-		struct rrr_mqtt_connection *connection
+		struct rrr_mqtt_connection *connection,
+		uint8_t reason
+);
+int rrr_mqtt_connection_send_packet_nobuf_iterator_ctx (
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet
 );
 
 

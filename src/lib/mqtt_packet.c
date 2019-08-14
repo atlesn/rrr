@@ -58,7 +58,8 @@ static struct rrr_mqtt_p_packet *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLO
 		ret->users = 1;
 		ret->create_time = time_get_64();
 		ret->packet_identifier = 0;
-		pthread_mutex_init(&ret->lock, 0);
+		pthread_mutex_init(&ret->data_lock, 0);
+		pthread_mutex_init(&ret->refcount_lock, 0);
 	}
 	return ret;
 }
@@ -205,57 +206,62 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 	{15, 0,	"AUTH",			1, 0, sizeof(struct rrr_mqtt_p_packet_auth),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_auth,		rrr_mqtt_assemble_auth,			__rrr_mqtt_p_free_auth}
 };
 
-struct rrr_mqtt_p_connect_reason {
+struct rrr_mqtt_p_reason {
 	uint8_t v5_reason;
 	uint8_t v31_reason;
+	uint8_t for_connack;
+	uint8_t for_disconnect;
 	const char *description;
 };
 
-#define RRR_MQTT_P_31_CONNECT_REASON_OK 0
-#define RRR_MQTT_P_31_CONNECT_REASON_REFUSED_PROTOCOL_VERSION 1
-#define RRR_MQTT_P_31_CONNECT_REASON_REFUSED_IDENTIFIER_REJECTED 2
-#define RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE 3
-#define RRR_MQTT_P_31_CONNECT_REASON_REFUSED_BAD_CREDENTIALS 4
-#define RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED 5
+const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
+		// The six version 3.1 reasons must be first
+		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, "Success"},
+		{ 0x84, RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION,	1, 0, "Refused/unsupported protocol version"},
+		{ 0x85, RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED,	1, 0, "Client identifier not valid/rejected"},
+		{ 0x86, RRR_MQTT_P_31_REASON_BAD_CREDENTIALS,		1, 0, "Bad user name or password"},
+		{ 0x87, RRR_MQTT_P_31_REASON_NOT_AUTHORIZED,		1, 0, "Not authorized"},
+		{ 0x88, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, "Server unavailable"},
 
-const struct rrr_mqtt_p_connect_reason rrr_mqtt_p_connect_reason_map_from_v5[] = {
-		{ 0x00, RRR_MQTT_P_31_CONNECT_REASON_OK,							"Success"},
-		{ 0x81, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Malformed packet"},
-		{ 0x82, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Protocol error"},
-		{ 0x83, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Implementation specific error"},
-		{ 0x84, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_PROTOCOL_VERSION,		"Unsupported Protocol Version"},
-		{ 0x85, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_IDENTIFIER_REJECTED,	"Client Identifier not valid"},
-		{ 0x86, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_BAD_CREDENTIALS,		"Bad User Name or Password"},
-		{ 0x87, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Not authorized"},
-		{ 0x88, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Server unavailable"},
-		{ 0x89, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Server busy"},
-		{ 0x8A, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Banned"},
-		{ 0x8C, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Bad authentication method"},
-		{ 0x90, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Topic Name invalid"},
-		{ 0x95, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Packet too large"},
-		{ 0x97, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Quota exceeded"},
-		{ 0x99, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Payload format invalid"},
-		{ 0x9A, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Retain not supported"},
-		{ 0x9B, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"QoS not supported"},
-		{ 0x9C, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Use another server"},
-		{ 0x9D, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Server moved"},
-		{ 0x9F, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Connection rate exceeded"},
-		{ 0, 0, NULL}
+		{ 0x04, RRR_MQTT_P_31_REASON_NA,					0, 1, "Disconnect with Will Message"},
+		{ 0x80, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, "Unspecified error"},
+		{ 0x81, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, "Malformed packet"},
+		{ 0x82, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, "Protocol error"},
+		{ 0x83, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, "Implementation specific error"},
+
+		{ 0x89, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 1, "Server busy"},
+		{ 0x8A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Banned"},
+		{ 0x8B, RRR_MQTT_P_31_REASON_NA,					0, 1, "Server shutting down"},
+		{ 0x8C, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Bad authentication method"},
+		{ 0x8D, RRR_MQTT_P_31_REASON_NA,					0, 1, "Keep alive timeout"},
+
+		{ 0x8E, RRR_MQTT_P_31_REASON_NA,					0, 1, "Session taken over"},
+		{ 0x8F, RRR_MQTT_P_31_REASON_NA,					0, 1, "Topic filter invalid"},
+		{ 0x90, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Topic Name invalid"},
+		{ 0x93, RRR_MQTT_P_31_REASON_NA,					0, 1, "Receive maximum exceeded"},
+		{ 0x94, RRR_MQTT_P_31_REASON_NA,					0, 1, "Topic alias invalid"},
+
+		{ 0x95, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Packet too large"},
+		{ 0x96, RRR_MQTT_P_31_REASON_NA,					0, 1, "Messsage rate too large"},
+		{ 0x97, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Quota exceeded"},
+		{ 0x98, RRR_MQTT_P_31_REASON_NA,					0, 1, "Administrative action"},
+		{ 0x99, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Payload format invalid"},
+
+		{ 0x9A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "Retain not supported"},
+		{ 0x9B, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, "QoS not supported"},
+		{ 0x9C, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, "Use another server"},
+		{ 0x9D, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, "Server moved"},
+		{ 0x9F, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, "Connection rate exceeded"},
+
+		{ 0xA0, RRR_MQTT_P_31_REASON_NA,					0, 1, "Maximum connect time"},
+		{ 0xA1, RRR_MQTT_P_31_REASON_NA,					0, 1, "Subscription Identifiers not supported"},
+		{ 0xA2, RRR_MQTT_P_31_REASON_NA,					0, 1, "Wildcard Subscriptions not supported"},
+		{ 0,	0,											0, 0, NULL}
 };
 
-const struct rrr_mqtt_p_connect_reason rrr_mqtt_p_connect_reason_map_from_v31[] = {
-		{ 0x00, RRR_MQTT_P_31_CONNECT_REASON_OK,							"Success"},
-		{ 0x84, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_PROTOCOL_VERSION,		"Refused protocol version"},
-		{ 0x85, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_IDENTIFIER_REJECTED,	"Client identifier rejected"},
-		{ 0x88, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_SERVER_UNAVAILABLE,	"Server unavailable"},
-		{ 0x86, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_BAD_CREDENTIALS,		"Bad user name or password"},
-		{ 0x87, RRR_MQTT_P_31_CONNECT_REASON_REFUSED_NOT_AUTHORIZED,		"Not authorized"},
-		{ 0, 0, NULL}
-};
-
-uint8_t rrr_mqtt_p_translate_connect_reason_from_v5 (uint8_t v5_reason) {
-	for (int i = 0; rrr_mqtt_p_connect_reason_map_from_v5[i].description != NULL; i++) {
-		const struct rrr_mqtt_p_connect_reason *test = &rrr_mqtt_p_connect_reason_map_from_v5[i];
+uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {
+	for (int i = 0; rrr_mqtt_p_reason_map[i].description != NULL; i++) {
+		const struct rrr_mqtt_p_reason *test = &rrr_mqtt_p_reason_map[i];
 		if (test->v5_reason == v5_reason) {
 			return test->v31_reason;
 		}
@@ -264,9 +270,12 @@ uint8_t rrr_mqtt_p_translate_connect_reason_from_v5 (uint8_t v5_reason) {
 	return 0;
 }
 
-uint8_t rrr_mqtt_p_translate_connect_reason_from_v31 (uint8_t v31_reason) {
-	for (int i = 0; rrr_mqtt_p_connect_reason_map_from_v31[i].description != NULL; i++) {
-		const struct rrr_mqtt_p_connect_reason *test = &rrr_mqtt_p_connect_reason_map_from_v31[i];
+uint8_t rrr_mqtt_p_translate_reason_from_v31 (uint8_t v31_reason) {
+	if (v31_reason > RRR_MQTT_P_31_REASON_MAX) {
+		VL_BUG("Reason was above max in rrr_mqtt_p_translate_reason_from_v31 (got %u)\n", v31_reason);
+	}
+	for (int i = 0; rrr_mqtt_p_reason_map[i].description != NULL; i++) {
+		const struct rrr_mqtt_p_reason *test = &rrr_mqtt_p_reason_map[i];
 		if (test->v31_reason == v31_reason) {
 			return test->v5_reason;
 		}

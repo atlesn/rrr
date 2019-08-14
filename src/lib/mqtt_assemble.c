@@ -101,7 +101,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		START_VARIABLE_HEADER();
 		PUT_BYTE(connack->ack_flags);
-		PUT_BYTE(connack->connect_reason_code);
+		PUT_BYTE(connack->reason_v5);
 		uint8_t zero = 0;
 		PUT_BYTE(zero);
 
@@ -110,9 +110,13 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		END_VARIABLE_HEADER();
 	}
 	else {
+		uint8_t reason_v31 = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
+		if (reason_v31 > 5) {
+			VL_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
+		}
 		PUT_HEADER(2);
 		PUT_BYTE(connack->ack_flags);
-		PUT_BYTE(rrr_mqtt_p_translate_connect_reason_from_v5(connack->connect_reason_code));
+		PUT_BYTE(reason_v31);
 	}
 
 	BUF_DESTROY_AND_RETURN();
