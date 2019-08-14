@@ -234,12 +234,12 @@ int write_callback(struct fifo_callback_args *poll_data, char *data, unsigned lo
 	else if (err == BDL_WRITE_ERR_SIZE) {
 		VL_MSG_ERR ("blockdev: Blocks on the device are not big enough to fit our data.\n");
 		blockdev_data->do_bdl_reset = 1;
-		return FIFO_SEARCH_ERR;
+		return FIFO_CALLBACK_ERR;
 	}
 	else if (err != 0) {
 		VL_MSG_ERR ("blockdev: Could not write data to device (error %i), leaving it in the buffer\n", err);
 		blockdev_data->do_bdl_reset = 1;
-		return FIFO_SEARCH_ERR;
+		return FIFO_CALLBACK_ERR;
 	}
 
 	VL_DEBUG_MSG_3 ("blockdev: Data was written to device successfully\n");

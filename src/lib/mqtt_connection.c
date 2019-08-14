@@ -194,7 +194,7 @@ int __rrr_mqtt_connection_collection_write_to_read_lock (struct rrr_mqtt_connect
 	return ret;
 }
 
-int rrr_mqtt_connection_send_disconnect_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_send_disconnect (
 		struct rrr_mqtt_connection *connection,
 		uint8_t reason
 ) {
@@ -220,12 +220,16 @@ int rrr_mqtt_connection_send_disconnect_iterator_ctx (
 
 	// If a CONNACK is sent, we must not sent DISCONNECT packet
 	if (RRR_MQTT_CONNECTION_STATE_SEND_ANY_IS_ALLOWED(connection)) {
-		if ((ret = rrr_mqtt_connection_send_packet_nobuf_iterator_ctx (
+		if ((ret = rrr_mqtt_connection_iterator_ctx_send_packet_nobuf (
 				connection,
 				(struct rrr_mqtt_p_packet *) disconnect
 		)) != RRR_MQTT_CONNECTION_OK) {
-			VL_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_connection_send_disconnect_and_close_unlocked\n");
-			goto send_disconnect_out;
+			ret = ret & ~RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+			if (ret != RRR_MQTT_CONNECTION_OK) {
+				VL_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_connection_send_disconnect_and_close_unlocked\n");
+				goto send_disconnect_out;
+			}
+			ret |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 		}
 
 		send_disconnect_out:
@@ -469,7 +473,7 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 				VL_BUG("Destroy connection flag not allowed in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 			}
 			if ((ret_tmp & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
-				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 				callback_ret |= ret_tmp;
 				break;
 			}
@@ -478,7 +482,7 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 				break;
 			}
 
-			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
 
 		cur = cur->next;
@@ -675,6 +679,10 @@ int rrr_mqtt_connection_read (
 	}
 
 	bytes = bytes_int;
+
+	if (bytes == 0) {
+		goto out_unlock;
+	}
 
 	/* Check for new read session */
 	if (read_session->rx_buf == NULL) {
@@ -968,7 +976,8 @@ struct handle_packets_callback {
 };
 
 static int __rrr_mqtt_connection_handle_packets_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	int ret = FIFO_OK;
+	// Remember to ALWAYS return FIFO_SEARCH_FREE
+	int ret = FIFO_SEARCH_FREE;
 
 	(void)(size);
 
@@ -977,33 +986,56 @@ static int __rrr_mqtt_connection_handle_packets_callback (struct fifo_callback_a
 	struct rrr_mqtt_connection *connection = handle_packets_data->connection;
 	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
 
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
+		if (!RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
+			VL_MSG_ERR("Received a CONNECT packet while not allowed in __rrr_mqtt_connection_handle_packets_callback\n");
+			ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+			goto out;
+		}
+	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNACK) {
+		if (!RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)) {
+			VL_MSG_ERR("Received a CONNACK packet while not allowed in __rrr_mqtt_connection_handle_packets_callback\n");
+			ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+			goto out;
+		}
+	}
+	else if (!RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
+		VL_MSG_ERR("Received a %s packet while only CONNECT was allowed in __rrr_mqtt_connection_handle_packets_callback\n",
+				RRR_MQTT_P_GET_TYPE_NAME(packet));
+		ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+		goto out;
+	}
+
 	if (mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler == NULL) {
 		VL_MSG_ERR("No handler specified for packet type %i\n", RRR_MQTT_P_GET_TYPE(packet));
-		return FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+		ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+		goto out;
 	}
 
 	int tmp = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, connection, packet);
 
-	printf ("handler return: %i\n", handle_packets_data->handler_return);
+	printf ("handler return: %i\n", tmp);
 
 	if (tmp != RRR_MQTT_CONNECTION_OK) {
 		if ((tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
 			handle_packets_data->handler_return = RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
-			ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+			ret |= FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
 		}
 		if ((tmp & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
 			handle_packets_data->handler_return = RRR_MQTT_CONNECTION_SOFT_ERROR;
-			ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+			ret |= FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
 		}
 
 		tmp = tmp & ~(RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION);
 		if (tmp != 0) {
 			handle_packets_data->handler_return = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
-			ret |= FIFO_SEARCH_STOP|FIFO_GLOBAL_ERR;
+			ret |=  FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
 		}
 	}
 
-	return ret;
+	out:
+	return ret | FIFO_SEARCH_FREE;
 }
 
 int rrr_mqtt_connection_handle_packets (
@@ -1018,7 +1050,10 @@ int rrr_mqtt_connection_handle_packets (
 		goto out_nolock;
 	}
 
-	if (RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
+	if (	!RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_IS_ALLOWED(connection) &&
+			!RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection) &&
+			!RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)
+	) {
 		ret = RRR_MQTT_CONNECTION_BUSY;
 		goto out;
 	}
@@ -1050,7 +1085,8 @@ int rrr_mqtt_connection_handle_packets (
 		ret = callback_data.handler_return;
 		if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
 			VL_MSG_ERR("Soft error while handling packets from mqtt client, destroying connection.\n");
-			ret |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+			// Always set DESTROY on SOFT ERROR
+			ret |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION|RRR_MQTT_CONNECTION_SOFT_ERROR;
 		}
 
 		int ret_old = ret;
@@ -1147,6 +1183,8 @@ static int __rrr_mqtt_connection_send_packet (
 		struct rrr_mqtt_p_packet *packet
 ) {
 	int ret = RRR_MQTT_CONNECTION_OK;
+	int ret_destroy = 0;
+
 	char *network_data = NULL;
 	ssize_t network_size = 0;
 
@@ -1156,25 +1194,31 @@ static int __rrr_mqtt_connection_send_packet (
 	}
 
 	if (packet->assembled_data == NULL) {
-		ret = RRR_MQTT_P_GET_ASSEMBLER(packet)(
+		int ret_tmp = RRR_MQTT_P_GET_ASSEMBLER(packet) (
 				&network_data,
 				&network_size,
 				packet
 		);
 
-		if (ret != RRR_MQTT_ASSEMBLE_OK) {
-			VL_MSG_ERR("Error while assembling packet in __rrr_mqtt_connection_send_packets_callback\n");
-			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
-			goto out_unlock;
-		}
+		packet->assembled_data = network_data;
+		packet->assembled_data_size = network_size;
 
 		if (network_size < 2 || network_data == NULL) {
 			VL_BUG("Assembled packet size was <2 or NULL in __rrr_mqtt_connection_send_packets_callback\n");
 		}
 
-		packet->assembled_data = network_data;
-		packet->assembled_data_size = network_size;
 		network_data = NULL;
+
+		if ((ret_tmp & RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION) != 0) {
+			ret_tmp = ret_tmp & ~RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION;
+			ret_destroy |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		}
+
+		if (ret_tmp != RRR_MQTT_ASSEMBLE_OK) {
+			VL_MSG_ERR("Error while assembling packet in __rrr_mqtt_connection_send_packets_callback\n");
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			goto out_unlock;
+		}
 	}
 
 	// It is possible here to actually send a packet which is not allowed in the current
@@ -1203,7 +1247,7 @@ static int __rrr_mqtt_connection_send_packet (
 
 	out_unlock:
 	RRR_FREE_IF_NOT_NULL(network_data);
-	return ret;
+	return ret | ret_destroy;
 }
 
 static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
@@ -1227,7 +1271,7 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 		}
 		if (ret_tmp != 0) {
 			VL_MSG_ERR("Internal error while sending packet in __rrr_mqtt_connection_send_packets_callback\n");
-			ret |= FIFO_GLOBAL_ERR;
+			ret = FIFO_GLOBAL_ERR;
 		}
 		goto out;
 	}
@@ -1324,7 +1368,7 @@ int rrr_mqtt_connection_set_protocol_version_iterator_ctx (
 	return RRR_MQTT_CONNECTION_OK;
 }
 
-int rrr_mqtt_connection_update_state_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_update_state (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet,
 		int direction
@@ -1399,10 +1443,12 @@ int rrr_mqtt_connection_update_state_iterator_ctx (
 	return RRR_MQTT_CONNECTION_OK;
 }
 
-int rrr_mqtt_connection_send_packet_nobuf_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_send_packet_nobuf (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 ) {
+	int ret = RRR_MQTT_CONNECTION_OK;
+
 	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
 		VL_BUG("Packet lock was not held in rrr_mqtt_connection_update_state_iterator_ctx\n");
 	}
@@ -1410,20 +1456,21 @@ int rrr_mqtt_connection_send_packet_nobuf_iterator_ctx (
 		VL_BUG("Connection lock was not held in rrr_mqtt_connection_update_state_iterator_ctx\n");
 	}
 
-	int ret = __rrr_mqtt_connection_send_packet(connection, packet);
-	if (ret != RRR_MQTT_CONNECTION_OK) {
-		VL_MSG_ERR("Error while sending packet in rrr_mqtt_connection_send_packet_nobuf_iterator_ctx\n");
-		goto out;
-	}
-
 	// When we send control packets, we always use this nobuf function, so this is
 	// the only place we update connection state when sending packets
-	if ((ret = rrr_mqtt_connection_update_state_iterator_ctx (
+	ret = rrr_mqtt_connection_iterator_ctx_update_state (
 			connection,
 			packet,
 			RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_OUT
-	)) != RRR_MQTT_CONNECTION_OK) {
+	);
+	if (ret != RRR_MQTT_CONNECTION_OK) {
 		VL_MSG_ERR("Could not update connection state in rrr_mqtt_connection_send_disconnect_unlocked\n");
+		goto out;
+	}
+
+	ret = __rrr_mqtt_connection_send_packet(connection, packet);
+	if ((ret & (RRR_MQTT_CONNECTION_INTERNAL_ERROR|RRR_MQTT_CONNECTION_SOFT_ERROR)) != 0) {
+		VL_MSG_ERR("Error while sending packet in rrr_mqtt_connection_send_packet_nobuf_iterator_ctx\n");
 		goto out;
 	}
 

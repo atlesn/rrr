@@ -39,9 +39,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
 #define FIFO_MAX_READS 500 // Maximum number of reads per call to a read function
 
-#define FIFO_OK 0
-#define FIFO_GLOBAL_ERR -1
-#define FIFO_CALLBACK_ERR 1
+#define FIFO_OK					0
+#define FIFO_GLOBAL_ERR			(1<<0)
+#define FIFO_CALLBACK_ERR		(1<<1)
+
+#define FIFO_SEARCH_KEEP	0
+#define FIFO_SEARCH_STOP	(1<<3)
+#define FIFO_SEARCH_GIVE	(1<<4)
+#define FIFO_SEARCH_FREE	(1<<5)
 
 #define FIFO_CALLBACK_ARGS \
 	struct fifo_callback_args *callback_data, char *data, unsigned long int size
@@ -284,12 +289,6 @@ static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wa
  * to by the fifo_callback_data struct, and the callback has to do the
  * counting.
  */
-
-#define FIFO_SEARCH_KEEP	0
-#define FIFO_SEARCH_ERR		1
-#define FIFO_SEARCH_STOP	(1 << 1)
-#define FIFO_SEARCH_GIVE	(1 << 2)
-#define FIFO_SEARCH_FREE	(1 << 3)
 
 int fifo_buffer_clear (
 		struct fifo_buffer *buffer

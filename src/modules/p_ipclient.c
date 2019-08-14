@@ -223,7 +223,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 			info,
 			VL_DEBUGLEVEL_2 ? &ipclient_data->stats.send : NULL
 	) != 0) {
-		return FIFO_SEARCH_ERR;
+		return FIFO_CALLBACK_ERR;
 	}
 
 	info->packet_counter++;

@@ -94,11 +94,16 @@ struct rrr_mqtt_connection {
 	};
 };
 
+// TODO : Create some mechanism to make the client close first when we send DISCONNECT to avoid holding TIME_WAIT
+
 #define RRR_MQTT_CONNECTION_STATE_NEW						(0)
 #define RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED		(1<<0)
 #define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED	(1<<1)
 #define RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED			(1<<2)
 #define RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED		(1<<3)
+// It is not always possible to destroy a connection immediately when we
+// send a disconnect packet (or pretend to). This flags tells housekeeping
+// to destroy the connection, and also blocks further usage.
 #define RRR_MQTT_CONNECTION_STATE_DISCONNECTED				(1<<4)
 #define RRR_MQTT_CONNECTION_STATE_CLOSED					(1<<5)
 
@@ -112,9 +117,9 @@ struct rrr_mqtt_connection {
 	(c)->state_flags |= c
 
 #define RRR_MQTT_CONNECTION_STATE_SEND_IS_BUSY_CLIENT_ID(c)						\
-	(((c)->state_flags & (	RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED|		\
-							RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED|	\
-							RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED|			\
+	(((c)->state_flags & (	RRR_MQTT_CONNECTION_STATE_SEND_CONNACK_ALLOWED |	\
+							RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED |	\
+							RRR_MQTT_CONNECTION_STATE_SEND_ANY_ALLOWED |		\
 							RRR_MQTT_CONNECTION_STATE_RECEIVE_ANY_ALLOWED		\
 	)) != 0)
 
@@ -130,6 +135,9 @@ struct rrr_mqtt_connection {
 
 #define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_IS_ALLOWED(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNACK_ALLOWED) != 0)
+
+#define RRR_MQTT_CONNECTION_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
+	((c)->state_flags == RRR_MQTT_CONNECTION_STATE_NEW)
 
 #define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED) != 0)
@@ -235,16 +243,16 @@ int rrr_mqtt_connection_set_protocol_version_iterator_ctx (
 #define RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN	1
 #define RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_OUT	2
 
-int rrr_mqtt_connection_update_state_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_update_state (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet,
 		int direction
 );
-int rrr_mqtt_connection_send_disconnect_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_send_disconnect (
 		struct rrr_mqtt_connection *connection,
 		uint8_t reason
 );
-int rrr_mqtt_connection_send_packet_nobuf_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_send_packet_nobuf (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );

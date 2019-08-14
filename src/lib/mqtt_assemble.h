@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_ASSEMBLE_OK 0
 #define RRR_MQTT_ASSEMBLE_ERR 1
+#define RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION 2
 
 #define RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION \
 		char **target, ssize_t *size, struct rrr_mqtt_p_packet *packet

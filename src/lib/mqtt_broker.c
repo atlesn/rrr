@@ -220,7 +220,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 
 	RRR_MQTT_CONNECTION_LOCK(connection);
 
-	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
+	if (!RRR_MQTT_CONNECTION_STATE_SEND_IS_BUSY_CLIENT_ID(connection)) {
 		// Equal name with a CLOSED connection is OK
 		ret = RRR_MQTT_CONNECTION_OK;
 		goto out;
@@ -230,20 +230,25 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
 		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
 
-		ret = rrr_mqtt_connection_send_disconnect_iterator_ctx(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
-		if (ret != RRR_MQTT_CONNECTION_OK) {
-			// On soft error, we cannot be sure that the existing client was actually
-			// disconnected, and we must disallow the new connection
-			if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
-				VL_MSG_ERR("Soft error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
-				ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
-			}
-			if (ret != RRR_MQTT_CONNECTION_OK) {
-				VL_MSG_ERR("Internal error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
-				ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
-			}
+		int ret_tmp = rrr_mqtt_connection_iterator_ctx_send_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+
+		// On soft error, we cannot be sure that the existing client was actually
+		// disconnected, and we must disallow the new connection
+		if ((ret_tmp & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
+			ret_tmp = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
 			ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
 		}
+
+		// We are not allowed to destroy the connection inside the read_to_write-iterator, it must be done by housekeeping
+		ret_tmp = ret_tmp & ~RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+
+		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
+			VL_MSG_ERR("Internal error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
+			ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		}
+
+		ret |= RRR_MQTT_CONNECTION_ITERATE_STOP;
 	}
 
 	out:
@@ -277,6 +282,8 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect (
 			VL_DEBUG_MSG_1("Client id %s was already used in an active connection, the old one was disconnected\n", client_id);
 			ret = (ret & ~RRR_MQTT_CONNECTION_ITERATE_STOP);
 		}
+
+		int old_ret = ret;
 		if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
 			VL_MSG_ERR("Soft error while checking for unique client ID %s, must disconnect the client\n", client_id);
 			ret = (ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR);
@@ -285,7 +292,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect (
 			VL_MSG_ERR("Internal error while checking for unique client ID %s, must close the server.\n", client_id);
 			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 		}
-		ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
+		ret |= old_ret;
 	}
 
 	return ret;
@@ -345,6 +352,7 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 
 static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONNECTION_OK;
+	int ret_destroy = 0;
 
 	struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
@@ -364,7 +372,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	connack = (struct rrr_mqtt_p_packet_connack *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_CONNACK, connect->protocol_version);
 
-	rrr_mqtt_connection_update_state_iterator_ctx (connection, packet, RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN);
+	rrr_mqtt_connection_iterator_ctx_update_state (connection, packet, RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN);
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
 		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
@@ -474,7 +482,8 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	connack->ack_flags = session_present;
 
 	out_send_connack:
-	if (ret == RRR_MQTT_CONNECTION_SOFT_ERROR && reason_v5 == 0) {
+
+	if ((ret & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0 && reason_v5 == 0) {
 		VL_BUG("Reason was not set on soft error in rrr_mqtt_p_handler_connect\n");
 	}
 	connack->reason_v5 = reason_v5;
@@ -482,7 +491,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if (connack->protocol_version->id < 5) {
 		uint8_t v31_reason = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
 		if (v31_reason == RRR_MQTT_P_31_REASON_NO_CONNACK) {
-			goto out_dont_send_connack;
+			goto out;
 		}
 		else if (v31_reason > 5) {
 			VL_BUG("Unknown V3.1 CONNECT reason code %u in rrr_mqtt_p_handler_connect, v5 code was %u\n",
@@ -492,64 +501,57 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	RRR_MQTT_P_LOCK(connack);
-	ret = rrr_mqtt_connection_send_packet_nobuf_iterator_ctx(connection, (struct rrr_mqtt_p_packet *) connack);
+	ret = rrr_mqtt_connection_iterator_ctx_send_packet_nobuf(connection, (struct rrr_mqtt_p_packet *) connack);
 	RRR_MQTT_P_UNLOCK(connack);
 
-	out_dont_send_connack:
-
-	// The handler will take care of the memory of the packet regardless of errors
-	connack = NULL;
+	if ((ret & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
+		ret = ret & ~RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		VL_DEBUG_MSG_1("CONNACK which was sent had non-zero reason, destroying connection\n");
+		ret_destroy = RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+	}
 
 	if (ret != 0) {
-		VL_MSG_ERR("Error occured while queing CONNACK for sending in rrr_mqtt_p_handler_connect\n");
+		VL_MSG_ERR("Error occured while sending CONNACK for sending in rrr_mqtt_p_handler_connect\n");
 		goto out;
 	}
 
 	out:
+
 	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
-	RRR_MQTT_P_DECREF(packet);
-	return ret;
+	return ret | ret_destroy;
 }
 
 static int rrr_mqtt_p_handler_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_puback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 static int rrr_mqtt_p_handler_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
-	RRR_MQTT_P_DECREF(packet);
 	return ret;
 }
 
@@ -560,7 +562,7 @@ static int rrr_mqtt_p_handler_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_P_LOCK(packet);
 
-	if ((ret = rrr_mqtt_connection_update_state_iterator_ctx (
+	if ((ret = rrr_mqtt_connection_iterator_ctx_update_state (
 			connection,
 			packet,
 			RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN
@@ -571,7 +573,6 @@ static int rrr_mqtt_p_handler_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out:
 	RRR_MQTT_P_UNLOCK(packet);
-	RRR_MQTT_P_DECREF(packet);
 	return ret | RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 }
 

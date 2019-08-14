@@ -55,12 +55,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		session.wpos += count;																\
 		} while (0)
 
-#define BUF_DESTROY_AND_RETURN()									\
+#define BUF_DESTROY_AND_RETURN(extra_ret_value)						\
 		out:														\
 		*size = session.wpos - session.buf;							\
 		*target = rrr_mqtt_payload_buf_extract_buffer(&session);	\
 		rrr_mqtt_payload_buf_destroy (&session);					\
-		return ret
+		return (ret | (extra_ret_value))
 
 #define PUT_HEADER(rem_length) do {																\
 		if (RRR_MQTT_P_IS_RESERVED_FLAGS(packet) &&												\
@@ -119,7 +119,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		PUT_BYTE(reason_v31);
 	}
 
-	BUF_DESTROY_AND_RETURN();
+	BUF_DESTROY_AND_RETURN(connack->reason_v5 != RRR_MQTT_P_5_REASON_OK ? RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION : 0);
 }
 
 int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -196,7 +196,7 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		PUT_HEADER(0);
 	}
 
-	BUF_DESTROY_AND_RETURN();
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION);
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {

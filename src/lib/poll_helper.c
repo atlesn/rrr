@@ -262,7 +262,9 @@ int poll_do_poll_delete (
 			ret = 1;
 			break;
 		}
-		if ((ret_tmp & FIFO_CALLBACK_ERR) ==  FIFO_CALLBACK_ERR || (ret_tmp & FIFO_GLOBAL_ERR) == FIFO_GLOBAL_ERR) {
+		if (	(ret_tmp & FIFO_CALLBACK_ERR) ==  FIFO_CALLBACK_ERR ||
+				(ret_tmp & FIFO_GLOBAL_ERR) == FIFO_GLOBAL_ERR
+		) {
 			*faulty_instance = entry->thread_data;
 			ret = 1;
 			if (control_flags & RRR_POLL_BREAK_ON_ERR) {

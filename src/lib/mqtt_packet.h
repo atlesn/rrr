@@ -181,6 +181,9 @@ struct rrr_mqtt_p_packet {
 		pthread_mutex_lock(&(p)->refcount_lock);					\
 		--(p)->users;												\
 		pthread_mutex_unlock(&(p)->refcount_lock);					\
+		if ((p)->users < 0) {										\
+			VL_BUG("Users was < 0 in RRR_MQTT_P_DECREF\n");			\
+		}															\
 		if ((p)->users == 0) {										\
 			RRR_FREE_IF_NOT_NULL((p)->assembled_data);				\
 			pthread_mutex_destroy(&(p)->refcount_lock);				\

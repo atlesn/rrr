@@ -271,7 +271,7 @@ int fifo_search (
 		if (actions == FIFO_SEARCH_KEEP) { // Just a 0
 			goto keep;
 		}
-		if (actions == FIFO_SEARCH_ERR) {
+		if ((actions & FIFO_CALLBACK_ERR) != 0) {
 			err = FIFO_CALLBACK_ERR;
 			break;
 		}
@@ -507,7 +507,11 @@ int fifo_read_clear_forward (
 				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
 				ret = FIFO_CALLBACK_ERR;
 			}
-			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR);
+			if ((ret_tmp & FIFO_GLOBAL_ERR) != 0) {
+				// Callback will free the memory also on error, unless FIFO_SEARCH_FREE is specified
+				ret = FIFO_GLOBAL_ERR;
+			}
+			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR|FIFO_GLOBAL_ERR);
 			if (ret_tmp != 0) {
 				VL_BUG("Unknown flags %i returned to fifo_read_clear_forward\n", ret_tmp);
 			}
@@ -566,12 +570,17 @@ int fifo_read (
 			else if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
 				VL_BUG("Bug: FIFO_SEARCH_GIVE or FIFO_SEARCH_FREE returned to fifo_read\n");
 			}
-			else if (ret_tmp == FIFO_GLOBAL_ERR) {
+			else if ((ret_tmp & FIFO_GLOBAL_ERR) != 0) {
 				ret = FIFO_GLOBAL_ERR;
 				break;
 			}
 			else {
 				ret |= ret_tmp;
+			}
+
+			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR|FIFO_GLOBAL_ERR);
+			if (ret_tmp != 0) {
+				VL_BUG("Unknown flags %i returned to fifo_read_clear_forward\n", ret_tmp);
 			}
 		}
 		first = first->next;
