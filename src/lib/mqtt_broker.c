@@ -230,7 +230,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
 		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
 
-		int ret_tmp = rrr_mqtt_connection_iterator_ctx_send_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+		int ret_tmp = rrr_mqtt_connection_iterator_ctx_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
 
 		// On soft error, we cannot be sure that the existing client was actually
 		// disconnected, and we must disallow the new connection
@@ -368,7 +368,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		VL_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
 	}
 
-	rrr_mqtt_connection_set_protocol_version_iterator_ctx (connection, packet);
+	rrr_mqtt_connection_iterator_ctx_set_protocol_version (connection, packet);
 
 	connack = (struct rrr_mqtt_p_packet_connack *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_CONNACK, connect->protocol_version);
 

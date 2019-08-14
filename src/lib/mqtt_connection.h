@@ -65,7 +65,7 @@ struct rrr_mqtt_connection_read_session {
 struct rrr_mqtt_connection {
 	struct rrr_mqtt_connection *next;
 
-	pthread_mutex_t __lock;
+	pthread_mutex_t lock;
 
 	struct ip_data ip_data;
 
@@ -76,6 +76,7 @@ struct rrr_mqtt_connection {
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 
 	uint32_t state_flags;
+	uint8_t disconnect_reason_v5;
 
 	struct rrr_mqtt_connection_read_session read_session;
 	struct rrr_mqtt_p_parse_session parse_session;
@@ -107,7 +108,7 @@ struct rrr_mqtt_connection {
 // It is not always possible to destroy a connection immediately when we
 // send a disconnect packet (or pretend to). This flags tells housekeeping
 // to destroy the connection, and also blocks further usage.
-#define RRR_MQTT_CONNECTION_STATE_DISCONNECTED_				(1<<4)
+#define RRR_MQTT_CONNECTION_STATE_DISCONNECTED				(1<<4)
 // After disconnecting, we wait a bit before close()-ing to let the client close first. The
 // broker sets the timeout for this, the client sets it to 0.
 #define RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT			(1<<5)
@@ -147,23 +148,23 @@ struct rrr_mqtt_connection {
 #define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECT_WAIT(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT) != 0)
 
-#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_(c) \
-	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED_) != 0)
+#define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(c) \
+	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_DISCONNECTED) != 0)
 
 #define RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(c) \
-	(((c)->state_flags & (RRR_MQTT_CONNECTION_STATE_DISCONNECTED_|RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT)) != 0)
+	(((c)->state_flags & (RRR_MQTT_CONNECTION_STATE_DISCONNECTED|RRR_MQTT_CONNECTION_STATE_DISCONNECT_WAIT)) != 0)
 
 #define RRR_MQTT_CONNECTION_STATE_IS_CLOSED(c) \
 	(((c)->state_flags & RRR_MQTT_CONNECTION_STATE_CLOSED) != 0)
 
 #define RRR_MQTT_CONNECTION_LOCK(c) \
-	pthread_mutex_lock(&((c)->__lock))
+	pthread_mutex_lock(&((c)->lock))
 
 #define RRR_MQTT_CONNECTION_UNLOCK(c) \
-	pthread_mutex_unlock(&((c)->__lock))
+	pthread_mutex_unlock(&((c)->lock))
 
 #define RRR_MQTT_CONNECTION_TRYLOCK(c) \
-	pthread_mutex_trylock(&((c)->__lock))
+	pthread_mutex_trylock(&((c)->lock))
 
 struct rrr_mqtt_connection_collection {
 	struct rrr_mqtt_connection *first;
@@ -218,6 +219,17 @@ int rrr_mqtt_connection_collection_iterate (
 		void *callback_arg
 );
 
+// Special iterator for functions which accept connection/packet arguments. The callback
+// is called exactly one time, and then with the provided connection as argument. The
+// return value from the callback is returned. If the connection was destroyed recently,
+// the callback is not called and a soft error is returned.
+int rrr_mqtt_connection_with_iterator_ctx_do (
+		struct rrr_mqtt_connection_collection *connections,
+		struct rrr_mqtt_connection *connection,
+		struct rrr_mqtt_p_packet *packet,
+		int (*callback)(struct rrr_mqtt_connection *connection, struct rrr_mqtt_p_packet *packet)
+);
+
 // These functions may be called asynchronously, BUT they MUST ONLY be used as callbacks
 // for the iterator above. It is and error to use these functions as callback for
 // rrr_mqtt_connection_collection_iterate_reenter_read_to_write
@@ -243,11 +255,11 @@ int rrr_mqtt_connection_handle_packets (
  * possible that another thread reads from the buffer before we continue and decrefs the packet.
  * Caller needs to hold the packet data lock to call the iterator_ctx function, and it cannot be
  * unlocked again if the packet is destroyed. */
-int rrr_mqtt_connection_queue_outbound_packet_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_queue_outbound_packet (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );
-int rrr_mqtt_connection_set_protocol_version_iterator_ctx (
+int rrr_mqtt_connection_iterator_ctx_set_protocol_version (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 );
@@ -260,25 +272,13 @@ int rrr_mqtt_connection_iterator_ctx_update_state (
 		struct rrr_mqtt_p_packet *packet,
 		int direction
 );
-int rrr_mqtt_connection_iterator_ctx_send_disconnect (
+int rrr_mqtt_connection_iterator_ctx_disconnect (
 		struct rrr_mqtt_connection *connection,
 		uint8_t reason
 );
 int rrr_mqtt_connection_iterator_ctx_send_packet_nobuf (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
-);
-
-
-// Special iterator for functions which accept connection/packet arguments. The callback
-// is called exactly one time, and then with the provided connection as argument. The
-// return value from the callback is returned. If the connection was destroyed recently,
-// the callback is not called and a soft error is returned.
-int rrr_mqtt_connection_with_iterator_ctx_do (
-		struct rrr_mqtt_connection_collection *connections,
-		struct rrr_mqtt_connection *connection,
-		struct rrr_mqtt_p_packet *packet,
-		int (*callback)(struct rrr_mqtt_connection *connection, struct rrr_mqtt_p_packet *packet)
 );
 
 // Helper functions to wrap connection/packet argument pair functions into iterator context. Might
@@ -289,7 +289,7 @@ static int rrr_mqtt_connection_queue_outbound_packet (
 		struct rrr_mqtt_connection *connection,
 		struct rrr_mqtt_p_packet *packet
 ) {
-	return rrr_mqtt_connection_with_iterator_ctx_do(connections, connection, packet, rrr_mqtt_connection_queue_outbound_packet_iterator_ctx);
+	return rrr_mqtt_connection_with_iterator_ctx_do(connections, connection, packet, rrr_mqtt_connection_iterator_ctx_queue_outbound_packet);
 }
 
 // Iterate connections and do basically everything. mqtt_data is needed for handling packets.
