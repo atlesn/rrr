@@ -63,14 +63,14 @@ extern struct rrr_global_config rrr_global_config;
  * 7 - Debug socket closing and opening (high rate at initialization)
  */
 
-#define __VL_DEBUGLEVEL_0	(0)		// 0
-#define __VL_DEBUGLEVEL_1	(1<<0)	// 1
-#define __VL_DEBUGLEVEL_2	(1<<1)	// 2
-#define __VL_DEBUGLEVEL_3	(1<<2)	// 4
-#define __VL_DEBUGLEVEL_4	(1<<3)	// 8
-#define __VL_DEBUGLEVEL_5	(1<<4)	// 16
-#define __VL_DEBUGLEVEL_6	(1<<5)	// 32
-#define __VL_DEBUGLEVEL_7	(1<<6)	// 64
+#define __VL_DEBUGLEVEL_0	(0)		// 0 - 0
+#define __VL_DEBUGLEVEL_1	(1<<0)	// 1 - 1
+#define __VL_DEBUGLEVEL_2	(1<<1)	// 2 - 2
+#define __VL_DEBUGLEVEL_3	(1<<2)	// 3 - 4
+#define __VL_DEBUGLEVEL_4	(1<<3)	// 4 - 8
+#define __VL_DEBUGLEVEL_5	(1<<4)	// 5 - 16
+#define __VL_DEBUGLEVEL_6	(1<<5)	// 6 - 32
+#define __VL_DEBUGLEVEL_7	(1<<6)	// 7 - 64
 #define __VL_DEBUGLEVEL_ALL	(__VL_DEBUGLEVEL_1|__VL_DEBUGLEVEL_2|__VL_DEBUGLEVEL_3|__VL_DEBUGLEVEL_4| \
 		__VL_DEBUGLEVEL_5|__VL_DEBUGLEVEL_6|__VL_DEBUGLEVEL_7)
 

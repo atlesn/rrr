@@ -28,34 +28,96 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "../global.h"
 
+#define FIFO_BUFFER_DEBUG 1
+#ifdef FIFO_BUFFER_DEBUG
+static void __fifo_consistency_check(struct fifo_buffer *buffer) {
+	if (	(buffer->gptr_first != NULL && buffer->gptr_last == NULL) ||
+			(buffer->gptr_first == NULL && buffer->gptr_last != NULL) ||
+			(buffer->gptr_write_queue_first != NULL && buffer->gptr_write_queue_last == NULL) ||
+			(buffer->gptr_write_queue_first == NULL && buffer->gptr_write_queue_last != NULL) ||
+			(buffer->gptr_last != NULL && buffer->gptr_last->next != NULL) ||
+			(buffer->gptr_write_queue_last != NULL && buffer->gptr_write_queue_last->next != NULL) ||
+			(buffer->gptr_first != NULL && buffer->gptr_first == buffer->gptr_last && buffer->gptr_first->next != NULL) ||
+			(		buffer->gptr_write_queue_first != NULL &&
+					buffer->gptr_write_queue_first == buffer->gptr_write_queue_last &&
+					buffer->gptr_write_queue_first->next != NULL
+			)
+	) {
+		VL_BUG("BUG: fifo buffer consistency error");
+	}
+}
+
+static int __fifo_verify_counter(struct fifo_buffer *buffer) {
+	int counter = 0;
+	int claimed_count = 0;
+//	fifo_read_lock(buffer);
+
+	claimed_count = buffer->entry_count;
+
+	struct fifo_buffer_entry *current = buffer->gptr_first;
+	while (current) {
+		struct fifo_buffer_entry *next = current->next;
+		counter++;
+		current = next;
+	}
+
+//	fifo_read_unlock(buffer);
+
+	return (counter != claimed_count);
+}
+
+#define FIFO_BUFFER_CONSISTENCY_CHECK()				\
+	__fifo_consistency_check(buffer);				\
+	__fifo_verify_counter(buffer)
+
+#define FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() 	\
+	fifo_write_lock(buffer);						\
+	FIFO_BUFFER_CONSISTENCY_CHECK();				\
+	fifo_write_unlock(buffer)
+
+#else
+
+#define FIFO_BUFFER_CONSISTENCY_CHECK() \
+	(void)(void)
+#define FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() \
+	(void)(void)
+
+#endif
+
 static void __fifo_merge_write_queue_nolock(struct fifo_buffer *buffer) {
-	// Merge write queue and buffer
-	if (buffer->gptr_last == NULL) {
-		buffer->gptr_first = buffer->gptr_write_queue_first;
-		buffer->gptr_last = buffer->gptr_write_queue_last;
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
+	if (buffer->gptr_write_queue_first != NULL) {
+		// Merge write queue and buffer
+		if (buffer->gptr_last == NULL) {
+			buffer->gptr_first = buffer->gptr_write_queue_first;
+			buffer->gptr_last = buffer->gptr_write_queue_last;
+		}
+		else {
+			buffer->gptr_last->next = buffer->gptr_write_queue_first;
+			buffer->gptr_last = buffer->gptr_write_queue_last;
+		}
+
+		buffer->gptr_write_queue_first = NULL;
+		buffer->gptr_write_queue_last = NULL;
+
+		FIFO_BUFFER_CONSISTENCY_CHECK();
+
+	//	int merge_entries = 0;
+	//  int merge_result = 0;
+
+		pthread_mutex_lock(&buffer->ratelimit_mutex);
+	//	merge_entries = buffer->write_queue_entry_count;
+		buffer->entry_count += buffer->write_queue_entry_count;
+		buffer->write_queue_entry_count = 0;
+	//	merge_result = buffer->entry_count;
+		pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	//	VL_DEBUG_MSG_3("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+	//			buffer, merge_entries, merge_result);
+	//	VL_DEBUG_MSG_1("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
+	//			buffer, merge_entries, merge_result);
 	}
-	else {
-		buffer->gptr_last->next = buffer->gptr_write_queue_first;
-		buffer->gptr_last = buffer->gptr_write_queue_last;
-	}
-
-	buffer->gptr_write_queue_first = NULL;
-	buffer->gptr_write_queue_last = NULL;
-
-	int merge_entries = 0;
-	int merge_result = 0;
-
-	pthread_mutex_lock(&buffer->ratelimit_mutex);
-	merge_entries = buffer->write_queue_entry_count;
-	buffer->entry_count += buffer->write_queue_entry_count;
-	buffer->write_queue_entry_count = 0;
-	merge_result = buffer->entry_count;
-	pthread_mutex_unlock(&buffer->ratelimit_mutex);
-
-	VL_DEBUG_MSG_3("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
-			buffer, merge_entries, merge_result);
-//	VL_DEBUG_MSG_1("Buffer %p merged %i entries from write queue, buffer size is now %i\n",
-//			buffer, merge_entries, merge_result);
 }
 
 /*
@@ -78,6 +140,8 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 	__fifo_merge_write_queue_nolock(buffer);
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	struct fifo_buffer_entry *entry = buffer->gptr_first;
 	int freed_counter = 0;
 	while (entry != NULL) {
@@ -89,6 +153,12 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 		freed_counter++;
 		entry = next;
 	}
+
+	buffer->gptr_first = NULL;
+	buffer->gptr_last = NULL;
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	VL_DEBUG_MSG_1 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 	pthread_mutex_unlock (&buffer->mutex);
 }
@@ -178,6 +248,8 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 	int entry_count = buffer->entry_count;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	// If the buffer is empty, we force a merge with the write queue. If
 	// not, we only merge if we happen to obtain a write lock immediately
 	if (entry_count == 0) {
@@ -190,6 +262,8 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 	else {
 		return;
 	}
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	fifo_write_unlock(buffer);
 	__fifo_buffer_set_data_available(buffer);
@@ -225,6 +299,8 @@ int fifo_buffer_clear(struct fifo_buffer *buffer) {
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
 	buffer->entry_count = 0;
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	fifo_write_unlock(buffer);
 
@@ -309,6 +385,8 @@ int fifo_search (
 		prev = entry;
 	}
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= cleared_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
@@ -376,6 +454,8 @@ int fifo_clear_order_lt (
 		}
 	}
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= cleared_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
@@ -386,25 +466,6 @@ int fifo_clear_order_lt (
 
 	fifo_write_unlock(buffer);
 	return 0;
-}
-
-int fifo_verify_counter(struct fifo_buffer *buffer) {
-	int counter = 0;
-	int claimed_count = 0;
-	fifo_read_lock(buffer);
-
-	claimed_count = buffer->entry_count;
-
-	struct fifo_buffer_entry *current = buffer->gptr_first;
-	while (current) {
-		struct fifo_buffer_entry *next = current->next;
-		counter++;
-		current = next;
-	}
-
-	fifo_read_unlock(buffer);
-
-	return (counter != claimed_count);
 }
 
 /*
@@ -464,6 +525,8 @@ int fifo_read_clear_forward (
 		__fifo_buffer_set_data_available(buffer);
 	}
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	fifo_write_unlock(buffer);
 
 	int processed_entries = 0;
@@ -521,6 +584,8 @@ int fifo_read_clear_forward (
 
 		current = next;
 	}
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= processed_entries;
@@ -585,6 +650,8 @@ int fifo_read (
 		}
 		first = first->next;
 	}
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	if (buffer->gptr_first != NULL) {
 		__fifo_buffer_set_data_available(buffer);
@@ -651,6 +718,8 @@ int fifo_read_minimum (
 
 		first = first->next;
 	}
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	if (buffer->gptr_first != NULL) {
 		__fifo_buffer_set_data_available(buffer);
@@ -807,6 +876,8 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 
 	fifo_write_lock(buffer);
 
+	FIFO_BUFFER_CONSISTENCY_CHECK();
+
 	if (buffer->invalid) {
 		fifo_write_unlock(buffer);
 		buffer->free_entry(entry->data);
@@ -822,6 +893,8 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 		buffer->gptr_last->next = entry;
 		buffer->gptr_last = entry;
 	}
+
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
@@ -864,6 +937,8 @@ void fifo_buffer_delayed_write (struct fifo_buffer *buffer, char *data, unsigned
 	{
 		pthread_mutex_lock (&buffer->write_queue_mutex);
 
+		FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK();
+
 		if (buffer->gptr_write_queue_first == NULL) {
 			buffer->gptr_write_queue_last = entry;
 			buffer->gptr_write_queue_first = entry;
@@ -872,11 +947,14 @@ void fifo_buffer_delayed_write (struct fifo_buffer *buffer, char *data, unsigned
 			buffer->gptr_write_queue_last->next = entry;
 			buffer->gptr_write_queue_last = entry;
 		}
+
 		{
 			pthread_mutex_lock(&buffer->ratelimit_mutex);
 			buffer->write_queue_entry_count++;
 			pthread_mutex_unlock(&buffer->ratelimit_mutex);
 		}
+
+		FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK();
 
 		pthread_mutex_unlock (&buffer->write_queue_mutex);
 	}
@@ -945,6 +1023,7 @@ void fifo_buffer_write_ordered (struct fifo_buffer *buffer, uint64_t order, char
 	}
 
 	out:
+	FIFO_BUFFER_CONSISTENCY_CHECK();
 	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	__fifo_buffer_set_data_available(buffer);

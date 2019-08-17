@@ -131,6 +131,6 @@ void ip_network_cleanup (void *arg);
 int ip_network_start_udp_ipv4 (struct ip_data *data);
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections);
 int ip_close (struct ip_data *data);
-int ip_accept (struct ip_accept_data **accept_data, struct ip_data *data, const char *creator);
+int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator, int tcp_nodelay);
 
 #endif

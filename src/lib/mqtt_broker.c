@@ -144,7 +144,7 @@ static int __rrr_mqtt_broker_listen_fd_accept_connections (
 	int ret = 0;
 
 	do {
-		if ((ret = ip_accept(&accept_data, &fd->ip, creator)) != 0) {
+		if ((ret = ip_accept(&accept_data, &fd->ip, creator, 1)) != 0) {
 			VL_MSG_ERR("Error from ip_accept in __rrr_mqtt_broker_listen_fd_accept_connections\n");
 			break;
 		}
@@ -230,7 +230,7 @@ static int __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback (stru
 	if (connection->client_id != NULL && strcmp(connection->client_id, data->client_id) == 0) {
 		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
 
-		int ret_tmp = rrr_mqtt_connection_iterator_ctx_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+		int ret_tmp = rrr_mqtt_connection_iterator_ctx_send_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
 
 		// On soft error, we cannot be sure that the existing client was actually
 		// disconnected, and we must disallow the new connection
@@ -368,9 +368,14 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		VL_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
 	}
 
-	rrr_mqtt_connection_iterator_ctx_set_protocol_version (connection, packet);
+	rrr_mqtt_connection_iterator_ctx_set_protocol_version_and_keep_alive(connection, packet);
 
 	connack = (struct rrr_mqtt_p_packet_connack *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_CONNACK, connect->protocol_version);
+	if (connack == NULL) {
+		VL_MSG_ERR("Could not allocate CONNACK packet in rrr_mqtt_p_handler_connect\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
 
 	rrr_mqtt_connection_iterator_ctx_update_state (connection, packet, RRR_MQTT_CONNECTION_UPDATE_STATE_DIRECTION_IN);
 
@@ -399,7 +404,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 			// Disallow client ID prefix which we use for generating random client IDs unless session already exists
 			if (strcmp(buf, RRR_MQTT_BROKER_CLIENT_PREFIX) == 0) {
-				ret = mqtt_data->sessions->methods->get_session(
+				ret = mqtt_data->sessions->methods->get_session (
 						&session,
 						mqtt_data->sessions,
 						connect->client_identifier,
@@ -407,7 +412,6 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 						1  // Create if non-existent client ID
 				);
 				if (ret != RRR_MQTT_SESSION_OK) {
-					if (ret )
 					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 					VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect A\n");
 					goto out;
@@ -421,7 +425,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			}
 		}
 
-		// If client ID is already used for active connection, reject it
+		// If client ID is already used for active connection, disconnect the old one
 		ret = __rrr_mqtt_broker_check_unique_client_id_or_disconnect (connect->client_identifier, connection, broker);
 		if (ret != 0) {
 			 ret = ret & ~RRR_MQTT_CONNECTION_SOFT_ERROR;
@@ -442,8 +446,6 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	printf ("CONNECT: Using client ID %s\n", connect->client_identifier);
 
 	if (session == NULL) {
-		// Set session not present
-
 		ret = mqtt_data->sessions->methods->get_session (
 				&session,
 				mqtt_data->sessions,
@@ -480,6 +482,7 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out_send_connack;
 	}
 	connack->ack_flags = session_present;
+	connection->session = session;
 
 	out_send_connack:
 
@@ -497,11 +500,11 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			VL_BUG("Unknown V3.1 CONNECT reason code %u in rrr_mqtt_p_handler_connect, v5 code was %u\n",
 					v31_reason, connack->reason_v5);
 		}
-		// DO NOT store the v31 code, assembler converts again
+		// DO NOT store the v31 reason, assembler will convert the v5 reason again later
 	}
 
 	RRR_MQTT_P_LOCK(connack);
-	ret = rrr_mqtt_connection_iterator_ctx_send_packet_nobuf(connection, (struct rrr_mqtt_p_packet *) connack);
+	ret = rrr_mqtt_connection_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p_packet *) connack);
 	RRR_MQTT_P_UNLOCK(connack);
 
 	if ((ret & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
@@ -542,19 +545,83 @@ static int rrr_mqtt_p_handler_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
 	return ret;
 }
+
 static int rrr_mqtt_p_handler_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
+	int ret = RRR_MQTT_CONNECTION_OK;
 
+	//struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
+	struct rrr_mqtt_p_packet_subscribe *subscribe = (struct rrr_mqtt_p_packet_subscribe *) packet;
 
+	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBACK, packet->protocol_version);
+	if (suback == NULL) {
+		VL_MSG_ERR("Could not allocate SUBACK packet in rrr_mqtt_p_handler_subscribe\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
 
+	// TODO : Check valid subscriptions, set max QoS etc.
+
+	int ret_tmp = MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt_data, connection->session, subscribe->subscriptions);
+	if (ret_tmp != RRR_MQTT_SESSION_OK) {
+		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
+			VL_MSG_ERR("Session was deleted in rrr_mqtt_p_handler_subscribe\n");
+			ret |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		}
+		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
+			VL_MSG_ERR("Soft error from session while adding subscriptions in rrr_mqtt_p_handler_subscribe\n");
+			ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
+		}
+		ret_tmp = ret_tmp & ~(RRR_MQTT_SESSION_DELETED|RRR_MQTT_SESSION_ERROR);
+
+		if (ret_tmp != 0) {
+			VL_MSG_ERR("Internal error while adding subscriptions in rrr_mqtt_p_handler_subscribe\n");
+			ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		}
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(suback);
+
+	suback->packet_identifier = subscribe->packet_identifier;
+	suback->subscriptions = subscribe->subscriptions;
+	subscribe->subscriptions = NULL;
+
+	RRR_MQTT_P_INCREF(suback);
+	ret = rrr_mqtt_connection_iterator_ctx_queue_outbound_packet(connection, (struct rrr_mqtt_p_packet *) suback);
+	RRR_MQTT_P_UNLOCK(suback);
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(suback);
 	return ret;
 }
+
 static int rrr_mqtt_p_handler_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
 	return ret;
 }
+
 static int rrr_mqtt_p_handler_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
+	struct rrr_mqtt_p_packet_pingresp *pingresp = NULL;
+
+	(void)(mqtt_data);
+
+	RRR_MQTT_P_LOCK(packet);
+
+	pingresp = (struct rrr_mqtt_p_packet_pingresp *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_PINGRESP, packet->protocol_version);
+	if (pingresp == NULL) {
+		VL_MSG_ERR("Could not allocate CONNACK packet in rrr_mqtt_p_handler_connect\n");
+		ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(pingresp);
+	ret = rrr_mqtt_connection_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p_packet *) pingresp);
+	RRR_MQTT_P_UNLOCK(pingresp);
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingresp);
+	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
@@ -720,6 +787,10 @@ int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 	}
 
 	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data)) != 0) {
+		goto out;
+	}
+
+	if ((ret = data->mqtt_data.sessions->methods->maintain(data->mqtt_data.sessions)) != 0) {
 		goto out;
 	}
 

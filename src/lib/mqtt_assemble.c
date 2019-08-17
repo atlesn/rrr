@@ -24,42 +24,63 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_assemble.h"
 #include "mqtt_packet.h"
 #include "mqtt_payload_buf.h"
+#include "mqtt_subscription.h"
 #include "../global.h"
 
 #define BUF_INIT() 																	\
 		int ret = RRR_MQTT_ASSEMBLE_OK;												\
 		*size = 0;																	\
 		*target = NULL;																\
-		struct rrr_mqtt_payload_buf_session session;								\
-		do {if (rrr_mqtt_payload_buf_init(&session) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
+		struct rrr_mqtt_payload_buf_session _session;								\
+		struct rrr_mqtt_payload_buf_session *session = &_session;					\
+		do {if (rrr_mqtt_payload_buf_init(session) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
 			return RRR_MQTT_ASSEMBLE_ERR;											\
 		}} while(0)
 
-#define PUT_RAW(data,size)	do {																\
-		if (rrr_mqtt_payload_buf_put_raw (&session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
+#define PUT_RAW(data,size) do {																	\
+		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
 			ret = RRR_MQTT_ASSEMBLE_ERR;														\
 			goto out;																			\
 		}} while (0)
 
-#define PUT_BYTE(byte) do {																		\
-		uint8_t data = (byte);																	\
-		if (rrr_mqtt_payload_buf_put_raw (&session, &data, 1) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
-			ret = RRR_MQTT_ASSEMBLE_ERR;														\
-			goto out;																			\
+#define PUT_U8(byte) do {					\
+		uint8_t data = (byte);				\
+		PUT_RAW(&data, sizeof(uint8_t));	\
+		} while (0)
+
+#define PUT_U16(byte) do {					\
+		uint16_t data = htobe16(byte);		\
+		PUT_RAW(&data, sizeof(uint16_t));	\
+		} while (0)
+
+#define PUT_RAW_AT_OFFSET(data,size,offset) do {		\
+		if (rrr_mqtt_payload_buf_put_raw_at_offset (	\
+				session,								\
+				(data),									\
+				(size),									\
+				(offset)								\
+		) != RRR_MQTT_PAYLOAD_BUF_OK) {					\
+			ret = RRR_MQTT_ASSEMBLE_ERR;				\
+			goto out;									\
 		}} while (0)
+
+#define PUT_U8_AT_OFFSET(byte,offset) do {						\
+		uint8_t data = (byte);									\
+		PUT_RAW_AT_OFFSET(&data, sizeof(uint8_t), offset);		\
+		} while (0)
 
 #define PUT_NOTHING(count) do {																\
-		if (rrr_mqtt_payload_buf_ensure (&session, count) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
+		if (rrr_mqtt_payload_buf_ensure (session, count) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
 			return RRR_MQTT_ASSEMBLE_ERR;													\
 		}																					\
-		session.wpos += count;																\
+		session->wpos += count;																\
 		} while (0)
 
 #define BUF_DESTROY_AND_RETURN(extra_ret_value)						\
 		out:														\
-		*size = session.wpos - session.buf;							\
-		*target = rrr_mqtt_payload_buf_extract_buffer(&session);	\
-		rrr_mqtt_payload_buf_destroy (&session);					\
+		*size = rrr_mqtt_payload_buf_get_touched_size(session);		\
+		*target = rrr_mqtt_payload_buf_extract_buffer(session);		\
+		rrr_mqtt_payload_buf_destroy (session);						\
 		return (ret | (extra_ret_value))
 
 #define PUT_HEADER(rem_length) do {																\
@@ -69,24 +90,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			VL_BUG("Illegal flags %u for packet type %s in rrr_mqtt_assemble PUT_HEADER\n",		\
 			RRR_MQTT_P_GET_TYPE_FLAGS(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));				\
 		}																						\
-		uint8_t _type_and_flags = RRR_MQTT_P_GET_TYPE(packet) << 4 |							\
-			RRR_MQTT_P_GET_TYPE_FLAGS(packet);													\
-		uint8_t _remaining_length = rem_length;													\
-		PUT_RAW(&_type_and_flags, sizeof(_type_and_flags));										\
-		PUT_RAW(&_remaining_length, sizeof(_remaining_length));									\
+		PUT_U8_AT_OFFSET(RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet), 0);								\
+		PUT_U8_AT_OFFSET(rem_length, 1);														\
 		} while (0)
 
-#define START_VARIABLE_HEADER() do {									\
-		ssize_t variable_header_start = session.wpos - session.buf;		\
+#define START_VARIABLE_LENGTH() do {											\
 		PUT_NOTHING(2)
 
-#define END_VARIABLE_HEADER() \
-		ssize_t current_wpos = session.wpos - session.buf;					\
-		ssize_t remaining_length = current_wpos - variable_header_start;	\
-		session.wpos = session.buf + variable_header_start;					\
-		PUT_HEADER(remaining_length);										\
-		session.wpos = session.buf + current_wpos;							\
+#define END_VARIABLE_LENGTH_PUT_HEADER()										\
+		PUT_HEADER(rrr_mqtt_payload_buf_get_touched_size(session)-2);			\
 		} while (0)
+
+#define NO_HEADER() \
+	PUT_HEADER(0)
 
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
@@ -99,24 +115,29 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		START_VARIABLE_HEADER();
-		PUT_BYTE(connack->ack_flags);
-		PUT_BYTE(connack->reason_v5);
+		START_VARIABLE_LENGTH();
+		PUT_U8(connack->ack_flags);
+		PUT_U8(connack->reason_v5);
 		uint8_t zero = 0;
-		PUT_BYTE(zero);
+		PUT_U8(zero);
 
 		// TODO : Replace zero byte with connack properties
 
-		END_VARIABLE_HEADER();
+		END_VARIABLE_LENGTH_PUT_HEADER();
 	}
 	else {
 		uint8_t reason_v31 = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
 		if (reason_v31 > 5) {
 			VL_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
 		}
-		PUT_HEADER(2);
-		PUT_BYTE(connack->ack_flags);
-		PUT_BYTE(reason_v31);
+		START_VARIABLE_LENGTH();
+		rrr_mqtt_payload_buf_dump(session);
+		PUT_U8(connack->ack_flags);
+		rrr_mqtt_payload_buf_dump(session);
+		PUT_U8(reason_v31);
+		rrr_mqtt_payload_buf_dump(session);
+		END_VARIABLE_LENGTH_PUT_HEADER();
+		rrr_mqtt_payload_buf_dump(session);
 	}
 
 	BUF_DESTROY_AND_RETURN(connack->reason_v5 != RRR_MQTT_P_5_REASON_OK ? RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION : 0);
@@ -152,10 +173,47 @@ int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	return RRR_MQTT_ASSEMBLE_ERR;
 }
 
-int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+int __rrr_mqtt_assemble_suback_callback (struct rrr_mqtt_subscription *sub, void *arg) {
+	int ret = RRR_MQTT_SUBSCRIPTION_ITERATE_OK;
+
+	struct rrr_mqtt_payload_buf_session *session = arg;
+	PUT_U8(sub->qos_or_reason_v5);
+
+	out:
+	return ret;
 }
+
+int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) packet;
+
+	BUF_INIT();
+	START_VARIABLE_LENGTH();
+
+	rrr_mqtt_payload_buf_dump(session);
+
+	PUT_U16(suback->packet_identifier);
+
+	rrr_mqtt_payload_buf_dump(session);
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		uint8_t zero = 0;
+		PUT_U8(zero);
+
+		// TODO : Replace zero byte with suback properties
+	}
+
+	ret = rrr_mqtt_subscription_collection_iterate(suback->subscriptions, __rrr_mqtt_assemble_suback_callback, session);
+	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+		VL_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
+		goto out;
+	}
+
+	rrr_mqtt_payload_buf_dump(session);
+
+	END_VARIABLE_LENGTH_PUT_HEADER();
+	rrr_mqtt_payload_buf_dump(session);
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
+ }
 
 int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
@@ -168,13 +226,15 @@ int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_pingreq (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	BUF_INIT();
+	NO_HEADER();
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_pingresp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	BUF_INIT();
+	NO_HEADER();
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -183,17 +243,17 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		START_VARIABLE_HEADER();
-		PUT_BYTE(disconnect->disconnect_reason_code);
+		START_VARIABLE_LENGTH();
+		PUT_U8(disconnect->disconnect_reason_code);
 		uint8_t zero = 0;
-		PUT_BYTE(zero);
+		PUT_U8(zero);
 
 		// TODO : Replace zero byte with disconnect properties
 
-		END_VARIABLE_HEADER();
+		END_VARIABLE_LENGTH_PUT_HEADER();
 	}
 	else {
-		PUT_HEADER(0);
+		NO_HEADER();
 	}
 
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION);

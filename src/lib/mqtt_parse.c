@@ -26,27 +26,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
 #include "mqtt_property.h"
+#include "mqtt_subscription.h"
 #include "utf8.h"
 
-#define PARSE_CHECK_END_AND_RETURN_RAW(end,final_end) \
-	do { if ((end) > (final_end)) { \
-		return RRR_MQTT_PARSE_INCOMPLETE; \
+#define PARSE_CHECK_END_RAW(end,final_end)										\
+	((end) > (final_end))
+
+#define PARSE_CHECK_END_AND_RETURN_RAW(end,final_end)							\
+	do { if (PARSE_CHECK_END_RAW(end, final_end)) {								\
+		return RRR_MQTT_PARSE_INCOMPLETE;										\
 	}} while (0)
 
-#define PARSE_CHECK_END_AND_RETURN(end,session) \
+#define PARSE_CHECK_TARGET_END()												\
+	PARSE_CHECK_END_RAW((end)+1,(session)->buf+(session)->target_size)
+
+#define PARSE_CHECK_END_AND_RETURN(end,session)									\
 	PARSE_CHECK_END_AND_RETURN_RAW((end),(session)->buf+(session)->buf_size)
 
 #define PASTE(x, y) x ## y
 
 #define PARSE_BEGIN(type)																\
 	int ret = RRR_MQTT_PARSE_OK;														\
-	const char *start = NULL;															\
-	const char *end = NULL;																\
+	const char *start = NULL; (void)(start);											\
+	const char *end = NULL; (void)(end);												\
 	ssize_t bytes_parsed = 0; (void)(bytes_parsed);										\
 	uint16_t blob_length = 0; (void)(blob_length);										\
 	ssize_t payload_length = 0; (void)(payload_length);									\
 	struct PASTE(rrr_mqtt_p_packet_,type) *type = NULL;									\
-	if (RRR_MQTT_PARSE_PAYLOAD_IS_DONE(session)) {										\
+	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {										\
 		VL_BUG("rrr_mqtt_parse called for same packet again after payload was done\n");	\
 	}																					\
 	if (RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(session)) {								\
@@ -66,11 +73,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			session->protocol_version													\
 		);																				\
 		if (session->packet == NULL) {													\
-			VL_MSG_ERR("Could not allocate packet in rrr_mqtt_parse_connect\n");		\
+			VL_MSG_ERR("Could not allocate packet of type %s while parsing\n",			\
+				session->type_properties->name);										\
 			return RRR_MQTT_PARSE_INTERNAL_ERROR;										\
 		}																				\
 	}																					\
-	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet
+	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet; (void)(type)
 
 #define PARSE_PACKET_ID(target) 										\
 	start = end;														\
@@ -83,18 +91,51 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	end = start + bytes;												\
 	PARSE_CHECK_END_AND_RETURN(end,session)
 
-#define PARSE_U8(type,target)						\
+#define PARSE_U8_RAW(target)						\
 	PARSE_PREPARE(1);								\
-	type->target = *((uint8_t*) start);
+	(target) = *((uint8_t*) start);
+
+#define PARSE_U16_RAW(target)						\
+	PARSE_PREPARE(2);								\
+	(target) = be16toh(*((uint16_t*) start));
+
+#define PARSE_U8(type,target)						\
+	PARSE_U8_RAW((type)->target)
 
 #define PARSE_U16(type,target)						\
-	PARSE_PREPARE(2);								\
-	type->target = be16toh(*((uint16_t*) start));
+	PARSE_U16_RAW((type)->target)
+
+#define PARSE_CHECK_V5(type)									\
+	((type)->protocol_version->id >= RRR_MQTT_VERSION_5)
+
+#define PARSE_VALIDATE_QOS(qos)													\
+	if ((qos) > 2) {															\
+		VL_MSG_ERR("Invalid QoS flags %u in %s packet\n",						\
+			(qos), RRR_MQTT_P_GET_TYPE_NAME(session->packet));					\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
+	}
+
+#define PARSE_VALIDATE_RETAIN(retain)											\
+	if ((retain) > 2) {															\
+		VL_MSG_ERR("Invalid retain flags %u in %s packet\n",					\
+			(retain), RRR_MQTT_P_GET_TYPE_NAME(session->packet));				\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
+	}
+
+#define PARSE_VALIDATE_RESERVED(reserved, value)								\
+	if ((reserved) != value) {													\
+		VL_MSG_ERR("Invalid reserved flags %u in %s packet, must be %u\n",		\
+			(reserved), RRR_MQTT_P_GET_TYPE_NAME(session->packet), (value));	\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
+	}
+
+#define PARSE_VALIDATE_ZERO_RESERVED(reserved)									\
+		PARSE_VALIDATE_RESERVED(reserved, 0)
 
 #define PARSE_PROPERTIES_IF_V5(type,target)														\
-	do {if (type->protocol_version->id >= RRR_MQTT_VERSION_5) {									\
+	do {if (PARSE_CHECK_V5(type)) {																\
 		start = end;																			\
-		ret = __rrr_mqtt_parse_properties(&type->target, session, start, &bytes_parsed);		\
+		ret = __rrr_mqtt_parse_properties(&(type)->target, session, start, &bytes_parsed);		\
 		if (ret != 0) {																			\
 			if (ret != RRR_MQTT_PARSE_INCOMPLETE) {												\
 				VL_MSG_ERR("Error while parsing properties of MQTT packet of type %s\n",		\
@@ -149,12 +190,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		goto parse_done;																		\
 	}
 
-#define PARSE_END_HEADER_BEGIN_PAYLOAD(type)													\
+#define PARSE_PAYLOAD_SAVE_CHECKPOINT()															\
+	session->payload_checkpoint = end - session->buf
+
+#define PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type)										\
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
+	PARSE_PAYLOAD_SAVE_CHECKPOINT();															\
 	session->payload_pos = end - session->buf;													\
+	goto parse_payload;																			\
 	parse_payload:																				\
-	end = session->buf + session->payload_pos;													\
-	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet
+	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet;							\
+	end = session->buf + session->payload_checkpoint
 
 #define PARSE_END_PAYLOAD()																		\
 	goto parse_done;																			\
@@ -162,6 +208,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE);						\
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
 	return ret;
+
+#define PARSE_END_NO_HEADER(type)																	\
+	if (!PARSE_CHECK_TARGET_END()) {																\
+		VL_MSG_ERR("Data after fixed header in mqtt packet type %s which has no variable header\n",	\
+				session->type_properties->name);													\
+	}																								\
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type);												\
+	PARSE_END_PAYLOAD()
+
 
 void rrr_mqtt_parse_session_destroy (
 		struct rrr_mqtt_p_parse_session *session
@@ -259,6 +314,16 @@ static int __rrr_mqtt_parse_blob (
 
 	start = end;
 	end = start + *blob_length;
+/*	{
+		char buf_debug[(*blob_length) + 1];
+		int length_available = final_end - start;
+		if (length_available > 0) {
+			int length_print = *blob_length > length_available ? length_available : *blob_length;
+			memcpy(buf_debug, start, length_print);
+			buf_debug[length_print] = '\0';
+			printf ("blob string: %s\n", buf_debug);
+		}
+	}*/
 	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
 
 	memcpy(*target, start, *blob_length);
@@ -611,10 +676,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session) {
 	// CONNECT FLAGS
 	PARSE_U8(connect,connect_flags);
 
-	if (RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(connect) != 0) {
-		VL_MSG_ERR("Last bit of MQTT connect packet flags was not zero\n");
-		return RRR_MQTT_PARSE_PARAMETER_ERROR;
-	}
+	PARSE_VALIDATE_ZERO_RESERVED(RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(connect));
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) == 0) {
 		if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect) != 0 || RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect) != 0) {
@@ -633,7 +695,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_U16(connect,keep_alive);
 	PARSE_PROPERTIES_IF_V5(connect,properties);
 
-	PARSE_END_HEADER_BEGIN_PAYLOAD(connect);
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(connect);
 
 	PARSE_UTF8(connect,client_identifier);
 
@@ -670,17 +732,14 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session) {
 	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
 	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
-	if (publish->qos > 2) {
-		VL_MSG_ERR("Invalid QoS flags %u in PUBLISH packet\n", publish->qos);
-		return RRR_MQTT_PARSE_PARAMETER_ERROR;
-	}
+	PARSE_VALIDATE_QOS(publish->qos);
 
 	// PARSE TOPIC
 	PARSE_UTF8(publish,topic);
 	PARSE_PACKET_ID(publish);
 	PARSE_PROPERTIES_IF_V5(publish,properties);
 
-	PARSE_END_HEADER_BEGIN_PAYLOAD(publish);
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(publish);
 
 	PARSE_CHECK_ZERO_PAYLOAD();
 
@@ -705,10 +764,6 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session) {
 	return RRR_MQTT_PARSE_INCOMPLETE;
 
 	PARSE_END_PAYLOAD();
-
-	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE);
-	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_TO_PACKET);
-	return RRR_MQTT_PARSE_OK;
 }
 
 int rrr_mqtt_parse_puback (struct rrr_mqtt_p_parse_session *session) {
@@ -733,14 +788,69 @@ int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_p_parse_session *session) {
 
 int rrr_mqtt_parse_subscribe (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_BEGIN(subscribe);
+
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(subscribe);
 
 	PARSE_PACKET_ID(subscribe);
+	PARSE_PROPERTIES_IF_V5(subscribe,properties);
 
-	PARSE_END_HEADER_BEGIN_PAYLOAD(subscribe);
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(subscribe);
 
+	/* If we need several attempts to parse the SUBSCRIBE-packet, the subscriptions parsed in the
+	 * previous rounds are parsed again and overwritten. We do however skip to our payload position
+	 * checkpoint to avoid doing this with all of the subscriptions, only at most one should actually
+	 * be overwritten. */
+	while (!PARSE_CHECK_TARGET_END()) {
+		PARSE_UTF8(subscribe,data_tmp);
 
+		uint8_t subscription_flags = 0;
+		uint8_t reserved = 0;
+		uint8_t retain = 0;
+		uint8_t rap = 0;
+		uint8_t nl = 0;
+		uint8_t qos = 0;
+
+		PARSE_U8_RAW(subscription_flags);
+
+		printf ("end: %p\n", end);
+
+		reserved = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(subscription_flags);
+		retain = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(subscription_flags);
+		rap = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(subscription_flags);
+		nl = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(subscription_flags);
+		qos = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(subscription_flags);
+
+		PARSE_VALIDATE_QOS(qos);
+		PARSE_VALIDATE_ZERO_RESERVED(reserved);
+
+		if (PARSE_CHECK_V5(subscribe)) {
+			PARSE_VALIDATE_RETAIN(retain);
+		}
+		else {
+			PARSE_VALIDATE_ZERO_RESERVED(retain);
+			PARSE_VALIDATE_ZERO_RESERVED(rap);
+			PARSE_VALIDATE_ZERO_RESERVED(nl);
+		}
+
+		struct rrr_mqtt_subscription *subscription = NULL;
+		ret = rrr_mqtt_subscription_new (&subscription, subscribe->data_tmp, retain, rap, nl, qos);
+		if (ret != 0) {
+			VL_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
+			return RRR_MQTT_PARSE_INTERNAL_ERROR;
+		}
+
+		ret = rrr_mqtt_subscription_collection_append_unique (subscribe->subscriptions, &subscription);
+		if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+			rrr_mqtt_subscription_destroy(subscription);
+			VL_MSG_ERR("Error while adding subscription to collection in rrr_mqtt_parse_subscribe\n");
+			return RRR_MQTT_PARSE_INTERNAL_ERROR;
+		}
+
+		PARSE_PAYLOAD_SAVE_CHECKPOINT();
+	}
+
+	goto parse_done;
 
 	PARSE_END_PAYLOAD();
 }
@@ -761,13 +871,21 @@ int rrr_mqtt_parse_unsuback (struct rrr_mqtt_p_parse_session *session) {
 }
 
 int rrr_mqtt_parse_pingreq (struct rrr_mqtt_p_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_BEGIN(pingreq);
+
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(pingreq);
+
+	PARSE_END_NO_HEADER(pingreq);
 }
 
 int rrr_mqtt_parse_pingresp (struct rrr_mqtt_p_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_BEGIN(pingresp);
+
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(pingresp);
+
+	PARSE_END_NO_HEADER(pingresp);
 }
 
 int rrr_mqtt_parse_disconnect (struct rrr_mqtt_p_parse_session *session) {
@@ -794,7 +912,7 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_p_parse_session *session) {
 
 	PARSE_PROPERTIES_IF_V5(disconnect,properties);
 
-	PARSE_END_HEADER_BEGIN_PAYLOAD(disconnect);
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(disconnect);
 	PARSE_END_PAYLOAD();
 }
 
@@ -917,7 +1035,7 @@ int rrr_mqtt_packet_parse (
 		goto out;
 	}
 
-	if (RRR_MQTT_PARSE_PAYLOAD_IS_DONE(session)) {
+	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_COMPLETE);
 	}
 
@@ -934,7 +1052,7 @@ int rrr_mqtt_packet_parse_finalize (
 ) {
 	int ret = 0;
 
-	if (session->packet == NULL || !RRR_MQTT_PARSE_PAYLOAD_IS_DONE(session)) {
+	if (session->packet == NULL || !RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
 		VL_BUG("Invalid preconditions for rrr_mqtt_packet_parse_finalize\n");
 	}
 

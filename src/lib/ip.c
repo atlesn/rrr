@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>
@@ -448,6 +449,12 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 		goto out_close_socket;
 	}
 
+	int enable = 1;
+	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
+		VL_MSG_ERR ("Could not set SO_REUSEADDR for socket bound to port %d: %s\n", data->port, strerror(errno));
+		goto out_close_socket;
+	}
+
 	if (listen (fd, max_connections) < 0) {
 		VL_MSG_ERR ("Could not listen to port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
@@ -475,7 +482,7 @@ int ip_close (struct ip_data *data) {
 	return ret;
 }
 
-int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator) {
+int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator, int tcp_nodelay) {
 	int ret = 0;
 
 	struct sockaddr sockaddr_tmp = {0};
@@ -497,6 +504,23 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 		}
 	}
 
+	int fd = ret;
+	ret = 0;
+
+	int enable = 1;
+	if (tcp_nodelay == 1) {
+		if (setsockopt(fd, SOL_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
+			VL_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", strerror(errno));
+			ret = 1;
+			goto out_close_socket;
+		}
+	}
+
+	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
+		VL_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", strerror(errno));
+		goto out_close_socket;
+	}
+
 	res = malloc(sizeof(*res));
 	if (res == NULL) {
 		VL_MSG_ERR("Could not allocate memory in ip_accept\n");
@@ -509,7 +533,7 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 		VL_BUG("Non AF_INET/AF_INET6 from accept() in ip_accept\n");
 	}
 
-	res->ip_data.fd = ret;
+	res->ip_data.fd = fd;
 	res->addr = sockaddr_tmp;
 	res->len = socklen_tmp;
 
@@ -520,12 +544,15 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 	    res->ip_data.port = ntohs (client_tmp.sin_port);
 	}
 
-	ret = 0;
 	*accept_data = res;
 	res = NULL;
 
-	out:
-	RRR_FREE_IF_NOT_NULL(res);
+	goto out;
 
-	return ret;
+	out_close_socket:
+		rrr_socket_close(fd);
+
+	out:
+		RRR_FREE_IF_NOT_NULL(res);
+		return ret;
 }

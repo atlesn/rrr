@@ -51,6 +51,15 @@ struct rrr_mqtt_data {
 	uint64_t close_wait_time_usec;
 };
 
+#define MQTT_COMMON_CALL_SESSION_HEARTBEAT(mqtt,session) \
+		(mqtt)->sessions->methods->heartbeat((mqtt)->sessions, &(session))
+
+#define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session) \
+		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session))
+
+#define MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt,session,subscriptions) \
+		(mqtt)->sessions->methods->add_subscriptions((mqtt)->sessions, &(session), (subscriptions))
+
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const char *client_name,

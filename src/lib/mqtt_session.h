@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #ifndef RRR_MQTT_SESSION_H
 #define RRR_MQTT_SESSION_H
 
@@ -28,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mqtt_p_packet;
 struct rrr_mqtt_session_collection;
 struct rrr_mqtt_session_collection_methods;
+struct rrr_mqtt_subscription_collection;
 
 // This struct should NOT contain ANY dynamically OR statically allocated data. The
 // sessions are merely identified by their pointer value. The struct may be freed
@@ -131,6 +131,13 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session
 	);
+
+	int (*add_subscriptions) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			const struct rrr_mqtt_subscription_collection *subscriptions
+	);
+
 };
 
 struct rrr_mqtt_session_collection {
