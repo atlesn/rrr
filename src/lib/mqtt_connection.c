@@ -312,7 +312,7 @@ static void __rrr_mqtt_connection_close (
 }
 
 
-static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connection) {
+static int __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connection) {
 	if (connection == NULL) {
 		VL_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
 	}
@@ -339,6 +339,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 	pthread_mutex_destroy (&connection->lock);
 
 	free(connection);
+	return 0;
 }
 
 static int __rrr_mqtt_connection_new (
@@ -430,17 +431,12 @@ void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collecti
 	}
 	pthread_mutex_unlock (&connections->lock);
 
-	struct rrr_mqtt_connection *cur = connections->first;
-	while (cur) {
-		struct rrr_mqtt_connection *next = cur->next;
-		RRR_MQTT_CONNECTION_LOCK(cur);
-		__rrr_mqtt_connection_destroy (cur);
-		cur = next;
-	}
+	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_connection);
+		RRR_MQTT_CONNECTION_LOCK(node);
+		RRR_LINKED_LIST_SET_DESTROY();
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(connections, __rrr_mqtt_connection_destroy);
 
-	connections->first = NULL;
 	connections->invalid = 1;
-	connections->count = 0;
 
 	pthread_mutex_destroy (&connections->lock);
 }
@@ -500,7 +496,7 @@ int rrr_mqtt_connection_collection_new_connection (
 		VL_BUG("FD was < 1 in rrr_mqtt_connection_collection_new_connection\n");
 	}
 
-	if (connections->count >= connections->max) {
+	if (connections->node_count >= connections->max) {
 		VL_MSG_ERR("Max number of connections (%i) reached in rrr_mqtt_connection_collection_new_connection\n",
 				connections->max);
 		ret = RRR_MQTT_CONNECTION_BUSY;
@@ -523,10 +519,7 @@ int rrr_mqtt_connection_collection_new_connection (
 		goto out_nolock;
 	}
 
-	res->next = connections->first;
-	connections->first = res;
-
-	connections->count++;
+	RRR_LINKED_LIST_PUSH(connections, res);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_unlock(connections)) != RRR_MQTT_CONNECTION_OK) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");
@@ -552,9 +545,12 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 		goto out;
 	}
 
-	struct rrr_mqtt_connection *cur = connections->first;
-	while (cur) {
-		int ret_tmp = callback(cur, callback_arg);
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_connection);
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(connections, __rrr_mqtt_connection_destroy);
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_connection);
+		int ret_tmp = callback(node, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
 			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
 				VL_BUG("Destroy connection flag not allowed in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
@@ -572,8 +568,7 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
 
-		cur = cur->next;
-	}
+	RRR_LINKED_LIST_ITERATE_END();
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
@@ -585,28 +580,19 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 }
 
 static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
-		struct rrr_mqtt_connection_collection *connections,
-		struct rrr_mqtt_connection **prev,
-		struct rrr_mqtt_connection **cur
+		struct rrr_mqtt_connection *connection
 ) {
 	int ret = RRR_MQTT_CONNECTION_OK;
-	struct rrr_mqtt_connection *connection = NULL;
 
-	if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
-		VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection while locking\n");
-		goto out;
-	}
+	RRR_MQTT_CONNECTION_LOCK(connection);
 
-	RRR_MQTT_CONNECTION_LOCK(*cur);
-	connection = *cur;
-
-	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(*cur)) {
+	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED(connection)) {
 		VL_BUG("Connection state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
 	}
 
 	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
-	if (!RRR_MQTT_CONNECTION_STATE_IS_DISCONNECT_WAIT(*cur)) {
-		ret = rrr_mqtt_connection_iterator_ctx_send_disconnect(*cur, (*cur)->disconnect_reason_v5);
+	if (!RRR_MQTT_CONNECTION_STATE_IS_DISCONNECT_WAIT(connection)) {
+		ret = rrr_mqtt_connection_iterator_ctx_send_disconnect(connection, connection->disconnect_reason_v5);
 		if ((ret & RRR_MQTT_CONNECTION_INTERNAL_ERROR) != 0) {
 			VL_MSG_ERR("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
 			goto out_unlock;
@@ -615,21 +601,20 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 		ret = 0;
 	}
 
-	if ((*cur)->close_wait_time_usec > 0) {
+	if (connection->close_wait_time_usec > 0) {
 		uint64_t time_now = time_get_64();
-		if ((*cur)->close_wait_start == 0) {
-			(*cur)->close_wait_start = time_now;
+		if (connection->close_wait_start == 0) {
+			connection->close_wait_start = time_now;
 			VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, starting timer\n");
 		}
-		if (time_now - (*cur)->close_wait_start < (*cur)->close_wait_time_usec) {
+		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
 					(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
+			ret = RRR_LINKED_LIST_DIDNT_DESTROY;
 			goto out_unlock;
 		}
 		VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, timer done\n");
 	}
-
-	struct rrr_mqtt_connection *next = (*cur)->next;
 
 	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
 	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONNECTION_EVENT_DISCONNECT) & ~RRR_MQTT_CONNECTION_DESTROY_CONNECTION)) != RRR_MQTT_CONNECTION_OK) {
@@ -638,36 +623,18 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 			VL_MSG_ERR("Error was critical.\n");
 			goto out_unlock;
 		}
-		VL_MSG_ERR("Proceeding with destroy.\n");
+		VL_MSG_ERR("Error was non-critical, proceeding with destroy.\n");
 		ret = RRR_MQTT_CONNECTION_OK;
 	}
 
-	__rrr_mqtt_connection_destroy(*cur);
-
+	__rrr_mqtt_connection_destroy(connection);
 	connection = NULL;
-
-	if ((*prev) != NULL) {
-		(*prev)->next = next;
-		(*cur) = (*prev);
-	}
-	else {
-		connections->first = next;
-		(*cur) = next;
-	}
-
-	connections->count--;
 
 	out_unlock:
 	if (connection != NULL) {
 		RRR_MQTT_CONNECTION_UNLOCK(connection);
 	}
 
-	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
-		VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection while unlocking\n");
-		goto out;
-	}
-
-	out:
 	return ret;
 }
 
@@ -684,10 +651,8 @@ int rrr_mqtt_connection_collection_iterate (
 		goto out;
 	}
 
-	struct rrr_mqtt_connection *cur = connections->first;
-	struct rrr_mqtt_connection *prev = NULL;
-	while (cur) {
-		int ret_tmp = callback(cur, callback_arg);
+	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_connection);
+		int ret_tmp = callback(node, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONNECTION_OK) {
 			if ((ret_tmp & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
 				VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
@@ -696,25 +661,15 @@ int rrr_mqtt_connection_collection_iterate (
 
 				// Always destroy connection upon soft error and set non-zero
 				// reason if not already set
-				if (cur->disconnect_reason_v5 == 0) {
-					cur->disconnect_reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+				if (node->disconnect_reason_v5 == 0) {
+					node->disconnect_reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 				}
 				ret_tmp |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 			}
 
 			if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
 //				VL_DEBUG_MSG_1("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
-
-				if ((ret = __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
-						connections,
-						&prev,
-						&cur
-				)) != RRR_MQTT_CONNECTION_OK) {
-					VL_MSG_ERR("Internal error while destroying connection in rrr_mqtt_connection_collection_iterate\n");
-					callback_ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;
-					break;
-				}
-
+				RRR_LINKED_LIST_SET_DESTROY();
 				ret_tmp = ret_tmp & ~RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
 			}
 
@@ -738,12 +693,24 @@ int rrr_mqtt_connection_collection_iterate (
 			}
 		}
 
-		/* If the current connection was last in the list and then destroyed, cur will be NULL */
-		if (cur != NULL) {
-			prev = cur;
-			cur = cur->next;
-		}
-	}
+#define LOCK_ERR																									\
+			VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");			\
+			ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR; \
+			goto out;
+
+#define DESTROY_ERR \
+			VL_MSG_ERR("Internal error while destroying connection in rrr_mqtt_connection_collection_iterate\n");	\
+			callback_ret = RRR_MQTT_CONNECTION_INTERNAL_ERROR;														\
+			break;
+
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK (
+			connections,
+			__rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy,
+			DESTROY_ERR,
+			ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections),
+			ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections),
+			LOCK_ERR
+	);
 
 	if ((ret = __rrr_mqtt_connection_collection_read_unlock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate\n");

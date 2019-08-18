@@ -30,16 +30,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_subscription.h"
 #include "vl_time.h"
+#include "linked_list.h"
 
 struct rrr_mqtt_session_ram {
 	// MUST be first
 	struct rrr_mqtt_session session;
 
+	RRR_LINKED_LIST_NODE(struct rrr_mqtt_session_ram);
+
 	// When updated, global collection lock must be held
 	int users;
 	pthread_mutex_t lock;
-
-	struct rrr_mqtt_session_ram *next;
 
 	struct rrr_mqtt_p_queue send_queue;
 
@@ -57,7 +58,7 @@ struct rrr_mqtt_session_ram {
 
 struct rrr_mqtt_session_collection_ram_data {
 	pthread_mutex_t lock;
-	struct rrr_mqtt_session_ram *first_session;
+	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_session_ram);
 };
 
 int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
@@ -106,8 +107,7 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	result->users = 1;
 
-	result->next = data->first_session;
-	data->first_session = result;
+	RRR_LINKED_LIST_PUSH(data,result);
 
 	*target = result;
 
@@ -134,9 +134,9 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		return ret;
 }
 
-static void __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *session) {
+static int __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *session) {
 	if (--(session->users) >= 1) {
-		return;
+		return 0;
 	}
 	if (session->users < 0) {
 		VL_BUG("users was < 0 in __rrr_mqtt_session_ram_destroy_unlocked\n");
@@ -148,6 +148,7 @@ static void __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram 
 //  TODO : Look into proper destruction of the buffer mutexes.
 //	fifo_buffer_destroy(&session->send_queue.buffer);
 	free(session);
+	return 0;
 }
 
 
@@ -165,40 +166,19 @@ static int __rrr_mqtt_session_collection_ram_maintain (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
 
 	pthread_mutex_lock(&data->lock);
-	struct rrr_mqtt_session_ram *test = data->first_session;
-	struct rrr_mqtt_session_ram *prev = NULL;
-	struct rrr_mqtt_session_ram *next = NULL;
 	uint64_t time_now = time_get_64();
 
-
-	while (test) {
-		int do_destroy = 0;
-		uint64_t time_diff = time_now - test->last_seen;
-
-		next = test->next;
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		uint64_t time_diff = time_now - node->last_seen;
 
 //		printf ("Expire check: %" PRIu64 " > %" PRIu64 "\n", time_diff, (uint64_t) test->session_expiry * 1000000);
-		if (time_diff > (uint64_t) test->session_expiry * 1000000) {
-			VL_DEBUG_MSG_3("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
-					test->client_id);
-			do_destroy = 1;
+		if (time_diff > (uint64_t) node->session_expiry * 1000000) {
+			VL_DEBUG_MSG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
+					node->client_id);
+			RRR_LINKED_LIST_SET_DESTROY();
 		}
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
 
-		if (do_destroy) {
-			if (prev != NULL) {
-				prev->next = test->next;
-			}
-			else {
-				data->first_session = next;
-			}
-			__rrr_mqtt_session_ram_decref_unlocked(test);
-		}
-		else {
-			prev = test;
-		}
-
-		test = next;
-	}
 	pthread_mutex_unlock(&data->lock);
 
 	return 0;
@@ -208,12 +188,11 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
 
 	pthread_mutex_lock(&data->lock);
-	struct rrr_mqtt_session_ram *cur = data->first_session;
-	while (cur) {
-		struct rrr_mqtt_session_ram *next = cur->next;
-		__rrr_mqtt_session_ram_decref_unlocked (cur);
-		cur = next;
-	}
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		RRR_LINKED_LIST_SET_DESTROY();
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
+
 	pthread_mutex_unlock(&data->lock);
 
 	pthread_mutex_destroy(&data->lock);
@@ -228,26 +207,12 @@ static void __rrr_mqtt_session_collection_remove (
 ) {
 	pthread_mutex_lock(&data->lock);
 
-	struct rrr_mqtt_session_ram *cur = data->first_session;
-	struct rrr_mqtt_session_ram *prev = NULL;
-	while (cur) {
-		struct rrr_mqtt_session_ram *next = cur->next;
-
-		if (cur == session) {
-			__rrr_mqtt_session_ram_decref_unlocked (cur);
-			if (prev == NULL) {
-				data->first_session = next;
-			}
-			else {
-				prev->next = next;
-			}
-			session = NULL;
-			break;
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		if (node == session) {
+			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LINKED_LIST_SET_STOP();
 		}
-
-		prev = cur;
-		cur = next;
-	}
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
 
 	pthread_mutex_unlock(&data->lock);
 
@@ -262,16 +227,15 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
 
-	struct rrr_mqtt_session_ram *test = data->first_session;
-	while (test) {
-		if (strcmp(test->client_id, client_id) == 0) {
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		if (strcmp(node->client_id, client_id) == 0) {
 			if (result != NULL) {
 				VL_BUG("Found two equal client ids in __rrr_mqtt_session_collection_ram_find_session_unlocked\n");
 			}
-			result = test;
+			result = node;
 		}
-		test = test->next;
-	}
+	RRR_LINKED_LIST_ITERATE_END();
+
 
 	return result;
 }
@@ -332,15 +296,15 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 	struct rrr_mqtt_session_ram *found = NULL;
 
 	pthread_mutex_lock(&data->lock);
-	struct rrr_mqtt_session_ram *test = data->first_session;
-	while (test) {
-		if ((void*) test == (void*) session) {
-			__rrr_mqtt_session_ram_incref_unlocked(test);
-			found = test;
-			break;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		if ((void*) node == (void*) session) {
+			__rrr_mqtt_session_ram_incref_unlocked(node);
+			found = node;
+			RRR_LINKED_LIST_SET_STOP();
 		}
-		test = test->next;
-	}
+	RRR_LINKED_LIST_ITERATE_END();
+
 	pthread_mutex_unlock(&data->lock);
 
 	return found;

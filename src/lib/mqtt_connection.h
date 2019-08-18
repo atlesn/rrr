@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
+#include "linked_list.h"
 
 #define RRR_MQTT_CONNECTION_TYPE_IPV4 4
 #define RRR_MQTT_CONNECTION_TYPE_IPV6 6
@@ -79,7 +80,7 @@ struct rrr_mqtt_connection_read_session {
 };
 
 struct rrr_mqtt_connection {
-	struct rrr_mqtt_connection *next;
+	RRR_LINKED_LIST_NODE(struct rrr_mqtt_connection);
 	struct rrr_mqtt_connection_collection *collection;
 
 	pthread_mutex_t lock;
@@ -120,11 +121,10 @@ struct rrr_mqtt_connection {
 };
 
 struct rrr_mqtt_connection_collection {
-	struct rrr_mqtt_connection *first;
-	int invalid;
+	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_connection);
 
+	int invalid;
 	int max;
-	int count;
 
 	pthread_mutex_t lock;
 	int readers;
