@@ -226,26 +226,24 @@ void rrr_mqtt_parse_session_destroy (
 	}
 
 	if (session->packet != NULL) {
-		printf ("Packet refcount in rrr_mqtt_parse_session_destroy: %i\n", rrr_mqtt_p_get_refcount(session->packet));
+//		printf ("Packet refcount in rrr_mqtt_parse_session_destroy: %i\n", rrr_mqtt_p_get_refcount(session->packet));
 		RRR_MQTT_P_DECREF(session->packet);
 		session->packet = NULL;
 	}
-
-	memset(session, '\0', sizeof(*session));
 }
 
 void rrr_mqtt_parse_session_init (
+		struct rrr_mqtt_p_parse_session *session
+) {
+	memset(session, '\0', sizeof(*session));
+}
+
+void rrr_mqtt_parse_session_update (
 		struct rrr_mqtt_p_parse_session *session,
 		const char *buf,
 		ssize_t buf_size,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 ) {
-	if (session->buf != NULL) {
-		VL_BUG("rrr_mqtt_packet_parse_session_init called with non-NULL buf\n");
-	}
-
-	memset(session, '\0', sizeof(*session));
-
 	session->buf = buf;
 	session->buf_size = buf_size;
 
@@ -813,8 +811,6 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_p_parse_session *session) {
 
 		PARSE_U8_RAW(subscription_flags);
 
-		printf ("end: %p\n", end);
-
 		reserved = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(subscription_flags);
 		retain = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(subscription_flags);
 		rap = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(subscription_flags);
@@ -961,7 +957,7 @@ int rrr_mqtt_packet_parse (
 
 		const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(RRR_MQTT_PARSE_GET_TYPE(header));
 
-		printf ("Received mqtt packet of type %u name %s\n",
+		VL_DEBUG_MSG_3("Received mqtt packet of type %u name %s\n",
 				properties->type_id, properties->name);
 
 		if (properties->has_reserved_flags != 0 && RRR_MQTT_PARSE_GET_TYPE_FLAGS(header) != properties->flags) {
@@ -1000,7 +996,7 @@ int rrr_mqtt_packet_parse (
 		session->type_flags = RRR_MQTT_PARSE_GET_TYPE_FLAGS(header);
 		session->type_properties = properties;
 
-		printf ("parsed a packet fixed header of type %s\n",
+		VL_DEBUG_MSG_3 ("parsed a packet fixed header of type %s\n",
 				properties->name);
 
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE);

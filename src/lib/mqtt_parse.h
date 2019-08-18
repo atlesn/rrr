@@ -108,6 +108,9 @@ void rrr_mqtt_parse_session_destroy (
 		struct rrr_mqtt_p_parse_session *session
 );
 void rrr_mqtt_parse_session_init (
+		struct rrr_mqtt_p_parse_session *session
+);
+void rrr_mqtt_parse_session_update (
 		struct rrr_mqtt_p_parse_session *session,
 		const char *buf,
 		ssize_t buf_size,

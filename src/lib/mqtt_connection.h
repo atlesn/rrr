@@ -122,10 +122,15 @@ struct rrr_mqtt_connection {
 struct rrr_mqtt_connection_collection {
 	struct rrr_mqtt_connection *first;
 	int invalid;
+
+	int max;
+	int count;
+
 	pthread_mutex_t lock;
 	int readers;
 	int writers_waiting;
 	int write_locked;
+
 	int (*event_handler)(struct rrr_mqtt_connection *connection, int event, void *arg);
 	void *event_handler_arg;
 };
@@ -187,6 +192,7 @@ void rrr_mqtt_connection_collection_destroy (struct rrr_mqtt_connection_collecti
 
 int rrr_mqtt_connection_collection_init (
 		struct rrr_mqtt_connection_collection *connections,
+		int max_connections,
 		int (*event_handler)(struct rrr_mqtt_connection *connection, int event, void *arg),
 		void *event_handler_arg
 );

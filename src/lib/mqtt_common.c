@@ -61,7 +61,7 @@ static int __rrr_mqtt_common_connection_event_handler (
 
 	switch (event) {
 		case RRR_MQTT_CONNECTION_EVENT_DISCONNECT:
-			ret_tmp = MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(data, connection->session);
+
 			break;
 		case RRR_MQTT_CONNECTION_EVENT_PACKET_PARSED:
 			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
@@ -86,7 +86,28 @@ static int __rrr_mqtt_common_connection_event_handler (
 		ret_tmp = ret_tmp & ~(RRR_MQTT_SESSION_ERROR|RRR_MQTT_SESSION_DELETED);
 
 		if (ret_tmp != 0) {
-			VL_MSG_ERR("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
+			VL_MSG_ERR("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
+					event, ret_tmp);
+			ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
+			goto out;
+		}
+	}
+
+	// Call downstream event handler (broker/client)
+	ret_tmp = data->event_handler(connection, event, data->event_handler_arg);
+	if (ret_tmp != 0) {
+		if ((ret_tmp & RRR_MQTT_CONNECTION_SOFT_ERROR) != 0) {
+			ret |= RRR_MQTT_CONNECTION_SOFT_ERROR;
+		}
+		if ((ret_tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
+			ret |= RRR_MQTT_CONNECTION_DESTROY_CONNECTION;
+		}
+
+		ret_tmp = ret_tmp & ~(RRR_MQTT_CONNECTION_SOFT_ERROR|RRR_MQTT_CONNECTION_DESTROY_CONNECTION);
+
+		if (ret_tmp != 0) {
+			VL_MSG_ERR("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
+					event, ret_tmp);
 			ret |= RRR_MQTT_CONNECTION_INTERNAL_ERROR;
 			goto out;
 		}
@@ -101,7 +122,10 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		uint64_t close_wait_time_usec
+		int (*event_handler)(struct rrr_mqtt_connection *connection, int event, void *arg),
+		void *event_handler_arg,
+		uint64_t close_wait_time_usec,
+		int max_socket_connections
 ) {
 	int ret = 0;
 
@@ -113,12 +137,15 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		goto out;
 	}
 
+	data->event_handler = event_handler;
+	data->event_handler_arg = event_handler_arg;
 	data->close_wait_time_usec = close_wait_time_usec;
 	data->handler_properties = handler_properties;
 	strcpy(data->client_name, client_name);
 
 	if (rrr_mqtt_connection_collection_init (
 			&data->connections,
+			max_socket_connections,
 			__rrr_mqtt_common_connection_event_handler,
 			data
 	) != 0) {
@@ -205,9 +232,8 @@ static int __rrr_mqtt_connection_handle_packets_callback (struct fifo_callback_a
 		goto out;
 	}
 
+	VL_DEBUG_MSG_3 ("Handling packet of type %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet));
 	int tmp = mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, connection, packet);
-
-	printf ("handler return: %i\n", tmp);
 
 	if (tmp != RRR_MQTT_CONNECTION_OK) {
 		if ((tmp & RRR_MQTT_CONNECTION_DESTROY_CONNECTION) != 0) {
@@ -307,6 +333,7 @@ static int __rrr_mqtt_common_read_and_parse (
 	int ret = RRR_MQTT_CONNECTION_OK;
 
 	struct rrr_mqtt_data *data = arg;
+	(void)(data);
 
 	if (RRR_MQTT_CONNECTION_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
 		goto out;

@@ -38,6 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_RETRY_INTERVAL	5
 #define RRR_MQTT_BROKER_CLOSE_WAIT_TIME 3
 
+#define RRR_MQTT_BROKER_MAX_CLIENTS 250
+#define RRR_MQTT_BROKER_MAX_SOCKETS 260
+
 struct rrr_mqtt_listen_fd {
 	struct rrr_mqtt_listen_fd *next;
 	struct ip_data ip;
@@ -54,13 +57,19 @@ struct rrr_mqtt_broker_data {
 
 	struct rrr_mqtt_listen_fd_collection listen_fds;
 
-	pthread_mutex_t client_serial_lock;
+	int max_clients;
+
+	pthread_mutex_t client_serial_and_count_lock;
 	uint32_t client_serial;
+	int client_count;
 };
 
 int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
-int rrr_mqtt_broker_new (struct rrr_mqtt_broker_data **broker, const char *client_name);
+int rrr_mqtt_broker_new (
+		struct rrr_mqtt_broker_data **broker,
+		const char *client_name
+);
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
 		int port,

@@ -132,7 +132,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	pthread_mutex_unlock (&buffer->mutex);
 
 	pthread_mutex_lock (&buffer->mutex);
-	VL_DEBUG_MSG_1 ("Buffer %p waiting for %i readers and %i writers before invalidate\n", buffer, buffer->readers, buffer->writers);
+	VL_DEBUG_MSG_4 ("Buffer %p waiting for %i readers and %i writers before invalidate\n", buffer, buffer->readers, buffer->writers);
 	while (buffer->readers > 0 || buffer->writers > 0) {
 		pthread_mutex_unlock (&buffer->mutex);
 		pthread_mutex_lock (&buffer->mutex);
@@ -146,7 +146,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 	int freed_counter = 0;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+//		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		buffer->free_entry (entry->data);
 		free (entry);
@@ -159,7 +159,7 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 	FIFO_BUFFER_CONSISTENCY_CHECK();
 
-	VL_DEBUG_MSG_1 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	VL_DEBUG_MSG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 	pthread_mutex_unlock (&buffer->mutex);
 }
 
@@ -168,7 +168,6 @@ void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->write_queue_mutex);
 	pthread_mutex_destroy (&buffer->ratelimit_mutex);
 	sem_destroy(&buffer->new_data_available);
-	VL_DEBUG_MSG_1 ("Buffer destroy buffer struct %p\n", buffer);
 }
 
 int fifo_buffer_init(struct fifo_buffer *buffer) {
@@ -294,7 +293,7 @@ int fifo_buffer_clear(struct fifo_buffer *buffer) {
 		entry = next;
 	}
 
-	VL_DEBUG_MSG_1 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	VL_DEBUG_MSG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
@@ -533,7 +532,7 @@ int fifo_read_clear_forward (
 	while (current != stop) {
 		struct fifo_buffer_entry *next = current->next;
 
-		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
+//		VL_DEBUG_MSG_3 ("Read buffer entry %p, give away data %p\n", current, current->data);
 
 		int ret_tmp = callback(callback_data, current->data, current->size);
 		processed_entries++;
@@ -896,7 +895,7 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 
 	FIFO_BUFFER_CONSISTENCY_CHECK();
 
-	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
+//	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
 	__fifo_buffer_set_data_available(buffer);
 
@@ -1024,7 +1023,7 @@ void fifo_buffer_write_ordered (struct fifo_buffer *buffer, uint64_t order, char
 
 	out:
 	FIFO_BUFFER_CONSISTENCY_CHECK();
-	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
+//	VL_DEBUG_MSG_4 ("New ordered buffer entry %p data %p\n", entry, entry->data);
 
 	__fifo_buffer_set_data_available(buffer);
 

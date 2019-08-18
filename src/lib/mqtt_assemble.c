@@ -131,13 +131,9 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			VL_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
 		}
 		START_VARIABLE_LENGTH();
-		rrr_mqtt_payload_buf_dump(session);
 		PUT_U8(connack->ack_flags);
-		rrr_mqtt_payload_buf_dump(session);
 		PUT_U8(reason_v31);
-		rrr_mqtt_payload_buf_dump(session);
 		END_VARIABLE_LENGTH_PUT_HEADER();
-		rrr_mqtt_payload_buf_dump(session);
 	}
 
 	BUF_DESTROY_AND_RETURN(connack->reason_v5 != RRR_MQTT_P_5_REASON_OK ? RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION : 0);
@@ -189,11 +185,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 	START_VARIABLE_LENGTH();
 
-	rrr_mqtt_payload_buf_dump(session);
-
 	PUT_U16(suback->packet_identifier);
-
-	rrr_mqtt_payload_buf_dump(session);
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		uint8_t zero = 0;
@@ -208,10 +200,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		goto out;
 	}
 
-	rrr_mqtt_payload_buf_dump(session);
-
 	END_VARIABLE_LENGTH_PUT_HEADER();
-	rrr_mqtt_payload_buf_dump(session);
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
  }
 

@@ -185,13 +185,13 @@ static int __rrr_mqtt_session_collection_ram_maintain (struct rrr_mqtt_session_c
 		}
 
 		if (do_destroy) {
-			__rrr_mqtt_session_ram_decref_unlocked(test);
 			if (prev != NULL) {
 				prev->next = test->next;
 			}
 			else {
 				data->first_session = next;
 			}
+			__rrr_mqtt_session_ram_decref_unlocked(test);
 		}
 		else {
 			prev = test;
