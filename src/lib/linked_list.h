@@ -32,16 +32,56 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	int node_count
 
 #define RRR_LINKED_LIST_NODE(type)						\
+	type *ptr_prev;										\
 	type *ptr_next
 
-#define RRR_LINKED_LIST_PUSH(head,node) do {			\
-	if ((head)->ptr_last == NULL) {						\
-		(head)->ptr_last = node;						\
-	}													\
-	node->ptr_next = (head)->ptr_first;					\
-	(head)->ptr_first = node;							\
-	(head)->node_count++;								\
+#define RRR_LINKED_LIST_IS_EMPTY(head)					\
+	((head)->ptr_first == NULL)							\
+
+#define RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(head)		\
+	(head)->ptr_first = NULL;							\
+	(head)->ptr_last = NULL;							\
+	(head)->node_count = 0
+
+#define RRR_LINKED_LIST_REPLACE_NODE(target, source, type, replace_func)	\
+	do {																	\
+	if (source->ptr_next != NULL)											\
+		VL_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
+	type *next_preserve = target->ptr_next;									\
+	type *prev_preserve = target->ptr_next;									\
+	replace_func;															\
+	target->ptr_next = next_preserve;										\
+	target->ptr_prev = prev_preserve;										\
 	} while (0)
+
+#define RRR_LINKED_LIST_PUSH(head,node) do {			\
+	(node)->ptr_next = NULL;							\
+	(node)->ptr_prev = NULL;							\
+	if ((head)->ptr_first == NULL) {					\
+		(head)->ptr_first = (node);						\
+		(head)->ptr_last = (node);						\
+	}													\
+	else {												\
+		(head)->ptr_first->ptr_prev = (node);			\
+		(node)->ptr_next = (head)->ptr_first;			\
+		(head)->ptr_first = (node);						\
+	}													\
+	(head)->node_count++; } while (0)
+
+#define RRR_LINKED_LIST_APPEND(head,node) do {			\
+	(node)->ptr_next = NULL;							\
+	(node)->ptr_prev = NULL;							\
+	if ((head)->ptr_first == NULL) {					\
+		(head)->ptr_first = (node);						\
+		(head)->ptr_last = (node);						\
+	}													\
+	else {												\
+		(head)->ptr_last->ptr_next = (node);			\
+		(node)->ptr_prev = (head)->ptr_last;			\
+		(head)->ptr_last = (node);						\
+	}													\
+	(head)->node_count++; } while (0)
+
 
 #define RRR_LINKED_LIST_DESTROY(head, type, destroy_func) do {	\
 	type *node = (head)->ptr_first;								\
@@ -51,17 +91,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		destroy_func;											\
 		(head)->node_count--;									\
 		node = next;											\
-	}} while (0)
+	}															\
+	(head)->ptr_first = (head)->ptr_last = NULL;				\
+	} while (0)
 
 #define __RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head)	\
 		if ((head)->ptr_first == node) {			\
 			(head)->ptr_first = next;				\
 		}											\
-		else {										\
-			prev->ptr_next = next;					\
-		}											\
 		if ((head)->ptr_last == node) {				\
 			(head)->ptr_last = prev;				\
+		}											\
+		if (next != NULL) {							\
+			next->ptr_prev = prev;					\
+		}											\
+		if (prev != NULL) {							\
+			prev->ptr_next = next;					\
 		}											\
 		(head)->node_count--
 
@@ -74,19 +119,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		if (node == find) {													\
 			destroy_func;													\
 			__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);					\
-			(head)->node_count--;											\
 			break;															\
 		}																	\
 		node = next;														\
 	}} while (0)
 
-static int linked_list_dummy(void *arg) { (void)(arg); return 0; }
-
-#define LINKED_LIST_DUMMY \
-		linked_list_dummy(NULL)
-
 #define RRR_LINKED_LIST_ITERATE_BEGIN(head, type) do {			\
-	LINKED_LIST_DUMMY;											\
 	type *node = (head)->ptr_first;								\
 	type *prev = NULL; (void)(prev);							\
 	type *next = NULL;											\
@@ -132,6 +170,6 @@ static int linked_list_dummy(void *arg) { (void)(arg); return 0; }
 	}} while(0)
 
 #define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, LINKED_LIST_DUMMY, 0, 0, LINKED_LIST_DUMMY)
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
 
 #endif /* RRR_LINKED_LIST_H */

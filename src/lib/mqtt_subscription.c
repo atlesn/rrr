@@ -25,15 +25,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "mqtt_subscription.h"
+#include "linked_list.h"
 
-void rrr_mqtt_subscription_destroy (
+int rrr_mqtt_subscription_destroy (
 		struct rrr_mqtt_subscription *subscription
 ) {
 	if (subscription == NULL) {
-		return;
+		return 0;
 	}
 	RRR_FREE_IF_NOT_NULL(subscription->topic_filter);
 	RRR_FREE_IF_NOT_NULL(subscription);
+	return 0;
 }
 
 int rrr_mqtt_subscription_new (
@@ -117,15 +119,18 @@ void rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription *target,
 		struct rrr_mqtt_subscription *source
 ) {
-	if (source->next != NULL) {
+	if (source->ptr_next != NULL) {
 		VL_BUG("source->next was not NULL, part of a collection in rrr_mqtt_subscription_replace_and_destroy\n");
 	}
 
 	RRR_FREE_IF_NOT_NULL(target->topic_filter);
 
-	struct rrr_mqtt_subscription *next_preserve = target->next;
-	memcpy(target, source, sizeof(*target));
-	target->next = next_preserve;
+	RRR_LINKED_LIST_REPLACE_NODE(
+			target,
+			source,
+			struct rrr_mqtt_subscription,
+			memcpy(target, source, sizeof(*target))
+	);
 
 	source->topic_filter = NULL;
 	rrr_mqtt_subscription_destroy(source);
@@ -134,14 +139,7 @@ void rrr_mqtt_subscription_replace_and_destroy (
 void rrr_mqtt_subscription_collection_destroy (
 		struct rrr_mqtt_subscription_collection *target
 ) {
-	struct rrr_mqtt_subscription *cur = target->first;
-	while (cur) {
-		struct rrr_mqtt_subscription *next = cur->next;
-		RRR_FREE_IF_NOT_NULL(cur->topic_filter);
-		RRR_FREE_IF_NOT_NULL(cur);
-		cur = next;
-	}
-
+	RRR_LINKED_LIST_DESTROY(target, struct rrr_mqtt_subscription, rrr_mqtt_subscription_destroy(node));
 	free(target);
 }
 
@@ -178,15 +176,7 @@ static int __rrr_mqtt_subscription_collection_append_unchecked_clone (
 		goto out;
 	}
 
-	if (target->last != NULL) {
-		target->last->next = new;
-	}
-	else {
-		target->first = new;
-	}
-
-	target->last = new;
-	new->next = NULL;
+	RRR_LINKED_LIST_APPEND(target, new);
 
 	out:
 	return ret;
@@ -208,17 +198,15 @@ int rrr_mqtt_subscription_collection_clone (
 		goto out;
 	}
 
-	const struct rrr_mqtt_subscription *cur = source->first;
-	while (cur != NULL) {
+	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_mqtt_subscription);
 		if ((ret = __rrr_mqtt_subscription_collection_append_unchecked_clone (
 				res,
-				cur
+				node
 		)) != RRR_MQTT_SUBSCRIPTION_OK) {
 			VL_MSG_ERR("Error while appending subscriptions while cloning in rrr_mqtt_subscription_collection_clone\n");
 			goto out_destroy_collection;
 		}
-		cur = cur->next;
-	}
+	RRR_LINKED_LIST_ITERATE_END();
 
 	*target = res;
 
@@ -236,35 +224,19 @@ int rrr_mqtt_subscription_collection_iterate (
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	struct rrr_mqtt_subscription *cur = collection->first;
-	struct rrr_mqtt_subscription *prev = NULL;
-
-	while (cur) {
-		struct rrr_mqtt_subscription *next = cur->next;
-
-		int ret_tmp = callback(cur, callback_arg);
+	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_subscription);
+		int ret_tmp = callback(node, callback_arg);
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR) != 0) {
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			break;
 		}
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY) != 0) {
-			if (prev == NULL) {
-				collection->first = next;
-			}
-			else {
-				prev->next = next;
-			}
-
-			rrr_mqtt_subscription_destroy(cur);
-			cur = NULL;
+			RRR_LINKED_LIST_SET_DESTROY();
 		}
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_STOP) != 0) {
 			break;
 		}
-
-		prev = cur;
-		cur = next;
-	}
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection, rrr_mqtt_subscription_destroy(node));
 
 	return ret;
 }
@@ -301,10 +273,8 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	if (target->first == NULL) {
-		(*subscription)->next = NULL;
-		target->first = *subscription;
-		target->last = *subscription;
+	if (RRR_LINKED_LIST_IS_EMPTY(target)) {
+		RRR_LINKED_LIST_APPEND(target, *subscription);
 		goto out;
 	}
 
@@ -330,13 +300,10 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 	}
 	else {
 		if (put_at_end == 1) {
-			target->last->next = *subscription;
-			target->last = *subscription;
-			(*subscription)->next = NULL;
+			RRR_LINKED_LIST_APPEND(target, *subscription);
 		}
 		else {
-			(*subscription)->next = target->first;
-			target->first = *subscription;
+			RRR_LINKED_LIST_PUSH(target, *subscription);
 		}
 	}
 
@@ -364,26 +331,19 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	struct rrr_mqtt_subscription *cur = source->first;
-
 	// NOTE : append_unique will steal all the pointers from the source
 	//        which means the list cannot be used afterwards
-	while (cur != NULL) {
-		struct rrr_mqtt_subscription *next = cur->next;
-
-		ret = rrr_mqtt_subscription_collection_append_unique(target, &cur) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
+	RRR_LINKED_LIST_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
+		ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
 
 		if (ret != 0) {
 			VL_MSG_ERR("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			break;
 		}
+	RRR_LINKED_LIST_ITERATE_END();
 
-		cur = next;
-	}
-
-	source->first = NULL;
-	source->last = NULL;
+	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(source);
 
 	return ret;
 }
@@ -409,7 +369,7 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		goto out;
 	}
 
-	if (new_source->first != NULL) {
+	if (!RRR_LINKED_LIST_IS_EMPTY(new_source)) {
 		VL_BUG("new source was not empty in rrr_mqtt_subscription_collection_append_unique_copy_from_collection\n");
 	}
 

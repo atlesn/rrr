@@ -331,7 +331,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_connection *connectio
 }
 
 static void __rrr_mqtt_connection_lock_and_destroy (struct rrr_mqtt_connection *connection) {
-	pthread_mutex_lock(&connection->lock);
+	RRR_MQTT_CONNECTION_LOCK(connection);
 	__rrr_mqtt_connection_destroy(connection);
 }
 
@@ -557,7 +557,6 @@ int rrr_mqtt_connection_collection_iterate_reenter_read_to_write (
 
 			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
-
 	RRR_LINKED_LIST_ITERATE_END();
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {

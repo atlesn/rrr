@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_SUBSCRIPTION_H
 #define RRR_MQTT_SUBSCRIPTION_H
 
+#include "linked_list.h"
+
 #define RRR_MQTT_SUBSCRIPTION_OK				0
 #define RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR	1
 #define RRR_MQTT_SUBSCRIPTION_MALFORMED			2
@@ -39,7 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)		((flags & (1<<6|1<<7)) >> 6)
 
 struct rrr_mqtt_subscription {
-	struct rrr_mqtt_subscription *next;
+	RRR_LINKED_LIST_NODE(struct rrr_mqtt_subscription);
+
 	char *topic_filter;
 
 	uint8_t retain_handling;
@@ -49,11 +52,10 @@ struct rrr_mqtt_subscription {
 };
 
 struct rrr_mqtt_subscription_collection {
-	struct rrr_mqtt_subscription *first;
-	struct rrr_mqtt_subscription *last;
+	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_subscription);
 };
 
-void rrr_mqtt_subscription_destroy (
+int rrr_mqtt_subscription_destroy (
 		struct rrr_mqtt_subscription *subscription
 );
 
