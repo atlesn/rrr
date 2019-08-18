@@ -177,7 +177,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (struct rrr_mqtt_session_c
 					node->client_id);
 			RRR_LINKED_LIST_SET_DESTROY();
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked(node));
 
 	pthread_mutex_unlock(&data->lock);
 
@@ -189,9 +189,7 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 
 	pthread_mutex_lock(&data->lock);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		RRR_LINKED_LIST_SET_DESTROY();
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
+	RRR_LINKED_LIST_DESTROY(data, struct rrr_mqtt_session_ram, __rrr_mqtt_session_ram_decref_unlocked);
 
 	pthread_mutex_unlock(&data->lock);
 
@@ -207,12 +205,12 @@ static void __rrr_mqtt_session_collection_remove (
 ) {
 	pthread_mutex_lock(&data->lock);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		if (node == session) {
-			RRR_LINKED_LIST_SET_DESTROY();
-			RRR_LINKED_LIST_SET_STOP();
-		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked);
+	RRR_LINKED_LIST_REMOVE_NODE(
+			data,
+			struct rrr_mqtt_session_ram,
+			session,
+			__rrr_mqtt_session_ram_decref_unlocked(node)
+	);
 
 	pthread_mutex_unlock(&data->lock);
 

@@ -43,7 +43,50 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	(head)->node_count++;								\
 	} while (0)
 
+#define RRR_LINKED_LIST_DESTROY(head, type, destroy_func) do {	\
+	type *node = (head)->ptr_first;								\
+	type *next = NULL;											\
+	while (node != NULL) {										\
+		next = node->ptr_next;									\
+		destroy_func;											\
+		(head)->node_count--;									\
+		node = next;											\
+	}} while (0)
+
+#define __RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head)	\
+		if ((head)->ptr_first == node) {			\
+			(head)->ptr_first = next;				\
+		}											\
+		else {										\
+			prev->ptr_next = next;					\
+		}											\
+		if ((head)->ptr_last == node) {				\
+			(head)->ptr_last = prev;				\
+		}											\
+		(head)->node_count--
+
+#define RRR_LINKED_LIST_REMOVE_NODE(head, type, find, destroy_func) do {	\
+	type *node = (head)->ptr_first;											\
+	type *next = NULL;														\
+	type *prev = NULL;														\
+	while (node != NULL) {													\
+		next = node->ptr_next;												\
+		if (node == find) {													\
+			destroy_func;													\
+			__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);					\
+			(head)->node_count--;											\
+			break;															\
+		}																	\
+		node = next;														\
+	}} while (0)
+
+static int linked_list_dummy(void *arg) { (void)(arg); return 0; }
+
+#define LINKED_LIST_DUMMY \
+		linked_list_dummy(NULL)
+
 #define RRR_LINKED_LIST_ITERATE_BEGIN(head, type) do {			\
+	LINKED_LIST_DUMMY;											\
 	type *node = (head)->ptr_first;								\
 	type *prev = NULL; (void)(prev);							\
 	type *next = NULL;											\
@@ -68,25 +111,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;																			\
 	}} while(0)
 
-static int linked_list_dummy(void *arg) { (void)(arg); return 0; }
-
 #define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, destroy_err, lock, unlock, lock_err) \
 		if (linked_list_iterate_destroy) {														\
-			linked_list_ret_tmp = destroy_func(node);											\
-			if (linked_list_ret_tmp == RRR_LINKED_LIST_DESTROY_ERR) { destroy_err }				\
+			linked_list_ret_tmp = destroy_func;													\
+			if (linked_list_ret_tmp == RRR_LINKED_LIST_DESTROY_ERR) { destroy_err; }			\
 			if (linked_list_ret_tmp == RRR_LINKED_LIST_DID_DESTROY) {							\
-				if ((lock) != 0) { lock_err }													\
-				if ((head)->ptr_first == node) {												\
-					(head)->ptr_first = next;													\
-				}																				\
-				else {																			\
-					prev->ptr_next = next;														\
-				}																				\
-				if ((head)->ptr_last == node) {													\
-					(head)->ptr_last = prev;													\
-				}																				\
-				(head)->node_count--;															\
-				if ((unlock) != 0) { lock_err }													\
+				if ((lock) != 0) { lock_err; }													\
+				__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);									\
+				if ((unlock) != 0) { lock_err; }												\
 			}																					\
 			else {																				\
 				prev = node;																	\
@@ -98,9 +130,6 @@ static int linked_list_dummy(void *arg) { (void)(arg); return 0; }
 		}																						\
 		node = next;																			\
 	}} while(0)
-
-#define LINKED_LIST_DUMMY \
-		linked_list_dummy(NULL);
 
 #define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, LINKED_LIST_DUMMY, 0, 0, LINKED_LIST_DUMMY)
