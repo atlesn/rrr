@@ -36,7 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	type *ptr_next
 
 #define RRR_LINKED_LIST_IS_EMPTY(head)					\
-	((head)->ptr_first == NULL)							\
+	((head)->ptr_first == NULL)
+
+#define RRR_LINKED_LIST_COUNT(head)						\
+	((head)->node_count)
 
 #define RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(head)		\
 	(head)->ptr_first = NULL;							\

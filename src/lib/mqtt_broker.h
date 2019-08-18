@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "ip.h"
 #include "mqtt_common.h"
+#include "linked_list.h"
 
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
@@ -42,12 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_SOCKETS 260
 
 struct rrr_mqtt_listen_fd {
-	struct rrr_mqtt_listen_fd *next;
+	RRR_LINKED_LIST_NODE(struct rrr_mqtt_listen_fd);
 	struct ip_data ip;
 };
 
 struct rrr_mqtt_listen_fd_collection {
-	struct rrr_mqtt_listen_fd *first;
+	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_listen_fd);
 	pthread_mutex_t lock;
 };
 

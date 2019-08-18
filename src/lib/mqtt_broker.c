@@ -25,22 +25,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_broker.h"
 #include "mqtt_session.h"
 #include "mqtt_session_ram.h"
+#include "linked_list.h"
+
+static void __rrr_mqtt_broker_destroy_listen_fd (struct rrr_mqtt_listen_fd *fd) {
+	VL_DEBUG_MSG_1 ("mqtt broker close listen fd %i\n", fd->ip.fd);
+	ip_network_cleanup(&fd->ip);
+	free(fd);
+}
 
 static void __rrr_mqtt_broker_destroy_listen_fds_elements (struct rrr_mqtt_listen_fd_collection *fds) {
 	pthread_mutex_lock(&fds->lock);
-	struct rrr_mqtt_listen_fd *cur = fds->first;
-	while (cur) {
-		struct rrr_mqtt_listen_fd *next = cur->next;
 
-		printf ("mqtt broker close listen fd %i\n", cur->ip.fd);
+	RRR_LINKED_LIST_DESTROY(fds, struct rrr_mqtt_listen_fd, __rrr_mqtt_broker_destroy_listen_fd(node));
 
-		ip_network_cleanup(&cur->ip);
-		free(cur);
-
-		cur = next;
-	}
-
-	fds->first = NULL;
 	pthread_mutex_unlock(&fds->lock);
 }
 
@@ -50,7 +47,7 @@ static void __rrr_mqtt_broker_destroy_listen_fds (struct rrr_mqtt_listen_fd_coll
 }
 
 static int __rrr_mqtt_broker_init_listen_fds (struct rrr_mqtt_listen_fd_collection *fds) {
-	fds->first = NULL;
+	memset(fds, '\0', sizeof(*fds));
 	return pthread_mutex_init(&fds->lock, 0);
 }
 
@@ -64,40 +61,24 @@ static struct rrr_mqtt_listen_fd *__rrr_mqtt_broker_listen_fd_allocate_unlocked 
 	}
 
 	memset (ret, '\0', sizeof(*ret));
-	ret->next = fds->first;
-	fds->first = ret;
+
+	RRR_LINKED_LIST_APPEND(fds, ret);
 
 	out:
 	return ret;
 }
 
-static void __rrr_mqtt_broker_listen_fd_destroy_unlocked (
+static void __rrr_mqtt_broker_listen_fd_remove_unlocked (
 		struct rrr_mqtt_listen_fd_collection *fds,
 		struct rrr_mqtt_listen_fd *fd
 ) {
-	int did_remove = 0;
+	int old_count = RRR_LINKED_LIST_COUNT(fds);
 
-	if (fds->first == fd) {
-		fds->first = fd->next;
-		did_remove = 1;
-	}
-	else {
-		struct rrr_mqtt_listen_fd *cur = fds->first;
-		while (cur) {
-			if (cur->next == fd) {
-				cur->next = cur->next->next;
-				did_remove = 1;
-				break;
-			}
-		}
-	}
+	RRR_LINKED_LIST_REMOVE_NODE(fds, struct rrr_mqtt_listen_fd, fd, __rrr_mqtt_broker_destroy_listen_fd(node));
 
-	if (did_remove == 0) {
+	if (old_count == RRR_LINKED_LIST_COUNT(fds)) {
 		VL_BUG("FD not found in __rrr_mqtt_broker_listen_fd_destroy_unlocked\n");
 	}
-
-	ip_network_cleanup(&fd->ip);
-	free(fd);
 }
 
 static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
@@ -125,7 +106,7 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 	goto out_unlock;
 
 	out_destroy_fd:
-	__rrr_mqtt_broker_listen_fd_destroy_unlocked(fds, fd);
+	__rrr_mqtt_broker_listen_fd_remove_unlocked(fds, fd);
 
 	out_unlock:
 	pthread_mutex_unlock(&fds->lock);
@@ -179,16 +160,14 @@ static int __rrr_mqtt_broker_listen_fds_accept_connections (
 
 	pthread_mutex_lock(&fds->lock);
 
-	struct rrr_mqtt_listen_fd *cur = fds->first;
-	while (cur) {
+	RRR_LINKED_LIST_ITERATE_BEGIN(fds, struct rrr_mqtt_listen_fd);
 		/* Save the error flag but loop the rest of the FDs even if one FD fails */
-		int ret_tmp = __rrr_mqtt_broker_listen_fd_accept_connections(cur, creator, callback, callback_arg);
+		int ret_tmp = __rrr_mqtt_broker_listen_fd_accept_connections(node, creator, callback, callback_arg);
 		if (ret_tmp != 0) {
 			VL_MSG_ERR("Error while accepting connections in __rrr_mqtt_broker_listen_fds_accept_connections\n");
 			ret = 1;
 		}
-		cur = cur->next;
-	}
+	RRR_LINKED_LIST_ITERATE_END();
 
 	pthread_mutex_unlock(&fds->lock);
 
