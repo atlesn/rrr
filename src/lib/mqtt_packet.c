@@ -70,8 +70,8 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connect (RRR_MQTT_P_TYPE_AL
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) ret;
 
 	if (ret != NULL) {
-		rrr_mqtt_packet_property_collection_init(&connect->properties);
-		rrr_mqtt_packet_property_collection_init(&connect->will_properties);
+		rrr_mqtt_property_collection_init(&connect->properties);
+		rrr_mqtt_property_collection_init(&connect->will_properties);
 	}
 
 	return ret;
@@ -82,7 +82,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connack (RRR_MQTT_P_TYPE_AL
 	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) ret;
 
 	if (ret != NULL) {
-		rrr_mqtt_packet_property_collection_init(&connack->properties);
+		rrr_mqtt_property_collection_init(&connack->properties);
 	}
 
 	return ret;
@@ -93,7 +93,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE
 	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) ret;
 
 	if (ret != NULL) {
-		rrr_mqtt_packet_property_collection_init(&disconnect->properties);
+		rrr_mqtt_property_collection_init(&disconnect->properties);
 	}
 
 	return ret;
@@ -104,7 +104,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_publish (RRR_MQTT_P_TYPE_AL
 	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) ret;
 
 	if (ret != NULL) {
-		rrr_mqtt_packet_property_collection_init(&publish->properties);
+		rrr_mqtt_property_collection_init(&publish->properties);
 	}
 
 	return ret;
@@ -121,7 +121,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_A
 		goto out;
 	}
 
-	rrr_mqtt_packet_property_collection_init(&subscribe->properties);
+	rrr_mqtt_property_collection_init(&subscribe->properties);
 
 	ret = rrr_mqtt_subscription_collection_new(&subscribe->subscriptions);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
@@ -132,7 +132,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_A
 	goto out;
 
 	out_destroy_properties:
-	rrr_mqtt_packet_property_collection_destroy(&subscribe->properties);
+	rrr_mqtt_property_collection_destroy(&subscribe->properties);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(subscribe);
 
 	out:
@@ -151,10 +151,10 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_suback(RRR_MQTT_P_TYPE_ALLO
 	// NOTE : We do not allocate the subscriptions here, those are
 	//        simply moved from the SUBSCRIBE packet
 
-	rrr_mqtt_packet_property_collection_init(&suback->properties);
+	rrr_mqtt_property_collection_init(&suback->properties);
 
 	goto out;
-	rrr_mqtt_packet_property_collection_destroy(&suback->properties);
+	rrr_mqtt_property_collection_destroy(&suback->properties);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(suback);
 
 	out:
@@ -164,8 +164,8 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_suback(RRR_MQTT_P_TYPE_ALLO
 static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
 
-	rrr_mqtt_packet_property_collection_destroy(&connect->properties);
-	rrr_mqtt_packet_property_collection_destroy(&connect->will_properties);
+	rrr_mqtt_property_collection_destroy(&connect->properties);
+	rrr_mqtt_property_collection_destroy(&connect->will_properties);
 
 	RRR_FREE_IF_NOT_NULL(connect->client_identifier);
 	RRR_FREE_IF_NOT_NULL(connect->username);
@@ -178,13 +178,13 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) packet;
-	rrr_mqtt_packet_property_collection_destroy(&connack->properties);
+	rrr_mqtt_property_collection_destroy(&connack->properties);
 	free(connack);
 }
 
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) packet;
-	rrr_mqtt_packet_property_collection_destroy(&publish->properties);
+	rrr_mqtt_property_collection_destroy(&publish->properties);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 	free(publish);
 }
@@ -207,7 +207,7 @@ static void __rrr_mqtt_p_free_pubcomp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_subscribe *subscribe = (struct rrr_mqtt_p_packet_subscribe *) packet;
-	rrr_mqtt_packet_property_collection_destroy(&subscribe->properties);
+	rrr_mqtt_property_collection_destroy(&subscribe->properties);
 	if (subscribe->subscriptions != NULL) {
 		rrr_mqtt_subscription_collection_destroy(subscribe->subscriptions);
 	}
@@ -217,7 +217,7 @@ static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_suback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) packet;
-	rrr_mqtt_packet_property_collection_destroy(&suback->properties);
+	rrr_mqtt_property_collection_destroy(&suback->properties);
 	if (suback->subscriptions != NULL) {
 		rrr_mqtt_subscription_collection_destroy(suback->subscriptions);
 	}
@@ -242,7 +242,7 @@ static void __rrr_mqtt_p_free_pingresp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_disconnect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) packet;
-	rrr_mqtt_packet_property_collection_destroy(&disconnect->properties);
+	rrr_mqtt_property_collection_destroy(&disconnect->properties);
 	free(disconnect);
 }
 

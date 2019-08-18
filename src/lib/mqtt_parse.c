@@ -369,10 +369,10 @@ static int __rrr_mqtt_parse_utf8 (
 }
 
 #define RRR_PROPERTY_PARSER_DEFINITION \
-		struct rrr_mqtt_p_property *target, struct rrr_mqtt_p_parse_session *session, \
+		struct rrr_mqtt_property *target, struct rrr_mqtt_p_parse_session *session, \
 		const char *start, ssize_t *bytes_parsed_final
 
-static int __rrr_mqtt_parse_property_save_uint32 (struct rrr_mqtt_p_property *target, uint32_t value) {
+static int __rrr_mqtt_parse_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
 	target->data = malloc(sizeof(value));
 	if (target->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
@@ -386,7 +386,7 @@ static int __rrr_mqtt_parse_property_save_uint32 (struct rrr_mqtt_p_property *ta
 	return RRR_MQTT_PARSE_OK;
 }
 
-static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_p_property *target, const char *start, ssize_t length) {
+static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, const char *start, ssize_t length) {
 	int ret = RRR_MQTT_PARSE_OK;
 
 	if (length > 4) {
@@ -515,7 +515,7 @@ static int __rrr_mqtt_parse_property_2utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	ssize_t bytes_parsed = 0;
 	*bytes_parsed_final = 0;
 
-	if ((ret = rrr_mqtt_packet_property_new(&target->sibling, target->definition)) != 0) {
+	if ((ret = rrr_mqtt_property_new(&target->sibling, target->definition)) != 0) {
 		return ret;
 	}
 
@@ -548,7 +548,7 @@ static int (* const property_parsers[]) (RRR_PROPERTY_PARSER_DEFINITION) = {
 };
 
 static int __rrr_mqtt_parse_properties (
-		struct rrr_mqtt_p_property_collection *target,
+		struct rrr_mqtt_property_collection *target,
 		struct rrr_mqtt_p_parse_session *session,
 		const char *start,
 		ssize_t *bytes_parsed_final
@@ -562,7 +562,7 @@ static int __rrr_mqtt_parse_properties (
 	ssize_t bytes_parsed = 0;
 	ssize_t bytes_parsed_total = 0;
 
-	rrr_mqtt_packet_property_collection_destroy(target);
+	rrr_mqtt_property_collection_destroy(target);
 
 	ret = __rrr_mqtt_parse_variable_int(&property_length, &bytes_parsed, start, (session->buf_size - (start - session->buf)));
 
@@ -581,25 +581,25 @@ static int __rrr_mqtt_parse_properties (
 
 		uint8_t type = *((uint8_t *) start);
 
-		const struct rrr_mqtt_p_property_definition *property_def = rrr_mqtt_p_get_property_definition(type);
+		const struct rrr_mqtt_property_definition *property_def = rrr_mqtt_property_get_definition(type);
 		if (property_def == NULL) {
 			VL_MSG_ERR("Unknown mqtt property field found: 0x%02x\n", type);
 			return RRR_MQTT_PARSE_PARAMETER_ERROR;
 		}
 
-		struct rrr_mqtt_p_property *property = NULL;
-		if ((ret = rrr_mqtt_packet_property_new(&property, property_def)) != 0) {
+		struct rrr_mqtt_property *property = NULL;
+		if ((ret = rrr_mqtt_property_new(&property, property_def)) != 0) {
 			return RRR_MQTT_PARSE_INTERNAL_ERROR;
 		}
 
 		start = end;
 		ret = property_parsers[property_def->type](property, session, start, &bytes_parsed);
 		if (ret != 0) {
-			rrr_mqtt_packet_property_destroy(property);
+			rrr_mqtt_property_destroy(property);
 			return ret;
 		}
 
-		rrr_mqtt_packet_property_collection_add (target, property);
+		rrr_mqtt_property_collection_add (target, property);
 
 		bytes_parsed_total += bytes_parsed;
 		start = end + bytes_parsed;

@@ -232,8 +232,8 @@ struct rrr_mqtt_p_packet_connect {
 	char *client_identifier;
 
 	// For version 5
-	struct rrr_mqtt_p_property_collection properties;
-	struct rrr_mqtt_p_property_collection will_properties;
+	struct rrr_mqtt_property_collection properties;
+	struct rrr_mqtt_property_collection will_properties;
 
 	char *will_topic;
 	char *will_message;
@@ -258,7 +258,7 @@ struct rrr_mqtt_p_packet_connack {
 
 	uint8_t reason_v5;
 
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 };
 
 #define RRR_MQTT_P_CONNACK_GET_REASON_V5(p)		(((struct rrr_mqtt_p_packet_connack *)(p))->reason_v5)
@@ -273,7 +273,7 @@ struct rrr_mqtt_p_packet_publish {
 
 	char *topic;
 
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 };
 
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((1<<0) &			((struct rrr_mqtt_p_packet_publish *)(p))->type_flags))
@@ -283,7 +283,7 @@ struct rrr_mqtt_p_packet_publish {
 struct rrr_mqtt_p_packet_puback {
 	RRR_MQTT_P_PACKET_HEADER;
 	uint8_t reason_v5;
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 };
 struct rrr_mqtt_p_packet_pubrec {
 	RRR_MQTT_P_PACKET_HEADER;
@@ -302,11 +302,11 @@ struct rrr_mqtt_p_packet_subscribe {
 	int max_qos;
 
 	struct rrr_mqtt_subscription_collection *subscriptions;
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 };
 struct rrr_mqtt_p_packet_suback {
 	RRR_MQTT_P_PACKET_HEADER;
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 	struct rrr_mqtt_subscription_collection *subscriptions;
 };
 struct rrr_mqtt_p_packet_unsubscribe {
@@ -326,7 +326,7 @@ struct rrr_mqtt_p_packet_disconnect {
 
 	uint8_t disconnect_reason_code;
 
-	struct rrr_mqtt_p_property_collection properties;
+	struct rrr_mqtt_property_collection properties;
 };
 struct rrr_mqtt_p_packet_auth {
 	RRR_MQTT_P_PACKET_HEADER;

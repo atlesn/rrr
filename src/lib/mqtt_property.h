@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
+#include "linked_list.h"
+
 #define RRR_MQTT_PROPERTY_DATA_TYPE_ONE 1
 #define RRR_MQTT_PROPERTY_DATA_TYPE_TWO 2
 #define RRR_MQTT_PROPERTY_DATA_TYPE_FOUR 4
@@ -35,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32 1
 #define RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB 2
 
-const struct rrr_mqtt_p_property_definition *rrr_mqtt_p_get_property_definition(uint8_t id);
+const struct rrr_mqtt_property_definition *rrr_mqtt_property_get_definition(uint8_t id);
 
 struct rrr_mqtt_p_properties_header {
 	/* Data starts at .data[.length_decoded] */
@@ -46,7 +48,7 @@ struct rrr_mqtt_p_properties_header {
 	};
 };
 
-struct rrr_mqtt_p_property_definition {
+struct rrr_mqtt_property_definition {
 	int type;
 	uint8_t identifier;
 
@@ -54,42 +56,41 @@ struct rrr_mqtt_p_property_definition {
 	const char *name;
 };
 
-struct rrr_mqtt_p_property {
-	struct rrr_mqtt_p_property *next;
+struct rrr_mqtt_property {
+	RRR_LINKED_LIST_NODE(struct rrr_mqtt_property);
 
 	int order;
 
 	/* Some properties have two values */
-	struct rrr_mqtt_p_property *sibling;
-	const struct rrr_mqtt_p_property_definition *definition;
+	struct rrr_mqtt_property *sibling;
+	const struct rrr_mqtt_property_definition *definition;
 	uint8_t internal_data_type;
 	ssize_t length;
 	char *data;
 };
 
 /* Properties are stored in the order of which they appear in the packets */
-struct rrr_mqtt_p_property_collection {
-	struct rrr_mqtt_p_property *first;
-	struct rrr_mqtt_p_property *last;
-	int count;
+struct rrr_mqtt_property_collection {
+	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_property);
+	int order_count;
 };
 
-void rrr_mqtt_packet_property_destroy (
-		struct rrr_mqtt_p_property *property
+void rrr_mqtt_property_destroy (
+		struct rrr_mqtt_property *property
 );
-int rrr_mqtt_packet_property_new (
-		struct rrr_mqtt_p_property **target,
-		const struct rrr_mqtt_p_property_definition *definition
+int rrr_mqtt_property_new (
+		struct rrr_mqtt_property **target,
+		const struct rrr_mqtt_property_definition *definition
 );
-void rrr_mqtt_packet_property_collection_add (
-		struct rrr_mqtt_p_property_collection *collection,
-		struct rrr_mqtt_p_property *property
+void rrr_mqtt_property_collection_add (
+		struct rrr_mqtt_property_collection *collection,
+		struct rrr_mqtt_property *property
 );
-void rrr_mqtt_packet_property_collection_destroy (
-		struct rrr_mqtt_p_property_collection *collection
+void rrr_mqtt_property_collection_destroy (
+		struct rrr_mqtt_property_collection *collection
 );
-void rrr_mqtt_packet_property_collection_init (
-		struct rrr_mqtt_p_property_collection *collection
+void rrr_mqtt_property_collection_init (
+		struct rrr_mqtt_property_collection *collection
 );
 
 
