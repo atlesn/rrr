@@ -24,7 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
-struct rrr_mqtt_p_packet;
+struct rrr_mqtt_p;
+struct rrr_mqtt_p_publish;
 struct rrr_mqtt_session_collection;
 struct rrr_mqtt_session_collection_methods;
 struct rrr_mqtt_subscription_collection;
@@ -102,26 +103,27 @@ struct rrr_mqtt_session_collection_methods {
 	//          database engine, the refcount will be decremented immediately. If the caller
 	//          is to keep the packet, the reference count must be incremented prior to calling
 	//          this function.
-	int (*push_send_queue) (
+	int (*notify_send) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p_packet *packet
+			struct rrr_mqtt_p *packet
 	);
 
 	// Receive an ACK for a packet and remove it from the send queue.
 	// The ACK is not stored in the session, no reference counting is performed.
-	int (*process_ack) (
+	int (*notify_ack) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p_packet *packet
+			struct rrr_mqtt_p *packet
 	);
 
 	// Iterate send queue and call callback for messages with retry interval exceeded.
-	// If force is 1, callback receives all packets.
+	// If force is 1, callback receives all packets, which happens if the client
+	// connects and re-uses an old session with unacknowledged packets.
 	int (*iterate_retries) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			int (*callback)(struct rrr_mqtt_p_packet *packet, void *arg),
+			int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 			void *callback_arg,
 			int force
 	);
@@ -138,6 +140,13 @@ struct rrr_mqtt_session_collection_methods {
 			const struct rrr_mqtt_subscription_collection *subscriptions
 	);
 
+	// Receive PUBLISH from the client. Session handler must distribute this to
+	// the other clients and/or retain it based on protocol rules.
+	int (*receive_publish) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p_publish *publish
+	);
 };
 
 struct rrr_mqtt_session_collection {

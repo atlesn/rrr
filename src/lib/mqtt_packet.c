@@ -50,8 +50,8 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
  * needs this default allocator. If it contains special objects, a custom allocator must
  * be written which again calls this default allocator to initialize the header before
  * initializing other special data. */
-static struct rrr_mqtt_p_packet *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *ret = malloc(type_properties->packet_size);
+static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *ret = malloc(type_properties->packet_size);
 	if (ret != NULL) {
 		memset(ret, '\0', type_properties->packet_size);
 		ret->type_properties = type_properties;
@@ -65,9 +65,9 @@ static struct rrr_mqtt_p_packet *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLO
 	return ret;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) ret;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_connect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) ret;
 
 	if (ret != NULL) {
 		rrr_mqtt_property_collection_init(&connect->properties);
@@ -77,9 +77,9 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connect (RRR_MQTT_P_TYPE_AL
 	return ret;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connack (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) ret;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_connack (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) ret;
 
 	if (ret != NULL) {
 		rrr_mqtt_property_collection_init(&connack->properties);
@@ -88,9 +88,9 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_connack (RRR_MQTT_P_TYPE_AL
 	return ret;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) ret;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) ret;
 
 	if (ret != NULL) {
 		rrr_mqtt_property_collection_init(&disconnect->properties);
@@ -99,9 +99,9 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_disconnect (RRR_MQTT_P_TYPE
 	return ret;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_publish (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) ret;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_publish (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *ret = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) ret;
 
 	if (ret != NULL) {
 		rrr_mqtt_property_collection_init(&publish->properties);
@@ -110,9 +110,9 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_publish (RRR_MQTT_P_TYPE_AL
 	return ret;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_subscribe *subscribe = (struct rrr_mqtt_p_packet_subscribe *) result;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) result;
 
 	int ret = 0;
 
@@ -139,9 +139,9 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_A
 	return result;
 }
 
-static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_suback(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
-	struct rrr_mqtt_p_packet *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
-	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) result;
+static struct rrr_mqtt_p *rrr_mqtt_p_allocate_suback(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
+	struct rrr_mqtt_p *result = __rrr_mqtt_p_allocate_raw (type_properties, protocol_version);
+	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) result;
 
 	if (result == NULL) {
 		VL_MSG_ERR("Could not allocate suback packet in rrr_mqtt_p_allocate_suback\n");
@@ -162,7 +162,7 @@ static struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate_suback(RRR_MQTT_P_TYPE_ALLO
 }
 
 static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_connect *connect = (struct rrr_mqtt_p_packet_connect *) packet;
+	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
 
 	rrr_mqtt_property_collection_destroy(&connect->properties);
 	rrr_mqtt_property_collection_destroy(&connect->will_properties);
@@ -177,13 +177,13 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) packet;
+	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
 	rrr_mqtt_property_collection_destroy(&connack->properties);
 	free(connack);
 }
 
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_publish *publish = (struct rrr_mqtt_p_packet_publish *) packet;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 	rrr_mqtt_property_collection_destroy(&publish->properties);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 	free(publish);
@@ -206,7 +206,7 @@ static void __rrr_mqtt_p_free_pubcomp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_subscribe *subscribe = (struct rrr_mqtt_p_packet_subscribe *) packet;
+	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
 	rrr_mqtt_property_collection_destroy(&subscribe->properties);
 	if (subscribe->subscriptions != NULL) {
 		rrr_mqtt_subscription_collection_destroy(subscribe->subscriptions);
@@ -216,7 +216,7 @@ static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_suback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) packet;
+	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
 	rrr_mqtt_property_collection_destroy(&suback->properties);
 	if (suback->subscriptions != NULL) {
 		rrr_mqtt_subscription_collection_destroy(suback->subscriptions);
@@ -241,7 +241,7 @@ static void __rrr_mqtt_p_free_pingresp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 }
 
 static void __rrr_mqtt_p_free_disconnect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
-	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) packet;
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
 	rrr_mqtt_property_collection_destroy(&disconnect->properties);
 	free(disconnect);
 }
@@ -252,21 +252,21 @@ static void __rrr_mqtt_p_free_auth (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 	{0,  0, "RESERVED",		1, 0, 0,											NULL,							NULL,						NULL,							NULL},
-	{1,  0, "CONNECT",		1, 0, sizeof(struct rrr_mqtt_p_packet_connect),		rrr_mqtt_p_allocate_connect,	rrr_mqtt_parse_connect,		rrr_mqtt_assemble_connect,		__rrr_mqtt_p_free_connect},
-	{2,  1, "CONNACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_connack), 	rrr_mqtt_p_allocate_connack,	rrr_mqtt_parse_connack,		rrr_mqtt_assemble_connack,		__rrr_mqtt_p_free_connack},
-	{3,  0, "PUBLISH",		0, 0, sizeof(struct rrr_mqtt_p_packet_publish),		rrr_mqtt_p_allocate_publish,	rrr_mqtt_parse_publish,		rrr_mqtt_assemble_publish,		__rrr_mqtt_p_free_publish},
-	{4,  3, "PUBACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_puback),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_puback,		rrr_mqtt_assemble_puback,		__rrr_mqtt_p_free_puback},
-	{5,  3, "PUBREC",		1, 0, sizeof(struct rrr_mqtt_p_packet_pubrec),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrec,		rrr_mqtt_assemble_pubrec,		__rrr_mqtt_p_free_pubrec},
-	{6,  5, "PUBREL",		1, 2, sizeof(struct rrr_mqtt_p_packet_pubrel),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrel,		rrr_mqtt_assemble_pubrel,		__rrr_mqtt_p_free_pubrel},
-	{7,  7, "PUBCOMP",		1, 0, sizeof(struct rrr_mqtt_p_packet_pubcomp),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubcomp,		rrr_mqtt_assemble_pubcomp,		__rrr_mqtt_p_free_pubcomp},
-	{8,  0, "SUBSCRIBE",	1, 2, sizeof(struct rrr_mqtt_p_packet_subscribe),	rrr_mqtt_p_allocate_subscribe,	rrr_mqtt_parse_subscribe,	rrr_mqtt_assemble_subscribe,	__rrr_mqtt_p_free_subscribe},
-	{9,  8, "SUBACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_suback),		rrr_mqtt_p_allocate_suback,		rrr_mqtt_parse_suback,		rrr_mqtt_assemble_suback,		__rrr_mqtt_p_free_suback},
-	{10, 0, "UNSUBSCRIBE",	1, 2, sizeof(struct rrr_mqtt_p_packet_unsubscribe),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_unsubscribe,	rrr_mqtt_assemble_unsubscribe,	__rrr_mqtt_p_free_unsubscribe},
-	{11, 10,"UNSUBACK",		1, 0, sizeof(struct rrr_mqtt_p_packet_unsuback),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_unsuback,	rrr_mqtt_assemble_unsuback,		__rrr_mqtt_p_free_unsuback},
-	{12, 0, "PINGREQ",		1, 0, sizeof(struct rrr_mqtt_p_packet_pingreq),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingreq,		rrr_mqtt_assemble_pingreq,		__rrr_mqtt_p_free_pingreq},
-	{13, 12,"PINGRESP",		1, 0, sizeof(struct rrr_mqtt_p_packet_pingresp),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingresp,	rrr_mqtt_assemble_pingresp,		__rrr_mqtt_p_free_pingresp},
-	{14, 0,	"DISCONNECT",	1, 0, sizeof(struct rrr_mqtt_p_packet_disconnect),	rrr_mqtt_p_allocate_disconnect,	rrr_mqtt_parse_disconnect,	rrr_mqtt_assemble_disconnect,	__rrr_mqtt_p_free_disconnect},
-	{15, 0,	"AUTH",			1, 0, sizeof(struct rrr_mqtt_p_packet_auth),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_auth,		rrr_mqtt_assemble_auth,			__rrr_mqtt_p_free_auth}
+	{1,  0, "CONNECT",		1, 0, sizeof(struct rrr_mqtt_p_connect),		rrr_mqtt_p_allocate_connect,	rrr_mqtt_parse_connect,		rrr_mqtt_assemble_connect,		__rrr_mqtt_p_free_connect},
+	{2,  1, "CONNACK",		1, 0, sizeof(struct rrr_mqtt_p_connack), 	rrr_mqtt_p_allocate_connack,	rrr_mqtt_parse_connack,		rrr_mqtt_assemble_connack,		__rrr_mqtt_p_free_connack},
+	{3,  0, "PUBLISH",		0, 0, sizeof(struct rrr_mqtt_p_publish),		rrr_mqtt_p_allocate_publish,	rrr_mqtt_parse_publish,		rrr_mqtt_assemble_publish,		__rrr_mqtt_p_free_publish},
+	{4,  3, "PUBACK",		1, 0, sizeof(struct rrr_mqtt_p_puback),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_puback,		rrr_mqtt_assemble_puback,		__rrr_mqtt_p_free_puback},
+	{5,  3, "PUBREC",		1, 0, sizeof(struct rrr_mqtt_p_pubrec),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrec,		rrr_mqtt_assemble_pubrec,		__rrr_mqtt_p_free_pubrec},
+	{6,  5, "PUBREL",		1, 2, sizeof(struct rrr_mqtt_p_pubrel),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubrel,		rrr_mqtt_assemble_pubrel,		__rrr_mqtt_p_free_pubrel},
+	{7,  7, "PUBCOMP",		1, 0, sizeof(struct rrr_mqtt_p_pubcomp),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pubcomp,		rrr_mqtt_assemble_pubcomp,		__rrr_mqtt_p_free_pubcomp},
+	{8,  0, "SUBSCRIBE",	1, 2, sizeof(struct rrr_mqtt_p_subscribe),	rrr_mqtt_p_allocate_subscribe,	rrr_mqtt_parse_subscribe,	rrr_mqtt_assemble_subscribe,	__rrr_mqtt_p_free_subscribe},
+	{9,  8, "SUBACK",		1, 0, sizeof(struct rrr_mqtt_p_suback),		rrr_mqtt_p_allocate_suback,		rrr_mqtt_parse_suback,		rrr_mqtt_assemble_suback,		__rrr_mqtt_p_free_suback},
+	{10, 0, "UNSUBSCRIBE",	1, 2, sizeof(struct rrr_mqtt_p_unsubscribe),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_unsubscribe,	rrr_mqtt_assemble_unsubscribe,	__rrr_mqtt_p_free_unsubscribe},
+	{11, 10,"UNSUBACK",		1, 0, sizeof(struct rrr_mqtt_p_unsuback),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_unsuback,	rrr_mqtt_assemble_unsuback,		__rrr_mqtt_p_free_unsuback},
+	{12, 0, "PINGREQ",		1, 0, sizeof(struct rrr_mqtt_p_pingreq),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingreq,		rrr_mqtt_assemble_pingreq,		__rrr_mqtt_p_free_pingreq},
+	{13, 12,"PINGRESP",		1, 0, sizeof(struct rrr_mqtt_p_pingresp),	__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_pingresp,	rrr_mqtt_assemble_pingresp,		__rrr_mqtt_p_free_pingresp},
+	{14, 0,	"DISCONNECT",	1, 0, sizeof(struct rrr_mqtt_p_disconnect),	rrr_mqtt_p_allocate_disconnect,	rrr_mqtt_parse_disconnect,	rrr_mqtt_assemble_disconnect,	__rrr_mqtt_p_free_disconnect},
+	{15, 0,	"AUTH",			1, 0, sizeof(struct rrr_mqtt_p_auth),		__rrr_mqtt_p_allocate_raw,		rrr_mqtt_parse_auth,		rrr_mqtt_assemble_auth,			__rrr_mqtt_p_free_auth}
 };
 
 struct rrr_mqtt_p_reason {

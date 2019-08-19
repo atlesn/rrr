@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/mqtt_broker.h"
 #include "../lib/mqtt_common.h"
+#include "../lib/mqtt_session_ram.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -89,7 +90,12 @@ static int data_init (
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_broker_new(&data->mqtt_broker_data, INSTANCE_D_NAME(thread_data))) != 0) {
+	if ((ret = rrr_mqtt_broker_new (
+			&data->mqtt_broker_data,
+			INSTANCE_D_NAME(thread_data),
+			rrr_mqtt_session_collection_ram_new,
+			NULL
+		)) != 0) {
 		VL_MSG_ERR("Could not create new mqtt broker\n");
 		goto out;
 	}

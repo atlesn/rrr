@@ -62,11 +62,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PARSE_STATUS_SET_ERR(s) \
 	RRR_MQTT_PARSE_STATUS_SET(s,RRR_MQTT_PARSE_STATUS_ERR)
 
-struct rrr_mqtt_p_packet;
+struct rrr_mqtt_p;
 struct rrr_mqtt_p_type_properties;
 struct rrr_mqtt_p_protocol_version;
 
-struct rrr_mqtt_p_parse_session {
+struct rrr_mqtt_parse_session {
 	int status;
 	const char *buf;
 
@@ -74,7 +74,7 @@ struct rrr_mqtt_p_parse_session {
 	const struct rrr_mqtt_p_type_properties *type_properties;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 
-	struct rrr_mqtt_p_packet *packet;
+	struct rrr_mqtt_p *packet;
 
 	ssize_t variable_header_pos;
 	ssize_t payload_pos;
@@ -88,40 +88,40 @@ struct rrr_mqtt_p_parse_session {
 	uint8_t type_flags;
 };
 
-int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_connack (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_puback (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_pubrec (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_pubrel (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_subscribe (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_suback (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_unsuback (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_pingreq (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_pingresp (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_disconnect (struct rrr_mqtt_p_parse_session *session);
-int rrr_mqtt_parse_auth (struct rrr_mqtt_p_parse_session *session);
+int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_connack (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_puback (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_pubrec (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_pubrel (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_unsuback (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_pingreq (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_pingresp (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_auth (struct rrr_mqtt_parse_session *session);
 
 void rrr_mqtt_parse_session_destroy (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 );
 void rrr_mqtt_parse_session_init (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 );
 void rrr_mqtt_parse_session_update (
-		struct rrr_mqtt_p_parse_session *session,
+		struct rrr_mqtt_parse_session *session,
 		const char *buf,
 		ssize_t buf_size,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 );
 int rrr_mqtt_packet_parse (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 );
 int rrr_mqtt_packet_parse_finalize (
-		struct rrr_mqtt_p_packet **packet,
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_p **packet,
+		struct rrr_mqtt_parse_session *session
 );
 
 #endif /* RRR_MQTT_PARSE_H */

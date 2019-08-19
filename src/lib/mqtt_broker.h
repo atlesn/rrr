@@ -69,7 +69,9 @@ int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
-		const char *client_name
+		const char *client_name,
+		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
+		void *session_initializer_arg
 );
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,

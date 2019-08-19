@@ -110,7 +110,7 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	struct rrr_mqtt_p_packet_connack *connack = (struct rrr_mqtt_p_packet_connack *) packet;
+	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
 
 	BUF_INIT();
 
@@ -180,7 +180,7 @@ int __rrr_mqtt_assemble_suback_callback (struct rrr_mqtt_subscription *sub, void
 }
 
 int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	struct rrr_mqtt_p_packet_suback *suback = (struct rrr_mqtt_p_packet_suback *) packet;
+	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
 
 	BUF_INIT();
 	START_VARIABLE_LENGTH();
@@ -227,7 +227,7 @@ int rrr_mqtt_assemble_pingresp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	struct rrr_mqtt_p_packet_disconnect *disconnect = (struct rrr_mqtt_p_packet_disconnect *) packet;
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
 
 	BUF_INIT();
 

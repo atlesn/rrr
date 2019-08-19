@@ -29,9 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION 2
 
 #define RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION \
-		char **target, ssize_t *size, struct rrr_mqtt_p_packet *packet
+		char **target, ssize_t *size, struct rrr_mqtt_p *packet
 
-struct rrr_mqtt_p_packet;
+struct rrr_mqtt_p;
 
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION);
 int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION);

@@ -52,7 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	ssize_t bytes_parsed = 0; (void)(bytes_parsed);										\
 	uint16_t blob_length = 0; (void)(blob_length);										\
 	ssize_t payload_length = 0; (void)(payload_length);									\
-	struct PASTE(rrr_mqtt_p_packet_,type) *type = NULL;									\
+	struct PASTE(rrr_mqtt_p_,type) *type = NULL;									\
 	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {										\
 		VL_BUG("rrr_mqtt_parse called for same packet again after payload was done\n");	\
 	}																					\
@@ -78,7 +78,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			return RRR_MQTT_PARSE_INTERNAL_ERROR;										\
 		}																				\
 	}																					\
-	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet; (void)(type)
+	type = (struct PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type)
 
 #define PARSE_PACKET_ID(target) 										\
 	start = end;														\
@@ -199,7 +199,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	session->payload_pos = end - session->buf;													\
 	goto parse_payload;																			\
 	parse_payload:																				\
-	type = (struct PASTE(rrr_mqtt_p_packet_,type) *) session->packet;							\
+	type = (struct PASTE(rrr_mqtt_p_,type) *) session->packet;							\
 	end = session->buf + session->payload_checkpoint
 
 #define PARSE_END_PAYLOAD()																		\
@@ -219,7 +219,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 void rrr_mqtt_parse_session_destroy (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 ) {
 	if (session->buf == NULL) {
 		return;
@@ -233,13 +233,13 @@ void rrr_mqtt_parse_session_destroy (
 }
 
 void rrr_mqtt_parse_session_init (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 ) {
 	memset(session, '\0', sizeof(*session));
 }
 
 void rrr_mqtt_parse_session_update (
-		struct rrr_mqtt_p_parse_session *session,
+		struct rrr_mqtt_parse_session *session,
 		const char *buf,
 		ssize_t buf_size,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
@@ -294,7 +294,7 @@ static int __rrr_mqtt_parse_blob (
 		char **target, const char *start, const char *final_end, ssize_t *bytes_parsed, uint16_t *blob_length
 ) {
 	if (*target != NULL) {
-		VL_BUG ("target was not NULL in __rrr_mqtt_p_parse_blob\n");
+		VL_BUG ("target was not NULL in __rrr_mqtt_parse_blob\n");
 	}
 
 	const char *end = start + 2;
@@ -305,7 +305,7 @@ static int __rrr_mqtt_parse_blob (
 
 	*target = malloc((*blob_length) + 1);
 	if (*target == NULL){
-		VL_MSG_ERR("Could not allocate memory for UTF8 in __rrr_mqtt_p_parse_utf8\n");
+		VL_MSG_ERR("Could not allocate memory for UTF8 in __rrr_mqtt_parse_utf8\n");
 		return RRR_MQTT_PARSE_INTERNAL_ERROR;
 	}
 	**target = '\0';
@@ -369,7 +369,7 @@ static int __rrr_mqtt_parse_utf8 (
 }
 
 #define RRR_PROPERTY_PARSER_DEFINITION \
-		struct rrr_mqtt_property *target, struct rrr_mqtt_p_parse_session *session, \
+		struct rrr_mqtt_property *target, struct rrr_mqtt_parse_session *session, \
 		const char *start, ssize_t *bytes_parsed_final
 
 static int __rrr_mqtt_parse_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
@@ -549,7 +549,7 @@ static int (* const property_parsers[]) (RRR_PROPERTY_PARSER_DEFINITION) = {
 
 static int __rrr_mqtt_parse_properties (
 		struct rrr_mqtt_property_collection *target,
-		struct rrr_mqtt_p_parse_session *session,
+		struct rrr_mqtt_parse_session *session,
 		const char *start,
 		ssize_t *bytes_parsed_final
 ) {
@@ -634,7 +634,7 @@ static int __rrr_mqtt_parse_protocol_version_validate_name (
 	return 1;
 }
 
-int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(connect);
 
 	PARSE_PREPARE(2);
@@ -714,23 +714,28 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_PAYLOAD();
  }
 
-int rrr_mqtt_parse_connack (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_connack (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(publish);
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(publish);
 
-	publish = (struct rrr_mqtt_p_packet_publish *) session->packet;
+	publish = (struct rrr_mqtt_p_publish *) session->packet;
 
 	publish->dup = RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(session);
 	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
 	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
 	PARSE_VALIDATE_QOS(publish->qos);
+
+	if (publish->qos == 0 && publish->dup != 0) {
+		VL_MSG_ERR("Received a PUBLISH packet of QoS 0, but DUP was non zero\n");
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;
+	}
 
 	// PARSE TOPIC
 	PARSE_UTF8(publish,topic);
@@ -748,10 +753,7 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session) {
 	// complete packet has been read, after which we order the read data to be moved to the
 	// assembled_data-member of the packet. Memory will after that be managed by the packet.
 
-	if (session->buf_size > session->target_size) {
-		VL_BUG("buf_size was > target_size in rrr_mqtt_parse_publish\n");
-	}
-	else if (session->buf_size == session->target_size) {
+	if (session->buf_size == session->target_size) {
 		goto parse_done;
 	}
 	else if (session->buf_size > session->target_size) {
@@ -764,27 +766,27 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_puback (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_puback (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_pubrec (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_pubrec (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_pubrel (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_pubrel (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_subscribe (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(subscribe);
 
 	PARSE_REQUIRE_PROTOCOL_VERSION();
@@ -851,22 +853,22 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_suback (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_unsuback (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_unsuback (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
 
-int rrr_mqtt_parse_pingreq (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_pingreq (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(pingreq);
 
 	PARSE_REQUIRE_PROTOCOL_VERSION();
@@ -875,7 +877,7 @@ int rrr_mqtt_parse_pingreq (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_NO_HEADER(pingreq);
 }
 
-int rrr_mqtt_parse_pingresp (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_pingresp (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(pingresp);
 
 	PARSE_REQUIRE_PROTOCOL_VERSION();
@@ -884,7 +886,7 @@ int rrr_mqtt_parse_pingresp (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_NO_HEADER(pingresp);
 }
 
-int rrr_mqtt_parse_disconnect (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(disconnect);
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(disconnect);
@@ -912,7 +914,7 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_p_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_auth (struct rrr_mqtt_p_parse_session *session) {
+int rrr_mqtt_parse_auth (struct rrr_mqtt_parse_session *session) {
 	int ret = 0;
 	return ret;
 }
@@ -922,7 +924,7 @@ int rrr_mqtt_parse_auth (struct rrr_mqtt_p_parse_session *session) {
 #define RRR_MQTT_PARSE_GET_TYPE_FLAGS(p)	((p)->type & ((uint8_t) 0xF))
 
 int rrr_mqtt_packet_parse (
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_parse_session *session
 ) {
 	int ret = 0;
 
@@ -1043,8 +1045,8 @@ int rrr_mqtt_packet_parse (
 }
 
 int rrr_mqtt_packet_parse_finalize (
-		struct rrr_mqtt_p_packet **packet,
-		struct rrr_mqtt_p_parse_session *session
+		struct rrr_mqtt_p **packet,
+		struct rrr_mqtt_parse_session *session
 ) {
 	int ret = 0;
 

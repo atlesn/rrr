@@ -36,18 +36,18 @@ struct rrr_mqtt_session_collection;
 
 #define RRR_MQTT_TYPE_HANDLER_DEFINITION \
 		struct rrr_mqtt_data *mqtt_data, \
-		struct rrr_mqtt_connection *connection, \
-		struct rrr_mqtt_p_packet *packet
+		struct rrr_mqtt_conn *connection, \
+		struct rrr_mqtt_p *packet
 
 struct rrr_mqtt_type_handler_properties {
 	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
 };
 
 struct rrr_mqtt_data {
-	struct rrr_mqtt_connection_collection connections;
+	struct rrr_mqtt_conn_collection connections;
 	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
-	int (*event_handler)(struct rrr_mqtt_connection *connection, int event, void *arg);
+	int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg);
 	void *event_handler_arg;
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t close_wait_time_usec;
@@ -62,13 +62,16 @@ struct rrr_mqtt_data {
 #define MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt,session,subscriptions) \
 		(mqtt)->sessions->methods->add_subscriptions((mqtt)->sessions, &(session), (subscriptions))
 
+#define MQTT_COMMON_CALL_SESSION_RECEIVE_PUBLISH(mqtt,session,publish) \
+		(mqtt)->sessions->methods->receive_publish((mqtt)->sessions, &(session), (publish))
+
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const char *client_name,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*event_handler)(struct rrr_mqtt_connection *connection, int event, void *arg),
+		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg),
 		void *event_handler_arg,
 		uint64_t close_wait_time_usec,
 		int max_socket_connections

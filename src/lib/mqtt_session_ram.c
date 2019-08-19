@@ -59,6 +59,7 @@ struct rrr_mqtt_session_ram {
 struct rrr_mqtt_session_collection_ram_data {
 	pthread_mutex_t lock;
 	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_session_ram);
+	struct rrr_mqtt_p_queue retain_queue;
 };
 
 int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
@@ -188,12 +189,14 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
 
 	pthread_mutex_lock(&data->lock);
-
+	fifo_buffer_invalidate(&data->retain_queue.buffer);
+	// TODO : implement destroy
+	// fifo_buffer_destroy(&data->retain_queue);
 	RRR_LINKED_LIST_DESTROY(data, struct rrr_mqtt_session_ram, __rrr_mqtt_session_ram_decref_unlocked(node));
-
 	pthread_mutex_unlock(&data->lock);
 
 	pthread_mutex_destroy(&data->lock);
+
 	RRR_FREE_IF_NOT_NULL(sessions->private_data);
 
 	rrr_mqtt_session_collection_destroy(sessions);
@@ -379,7 +382,7 @@ static int __rrr_mqtt_session_ram_heartbeat (
 static int __rrr_mqtt_session_ram_push_send_queue (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		struct rrr_mqtt_p_packet *packet
+		struct rrr_mqtt_p *packet
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -392,7 +395,7 @@ static int __rrr_mqtt_session_ram_push_send_queue (
 }
 
 struct ram_process_ack_callback_data {
-	struct rrr_mqtt_p_packet *ack_packet;
+	struct rrr_mqtt_p *ack_packet;
 	uint8_t find_packet_type;
 	int found;
 };
@@ -403,7 +406,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 	(void)(size);
 
 	struct ram_process_ack_callback_data *ack_callback_data = callback_data->private_data;
-	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	if (	(RRR_MQTT_P_GET_TYPE(packet) == ack_callback_data->find_packet_type) &&
 			(RRR_MQTT_P_GET_IDENTIFIER(packet) == RRR_MQTT_P_GET_IDENTIFIER(ack_callback_data->ack_packet))
@@ -418,7 +421,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 static int __rrr_mqtt_session_ram_process_ack (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		struct rrr_mqtt_p_packet *packet
+		struct rrr_mqtt_p *packet
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -473,7 +476,7 @@ static int __rrr_mqtt_session_ram_process_ack (
 }
 
 struct iterate_retries_callback_data {
-	int (*callback)(struct rrr_mqtt_p_packet *packet, void *arg);
+	int (*callback)(struct rrr_mqtt_p *packet, void *arg);
 	void *callback_arg;
 	int force;
 	uint64_t retry_interval_millis;
@@ -486,7 +489,7 @@ static int __rrr_mqtt_session_ram_iterate_retries_callback (FIFO_CALLBACK_ARGS) 
 	(void)(size);
 
 	struct iterate_retries_callback_data *retries_callback_data = callback_data->private_data;
-	struct rrr_mqtt_p_packet *packet = (struct rrr_mqtt_p_packet *) data;
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	RRR_MQTT_P_LOCK(packet);
 
@@ -513,7 +516,7 @@ static int __rrr_mqtt_session_ram_iterate_retries_callback (FIFO_CALLBACK_ARGS) 
 static int __rrr_mqtt_session_ram_iterate_retries (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		int (*callback)(struct rrr_mqtt_p_packet *packet, void *arg),
+		int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 		void *callback_arg,
 		int force
 ) {
@@ -606,6 +609,24 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 	return ret;
 }
 
+static int __rrr_mqtt_session_ram_receive_publish (
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find,
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_FUNCTION_INCREF_OR_RETURN();
+	SESSION_LOCK();
+
+
+
+	SESSION_UNLOCK();
+	SESSION_FUNCTION_DECREF();
+
+	return ret;
+}
+
 const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,
@@ -616,7 +637,8 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_process_ack,
 		__rrr_mqtt_session_ram_iterate_retries,
 		__rrr_mqtt_session_ram_notify_disconnect,
-		__rrr_mqtt_session_ram_add_subscriptions
+		__rrr_mqtt_session_ram_add_subscriptions,
+		__rrr_mqtt_session_ram_receive_publish
 };
 
 int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **sessions, void *arg) {
@@ -651,11 +673,20 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		goto out_destroy_ram_data;
 	}
 
+	if (fifo_buffer_init_custom_free(&ram_data->retain_queue.buffer, rrr_mqtt_p_decref) != 0) {
+		VL_MSG_ERR("Could not initialize buffer in rrr_mqtt_session_collection_ram_new\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_mutex;
+	}
+
 	res->private_data = ram_data;
 
 	*sessions = res;
 
 	goto out;
+
+	out_destroy_mutex:
+		pthread_mutex_destroy(&ram_data->lock);
 
 	out_destroy_ram_data:
 		free(ram_data);

@@ -91,12 +91,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_P_5_REASON_SUB_IDENTIFIERS_NOT_SUPPORTED	0xA1
 #define RRR_MQTT_P_5_REASON_WILDCARD_SUBS_NOT_SUPPORTED		0xA2
 
-struct rrr_mqtt_connection;
+struct rrr_mqtt_p;
+struct rrr_mqtt_conn;
 struct rrr_mqtt_p_type_properties;
 struct rrr_mqtt_p_protocol_version;
-struct rrr_mqtt_p_parse_session;
+struct rrr_mqtt_parse_session;
 struct rrr_mqtt_payload_buf_session;
-struct rrr_mqtt_p_packet;
 struct rrr_mqtt_subscription_collection;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
@@ -104,7 +104,7 @@ struct rrr_mqtt_subscription_collection;
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 
 #define RRR_MQTT_P_TYPE_FREE_DEFINITION \
-		struct rrr_mqtt_p_packet *packet
+		struct rrr_mqtt_p *packet
 
 struct rrr_mqtt_p_protocol_version {
 	uint8_t id;
@@ -125,11 +125,11 @@ struct rrr_mqtt_p_type_properties {
 	uint8_t flags;
 	ssize_t packet_size;
 
-	struct rrr_mqtt_p_packet *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
+	struct rrr_mqtt_p *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
 
 	// We do not use function argument macros for these two to avoid including the header files
-	int (*parse)(struct rrr_mqtt_p_parse_session *session);
-	int (*assemble)(char **target, ssize_t *size, struct rrr_mqtt_p_packet *packet);
+	int (*parse)(struct rrr_mqtt_parse_session *session);
+	int (*assemble)(char **target, ssize_t *size, struct rrr_mqtt_p *packet);
 
 	// DO NOT use the free-functions directly, ALWAYS use the RRR_MQTT_P_DECREF-macro
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
@@ -159,7 +159,7 @@ struct rrr_mqtt_p_type_properties {
 	const struct rrr_mqtt_p_protocol_version *protocol_version;	\
 	const struct rrr_mqtt_p_type_properties *type_properties
 
-struct rrr_mqtt_p_packet {
+struct rrr_mqtt_p {
 	RRR_MQTT_P_PACKET_HEADER;
 };
 
@@ -181,14 +181,14 @@ struct rrr_mqtt_p_packet {
 #define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->free(p))
 
 static inline void rrr_mqtt_p_incref (void *arg) {
-	struct rrr_mqtt_p_packet *p = arg;
+	struct rrr_mqtt_p *p = arg;
 	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
 	pthread_mutex_unlock(&p->refcount_lock);
 }
 
 static inline void rrr_mqtt_p_decref (void *arg) {
-	struct rrr_mqtt_p_packet *p = arg;
+	struct rrr_mqtt_p *p = arg;
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
@@ -223,7 +223,7 @@ static inline void rrr_mqtt_p_decref (void *arg) {
 #define RRR_MQTT_P_TRYLOCK(p)	\
 	pthread_mutex_trylock(&((p)->data_lock))
 
-struct rrr_mqtt_p_packet_connect {
+struct rrr_mqtt_p_connect {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	uint8_t connect_flags;
@@ -242,15 +242,15 @@ struct rrr_mqtt_p_packet_connect {
 	char *password;
 };
 
-#define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			(((1<<0) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags))
-#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 1)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL(p)				(((1<<2) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 2)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)			((((1<<4)|(1<<3)) &	((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 3)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)		(((1<<5) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 5)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 6)
-#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) &			((struct rrr_mqtt_p_packet_connect *)(p))->connect_flags) >> 7)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_RESERVED(p)			(((1<<0) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags))
+#define RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(p)		(((1<<1) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 1)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL(p)				(((1<<2) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 2)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(p)			((((1<<4)|(1<<3)) &	((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 3)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(p)		(((1<<5) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 5)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
+#define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
-struct rrr_mqtt_p_packet_connack {
+struct rrr_mqtt_p_connack {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	// Only least significant bit is used (session_present)
@@ -261,9 +261,9 @@ struct rrr_mqtt_p_packet_connack {
 	struct rrr_mqtt_property_collection properties;
 };
 
-#define RRR_MQTT_P_CONNACK_GET_REASON_V5(p)		(((struct rrr_mqtt_p_packet_connack *)(p))->reason_v5)
+#define RRR_MQTT_P_CONNACK_GET_REASON_V5(p)		(((struct rrr_mqtt_p_connack *)(p))->reason_v5)
 
-struct rrr_mqtt_p_packet_publish {
+struct rrr_mqtt_p_publish {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	/* These are also accessible through packet type flags but we cache them here */
@@ -276,25 +276,25 @@ struct rrr_mqtt_p_packet_publish {
 	struct rrr_mqtt_property_collection properties;
 };
 
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((1<<0) &			((struct rrr_mqtt_p_packet_publish *)(p))->type_flags))
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		((((1<<2)|(1<<1)) &	((struct rrr_mqtt_p_packet_publish *)(p))->type_flags) >> 2)
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((1<<3) &			((struct rrr_mqtt_p_packet_publish *)(p))->type_flags) >> 3)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((1<<0) &			((struct rrr_mqtt_p_publish *)(p))->type_flags))
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		((((1<<2)|(1<<1)) &	((struct rrr_mqtt_p_publish *)(p))->type_flags) >> 2)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((1<<3) &			((struct rrr_mqtt_p_publish *)(p))->type_flags) >> 3)
 
-struct rrr_mqtt_p_packet_puback {
+struct rrr_mqtt_p_puback {
 	RRR_MQTT_P_PACKET_HEADER;
 	uint8_t reason_v5;
 	struct rrr_mqtt_property_collection properties;
 };
-struct rrr_mqtt_p_packet_pubrec {
+struct rrr_mqtt_p_pubrec {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_pubrel {
+struct rrr_mqtt_p_pubrel {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_pubcomp {
+struct rrr_mqtt_p_pubcomp {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_subscribe {
+struct rrr_mqtt_p_subscribe {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	char *data_tmp;
@@ -304,31 +304,31 @@ struct rrr_mqtt_p_packet_subscribe {
 	struct rrr_mqtt_subscription_collection *subscriptions;
 	struct rrr_mqtt_property_collection properties;
 };
-struct rrr_mqtt_p_packet_suback {
+struct rrr_mqtt_p_suback {
 	RRR_MQTT_P_PACKET_HEADER;
 	struct rrr_mqtt_property_collection properties;
 	struct rrr_mqtt_subscription_collection *subscriptions;
 };
-struct rrr_mqtt_p_packet_unsubscribe {
+struct rrr_mqtt_p_unsubscribe {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_unsuback {
+struct rrr_mqtt_p_unsuback {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_pingreq {
+struct rrr_mqtt_p_pingreq {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_pingresp {
+struct rrr_mqtt_p_pingresp {
 	RRR_MQTT_P_PACKET_HEADER;
 };
-struct rrr_mqtt_p_packet_disconnect {
+struct rrr_mqtt_p_disconnect {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	uint8_t disconnect_reason_code;
 
 	struct rrr_mqtt_property_collection properties;
 };
-struct rrr_mqtt_p_packet_auth {
+struct rrr_mqtt_p_auth {
 	RRR_MQTT_P_PACKET_HEADER;
 };
 
@@ -355,7 +355,7 @@ struct rrr_mqtt_p_queue {
 
 const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8_t id);
 
-static inline int rrr_mqtt_p_get_refcount (struct rrr_mqtt_p_packet *packet) {
+static inline int rrr_mqtt_p_get_refcount (struct rrr_mqtt_p *packet) {
 	int ret = 0;
 	pthread_mutex_lock(&packet->refcount_lock);
 	ret = packet->users;
@@ -371,7 +371,7 @@ static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_prope
 	return &rrr_mqtt_p_type_properties[id];
 }
 
-static inline struct rrr_mqtt_p_packet *rrr_mqtt_p_allocate (uint8_t id, const struct rrr_mqtt_p_protocol_version *protocol_version) {
+static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (uint8_t id, const struct rrr_mqtt_p_protocol_version *protocol_version) {
 	const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(id);
 
 	return properties->allocate(properties, protocol_version);
