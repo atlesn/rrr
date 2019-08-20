@@ -82,7 +82,7 @@ static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const
 	return 1;
 }
 
-static inline int __rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end) {
+int rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end) {
 	*result = 0;
 
 	if (*pos >= end) {
@@ -108,7 +108,7 @@ int rrr_utf8_validate (const char *buf, int len) {
 
 	uint32_t result = 0;
 	do {
-		ret = __rrr_utf8_get_character (&result, &pos, end);
+		ret = rrr_utf8_get_character (&result, &pos, end);
 	} while (ret == 0 && !(ret == 0 && result == 0));
 
 	return ret;
@@ -127,7 +127,7 @@ int rrr_utf8_validate_and_iterate (
 
 	uint32_t result = 0;
 	do {
-		ret = __rrr_utf8_get_character (&result, &pos, end);
+		ret = rrr_utf8_get_character (&result, &pos, end);
 		if (ret != 0 || (ret == 0 && result == 0)) {
 			return ret;
 		}

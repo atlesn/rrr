@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_UTF8_H
 #define RRR_UTF8_H
 
+#include <inttypes.h>
+
+int rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end);
 int rrr_utf8_validate (const char *buf, int len);
 int rrr_utf8_validate_and_iterate (
 		const char *buf,

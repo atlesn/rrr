@@ -40,10 +40,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(flags)		((flags & (1<<4|1<<5)) >> 4)
 #define RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(flags)		((flags & (1<<6|1<<7)) >> 6)
 
+struct rrr_mqtt_p_publish;
+struct rrr_mqtt_topic_token;
+
 struct rrr_mqtt_subscription {
 	RRR_LINKED_LIST_NODE(struct rrr_mqtt_subscription);
 
 	char *topic_filter;
+	struct rrr_mqtt_topic_token *token_tree;
 
 	uint8_t retain_handling;
 	uint8_t rap;
@@ -75,6 +79,12 @@ void rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription *target,
 		struct rrr_mqtt_subscription *source
 );
+int rrr_mqtt_subscription_collection_match_publish (
+		struct rrr_mqtt_subscription_collection *subscriptions,
+		const struct rrr_mqtt_p_publish *publish,
+		int (match_callback)(const struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+);
 void rrr_mqtt_subscription_collection_destroy (
 		struct rrr_mqtt_subscription_collection *target
 );
@@ -100,11 +110,13 @@ int rrr_mqtt_subscription_collection_append_unique (
 );
 int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription_collection *source
+		struct rrr_mqtt_subscription_collection *source,
+		int include_invalid_entries
 );
 int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
-		const struct rrr_mqtt_subscription_collection *source
+		const struct rrr_mqtt_subscription_collection *source,
+		int include_invalid_entries
 );
 
 #endif /* RRR_MQTT_SUBSCRIPTION_H */

@@ -391,6 +391,37 @@ static int __rrr_mqtt_common_read_and_parse (
 	return ret;
 }
 
+struct send_callback_data {
+	struct rrr_mqtt_conn *connection;
+};
+
+static int __rrr_mqtt_common_send_from_sessions_callback (struct rrr_mqtt_p *packet, void *arg) {
+	// context is FIFO-buffer
+	int ret = FIFO_OK;
+
+	struct send_callback_data *callback_data = arg;
+	struct rrr_mqtt_conn *connection = callback_data->connection;
+
+	RRR_MQTT_P_LOCK(packet);
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+
+		// XXX - COPY PACKET BEFORE ADDING TO SEND QUEUE
+
+	}
+	else {
+		VL_BUG ("Unsupported packet of type %s in __rrr_mqtt_common_send_from_sessions_callback\n",
+				RRR_MQTT_P_GET_TYPE_NAME(packet));
+	}
+	RRR_MQTT_P_UNLOCK(packet);
+
+	RRR_MQTT_P_INCREF(packet);
+	rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, packet);
+
+
+	return ret;
+}
+
 static int __rrr_mqtt_common_send (
 		struct rrr_mqtt_conn *connection,
 		void *arg
@@ -407,12 +438,41 @@ static int __rrr_mqtt_common_send (
 		goto out_nolock;
 	}
 
+	struct send_callback_data callback_data = {
+			connection
+	};
+
+	int ret_tmp = data->sessions->methods->iterate_send_queue (
+			data->sessions,
+			&connection->session,
+			__rrr_mqtt_common_send_from_sessions_callback,
+			&callback_data,
+			0
+	);
+	if (ret_tmp != 0) {
+		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while iterating session send queue, destroying connection\n");
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_ERROR;
+			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
+			VL_MSG_ERR("Session was deleted in __rrr_mqtt_common_send, destroying connection\n");
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_DELETED;
+			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if (ret_tmp != RRR_MQTT_SESSION_OK) {
+			VL_MSG_ERR("Internal error while iterating session send queue, cannot continue. Return was %i.\n", ret_tmp);
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			goto out_unlock;
+		}
+	}
+
 	ret = rrr_mqtt_conn_iterator_ctx_send_packets(connection);
 
-	RRR_MQTT_CONN_UNLOCK(connection);
+	out_unlock:
+		RRR_MQTT_CONN_UNLOCK(connection);
 	out_nolock:
-
-	return ret;
+		return ret;
 }
 
 

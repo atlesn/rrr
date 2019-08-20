@@ -362,8 +362,8 @@ static int __rrr_mqtt_connection_new (
 	}
 	RRR_MQTT_CONN_LOCK(res);
 
-	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_decref);
-	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_decref);
+	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_standardized_decref);
+	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_standardized_decref);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
@@ -1029,21 +1029,23 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 
 	if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
 		if (RRR_MQTT_PARSE_STATUS_IS_MOVE_PAYLOAD_TO_PACKET(&connection->parse_session)) {
-			if (connection->parse_session.packet->_assembled_data != NULL) {
-				VL_BUG("assembled data was not NULL in rrr_mqtt_connection_iterator_ctx_parse while moving payload\n");
+			if (connection->parse_session.packet->payload != NULL) {
+				VL_BUG("payload data was not NULL in rrr_mqtt_connection_iterator_ctx_parse while moving payload\n");
 			}
-			connection->parse_session.packet->_assembled_data =
-					connection->read_session.rx_buf;
 
-			connection->parse_session.packet->assembled_data_size =
-					connection->parse_session.payload_pos;
+			ret = rrr_mqtt_p_payload_new_with_allocated_payload (
+					&connection->parse_session.packet->payload,
+					connection->read_session.rx_buf,
+					connection->read_session.rx_buf + connection->parse_session.payload_pos,
+					connection->read_session.rx_buf_wpos - connection->parse_session.payload_pos
+			);
+			if (ret != 0) {
+				VL_MSG_ERR("Could not move payload to packet in rrr_mqtt_conn_iterator_ctx_parse\n");
+				goto out_unlock;
+			}
 
-			connection->parse_session.packet->payload_pointer =
-					connection->parse_session.packet->_assembled_data + connection->parse_session.payload_pos;
-
-			connection->parse_session.packet->payload_size =
-					connection->read_session.rx_buf_wpos - connection->parse_session.payload_pos;
-
+			connection->read_session.rx_buf = NULL;
+			connection->read_session.rx_buf_wpos = 0;
 		}
 
 		connection->parse_complete = 1;
@@ -1243,17 +1245,14 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		goto out;
 	}
 
-	if (packet->payload_pointer != NULL) {
-		if (packet->payload_size == 0) {
+	if (packet->payload != NULL) {
+		if (packet->payload->payload_length == 0) {
 			VL_BUG("Payload size was 0 but payload pointer was not NULL in __rrr_mqtt_connection_send_packets_callback\n");
 		}
-		if ((ret = __rrr_mqtt_connection_write (connection, packet->payload_pointer, packet->payload_size)) != 0) {
+		if ((ret = __rrr_mqtt_connection_write (connection, packet->payload->payload_start, packet->payload->payload_length)) != 0) {
 			VL_MSG_ERR("Error while sending payload data in __rrr_mqtt_connection_send_packets_callback\n");
 			goto out;
 		}
-	}
-	else if (packet->payload_size != 0) {
-		VL_BUG("Payload pointer was NULL but payload size was not 0 in __rrr_mqtt_connection_send_packets_callback\n");
 	}
 
 	ret = rrr_mqtt_conn_iterator_ctx_update_state (

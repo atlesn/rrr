@@ -46,7 +46,7 @@ struct rrr_mqtt_session {
 struct rrr_mqtt_session_collection_methods {
 	// COLLECTION METHODS
 
-	// Destroy old sessions, read from ACK queue
+	// Destroy old sessions, read from send queue
 	int (*maintain) (
 			struct rrr_mqtt_session_collection *
 	);
@@ -96,19 +96,6 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Save a packet for which we should receive an ACK.
-	// NOTICE : The downstream session engine will decrement the reference count when
-	//          the packet is processed. For a RAM engine, it will be decremented when
-	//          an ACK is received and the packet is removed from the send queue. For a
-	//          database engine, the refcount will be decremented immediately. If the caller
-	//          is to keep the packet, the reference count must be incremented prior to calling
-	//          this function.
-	int (*notify_send) (
-			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet
-	);
-
 	// Receive an ACK for a packet and remove it from the send queue.
 	// The ACK is not stored in the session, no reference counting is performed.
 	int (*notify_ack) (
@@ -117,12 +104,11 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_p *packet
 	);
 
-	// Iterate send queue and call callback for messages with retry interval exceeded.
-	// If force is 1, callback receives all packets, which happens if the client
-	// connects and re-uses an old session with unacknowledged packets.
-	int (*iterate_retries) (
+	// Iterate send queue of session. If force=1, return everything. If not,
+	// return only non-sent and messages with exceeded retry interval.
+	int (*iterate_send_queue) (
 			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_session **session_to_find,
 			int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 			void *callback_arg,
 			int force

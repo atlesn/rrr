@@ -85,6 +85,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_P_5_REASON_QOS_NOT_SUPPORTED				0x9B
 #define RRR_MQTT_P_5_REASON_USE_ANOTHER_SERVER				0x9C
 #define RRR_MQTT_P_5_REASON_SERVER_MOVED					0x9D
+#define RRR_MQTT_P_5_REASON_NO_SHARED_SUBSCRIPTIONS			0x9E
 #define RRR_MQTT_P_5_REASON_CONNECTION_RATE_EXCEEDED		0x9F
 
 #define RRR_MQTT_P_5_REASON_MAXIMUM_CONNECT_TIME			0xA0
@@ -98,6 +99,7 @@ struct rrr_mqtt_p_protocol_version;
 struct rrr_mqtt_parse_session;
 struct rrr_mqtt_payload_buf_session;
 struct rrr_mqtt_subscription_collection;
+struct rrr_mqtt_topic_token;
 
 #define RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION \
 		const struct rrr_mqtt_p_type_properties *type_properties, \
@@ -135,6 +137,27 @@ struct rrr_mqtt_p_type_properties {
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
 };
 
+#define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER					\
+	int users;													\
+	pthread_mutex_t refcount_lock;								\
+	void (*destroy)(void *arg)
+
+struct rrr_mqtt_p_standarized_usercount {
+	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;
+};
+
+struct rrr_mqtt_p_payload {
+	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;
+	pthread_mutex_t data_lock;
+
+	// Pointer to full packet, used only by free()
+	char *packet_data;
+
+	// Pointer to where payload starts
+	const char *payload_start;
+	ssize_t payload_length;
+};
+
 // Assembled data is either generated when sending a newly created packet,
 // or it is saved when reading from network (if the packet type parser requires it).
 
@@ -142,11 +165,11 @@ struct rrr_mqtt_p_type_properties {
 // assembled_data. A packet type which does this should ensure that, after parsing, the
 // assembled_data_size value is reduced to the length of the variable header if it also
 // stores the payload data (will be the case for received packets). Payload data
-// memory might however also be managed elsewhere for locally created packets.
+// memory might however also be managed elsewhere for locally created packets. Packets
+// may share the same payload data.
 
 #define RRR_MQTT_P_PACKET_HEADER								\
-	int users;													\
-	pthread_mutex_t refcount_lock;								\
+	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;					\
 	pthread_mutex_t data_lock;									\
 	uint8_t type_flags;											\
 	uint16_t packet_identifier;									\
@@ -154,8 +177,7 @@ struct rrr_mqtt_p_type_properties {
 	uint64_t last_attempt;										\
 	char *_assembled_data;										\
 	ssize_t assembled_data_size;								\
-	const char *payload_pointer;								\
-	ssize_t payload_size;										\
+	struct rrr_mqtt_p_payload *payload;							\
 	const struct rrr_mqtt_p_protocol_version *protocol_version;	\
 	const struct rrr_mqtt_p_type_properties *type_properties
 
@@ -180,15 +202,15 @@ struct rrr_mqtt_p {
 
 #define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->free(p))
 
-static inline void rrr_mqtt_p_incref (void *arg) {
-	struct rrr_mqtt_p *p = arg;
+static inline void rrr_mqtt_p_standardized_incref (void *arg) {
+	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
 	pthread_mutex_unlock(&p->refcount_lock);
 }
 
-static inline void rrr_mqtt_p_decref (void *arg) {
-	struct rrr_mqtt_p *p = arg;
+static inline void rrr_mqtt_p_standardized_decref (void *arg) {
+	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
@@ -196,19 +218,19 @@ static inline void rrr_mqtt_p_decref (void *arg) {
 		VL_BUG("Users was < 0 in RRR_MQTT_P_DECREF\n");
 	}
 	if (p->users == 0) {
-		RRR_FREE_IF_NOT_NULL(p->_assembled_data);
+		p->destroy(p);
+		if (p->users != 0) {
+			VL_BUG("users was not 0 in __rrr_mqtt_p_standarized_usercount_destroy\n");
+		}
 		pthread_mutex_destroy(&p->refcount_lock);
-		pthread_mutex_destroy(&p->data_lock);
-		RRR_MQTT_P_CALL_FREE(p);
-		p = NULL;
 	}
 }
 
 #define RRR_MQTT_P_INCREF(p) \
-	rrr_mqtt_p_incref(p)
+	rrr_mqtt_p_standardized_incref(p)
 
 #define RRR_MQTT_P_DECREF(p) \
-	rrr_mqtt_p_decref(p)
+	rrr_mqtt_p_standardized_decref(p)
 
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
@@ -271,7 +293,11 @@ struct rrr_mqtt_p_publish {
 	uint8_t qos;
 	uint8_t retain;
 
+	/* If the packet is to be rejected, set to non-zero in parser */
+	uint8_t reason_v5;
+
 	char *topic;
+	struct rrr_mqtt_topic_token *token_tree;
 
 	struct rrr_mqtt_property_collection properties;
 };
@@ -371,10 +397,26 @@ static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_prope
 	return &rrr_mqtt_p_type_properties[id];
 }
 
-static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (uint8_t id, const struct rrr_mqtt_p_protocol_version *protocol_version) {
+int rrr_mqtt_p_payload_set_data (
+		struct rrr_mqtt_p_payload *target,
+		const char *data,
+		ssize_t size
+);
+int rrr_mqtt_p_payload_new (
+		struct rrr_mqtt_p_payload **target
+);
+int rrr_mqtt_p_payload_new_with_allocated_payload (
+		struct rrr_mqtt_p_payload **target,
+		char *packet_start,
+		const char *payload_start,
+		ssize_t payload_size
+);
+static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (
+		uint8_t id,
+		const struct rrr_mqtt_p_protocol_version *protocol_version
+) {
 	const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(id);
-
-	return properties->allocate(properties, protocol_version);
+	return properties->allocate(rrr_mqtt_p_get_type_properties(id), protocol_version);
 }
 
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason);

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_parse.h"
 #include "mqtt_property.h"
 #include "mqtt_subscription.h"
+#include "mqtt_topic.h"
 #include "utf8.h"
 
 #define PARSE_CHECK_END_RAW(end,final_end)										\
@@ -739,6 +740,18 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 
 	// PARSE TOPIC
 	PARSE_UTF8(publish,topic);
+
+	if (rrr_mqtt_topic_validate_name(publish->topic) != 0) {
+		VL_MSG_ERR("Invalid topic name '%s' in received PUBLISH packet, it will be rejected\n",
+				publish->topic);
+		publish->reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_NAME_INVALID;
+	}
+
+	if (rrr_mqtt_topic_tokenize(&publish->token_tree, publish->topic) != 0) {
+		VL_MSG_ERR("Could not create topic token tree in rrr_mqtt_parse_publish\n");
+		return RRR_MQTT_PARSE_INTERNAL_ERROR;
+	}
+
 	PARSE_PACKET_ID(publish);
 	PARSE_PROPERTIES_IF_V5(publish,properties);
 
@@ -834,8 +847,16 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 		struct rrr_mqtt_subscription *subscription = NULL;
 		ret = rrr_mqtt_subscription_new (&subscription, subscribe->data_tmp, retain, rap, nl, qos);
 		if (ret != 0) {
-			VL_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
-			return RRR_MQTT_PARSE_INTERNAL_ERROR;
+			if (ret == RRR_MQTT_SUBSCRIPTION_MALFORMED) {
+				VL_MSG_ERR("Received mqtt SUBSCRIBE packet was malformed, will be rejected\n");
+				// We pass the packet on to the handler regardless of error. The handler will
+				// detect that *subscription is NULL and send SUBACK accordingly.
+				ret = RRR_MQTT_PARSE_OK;
+			}
+			else {
+				VL_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
+				return RRR_MQTT_PARSE_INTERNAL_ERROR;
+			}
 		}
 
 		ret = rrr_mqtt_subscription_collection_append_unique (subscribe->subscriptions, &subscription);

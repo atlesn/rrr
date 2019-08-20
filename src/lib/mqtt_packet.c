@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_parse.h"
 #include "mqtt_packet.h"
 #include "mqtt_common.h"
+#include "mqtt_topic.h"
 #include "mqtt_subscription.h"
 #include "vl_time.h"
 
@@ -46,23 +47,173 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
 	return NULL;
 }
 
+static int __rrr_mqtt_p_standarized_usercount_init (
+		struct rrr_mqtt_p_standarized_usercount *head,
+		void (*destroy)(void *arg)
+) {
+	int ret = pthread_mutex_init(&head->refcount_lock, 0);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_standarized_usercount_init\n");
+		return 1;
+	}
+
+	head->destroy = destroy;
+	head->users = 1;
+
+	return 0;
+}
+
+static void __rrr_mqtt_p_payload_destroy (void *arg) {
+	struct rrr_mqtt_p_payload *payload = arg;
+	RRR_FREE_IF_NOT_NULL(payload->packet_data);
+	pthread_mutex_destroy(&payload->data_lock);
+}
+
+
+int rrr_mqtt_p_payload_set_data (
+		struct rrr_mqtt_p_payload *target,
+		const char *data,
+		ssize_t size
+) {
+	int ret = 0;
+
+	RRR_MQTT_P_LOCK(target);
+	RRR_FREE_IF_NOT_NULL(target->packet_data);
+
+	target->packet_data = malloc(size);
+	if (target->packet_data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_p_payload_set_data\n");
+		ret = 1;
+		goto out_unlock;
+	}
+
+	memcpy(target->packet_data, data, size);
+
+	out_unlock:
+	RRR_MQTT_P_UNLOCK(target);
+
+	return ret;
+}
+
+int rrr_mqtt_p_payload_new (
+		struct rrr_mqtt_p_payload **target
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_mqtt_p_payload *result = malloc(sizeof(*result));
+
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_payload_new\n");
+		ret = 1;
+		goto out;
+	}
+	memset(result, '\0', sizeof(*result));
+
+	ret = pthread_mutex_init(&result->data_lock, 0);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_payload_new\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	ret = __rrr_mqtt_p_standarized_usercount_init (
+			(struct rrr_mqtt_p_standarized_usercount *) result,
+			__rrr_mqtt_p_payload_destroy
+	);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		ret = 1;
+		goto out_destroy_mutex;
+	}
+
+	*target = result;
+
+	goto out;
+	out_destroy_mutex:
+		pthread_mutex_destroy(&result->data_lock);
+	out_free:
+		free(result);
+	out:
+		return ret;
+}
+
+int rrr_mqtt_p_payload_new_with_allocated_payload (
+		struct rrr_mqtt_p_payload **target,
+		char *packet_start,
+		const char *payload_start,
+		ssize_t payload_length
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_mqtt_p_payload *result = NULL;
+
+	ret = rrr_mqtt_p_payload_new (&result);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not create payload in rrr_mqtt_p_payload_new_with_allocated_payload\n");
+		ret = 1;
+		goto out;
+	}
+
+	result->packet_data = packet_start;
+	result->payload_start = payload_start;
+	result->payload_length = payload_length;
+
+	*target = result;
+
+	out:
+	return ret;
+}
+
+static void __rrr_mqtt_p_destroy (void *arg) {
+	struct rrr_mqtt_p *p = arg;
+	RRR_FREE_IF_NOT_NULL(p->_assembled_data);
+	pthread_mutex_destroy(&p->data_lock);
+	RRR_MQTT_P_DECREF(p->payload);
+	RRR_MQTT_P_CALL_FREE(p);
+}
+
 /* If a packet type only contains values which are to be zero-initialized, it only
  * needs this default allocator. If it contains special objects, a custom allocator must
  * be written which again calls this default allocator to initialize the header before
  * initializing other special data. */
 static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
 	struct rrr_mqtt_p *ret = malloc(type_properties->packet_size);
-	if (ret != NULL) {
-		memset(ret, '\0', type_properties->packet_size);
-		ret->type_properties = type_properties;
-		ret->protocol_version = protocol_version;
-		ret->users = 1;
-		ret->create_time = time_get_64();
-		ret->packet_identifier = 0;
-		pthread_mutex_init(&ret->data_lock, 0);
-		pthread_mutex_init(&ret->refcount_lock, 0);
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_allocate_raw\n");
+		goto out;
 	}
-	return ret;
+
+	memset(ret, '\0', type_properties->packet_size);
+	ret->type_properties = type_properties;
+	ret->protocol_version = protocol_version;
+	ret->create_time = time_get_64();
+	ret->packet_identifier = 0;
+
+	if (pthread_mutex_init(&ret->data_lock, 0) != 0) {
+		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_allocate_raw\n");
+		goto out_free;
+	}
+
+	if (__rrr_mqtt_p_standarized_usercount_init (
+			(struct rrr_mqtt_p_standarized_usercount *) ret,
+			__rrr_mqtt_p_destroy
+	) != 0) {
+		VL_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		goto out_destroy_mutex;
+	}
+
+	goto out;
+	out_destroy_mutex:
+		pthread_mutex_destroy(&ret->data_lock);
+	out_free:
+		free(ret);
+		ret = NULL;
+	out:
+		return ret;
 }
 
 static struct rrr_mqtt_p *rrr_mqtt_p_allocate_connect (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
@@ -185,6 +336,7 @@ static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 	rrr_mqtt_property_collection_destroy(&publish->properties);
+	rrr_mqtt_topic_token_destroy(publish->token_tree);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 	free(publish);
 }
@@ -276,53 +428,55 @@ struct rrr_mqtt_p_reason {
 	uint8_t for_disconnect;
 	uint8_t for_puback_pubrec;
 	uint8_t for_pubrel;
+	uint8_t for_suback;
 	const char *description;
 };
 
 const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 		// The six version 3.1 reasons must be first
-		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 0, 0, "Success"},
-		{ 0x84, RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION,	1, 0, 0, 0, "Refused/unsupported protocol version"},
-		{ 0x85, RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED,	1, 0, 0, 0, "Client identifier not valid/rejected"},
-		{ 0x86, RRR_MQTT_P_31_REASON_BAD_CREDENTIALS,		1, 0, 0, 0, "Bad user name or password"},
-		{ 0x87, RRR_MQTT_P_31_REASON_NOT_AUTHORIZED,		1, 0, 1, 0, "Not authorized"},
-		{ 0x88, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, "Server unavailable"},
+		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 0, 0, 0, "Success"},
+		{ 0x84, RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION,	1, 0, 0, 0, 0, "Refused/unsupported protocol version"},
+		{ 0x85, RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED,	1, 0, 0, 0, 0, "Client identifier not valid/rejected"},
+		{ 0x86, RRR_MQTT_P_31_REASON_BAD_CREDENTIALS,		1, 0, 0, 0, 0, "Bad user name or password"},
+		{ 0x87, RRR_MQTT_P_31_REASON_NOT_AUTHORIZED,		1, 0, 1, 0, 1, "Not authorized"},
+		{ 0x88, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, 0, "Server unavailable"},
 
-		{ 0x04, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Disconnect with Will Message"},
-		{ 0x10, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 0, "No matching subscribers"},
+		{ 0x04, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Disconnect with Will Message"},
+		{ 0x10, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 0, 0, "No matching subscribers"},
 
-		{ 0x80, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 1, 0, "Unspecified error"},
-		{ 0x81, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 0, 0, "Malformed packet"},
-		{ 0x82, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 0, 0, "Protocol error"},
-		{ 0x83, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 1, 0, "Implementation specific error"},
-		{ 0x89, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 1, 0, 0, "Server busy"},
-		{ 0x8A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, "Banned"},
-		{ 0x8B, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Server shutting down"},
-		{ 0x8C, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, "Bad authentication method"},
-		{ 0x8D, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Keep alive timeout"},
-		{ 0x8E, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Session taken over"},
-		{ 0x8F, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Topic filter invalid"},
+		{ 0x80, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 1, 0, 1, "Unspecified error"},
+		{ 0x81, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 0, 0, 0, "Malformed packet"},
+		{ 0x82, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 0, 0, 0, "Protocol error"},
+		{ 0x83, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 1, 1, 0, 1, "Implementation specific error"},
+		{ 0x89, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 1, 0, 0, 0, "Server busy"},
+		{ 0x8A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, 0, "Banned"},
+		{ 0x8B, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Server shutting down"},
+		{ 0x8C, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, 0, "Bad authentication method"},
+		{ 0x8D, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Keep alive timeout"},
+		{ 0x8E, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Session taken over"},
+		{ 0x8F, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 1, "Topic filter invalid"},
 
-		{ 0x90, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, "Topic Name invalid"},
-		{ 0x91, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 0, "Packet identifier in use"},
-		{ 0x92, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 1, "Packet identifier not found"},
-		{ 0x93, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Receive maximum exceeded"},
-		{ 0x94, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Topic alias invalid"},
-		{ 0x95, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, "Packet too large"},
-		{ 0x96, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Messsage rate too large"},
-		{ 0x97, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, "Quota exceeded"},
-		{ 0x98, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Administrative action"},
-		{ 0x99, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, "Payload format invalid"},
-		{ 0x9A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, "Retain not supported"},
-		{ 0x9B, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, "QoS not supported"},
-		{ 0x9C, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, "Use another server"},
-		{ 0x9D, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, "Server moved"},
-		{ 0x9F, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, "Connection rate exceeded"},
+		{ 0x90, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, 0, "Topic Name invalid"},
+		{ 0x91, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 0, 1, "Packet identifier in use"},
+		{ 0x92, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 1, 0, "Packet identifier not found"},
+		{ 0x93, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Receive maximum exceeded"},
+		{ 0x94, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Topic alias invalid"},
+		{ 0x95, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, 0, "Packet too large"},
+		{ 0x96, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Messsage rate too large"},
+		{ 0x97, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, 1, "Quota exceeded"},
+		{ 0x98, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Administrative action"},
+		{ 0x99, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 1, 0, 0, "Payload format invalid"},
+		{ 0x9A, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, 0, "Retain not supported"},
+		{ 0x9B, RRR_MQTT_P_31_REASON_NO_CONNACK,			1, 0, 0, 0, 0, "QoS not supported"},
+		{ 0x9C, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, 0, "Use another server"},
+		{ 0x9D, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, 0, "Server moved"},
+		{ 0x9E, RRR_MQTT_P_31_REASON_NA,					0, 0, 0, 0, 1, "Shared subscriptions not supported"},
+		{ 0x9F, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, 0, "Connection rate exceeded"},
 
-		{ 0xA0, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Maximum connect time"},
-		{ 0xA1, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Subscription Identifiers not supported"},
-		{ 0xA2, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, "Wildcard Subscriptions not supported"},
-		{ 0,	0,											0, 0, 0, 0, NULL}
+		{ 0xA0, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Maximum connect time"},
+		{ 0xA1, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 1, "Subscription Identifiers not supported"},
+		{ 0xA2, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 1, "Wildcard Subscriptions not supported"},
+		{ 0,	0,											0, 0, 0, 0, 0, NULL}
 };
 
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {

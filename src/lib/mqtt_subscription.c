@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "mqtt_subscription.h"
+#include "mqtt_packet.h"
+#include "mqtt_topic.h"
 #include "linked_list.h"
 
 int rrr_mqtt_subscription_destroy (
@@ -33,6 +35,7 @@ int rrr_mqtt_subscription_destroy (
 	if (subscription == NULL) {
 		return 0;
 	}
+	rrr_mqtt_topic_token_destroy(subscription->token_tree);
 	RRR_FREE_IF_NOT_NULL(subscription->topic_filter);
 	RRR_FREE_IF_NOT_NULL(subscription);
 	return 0;
@@ -50,12 +53,6 @@ int rrr_mqtt_subscription_new (
 
 	*target = NULL;
 
-	if (topic_filter == NULL || *topic_filter == '\0') {
-		VL_MSG_ERR("Zero-length or NULL topic filter in rrr_mqtt_subscription_new\n");
-		ret = RRR_MQTT_SUBSCRIPTION_MALFORMED;
-		goto out;
-	}
-
 	struct rrr_mqtt_subscription *sub = malloc(sizeof(*sub));
 	if (sub == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
@@ -63,29 +60,48 @@ int rrr_mqtt_subscription_new (
 		goto out;
 	}
 
-	sub->topic_filter = malloc(strlen(topic_filter) + 1);
-	if (sub == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_subscription_new_subscriptionB\n");
-		ret = 1;
-		goto out_free_subscription;
+	if (topic_filter == NULL || *topic_filter == '\0') {
+		VL_MSG_ERR("Zero-length or NULL topic filter while creating subscription, tagging subscription as invalid\n");
+		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
 	}
+	else if (rrr_mqtt_topic_filter_validate_name(topic_filter) != 0) {
+		VL_MSG_ERR("Invalid topic filter '%s' while creating subscription, tagging subscription as invalid\n",
+				topic_filter);
+		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
+	}
+	else {
+		sub->topic_filter = malloc(strlen(topic_filter) + 1);
+		if (sub == NULL) {
+			VL_MSG_ERR("Could not allocate memory in rrr_mqtt_subscription_new_subscriptionB\n");
+			ret = 1;
+			goto out_free_subscription;
+		}
+		strcpy(sub->topic_filter, topic_filter);
 
-	strcpy(sub->topic_filter, topic_filter);
+		ret = rrr_mqtt_topic_tokenize(&sub->token_tree, sub->topic_filter);
+		if (ret != 0) {
+			VL_MSG_ERR("Error while creating token tree in rrr_mqtt_subscription_new\n");
+			ret = 1;
+			goto out_free_topic_filter;
+		}
+
+		sub->qos_or_reason_v5 = qos;
+	}
 
 	sub->retain_handling = retain_handling;
 	sub->rap = rap;
 	sub->nl = nl;
-	sub->qos_or_reason_v5 = qos;
 
 	*target = sub;
 
 	goto out;
 
+	out_free_topic_filter:
+		free(sub->topic_filter);
 	out_free_subscription:
-	free(sub);
-
+		free(sub);
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_mqtt_subscription_clone (
@@ -97,7 +113,7 @@ int rrr_mqtt_subscription_clone (
 	*target = NULL;
 
 	struct rrr_mqtt_subscription *sub = NULL;
-	if ((ret = rrr_mqtt_subscription_new(
+	if ((ret = rrr_mqtt_subscription_new (
 			&sub,
 			source->topic_filter,
 			source->retain_handling,
@@ -105,8 +121,13 @@ int rrr_mqtt_subscription_clone (
 			source->nl,
 			source->qos_or_reason_v5
 	)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		VL_MSG_ERR("Could not clone subscription in rrr_mqtt_subscription_clone\n");
-		goto out;
+		if (ret == RRR_MQTT_SUBSCRIPTION_MALFORMED) {
+			VL_MSG_ERR("Subscription was malformed in rrr_mqtt_subscription_clone, subscription is tagged as invalid\n");
+		}
+		else {
+			VL_MSG_ERR("Could not clone subscription in rrr_mqtt_subscription_clone return was %i\n", ret);
+			goto out;
+		}
 	}
 
 	*target = sub;
@@ -134,6 +155,53 @@ void rrr_mqtt_subscription_replace_and_destroy (
 
 	source->topic_filter = NULL;
 	rrr_mqtt_subscription_destroy(source);
+}
+
+static int __rrr_mqtt_subscription_match_publish (
+		struct rrr_mqtt_subscription *subscription,
+		const struct rrr_mqtt_p_publish *publish
+) {
+	int ret = RRR_MQTT_TOKEN_MISMATCH;
+
+	const char *topic_name = publish->topic;
+
+	if (rrr_mqtt_topic_validate_name(topic_name) != 0) {
+		VL_BUG("Topic name of packet was not valid in __rrr_mqtt_subscription_match_publish, should be checked at parsing\n");
+	}
+
+	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree);
+
+	return ret;
+}
+
+int rrr_mqtt_subscription_collection_match_publish (
+		struct rrr_mqtt_subscription_collection *subscriptions,
+		const struct rrr_mqtt_p_publish *publish,
+		int (match_callback)(const struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+) {
+	int ret = RRR_MQTT_SUBSCRIPTION_OK;
+	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, struct rrr_mqtt_subscription);
+		ret = __rrr_mqtt_subscription_match_publish(node, publish);
+		if (ret == RRR_MQTT_TOKEN_MATCH) {
+			ret = match_callback(publish, callback_arg);
+			if (ret != 0) {
+				VL_MSG_ERR("Error from match_callback in rrr_mqtt_subscription_collection_match_publish: %i\n",
+						ret);
+				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+				RRR_LINKED_LIST_SET_STOP();
+			}
+		}
+		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
+			VL_MSG_ERR("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+			RRR_LINKED_LIST_SET_STOP();
+		}
+		else {
+			ret = RRR_MQTT_SUBSCRIPTION_OK;
+		}
+	RRR_LINKED_LIST_ITERATE_END();
+	return ret;
 }
 
 void rrr_mqtt_subscription_collection_destroy (
@@ -327,19 +395,25 @@ int rrr_mqtt_subscription_collection_append_unique (
 
 int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription_collection *source
+		struct rrr_mqtt_subscription_collection *source,
+		int include_invalid_entries
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
 	// NOTE : append_unique will steal all the pointers from the source
 	//        which means the list cannot be used afterwards
 	RRR_LINKED_LIST_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
-		ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
+		if (include_invalid_entries != 0 || node->qos_or_reason_v5 == RRR_MQTT_P_5_REASON_OK) {
+			ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
 
-		if (ret != 0) {
-			VL_MSG_ERR("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
-			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-			break;
+			if (ret != 0) {
+				VL_MSG_ERR("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
+				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+				break;
+			}
+		}
+		else {
+			rrr_mqtt_subscription_destroy(node);
 		}
 	RRR_LINKED_LIST_ITERATE_END();
 
@@ -350,7 +424,8 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 
 int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
-		const struct rrr_mqtt_subscription_collection *source
+		const struct rrr_mqtt_subscription_collection *source,
+		int include_invalid_entries
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
@@ -363,7 +438,8 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 
 	if ((ret = rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 			target,
-			new_source
+			new_source,
+			include_invalid_entries
 	)) != RRR_MQTT_SUBSCRIPTION_OK) {
 		VL_MSG_ERR("Could not append to collection in rrr_mqtt_subscription_collection_copy_from_collection_unique\n");
 		goto out;

@@ -558,9 +558,29 @@ static int rrr_mqtt_p_handler_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
 	if (publish->qos == 0) {
-
+		if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+			VL_MSG_ERR("Closing connection due to malformed PUBLISH packet with QoS 0\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
+			goto out;
+		}
+	}
+	else {
+		VL_MSG_ERR("QoS > 0 not implemented in rrr_mqtt_p_handler_publish\n");
+		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
+		goto out;
+	}
+/*	else if (publish->qos == 1) {
+		struct rrr_mqtt_p_puback *puback = rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBACK);
 	}
 
+	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+	}
+	else {
+	}
+*/
+	ret = mqtt_data->sessions->methods->receive_publish(mqtt_data->sessions, &connection->session, publish);
+
+	out:
 	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
@@ -594,7 +614,7 @@ static int rrr_mqtt_p_handler_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	// TODO : Check valid subscriptions, set max QoS etc.
+	// TODO : Check valid subscriptions (is done now while adding to session), set max QoS etc.
 
 	int ret_tmp = MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt_data, connection->session, subscribe->subscriptions);
 	if (ret_tmp != RRR_MQTT_SESSION_OK) {
@@ -872,8 +892,14 @@ int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data)) != 0) {
 		goto out;
 	}
-
-	if ((ret = data->mqtt_data.sessions->methods->maintain(data->mqtt_data.sessions)) != 0) {
+/*
+ * 			struct rrr_mqtt_session_collection *,
+			int (*send_callback)(struct rrr_mqtt_p *packet, void *arg),
+			void *send_callback_arg
+ */
+	if ((ret = data->mqtt_data.sessions->methods->maintain (
+			data->mqtt_data.sessions
+	)) != 0) {
 		goto out;
 	}
 
