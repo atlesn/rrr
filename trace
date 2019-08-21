@@ -1,0 +1,17 @@
+==29235== Thread 1:
+==29235== 702 (234 direct, 468 indirect) bytes in 13 blocks are definitely lost in loss record 4 of 4
+==29235==    at 0x4C2FB0F: malloc (in /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so)
+==29235==    by 0x50F457E: rrr_mqtt_topic_tokenize (mqtt_topic.c:219)
+==29235==    by 0x50F3694: rrr_mqtt_subscription_new (mqtt_subscription.c:81)
+==29235==    by 0x50F3798: rrr_mqtt_subscription_clone (mqtt_subscription.c:116)
+==29235==    by 0x50F3B66: __rrr_mqtt_subscription_collection_append_unchecked_clone (mqtt_subscription.c:242)
+==29235==    by 0x50F3B66: rrr_mqtt_subscription_collection_clone (mqtt_subscription.c:270)
+==29235==    by 0x50F408D: rrr_mqtt_subscription_collection_append_unique_copy_from_collection (mqtt_subscription.c:434)
+==29235==    by 0x50F1390: __rrr_mqtt_session_ram_add_subscriptions (mqtt_session_ram.c:751)
+==29235==    by 0x50E96E5: __rrr_mqtt_broker_handle_subscribe (mqtt_broker.c:660)
+==29235==    by 0x50EA462: __rrr_mqtt_connection_handle_packets_callback (mqtt_common.c:378)
+==29235==    by 0x50DC482: fifo_read_clear_forward (buffer.c:537)
+==29235==    by 0x50EA346: __rrr_mqtt_common_handle_packets (mqtt_common.c:431)
+==29235==    by 0x50ED321: rrr_mqtt_conn_collection_iterate (mqtt_connection.c:644)
+==29235== 
+
