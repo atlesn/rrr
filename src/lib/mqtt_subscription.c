@@ -177,14 +177,14 @@ static int __rrr_mqtt_subscription_match_publish (
 int rrr_mqtt_subscription_collection_match_publish (
 		struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (match_callback)(const struct rrr_mqtt_p_publish *publish, void *arg),
+		int (match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
-			ret = match_callback(publish, callback_arg);
+			ret = match_callback(publish, node, callback_arg);
 			if (ret != 0) {
 				VL_MSG_ERR("Error from match_callback in rrr_mqtt_subscription_collection_match_publish: %i\n",
 						ret);

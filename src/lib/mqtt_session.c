@@ -24,6 +24,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "mqtt_session.h"
+#include "mqtt_property.h"
+
+void rrr_mqtt_session_properties_destroy (
+		struct rrr_mqtt_session_properties *target
+) {
+	rrr_mqtt_property_collection_destroy(&target->user_properties);
+	rrr_mqtt_property_destroy(target->auth_method);
+	rrr_mqtt_property_destroy(target->auth_data);
+}
+
+
+int rrr_mqtt_session_properties_clone (
+		struct rrr_mqtt_session_properties *target,
+		const struct rrr_mqtt_session_properties *source
+) {
+	int ret = 0;
+
+	memcpy(target, source, sizeof(*target));
+
+	ret |= rrr_mqtt_property_collection_clone(&target->user_properties, &source->user_properties);
+	ret |= rrr_mqtt_property_clone(&target->auth_method, source->auth_method);
+	ret |= rrr_mqtt_property_clone(&target->auth_data, source->auth_data);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Could not clone properties in rrr_mqtt_session_properties_clone\n");
+		goto out_destroy;
+	}
+
+	goto out;
+	out_destroy:
+		rrr_mqtt_session_properties_destroy(target);
+	out:
+		return ret;
+}
 
 void rrr_mqtt_session_collection_destroy (struct rrr_mqtt_session_collection *target) {
 	if (target->private_data != NULL) {

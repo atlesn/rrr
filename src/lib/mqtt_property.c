@@ -106,6 +106,72 @@ int rrr_mqtt_property_new (
 	return ret;
 }
 
+int rrr_mqtt_property_clone (
+		struct rrr_mqtt_property **target,
+		const struct rrr_mqtt_property *source
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_mqtt_property *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone A\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(result, source, sizeof(*source));
+
+	if (result->length <= 0) {
+		VL_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
+	}
+
+	result->data = malloc(result->length);
+	if (result->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone B\n");
+		ret = 1;
+		goto out_free_property;
+	}
+
+	memcpy(result->data, source, result->length);
+	result->order = 0;
+
+	*target = result;
+
+	goto out;
+	out_free_property:
+		free(result);
+	out:
+		return ret;
+}
+
+uint32_t rrr_mqtt_property_get_uint32 (
+		const struct rrr_mqtt_property *property
+) {
+	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32) {
+		VL_BUG("Property was not UINT32 in rrr_mqtt_property_get_uint32\n");
+	}
+	if (property->length < (ssize_t) sizeof(uint32_t)) {
+		VL_BUG("Length of property was <4 in rrr_mqtt_property_get_uint32\n");
+	}
+	return *((uint32_t*) property->data);
+}
+
+const char *rrr_mqtt_property_get_blob (
+		const struct rrr_mqtt_property *property,
+		ssize_t *length
+) {
+	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB) {
+		VL_BUG("Property was not BLOB in rrr_mqtt_property_get_blob\n");
+	}
+	if (property->length < 1) {
+		VL_BUG("Length of property was <1 in rrr_mqtt_property_get_blob\n");
+	}
+	*length = property->length;
+	return property->data;
+}
+
 static int __rrr_mqtt_property_clone (
 		struct rrr_mqtt_property **target,
 		const struct rrr_mqtt_property *source
@@ -160,6 +226,61 @@ void rrr_mqtt_property_collection_add (
 	property->order = ++(collection->order_count);
 
 	RRR_LINKED_LIST_APPEND(collection, property);
+}
+
+int rrr_mqtt_property_collection_add_cloned (
+		struct rrr_mqtt_property_collection *collection,
+		const struct rrr_mqtt_property *property
+) {
+	struct rrr_mqtt_property *new_property = NULL;
+
+	int ret = 0;
+
+	ret = rrr_mqtt_property_clone(&new_property, property);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_add_cloned\n");
+		goto out;
+	}
+
+	new_property->order = ++(collection->order_count);
+
+	RRR_LINKED_LIST_APPEND(collection, new_property);
+
+	out:
+	return ret;
+}
+
+int rrr_mqtt_property_collection_iterate (
+	const struct rrr_mqtt_property_collection *collection,
+	int (*callback)(const struct rrr_mqtt_property *property, void *arg),
+	void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+		ret = callback(node, callback_arg);
+		if (ret != 0) {
+			RRR_LINKED_LIST_SET_STOP();
+		}
+	RRR_LINKED_LIST_ITERATE_END();
+
+	return ret;
+}
+
+unsigned int rrr_mqtt_property_collection_count_duplicates (
+		const struct rrr_mqtt_property_collection *collection,
+		const struct rrr_mqtt_property *self
+) {
+	unsigned int ret = 0;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+		if (RRR_MQTT_PROPERTY_GET_ID(node) == RRR_MQTT_PROPERTY_GET_ID(self) && node != self) {
+			ret += 1;
+		}
+	RRR_LINKED_LIST_ITERATE_END();
+
+	return ret;
+
 }
 
 void rrr_mqtt_property_collection_destroy (

@@ -24,7 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_broker.h"
 #include "mqtt_session.h"
+#include "mqtt_property.h"
 #include "linked_list.h"
+
+const struct rrr_mqtt_session_properties default_session_properties = {
+		session_expiry:					RRR_MQTT_BROKER_SESSION_EXPIRY,
+		receive_maximum:				0,
+		maximum_packet_size:			0,
+		topic_alias_maximum:			0,
+		request_response_information:	0,
+		request_problem_information:	0,
+		{0},
+		NULL,
+		NULL
+};
 
 static void __rrr_mqtt_broker_destroy_listen_fd (struct rrr_mqtt_listen_fd *fd) {
 	VL_DEBUG_MSG_1 ("mqtt broker close listen fd %i\n", fd->ip.fd);
@@ -352,6 +365,202 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 	return RRR_MQTT_CONN_OK;
 }
 
+#define HANDLE_PROPERTIES_CALLBACK_DATA_HEAD			\
+	const struct rrr_mqtt_property_collection *source;	\
+	uint8_t reason_v5
+
+struct parse_properties_data {
+	HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
+};
+
+struct parse_properties_data_connect {
+	HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
+	struct rrr_mqtt_session_properties session_properties;
+};
+
+#define HANDLE_PROPERTIES(target,callback,action_on_error)											\
+	do {if ((ret = __rrr_mqtt_p_handle_properties (													\
+			(target),																				\
+			callback,																			\
+			(struct parse_properties_data*) &callback_data,											\
+			&reason_v5																				\
+	)) != 0) {																						\
+		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {												\
+			VL_MSG_ERR("Soft error while iterating %s source_properties\n",							\
+					RRR_MQTT_P_GET_TYPE_NAME(packet));												\
+			ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);												\
+		}																							\
+		if (ret != 0) {																				\
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;														\
+			VL_MSG_ERR("Internal error while iterating %s source_properties, return was %i\n",		\
+					RRR_MQTT_P_GET_TYPE_NAME(packet), ret);											\
+			goto out;																				\
+		}																							\
+																									\
+		ret = RRR_MQTT_CONN_SOFT_ERROR;																\
+		action_on_error;																			\
+	}} while(0)
+
+#define HANDLE_PROPERTY_CHECK_DUP()																				\
+	do {unsigned int dup_count = 0;																				\
+	if (	RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_USER_PROPERTY &&							\
+			(dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0	\
+	) {																											\
+		VL_MSG_ERR("Property '%s' was specified more than once (%u times) in packet\n",							\
+				RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1);											\
+		goto out_reason_protocol_error;																			\
+	}} while (0)
+
+#define HANDLE_PROPERTY_SWITCH_BEGIN()										\
+	int ret = RRR_MQTT_CONN_OK;												\
+	HANDLE_PROPERTY_CHECK_DUP();											\
+	do { switch (RRR_MQTT_PROPERTY_GET_ID(property)) {						\
+		case 0:																\
+			VL_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n");	\
+			break
+
+#define HANDLE_PROPERTY_UINT32_UNCHECKED(target,id) 						\
+		case id:															\
+			(target) = rrr_mqtt_property_get_uint32(property);				\
+			break
+
+#define HANDLE_PROPERTY_UINT32_NON_ZERO(target,id,error_msg)				\
+		case id:															\
+			(target) = rrr_mqtt_property_get_uint32(property);				\
+			if ((target) == 0) {											\
+				VL_MSG_ERR(error_msg "\n");									\
+				goto out_reason_protocol_error;								\
+			}																\
+			break
+
+#define HANDLE_PROPERTY_UINT32_ON_OFF(target,id,error_msg)					\
+		case id:															\
+			(target) = rrr_mqtt_property_get_uint32(property);				\
+			if ((target) > 1) {												\
+				VL_MSG_ERR(error_msg "\n");									\
+				goto out_reason_protocol_error;								\
+			}																\
+			break
+
+#define HANDLE_PROPERTY_USER_PROPERTY(target,id)													\
+		case id:																					\
+			ret = rrr_mqtt_property_collection_add_cloned((target), property);						\
+			if (ret != 0) {																			\
+				VL_MSG_ERR("Error while cloning user property in HANDLE_PROPERTY_USER_PROPERTY\n");	\
+				goto out_internal_error;															\
+			}																						\
+			break
+
+#define HANDLE_PROPERTY_CLONE(target,id)															\
+		case id:																					\
+			if (rrr_mqtt_property_clone((target), property) != 0) {									\
+				VL_MSG_ERR("Could not clone property HANDLE_PROPERTY_USER_PROPERTY\n");				\
+				goto out_internal_error;															\
+			}																						\
+			break;
+
+// We do not return error as we want to parse the rest of the source_properties to check
+// for more errors. Caller checks for non-zero reason.
+#define HANDLE_PROPERTY_SWITCH_END_AND_RETURN() 													\
+		default:																					\
+			VL_MSG_ERR("Unknown property '%s' for packet", RRR_MQTT_PROPERTY_GET_NAME(property));	\
+			goto out_reason_protocol_error;															\
+	};																								\
+	goto out;																						\
+	out_internal_error:																				\
+		ret = RRR_MQTT_CONN_INTERNAL_ERROR;															\
+		return ret;																					\
+	out_reason_protocol_error:																		\
+		callback_data->reason_v5 = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;								\
+	out:																							\
+		return ret;																					\
+	} while (0)
+
+int __handler_connect_parse_properties_callback (const struct rrr_mqtt_property *property, void *arg) {
+	struct parse_properties_data_connect *callback_data = arg;
+	struct rrr_mqtt_session_properties *session_properties = &callback_data->session_properties;
+
+	HANDLE_PROPERTY_SWITCH_BEGIN();
+		HANDLE_PROPERTY_UINT32_UNCHECKED (
+				session_properties->session_expiry,
+				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
+		);
+		HANDLE_PROPERTY_UINT32_NON_ZERO (
+				session_properties->receive_maximum,
+				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
+				"Receive maximum was 0 in CONNECT packet"
+		);
+		HANDLE_PROPERTY_UINT32_NON_ZERO (
+				session_properties->maximum_packet_size,
+				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
+				"Maximum packet size was 0 in CONNECT packet"
+		);
+		HANDLE_PROPERTY_UINT32_UNCHECKED (
+				session_properties->topic_alias_maximum,
+				RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM
+		);
+		HANDLE_PROPERTY_UINT32_ON_OFF (
+				session_properties->request_response_information,
+				RRR_MQTT_PROPERTY_REQUEST_RESPONSE_INFO,
+				"Request response information field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_UINT32_ON_OFF (
+				session_properties->request_problem_information,
+				RRR_MQTT_PROPERTY_REQUEST_PROBLEM_INFO,
+				"Request problem information field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_USER_PROPERTY (
+				&session_properties->user_properties,
+				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_method,
+				RRR_MQTT_PROPERTY_AUTH_METHOD
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_data,
+				RRR_MQTT_PROPERTY_AUTH_DATA
+		);
+	HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+}
+
+static int __rrr_mqtt_p_handle_properties (
+		const struct rrr_mqtt_property_collection *source,
+		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
+		struct parse_properties_data *callback_data,
+		uint8_t *reason_v5
+) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
+
+	if ((ret = rrr_mqtt_property_collection_iterate (
+		source,
+		callback,
+		&callback_data
+	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while iterating properties\n");
+			ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);
+		}
+		if (ret != 0) {
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			VL_MSG_ERR("Internal error while iterating properties, return was %i\n", ret);
+			goto out;
+		}
+
+		if (callback_data->reason_v5 == RRR_MQTT_P_5_REASON_OK) {
+			VL_BUG("Callback return error in __rrr_mqtt_p_handle_propertie returned but no reason was set\n");
+		}
+
+		ret = RRR_MQTT_CONN_SOFT_ERROR;
+		*reason_v5 = callback_data->reason_v5;
+	}
+
+	out:
+	return ret;
+}
+
 static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
 	int ret_destroy = 0;
@@ -481,16 +690,24 @@ static int rrr_mqtt_p_handler_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				&session_present,
 				0 // Create if non-existent client ID
 		)) != RRR_MQTT_SESSION_OK || session == NULL) {
-			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect B\n");
 			goto out;
 		}
 	}
 
+	struct parse_properties_data_connect callback_data = {
+			&connect->properties,
+			RRR_MQTT_P_5_REASON_OK,
+			default_session_properties
+	};
+
+	HANDLE_PROPERTIES(&connect->properties, __handler_connect_parse_properties_callback, goto out_send_connack);
+
 	if ((ret = mqtt_data->sessions->methods->init_session (
 			mqtt_data->sessions,
 			&session,
-			RRR_MQTT_BROKER_SESSION_EXPIRY,
+			&callback_data.session_properties,
 			RRR_MQTT_BROKER_RETRY_INTERVAL,
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
@@ -569,6 +786,7 @@ static int rrr_mqtt_p_handler_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
+
 /*	else if (publish->qos == 1) {
 		struct rrr_mqtt_p_puback *puback = rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBACK);
 	}

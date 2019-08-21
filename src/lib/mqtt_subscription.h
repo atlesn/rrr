@@ -82,7 +82,7 @@ void rrr_mqtt_subscription_replace_and_destroy (
 int rrr_mqtt_subscription_collection_match_publish (
 		struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (match_callback)(const struct rrr_mqtt_p_publish *publish, void *arg),
+		int (match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
 		void *callback_arg
 );
 void rrr_mqtt_subscription_collection_destroy (

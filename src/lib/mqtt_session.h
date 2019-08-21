@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
+#include "mqtt_property.h"
+
 struct rrr_mqtt_p;
 struct rrr_mqtt_p_publish;
 struct rrr_mqtt_session_collection;
@@ -35,6 +37,18 @@ struct rrr_mqtt_subscription_collection;
 // up at any time (but ONLY by the downstream session engine)
 struct rrr_mqtt_session {
 	char dummy;
+};
+
+struct rrr_mqtt_session_properties {
+	uint32_t session_expiry;
+	uint32_t receive_maximum;
+	uint32_t maximum_packet_size;
+	uint32_t topic_alias_maximum;
+	uint32_t request_response_information;
+	uint32_t request_problem_information;
+	struct rrr_mqtt_property_collection user_properties;
+	struct rrr_mqtt_property *auth_method;
+	struct rrr_mqtt_property *auth_data;
 };
 
 #define RRR_MQTT_SESSION_OK				0
@@ -83,7 +97,7 @@ struct rrr_mqtt_session_collection_methods {
 	int (*init_session) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			uint32_t session_expiry,
+			const struct rrr_mqtt_session_properties *session_properties,
 			uint32_t retry_interval,
 			uint32_t max_in_flight,
 			int clean_session,
@@ -141,6 +155,14 @@ struct rrr_mqtt_session_collection {
 
 	const struct rrr_mqtt_session_collection_methods *methods;
 };
+
+void rrr_mqtt_session_properties_destroy (
+		struct rrr_mqtt_session_properties *target
+);
+int rrr_mqtt_session_properties_clone (
+		struct rrr_mqtt_session_properties *target,
+		const struct rrr_mqtt_session_properties *source
+);
 
 // DO NOT use this function directly. Call the provided destroy()-method
 void rrr_mqtt_session_collection_destroy (struct rrr_mqtt_session_collection *target);

@@ -43,12 +43,14 @@ struct rrr_mqtt_session_ram {
 	pthread_mutex_t lock;
 
 	struct rrr_mqtt_p_queue send_queue;
+	uint16_t packet_identifier_counter;
 
 	char *client_id;
+	uint8_t client_maximum_qos;
 
 	uint64_t last_seen;
 
-	uint32_t session_expiry;
+	struct rrr_mqtt_session_properties session_properties;
 	uint32_t retry_interval;
 	uint32_t max_in_flight;
 	int clean_session;
@@ -175,6 +177,7 @@ static int __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *
 	fifo_buffer_invalidate(&session->send_queue.buffer);
 //  TODO : Look into proper destruction of the buffer mutexes.
 //	fifo_buffer_destroy(&session->send_queue.buffer);
+	rrr_mqtt_session_properties_destroy(&session->session_properties);
 	free(session);
 	return 0;
 }
@@ -195,6 +198,7 @@ struct receive_forwarded_publish_data {
 
 static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		const struct rrr_mqtt_p_publish *publish,
+		const struct rrr_mqtt_subscription *subscription,
 		void *arg
 ) {
 	struct receive_forwarded_publish_data *callback_data = arg;
@@ -207,6 +211,20 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		VL_MSG_ERR("Could not clone PUBLISH packet in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
 		return RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
+
+	uint16_t packet_identifier = ++(session->packet_identifier_counter);
+
+	RRR_MQTT_P_LOCK(new_publish);
+	new_publish->packet_identifier = packet_identifier;
+
+	if (new_publish->qos > subscription->qos_or_reason_v5) {
+		new_publish->qos = subscription->qos_or_reason_v5;
+	}
+	if (new_publish->qos > session->client_maximum_qos) {
+		new_publish->qos = session->client_maximum_qos;
+	}
+
+	RRR_MQTT_P_UNLOCK(new_publish);
 
 	fifo_buffer_delayed_write(&session->send_queue.buffer, (char*) new_publish, sizeof(*new_publish));
 
@@ -301,7 +319,10 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		uint64_t time_diff = time_now - node->last_seen;
 
 //		printf ("Expire check: %" PRIu64 " > %" PRIu64 "\n", time_diff, (uint64_t) test->session_expiry * 1000000);
-		if (time_diff > (uint64_t) node->session_expiry * 1000000) {
+		if (	node->session_properties.session_expiry != 0 &&
+				node->session_properties.session_expiry != 0xffffffff &&
+				time_diff > (uint64_t) node->session_properties.session_expiry * 1000000
+		) {
 			VL_DEBUG_MSG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
 					node->client_id);
 			RRR_LINKED_LIST_SET_DESTROY();
@@ -443,7 +464,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 static int __rrr_mqtt_session_ram_init (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		uint32_t session_expiry,
+		const struct rrr_mqtt_session_properties *session_properties,
 		uint32_t retry_interval,
 		uint32_t max_in_flight,
 		int clean_session,
@@ -454,7 +475,12 @@ static int __rrr_mqtt_session_ram_init (
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK();
 
-	ram_session->session_expiry = session_expiry;
+	ret = rrr_mqtt_session_properties_clone(&ram_session->session_properties, session_properties);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not clone properties in __rrr_mqtt_session_ram_init\n");
+		goto out_unlock;
+	}
+
 	ram_session->retry_interval = retry_interval;
 	ram_session->max_in_flight = max_in_flight;
 	ram_session->last_seen = time_get_64();
@@ -467,6 +493,7 @@ static int __rrr_mqtt_session_ram_init (
 		}
 	}
 
+	out_unlock:
 	SESSION_RAM_UNLOCK();
 	SESSION_RAM_DECREF();
 	return ret;
@@ -676,21 +703,30 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		struct rrr_mqtt_session **session_to_find
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
+
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK();
 
 	if (ram_session->clean_session == 1) {
 		VL_DEBUG_MSG_1("Destroying session which had clean session set upon disconnect\n");
+		ret = RRR_MQTT_SESSION_DELETED;
+	}
+	else if (ram_session->session_properties.session_expiry == 0) {
+		VL_DEBUG_MSG_1("Destroying session with zero session expiry upon disconnect\n");
+		ret = RRR_MQTT_SESSION_DELETED;
+	}
+
+	if (ret == RRR_MQTT_SESSION_DELETED) {
 		__rrr_mqtt_session_collection_remove (
 				ram_data,
 				ram_session
 		);
 		*session_to_find = NULL;
-		ret = RRR_MQTT_SESSION_DELETED;
 	}
 
 	SESSION_RAM_UNLOCK();
 	SESSION_RAM_DECREF();
+
 	return ret;
 }
 
