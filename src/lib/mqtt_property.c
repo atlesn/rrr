@@ -114,6 +114,10 @@ int rrr_mqtt_property_clone (
 
 	*target = NULL;
 
+	if (source == NULL) {
+		goto out;
+	}
+
 	struct rrr_mqtt_property *result = malloc(sizeof(*result));
 	if (result == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone A\n");
@@ -121,7 +125,7 @@ int rrr_mqtt_property_clone (
 		goto out;
 	}
 
-	memcpy(result, source, sizeof(*source));
+	memcpy(result, source, sizeof(*result));
 
 	if (result->length <= 0) {
 		VL_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
@@ -262,7 +266,7 @@ int rrr_mqtt_property_collection_iterate (
 		if (ret != 0) {
 			RRR_LINKED_LIST_SET_STOP();
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(collection);
 
 	return ret;
 }
@@ -277,7 +281,7 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 		if (RRR_MQTT_PROPERTY_GET_ID(node) == RRR_MQTT_PROPERTY_GET_ID(self) && node != self) {
 			ret += 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(collection);
 
 	return ret;
 
@@ -305,17 +309,11 @@ int rrr_mqtt_property_collection_clone (
 			goto out_destroy;
 		}
 		rrr_mqtt_property_collection_add(target, new_node);
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(source);
 
 	goto out;
 	out_destroy:
 		rrr_mqtt_property_collection_destroy(target);
 	out:
 		return ret;
-}
-
-void rrr_mqtt_property_collection_init (
-		struct rrr_mqtt_property_collection *collection
-) {
-	memset(collection, '\0', sizeof(*collection));
 }

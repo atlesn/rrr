@@ -557,7 +557,7 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 
 			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(connections);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");

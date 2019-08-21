@@ -35,6 +35,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	type *ptr_prev;										\
 	type *ptr_next
 
+#define RRR_LINKED_LIST_VERIFY_HEAD(head) 							\
+	do {if (														\
+		(head->ptr_first != NULL && head->ptr_last == NULL) ||		\
+		(head->ptr_last != NULL && head->ptr_first == NULL) ||		\
+		(head->ptr_first == NULL && head->node_count != 0)			\
+	) {																\
+		VL_BUG("Bug: Linked list head integrity error");			\
+	}} while(0)
+
+#define RRR_LINKED_LIST_VERIFY_NODE(head)								\
+	do {if (	(node->ptr_prev == NULL && head->ptr_first != node) ||	\
+				(node->ptr_next == NULL && head->ptr_last != node) ||	\
+				(node->ptr_prev != NULL && head->ptr_first == node) ||	\
+				(node->ptr_next != NULL && head->ptr_last == node) ||	\
+				(	head->ptr_first != node &&							\
+					head->ptr_last != node &&							\
+					(node->ptr_next == NULL || node->ptr_prev == NULL)	\
+				)														\
+		) {																\
+			VL_BUG("Bug: Linked list node integrity error");			\
+		}																\
+	} while(0)
+
 #define RRR_LINKED_LIST_IS_EMPTY(head)					\
 	((head)->ptr_first == NULL)
 
@@ -51,7 +74,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	if (source->ptr_next != NULL)											\
 		VL_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
 	type *next_preserve = target->ptr_next;									\
-	type *prev_preserve = target->ptr_next;									\
+	type *prev_preserve = target->ptr_prev;									\
 	replace_func;															\
 	target->ptr_next = next_preserve;										\
 	target->ptr_prev = prev_preserve;										\
@@ -122,8 +145,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		if (node == find) {													\
 			destroy_func;													\
 			__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);					\
+			find = NULL;													\
 			break;															\
 		}																	\
+		prev = node;														\
 		node = next;														\
 	}} while (0)
 
@@ -143,7 +168,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LINKED_LIST_SET_STOP()							\
 		linked_list_iterate_stop = 1
 
-#define RRR_LINKED_LIST_ITERATE_END()															\
+#define RRR_LINKED_LIST_ITERATE_END(head)														\
 		if (linked_list_iterate_destroy != 0) {													\
 			VL_BUG("RRR_LINKED_LIST_SET_DESTROY was used without destroy "						\
 					"function, must use RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY instead\n");	\

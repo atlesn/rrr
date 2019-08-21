@@ -358,7 +358,7 @@ static void __rrr_mqtt_session_collection_remove (
 ) {
 	SESSION_COLLECTION_RAM_LOCK(data);
 
-	RRR_LINKED_LIST_REMOVE_NODE(
+	RRR_LINKED_LIST_REMOVE_NODE (
 			data,
 			struct rrr_mqtt_session_ram,
 			session,
@@ -385,7 +385,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 			}
 			result = node;
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(data);
 
 
 	return result;
@@ -454,7 +454,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 			found = node;
 			RRR_LINKED_LIST_SET_STOP();
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(data);
 
 	SESSION_COLLECTION_RAM_UNLOCK(data);
 
@@ -492,6 +492,9 @@ static int __rrr_mqtt_session_ram_init (
 			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
 		}
 	}
+
+	VL_DEBUG_MSG_1("Init session expiry interval: %" PRIu32 "\n",
+			ram_session->session_properties.session_expiry);
 
 	out_unlock:
 	SESSION_RAM_UNLOCK();
@@ -706,6 +709,11 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK();
+
+	VL_DEBUG_MSG_1("Session notify disconnect expiry interval: %" PRIu32 " clean session: %i\n",
+			ram_session->session_properties.session_expiry,
+			ram_session->clean_session
+	);
 
 	if (ram_session->clean_session == 1) {
 		VL_DEBUG_MSG_1("Destroying session which had clean session set upon disconnect\n");

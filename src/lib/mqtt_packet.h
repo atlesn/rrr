@@ -292,6 +292,9 @@ struct rrr_mqtt_p_connack {
 struct rrr_mqtt_p_publish {
 	RRR_MQTT_P_PACKET_HEADER;
 
+	char *topic;
+	struct rrr_mqtt_topic_token *token_tree;
+
 	/* These are also accessible through packet type flags but we cache them here */
 	uint8_t dup;
 	uint8_t qos;
@@ -300,10 +303,20 @@ struct rrr_mqtt_p_publish {
 	/* If the packet is to be rejected, set to non-zero in parser */
 	uint8_t reason_v5;
 
-	char *topic;
-	struct rrr_mqtt_topic_token *token_tree;
+	/* V5 properties */
+	uint8_t payload_format_indicator;
+	uint32_t message_expiry_interval;
+	uint16_t topic_alias;
+	struct rrr_mqtt_property_collection user_properties;
+	struct rrr_mqtt_property_collection subscription_ids;
+
+	// Memory of these are managed in the properties field
+	const struct rrr_mqtt_property *response_topic;
+	const struct rrr_mqtt_property *correlation_data;
+	const struct rrr_mqtt_property *content_type;
 
 	struct rrr_mqtt_property_collection properties;
+
 };
 
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((1<<0) &			((struct rrr_mqtt_p_publish *)(p))->type_flags))

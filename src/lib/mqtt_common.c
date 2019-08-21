@@ -68,19 +68,8 @@ static int __rrr_mqtt_common_connection_event_handler (
 		goto out;
 	}
 
-	switch (event) {
-		case RRR_MQTT_CONN_EVENT_DISCONNECT:
-
-			break;
-		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
-			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
-			break;
-		default:
-			VL_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
-	}
-
 	// Call downstream event handler (broker/client), must be called first in
-	// case session-stuff fails
+	// case session-stuff fails due to client counters
 	ret_tmp = data->event_handler(connection, event, data->event_handler_arg);
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
@@ -100,6 +89,16 @@ static int __rrr_mqtt_common_connection_event_handler (
 		}
 	}
 
+	switch (event) {
+		case RRR_MQTT_CONN_EVENT_DISCONNECT:
+			ret_tmp = MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(data, connection->session);
+			break;
+		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
+			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
+			break;
+		default:
+			VL_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
+	}
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
 			// It is normal to return DELETED from disconnect event
@@ -195,6 +194,139 @@ int rrr_mqtt_common_data_register_connection (
 			data->close_wait_time_usec
 	);
 
+	return ret;
+}
+
+int rrr_mqtt_common_handler_connect_handle_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+) {
+	struct rrr_mqtt_common_parse_properties_data_connect *callback_data = arg;
+	struct rrr_mqtt_session_properties *session_properties = &callback_data->session_properties;
+
+	MQTT_COMMON_HANDLE_PROPERTY_SWITCH_BEGIN();
+		MQTT_COMMON_HANDLE_PROPERTY_U32_UNCHECKED (
+				session_properties->session_expiry,
+				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_NON_ZERO (
+				session_properties->receive_maximum,
+				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
+				"Receive maximum was 0 in CONNECT packet"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_NON_ZERO (
+				session_properties->maximum_packet_size,
+				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
+				"Maximum packet size was 0 in CONNECT packet"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_UNCHECKED (
+				session_properties->topic_alias_maximum,
+				RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->request_response_information,
+				RRR_MQTT_PROPERTY_REQUEST_RESPONSE_INFO,
+				"Request response information field in CONNECT packet was not 0 or 1"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->request_problem_information,
+				RRR_MQTT_PROPERTY_REQUEST_PROBLEM_INFO,
+				"Request problem information field in CONNECT packet was not 0 or 1"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_TO_COLLECTION (
+				&session_properties->user_properties,
+				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_method,
+				RRR_MQTT_PROPERTY_AUTH_METHOD
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_data,
+				RRR_MQTT_PROPERTY_AUTH_DATA
+		);
+	MQTT_COMMON_HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+}
+
+int rrr_mqtt_common_handler_publish_handle_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+) {
+	struct rrr_mqtt_common_parse_properties_data_publish *callback_data = arg;
+	struct rrr_mqtt_p_publish *publish = callback_data->publish;
+
+	MQTT_COMMON_HANDLE_PROPERTY_SWITCH_BEGIN();
+		MQTT_COMMON_HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				publish->payload_format_indicator,
+				RRR_MQTT_PROPERTY_PAYLOAD_FORMAT_INDICATOR,
+				"Payload format indicator field in PUBLISH packet was not 0 or 1"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_UNCHECKED (
+				publish->message_expiry_interval,
+				RRR_MQTT_PROPERTY_MESSAGE_EXPIRY_INTERVAL
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_U32_TO_U16 (
+				publish->topic_alias,
+				RRR_MQTT_PROPERTY_TOPIC_ALIAS
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				publish->response_topic,
+				RRR_MQTT_PROPERTY_RESPONSE_TOPIC
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				publish->correlation_data,
+				RRR_MQTT_PROPERTY_CORRELATION_DATA
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_TO_COLLECTION (
+				&publish->user_properties,
+				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_TO_COLLECTION_NON_ZERO (
+				&publish->subscription_ids,
+				RRR_MQTT_PROPERTY_SUBSCRIPTION_ID,
+				"Subscription id was zero in PUBLISH properties"
+		);
+		MQTT_COMMON_HANDLE_PROPERTY_COPY_POINTER_DANGEROUS (
+				publish->content_type,
+				RRR_MQTT_PROPERTY_CONTENT_TYPE
+		);
+	MQTT_COMMON_HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+}
+
+int rrr_mqtt_common_handle_properties (
+		const struct rrr_mqtt_property_collection *source,
+		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
+		struct rrr_mqtt_common_parse_properties_data *callback_data,
+		uint8_t *reason_v5
+) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
+
+	if ((ret = rrr_mqtt_property_collection_iterate (
+		source,
+		callback,
+		&callback_data
+	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while iterating properties\n");
+			ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);
+		}
+		if (ret != 0) {
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			VL_MSG_ERR("Internal error while iterating properties, return was %i\n", ret);
+			goto out;
+		}
+
+		if (callback_data->reason_v5 == RRR_MQTT_P_5_REASON_OK) {
+			VL_BUG("Callback return error in __rrr_mqtt_p_handle_propertie returned but no reason was set\n");
+		}
+
+		ret = RRR_MQTT_CONN_SOFT_ERROR;
+		*reason_v5 = callback_data->reason_v5;
+	}
+
+	out:
 	return ret;
 }
 
@@ -483,7 +615,6 @@ static int __rrr_mqtt_common_send (
 	out_nolock:
 		return ret;
 }
-
 
 int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 	int ret = 0;

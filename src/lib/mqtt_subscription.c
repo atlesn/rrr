@@ -200,7 +200,7 @@ int rrr_mqtt_subscription_collection_match_publish (
 		else {
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(subscriptions);
 	return ret;
 }
 
@@ -274,7 +274,7 @@ int rrr_mqtt_subscription_collection_clone (
 			VL_MSG_ERR("Error while appending subscriptions while cloning in rrr_mqtt_subscription_collection_clone\n");
 			goto out_destroy_collection;
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(source);
 
 	*target = res;
 
@@ -415,7 +415,7 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 		else {
 			rrr_mqtt_subscription_destroy(node);
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LINKED_LIST_ITERATE_END(source);
 
 	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(source);
 

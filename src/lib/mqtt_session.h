@@ -128,7 +128,8 @@ struct rrr_mqtt_session_collection_methods {
 			int force
 	);
 
-	// Act upon client disconnect event according to clean_session parameter
+	// Act upon client disconnect event according to clean_session and
+	// session expiry parameters
 	int (*notify_disconnect) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session

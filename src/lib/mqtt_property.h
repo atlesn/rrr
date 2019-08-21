@@ -154,9 +154,6 @@ int rrr_mqtt_property_collection_clone (
 		struct rrr_mqtt_property_collection *target,
 		const struct rrr_mqtt_property_collection *source
 );
-void rrr_mqtt_property_collection_init (
-		struct rrr_mqtt_property_collection *collection
-);
 
 
 #endif /* RRR_MQTT_PROPERTY_H */
