@@ -53,6 +53,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		PUT_RAW(&data, sizeof(uint16_t));	\
 		} while (0)
 
+#define PUT_RAW_WITH_LENGTH(data,size) do {														\
+		PUT_U16(size);																			\
+		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
+			ret = RRR_MQTT_ASSEMBLE_ERR;														\
+			goto out;																			\
+		}} while (0)
+
 #define PUT_RAW_AT_OFFSET(data,size,offset) do {		\
 		if (rrr_mqtt_payload_buf_put_raw_at_offset (	\
 				session,								\
@@ -98,8 +105,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		PUT_NOTHING(2)
 
 #define END_VARIABLE_LENGTH_PUT_HEADER()										\
-		PUT_HEADER(rrr_mqtt_payload_buf_get_touched_size(session)-2);			\
-		} while (0)
+		PUT_HEADER(																\
+			rrr_mqtt_payload_buf_get_touched_size(session) -					\
+			2 +																	\
+			(packet->payload != NULL ? packet->payload->payload_length : 0)		\
+		);} while (0)
 
 #define NO_HEADER() \
 	PUT_HEADER(0)
@@ -140,8 +150,29 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+
+	BUF_INIT();
+
+	START_VARIABLE_LENGTH();
+
+	PUT_RAW_WITH_LENGTH(publish->topic, strlen(publish->topic));
+	if (publish->qos > 0) {
+		// TODO Put packet ID
+		VL_BUG("Publish QoS not supported in rrr_mqtt_assemble_publish\n");
+	}
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		uint8_t zero = 0;
+		PUT_U8(zero);
+		// TODO : Replace zero byte with publish properties
+	}
+
+	// Payload is added automatically
+
+	END_VARIABLE_LENGTH_PUT_HEADER();
+
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
 
 int rrr_mqtt_assemble_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {

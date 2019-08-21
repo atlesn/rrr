@@ -105,6 +105,9 @@ struct rrr_mqtt_topic_token;
 		const struct rrr_mqtt_p_type_properties *type_properties, \
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 
+#define RRR_MQTT_P_TYPE_CLONE_DEFINITION \
+		const struct rrr_mqtt_p *source
+
 #define RRR_MQTT_P_TYPE_FREE_DEFINITION \
 		struct rrr_mqtt_p *packet
 
@@ -128,6 +131,7 @@ struct rrr_mqtt_p_type_properties {
 	ssize_t packet_size;
 
 	struct rrr_mqtt_p *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
+	struct rrr_mqtt_p *(*clone)(RRR_MQTT_P_TYPE_CLONE_DEFINITION);
 
 	// We do not use function argument macros for these two to avoid including the header files
 	int (*parse)(struct rrr_mqtt_parse_session *session);
@@ -210,6 +214,9 @@ static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 }
 
 static inline void rrr_mqtt_p_standardized_decref (void *arg) {
+	if (arg == NULL) {
+		return;
+	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
@@ -218,11 +225,8 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		VL_BUG("Users was < 0 in RRR_MQTT_P_DECREF\n");
 	}
 	if (p->users == 0) {
-		p->destroy(p);
-		if (p->users != 0) {
-			VL_BUG("users was not 0 in __rrr_mqtt_p_standarized_usercount_destroy\n");
-		}
 		pthread_mutex_destroy(&p->refcount_lock);
+		p->destroy(p);
 	}
 }
 
@@ -417,6 +421,17 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (
 ) {
 	const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(id);
 	return properties->allocate(rrr_mqtt_p_get_type_properties(id), protocol_version);
+}
+
+static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
+		const struct rrr_mqtt_p *source
+) {
+	const struct rrr_mqtt_p_type_properties *properties = source->type_properties;
+	if (properties->clone == NULL) {
+		VL_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
+	}
+
+	return properties->clone(source);
 }
 
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason);

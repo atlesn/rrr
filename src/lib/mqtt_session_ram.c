@@ -202,8 +202,13 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	int ret = RRR_MQTT_SESSION_OK;
 
-	RRR_MQTT_P_INCREF(publish);
-	fifo_buffer_delayed_write(&session->send_queue.buffer, (char*) publish, sizeof(*publish));
+	struct rrr_mqtt_p_publish *new_publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_clone((struct rrr_mqtt_p *) publish);
+	if (new_publish == NULL) {
+		VL_MSG_ERR("Could not clone PUBLISH packet in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
+		return RRR_MQTT_SESSION_INTERNAL_ERROR;
+	}
+
+	fifo_buffer_delayed_write(&session->send_queue.buffer, (char*) new_publish, sizeof(*new_publish));
 
 	return ret;
 }
@@ -244,7 +249,10 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (FIFO_CA
 
 	int ret = FIFO_OK;
 
-	// It is not possible for anyone to decref any session while we hold this lock
+	if (publish->retain != 0) {
+		VL_BUG("Retain not supported in __rrr_mqtt_session_collection_ram_forward_publish_to_clients\n");
+	}
+
 	SESSION_COLLECTION_RAM_LOCK(ram_data);
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
@@ -274,7 +282,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	int ret = RRR_MQTT_SESSION_OK;
 
-	SESSION_COLLECTION_RAM_LOCK(data);
+
 	uint64_t time_now = time_get_64();
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
@@ -288,6 +296,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	ret = RRR_MQTT_SESSION_OK;
 
 	// CHECK FOR EXPIRED SESSIONS
+	SESSION_COLLECTION_RAM_LOCK(data);
 	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		uint64_t time_diff = time_now - node->last_seen;
 
@@ -574,20 +583,27 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 
 	(void)(size);
 
-	struct iterate_send_queue_callback_data *retries_callback_data = callback_data->private_data;
+	struct iterate_send_queue_callback_data *iterate_callback_data = callback_data->private_data;
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	RRR_MQTT_P_LOCK(packet);
 
-	if (	retries_callback_data->force == 1 ||
-			time_get_64() - packet->last_attempt > retries_callback_data->retry_interval_millis
+	if (	iterate_callback_data->force == 1 ||
+			time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_millis
 	) {
 		RRR_MQTT_P_UNLOCK(packet);
-		ret = retries_callback_data->callback(packet, retries_callback_data->callback_arg);
-		if (ret != 0) {
-			retries_callback_data->callback_return = ret;
+		ret = iterate_callback_data->callback(packet, iterate_callback_data->callback_arg);
+		if (ret == (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) {
+			// Callback wants to delete the data, happens with QoS 0 packets
+		}
+		else if (ret != 0) {
+			VL_MSG_ERR("Error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback, return was %i\n", ret);
+			iterate_callback_data->callback_return = ret;
 			ret = FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
 			goto out_nolock;
+		}
+		else {
+			ret = FIFO_OK;
 		}
 		RRR_MQTT_P_LOCK(packet);
 		packet->last_attempt = time_get_64();

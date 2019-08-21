@@ -47,6 +47,10 @@ int rrr_mqtt_topic_match_tokens_recursively (
 void rrr_mqtt_topic_token_destroy (
 		struct rrr_mqtt_topic_token *first_token
 );
+int rrr_mqtt_topic_tokens_clone (
+		struct rrr_mqtt_topic_token **target,
+		const struct rrr_mqtt_topic_token *first_token
+);
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,
 		const char *topic

@@ -274,6 +274,7 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		struct rrr_mqtt_conn *connection,
 		void *arg
 );
+// No reference counting of packet performed
 int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
@@ -281,10 +282,12 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 int rrr_mqtt_conn_iterator_ctx_send_packets (
 		struct rrr_mqtt_conn *connection
 );
+// Decref of packet guaranteed (some time in the future), immediately on errors
 int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
 );
+// No reference counting of packet performed
 int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
@@ -293,6 +296,7 @@ int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN		1
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_OUT	2
 
+// No reference counting of packet performed
 int rrr_mqtt_conn_iterator_ctx_update_state (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet,

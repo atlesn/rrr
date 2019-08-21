@@ -79,6 +79,27 @@ static int __rrr_mqtt_common_connection_event_handler (
 			VL_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
 	}
 
+	// Call downstream event handler (broker/client), must be called first in
+	// case session-stuff fails
+	ret_tmp = data->event_handler(connection, event, data->event_handler_arg);
+	if (ret_tmp != 0) {
+		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
+			ret |= RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {
+			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
+		}
+
+		ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION);
+
+		if (ret_tmp != 0) {
+			VL_MSG_ERR("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
+					event, ret_tmp);
+			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
+			goto out;
+		}
+	}
+
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
 			// It is normal to return DELETED from disconnect event
@@ -96,26 +117,6 @@ static int __rrr_mqtt_common_connection_event_handler (
 
 		if (ret_tmp != 0) {
 			VL_MSG_ERR("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
-					event, ret_tmp);
-			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
-			goto out;
-		}
-	}
-
-	// Call downstream event handler (broker/client)
-	ret_tmp = data->event_handler(connection, event, data->event_handler_arg);
-	if (ret_tmp != 0) {
-		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
-			ret |= RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {
-			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
-		}
-
-		ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION);
-
-		if (ret_tmp != 0) {
-			VL_MSG_ERR("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
 					event, ret_tmp);
 			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
@@ -406,18 +407,26 @@ static int __rrr_mqtt_common_send_from_sessions_callback (struct rrr_mqtt_p *pac
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
-		// XXX - COPY PACKET BEFORE ADDING TO SEND QUEUE
+		if (publish->qos > 0) {
+			VL_BUG("QoS > 0 not supported in __rrr_mqtt_common_send_from_sessions_callback\n");
+		}
 
+		// Remember the FREE to decref the packet!
+		ret = FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE;
 	}
 	else {
 		VL_BUG ("Unsupported packet of type %s in __rrr_mqtt_common_send_from_sessions_callback\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet));
 	}
+
 	RRR_MQTT_P_UNLOCK(packet);
 
+	// This function guarantees to always decref a packet it receives, also on error.
 	RRR_MQTT_P_INCREF(packet);
-	rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, packet);
-
+	if (rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, packet) != RRR_MQTT_CONN_OK) {
+		VL_MSG_ERR("Could not queue outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
+		ret = ret | FIFO_GLOBAL_ERR;
+	}
 
 	return ret;
 }
@@ -463,8 +472,8 @@ static int __rrr_mqtt_common_send (
 		if (ret_tmp != RRR_MQTT_SESSION_OK) {
 			VL_MSG_ERR("Internal error while iterating session send queue, cannot continue. Return was %i.\n", ret_tmp);
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-			goto out_unlock;
 		}
+		goto out_unlock;
 	}
 
 	ret = rrr_mqtt_conn_iterator_ctx_send_packets(connection);

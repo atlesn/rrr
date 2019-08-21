@@ -89,6 +89,10 @@ void rrr_mqtt_property_collection_add (
 void rrr_mqtt_property_collection_destroy (
 		struct rrr_mqtt_property_collection *collection
 );
+int rrr_mqtt_property_collection_clone (
+		struct rrr_mqtt_property_collection *target,
+		const struct rrr_mqtt_property_collection *source
+);
 void rrr_mqtt_property_collection_init (
 		struct rrr_mqtt_property_collection *collection
 );

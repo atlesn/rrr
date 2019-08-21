@@ -1198,11 +1198,6 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	char *network_data = NULL;
 	ssize_t network_size = 0;
 
-	// We do not re-send packets here, that is done during housekeeping
-	if (packet->last_attempt != 0) {
-		goto out;
-	}
-
 	if (packet->_assembled_data == NULL) {
 		int ret_tmp = RRR_MQTT_P_GET_ASSEMBLER(packet) (
 				&network_data,
@@ -1234,6 +1229,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
 		}
+	}
+
+	if (packet->payload != NULL) {
+
 	}
 
 	// It is possible here to actually send a packet which is not allowed in the current
@@ -1274,6 +1273,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 struct send_packets_callback_data {
 	struct rrr_mqtt_conn *connection;
+	struct fifo_buffer *put_back_buffer;
 };
 
 static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
@@ -1291,9 +1291,11 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 
 	if (ret_tmp != RRR_MQTT_CONN_OK) {
 		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
-			VL_MSG_ERR("Soft error while sending packet in __rrr_mqtt_connection_send_packets_callback\n");
+			VL_MSG_ERR("Soft error while sending packet in __rrr_mqtt_connection_send_packets_callback, putting it back\n");
+			RRR_MQTT_P_INCREF(packet);
+			fifo_buffer_delayed_write(packets_callback_data->put_back_buffer, data, size);
 			ret_tmp = ret_tmp & ~RRR_MQTT_CONN_SOFT_ERROR;
-			ret |= FIFO_CALLBACK_ERR;
+			ret |= FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
 		}
 		if (ret_tmp != 0) {
 			VL_MSG_ERR("Internal error while sending packet in __rrr_mqtt_connection_send_packets_callback\n");
@@ -1304,6 +1306,7 @@ static int __rrr_mqtt_connection_send_packets_callback (FIFO_CALLBACK_ARGS) {
 
 	out:
 	RRR_MQTT_P_UNLOCK(packet);
+	RRR_MQTT_P_DECREF(packet);
 
 	return ret;
 }
@@ -1321,13 +1324,20 @@ int rrr_mqtt_conn_iterator_ctx_send_packets (
 		goto out;
 	}
 
-	struct send_packets_callback_data callback_data = { connection };
+	struct send_packets_callback_data callback_data = {
+			connection,
+			&connection->send_queue.buffer
+	};
 	struct fifo_callback_args fifo_callback_args = { NULL, &callback_data, 0 };
 
-	// We use fifo_read because it only holds read-lock on the buffer. We do not immediately delete sent
-	// packets, and it is also not possible while traversing with fifo_read. Sent packets are deleted
-	// while doing housekeeping. We only send packets which previously has not been attempted sent.
-	ret = fifo_read(&connection->send_queue.buffer, __rrr_mqtt_connection_send_packets_callback, &fifo_callback_args, 0);
+	// On send errors, packets will be put back into the buffer
+	ret = fifo_read_clear_forward (
+			&connection->send_queue.buffer,
+			NULL,
+			__rrr_mqtt_connection_send_packets_callback,
+			&fifo_callback_args,
+			0
+	);
 	if (ret != FIFO_OK) {
 		if (ret == FIFO_CALLBACK_ERR) {
 			VL_MSG_ERR("Soft error while handling send queue in __rrr_mqtt_common_send_packets\n");
@@ -1349,9 +1359,6 @@ int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
 ) {
 	if (rrr_mqtt_p_get_refcount(packet) < 2) {
 		VL_BUG("Refcount for packet too small to proceed safely in rrr_mqtt_connection_queue_outbound_packet_iterator_ctx\n");
-	}
-	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
-		VL_BUG("Packet lock was not held in rrr_mqtt_connection_queue_outbound_packet_iterator_ctx\n");
 	}
 	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
 		VL_BUG("Connection lock was not held in rrr_mqtt_connection_queue_outbound_packet_iterator_ctx\n");

@@ -159,6 +159,43 @@ void rrr_mqtt_topic_token_destroy (
 	free(first_token);
 }
 
+int rrr_mqtt_topic_tokens_clone (
+		struct rrr_mqtt_topic_token **target,
+		const struct rrr_mqtt_topic_token *first_token
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	if (first_token == NULL) {
+		goto out;
+	}
+
+	struct rrr_mqtt_topic_token *result = malloc(strlen(first_token->data) + sizeof(*result));
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
+		ret = 1;
+		goto out;
+	}
+
+	strcpy(result->data, first_token->data);
+
+	ret = rrr_mqtt_topic_tokens_clone(&result->next, first_token->next);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not clone child topic token in rrr_mqtt_topic_tokens_clone\n");
+		goto out_free;
+	}
+
+	*target = result;
+
+	goto out;
+	out_free:
+		free(result);
+		result = NULL;
+	out:
+		return ret;
+}
+
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,
 		const char *topic

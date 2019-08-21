@@ -752,7 +752,10 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 		return RRR_MQTT_PARSE_INTERNAL_ERROR;
 	}
 
-	PARSE_PACKET_ID(publish);
+	if (publish->qos > 0) {
+		VL_BUG("QoS > 0 not supported in rrr_mqtt_parse_publish\n");
+		PARSE_PACKET_ID(publish);
+	}
 	PARSE_PROPERTIES_IF_V5(publish,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(publish);
@@ -767,6 +770,7 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	// assembled_data-member of the packet. Memory will after that be managed by the packet.
 
 	if (session->buf_size == session->target_size) {
+		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET);
 		goto parse_done;
 	}
 	else if (session->buf_size > session->target_size) {

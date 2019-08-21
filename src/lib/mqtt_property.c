@@ -106,6 +106,53 @@ int rrr_mqtt_property_new (
 	return ret;
 }
 
+static int __rrr_mqtt_property_clone (
+		struct rrr_mqtt_property **target,
+		const struct rrr_mqtt_property *source
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_mqtt_property *result = NULL;
+
+	ret = rrr_mqtt_property_new(&result, source->definition);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not create new property in __rrr_mqtt_property_clone\n");
+	}
+
+	if (source->sibling != NULL) {
+		ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling);
+		if (ret != 0) {
+			VL_MSG_ERR("Could not clone sibling in __rrr_mqtt_property_clone\n");
+			goto out_destroy;
+		}
+	}
+
+	result->order = source->order;
+	result->internal_data_type = source->internal_data_type;
+
+	if (source->length > 0) {
+		result->length = source->length;
+		result->data = malloc(result->length);
+		if (result->data == NULL) {
+			VL_MSG_ERR("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
+			ret = 1;
+			goto out_destroy;
+		}
+		memcpy(result->data, source->data, result->length);
+	}
+
+	*target = result;
+
+	goto out;
+	out_destroy:
+		rrr_mqtt_property_destroy(result);
+
+	out:
+	return ret;
+}
+
 void rrr_mqtt_property_collection_add (
 		struct rrr_mqtt_property_collection *collection,
 		struct rrr_mqtt_property *property
@@ -119,6 +166,31 @@ void rrr_mqtt_property_collection_destroy (
 		struct rrr_mqtt_property_collection *collection
 ) {
 	RRR_LINKED_LIST_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
+}
+
+int rrr_mqtt_property_collection_clone (
+		struct rrr_mqtt_property_collection *target,
+		const struct rrr_mqtt_property_collection *source
+) {
+	int ret = 0;
+
+	memset(target, '\0', sizeof(*target));
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
+		struct rrr_mqtt_property *new_node = NULL;
+		ret = __rrr_mqtt_property_clone(&new_node, node);
+		if (ret != 0) {
+			VL_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_clone\n");
+			goto out_destroy;
+		}
+		rrr_mqtt_property_collection_add(target, new_node);
+	RRR_LINKED_LIST_ITERATE_END();
+
+	goto out;
+	out_destroy:
+		rrr_mqtt_property_collection_destroy(target);
+	out:
+		return ret;
 }
 
 void rrr_mqtt_property_collection_init (
