@@ -71,48 +71,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			goto out;									\
 		}} while (0)
 
+#define PUT_VARIABLE_INT_AT_OFFSET(value,offset) do {			\
+			if (rrr_mqtt_payload_buf_put_variable_int_at_offset(\
+				session,										\
+				(value),										\
+				(offset)										\
+		) != RRR_MQTT_PAYLOAD_BUF_OK) {							\
+			ret = RRR_MQTT_ASSEMBLE_ERR;						\
+			goto out;											\
+		}} while (0)
+
 #define PUT_U8_AT_OFFSET(byte,offset) do {						\
 		uint8_t data = (byte);									\
 		PUT_RAW_AT_OFFSET(&data, sizeof(uint8_t), offset);		\
 		} while (0)
 
-#define PUT_NOTHING(count) do {																\
-		if (rrr_mqtt_payload_buf_ensure (session, count) != RRR_MQTT_PAYLOAD_BUF_OK) {		\
-			return RRR_MQTT_ASSEMBLE_ERR;													\
-		}																					\
-		session->wpos += count;																\
-		} while (0)
-
 #define BUF_DESTROY_AND_RETURN(extra_ret_value)						\
+		goto out;													\
 		out:														\
 		*size = rrr_mqtt_payload_buf_get_touched_size(session);		\
 		*target = rrr_mqtt_payload_buf_extract_buffer(session);		\
 		rrr_mqtt_payload_buf_destroy (session);						\
 		return (ret | (extra_ret_value))
-
-#define PUT_HEADER(rem_length) do {																\
-		if (RRR_MQTT_P_IS_RESERVED_FLAGS(packet) &&												\
-			RRR_MQTT_P_GET_PROP_FLAGS(packet) != RRR_MQTT_P_GET_TYPE_FLAGS(packet)				\
-		) {																						\
-			VL_BUG("Illegal flags %u for packet type %s in rrr_mqtt_assemble PUT_HEADER\n",		\
-			RRR_MQTT_P_GET_TYPE_FLAGS(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));				\
-		}																						\
-		PUT_U8_AT_OFFSET(RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet), 0);								\
-		PUT_U8_AT_OFFSET(rem_length, 1);														\
-		} while (0)
-
-#define START_VARIABLE_LENGTH() do {											\
-		PUT_NOTHING(2)
-
-#define END_VARIABLE_LENGTH_PUT_HEADER()										\
-		PUT_HEADER(																\
-			rrr_mqtt_payload_buf_get_touched_size(session) -					\
-			2 +																	\
-			(packet->payload != NULL ? packet->payload->payload_length : 0)		\
-		);} while (0)
-
-#define NO_HEADER() \
-	PUT_HEADER(0)
 
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
@@ -125,25 +105,20 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		START_VARIABLE_LENGTH();
 		PUT_U8(connack->ack_flags);
 		PUT_U8(connack->reason_v5);
 		uint8_t zero = 0;
 		PUT_U8(zero);
 
 		// TODO : Replace zero byte with connack properties
-
-		END_VARIABLE_LENGTH_PUT_HEADER();
 	}
 	else {
 		uint8_t reason_v31 = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
 		if (reason_v31 > 5) {
 			VL_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
 		}
-		START_VARIABLE_LENGTH();
 		PUT_U8(connack->ack_flags);
 		PUT_U8(reason_v31);
-		END_VARIABLE_LENGTH_PUT_HEADER();
 	}
 
 	BUF_DESTROY_AND_RETURN(connack->reason_v5 != RRR_MQTT_P_5_REASON_OK ? RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION : 0);
@@ -154,12 +129,17 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	START_VARIABLE_LENGTH();
+	// Make sure that if somebody modified qos, dup or retain that these
+	// values are put into the type flags
+	RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(publish);
 
 	PUT_RAW_WITH_LENGTH(publish->topic, strlen(publish->topic));
 	if (publish->qos > 0) {
 		// TODO Put packet ID
-		VL_BUG("Publish QoS not supported in rrr_mqtt_assemble_publish\n");
+		PUT_U16(publish->packet_identifier);
+		if (publish->qos > 1) {
+			VL_BUG("Publish QoS > 1 not supported in rrr_mqtt_assemble_publish\n");
+		}
 	}
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
@@ -170,14 +150,24 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	// Payload is added automatically
 
-	END_VARIABLE_LENGTH_PUT_HEADER();
-
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
 
 int rrr_mqtt_assemble_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	struct rrr_mqtt_p_puback *puback = (struct rrr_mqtt_p_puback *) packet;
+
+	BUF_INIT();
+
+	PUT_U16(puback->packet_identifier);
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		PUT_U8(puback->reason_v5);
+		uint8_t zero = 0;
+		PUT_U8(zero);
+		// TODO : Replace zero byte with publish properties
+	}
+
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
 
 int rrr_mqtt_assemble_pubrec (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -214,7 +204,6 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
 
 	BUF_INIT();
-	START_VARIABLE_LENGTH();
 
 	PUT_U16(suback->packet_identifier);
 
@@ -231,7 +220,6 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		goto out;
 	}
 
-	END_VARIABLE_LENGTH_PUT_HEADER();
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
  }
 
@@ -247,13 +235,11 @@ int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 int rrr_mqtt_assemble_pingreq (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
-	NO_HEADER();
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_pingresp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
-	NO_HEADER();
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
@@ -263,19 +249,12 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		START_VARIABLE_LENGTH();
 		PUT_U8(disconnect->disconnect_reason_code);
 		uint8_t zero = 0;
 		PUT_U8(zero);
 
 		// TODO : Replace zero byte with disconnect properties
-
-		END_VARIABLE_LENGTH_PUT_HEADER();
 	}
-	else {
-		NO_HEADER();
-	}
-
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION);
 }
 

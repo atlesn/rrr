@@ -175,7 +175,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 		goto out_message;
 	}
 
-	int count = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
@@ -188,11 +187,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
 			VL_MSG_ERR("Error from MQTT broker while running tasks\n");
 			break;
-		}
-
-		if (++count == 1000) {
-			usleep (5000000);
-			count = 0;
 		}
 
 		usleep (5000); // 50 ms

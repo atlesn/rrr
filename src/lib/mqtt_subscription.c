@@ -204,10 +204,16 @@ int rrr_mqtt_subscription_collection_match_publish (
 	return ret;
 }
 
-void rrr_mqtt_subscription_collection_destroy (
+void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
 ) {
 	RRR_LINKED_LIST_DESTROY(target, struct rrr_mqtt_subscription, rrr_mqtt_subscription_destroy(node));
+}
+
+void rrr_mqtt_subscription_collection_destroy (
+		struct rrr_mqtt_subscription_collection *target
+) {
+	rrr_mqtt_subscription_collection_clear(target);
 	free(target);
 }
 
@@ -403,7 +409,7 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 	// NOTE : append_unique will steal all the pointers from the source
 	//        which means the list cannot be used afterwards
 	RRR_LINKED_LIST_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
-		if (include_invalid_entries != 0 || node->qos_or_reason_v5 == RRR_MQTT_P_5_REASON_OK) {
+		if (include_invalid_entries != 0 || node->qos_or_reason_v5 <= 2) {
 			ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
 
 			if (ret != 0) {

@@ -731,6 +731,9 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
 	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
+	VL_DEBUG_MSG_3("PUBLISH flags (%u): DUP: %u, QOS: %u, RET: %u\n",
+			session->packet->type_flags, publish->dup, publish->qos, publish->retain);
+
 	PARSE_VALIDATE_QOS(publish->qos);
 
 	if (publish->qos == 0 && publish->dup != 0) {
@@ -752,10 +755,13 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 		return RRR_MQTT_PARSE_INTERNAL_ERROR;
 	}
 
-	if (publish->qos > 0) {
-		VL_BUG("QoS > 0 not supported in rrr_mqtt_parse_publish\n");
+	if (publish->qos == 1) {
 		PARSE_PACKET_ID(publish);
 	}
+	else if (publish->qos > 1) {
+		VL_BUG("QoS > 1 not supported in rrr_mqtt_parse_publish\n");
+	}
+
 	PARSE_PROPERTIES_IF_V5(publish,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(publish);
@@ -784,8 +790,15 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 }
 
 int rrr_mqtt_parse_puback (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_BEGIN(suback);
+
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(suback);
+
+	PARSE_PACKET_ID(suback);
+
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback);
+	PARSE_END_PAYLOAD();
 }
 
 int rrr_mqtt_parse_pubrec (struct rrr_mqtt_parse_session *session) {
@@ -879,8 +892,18 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 }
 
 int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_BEGIN(suback);
+
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(suback);
+
+	PARSE_PACKET_ID(suback);
+
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback);
+
+	// XXX
+
+	PARSE_END_PAYLOAD();
 }
 
 int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session) {

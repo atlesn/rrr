@@ -137,7 +137,7 @@ static int __rrr_mqtt_broker_listen_fd_accept_connections (
 	int ret = 0;
 
 	do {
-		if ((ret = ip_accept(&accept_data, &fd->ip, creator, 1)) != 0) {
+		if ((ret = ip_accept(&accept_data, &fd->ip, creator, 0)) != 0) {
 			VL_MSG_ERR("Error from ip_accept in __rrr_mqtt_broker_listen_fd_accept_connections\n");
 			break;
 		}
@@ -506,7 +506,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			default_session_properties
 	};
 
-	MQTT_COMMON_HANDLE_PROPERTIES (
+	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connect->properties,
 			rrr_mqtt_common_handler_connect_handle_properties_callback,
 			goto out_send_connack
@@ -574,72 +574,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;
-}
-
-static int __rrr_mqtt_broker_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = RRR_MQTT_CONN_OK;
-	RRR_MQTT_P_LOCK(packet);
-
-	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
-	uint8_t reason_v5 = 0;
-
-	if (publish->qos == 0) {
-		if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-			VL_MSG_ERR("Closing connection due to malformed PUBLISH packet with QoS 0\n");
-			ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
-			goto out;
-		}
-	}
-	else {
-		VL_MSG_ERR("QoS > 0 not implemented in rrr_mqtt_p_handler_publish\n");
-		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
-		goto out;
-	}
-
-	struct rrr_mqtt_common_parse_properties_data_publish callback_data = {
-			&publish->properties,
-			0,
-			publish
-	};
-
-	MQTT_COMMON_HANDLE_PROPERTIES (
-			&publish->properties,
-			rrr_mqtt_common_handler_publish_handle_properties_callback,
-			goto out_send_puback
-	);
-
-/*	else if (publish->qos == 1) {
-		struct rrr_mqtt_p_puback *puback = rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBACK);
-	}
-
-	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-	}
-	else {
-	}
-*/
-	ret = mqtt_data->sessions->methods->receive_publish(mqtt_data->sessions, &connection->session, publish);
-
-	out_send_puback:
-
-	out:
-	RRR_MQTT_P_UNLOCK(packet);
-	return ret;
-}
-static int __rrr_mqtt_broker_handle_puback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-	return ret;
-}
-static int __rrr_mqtt_broker_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-	return ret;
-}
-static int __rrr_mqtt_broker_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-	return ret;
-}
-static int __rrr_mqtt_broker_handle_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-	return ret;
 }
 
 static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
@@ -721,27 +655,6 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
-static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-
-	(void)(mqtt_data);
-
-	RRR_MQTT_P_LOCK(packet);
-
-	if ((ret = rrr_mqtt_conn_iterator_ctx_update_state (
-			connection,
-			packet,
-			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
-	)) != RRR_MQTT_CONN_OK) {
-		VL_MSG_ERR("Could not update connection state in rrr_mqtt_p_handler_disconnect\n");
-		goto out;
-	}
-
-	out:
-	RRR_MQTT_P_UNLOCK(packet);
-	return ret | RRR_MQTT_CONN_DESTROY_CONNECTION;
-}
-
 static int __rrr_mqtt_broker_handle_auth (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
 	return ret;
@@ -752,18 +665,18 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{__rrr_mqtt_broker_handle_connect},
 	{NULL},
-	{__rrr_mqtt_broker_handle_publish},
-	{__rrr_mqtt_broker_handle_puback},
-	{__rrr_mqtt_broker_handle_pubrec},
-	{__rrr_mqtt_broker_handle_pubrel},
-	{__rrr_mqtt_broker_handle_pubcomp},
+	{rrr_mqtt_common_handle_publish},
+	{rrr_mqtt_common_handle_general_ack},
+	{rrr_mqtt_common_handle_pubrec},
+	{rrr_mqtt_common_handle_pubrel},
+	{rrr_mqtt_common_handle_pubcomp},
 	{__rrr_mqtt_broker_handle_subscribe},
 	{NULL},
 	{__rrr_mqtt_broker_handle_unsubscribe},
 	{NULL},
 	{__rrr_mqtt_broker_handle_pingreq},
 	{NULL},
-	{__rrr_mqtt_broker_handle_disconnect},
+	{rrr_mqtt_common_handle_disconnect},
 	{__rrr_mqtt_broker_handle_auth}
 };
 
@@ -916,7 +829,7 @@ int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data) {
 	}
 
 	if (callback_data.connection_count > 0) {
-		printf ("rrr_mqtt_broker_accept_connections: accepted %i connections\n",
+		VL_DEBUG_MSG_1 ("rrr_mqtt_broker_accept_connections: accepted %i connections\n",
 				callback_data.connection_count);
 	}
 

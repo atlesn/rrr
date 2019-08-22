@@ -176,6 +176,7 @@ struct rrr_mqtt_p_payload {
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;					\
 	pthread_mutex_t data_lock;									\
 	uint8_t type_flags;											\
+	uint8_t dup;												\
 	uint16_t packet_identifier;									\
 	uint64_t create_time;										\
 	uint64_t last_attempt;										\
@@ -201,7 +202,7 @@ struct rrr_mqtt_p {
 #define RRR_MQTT_P_GET_ASSEMBLER(p)			((p)->type_properties->assemble)
 #define RRR_MQTT_P_GET_FREE(p)				((p)->type_properties->free)
 #define RRR_MQTT_P_IS_RESERVED_FLAGS(p)		((p)->type_properties->has_reserved_flags)
-#define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->complementary_id == 0)
+#define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->complementary_id != 0)
 #define RRR_MQTT_P_IS_V5(p)					((p)->protocol_version->id == 5)
 
 #define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->free(p))
@@ -296,7 +297,7 @@ struct rrr_mqtt_p_publish {
 	struct rrr_mqtt_topic_token *token_tree;
 
 	/* These are also accessible through packet type flags but we cache them here */
-	uint8_t dup;
+	//uint8_t dup; <-- defined in header
 	uint8_t qos;
 	uint8_t retain;
 
@@ -319,9 +320,11 @@ struct rrr_mqtt_p_publish {
 
 };
 
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((1<<0) &			((struct rrr_mqtt_p_publish *)(p))->type_flags))
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		((((1<<2)|(1<<1)) &	((struct rrr_mqtt_p_publish *)(p))->type_flags) >> 2)
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((1<<3) &			((struct rrr_mqtt_p_publish *)(p))->type_flags) >> 3)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
+#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
+	(p)->type_flags = (((p)->type_flags & 0xff) << 4)|((p)->retain)|((p)->qos << 1)|((p)->dup << 3)
 
 struct rrr_mqtt_p_puback {
 	RRR_MQTT_P_PACKET_HEADER;

@@ -46,7 +46,6 @@ struct rrr_mqtt_session_ram {
 	uint16_t packet_identifier_counter;
 
 	char *client_id;
-	uint8_t client_maximum_qos;
 
 	uint64_t last_seen;
 
@@ -220,9 +219,10 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	if (new_publish->qos > subscription->qos_or_reason_v5) {
 		new_publish->qos = subscription->qos_or_reason_v5;
 	}
-	if (new_publish->qos > session->client_maximum_qos) {
-		new_publish->qos = session->client_maximum_qos;
-	}
+
+	new_publish->dup = 0;
+
+	RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(new_publish);
 
 	RRR_MQTT_P_UNLOCK(new_publish);
 
@@ -491,8 +491,8 @@ static int __rrr_mqtt_session_ram_init (
 		if (fifo_buffer_clear(&ram_session->send_queue.buffer) != 0) {
 			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
 		}
+		rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
 	}
-
 	VL_DEBUG_MSG_1("Init session expiry interval: %" PRIu32 "\n",
 			ram_session->session_properties.session_expiry);
 
@@ -543,7 +543,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_process_ack (
+static int __rrr_mqtt_session_ram_receive_ack (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p *packet
@@ -551,12 +551,13 @@ static int __rrr_mqtt_session_ram_process_ack (
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
+	RRR_MQTT_P_LOCK(packet);
 
 	if (!RRR_MQTT_P_IS_ACK(packet)) {
 		VL_BUG("Received non-ACK packet in __rrr_mqtt_session_ram_process_ack\n");
 	}
 
-	printf("Processing ACK packet with idientifier %u of type %s\n",
+	VL_DEBUG_MSG_3("Processing ACK packet with idientifier %u of type %s\n",
 			RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 	struct ram_process_ack_callback_data callback_data = {
@@ -596,6 +597,7 @@ static int __rrr_mqtt_session_ram_process_ack (
 	}
 
 	out:
+	RRR_MQTT_P_UNLOCK(packet);
 	SESSION_RAM_DECREF();
 	return ret;
 }
@@ -604,7 +606,7 @@ struct iterate_send_queue_callback_data {
 	int (*callback)(struct rrr_mqtt_p *packet, void *arg);
 	void *callback_arg;
 	int force;
-	uint64_t retry_interval_millis;
+	uint64_t retry_interval_usec;
 	int callback_return;
 };
 
@@ -618,9 +620,15 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 
 	RRR_MQTT_P_LOCK(packet);
 
-	if (	iterate_callback_data->force == 1 ||
-			time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_millis
-	) {
+	int do_send = iterate_callback_data->force;
+
+	packet->dup = 0;
+	if (time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec) {
+		do_send = 1;
+		packet->dup = 1;
+	}
+
+	if (do_send) {
 		RRR_MQTT_P_UNLOCK(packet);
 		ret = iterate_callback_data->callback(packet, iterate_callback_data->callback_arg);
 		if (ret == (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) {
@@ -665,7 +673,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			callback,
 			callback_arg,
 			force,
-			retry_interval * 1000,
+			retry_interval * 1000 * 1000,
 			RRR_MQTT_SESSION_OK
 	};
 
@@ -787,7 +795,7 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_session,
 		__rrr_mqtt_session_ram_init,
 		__rrr_mqtt_session_ram_heartbeat,
-		__rrr_mqtt_session_ram_process_ack,
+		__rrr_mqtt_session_ram_receive_ack,
 		__rrr_mqtt_session_ram_iterate_send_queue,
 		__rrr_mqtt_session_ram_notify_disconnect,
 		__rrr_mqtt_session_ram_add_subscriptions,

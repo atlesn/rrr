@@ -1181,6 +1181,31 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 	return ret;
 }
 
+int __rrr_mqtt_connection_create_variable_int (
+		uint8_t *target,
+		ssize_t *length,
+		uint32_t value
+) {
+	*length = 1;
+
+	if (value > 0xfffffff) {
+		VL_MSG_ERR("Integer value too large in __rrr_mqtt_connection_create_variable_int\n");
+		return RRR_MQTT_CONN_INTERNAL_ERROR;
+	}
+
+	for (int i = 0; i <= 3; i++) {
+//		printf ("Value[%i]: %" PRIu32 "\n", i, value);
+		target[i] = value & 0x7F;
+		value >>= 7;
+		if (value > 0) {
+			target[i] |= 1 << 7;
+			(*length)++;
+		}
+	}
+
+	return RRR_MQTT_CONN_OK;
+}
+
 int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
@@ -1205,17 +1230,18 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 				packet
 		);
 
-		packet->_assembled_data = network_data;
-		packet->assembled_data_size = network_size;
-
 		if (network_data == NULL) {
 			VL_BUG("Assembled packet of type %s was NULL in __rrr_mqtt_connection_send_packets_callback\n",
 					RRR_MQTT_P_GET_TYPE_NAME(packet));
 		}
-		if (network_size < 2) {
-			VL_BUG("Assembled packet size of type %s was <2 in __rrr_mqtt_connection_send_packets_callback\n",
-					RRR_MQTT_P_GET_TYPE_NAME(packet));
+
+		if (network_size == 0) {
+			free(network_data);
+			network_data = NULL;
 		}
+
+		packet->_assembled_data = network_data;
+		packet->assembled_data_size = network_size;
 
 		network_data = NULL;
 
@@ -1231,17 +1257,53 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		}
 	}
 
-	if (packet->payload != NULL) {
-
-	}
-
 	// It is possible here to actually send a packet which is not allowed in the current
 	// connection state, but in that case, the program will crash after the write when updating
 	// the state. It is a bug to call this function with a non-timely packet.
 
-	if ((ret = __rrr_mqtt_connection_write (connection, packet->_assembled_data, packet->assembled_data_size)) != 0) {
-		VL_MSG_ERR("Error while sending assembled data in __rrr_mqtt_connection_send_packets_callback\n");
+	if (RRR_MQTT_P_IS_RESERVED_FLAGS(packet) &&
+		RRR_MQTT_P_GET_PROP_FLAGS(packet) != RRR_MQTT_P_GET_TYPE_FLAGS(packet)
+	) {
+		VL_BUG("Illegal flags %u for packet type %s in rrr_mqtt_conn_iterator_ctx_send_packet\n",
+				RRR_MQTT_P_GET_TYPE_FLAGS(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
+	}
+
+	struct rrr_mqtt_p_header header = {0};
+	ssize_t variable_int_length = 0;
+
+	if ((ret = __rrr_mqtt_connection_create_variable_int (
+			header.length,
+			&variable_int_length,
+			packet->assembled_data_size + (packet->payload != NULL ? packet->payload->payload_length : 0)
+	)) != 0) {
+		VL_MSG_ERR("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
+	}
+	header.type = RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
+
+	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + (packet->payload != NULL ? packet->payload->payload_length : 0);
+
+	VL_DEBUG_MSG_3("Sending packet of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li\n",
+			RRR_MQTT_P_GET_TYPE_NAME(packet),
+			variable_int_length,
+			packet->assembled_data_size,
+			(packet->payload != NULL ? packet->payload->payload_length : 0),
+			total_size
+	);
+
+	if ((ret = __rrr_mqtt_connection_write (connection, (char*) &header, sizeof(header.type) + variable_int_length)) != 0) {
+		VL_MSG_ERR("Error while sending fixed header in __rrr_mqtt_connection_send_packets_callback\n");
+		goto out;
+	}
+
+	if (packet->assembled_data_size > 0) {
+		if ((ret = __rrr_mqtt_connection_write (connection, packet->_assembled_data, packet->assembled_data_size)) != 0) {
+			VL_MSG_ERR("Error while sending assembled data in __rrr_mqtt_connection_send_packets_callback\n");
+			goto out;
+		}
+	}
+	else if (packet->payload != NULL) {
+		VL_BUG("Payload was present without variable header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 	}
 
 	if (packet->payload != NULL) {

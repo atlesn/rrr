@@ -112,7 +112,7 @@ struct rrr_mqtt_session_collection_methods {
 
 	// Receive an ACK for a packet and remove it from the send queue.
 	// The ACK is not stored in the session, no reference counting is performed.
-	int (*notify_ack) (
+	int (*receive_ack) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
