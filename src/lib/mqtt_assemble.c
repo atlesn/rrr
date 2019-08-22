@@ -153,36 +153,18 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
 
-int rrr_mqtt_assemble_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	struct rrr_mqtt_p_puback *puback = (struct rrr_mqtt_p_puback *) packet;
-
+// Assemble PUBACK, PUBREC, PUBREL, PUBCOMP
+int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	struct rrr_mqtt_p_def_puback *puback = (struct rrr_mqtt_p_def_puback *) packet;
 	BUF_INIT();
-
 	PUT_U16(puback->packet_identifier);
-
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		PUT_U8(puback->reason_v5);
 		uint8_t zero = 0;
 		PUT_U8(zero);
-		// TODO : Replace zero byte with publish properties
+		// TODO : Replace zero byte with properties
 	}
-
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
-}
-
-int rrr_mqtt_assemble_pubrec (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
-}
-
-int rrr_mqtt_assemble_pubrel (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
-}
-
-int rrr_mqtt_assemble_pubcomp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
 }
 
 int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -249,7 +231,7 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_INIT();
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		PUT_U8(disconnect->disconnect_reason_code);
+		PUT_U8(disconnect->reason_v5);
 		uint8_t zero = 0;
 		PUT_U8(zero);
 

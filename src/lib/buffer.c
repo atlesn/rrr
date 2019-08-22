@@ -125,7 +125,11 @@ static void __fifo_merge_write_queue_nolock(struct fifo_buffer *buffer) {
  * using the buffer. After already initiated reads and writes have completed,
  * free the buffer contents.
  */
-void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
+void fifo_buffer_invalidate_with_callback (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
+) {
 	pthread_mutex_lock (&buffer->mutex);
 	if (buffer->invalid) { pthread_mutex_unlock (&buffer->mutex); return; }
 	buffer->invalid = 1;
@@ -148,6 +152,10 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 		struct fifo_buffer_entry *next = entry->next;
 //		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
+		if (callback != NULL && (callback(callback_data, entry->data, entry->size) != FIFO_OK)) {
+			VL_BUG("Callback returned non-zero in fifo_buffer_invalidate_with_callback\n");
+		}
+
 		buffer->free_entry (entry->data);
 		free (entry);
 		freed_counter++;
@@ -161,6 +169,10 @@ void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
 
 	VL_DEBUG_MSG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 	pthread_mutex_unlock (&buffer->mutex);
+}
+
+void fifo_buffer_invalidate(struct fifo_buffer *buffer) {
+	fifo_buffer_invalidate_with_callback(buffer, NULL, NULL);
 }
 
 void fifo_buffer_destroy(struct fifo_buffer *buffer) {
@@ -699,14 +711,14 @@ int fifo_read_minimum (
 			if (++processed_entries == FIFO_MAX_READS || first == last_element) {
 				break;
 			}
-			if (res_ == 0) {
+			if (res_ == FIFO_OK) {
 				// Do nothing
 			}
-			else if ((res & FIFO_SEARCH_STOP) != 0) {
-				res = 0;
+			else if ((res_ & FIFO_SEARCH_STOP) != 0) {
+				res = res_ & ~(FIFO_SEARCH_STOP);
 				break;
 			}
-			else if ((res & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
+			else if ((res_ & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {
 				VL_BUG("Bug: FIFO_SEARCH_GIVE or FIFO_SEARCH_FREE returned to fifo_read_minimum\n");
 			}
 			else {

@@ -56,9 +56,10 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 static int __rrr_mqtt_common_connection_event_handler (
 		struct rrr_mqtt_conn *connection,
 		int event,
+		void *static_arg,
 		void *arg
 ) {
-	struct rrr_mqtt_data *data = arg;
+	struct rrr_mqtt_data *data = static_arg;
 
 	int ret = 0;
 	int ret_tmp = 0;
@@ -70,7 +71,7 @@ static int __rrr_mqtt_common_connection_event_handler (
 
 	// Call downstream event handler (broker/client), must be called first in
 	// case session-stuff fails due to client counters
-	ret_tmp = data->event_handler(connection, event, data->event_handler_arg);
+	ret_tmp = data->event_handler(connection, event, data->event_handler_static_arg, arg);
 	if (ret_tmp != 0) {
 		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
 			ret |= RRR_MQTT_CONN_SOFT_ERROR;
@@ -95,6 +96,10 @@ static int __rrr_mqtt_common_connection_event_handler (
 			break;
 		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
 			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
+			break;
+		case RRR_MQTT_CONN_EVENT_ACK_SENT:
+			// Nothing to do
+			ret_tmp = RRR_MQTT_CONN_OK;
 			break;
 		default:
 			VL_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
@@ -131,8 +136,8 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg),
-		void *event_handler_arg,
+		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
+		void *event_handler_static_arg,
 		uint64_t close_wait_time_usec,
 		int max_socket_connections
 ) {
@@ -147,7 +152,7 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 	}
 
 	data->event_handler = event_handler;
-	data->event_handler_arg = event_handler_arg;
+	data->event_handler_static_arg = event_handler_static_arg;
 	data->close_wait_time_usec = close_wait_time_usec;
 	data->handler_properties = handler_properties;
 	strcpy(data->client_name, client_name);
@@ -468,12 +473,12 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out_generate_ack;
 	}
 
-	if (publish->qos > 1) {
+/*	if (publish->qos > 1) {
 		VL_MSG_ERR("QoS > 1 not implemented in rrr_mqtt_p_handler_publish\n");
 		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		reason_v5 = RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR;
 		goto out_generate_ack;
-	}
+	}*/
 
 	struct rrr_mqtt_common_parse_properties_data_publish callback_data = {
 			&publish->properties,
@@ -493,6 +498,21 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_P_DECREF(packet);
 	RRR_MQTT_P_LOCK(packet);
 
+	if (ret != RRR_MQTT_SESSION_OK) {
+		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
+			VL_MSG_ERR("Soft error from session receive publish function in rrr_mqtt_common_handle_publish\n");
+		}
+		ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION);
+		if (ret != 0) {
+			VL_MSG_ERR("Internal error from session receive publish function in rrr_mqtt_common_handle_publish\n");
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			goto out;
+		}
+
+		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
+		goto out;
+	}
+
 	out_generate_ack:
 	if (publish->qos == 1) {
 		struct rrr_mqtt_p_puback *puback = (struct rrr_mqtt_p_puback *) rrr_mqtt_p_allocate (
@@ -509,6 +529,24 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		puback->reason_v5 = reason_v5;
 		puback->packet_identifier = publish->packet_identifier;
 	}
+	else if (publish->qos == 2) {
+		struct rrr_mqtt_p_pubrec *pubrec = (struct rrr_mqtt_p_pubrec *) rrr_mqtt_p_allocate (
+						RRR_MQTT_P_TYPE_PUBREC, publish->protocol_version
+		);
+		ack = (struct rrr_mqtt_p *) pubrec;
+		if (pubrec == NULL) {
+			VL_MSG_ERR("Could not allocate PUBREC in __rrr_mqtt_broker_handle_publish\n");
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			goto out;
+		}
+
+		RRR_MQTT_P_LOCK(pubrec);
+		pubrec->reason_v5 = reason_v5;
+		pubrec->packet_identifier = publish->packet_identifier;
+	}
+	else if (publish->qos != 0) {
+		VL_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", publish->qos);
+	}
 
 	if (ack != NULL) {
 		if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, ack)) != 0) {
@@ -524,14 +562,27 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		return ret;
 }
 
-int rrr_mqtt_common_handle_general_ack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+static int __rrr_mqtt_common_handle_general_ack (
+		unsigned int *match_count,
+		uint8_t *reason_v5,
+		RRR_MQTT_TYPE_HANDLER_DEFINITION,
+		int delete_if_found
+) {
 	int ret = RRR_MQTT_CONN_OK;
 
+	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
+
 	int ret_tmp = mqtt_data->sessions->methods->receive_ack (
+			match_count,
 			mqtt_data->sessions,
 			&connection->session,
-			packet
+			packet,
+			delete_if_found
 	);
+
+	if (*match_count != 1) {
+		*reason_v5 = RRR_MQTT_P_5_REASON_PACKET_IDENTIFIER_NOT_FOUND;
+	}
 
 	RRR_MQTT_P_LOCK(packet);
 	if (ret_tmp != 0) {
@@ -560,8 +611,82 @@ int rrr_mqtt_common_handle_general_ack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+int rrr_mqtt_common_handle_puback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	unsigned int match_count = 0;
+	uint8_t reason_v5 = 0;
+	return __rrr_mqtt_common_handle_general_ack (
+			&match_count,
+			&reason_v5,
+			mqtt_data,
+			connection,
+			packet,
+			1 // <-- Delete if found
+	);
+}
+
 int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
+	int ret = RRR_MQTT_CONN_OK;
+
+	RRR_MQTT_P_LOCK(packet);
+
+	struct rrr_mqtt_p_pubrec *pubrec = (struct rrr_mqtt_p_pubrec *) packet;
+	struct rrr_mqtt_p_pubrel *pubrel = NULL;
+
+	uint8_t reason_v5;
+
+	unsigned int match_count = 0;
+	ret = __rrr_mqtt_common_handle_general_ack (
+			&match_count,
+			&reason_v5,
+			mqtt_data,
+			connection,
+			packet,
+			0 // <-- Don't delete PUBLISH (connection notifies session when PUBREL is successfully sent)
+	);
+	if (ret != 0) {
+		if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
+			goto out;
+		}
+		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
+			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+		}
+		ret = RRR_MQTT_CONN_OK;
+		goto out_send_ack;
+	}
+
+	if (match_count != 1) {
+		VL_BUG("match_count was not 1 in rrr_mqtt_common_handle_pubrec, session system should have triggered an error\n");
+	}
+
+	out_send_ack:
+	pubrel = (struct rrr_mqtt_p_pubrel *) rrr_mqtt_p_allocate (
+			RRR_MQTT_P_TYPE_PUBREL,
+			packet->protocol_version
+	);
+	if (pubrel == NULL) {
+		VL_MSG_ERR("Could not allocate PUBREL in __rrr_mqtt_broker_handle_pubrec\n");
+		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(pubrel);
+
+	pubrel->reason_v5 = reason_v5;
+	pubrel->packet_identifier = pubrec->packet_identifier;
+
+	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) pubrel)) != 0) {
+		VL_MSG_ERR("Error while sending ACK for PUBREC packet (PUBREL) in __rrr_mqtt_common_handle_pubrec\n");
+		goto out_unlock_pubrel;
+	}
+
+	if (pubrel->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
+	}
+
+	out_unlock_pubrel:
+		RRR_MQTT_P_UNLOCK(pubrel);
+	out:
+		RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
@@ -569,8 +694,16 @@ int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 int rrr_mqtt_common_handle_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
-	return ret;
+	unsigned int match_count = 0;
+	uint8_t reason_v5 = 0;
+	return __rrr_mqtt_common_handle_general_ack (
+			&match_count,
+			&reason_v5,
+			mqtt_data,
+			connection,
+			packet,
+			1 // <-- Delete if found
+	);
 }
 
 int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {

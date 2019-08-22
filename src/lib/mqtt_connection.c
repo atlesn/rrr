@@ -194,14 +194,15 @@ int __rrr_mqtt_connection_collection_write_to_read_lock (struct rrr_mqtt_conn_co
 	return ret;
 }
 
-static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat) {
+static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_CONN_OK;
 
 	if (no_repeat == 0 || connection->last_event != event) {
 		ret = connection->collection->event_handler (
 				connection,
 				event,
-				connection->collection->event_handler_arg
+				connection->collection->event_handler_static_arg,
+				arg
 		);
 		connection->last_event = event;
 	}
@@ -209,11 +210,14 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
 	return ret;
 }
 
+#define CALL_EVENT_HANDLER_ARG(event, arg) \
+		__rrr_mqtt_connection_call_event_handler(connection, event, 0, arg)
+
 #define CALL_EVENT_HANDLER(event) \
-		__rrr_mqtt_connection_call_event_handler(connection, event, 0)
+		__rrr_mqtt_connection_call_event_handler(connection, event, 0, NULL)
 
 #define CALL_EVENT_HANDLER_NO_REPEAT(event)	\
-		__rrr_mqtt_connection_call_event_handler(connection, event, 1)
+		__rrr_mqtt_connection_call_event_handler(connection, event, 1, NULL)
 
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_mqtt_conn *connection,
@@ -242,7 +246,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 
 	RRR_MQTT_P_LOCK(disconnect);
 
-	disconnect->disconnect_reason_code = reason;
+	disconnect->reason_v5 = reason;
 
 	// If a CONNACK is sent, we must not sent DISCONNECT packet
 	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
@@ -438,7 +442,7 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 int rrr_mqtt_conn_collection_init (
 		struct rrr_mqtt_conn_collection *connections,
 		int max_connections,
-		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg),
+		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg
 ) {
 	int ret = RRR_MQTT_CONN_OK;
@@ -450,7 +454,7 @@ int rrr_mqtt_conn_collection_init (
 	connections->readers = 0;
 	connections->write_locked = 0;
 	connections->event_handler = event_handler;
-	connections->event_handler_arg = event_handler_arg;
+	connections->event_handler_static_arg = event_handler_arg;
 	connections->max = max_connections;
 
 	if ((ret = pthread_mutex_init (&connections->lock, 0)) != 0) {
@@ -1090,7 +1094,7 @@ int rrr_mqtt_conn_iterator_ctx_check_finalize (
 
 		struct rrr_mqtt_p *packet;
 		ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
-		if (rrr_mqtt_p_get_refcount(packet) != 1) {
+		if (rrr_mqtt_p_standardized_get_refcount(packet) != 1) {
 			VL_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
 		}
 
@@ -1220,6 +1224,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	int ret = RRR_MQTT_CONN_OK;
 	int ret_destroy = 0;
 
+	struct rrr_mqtt_p_payload *payload = NULL;
 	char *network_data = NULL;
 	ssize_t network_size = 0;
 
@@ -1270,24 +1275,30 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	struct rrr_mqtt_p_header header = {0};
 	ssize_t variable_int_length = 0;
+	ssize_t payload_length = 0;
+	payload = packet->payload;
+	if (payload != NULL) {
+		RRR_MQTT_P_LOCK(packet->payload);
+		payload_length = packet->payload->length;
+	}
 
 	if ((ret = __rrr_mqtt_connection_create_variable_int (
 			header.length,
 			&variable_int_length,
-			packet->assembled_data_size + (packet->payload != NULL ? packet->payload->payload_length : 0)
+			packet->assembled_data_size + payload_length
 	)) != 0) {
 		VL_MSG_ERR("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
 	header.type = RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
 
-	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + (packet->payload != NULL ? packet->payload->payload_length : 0);
+	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
 
 	VL_DEBUG_MSG_3("Sending packet of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li\n",
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			variable_int_length,
 			packet->assembled_data_size,
-			(packet->payload != NULL ? packet->payload->payload_length : 0),
+			payload_length,
 			total_size
 	);
 
@@ -1302,16 +1313,28 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			goto out;
 		}
 	}
-	else if (packet->payload != NULL) {
+	else if (payload != NULL) {
 		VL_BUG("Payload was present without variable header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 	}
 
-	if (packet->payload != NULL) {
-		if (packet->payload->payload_length == 0) {
+	if (payload != NULL) {
+		if (payload_length == 0) {
 			VL_BUG("Payload size was 0 but payload pointer was not NULL in __rrr_mqtt_connection_send_packets_callback\n");
 		}
-		if ((ret = __rrr_mqtt_connection_write (connection, packet->payload->payload_start, packet->payload->payload_length)) != 0) {
+		if ((ret = __rrr_mqtt_connection_write (connection, payload->payload_start, payload->length)) != 0) {
 			VL_MSG_ERR("Error while sending payload data in __rrr_mqtt_connection_send_packets_callback\n");
+			goto out;
+		}
+	}
+
+	if (RRR_MQTT_P_IS_ACK(packet)) {
+		RRR_MQTT_P_UNLOCK(packet);
+		ret = CALL_EVENT_HANDLER_ARG(RRR_MQTT_CONN_EVENT_ACK_SENT, packet);
+		RRR_MQTT_P_LOCK(packet);
+		if (ret != RRR_MQTT_CONN_OK) {
+			VL_MSG_ERR("Error from event handler in rrr_mqtt_conn_iterator_ctx_send_packet " \
+					"while handling ACK packet, return was %i\n",
+					ret);
 			goto out;
 		}
 	}
@@ -1329,6 +1352,9 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	packet->last_attempt = time_get_64();
 
 	out:
+	if (payload != NULL) {
+		RRR_MQTT_P_UNLOCK(packet->payload);
+	}
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
 }
@@ -1419,7 +1445,7 @@ int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
 ) {
-	if (rrr_mqtt_p_get_refcount(packet) < 2) {
+	if (rrr_mqtt_p_standardized_get_refcount(packet) < 2) {
 		VL_BUG("Refcount for packet too small to proceed safely in rrr_mqtt_connection_queue_outbound_packet_iterator_ctx\n");
 	}
 	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
@@ -1507,7 +1533,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 		}
 
 		RRR_MQTT_CONN_STATE_SET (connection,
-				RRR_MQTT_P_CONNACK_GET_REASON_V5(packet) == RRR_MQTT_P_5_REASON_OK
+				RRR_MQTT_P_GET_REASON_V5(packet) == RRR_MQTT_P_5_REASON_OK
 					? RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED | RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED
 					: RRR_MQTT_CONN_STATE_DISCONNECT_WAIT
 		);

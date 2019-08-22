@@ -31,6 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_subscription.h"
 #include "vl_time.h"
 #include "linked_list.h"
+#include "mqtt_id_pool.h"
+
+struct rrr_mqtt_session_collection_ram_data;
 
 struct rrr_mqtt_session_ram {
 	// MUST be first
@@ -38,12 +41,16 @@ struct rrr_mqtt_session_ram {
 
 	RRR_LINKED_LIST_NODE(struct rrr_mqtt_session_ram);
 
+	struct rrr_mqtt_session_collection_ram_data *ram_data;
+
 	// When updated, global collection lock must be held
 	int users;
 	pthread_mutex_t lock;
 
+	struct rrr_mqtt_p_queue qos2_queue;
 	struct rrr_mqtt_p_queue send_queue;
-	uint16_t packet_identifier_counter;
+
+	struct rrr_mqtt_id_pool id_pool;
 
 	char *client_id;
 
@@ -58,6 +65,7 @@ struct rrr_mqtt_session_ram {
 };
 
 struct rrr_mqtt_session_collection_ram_data {
+	RRR_MQTT_SESSION_COLLECTION_HEAD;
 	pthread_mutex_t lock;
 	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_session_ram);
 	struct rrr_mqtt_p_queue retain_queue;
@@ -72,7 +80,7 @@ struct rrr_mqtt_session_collection_ram_data {
 
 #define SESSION_RAM_INCREF_OR_RETURN() \
 	do { \
-		struct rrr_mqtt_session_collection_ram_data *ram_data = (collection)->private_data; \
+		struct rrr_mqtt_session_collection_ram_data *ram_data = (struct rrr_mqtt_session_collection_ram_data *)(collection); \
 		struct rrr_mqtt_session_ram *ram_session = __rrr_mqtt_session_collection_ram_session_find_and_incref(ram_data, (*session_to_find)); \
 		if (ram_session == NULL) { \
 			*session_to_find = NULL; \
@@ -89,8 +97,7 @@ struct rrr_mqtt_session_collection_ram_data {
 #define SESSION_RAM_UNLOCK() \
 	pthread_mutex_unlock(&ram_session->lock); } while(0)
 
-
-int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
+static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		struct rrr_mqtt_session_ram **target,
 		struct rrr_mqtt_session_collection_ram_data *data,
 		const char *client_id
@@ -109,16 +116,22 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 	memset(result, '\0', sizeof(*result));
 
 	if (fifo_buffer_init_custom_free(&result->send_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
-		VL_MSG_ERR("Could not initialize buffer in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
+		VL_MSG_ERR("Could not initialize send buffer in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out_free_result;
+	}
+
+	if (fifo_buffer_init_custom_free(&result->qos2_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
+		VL_MSG_ERR("Could not initialize qos2 buffer in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_send_buffer;
 	}
 
 	result->client_id = malloc(strlen(client_id) + 1);
 	if (result->client_id == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked B\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out_destroy_buffer;
+		goto out_destroy_qos2_buffer;
 	}
 	strcpy (result->client_id, client_id);
 
@@ -134,7 +147,14 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		goto out_destroy_subscriptions;
 	}
 
+	if (rrr_mqtt_id_pool_init(&result->id_pool) != 0) {
+		VL_MSG_ERR("Could not initialize ID pool in __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_lock;
+	}
+
 	result->users = 1;
+	result->ram_data = data;
 
 	RRR_LINKED_LIST_PUSH(data,result);
 
@@ -142,13 +162,15 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	goto out;
 
+	out_destroy_lock:
+		pthread_mutex_destroy(&result->lock);
 	out_destroy_subscriptions:
 		rrr_mqtt_subscription_collection_destroy(result->subscriptions);
-
 	out_free_client_id:
 		free(result->client_id);
-
-	out_destroy_buffer:
+	out_destroy_qos2_buffer:
+		fifo_buffer_invalidate(&result->qos2_queue.buffer);
+	out_destroy_send_buffer:
 		fifo_buffer_invalidate(&result->send_queue.buffer);
 //	TODO : Implement
 //	fifo_buffer_destroy(&result->send_queue.buffer);
@@ -163,21 +185,46 @@ int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		return ret;
 }
 
-static int __rrr_mqtt_session_ram_decref_unlocked (struct rrr_mqtt_session_ram *session) {
+static int __clear_packed_id_release_func_callback (FIFO_CALLBACK_ARGS) {
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+
+	(void)(size);
+	(void)(callback_data);
+
+	RRR_MQTT_P_CLEAR_POOL_ID(packet);
+
+	return FIFO_OK;
+}
+
+static int __rrr_mqtt_session_ram_decref_unlocked (
+		struct rrr_mqtt_session_ram *session
+) {
 	if (--(session->users) >= 1) {
 		return 0;
 	}
 	if (session->users < 0) {
 		VL_BUG("users was < 0 in __rrr_mqtt_session_ram_destroy_unlocked\n");
 	}
-	pthread_mutex_destroy(&session->lock);
-	rrr_mqtt_subscription_collection_destroy(session->subscriptions);
+
+	// Remove the packet ID free functions as the packets might call back in the
+	// session system to release packet ID when they are destroyed, which cause
+	// deadlock with main session collection lock. The whole ID pool is to be
+	// destroyed here anyway, not need for the packets to release IDs.
+	fifo_buffer_invalidate_with_callback(&session->send_queue.buffer, __clear_packed_id_release_func_callback, NULL);
+	fifo_buffer_invalidate_with_callback(&session->qos2_queue.buffer, __clear_packed_id_release_func_callback, NULL);
+	//  TODO : Look into proper destruction of the buffer mutexes.
+	//	fifo_buffer_destroy(&session->send_queue.buffer);
+
 	RRR_FREE_IF_NOT_NULL(session->client_id);
-	fifo_buffer_invalidate(&session->send_queue.buffer);
-//  TODO : Look into proper destruction of the buffer mutexes.
-//	fifo_buffer_destroy(&session->send_queue.buffer);
+
+	rrr_mqtt_subscription_collection_destroy(session->subscriptions);
 	rrr_mqtt_session_properties_destroy(&session->session_properties);
+	rrr_mqtt_id_pool_destroy(&session->id_pool);
+
+	pthread_mutex_destroy(&session->lock);
+
 	free(session);
+
 	return 0;
 }
 
@@ -195,6 +242,136 @@ struct receive_forwarded_publish_data {
 	struct rrr_mqtt_session_ram *session;
 };
 
+static void __rrr_mqtt_session_collection_remove (
+		struct rrr_mqtt_session_collection_ram_data *data,
+		struct rrr_mqtt_session_ram *session
+) {
+	SESSION_COLLECTION_RAM_LOCK(data);
+
+	RRR_LINKED_LIST_REMOVE_NODE (
+			data,
+			struct rrr_mqtt_session_ram,
+			session,
+			__rrr_mqtt_session_ram_decref_unlocked(node)
+	);
+
+	SESSION_COLLECTION_RAM_UNLOCK(data);
+
+	if (session != NULL) {
+		VL_BUG("Session not found in __rrr_mqtt_session_collection_remove_unlocked\n");
+	}
+}
+
+static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_session_unlocked (
+		struct rrr_mqtt_session_collection_ram_data *data,
+		const char *client_id
+) {
+	struct rrr_mqtt_session_ram *result = NULL;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		if (strcmp(node->client_id, client_id) == 0) {
+			if (result != NULL) {
+				VL_BUG("Found two equal client ids in __rrr_mqtt_session_collection_ram_find_session_unlocked\n");
+			}
+			result = node;
+		}
+	RRR_LINKED_LIST_ITERATE_END(data);
+
+
+	return result;
+}
+
+static void __rrr_mqtt_session_ram_heartbeat_unlocked (
+		struct rrr_mqtt_session_ram *ram_session
+) {
+	ram_session->last_seen = time_get_64();
+}
+
+static int __rrr_mqtt_session_collection_ram_get_session (
+		struct rrr_mqtt_session **target,
+		struct rrr_mqtt_session_collection *sessions,
+		const char *client_id,
+		int *session_present,
+		int no_creation
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
+
+	int ret = RRR_MQTT_SESSION_OK;
+
+	*target = NULL;
+	*session_present = 0;
+
+	struct rrr_mqtt_session_ram *result = NULL;
+
+	SESSION_COLLECTION_RAM_LOCK(data);
+	result = __rrr_mqtt_session_collection_ram_find_session_unlocked (data, client_id);
+
+	if (result != NULL) {
+		*session_present = 1;
+	}
+	else if (no_creation == 0) {
+		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (&result, data, client_id);
+		if (ret != RRR_MQTT_SESSION_OK) {
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out_unlock;
+		}
+	}
+
+	VL_DEBUG_MSG_1("Got a session, session present was %i and no creation was %i\n",
+			*session_present, no_creation);
+
+	__rrr_mqtt_session_ram_heartbeat_unlocked(result);
+
+	*target = (struct rrr_mqtt_session *) result;
+
+	out_unlock:
+	SESSION_COLLECTION_RAM_UNLOCK(data);
+
+	return ret;
+}
+
+static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_find_and_incref (
+		struct rrr_mqtt_session_collection_ram_data *data,
+		struct rrr_mqtt_session *session
+) {
+	struct rrr_mqtt_session_ram *found = NULL;
+
+	SESSION_COLLECTION_RAM_LOCK(data);
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+		if ((void*) node == (void*) session) {
+			__rrr_mqtt_session_ram_incref_unlocked(node);
+			found = node;
+			RRR_LINKED_LIST_SET_STOP();
+		}
+	RRR_LINKED_LIST_ITERATE_END(data);
+
+	SESSION_COLLECTION_RAM_UNLOCK(data);
+
+	return found;
+}
+
+static int __rrr_mqtt_session_ram_release_packet_id (
+		void *arg1,
+		void *arg2,
+		uint16_t packet_id
+) {
+	struct rrr_mqtt_session_collection *collection = arg1;
+	struct rrr_mqtt_session *session = arg2;
+	struct rrr_mqtt_session **session_to_find = &session;
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+	SESSION_RAM_LOCK();
+
+	rrr_mqtt_id_pool_release_id(&ram_session->id_pool, packet_id);
+
+	SESSION_RAM_UNLOCK();
+	SESSION_RAM_DECREF();
+	return ret;
+
+}
+
 static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		const struct rrr_mqtt_p_publish *publish,
 		const struct rrr_mqtt_subscription *subscription,
@@ -211,10 +388,16 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		return RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
-	uint16_t packet_identifier = ++(session->packet_identifier_counter);
-
 	RRR_MQTT_P_LOCK(new_publish);
-	new_publish->packet_identifier = packet_identifier;
+
+	uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(&session->id_pool);
+	RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (
+			new_publish,
+			packet_identifier,
+			__rrr_mqtt_session_ram_release_packet_id,
+			session->ram_data,
+			session
+	);
 
 	if (new_publish->qos > subscription->qos_or_reason_v5) {
 		new_publish->qos = subscription->qos_or_reason_v5;
@@ -284,7 +467,10 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (FIFO_CA
 		}
 		RRR_MQTT_P_UNLOCK(publish);
 		RRR_MQTT_P_DECREF(publish);
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(ram_data, __rrr_mqtt_session_ram_decref_unlocked(node));
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(
+			ram_data,
+			__rrr_mqtt_session_ram_decref_unlocked(node)
+	);
 
 	SESSION_COLLECTION_RAM_UNLOCK(ram_data);
 
@@ -296,10 +482,9 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (FIFO_CA
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
 ) {
-	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	int ret = RRR_MQTT_SESSION_OK;
-
 
 	uint64_t time_now = time_get_64();
 
@@ -327,7 +512,10 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 					node->client_id);
 			RRR_LINKED_LIST_SET_DESTROY();
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(data, __rrr_mqtt_session_ram_decref_unlocked(node));
+	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY (
+			data,
+			__rrr_mqtt_session_ram_decref_unlocked(node)
+	);
 
 	out_unlock:
 	SESSION_COLLECTION_RAM_UNLOCK(data);
@@ -336,129 +524,24 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 }
 
 static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_collection *sessions) {
-	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	SESSION_COLLECTION_RAM_LOCK(data);
 	fifo_buffer_invalidate(&data->retain_queue.buffer);
 	// TODO : implement destroy
 	// fifo_buffer_destroy(&data->retain_queue);
-	RRR_LINKED_LIST_DESTROY(data, struct rrr_mqtt_session_ram, __rrr_mqtt_session_ram_decref_unlocked(node));
+	RRR_LINKED_LIST_DESTROY (
+			data,
+			struct rrr_mqtt_session_ram,
+			__rrr_mqtt_session_ram_decref_unlocked(node)
+	);
 	SESSION_COLLECTION_RAM_UNLOCK(data);
 
 	pthread_mutex_destroy(&data->lock);
 
-	RRR_FREE_IF_NOT_NULL(sessions->private_data);
-
 	rrr_mqtt_session_collection_destroy(sessions);
-}
 
-static void __rrr_mqtt_session_collection_remove (
-		struct rrr_mqtt_session_collection_ram_data *data,
-		struct rrr_mqtt_session_ram *session
-) {
-	SESSION_COLLECTION_RAM_LOCK(data);
-
-	RRR_LINKED_LIST_REMOVE_NODE (
-			data,
-			struct rrr_mqtt_session_ram,
-			session,
-			__rrr_mqtt_session_ram_decref_unlocked(node)
-	);
-
-	SESSION_COLLECTION_RAM_UNLOCK(data);
-
-	if (session != NULL) {
-		VL_BUG("Session not found in __rrr_mqtt_session_collection_remove_unlocked\n");
-	}
-}
-
-static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_session_unlocked (
-		struct rrr_mqtt_session_collection_ram_data *data,
-		const char *client_id
-) {
-	struct rrr_mqtt_session_ram *result = NULL;
-
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		if (strcmp(node->client_id, client_id) == 0) {
-			if (result != NULL) {
-				VL_BUG("Found two equal client ids in __rrr_mqtt_session_collection_ram_find_session_unlocked\n");
-			}
-			result = node;
-		}
-	RRR_LINKED_LIST_ITERATE_END(data);
-
-
-	return result;
-}
-
-static void __rrr_mqtt_session_ram_heartbeat_unlocked (
-		struct rrr_mqtt_session_ram *ram_session
-) {
-	ram_session->last_seen = time_get_64();
-}
-
-static int __rrr_mqtt_session_collection_ram_get_session (
-		struct rrr_mqtt_session **target,
-		struct rrr_mqtt_session_collection *sessions,
-		const char *client_id,
-		int *session_present,
-		int no_creation
-) {
-	struct rrr_mqtt_session_collection_ram_data *data = sessions->private_data;
-
-	int ret = RRR_MQTT_SESSION_OK;
-
-	*target = NULL;
-	*session_present = 0;
-
-	struct rrr_mqtt_session_ram *result = NULL;
-
-	SESSION_COLLECTION_RAM_LOCK(data);
-	result = __rrr_mqtt_session_collection_ram_find_session_unlocked (data, client_id);
-
-	if (result != NULL) {
-		*session_present = 1;
-	}
-	else if (no_creation == 0) {
-		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (&result, data, client_id);
-		if (ret != RRR_MQTT_SESSION_OK) {
-			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-			goto out_unlock;
-		}
-	}
-
-	VL_DEBUG_MSG_1("Got a session, session present was %i and no creation was %i\n",
-			*session_present, no_creation);
-
-	__rrr_mqtt_session_ram_heartbeat_unlocked(result);
-
-	*target = (struct rrr_mqtt_session *) result;
-
-	out_unlock:
-	SESSION_COLLECTION_RAM_UNLOCK(data);
-
-	return ret;
-}
-
-static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_find_and_incref (
-		struct rrr_mqtt_session_collection_ram_data *data,
-		struct rrr_mqtt_session *session
-) {
-	struct rrr_mqtt_session_ram *found = NULL;
-
-	SESSION_COLLECTION_RAM_LOCK(data);
-
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		if ((void*) node == (void*) session) {
-			__rrr_mqtt_session_ram_incref_unlocked(node);
-			found = node;
-			RRR_LINKED_LIST_SET_STOP();
-		}
-	RRR_LINKED_LIST_ITERATE_END(data);
-
-	SESSION_COLLECTION_RAM_UNLOCK(data);
-
-	return found;
+	free(sessions);
 }
 
 static int __rrr_mqtt_session_ram_init (
@@ -489,6 +572,9 @@ static int __rrr_mqtt_session_ram_init (
 	if (clean_session == 1) {
 		*session_was_present = 0;
 		if (fifo_buffer_clear(&ram_session->send_queue.buffer) != 0) {
+			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
+		}
+		if (fifo_buffer_clear(&ram_session->qos2_queue.buffer) != 0) {
 			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
 		}
 		rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
@@ -522,7 +608,8 @@ static int __rrr_mqtt_session_ram_heartbeat (
 struct ram_process_ack_callback_data {
 	struct rrr_mqtt_p *ack_packet;
 	uint8_t find_packet_type;
-	int found;
+	unsigned int found;
+	int delete_if_found;
 };
 
 static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
@@ -536,14 +623,116 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 	if (	(RRR_MQTT_P_GET_TYPE(packet) == ack_callback_data->find_packet_type) &&
 			(RRR_MQTT_P_GET_IDENTIFIER(packet) == RRR_MQTT_P_GET_IDENTIFIER(ack_callback_data->ack_packet))
 	) {
-		ret = FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE;
+		if (ack_callback_data->delete_if_found == 1) {
+			ret = FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE;
+			RRR_MQTT_P_LOCK(packet);
+			RRR_MQTT_P_MOVE_POOL_ID(ack_callback_data->ack_packet, packet);
+			RRR_MQTT_P_UNLOCK(packet);
+		}
 		ack_callback_data->found++;
 	}
 
 	return ret;
 }
 
+static int __rrr_mqtt_session_ram_process_iterate_ack (
+		unsigned int *match_count,
+		struct rrr_mqtt_p_queue *queue,
+		struct rrr_mqtt_p *packet,
+		int delete_if_found
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct ram_process_ack_callback_data callback_data = {
+			packet,
+			RRR_MQTT_P_GET_COMPLEMENTARY(packet),
+			0, // Initialize found counter
+			delete_if_found
+	};
+	struct fifo_callback_args fifo_callback_data = {NULL, &callback_data, 0};
+
+	ret = fifo_search (
+			&queue->buffer,
+			__rrr_mqtt_session_ram_process_ack_callback,
+			&fifo_callback_data,
+			0
+	);
+
+	// We must always return match count also on errors
+	*match_count = callback_data.found;
+
+	if (ret != FIFO_OK) {
+		if ((ret & FIFO_GLOBAL_ERR) != 0) {
+			VL_MSG_ERR("Internal error while searching send buffer in __rrr_mqtt_session_ram_process_ack\n");
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out;
+		}
+		VL_MSG_ERR("Soft error while searching send buffer in __rrr_mqtt_session_ram_process_ack\n");
+		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_session_ram_receive_ack (
+		unsigned int *match_count,
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find,
+		struct rrr_mqtt_p *packet,
+		int delete_if_found
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+	RRR_MQTT_P_LOCK(packet);
+
+	if (!RRR_MQTT_P_IS_ACK(packet)) {
+		VL_BUG("Received non-ACK packet in __rrr_mqtt_session_ram_process_ack\n");
+	}
+
+	VL_DEBUG_MSG_3("Processing ACK packet with identifier %u of type %s\n",
+			RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
+
+	struct rrr_mqtt_p_queue *queue_to_use = NULL;
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREL ||
+		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBCOMP
+	) {
+		queue_to_use = &ram_session->qos2_queue;
+	}
+	else {
+		queue_to_use = &ram_session->send_queue;
+	}
+
+	if ((ret = __rrr_mqtt_session_ram_process_iterate_ack (
+			match_count,
+			queue_to_use,
+			packet,
+			delete_if_found
+	)) != 0) {
+		VL_MSG_ERR("Error while iterating send queue in __rrr_mqtt_session_ram_receive_ack\n");
+		goto out;
+	}
+
+	if (*match_count > 1) {
+		VL_BUG("Two packets with the same identifier %u matched while processing in __rrr_mqtt_session_ram_process_ack\n",
+				RRR_MQTT_P_GET_IDENTIFIER(packet));
+	}
+	else if (*match_count == 0) {
+		VL_MSG_ERR("No packet with identifier %u matched while processing ACK packet of type %s\n",
+				RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
+		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
+	}
+
+	out:
+	RRR_MQTT_P_UNLOCK(packet);
+	SESSION_RAM_DECREF();
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_notify_ack_sent (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p *packet
@@ -557,43 +746,28 @@ static int __rrr_mqtt_session_ram_receive_ack (
 		VL_BUG("Received non-ACK packet in __rrr_mqtt_session_ram_process_ack\n");
 	}
 
-	VL_DEBUG_MSG_3("Processing ACK packet with idientifier %u of type %s\n",
-			RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREL) {
+		unsigned int match_count = 0;
 
-	struct ram_process_ack_callback_data callback_data = {
-			packet,
-			RRR_MQTT_P_GET_COMPLEMENTARY(packet),
-			0
-	};
-	struct fifo_callback_args fifo_callback_data = {NULL, &callback_data, 0};
-
-	ret = fifo_search (
-			&ram_session->send_queue.buffer,
-			__rrr_mqtt_session_ram_process_ack_callback,
-			&fifo_callback_data,
-			0
-	);
-
-	if (ret != FIFO_OK) {
-		if (ret == FIFO_GLOBAL_ERR) {
-			VL_MSG_ERR("Internal error while searching send buffer in __rrr_mqtt_session_ram_process_ack\n");
-			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		if ((ret = __rrr_mqtt_session_ram_process_iterate_ack (
+				&match_count,
+				&ram_session->send_queue,
+				packet,
+				1
+		)) != 0) {
+			VL_MSG_ERR("Error while iterating send queue in __rrr_mqtt_session_ram_notify_ack_sent\n");
 			goto out;
 		}
-		VL_MSG_ERR("Soft error while searching send buffer in __rrr_mqtt_session_ram_process_ack\n");
-		ret = RRR_MQTT_SESSION_ERROR;
-		goto out;
-	}
 
-	if (callback_data.found > 1) {
-		VL_BUG("Two packets with the same identifier %u matched while processing in __rrr_mqtt_session_ram_process_ack\n",
-				RRR_MQTT_P_GET_IDENTIFIER(packet));
-	}
-	else if (callback_data.found == 0) {
-		VL_MSG_ERR("No packet with identifier %u matched while processing ACK packet of type %s\n",
-				RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
-		ret = RRR_MQTT_SESSION_ERROR;
-		goto out;
+		if (match_count == 0) {
+			VL_MSG_ERR("No matching publish packet found for %s packet in __rrr_mqtt_session_ram_notify_ack_sent\n",
+					RRR_MQTT_P_GET_TYPE_NAME(packet));
+			ret = RRR_MQTT_SESSION_ERROR;
+			goto out;
+		}
+
+		RRR_MQTT_P_INCREF(packet);
+		fifo_buffer_write_ordered(&ram_session->send_queue.buffer, packet->packet_identifier, (char*) packet, sizeof(*packet));
 	}
 
 	out:
@@ -623,7 +797,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 	int do_send = iterate_callback_data->force;
 
 	packet->dup = 0;
-	if (time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec) {
+	if (packet->last_attempt == 0) {
+		do_send = 1;
+	}
+	else if (time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec) {
 		do_send = 1;
 		packet->dup = 1;
 	}
@@ -772,6 +949,42 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 	return ret;
 }
 
+struct find_qos2_publish_data {
+	struct rrr_mqtt_p_publish *publish;
+	struct rrr_mqtt_p_publish *publish_in_buffer;
+};
+
+static int __rrr_mqtt_session_ram_find_qos2_publish_callback (FIFO_CALLBACK_ARGS) {
+	int ret = FIFO_OK;
+
+	(void)(size);
+
+	struct find_qos2_publish_data *qos2_publish_data = callback_data->private_data;
+	struct rrr_mqtt_p_publish *publish_in_buffer = (struct rrr_mqtt_p_publish *) data;
+	struct rrr_mqtt_p_publish *publish_received = qos2_publish_data->publish;
+
+	if (RRR_MQTT_P_GET_TYPE(publish_in_buffer) != RRR_MQTT_P_TYPE_PUBLISH) {
+		VL_BUG("Non-PUBLISH packet %s in qos2 buffer in \n",
+				RRR_MQTT_P_GET_TYPE_NAME(publish_in_buffer));
+	}
+
+	if (publish_in_buffer->packet_identifier == publish_received->packet_identifier) {
+		RRR_MQTT_P_INCREF(publish_in_buffer);
+		qos2_publish_data->publish_in_buffer = publish_in_buffer;
+		goto out_stop;
+	}
+	else if (publish_in_buffer->packet_identifier > publish_received->packet_identifier) {
+		goto out_stop;
+	}
+
+	goto out;
+	out:
+		return ret;
+	out_stop:
+		return FIFO_SEARCH_STOP;
+
+}
+
 static int __rrr_mqtt_session_ram_receive_publish (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
@@ -780,12 +993,109 @@ static int __rrr_mqtt_session_ram_receive_publish (
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
+	RRR_MQTT_P_LOCK(publish);
 
-	RRR_MQTT_P_INCREF(publish);
-	fifo_buffer_delayed_write(&ram_data->publish_queue.buffer, (char*) publish, sizeof(*publish));
+	if (publish->qos < 2) {
+		RRR_MQTT_P_INCREF(publish);
+		fifo_buffer_delayed_write (
+				&ram_data->publish_queue.buffer,
+				(char*) publish,
+				sizeof(*publish)
+		);
+	}
+	else if (publish->qos == 2) {
+		struct find_qos2_publish_data callback_data = {
+				publish, NULL
+		};
 
+		struct fifo_callback_args fifo_callback_args = {
+				NULL, &callback_data, 0
+		};
+
+		// Callback will INCREF the packet it finds
+		int ret_tmp = fifo_read_minimum (
+				&ram_session->qos2_queue.buffer,
+				NULL,
+				__rrr_mqtt_session_ram_find_qos2_publish_callback,
+				&fifo_callback_args,
+				publish->packet_identifier - 1,
+				0
+		);
+		if (ret_tmp != 0) {
+			if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {
+				VL_MSG_ERR("Soft error while iterating QoS 2 publish queue in __rrr_mqtt_session_ram_receive_publish\n");
+				ret |= RRR_MQTT_SESSION_ERROR;
+				ret_tmp = ret_tmp & ~(FIFO_CALLBACK_ERR);
+			}
+			if (ret_tmp != 0) {
+				VL_MSG_ERR("Internal error in __rrr_mqtt_session_ram_receive_publish while iterating QoS 2 publish queue\n");
+				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			}
+			goto out_decref;
+		}
+
+		struct rrr_mqtt_p_publish *publish_in_buffer = callback_data.publish_in_buffer;
+
+		if (publish_in_buffer == NULL) {
+			if (publish->dup != 0) {
+				VL_MSG_ERR("Received a new QoS 2 PUBLISH packet which had DUP flag set\n");
+				ret = RRR_MQTT_SESSION_ERROR;
+				goto out_decref;
+			}
+			RRR_MQTT_P_INCREF(publish);
+			fifo_buffer_write_ordered (
+					&ram_session->qos2_queue.buffer,
+					publish->packet_identifier,
+					(char*) publish,
+					sizeof(*publish)
+			);
+		}
+		else {
+			VL_DEBUG_MSG_1("Received duplicate PUBLISH message");
+
+			RRR_MQTT_P_LOCK(publish_in_buffer);
+
+			if (publish_in_buffer->payload != NULL) {
+				RRR_MQTT_P_LOCK(publish_in_buffer->payload);
+			}
+			if (publish->payload != NULL) {
+				RRR_MQTT_P_LOCK(publish->payload);
+			}
+
+			if ((((publish_in_buffer->payload != NULL) ^ (publish->payload != NULL)) == 1) ||
+				(publish_in_buffer->payload != NULL && (publish_in_buffer->payload->length != publish->payload->length))
+			) {
+				VL_MSG_ERR("Received a QoS 2 PUBLISH packet with equal id to another packet of different size\n");
+				ret = RRR_MQTT_SESSION_ERROR;
+				goto unlock_payload;
+			}
+			if (publish->dup != 1) {
+				VL_MSG_ERR("Received a re-sent QoS 2 PUBLISH packet which did not have DUP flag set\n");
+				ret = RRR_MQTT_SESSION_ERROR;
+				goto unlock_payload;
+			}
+
+			unlock_payload:
+			if (publish_in_buffer->payload != NULL) {
+				RRR_MQTT_P_UNLOCK(publish_in_buffer->payload);
+			}
+			if (publish->payload != NULL) {
+				RRR_MQTT_P_UNLOCK(publish->payload);
+			}
+
+			RRR_MQTT_P_UNLOCK(publish_in_buffer);
+			RRR_MQTT_P_DECREF(publish_in_buffer);
+
+			goto out_decref;
+		}
+	}
+	else {
+		VL_BUG("Invalid QoS %u in __rrr_mqtt_session_ram_receive_publish\n", publish->qos);
+	}
+
+	out_decref:
+	RRR_MQTT_P_UNLOCK(publish);
 	SESSION_RAM_DECREF();
-
 	return ret;
 }
 
@@ -796,6 +1106,7 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_init,
 		__rrr_mqtt_session_ram_heartbeat,
 		__rrr_mqtt_session_ram_receive_ack,
+		__rrr_mqtt_session_ram_notify_ack_sent,
 		__rrr_mqtt_session_ram_iterate_send_queue,
 		__rrr_mqtt_session_ram_notify_disconnect,
 		__rrr_mqtt_session_ram_add_subscriptions,
@@ -809,29 +1120,28 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		VL_BUG("arg was not NULL in rrr_mqtt_session_collection_ram_new\n");
 	}
 
-	struct rrr_mqtt_session_collection *res = NULL;
-	if (rrr_mqtt_session_collection_new (
-			&res,
-			&methods
-	) != 0) {
-		VL_MSG_ERR("Could not create session collection in rrr_mqtt_session_collection_ram_new\n");
-		ret = 1;
-		goto out;
-	}
-
 	struct rrr_mqtt_session_collection_ram_data *ram_data = malloc(sizeof(*ram_data));
 	if (ram_data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;
-		goto out_destroy_collection;
+		goto out;
 	}
 
 	memset (ram_data, '\0', sizeof(*ram_data));
 
+	if (rrr_mqtt_session_collection_init (
+			(struct rrr_mqtt_session_collection *) ram_data,
+			&methods
+	) != 0) {
+		VL_MSG_ERR("Could not initialize session collection in rrr_mqtt_session_collection_ram_new\n");
+		ret = 1;
+		goto out_destroy_ram_data;
+	}
+
 	if (pthread_mutex_init(&ram_data->lock, 0) != 0) {
 		VL_MSG_ERR("Could not initialize mutex in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;
-		goto out_destroy_ram_data;
+		goto out_destroy_collection;
 	}
 
 	if (fifo_buffer_init_custom_free(&ram_data->retain_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
@@ -846,22 +1156,22 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		goto out_destroy_retain_queue;
 	}
 
-	res->private_data = ram_data;
-
-	*sessions = res;
+	*sessions = (struct rrr_mqtt_session_collection *) ram_data;
 
 	goto out;
 
+/*	out_destroy_publish_queue:
+		fifo_buffer_invalidate(&ram_data->publish_queue.buffer);*/
 	out_destroy_retain_queue:
 		fifo_buffer_invalidate(&ram_data->retain_queue.buffer);
 		// TODO : Implement destroy
 		//fifo_buffer_destroy(&ram_data->retain_queue);
 	out_destroy_mutex:
 		pthread_mutex_destroy(&ram_data->lock);
+	out_destroy_collection:
+		rrr_mqtt_session_collection_destroy((struct rrr_mqtt_session_collection *)ram_data);
 	out_destroy_ram_data:
 		free(ram_data);
-	out_destroy_collection:
-		rrr_mqtt_session_collection_destroy(res);
 
 	out:
 	return ret;

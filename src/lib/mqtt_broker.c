@@ -666,7 +666,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_connect},
 	{NULL},
 	{rrr_mqtt_common_handle_publish},
-	{rrr_mqtt_common_handle_general_ack},
+	{rrr_mqtt_common_handle_puback},
 	{rrr_mqtt_common_handle_pubrec},
 	{rrr_mqtt_common_handle_pubrel},
 	{rrr_mqtt_common_handle_pubcomp},
@@ -680,8 +680,13 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_auth}
 };
 
-static int __rrr_mqtt_broker_event_handler (struct rrr_mqtt_conn *connection, int event, void *arg) {
-	struct rrr_mqtt_broker_data *data = arg;
+static int __rrr_mqtt_broker_event_handler (
+		struct rrr_mqtt_conn *connection,
+		int event,
+		void *static_arg,
+		void *arg
+) {
+	struct rrr_mqtt_broker_data *data = static_arg;
 
 	(void)(connection);
 
@@ -696,10 +701,21 @@ static int __rrr_mqtt_broker_event_handler (struct rrr_mqtt_conn *connection, in
 			}
 			pthread_mutex_unlock(&data->client_serial_and_count_lock);
 			break;
+		case RRR_MQTT_CONN_EVENT_ACK_SENT:
+			if ((ret = data->mqtt_data.sessions->methods->notify_ack_sent (
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) arg
+			)) != RRR_MQTT_SESSION_OK) {
+				VL_MSG_ERR("Error from session ACK notification function in __rrr_mqtt_broker_event_handler\n");
+				goto out;
+			}
+			break;
 		default:
 			break;
 	};
 
+	out:
 	return ret;
 }
 

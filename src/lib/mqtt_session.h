@@ -113,6 +113,17 @@ struct rrr_mqtt_session_collection_methods {
 	// Receive an ACK for a packet and remove it from the send queue.
 	// The ACK is not stored in the session, no reference counting is performed.
 	int (*receive_ack) (
+			unsigned int *match_count,
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p *packet,
+			int delete_if_found
+	);
+
+	// This is called when an ACK has been successfully transmitted. This goes
+	// for QoS2 PUBREL packages where we should delete the original PUBLISH
+	// after successful transmit of the PUBREL.
+	int (*notify_ack_sent) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
@@ -142,7 +153,8 @@ struct rrr_mqtt_session_collection_methods {
 	);
 
 	// Receive PUBLISH from the client. Session handler must distribute this to
-	// the other clients and/or retain it based on protocol rules.
+	// the other clients and/or retain it based on protocol rules. QoS 2 packets
+	// will be stored until handshakes are complete.
 	int (*receive_publish) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
@@ -150,11 +162,13 @@ struct rrr_mqtt_session_collection_methods {
 	);
 };
 
-struct rrr_mqtt_session_collection {
-	// Data pointer for downstream session engine
-	void *private_data;
+#define RRR_MQTT_SESSION_COLLECTION_HEAD \
+		const struct rrr_mqtt_session_collection_methods *methods
 
-	const struct rrr_mqtt_session_collection_methods *methods;
+struct rrr_mqtt_session_collection {
+	RRR_MQTT_SESSION_COLLECTION_HEAD;
+
+	// Private data follows
 };
 
 void rrr_mqtt_session_properties_destroy (
@@ -168,8 +182,8 @@ int rrr_mqtt_session_properties_clone (
 // DO NOT use this function directly. Call the provided destroy()-method
 void rrr_mqtt_session_collection_destroy (struct rrr_mqtt_session_collection *target);
 
-int rrr_mqtt_session_collection_new (
-		struct rrr_mqtt_session_collection **target,
+int rrr_mqtt_session_collection_init (
+		struct rrr_mqtt_session_collection *target,
 		const struct rrr_mqtt_session_collection_methods *methods
 );
 

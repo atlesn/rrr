@@ -183,18 +183,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	end = start + bytes_parsed
 
 #define PARSE_CHECK_ZERO_PAYLOAD()																\
-	payload_length = session->target_size - session->payload_pos;								\
+	do {payload_length = session->target_size - session->payload_pos;							\
 	if (payload_length < 0) {																	\
 		VL_BUG("Payload length was < 0 while parsing\n");										\
 	}																							\
 	if (payload_length == 0) {																	\
 		goto parse_done;																		\
-	}
+	}} while(0)
+
+#define PARSE_CHECK_NO_MORE_DATA()																\
+	do {if (PARSE_CHECK_TARGET_END()) {															\
+		goto header_complete;																	\
+	}} while (0)
 
 #define PARSE_PAYLOAD_SAVE_CHECKPOINT()															\
 	session->payload_checkpoint = end - session->buf
 
 #define PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(type)										\
+	goto header_complete;																		\
+	header_complete:																			\
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
 	PARSE_PAYLOAD_SAVE_CHECKPOINT();															\
 	session->payload_pos = end - session->buf;													\
@@ -208,7 +215,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	parse_done:																					\
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE);						\
 	RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE);				\
-	return ret;
+	return ret
 
 #define PARSE_END_NO_HEADER(type)																	\
 	if (!PARSE_CHECK_TARGET_END()) {																\
@@ -755,11 +762,8 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 		return RRR_MQTT_PARSE_INTERNAL_ERROR;
 	}
 
-	if (publish->qos == 1) {
+	if (publish->qos > 0) {
 		PARSE_PACKET_ID(publish);
-	}
-	else if (publish->qos > 1) {
-		VL_BUG("QoS > 1 not supported in rrr_mqtt_parse_publish\n");
 	}
 
 	PARSE_PROPERTIES_IF_V5(publish,properties);
@@ -789,31 +793,19 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_puback (struct rrr_mqtt_parse_session *session) {
-	PARSE_BEGIN(suback);
-
+// Parse PUBACK, PUBREC, PUBREL, PUBCOMP
+int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
+	PARSE_BEGIN(def_puback);
 	PARSE_REQUIRE_PROTOCOL_VERSION();
-	PARSE_ALLOCATE(suback);
-
-	PARSE_PACKET_ID(suback);
-
-	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback);
+	PARSE_ALLOCATE(def_puback);
+	PARSE_PACKET_ID(def_puback);
+	PARSE_CHECK_NO_MORE_DATA();
+	if (PARSE_CHECK_V5(def_puback)) {
+		PARSE_U8(def_puback,reason_v5);
+		PARSE_PROPERTIES_IF_V5(def_puback,properties);
+	}
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(def_puback);
 	PARSE_END_PAYLOAD();
-}
-
-int rrr_mqtt_parse_pubrec (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
-}
-
-int rrr_mqtt_parse_pubrel (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
-}
-
-int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
 }
 
 int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
@@ -954,7 +946,7 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 	}
 
 	PARSE_PREPARE(1);
-	disconnect->disconnect_reason_code = *((uint8_t*) start);
+	disconnect->reason_v5 = *((uint8_t*) start);
 
 	PARSE_PROPERTIES_IF_V5(disconnect,properties);
 

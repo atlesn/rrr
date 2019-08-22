@@ -91,10 +91,7 @@ struct rrr_mqtt_parse_session {
 int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session);
 int rrr_mqtt_parse_connack (struct rrr_mqtt_parse_session *session);
 int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session);
-int rrr_mqtt_parse_puback (struct rrr_mqtt_parse_session *session);
-int rrr_mqtt_parse_pubrec (struct rrr_mqtt_parse_session *session);
-int rrr_mqtt_parse_pubrel (struct rrr_mqtt_parse_session *session);
-int rrr_mqtt_parse_pubcomp (struct rrr_mqtt_parse_session *session);
+int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session);
 int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session);
 int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session);
 int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session);

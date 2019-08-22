@@ -330,6 +330,11 @@ void fifo_buffer_write(struct fifo_buffer *buffer, char *data, unsigned long int
 void fifo_buffer_delayed_write (struct fifo_buffer *buffer, char *data, unsigned long int size);
 void fifo_buffer_write_ordered(struct fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size);
 
+void fifo_buffer_invalidate_with_callback (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
+);
 void fifo_buffer_invalidate(struct fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 int fifo_buffer_init(struct fifo_buffer *buffer);

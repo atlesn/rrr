@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_CONN_EVENT_DISCONNECT		1
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
+#define RRR_MQTT_CONN_EVENT_ACK_SENT		3
 
 struct rrr_mqtt_data;
 struct rrr_mqtt_session;
@@ -131,8 +132,13 @@ struct rrr_mqtt_conn_collection {
 	int writers_waiting;
 	int write_locked;
 
-	int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg);
-	void *event_handler_arg;
+	int (*event_handler) (
+			struct rrr_mqtt_conn *connection,
+			int event,
+			void *static_arg,
+			void *arg
+	);
+	void *event_handler_static_arg;
 };
 
 #define RRR_MQTT_CONN_STATE_CONNECT_ALLOWED(c) \
@@ -193,7 +199,7 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 int rrr_mqtt_conn_collection_init (
 		struct rrr_mqtt_conn_collection *connections,
 		int max_connections,
-		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg),
+		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg
 );
 int rrr_mqtt_conn_collection_new_connection (

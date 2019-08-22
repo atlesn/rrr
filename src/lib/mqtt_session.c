@@ -60,32 +60,18 @@ int rrr_mqtt_session_properties_clone (
 }
 
 void rrr_mqtt_session_collection_destroy (struct rrr_mqtt_session_collection *target) {
-	if (target->private_data != NULL) {
-		VL_BUG("private data was not NULL in rrr_mqtt_session_collection_destroy\n");
-	}
-	free(target);
+	// Nothing to do
 }
 
-int rrr_mqtt_session_collection_new (
-		struct rrr_mqtt_session_collection **target,
+int rrr_mqtt_session_collection_init (
+		struct rrr_mqtt_session_collection *target,
 		const struct rrr_mqtt_session_collection_methods *methods
 ) {
 	int ret = 0;
 
-	*target = NULL;
+	memset (target, '\0', sizeof(*target));
 
-	struct rrr_mqtt_session_collection *res = malloc(sizeof(*res));
-	if (res == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_session_collection_new\n");
-		ret = 1;
-		goto out;
-	}
-
-	memset (res, '\0', sizeof(*res));
-
-	res->methods = methods;
-
-	*target = res;
+	target->methods = methods;
 
 	out:
 	return ret;

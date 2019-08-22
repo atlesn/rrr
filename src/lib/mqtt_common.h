@@ -47,8 +47,13 @@ struct rrr_mqtt_data {
 	struct rrr_mqtt_conn_collection connections;
 	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
-	int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg);
-	void *event_handler_arg;
+	int (*event_handler)(
+			struct rrr_mqtt_conn *connection,
+			int event,
+			void *static_arg,
+			void *arg
+	);
+	void *event_handler_static_arg;
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t close_wait_time_usec;
 };
@@ -89,7 +94,7 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *arg),
+		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg,
 		uint64_t close_wait_time_usec,
 		int max_socket_connections
@@ -138,7 +143,7 @@ int rrr_mqtt_common_handle_properties (
 	}} while(0)
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION);
-int rrr_mqtt_common_handle_general_ack (RRR_MQTT_TYPE_HANDLER_DEFINITION);
+int rrr_mqtt_common_handle_puback (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION);
