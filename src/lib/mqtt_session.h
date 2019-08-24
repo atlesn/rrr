@@ -110,19 +110,44 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Receive an ACK for a packet and remove it from the send queue.
-	// The ACK is not stored in the session, no reference counting is performed.
+	/*
+	 * Receive an ACK for a packet.
+	 * The ACK is not stored, no reference counting is performed.
+	 *
+	 *    SENDER    Q2Q  SQ        Q2Q SQ  RECEIVER
+	 * 1. PUBLISH 	     A	  ->    B
+	 * 2.                     <-        C  PUBREC
+	 * 3. PUBREL         DxA  ->    xB xC
+	 * 4.                xD   <-           PUBCOMP
+	 * Q2Q = QoS2 queue, SQ = Send Queue
+	 *
+	 * For QoS 1, this function deletes the original PUBLISH from
+	 * send queue when PUBACK is received.
+	 *
+	 * For QoS 2, this function deletes the original PUBLISH and
+	 * PUBACK when PUBREL is received, and the original PUBREL when
+	 * PUBCOMP is received.
+	 */
 	int (*receive_ack) (
 			unsigned int *match_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet,
-			int delete_if_found
+			struct rrr_mqtt_p *packet
 	);
 
-	// This is called when an ACK has been successfully transmitted. This goes
-	// for QoS2 PUBREL packages where we should delete the original PUBLISH
-	// after successful transmit of the PUBREL.
+	/*
+	 * Notification from connection framework that an ACK
+	 * is successfully transmitted. See diagram above.
+	 *
+	 * For QoS 1, this function does nothing.
+	 *
+	 * For QoS 2, this function:
+	 * Preconditions: PUBLISH is already in SQ of sender
+	 * - When sending PUBREC   save it to SQ
+	 * - When sending PUBREL   save it to SQ
+	 *                         delete PUBLISH from SQ
+	 * - When sending PUBCOMP  do nothing
+	 */
 	int (*notify_ack_sent) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,

@@ -124,7 +124,7 @@ struct rrr_mqtt_p_header {
 struct rrr_mqtt_p_type_properties {
 	/* If has_reserved_flags is non-zero, a packet must have the exact specified flags set to be valid */
 	uint8_t type_id;
-	uint8_t complementary_id; // Used for ACK packets. Zero means non-ack packet.
+	uint8_t is_ack;
 	const char *name;
 	uint8_t has_reserved_flags;
 	uint8_t flags;
@@ -201,13 +201,12 @@ struct rrr_mqtt_p {
 #define RRR_MQTT_P_GET_IDENTIFIER(p)		((p)->packet_identifier)
 #define RRR_MQTT_P_GET_TYPE_NAME(p)			((p)->type_properties->name)
 #define RRR_MQTT_P_GET_SIZE(p)				((p)->type_properties->packet_size)
-#define RRR_MQTT_P_GET_COMPLEMENTARY(p)		((p)->type_properties->complementary_id)
 #define RRR_MQTT_P_GET_PROP_FLAGS(p)		((p)->type_properties->flags)
 #define RRR_MQTT_P_GET_PARSER(p)			((p)->type_properties->parse)
 #define RRR_MQTT_P_GET_ASSEMBLER(p)			((p)->type_properties->assemble)
 #define RRR_MQTT_P_GET_FREE(p)				((p)->type_properties->free)
 #define RRR_MQTT_P_IS_RESERVED_FLAGS(p)		((p)->type_properties->has_reserved_flags)
-#define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->complementary_id != 0)
+#define RRR_MQTT_P_IS_ACK(p)				((p)->type_properties->is_ack != 0)
 #define RRR_MQTT_P_IS_V5(p)					((p)->protocol_version->id == 5)
 
 #define RRR_MQTT_P_CALL_FREE(p)				((p)->type_properties->free(p))
@@ -375,7 +374,7 @@ struct rrr_mqtt_p_publish {
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
 #define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
-	(p)->type_flags = (((p)->type_flags & 0xff) << 4)|((p)->retain)|((p)->qos << 1)|((p)->dup << 3)
+	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
 
 #define RRR_MQTT_P_PACKET_PUBACK_PROPERTIES \
 		struct rrr_mqtt_property_collection properties
@@ -462,6 +461,9 @@ static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_prope
 	}
 	return &rrr_mqtt_p_type_properties[id];
 }
+
+#define RRR_MQTT_P_GET_TYPE_NAME_RAW(id) \
+		(rrr_mqtt_p_get_type_properties(id)->name)
 
 int rrr_mqtt_p_payload_set_data (
 		struct rrr_mqtt_p_payload *target,

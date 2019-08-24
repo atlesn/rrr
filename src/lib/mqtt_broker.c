@@ -535,6 +535,39 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	connack->ack_flags = session_present;
 	connection->session = session;
 
+	struct rrr_mqtt_send_from_sessions_callback_data send_from_sessions_callback_data = {
+		connection
+	};
+
+	// Iterate send queue and re-queue any old packets for transmission in connection. If session
+	// is new or if it has been cleaned, nothing will be sent.
+	int ret_tmp = 0;
+	if ((ret_tmp = mqtt_data->sessions->methods->iterate_send_queue (
+			mqtt_data->sessions,
+			&connection->session,
+			rrr_mqtt_common_send_from_sessions_callback,
+			&send_from_sessions_callback_data,
+			1 // <-- Force processing of everything
+	)) != RRR_MQTT_SESSION_OK) {
+		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
+			VL_MSG_ERR("Soft error while iterating session send queue in __rrr_mqtt_broker_handle_connect, destroying connection\n");
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_ERROR;
+			ret_destroy |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
+			VL_MSG_ERR("Session was deleted in __rrr_mqtt_broker_handle_connect, destroying connection\n");
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_DELETED;
+			ret_destroy |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if (ret_tmp != RRR_MQTT_SESSION_OK) {
+			VL_MSG_ERR("Internal error while iterating session send queue in __rrr_mqtt_broker_handle_connect, cannot continue. Return was %i.\n", ret_tmp);
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+			goto out;
+		}
+		goto out_send_connack;
+	}
+
 	out_send_connack:
 
 	if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0 && reason_v5 == 0) {
@@ -666,10 +699,10 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_connect},
 	{NULL},
 	{rrr_mqtt_common_handle_publish},
-	{rrr_mqtt_common_handle_puback},
+	{rrr_mqtt_common_handle_puback_pubcomp},
 	{rrr_mqtt_common_handle_pubrec},
 	{rrr_mqtt_common_handle_pubrel},
-	{rrr_mqtt_common_handle_pubcomp},
+	{rrr_mqtt_common_handle_puback_pubcomp},
 	{__rrr_mqtt_broker_handle_subscribe},
 	{NULL},
 	{__rrr_mqtt_broker_handle_unsubscribe},

@@ -37,6 +37,7 @@ struct rrr_mqtt_id_pool {
 };
 
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool);
+void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool);
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id);

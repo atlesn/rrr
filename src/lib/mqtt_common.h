@@ -58,6 +58,10 @@ struct rrr_mqtt_data {
 	uint64_t close_wait_time_usec;
 };
 
+struct rrr_mqtt_send_from_sessions_callback_data {
+	struct rrr_mqtt_conn *connection;
+};
+
 #define MQTT_COMMON_CALL_SESSION_HEARTBEAT(mqtt,session) \
 		(mqtt)->sessions->methods->heartbeat((mqtt)->sessions, &(session))
 
@@ -143,12 +147,12 @@ int rrr_mqtt_common_handle_properties (
 	}} while(0)
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION);
-int rrr_mqtt_common_handle_puback (RRR_MQTT_TYPE_HANDLER_DEFINITION);
+int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION);
-int rrr_mqtt_common_handle_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 
+int rrr_mqtt_common_send_from_sessions_callback (struct rrr_mqtt_p *packet, void *arg);
 int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data);
 
 #endif /* RRR_MQTT_COMMON_H */

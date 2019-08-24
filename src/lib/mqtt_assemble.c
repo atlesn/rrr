@@ -137,9 +137,6 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	if (publish->qos > 0) {
 		// TODO Put packet ID
 		PUT_U16(publish->packet_identifier);
-		if (publish->qos > 1) {
-			VL_BUG("Publish QoS > 1 not supported in rrr_mqtt_assemble_publish\n");
-		}
 	}
 
 	if (RRR_MQTT_P_IS_V5(packet)) {

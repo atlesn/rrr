@@ -30,16 +30,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));
 
-	if (pool->pool == NULL) {
-		VL_MSG_ERR("Could not allocate memory in ");
-	}
-
 	if (pthread_mutex_init(&pool->lock, 0) != 0) {
 		VL_MSG_ERR("Could not initialize lock in rrr_mqtt_id_pool_init\n");
 		return 1;
 	}
 
 	return 0;
+}
+
+void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool) {
+	pthread_mutex_lock(&pool->lock);
+
+	free(pool->pool);
+	pool->pool = NULL;
+	pool->allocated_size = 0;
+	pool->last_allocated_id = 0;
+
+	pthread_mutex_unlock(&pool->lock);
 }
 
 void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool) {
@@ -148,6 +155,7 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 	if ((pool->pool[maj] & mask) == 0) {
 		VL_BUG("Tried to release unused ID in rrr_mqtt_id_pool_release_id\n");
 	}
+
 	pool->pool[maj] &= ~mask;
 
 	pthread_mutex_unlock(&pool->lock);

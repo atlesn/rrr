@@ -290,6 +290,11 @@ static inline int fifo_wait_for_data(struct fifo_buffer *buffer, unsigned int wa
  * counting.
  */
 
+int fifo_buffer_clear_with_callback (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
+);
 int fifo_buffer_clear (
 		struct fifo_buffer *buffer
 );

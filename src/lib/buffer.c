@@ -283,7 +283,13 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 /*
  * Remove all entries from a buffer
  */
-int fifo_buffer_clear(struct fifo_buffer *buffer) {
+int fifo_buffer_clear_with_callback (
+		struct fifo_buffer *buffer,
+		int (*callback)(struct fifo_callback_args *callback_data, char *data, unsigned long int size),
+		struct fifo_callback_args *callback_data
+) {
+	int ret = FIFO_OK;
+
 	fifo_write_lock(buffer);
 	if (buffer->invalid) {
 		VL_DEBUG_MSG_1 ("Buffer was invalid\n");
@@ -298,6 +304,10 @@ int fifo_buffer_clear(struct fifo_buffer *buffer) {
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
 		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+
+		if (callback != NULL && (ret = callback(callback_data, entry->data, entry->size)) != FIFO_OK) {
+			VL_BUG("Non-zero return from callback not allowed in fifo_buffer_clear_with_callback, return was %i\n", ret);
+		}
 
 		buffer->free_entry (entry->data);
 		free (entry);
@@ -315,7 +325,11 @@ int fifo_buffer_clear(struct fifo_buffer *buffer) {
 
 	fifo_write_unlock(buffer);
 
-	return FIFO_OK;
+	return ret;
+}
+
+int fifo_buffer_clear(struct fifo_buffer *buffer) {
+	return fifo_buffer_clear_with_callback(buffer, NULL, NULL);
 }
 
 /*

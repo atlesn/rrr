@@ -81,11 +81,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}																					\
 	type = (struct PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type)
 
-#define PARSE_PACKET_ID(target) 										\
-	start = end;														\
-	end = start + 2;													\
-	PARSE_CHECK_END_AND_RETURN(end,session);							\
-	(target)->packet_identifier = be16toh(*((uint16_t *) start))
+#define PARSE_PACKET_ID(target) 											\
+	do {start = end;														\
+	end = start + 2;														\
+	PARSE_CHECK_END_AND_RETURN(end,session);								\
+	(target)->packet_identifier = be16toh(*((uint16_t *) start));			\
+	if ((target)->packet_identifier == 0) {									\
+		VL_MSG_ERR("Packet ID was zero while parsing packet of type %s\n",	\
+			session->type_properties->name);								\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;								\
+	}} while(0)																\
+
 
 #define PARSE_PREPARE(bytes)											\
 	start = end;														\

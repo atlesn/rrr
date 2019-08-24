@@ -280,7 +280,8 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		struct rrr_mqtt_conn *connection,
 		void *arg
 );
-// No reference counting of packet performed
+// No reference counting of packet performed, but event handlers might
+// INCREF if they add the packet to a buffer
 int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
