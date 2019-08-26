@@ -1234,10 +1234,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	if ((ret & FIFO_GLOBAL_ERR) != 0) {
 		VL_MSG_ERR("Internal error in __rrr_mqtt_session_ram_iterate_send_queue while iterating buffer A\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
 	}
 	else if ((ret & FIFO_CALLBACK_ERR) != 0) {
 		VL_MSG_ERR("Soft error in __rrr_mqtt_session_ram_iterate_send_queue while iterating buffer A\n");
 		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
 	}
 
 	callback_data.counter = 0;
@@ -1253,12 +1255,15 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	if ((ret & FIFO_GLOBAL_ERR) != 0) {
 		VL_MSG_ERR("Internal error in __rrr_mqtt_session_ram_iterate_send_queue while iterating buffer B\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
 	}
 	else if ((ret & FIFO_CALLBACK_ERR) != 0) {
 		VL_MSG_ERR("Soft error in __rrr_mqtt_session_ram_iterate_send_queue while iterating buffer B\n");
 		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
 	}
 
+	out:
 	SESSION_RAM_DECREF();
 	return ret;
 }

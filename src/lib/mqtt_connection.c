@@ -663,13 +663,14 @@ int rrr_mqtt_conn_collection_iterate (
 				if (node->disconnect_reason_v5_ == 0) {
 					RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(node, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_);
 				}
-				ret_tmp |= RRR_MQTT_CONN_DESTROY_CONNECTION;
+				callback_ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
 			}
 
 			if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {
 //				VL_DEBUG_MSG_1("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
 				RRR_LINKED_LIST_SET_DESTROY();
 				ret_tmp = ret_tmp & ~RRR_MQTT_CONN_DESTROY_CONNECTION;
+				// Do not let DESTROY_CONNECTION propogate through the iterator since we handle it here
 			}
 
 			if ((ret_tmp & RRR_MQTT_CONN_BUSY) != 0) {

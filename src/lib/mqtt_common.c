@@ -870,7 +870,6 @@ static int __rrr_mqtt_common_handle_packets (
 			!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection) &&
 			!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)
 	) {
-		ret = RRR_MQTT_CONN_BUSY;
 		goto out;
 	}
 
@@ -1042,8 +1041,7 @@ static int __rrr_mqtt_common_send (
 		ret = RRR_MQTT_CONN_BUSY;
 		goto out_nolock;
 	}
-	if (RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
-		ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
+	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
 		goto out_unlock;
 	}
 
@@ -1088,51 +1086,59 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 	int ret = 0;
 
 	ret = rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse, data);
-
-	if ((ret & (RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION)) != 0) {
-		VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle (one or more connections had to be closed)\n");
-		ret = 0;
-	}
-	if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-		VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while reading and parsing\n");
-		ret = 1;
-		goto out;
+	if (ret != RRR_MQTT_CONN_OK) {
+		if ((ret & (RRR_MQTT_CONN_SOFT_ERROR)) != 0) {
+			VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle (one or more connections had to be closed)\n");
+			ret = 0;
+			goto housekeeping;
+		}
+		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
+			VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while reading and parsing\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 
 	ret = rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_handle_packets, data);
-
-	if ((ret & (RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION)) != 0) {
-		VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while handling packets (one or more connections had to be closed)\n");
-		ret = 0;
-	}
-	if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-		VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while handling packets\n");
-		ret = 1;
-		goto out;
+	if (ret != RRR_MQTT_CONN_OK) {
+		if ((ret & (RRR_MQTT_CONN_SOFT_ERROR)) != 0) {
+			VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while handling packets (one or more connections had to be closed)\n");
+			ret = 0;
+			goto housekeeping;
+		}
+		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
+			VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while handling packets\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	ret = rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_send, data);
-
-	if ((ret & (RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION)) != 0) {
-		VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while sending packets (one or more connections had to be closed)\n");
-		ret = 0;
+	if (ret != RRR_MQTT_CONN_OK) {
+		if ((ret & (RRR_MQTT_CONN_SOFT_ERROR)) != 0) {
+			VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while sending packets (one or more connections had to be closed)\n");
+			ret = 0;
+			goto housekeeping;
+		}
+		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
+			VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while sending packets\n");
+			ret = 1;
+			goto out;
+		}
 	}
-	if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-		VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while sending packets\n");
-		ret = 1;
-		goto out;
-	}
 
+	housekeeping:
 	ret = rrr_mqtt_conn_collection_iterate(&data->connections, rrr_mqtt_conn_iterator_ctx_housekeeping, data);
-
-	if ((ret & (RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION)) != 0) {
-		VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while doing housekeeping (one or more connections had to be closed)\n");
-		ret = 0;
-	}
-	if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-		VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while doing housekeeping\n");
-		ret = 1;
+	if (ret != RRR_MQTT_CONN_OK) {
+		if ((ret & (RRR_MQTT_CONN_SOFT_ERROR)) != 0) {
+			VL_MSG_ERR("Soft error in rrr_mqtt_common_read_parse_handle while doing housekeeping (one or more connections had to be closed)\n");
+			ret = 0;
+		}
+		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
+			VL_MSG_ERR("Internal error received in rrr_mqtt_common_read_parse_handle while doing housekeeping\n");
+			ret = 1;
+		}
 		goto out;
 	}
 

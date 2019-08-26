@@ -579,6 +579,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (ret != 0) {
 		VL_MSG_ERR("Error occured while sending CONNACK for sending in rrr_mqtt_p_handler_connect\n");
+		ret_destroy = RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
 
