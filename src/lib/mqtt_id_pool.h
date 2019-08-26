@@ -29,10 +29,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // This is the maximum for 16 bit identifiers
 #define RRR_MQTT_ID_POOL_SIZE_IN_32 2048
 
+// Number of 32-uints we allocate each time we need more IDs
+#define RRR_MQTT_ID_POOL_STEP_SIZE_IN_32 16
+
+// for debugging, use smaller size
+// #define RRR_MQTT_ID_POOL_SIZE_IN_32 4
+
 struct rrr_mqtt_id_pool {
 	uint32_t *pool;
 	pthread_mutex_t lock;
-	ssize_t allocated_size;
+	ssize_t allocated_majors;
 	uint16_t last_allocated_id;
 };
 
@@ -41,5 +47,6 @@ void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool);
 uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool);
 void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id);
+int rrr_mqtt_id_pool_reserve_id_hard (struct rrr_mqtt_id_pool *pool, uint16_t id);
 
 #endif /* RRR_MQTT_ID_POOL_H */

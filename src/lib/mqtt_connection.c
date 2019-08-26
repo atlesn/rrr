@@ -220,8 +220,7 @@ static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *conne
 		__rrr_mqtt_connection_call_event_handler(connection, event, 1, NULL)
 
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
-		struct rrr_mqtt_conn *connection,
-		uint8_t reason
+		struct rrr_mqtt_conn *connection
 ) {
 	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
 		VL_BUG("Connection lock was not held in rrr_mqtt_connection_send_disconnect_iterator_ctx\n");
@@ -246,7 +245,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 
 	RRR_MQTT_P_LOCK(disconnect);
 
-	disconnect->reason_v5 = reason;
+	disconnect->reason_v5 = connection->disconnect_reason_v5_;
 
 	// If a CONNACK is sent, we must not sent DISCONNECT packet
 	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
@@ -319,7 +318,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 	}
 
 	fifo_buffer_invalidate(&connection->receive_queue.buffer);
-	fifo_buffer_invalidate(&connection->send_queue.buffer);
+//	fifo_buffer_invalidate(&connection->send_queue.buffer);
 
 	__rrr_mqtt_connection_read_session_destroy(&connection->read_session);
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
@@ -343,6 +342,7 @@ static int __rrr_mqtt_connection_new (
 		struct rrr_mqtt_conn **connection,
 		const struct ip_data *ip_data,
 		const struct sockaddr *remote_addr,
+		uint64_t retry_interval_usec,
 		uint64_t close_wait_time_usec,
 		struct rrr_mqtt_conn_collection *collection
 ) {
@@ -367,7 +367,7 @@ static int __rrr_mqtt_connection_new (
 	RRR_MQTT_CONN_LOCK(res);
 
 	ret |= fifo_buffer_init_custom_free(&res->receive_queue.buffer,		rrr_mqtt_p_standardized_decref);
-	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_standardized_decref);
+//	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_standardized_decref);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
@@ -377,6 +377,7 @@ static int __rrr_mqtt_connection_new (
 
 	res->ip_data = *ip_data;
 	res->connect_time = res->last_seen_time = time_get_64();
+	res->retry_interval_usec = retry_interval_usec;
 	res->close_wait_time_usec = close_wait_time_usec;
 	res->collection = collection;
 
@@ -479,6 +480,7 @@ int rrr_mqtt_conn_collection_new_connection (
 		struct rrr_mqtt_conn_collection *connections,
 		const struct ip_data *ip_data,
 		const struct sockaddr *remote_addr,
+		uint64_t retry_interval_usec,
 		uint64_t close_wait_time_usec
 ) {
 	int ret = RRR_MQTT_CONN_OK;
@@ -505,6 +507,7 @@ int rrr_mqtt_conn_collection_new_connection (
 			&res,
 			ip_data,
 			remote_addr,
+			retry_interval_usec,
 			close_wait_time_usec,
 			connections
 	)) != RRR_MQTT_CONN_OK) {
@@ -580,14 +583,14 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 	RRR_MQTT_CONN_LOCK(connection);
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED(connection)) {
-		VL_BUG("Connection state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
+		VL_BUG("Connection state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
 	}
 
 	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
 	if (!RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
-		ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(connection, connection->disconnect_reason_v5);
+		ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(connection);
 		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-			VL_MSG_ERR("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");
+			VL_MSG_ERR("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
 			goto out_unlock;
 		}
 		// Ignore soft errors when sending DISCONNECT packet here.
@@ -598,7 +601,8 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 		uint64_t time_now = time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, starting timer\n");
+			VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer\n",
+					connection->disconnect_reason_v5_);
 		}
 		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
@@ -606,12 +610,13 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 			ret = RRR_LINKED_LIST_DIDNT_DESTROY;
 			goto out_unlock;
 		}
-		VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_destroy_connection, timer done\n");
+		VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, timer done\n",
+				connection->disconnect_reason_v5_);
 	}
 
 	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
 	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_CONN_DESTROY_CONNECTION)) != RRR_MQTT_CONN_OK) {
-		VL_MSG_ERR("Error from event handler in rrr_mqtt_connection_iterator_ctx_disconnect, return was %i. ", ret);
+		VL_MSG_ERR("Error from event handler in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy, return was %i. ", ret);
 		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
 			VL_MSG_ERR("Error was critical.\n");
 			goto out_unlock;
@@ -648,14 +653,14 @@ int rrr_mqtt_conn_collection_iterate (
 		int ret_tmp = callback(node, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONN_OK) {
 			if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
-				VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate\n");
+				VL_DEBUG_MSG_1("Soft error returned from callback in rrr_mqtt_connection_collection_iterate, setting disconnect reason to 0x80\n");
 				callback_ret |= RRR_MQTT_CONN_SOFT_ERROR;
 				ret_tmp = ret_tmp & ~RRR_MQTT_CONN_SOFT_ERROR;
 
 				// Always destroy connection upon soft error and set non-zero
 				// reason if not already set
-				if (node->disconnect_reason_v5 == 0) {
-					node->disconnect_reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+				if (node->disconnect_reason_v5_ == 0) {
+					RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(node, RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_);
 				}
 				ret_tmp |= RRR_MQTT_CONN_DESTROY_CONNECTION;
 			}
@@ -1236,7 +1241,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		);
 
 		if (network_data == NULL) {
-			VL_BUG("Assembled packet of type %s was NULL in __rrr_mqtt_connection_send_packets_callback\n",
+			VL_BUG("Assembled packet of type %s was NULL in rrr_mqtt_conn_iterator_ctx_send_packet\n",
 					RRR_MQTT_P_GET_TYPE_NAME(packet));
 		}
 
@@ -1250,15 +1255,15 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 		network_data = NULL;
 
-		if ((ret_tmp & RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION) != 0) {
-			ret_tmp = ret_tmp & ~RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION;
-			ret_destroy |= RRR_MQTT_CONN_DESTROY_CONNECTION;
-		}
-
 		if (ret_tmp != RRR_MQTT_ASSEMBLE_OK) {
-			VL_MSG_ERR("Error while assembling packet in __rrr_mqtt_connection_send_packets_callback\n");
-			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-			goto out;
+			if (ret_tmp == RRR_MQTT_ASSEMBLE_INTERNAL_ERR) {
+				VL_MSG_ERR("Error while assembling packet in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+				ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+				goto out;
+			}
+			else {
+				VL_BUG("Unknown return value %i from assembler in rrr_mqtt_conn_iterator_ctx_send_packet\n", ret_tmp);
+			}
 		}
 	}
 
@@ -1294,22 +1299,24 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	ssize_t total_size = 1 + variable_int_length + packet->assembled_data_size + payload_length;
 
-	VL_DEBUG_MSG_3("Sending packet of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li\n",
+	VL_DEBUG_MSG_3("Sending packet %p of type %s flen: 1, vlen: %li, alen: %li, plen: %li, total: %li, id: %u\n",
+			packet,
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
 			variable_int_length,
 			packet->assembled_data_size,
 			payload_length,
-			total_size
+			total_size,
+			RRR_MQTT_P_GET_IDENTIFIER(packet)
 	);
 
 	if ((ret = __rrr_mqtt_connection_write (connection, (char*) &header, sizeof(header.type) + variable_int_length)) != 0) {
-		VL_MSG_ERR("Error while sending fixed header in __rrr_mqtt_connection_send_packets_callback\n");
+		VL_MSG_ERR("Error while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
 
 	if (packet->assembled_data_size > 0) {
 		if ((ret = __rrr_mqtt_connection_write (connection, packet->_assembled_data, packet->assembled_data_size)) != 0) {
-			VL_MSG_ERR("Error while sending assembled data in __rrr_mqtt_connection_send_packets_callback\n");
+			VL_MSG_ERR("Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 			goto out;
 		}
 	}
@@ -1319,10 +1326,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 	if (payload != NULL) {
 		if (payload_length == 0) {
-			VL_BUG("Payload size was 0 but payload pointer was not NULL in __rrr_mqtt_connection_send_packets_callback\n");
+			VL_BUG("Payload size was 0 but payload pointer was not NULL in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		}
 		if ((ret = __rrr_mqtt_connection_write (connection, payload->payload_start, payload->length)) != 0) {
-			VL_MSG_ERR("Error while sending payload data in __rrr_mqtt_connection_send_packets_callback\n");
+			VL_MSG_ERR("Error while sending payload data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 			goto out;
 		}
 	}
@@ -1358,7 +1365,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
 }
-
+/*
 struct send_packets_callback_data {
 	struct rrr_mqtt_conn *connection;
 	struct fifo_buffer *put_back_buffer;
@@ -1455,7 +1462,7 @@ int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
 	fifo_buffer_delayed_write(&connection->send_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
 	return RRR_MQTT_CONN_OK;
 }
-
+*/
 int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet

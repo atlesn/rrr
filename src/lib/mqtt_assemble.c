@@ -34,12 +34,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		struct rrr_mqtt_payload_buf_session _session;								\
 		struct rrr_mqtt_payload_buf_session *session = &_session;					\
 		do {if (rrr_mqtt_payload_buf_init(session) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			return RRR_MQTT_ASSEMBLE_ERR;											\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
 		}} while(0)
 
 #define PUT_RAW(data,size) do {																	\
 		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			ret = RRR_MQTT_ASSEMBLE_ERR;														\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
 			goto out;																			\
 		}} while (0)
 
@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PUT_RAW_WITH_LENGTH(data,size) do {														\
 		PUT_U16(size);																			\
 		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
-			ret = RRR_MQTT_ASSEMBLE_ERR;														\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
 			goto out;																			\
 		}} while (0)
 
@@ -96,7 +96,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -121,7 +121,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		PUT_U8(reason_v31);
 	}
 
-	BUF_DESTROY_AND_RETURN(connack->reason_v5 != RRR_MQTT_P_5_REASON_OK ? RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION : 0);
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -166,7 +166,7 @@ int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int __rrr_mqtt_assemble_suback_callback (struct rrr_mqtt_subscription *sub, void *arg) {
@@ -204,12 +204,12 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int rrr_mqtt_assemble_pingreq (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
@@ -234,10 +234,10 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 		// TODO : Replace zero byte with disconnect properties
 	}
-	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_DESTROY_CONNECTION);
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_ERR;
+	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }

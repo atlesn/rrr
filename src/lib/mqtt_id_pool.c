@@ -43,7 +43,7 @@ void rrr_mqtt_id_pool_clear (struct rrr_mqtt_id_pool *pool) {
 
 	free(pool->pool);
 	pool->pool = NULL;
-	pool->allocated_size = 0;
+	pool->allocated_majors = 0;
 	pool->last_allocated_id = 0;
 
 	pthread_mutex_unlock(&pool->lock);
@@ -54,22 +54,28 @@ void rrr_mqtt_id_pool_destroy (struct rrr_mqtt_id_pool *pool) {
 	pthread_mutex_destroy(&pool->lock);
 }
 
-static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool) {
-	ssize_t new_size = pool->allocated_size + 4;
-	if (new_size > RRR_MQTT_ID_POOL_SIZE_IN_32) {
+static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssize_t steps) {
+	ssize_t new_majors = pool->allocated_majors + steps;
+	if (new_majors > (ssize_t) RRR_MQTT_ID_POOL_SIZE_IN_32) {
 		return 1;
 	}
 
-	uint32_t *new_pool = realloc(pool->pool, sizeof(*(pool->pool)) * new_size);
+	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
+	ssize_t new_size = new_majors * sizeof(*(pool->pool));
+
+	printf ("realloc old size %li new size %li\n", old_size, new_size);
+	uint32_t *new_pool = realloc(pool->pool, new_size);
 	if (new_pool == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
 		return 1;
 	}
 
-	memset(new_pool + pool->allocated_size * sizeof(*(pool->pool)), '\0', sizeof(*(pool->pool)) * 4);
+	for (ssize_t i = pool->allocated_majors; i < new_majors; i++) {
+		new_pool[i] = 0;
+	}
 
 	pool->pool = new_pool;
-	pool->allocated_size = new_size;
+	pool->allocated_majors = new_majors;
 
 	return 0;
 }
@@ -109,25 +115,28 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	}
 	MIN_MAJ_MASK(ret);
 
-	if (maj < pool->allocated_size && (pool->pool[maj] & mask) == 0) {
+	VL_DEBUG_MSG_3("Get ID, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+			min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
+
+	if (maj < pool->allocated_majors && (pool->pool[maj] & mask) == 0) {
 		pool->pool[maj] |= mask;
-		VL_DEBUG_MSG_4("Fast-allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[maj]);
+		VL_DEBUG_MSG_3("Fast-allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[maj]);
 		goto out;
 	}
 
 	ret = 0;
 
 	retry:
-	for (int i = 0; i < pool->allocated_size; i++) {
+	for (int i = 0; i < pool->allocated_majors; i++) {
 		uint16_t ret_tmp = __rrr_mqtt_id_pool_get_id_32 (&(pool->pool[i]));
 		if (ret_tmp > 0) {
 			ret = ret_tmp + 32 * i;
-			VL_DEBUG_MSG_4("Allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[i]);
+			VL_DEBUG_MSG_3("Allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[i]);
 			goto out;
 		}
 	}
 
-	if (__rrr_mqtt_id_pool_realloc(pool) == 0) {
+	if (__rrr_mqtt_id_pool_realloc(pool, RRR_MQTT_ID_POOL_STEP_SIZE_IN_32) == 0) {
 		goto retry;
 	}
 	else {
@@ -145,10 +154,10 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 
 	pthread_mutex_lock(&pool->lock);
 
-	VL_DEBUG_MSG_4("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
-			id, min, maj, mask, pool->allocated_size, pool->pool[maj]);
+	VL_DEBUG_MSG_3("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
 
-	if (maj >= pool->allocated_size) {
+	if (maj >= pool->allocated_majors) {
 		VL_BUG("Tries to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
 	}
 
@@ -159,4 +168,34 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 	pool->pool[maj] &= ~mask;
 
 	pthread_mutex_unlock(&pool->lock);
+}
+
+int rrr_mqtt_id_pool_reserve_id_hard (struct rrr_mqtt_id_pool *pool, uint16_t id) {
+	int ret = 0;
+
+	MIN_MAJ_MASK(id);
+
+	pthread_mutex_lock(&pool->lock);
+
+	VL_DEBUG_MSG_3("Hard reserve ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+			id, min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
+
+	if (maj >= pool->allocated_majors) {
+		ssize_t diff = maj - pool->allocated_majors;
+		if (__rrr_mqtt_id_pool_realloc(pool, diff + 1) != 0) {
+			VL_BUG("No more room in ID pool in rrr_mqtt_id_pool_reserve_id_hard\n");
+		}
+	}
+
+	if ((pool->pool[maj] & mask) != 0) {
+		VL_DEBUG_MSG_1("Hard reserve of ID %u failed, already taken.\n", id);
+		ret = 1;
+		goto out;
+	}
+
+	pool->pool[maj] |= mask;
+
+	out:
+	pthread_mutex_unlock(&pool->lock);
+	return ret;
 }

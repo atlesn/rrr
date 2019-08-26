@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_topic.h"
 #include "linked_list.h"
 
+// On new data fields, remember to also update rrr_mqtt_subscription_replace_and_destroy
 int rrr_mqtt_subscription_destroy (
 		struct rrr_mqtt_subscription *subscription
 ) {
@@ -136,6 +137,16 @@ int rrr_mqtt_subscription_clone (
 	return ret;
 }
 
+static void __rrr_mqtt_subscription_move_data_and_zero_source (
+		struct rrr_mqtt_subscription *target,
+		struct rrr_mqtt_subscription *source
+) {
+	RRR_FREE_IF_NOT_NULL(target->topic_filter);
+	rrr_mqtt_topic_token_destroy(target->token_tree);
+	memcpy(target, source, sizeof(*target));
+	memset(source, '\0', sizeof(*source));
+}
+
 void rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription *target,
 		struct rrr_mqtt_subscription *source
@@ -143,17 +154,21 @@ void rrr_mqtt_subscription_replace_and_destroy (
 	if (source->ptr_next != NULL) {
 		VL_BUG("source->next was not NULL, part of a collection in rrr_mqtt_subscription_replace_and_destroy\n");
 	}
-
-	RRR_FREE_IF_NOT_NULL(target->topic_filter);
-
-	RRR_LINKED_LIST_REPLACE_NODE(
+	/*
+	 * 1. Free the original dynamically allocated data in target
+	 * 2. Save the linked list pointers temporarily
+	 * 3. Shallow-copy all data from source to target
+	 * 4. Re-write linked list data with data from point 2
+	 * 5. Zero all data in source
+	 * 6. Free source
+	 */
+	RRR_LINKED_LIST_REPLACE_NODE (
 			target,
 			source,
 			struct rrr_mqtt_subscription,
-			memcpy(target, source, sizeof(*target))
+			__rrr_mqtt_subscription_move_data_and_zero_source(target, source)
 	);
 
-	source->topic_filter = NULL;
 	rrr_mqtt_subscription_destroy(source);
 }
 

@@ -395,7 +395,7 @@ int fifo_search (
 			VL_DEBUG_MSG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
 			free(entry);
 
-			entry = NULL;
+			entry = prev;
 			did_something = 1;
 		}
 		if ((actions & FIFO_SEARCH_STOP) != 0) {
@@ -655,6 +655,7 @@ int fifo_read (
 		int ret_tmp = callback(callback_data, first->data, first->size);
 		if (ret_tmp != 0) {
 			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
+				ret |= (ret_tmp & ~FIFO_SEARCH_STOP);
 				break;
 			}
 			else if ((ret_tmp & (FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE)) != 0) {

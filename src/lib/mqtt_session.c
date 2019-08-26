@@ -60,6 +60,7 @@ int rrr_mqtt_session_properties_clone (
 }
 
 void rrr_mqtt_session_collection_destroy (struct rrr_mqtt_session_collection *target) {
+	(void)(target);
 	// Nothing to do
 }
 
@@ -73,6 +74,6 @@ int rrr_mqtt_session_collection_init (
 
 	target->methods = methods;
 
-	out:
+//	out:
 	return ret;
 }

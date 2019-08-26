@@ -98,8 +98,9 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			const struct rrr_mqtt_session_properties *session_properties,
-			uint32_t retry_interval,
+			uint64_t retry_interval_usec,
 			uint32_t max_in_flight,
+			uint32_t complete_publish_grace_time,
 			int clean_session,
 			int *session_was_present
 	);
@@ -110,44 +111,15 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	/*
-	 * Receive an ACK for a packet.
-	 * The ACK is not stored, no reference counting is performed.
-	 *
-	 *    SENDER    Q2Q  SQ        Q2Q SQ  RECEIVER
-	 * 1. PUBLISH 	     A	  ->    B
-	 * 2.                     <-        C  PUBREC
-	 * 3. PUBREL         DxA  ->    xB xC
-	 * 4.                xD   <-           PUBCOMP
-	 * Q2Q = QoS2 queue, SQ = Send Queue
-	 *
-	 * For QoS 1, this function deletes the original PUBLISH from
-	 * send queue when PUBACK is received.
-	 *
-	 * For QoS 2, this function deletes the original PUBLISH and
-	 * PUBACK when PUBREL is received, and the original PUBREL when
-	 * PUBCOMP is received.
-	 */
-	int (*receive_ack) (
+	// Receive an ACK for a packet from remote
+	int (*notify_ack_received) (
 			unsigned int *match_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
 	);
 
-	/*
-	 * Notification from connection framework that an ACK
-	 * is successfully transmitted. See diagram above.
-	 *
-	 * For QoS 1, this function does nothing.
-	 *
-	 * For QoS 2, this function:
-	 * Preconditions: PUBLISH is already in SQ of sender
-	 * - When sending PUBREC   save it to SQ
-	 * - When sending PUBREL   save it to SQ
-	 *                         delete PUBLISH from SQ
-	 * - When sending PUBCOMP  do nothing
-	 */
+	// Notification that an ACK has been sent to remote
 	int (*notify_ack_sent) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
@@ -161,14 +133,15 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session_to_find,
 			int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 			void *callback_arg,
-			int force
+			unsigned int max_count
 	);
 
 	// Act upon client disconnect event according to clean_session and
 	// session expiry parameters
 	int (*notify_disconnect) (
 			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session
+			struct rrr_mqtt_session **session,
+			uint8_t reason_v5
 	);
 
 	int (*add_subscriptions) (
@@ -188,7 +161,7 @@ struct rrr_mqtt_session_collection_methods {
 };
 
 #define RRR_MQTT_SESSION_COLLECTION_HEAD \
-		const struct rrr_mqtt_session_collection_methods *methods
+	const struct rrr_mqtt_session_collection_methods *methods
 
 struct rrr_mqtt_session_collection {
 	RRR_MQTT_SESSION_COLLECTION_HEAD;

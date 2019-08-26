@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS			0x10
 
-#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR				0x80
+#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_				0x80
 #define RRR_MQTT_P_5_REASON_MALFORMED_PACKET				0x81
 #define RRR_MQTT_P_5_REASON_PROTOCOL_ERROR					0x82
 #define RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR				0x83
@@ -184,6 +184,7 @@ struct rrr_mqtt_p_payload {
 	uint16_t packet_identifier;											\
 	uint64_t create_time;												\
 	uint64_t last_attempt;												\
+	uint64_t planned_expiry_time;										\
 	char *_assembled_data;												\
 	ssize_t assembled_data_size;										\
 	struct rrr_mqtt_p_payload *payload;									\
@@ -238,16 +239,6 @@ struct rrr_mqtt_p {
 		(p)->release_packet_id_arg2 = NULL;			\
 	} while(0)
 
-#define RRR_MQTT_P_MOVE_POOL_ID(p_to,p_from)		\
-	RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (		\
-			(p_to),									\
-			(p_from)->packet_identifier,			\
-			(p_from)->release_packet_id_func,		\
-			(p_from)->release_packet_id_arg1,		\
-			(p_from)->release_packet_id_arg2		\
-	);												\
-	RRR_MQTT_P_CLEAR_POOL_ID(p_from)
-
 #define RRR_MQTT_P_RELEASE_POOL_ID(p)				\
 	do {if ((p)->release_packet_id_func != NULL) {	\
 		(p)->release_packet_id_func (				\
@@ -259,6 +250,10 @@ struct rrr_mqtt_p {
 
 static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
+	if (p->users == 0) {
+		VL_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
+	}
+//	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
 	pthread_mutex_unlock(&p->refcount_lock);
@@ -269,6 +264,7 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
+//	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
@@ -290,17 +286,17 @@ static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 	return ret;
 }
 
-#define RRR_MQTT_P_INCREF(p) \
+#define RRR_MQTT_P_INCREF(p)	\
 	rrr_mqtt_p_standardized_incref(p)
 
-#define RRR_MQTT_P_DECREF(p) \
+#define RRR_MQTT_P_DECREF(p)	\
 	rrr_mqtt_p_standardized_decref(p)
 
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
 		RRR_MQTT_P_DECREF(p)
 
-#define RRR_MQTT_P_LOCK(p)	\
+#define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
 
 #define RRR_MQTT_P_UNLOCK(p)	\
@@ -344,38 +340,6 @@ struct rrr_mqtt_p_connack {
 	struct rrr_mqtt_property_collection properties;
 };
 
-struct rrr_mqtt_p_publish {
-	RRR_MQTT_P_PACKET_HEADER;
-
-	char *topic;
-	struct rrr_mqtt_topic_token *token_tree;
-
-	/* These three are also accessible through packet type flags but we cache them here */
-	//uint8_t dup; <-- defined in header
-	uint8_t qos;
-	uint8_t retain;
-
-	struct rrr_mqtt_property_collection properties;
-
-	uint8_t payload_format_indicator;
-	uint32_t message_expiry_interval;
-	uint16_t topic_alias;
-	struct rrr_mqtt_property_collection user_properties;
-	struct rrr_mqtt_property_collection subscription_ids;
-
-	/* Memory of these are managed in the properties field */
-	const struct rrr_mqtt_property *response_topic;
-	const struct rrr_mqtt_property *correlation_data;
-	const struct rrr_mqtt_property *content_type;
-
-};
-
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
-#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
-#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
-	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
-
 #define RRR_MQTT_P_PACKET_PUBACK_PROPERTIES \
 		struct rrr_mqtt_property_collection properties
 
@@ -399,6 +363,49 @@ struct rrr_mqtt_p_pubcomp {
 	RRR_MQTT_P_PACKET_HEADER;
 	RRR_MQTT_P_PACKET_PUBACK_PROPERTIES;
 };
+
+struct rrr_mqtt_p_qos_packets {
+	struct rrr_mqtt_p_puback *puback;
+	struct rrr_mqtt_p_pubrec *pubrec;
+	struct rrr_mqtt_p_pubrel *pubrel;
+	struct rrr_mqtt_p_pubcomp *pubcomp;
+};
+
+struct rrr_mqtt_p_publish {
+	RRR_MQTT_P_PACKET_HEADER;
+
+	char *topic;
+	struct rrr_mqtt_topic_token *token_tree;
+
+	/* These three are also accessible through packet type flags but we cache them here */
+	//uint8_t dup; <-- defined in header
+	uint8_t qos;
+	uint8_t retain;
+
+	struct rrr_mqtt_property_collection properties;
+
+	uint8_t payload_format_indicator;
+	uint32_t message_expiry_interval;
+	uint16_t topic_alias;
+	struct rrr_mqtt_property_collection user_properties;
+	struct rrr_mqtt_property_collection subscription_ids;
+
+	int is_outbound;
+	struct rrr_mqtt_p_qos_packets qos_packets;
+
+	/* Memory of these are managed in the properties field */
+	const struct rrr_mqtt_property *response_topic;
+	const struct rrr_mqtt_property *correlation_data;
+	const struct rrr_mqtt_property *content_type;
+
+};
+
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
+#define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
+#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
+	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
+
 struct rrr_mqtt_p_subscribe {
 	RRR_MQTT_P_PACKET_HEADER;
 	char *data_tmp;

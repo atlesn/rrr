@@ -336,6 +336,10 @@ static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	rrr_mqtt_property_collection_destroy(&publish->subscription_ids);
 	rrr_mqtt_topic_token_destroy(publish->token_tree);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.puback);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubrec);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubrel);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubcomp);
 	free(publish);
 }
 

@@ -97,19 +97,20 @@ struct rrr_mqtt_conn {
 	uint16_t keep_alive;
 
 	uint32_t state_flags;
-	uint8_t disconnect_reason_v5;
+	uint8_t disconnect_reason_v5_;
 
 	int last_event;
 
 	struct rrr_mqtt_conn_read_session read_session;
 	struct rrr_mqtt_parse_session parse_session;
 
-	struct rrr_mqtt_p_queue send_queue;
+//	struct rrr_mqtt_p_queue send_queue;
 	struct rrr_mqtt_p_queue receive_queue;
 
 	int read_complete;
 	int parse_complete;
 
+	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
 
@@ -140,6 +141,9 @@ struct rrr_mqtt_conn_collection {
 	);
 	void *event_handler_static_arg;
 };
+
+#define RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(c, reason_v5) \
+	(c)->disconnect_reason_v5_ = reason_v5
 
 #define RRR_MQTT_CONN_STATE_CONNECT_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
@@ -207,6 +211,7 @@ int rrr_mqtt_conn_collection_new_connection (
 		struct rrr_mqtt_conn_collection *connections,
 		const struct ip_data *ip_data,
 		const struct sockaddr *remote_addr,
+		uint64_t retry_interval_usec,
 		uint64_t close_wait_time_usec
 );
 
@@ -286,14 +291,14 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
 );
-int rrr_mqtt_conn_iterator_ctx_send_packets (
+/*int rrr_mqtt_conn_iterator_ctx_send_packets (
 		struct rrr_mqtt_conn *connection
-);
+);*/
 // Decref of packet guaranteed (some time in the future), immediately on errors
-int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
+/*int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
-);
+);*/
 // No reference counting of packet performed
 int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
 		struct rrr_mqtt_conn *connection,
@@ -310,8 +315,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 		int direction
 );
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
-		struct rrr_mqtt_conn *connection,
-		uint8_t reason
+		struct rrr_mqtt_conn *connection
 );
 
 #endif /* RRR_MQTT_CONN_H */

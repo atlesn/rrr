@@ -232,7 +232,8 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_co
 
 		VL_DEBUG_MSG_1("Disconnecting existing client with client ID %s\n", connection->client_id);
 
-		int ret_tmp = rrr_mqtt_conn_iterator_ctx_send_disconnect(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+		RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER);
+		int ret_tmp = rrr_mqtt_conn_iterator_ctx_send_disconnect(connection);
 
 		// On soft error, we cannot be sure that the existing client was actually
 		// disconnected, and we must disallow the new connection
@@ -455,7 +456,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			 }
 			 VL_MSG_ERR("Error while checking if client id '%s' was unique\n", connect->client_identifier);
 			 ret = RRR_MQTT_CONN_SOFT_ERROR;
-			 reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			 reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
 			 goto out_send_connack;
 		}
 
@@ -500,10 +501,18 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 	}
 
+	struct rrr_mqtt_session_properties session_properties = default_session_properties;
+
+	if (!RRR_MQTT_P_IS_V5(packet)) {
+		// Default for version 3.1 is that sessions do not expire,
+		// only use clean session to control this
+		session_properties.session_expiry = 0xffffffff;
+	}
+
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			default_session_properties
+			session_properties
 	};
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
@@ -516,8 +525,9 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			mqtt_data->sessions,
 			&session,
 			&callback_data.session_properties,
-			RRR_MQTT_BROKER_RETRY_INTERVAL,
+			mqtt_data->retry_interval_usec,
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
+			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
@@ -529,51 +539,20 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
-		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
 		goto out_send_connack;
 	}
 	connack->ack_flags = session_present;
 	connection->session = session;
-
-	struct rrr_mqtt_send_from_sessions_callback_data send_from_sessions_callback_data = {
-		connection
-	};
-
-	// Iterate send queue and re-queue any old packets for transmission in connection. If session
-	// is new or if it has been cleaned, nothing will be sent.
-	int ret_tmp = 0;
-	if ((ret_tmp = mqtt_data->sessions->methods->iterate_send_queue (
-			mqtt_data->sessions,
-			&connection->session,
-			rrr_mqtt_common_send_from_sessions_callback,
-			&send_from_sessions_callback_data,
-			1 // <-- Force processing of everything
-	)) != RRR_MQTT_SESSION_OK) {
-		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
-		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
-			VL_MSG_ERR("Soft error while iterating session send queue in __rrr_mqtt_broker_handle_connect, destroying connection\n");
-			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_ERROR;
-			ret_destroy |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
-			VL_MSG_ERR("Session was deleted in __rrr_mqtt_broker_handle_connect, destroying connection\n");
-			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_DELETED;
-			ret_destroy |= RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		if (ret_tmp != RRR_MQTT_SESSION_OK) {
-			VL_MSG_ERR("Internal error while iterating session send queue in __rrr_mqtt_broker_handle_connect, cannot continue. Return was %i.\n", ret_tmp);
-			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-			goto out;
-		}
-		goto out_send_connack;
-	}
 
 	out_send_connack:
 
 	if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0 && reason_v5 == 0) {
 		VL_BUG("Reason was not set on soft error in rrr_mqtt_p_handler_connect\n");
 	}
+	VL_DEBUG_MSG_1("Setting connection disconnect reason to %u in __rrr_mqtt_broker_handle_connect\n", reason_v5);
 	connack->reason_v5 = reason_v5;
+	RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, reason_v5);
 
 	if (connack->protocol_version->id < 5) {
 		uint8_t v31_reason = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
@@ -648,9 +627,13 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	suback->packet_identifier = subscribe->packet_identifier;
 	suback->subscriptions = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
-
+/*
 	RRR_MQTT_P_INCREF(suback);
 	ret = rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, (struct rrr_mqtt_p *) suback);
+	RRR_MQTT_P_UNLOCK(suback);
+*/
+
+	ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) suback);
 	RRR_MQTT_P_UNLOCK(suback);
 
 	out:
@@ -794,7 +777,8 @@ int rrr_mqtt_broker_new (
 			session_initializer_arg,
 			__rrr_mqtt_broker_event_handler,
 			res,
-			RRR_MQTT_BROKER_CLOSE_WAIT_TIME * 1000000,
+			RRR_MQTT_BROKER_RETRY_INTERVAL * 1000 * 1000,
+			RRR_MQTT_BROKER_CLOSE_WAIT_TIME * 1000 * 1000,
 			max_socket_connections
 	)) != 0) {
 		VL_MSG_ERR("Could not initialize mqtt data in rrr_mqtt_broker_new\n");

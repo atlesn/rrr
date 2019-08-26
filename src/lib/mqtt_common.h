@@ -55,6 +55,7 @@ struct rrr_mqtt_data {
 	);
 	void *event_handler_static_arg;
 	struct rrr_mqtt_session_collection *sessions;
+	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
 };
 
@@ -65,8 +66,8 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_HEARTBEAT(mqtt,session) \
 		(mqtt)->sessions->methods->heartbeat((mqtt)->sessions, &(session))
 
-#define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session) \
-		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session))
+#define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session,reason_v5) \
+		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session), reason_v5)
 
 #define MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt,session,subscriptions) \
 		(mqtt)->sessions->methods->add_subscriptions((mqtt)->sessions, &(session), (subscriptions))
@@ -100,6 +101,7 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg,
+		uint64_t retry_interval_usec,
 		uint64_t close_wait_time_usec,
 		int max_socket_connections
 );
@@ -152,7 +154,10 @@ int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 
-int rrr_mqtt_common_send_from_sessions_callback (struct rrr_mqtt_p *packet, void *arg);
+int rrr_mqtt_common_send_from_sessions_callback (
+		struct rrr_mqtt_p *packet,
+		void *arg
+);
 int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data);
 
 #endif /* RRR_MQTT_COMMON_H */
