@@ -787,6 +787,10 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 			RRR_MQTT_P_DECREF(publish->qos_packets.puback);
 			publish->qos_packets.puback = NULL;
 		}
+		else if (publish->is_outbound == 0) {
+			RRR_MQTT_P_INCREF(packet);
+			fifo_buffer_write(&ack_callback_data->ram_data->publish_queue.buffer, (char*) packet, sizeof(*packet));
+		}
 		publish->qos_packets.puback = (struct rrr_mqtt_p_puback *) ack_packet;
 		ack_packet = NULL;
 	}
@@ -1110,8 +1114,13 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 	//        the most recent ACK not acknowledged by remote will be sent.
 
 	if (publish->qos == 0) {
-		// No retransmission of QOS0
-		goto out_unlock;
+		if (publish->last_attempt == 0) {
+			packet_to_transmit = packet;
+		}
+		else {
+			// No retransmission of QOS0
+			goto out_unlock;
+		}
 	}
 	else if (publish->qos == 1) {
 		if (publish->is_outbound == 1) {
@@ -1155,27 +1164,27 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 				packet_to_transmit,
 				iterate_callback_data->callback_arg
 		);
-	}
 
-	RRR_MQTT_P_LOCK(packet);
-	packet->last_attempt = time_get_64();
+		RRR_MQTT_P_LOCK(packet);
+		packet->last_attempt = time_get_64();
 
-	if ((ret & FIFO_GLOBAL_ERR) != 0) {
-		VL_MSG_ERR("Internal error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback, return was %i\n", ret);
-		ret = FIFO_GLOBAL_ERR;
-		goto out_unlock;
-	}
-	else if (ret == FIFO_SEARCH_STOP) {
-		// Callback wants to stop (with no CALLBACK_ERR set), this is OK
-		goto out_unlock;
-	}
-	else if (ret != 0) {
-		VL_MSG_ERR("Soft error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback, return was %i\n", ret);
-		ret = FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
-		goto out_unlock;
-	}
-	else {
-		ret = FIFO_OK;
+		if ((ret & FIFO_GLOBAL_ERR) != 0) {
+			VL_MSG_ERR("Internal error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback, return was %i\n", ret);
+			ret = FIFO_GLOBAL_ERR;
+			goto out_unlock;
+		}
+		else if (ret == FIFO_SEARCH_STOP) {
+			// Callback wants to stop (with no CALLBACK_ERR set), this is OK
+			goto out_unlock;
+		}
+		else if (ret != 0) {
+			VL_MSG_ERR("Soft error from callback in __rrr_mqtt_session_ram_iterate_send_queue_callback, return was %i\n", ret);
+			ret = FIFO_CALLBACK_ERR|FIFO_SEARCH_STOP;
+			goto out_unlock;
+		}
+		else {
+			ret = FIFO_OK;
+		}
 	}
 
 	out_unlock:
@@ -1389,7 +1398,36 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		VL_BUG("Invalid QoS %u in __rrr_mqtt_session_ram_receive_publish\n", publish->qos);
 	}
 
-	if (publish->qos == 2) {
+	if (publish->qos == 0) {
+		// QOS 0 packets are released immediately
+
+		VL_DEBUG_MSG_3("Receive PUBLISH QOS 0 packet %p with id %u add directly to publish queue\n",
+				publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
+
+		RRR_MQTT_P_INCREF(publish);
+		fifo_buffer_write (
+				&ram_data->publish_queue.buffer,
+				(char*) publish,
+				sizeof(*publish)
+		);
+	}
+	else if (publish->qos == 1) {
+		// QOS 1 packets are released when we send PUBACK
+
+		VL_DEBUG_MSG_3("Receive PUBLISH QOS 1 packet %p with id %u add to QoS 1/2 queue\n",
+				publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
+
+		RRR_MQTT_P_INCREF(publish);
+		fifo_buffer_write_ordered (
+				&ram_session->from_client_queue.buffer,
+				publish->packet_identifier,
+				(char*) publish,
+				sizeof(*publish)
+		);
+	}
+	else if (publish->qos == 2) {
+		// QOS 2 packets are released when we send PUBCOMP
+
 		struct find_qos2_publish_data callback_data = {
 				publish,
 				NULL,
@@ -1411,12 +1449,12 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		);
 		if (ret_tmp != 0) {
 			if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {
-				VL_MSG_ERR("Soft error while iterating QoS 2 publish queue in __rrr_mqtt_session_ram_receive_publish\n");
+				VL_MSG_ERR("Soft error while iterating QoS2 publish queue in __rrr_mqtt_session_ram_receive_publish\n");
 				ret |= RRR_MQTT_SESSION_ERROR;
 				ret_tmp = ret_tmp & ~(FIFO_CALLBACK_ERR);
 			}
 			if (ret_tmp != 0) {
-				VL_MSG_ERR("Internal error in __rrr_mqtt_session_ram_receive_publish while iterating QoS 2 publish queue\n");
+				VL_MSG_ERR("Internal error in __rrr_mqtt_session_ram_receive_publish while iterating QoS2 publish queue\n");
 				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			}
 			goto out_decref;
@@ -1426,12 +1464,12 @@ static int __rrr_mqtt_session_ram_receive_publish (
 
 		if (publish_in_buffer == NULL) {
 			if (publish->dup != 0) {
-				VL_MSG_ERR("Received a new QoS 2 PUBLISH packet which had DUP flag set\n");
+				VL_MSG_ERR("Received a new QoS2 PUBLISH packet which had DUP flag set\n");
 				ret = RRR_MQTT_SESSION_ERROR;
 				goto out_decref;
 			}
 
-			VL_DEBUG_MSG_3("Receive PUBLISH packet %p with identifier %u add to QoS2 queue\n",
+			VL_DEBUG_MSG_3("Receive PUBLISH packet %p with id %u add to QoS2 queue\n",
 					publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
 			RRR_MQTT_P_INCREF(publish);
@@ -1443,7 +1481,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 			);
 		}
 		else {
-			VL_DEBUG_MSG_3("Receive duplicate PUBLISH packet %p with identifier %u, already in QoS2 queue\n",
+			VL_DEBUG_MSG_3("Receive duplicate PUBLISH packet %p with id %u, already in QoS2 queue\n",
 					publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
 			RRR_MQTT_P_LOCK(publish_in_buffer);
@@ -1458,12 +1496,12 @@ static int __rrr_mqtt_session_ram_receive_publish (
 			if ((((publish_in_buffer->payload != NULL) ^ (publish->payload != NULL)) == 1) ||
 				(publish_in_buffer->payload != NULL && (publish_in_buffer->payload->length != publish->payload->length))
 			) {
-				VL_MSG_ERR("Received a QoS 2 PUBLISH packet with equal id to another packet of different size\n");
+				VL_MSG_ERR("Received a QoS2 PUBLISH packet with equal id to another packet of different size\n");
 				ret = RRR_MQTT_SESSION_ERROR;
 				goto unlock_payload;
 			}
 			if (publish->dup != 1) {
-				VL_MSG_ERR("Received a re-sent QoS 2 PUBLISH packet which did not have DUP flag set\n");
+				VL_MSG_ERR("Received a re-sent QoS2 PUBLISH packet which did not have DUP flag set\n");
 				ret = RRR_MQTT_SESSION_ERROR;
 				goto unlock_payload;
 			}
@@ -1482,8 +1520,9 @@ static int __rrr_mqtt_session_ram_receive_publish (
 			goto out_decref;
 		}
 	}
-
-	// Do not forward PUBLISH packet to other clients until we receive PUBREL
+	else {
+		VL_BUG("Invalid QOS in __rrr_mqtt_session_ram_receive_publish");
+	}
 
 	out_decref:
 	RRR_MQTT_P_UNLOCK(publish);

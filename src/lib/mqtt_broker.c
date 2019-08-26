@@ -247,7 +247,8 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_mqtt_co
 		ret_tmp = ret_tmp & ~RRR_MQTT_CONN_DESTROY_CONNECTION;
 
 		if (ret_tmp != RRR_MQTT_CONN_OK) {
-			VL_MSG_ERR("Internal error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback\n");
+			VL_MSG_ERR("Internal error while disconnecting existing client in __rrr_mqtt_broker_check_unique_client_id_or_disconnect_callback return was %i\n",
+					ret_tmp);
 			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
 		}
 	}

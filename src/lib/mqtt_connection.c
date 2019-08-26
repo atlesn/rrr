@@ -223,7 +223,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_mqtt_conn *connection
 ) {
 	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
-		VL_BUG("Connection lock was not held in rrr_mqtt_connection_send_disconnect_iterator_ctx\n");
+		VL_BUG("Connection lock was not held in rrr_mqtt_conn_iterator_ctx_send_disconnect\n");
 	}
 
 	int ret = RRR_MQTT_CONN_OK;
@@ -238,7 +238,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 			connection->protocol_version
 	);
 	if (disconnect == NULL) {
-		VL_MSG_ERR("Could not allocate DISCONNECT packet in rrr_mqtt_connection_send_disconnect_unlocked\n");
+		VL_MSG_ERR("Could not allocate DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect\n");
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out_nolock;
 	}
@@ -255,7 +255,8 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		)) != RRR_MQTT_CONN_OK) {
 			ret = ret & ~RRR_MQTT_CONN_DESTROY_CONNECTION;
 			if (ret != RRR_MQTT_CONN_OK) {
-				VL_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_connection_send_disconnect_and_close_unlocked\n");
+				VL_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect return was %i\n",
+						ret);
 				goto send_disconnect_out;
 			}
 			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
