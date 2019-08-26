@@ -137,21 +137,18 @@ static int __rrr_mqtt_broker_listen_fd_accept_connections (
 	int ret = 0;
 
 	do {
+		// TODO : Check if some errors can be managed without triggering internal error
 		if ((ret = ip_accept(&accept_data, &fd->ip, creator, 0)) != 0) {
 			VL_MSG_ERR("Error from ip_accept in __rrr_mqtt_broker_listen_fd_accept_connections\n");
 			break;
 		}
 
 		if (accept_data != NULL) {
-			ret = callback(accept_data, callback_arg);
-			if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
-				VL_MSG_ERR("Soft error while accepting connection\n");
-				ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);
-			}
-			if (ret != 0) {
-				VL_MSG_ERR("Error from callback function in __rrr_mqtt_broker_listen_fd_accept_connections\n");
-				break;
-			}
+			RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
+					callback(accept_data, callback_arg),
+					break,
+					" from callback function in __rrr_mqtt_broker_listen_fd_accept_connections"
+			);
 		}
 
 		RRR_FREE_IF_NOT_NULL(accept_data);
@@ -177,7 +174,7 @@ static int __rrr_mqtt_broker_listen_fds_accept_connections (
 		int ret_tmp = __rrr_mqtt_broker_listen_fd_accept_connections(node, creator, callback, callback_arg);
 		if (ret_tmp != 0) {
 			VL_MSG_ERR("Error while accepting connections in __rrr_mqtt_broker_listen_fds_accept_connections\n");
-			ret = 1;
+			ret = ret_tmp;
 		}
 	RRR_LINKED_LIST_ITERATE_END(fds);
 
@@ -281,6 +278,7 @@ static int __rrr_mqtt_broker_check_unique_client_id (
 			&callback_data
 	);
 
+	// Do not replace error handling with macro, special case
 	if (ret != RRR_MQTT_CONN_OK) {
 		if ((ret & RRR_MQTT_CONN_ITERATE_STOP) != 0) {
 			VL_DEBUG_MSG_1("Client id %s was already used in an active connection, the old one was disconnected\n", client_id);
@@ -399,20 +397,13 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
 		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
-		ret = __rrr_mqtt_broker_generate_unique_client_id (connection, broker);
-		if (ret != RRR_MQTT_CONN_OK) {
-			ret = ret & ~RRR_MQTT_CONN_SOFT_ERROR;
-			if (ret == 0) {
-				ret = RRR_MQTT_CONN_SOFT_ERROR;
-				reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
-				goto out_send_connack;
-			}
-			else {
-				VL_MSG_ERR("Could not generate client identifier in rrr_mqtt_p_handler_connect, result is %i\n", ret);
-				ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-			}
-			goto out;
-		}
+		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
+				__rrr_mqtt_broker_generate_unique_client_id (connection, broker),
+				ret,
+				reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED; goto out_send_connack,
+				goto out,
+				"- Could not generate client identifier in rrr_mqtt_p_handler_connect"
+		);
 	}
 	else {
 		if (strlen(connect->client_identifier) >= strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)) {
@@ -593,7 +584,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
 
-	//struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
 	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
 
 	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_SUBACK, packet->protocol_version);
@@ -629,11 +619,6 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 	suback->packet_identifier = subscribe->packet_identifier;
 	suback->subscriptions = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
-/*
-	RRR_MQTT_P_INCREF(suback);
-	ret = rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, (struct rrr_mqtt_p *) suback);
-	RRR_MQTT_P_UNLOCK(suback);
-*/
 
 	ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) suback);
 	RRR_MQTT_P_UNLOCK(suback);

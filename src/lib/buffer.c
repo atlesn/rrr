@@ -569,6 +569,7 @@ int fifo_read_clear_forward (
 			if ((ret_tmp & FIFO_SEARCH_FREE) != 0) {
 					// Entry has not been processed and/or freed callback (for some reason)
 					buffer->free_entry(current->data);
+					ret_tmp = ret_tmp & ~(FIFO_SEARCH_FREE);
 			}
 			if ((ret_tmp & FIFO_SEARCH_STOP) != 0) {
 				// Stop processing and put the rest back into the buffer
