@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 #include "mqtt_packet.h"
 #include "mqtt_subscription.h"
+#include "mqtt_common.h"
 #include "vl_time.h"
 #include "linked_list.h"
 #include "mqtt_id_pool.h"
@@ -51,6 +52,9 @@ struct rrr_mqtt_session_ram {
 	struct rrr_mqtt_p_queue from_client_queue;
 	struct rrr_mqtt_id_pool id_pool;
 
+	// Pointer to queue in collection data where we are to deliver publish packets
+	struct rrr_mqtt_p_queue *target_publish_queue;
+
 	// These fields must be protected by the session lock
 	pthread_mutex_t lock;
 	char *client_id;
@@ -68,7 +72,13 @@ struct rrr_mqtt_session_collection_ram_data {
 	pthread_mutex_t lock;
 	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_session_ram);
 	struct rrr_mqtt_p_queue retain_queue;
-	struct rrr_mqtt_p_queue publish_queue;
+
+	// Packets in this queue are forwarded to sessions with matching subscriptions. If no
+	// subscriptions match for a packet, it is deleted. Used by broker program.
+	struct rrr_mqtt_p_queue publish_forward_queue;
+
+	// Packets in this queue are stored until read from. Used by client program.
+	struct rrr_mqtt_p_queue publish_local_queue;
 };
 
 #define SESSION_COLLECTION_RAM_LOCK(data) \
@@ -99,7 +109,8 @@ struct rrr_mqtt_session_collection_ram_data {
 static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		struct rrr_mqtt_session_ram **target,
 		struct rrr_mqtt_session_collection_ram_data *data,
-		const char *client_id
+		const char *client_id,
+		int local_delivery
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
 	int ret = RRR_MQTT_SESSION_OK;
@@ -154,6 +165,11 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	result->users = 1;
 	result->ram_data = data;
+
+	result->target_publish_queue = (local_delivery != 0
+			? &data->publish_local_queue
+			: &data->publish_forward_queue
+	);
 
 	RRR_LINKED_LIST_PUSH(data,result);
 
@@ -239,10 +255,6 @@ static void __rrr_mqtt_session_ram_incref_unlocked (struct rrr_mqtt_session_ram 
 	session->users++;
 }
 
-struct receive_forwarded_publish_data {
-	struct rrr_mqtt_session_ram *session;
-};
-
 static void __rrr_mqtt_session_collection_remove (
 		struct rrr_mqtt_session_collection_ram_data *data,
 		struct rrr_mqtt_session_ram *session
@@ -295,7 +307,8 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		struct rrr_mqtt_session_collection *sessions,
 		const char *client_id,
 		int *session_present,
-		int no_creation
+		int no_creation,
+		int local_delivery
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
@@ -313,7 +326,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		*session_present = 1;
 	}
 	else if (no_creation == 0) {
-		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (&result, data, client_id);
+		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (&result, data, client_id, local_delivery);
 		if (ret != RRR_MQTT_SESSION_OK) {
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out_unlock;
@@ -372,6 +385,10 @@ static int __rrr_mqtt_session_ram_release_packet_id (
 	return ret;
 
 }
+
+struct receive_forwarded_publish_data {
+	struct rrr_mqtt_session_ram *session;
+};
 
 static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 		const struct rrr_mqtt_p_publish *publish,
@@ -555,10 +572,66 @@ static int __rrr_mqtt_session_ram_maintain (struct rrr_mqtt_session_ram *session
 	return ret;
 }
 
-struct iterate_notify_ack_callback_data {
-	struct rrr_mqtt_session_ram *ram_session;
-	struct rrr_mqtt_session_collection_ram_data *ram_data;
+struct iterate_local_delivery_callback_data {
+	int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg);
+	void *callback_arg;
 };
+
+static int __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback (FIFO_CALLBACK_ARGS) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	(void)(size);
+
+	struct iterate_local_delivery_callback_data *iterate_callback_data = callback_data->private_data;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
+
+	if (RRR_MQTT_P_GET_TYPE(publish) != RRR_MQTT_P_TYPE_PUBLISH) {
+		VL_BUG("Packet was not publish in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback\n");
+	}
+
+	ret = iterate_callback_data->callback(publish, iterate_callback_data->callback_arg);
+	if (ret != 0) {
+		VL_MSG_ERR("Error from callback in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback\n");
+		ret = FIFO_CALLBACK_ERR | FIFO_SEARCH_STOP;
+	}
+
+	return ret | FIFO_SEARCH_FREE;
+}
+
+
+static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_session_collection *sessions,
+		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
+
+	int ret = RRR_MQTT_SESSION_OK;
+
+	struct iterate_local_delivery_callback_data iterate_callback_data = {
+			callback,
+			callback_arg
+	};
+
+	struct fifo_callback_args callback_args = {
+			NULL, &iterate_callback_data, 0
+	};
+
+	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(
+			fifo_read_clear_forward(
+					&data->publish_local_queue.buffer,
+					NULL,
+					__rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback,
+					&callback_args,
+					0
+			),
+			goto out,
+			" while iterating local delivery queue in __rrr_mqtt_session_collection_iterate_and_clear_local_delivery"
+	);
+
+	out:
+	return ret;
+}
 
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
@@ -571,7 +644,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	struct fifo_callback_args callback_args = { data, NULL, 0 };
-	ret = fifo_read_clear_forward(&data->publish_queue.buffer, NULL,  __rrr_mqtt_session_collection_ram_forward_publish_to_clients, &callback_args, 0);
+	ret = fifo_read_clear_forward(&data->publish_forward_queue.buffer, NULL,  __rrr_mqtt_session_collection_ram_forward_publish_to_clients, &callback_args, 0);
 	if ((ret & FIFO_GLOBAL_ERR) != 0) {
 		VL_MSG_ERR("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -616,7 +689,9 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 
 	SESSION_COLLECTION_RAM_LOCK(data);
 	fifo_buffer_invalidate(&data->retain_queue.buffer);
-	fifo_buffer_invalidate(&data->publish_queue.buffer);
+	fifo_buffer_invalidate(&data->publish_forward_queue.buffer);
+	fifo_buffer_invalidate(&data->publish_local_queue.buffer);
+
 	// TODO : implement destroy
 	// fifo_buffer_destroy(&data->retain_queue);
 	RRR_LINKED_LIST_DESTROY (
@@ -722,6 +797,7 @@ struct ram_process_ack_callback_data {
 	struct rrr_mqtt_p *ack_packet;
 	unsigned int found;
 	struct rrr_mqtt_session_collection_ram_data *ram_data;
+	struct rrr_mqtt_p_queue *delivery_queue;
 };
 
 static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
@@ -789,7 +865,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 		}
 		else if (publish->is_outbound == 0) {
 			RRR_MQTT_P_INCREF(packet);
-			fifo_buffer_write(&ack_callback_data->ram_data->publish_queue.buffer, (char*) packet, sizeof(*packet));
+			fifo_buffer_write(&ack_callback_data->delivery_queue->buffer, (char*) packet, sizeof(*packet));
 		}
 		publish->qos_packets.puback = (struct rrr_mqtt_p_puback *) ack_packet;
 		ack_packet = NULL;
@@ -836,7 +912,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 		}
 		else if (publish->is_outbound == 0) {
 			RRR_MQTT_P_INCREF(packet);
-			fifo_buffer_write(&ack_callback_data->ram_data->publish_queue.buffer, (char*) packet, sizeof(*packet));
+			fifo_buffer_write(&ack_callback_data->delivery_queue->buffer, (char*) packet, sizeof(*packet));
 		}
 		publish->qos_packets.pubrel = (struct rrr_mqtt_p_pubrel *) ack_packet;
 		ack_packet = NULL;
@@ -857,14 +933,16 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 		unsigned int *match_count,
 		struct rrr_mqtt_p_queue *queue,
 		struct rrr_mqtt_p *packet,
-		struct rrr_mqtt_session_collection_ram_data *ram_data
+		struct rrr_mqtt_session_collection_ram_data *ram_data,
+		struct rrr_mqtt_p_queue *delivery_queue
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
 	struct ram_process_ack_callback_data callback_data = {
 			packet,
 			0, // Initialize found counter
-			ram_data
+			ram_data,
+			delivery_queue
 	};
 	struct fifo_callback_args fifo_callback_data = {NULL, &callback_data, 0};
 
@@ -921,7 +999,8 @@ static int __rrr_mqtt_session_ram_process_ack (
 			match_count,
 			(publish_was_outbound ? &ram_session->to_client_queue : &ram_session->from_client_queue),
 			packet,
-			ram_data
+			ram_data,
+			ram_session->target_publish_queue
 	)) != 0) {
 		VL_MSG_ERR("Error while iterating send queue in __rrr_mqtt_session_ram_process_ack\n");
 		goto out;
@@ -1411,7 +1490,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 
 		RRR_MQTT_P_INCREF(publish);
 		fifo_buffer_write (
-				&ram_data->publish_queue.buffer,
+				&ram_session->target_publish_queue->buffer,
 				(char*) publish,
 				sizeof(*publish)
 		);
@@ -1536,6 +1615,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 }
 
 const struct rrr_mqtt_session_collection_methods methods = {
+		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,
@@ -1586,17 +1666,26 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		goto out_destroy_mutex;
 	}
 
-	if (fifo_buffer_init_custom_free(&ram_data->publish_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
+	if (fifo_buffer_init_custom_free(&ram_data->publish_forward_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
 		VL_MSG_ERR("Could not initialize buffer in rrr_mqtt_session_collection_ram_new\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out_destroy_retain_queue;
 	}
+
+	if (fifo_buffer_init_custom_free(&ram_data->publish_local_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
+		VL_MSG_ERR("Could not initialize buffer in rrr_mqtt_session_collection_ram_new\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_publish_queue;
+	}
+
 	*sessions = (struct rrr_mqtt_session_collection *) ram_data;
 
 	goto out;
 
-/*	out_destroy_publish_queue:
-		fifo_buffer_invalidate(&ram_data->publish_queue.buffer);*/
+/*	out_destroy_local_delivery_queue:
+		fifo_buffer_invalidate(&ram_data->local_delivery_queue.buffer);*/
+	out_destroy_publish_queue:
+		fifo_buffer_invalidate(&ram_data->publish_forward_queue.buffer);
 	out_destroy_retain_queue:
 		fifo_buffer_invalidate(&ram_data->retain_queue.buffer);
 		// TODO : Implement destroy

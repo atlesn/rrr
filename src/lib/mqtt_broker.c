@@ -418,7 +418,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 						mqtt_data->sessions,
 						connect->client_identifier,
 						&session_present,
-						1  // No creation if non-existent client ID
+						1,  // No creation if non-existent client ID
+						0   // No local delivery (forward publish to other sessions)
 				)) != RRR_MQTT_SESSION_OK) {
 					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 					VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect A\n");
@@ -485,7 +486,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				mqtt_data->sessions,
 				connect->client_identifier,
 				&session_present,
-				0 // Create if non-existent client ID
+				0,  // Create if non-existent client ID
+				0   // No local delivery (forward publish to other sessions)
 		)) != RRR_MQTT_SESSION_OK || session == NULL) {
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect B\n");
@@ -811,17 +813,11 @@ static int __rrr_mqtt_broker_accept_connections_callback (
 	struct rrr_mqtt_broker_data *data = callback_data->data;
 
 	int ret = 0;
-	int ret_tmp = 0;
 
-	if ((ret_tmp = rrr_mqtt_common_data_register_connection(&data->mqtt_data, accept_data)) != RRR_MQTT_CONN_OK) {
-		if ((ret_tmp & RRR_MQTT_CONN_BUSY) != 0) {
-			VL_MSG_ERR("Too many connections was open in __rrr_mqtt_broker_accept_connections_callback\n");
-			ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_BUSY);
-			ret |= RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		if (ret_tmp != RRR_MQTT_CONN_OK) {
-			VL_MSG_ERR("Could not register new connection in __rrr_mqtt_broker_accept_connections_callback\n");
-		}
+	struct rrr_mqtt_common_remote_handle remote_handle;
+
+	if ((ret = rrr_mqtt_common_register_connection(&remote_handle, &data->mqtt_data, accept_data)) != RRR_MQTT_CONN_OK) {
+		VL_MSG_ERR("Could not register connection in __rrr_mqtt_broker_accept_connections_callback\n");
 	}
 	else {
 		callback_data->connection_count++;

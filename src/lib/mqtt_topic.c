@@ -70,7 +70,7 @@ static int __rrr_mqtt_topic_name_char_is_ok(uint32_t c, void *arg) {
 	struct topic_name_seq *seq = arg;
 
 	if (c == '#' || c == '+') {
-		VL_MSG_ERR("mqtt topic filter cannot contain '+' and '#', name was '%s'\n",
+		VL_MSG_ERR("mqtt topic name cannot contain '+' and '#', name was '%s'\n",
 				seq->orig);
 		return 1;
 	}

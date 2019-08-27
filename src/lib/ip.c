@@ -426,6 +426,78 @@ int ip_network_start_udp_ipv4 (struct ip_data *data) {
 	return 1;
 }
 
+int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, unsigned int port, const char *host) {
+	int fd = 0;
+
+	*accept_data = NULL;
+
+	if (port < 1 || port > 65535) {
+		VL_BUG ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", port);
+	}
+
+	char port_str[16];
+	sprintf(port_str, "%u", port);
+
+    struct addrinfo hints;
+    struct addrinfo *result;
+
+    memset (&hints, '\0', sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    int s = getaddrinfo(host, port_str, &hints, &result);
+    if (s != 0) {
+    	VL_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+    	goto out_error;
+    }
+
+    struct addrinfo *rp;
+    for (rp = result; rp != NULL; rp = rp->ai_next) {
+    	fd = rrr_socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol, "ip_network_start");
+    	if (fd == -1) {
+    		continue;
+    	}
+    	if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
+    		break;
+    	}
+    	rrr_socket_close(fd);
+    }
+
+    freeaddrinfo(result);
+
+    if (fd < 0 || rp == NULL) {
+		VL_MSG_ERR ("Could not create socket for host '%s'\n", host);
+		goto out_error;
+    }
+
+    struct ip_accept_data *accept_result = malloc(sizeof(*result));
+    if (accept_result == NULL) {
+    	VL_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+    	goto out_close_socket;
+    }
+
+    memset(accept_result, '\0', sizeof(*accept_result));
+
+    accept_result->ip_data.fd = fd;
+    accept_result->ip_data.port = port;
+    accept_result->len = sizeof(accept_result->addr);
+    if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
+    	VL_MSG_ERR("getsockname failed: %s\n", strerror(errno));
+    	goto out_free_accept;
+    }
+
+    *accept_data = accept_result;
+
+	return 0;
+
+	out_free_accept:
+		free(accept_result);
+	out_close_socket:
+		rrr_socket_close(fd);
+	out_error:
+		return 1;
+}
+
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
 	int fd = rrr_socket(AF_INET6, SOCK_CLOEXEC|SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
 	if (fd == -1) {

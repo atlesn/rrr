@@ -53,6 +53,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		goto_or_break_soft;											\
 	}} while(0)
 
+#define RRR_MQTT_COMMON_SESSION_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_deleted,ret_hard) \
+	do {if (ret_tmp != 0) {											\
+		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {				\
+			VL_MSG_ERR("Soft session error " msg_on_err "\n");		\
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_ERROR;			\
+			ret_final |= ret_soft;									\
+		}															\
+		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {			\
+			VL_MSG_ERR("Session was deleted " msg_on_err "\n");		\
+			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_DELETED;			\
+			ret_final |= ret_deleted;								\
+		}															\
+		if (ret_tmp != RRR_MQTT_SESSION_OK) {						\
+			VL_MSG_ERR("Internal error " msg_on_err					\
+				" (return was %i)\n", ret_tmp);						\
+			ret_final |= ret_hard;									\
+			goto_or_break_hard;										\
+		}															\
+		goto_or_break_soft;											\
+	}} while(0)
+
+#define RRR_MQTT_COMMON_FIFO_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_hard) \
+	do {if (ret_tmp != 0) {											\
+		if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {					\
+			VL_MSG_ERR("FIFO callback error " msg_on_err "\n");		\
+			ret_tmp = ret_tmp & ~FIFO_CALLBACK_ERR;					\
+			ret_final |= ret_soft;									\
+		}															\
+		if (ret_tmp != FIFO_OK) {									\
+			VL_MSG_ERR("FIFO internal error " msg_on_err			\
+				" (return was %i)\n", ret_tmp);						\
+			ret_final |= ret_hard;									\
+			goto_or_break_hard;										\
+		}															\
+		goto_or_break_soft;											\
+	}} while(0)
+
 #define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
 	do { int ret_tmp = function;									\
 		RRR_MQTT_COMMON_CONN_CHECK_RETURN(							\
@@ -66,8 +103,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		);															\
 	} while(0)
 
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(function,goto,msg_on_err) \
-	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(function,ret,goto,goto,msg_on_err)
+#define RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
+	do { int ret_tmp = function;									\
+		RRR_MQTT_COMMON_SESSION_CHECK_RETURN(						\
+			ret_final,												\
+			msg_on_err,												\
+			goto_or_break_soft,										\
+			goto_or_break_hard,										\
+			RRR_MQTT_SESSION_DELETED,								\
+			RRR_MQTT_SESSION_ERROR,									\
+			RRR_MQTT_SESSION_INTERNAL_ERROR							\
+		);															\
+	} while(0)
 
 #define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
 	do { int ret_tmp = function;									\
@@ -82,56 +129,59 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		);															\
 	} while(0)
 
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS_GENERAL(function,goto,msg_on_err) \
-	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS(function,ret,goto,goto,msg_on_err)
-
 #define RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
 	do { int ret_tmp = function;									\
-	if (ret_tmp != 0) {												\
-		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {				\
-			VL_MSG_ERR("Soft session error " msg_on_err "\n");		\
-			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_ERROR;			\
-			ret_final |= RRR_MQTT_CONN_DESTROY_CONNECTION;			\
-			ret_final |= RRR_MQTT_CONN_SOFT_ERROR;					\
-		}															\
-		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {			\
-			VL_MSG_ERR("Session was deleted " msg_on_err "\n");		\
-			ret_tmp = ret_tmp & ~RRR_MQTT_SESSION_DELETED;			\
-			ret_final |= RRR_MQTT_CONN_DESTROY_CONNECTION;			\
-			ret_final |= RRR_MQTT_CONN_SOFT_ERROR;					\
-		}															\
-		if (ret_tmp != RRR_MQTT_SESSION_OK) {						\
-			VL_MSG_ERR("Internal error " msg_on_err					\
-				" (return was %i)\n", ret_tmp);						\
-			ret_final |= RRR_MQTT_CONN_INTERNAL_ERROR;				\
-			goto_or_break_hard;										\
-		}															\
-		goto_or_break_soft;											\
-	}} while(0)
+	RRR_MQTT_COMMON_SESSION_CHECK_RETURN(							\
+		ret_final,													\
+		msg_on_err,													\
+		goto_or_break_soft,											\
+		goto_or_break_hard,											\
+		RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,	\
+		RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,	\
+		RRR_MQTT_CONN_INTERNAL_ERROR								\
+	); } while(0)
+
+#define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
+	do { int ret_tmp = function;									\
+		RRR_MQTT_COMMON_FIFO_CHECK_RETURN(							\
+			ret_final,												\
+			msg_on_err,												\
+			goto_or_break_soft,										\
+			goto_or_break_hard,										\
+			RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,\
+			RRR_MQTT_CONN_INTERNAL_ERROR							\
+		);															\
+	} while(0)
+
+#define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
+	do { int ret_tmp = function;									\
+		RRR_MQTT_COMMON_FIFO_CHECK_RETURN(							\
+			ret_final,												\
+			msg_on_err,												\
+			goto_or_break_soft,										\
+			goto_or_break_hard,										\
+			RRR_MQTT_SESSION_ERROR,									\
+			RRR_MQTT_SESSION_INTERNAL_ERROR							\
+		);															\
+	} while(0)
+
+#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(function,goto,msg_on_err) \
+		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(function,ret,goto,goto,msg_on_err)
+
+#define RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(function,goto,msg_on_err) \
+		RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN(function,ret,goto,goto,msg_on_err)
+
+#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS_GENERAL(function,goto,msg_on_err) \
+		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS(function,ret,goto,goto,msg_on_err)
 
 #define RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(function,goto,msg_on_err) \
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS(function,ret,goto,goto,msg_on_err)
 
-#define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
-	do { int ret_tmp = function;									\
-	if (ret_tmp != 0) {												\
-		if ((ret_tmp & FIFO_CALLBACK_ERR) != 0) {					\
-			VL_MSG_ERR("FIFO callback error " msg_on_err "\n");		\
-			ret_tmp = ret_tmp & ~FIFO_CALLBACK_ERR;					\
-			ret_final |= RRR_MQTT_CONN_DESTROY_CONNECTION;			\
-			ret_final |= RRR_MQTT_CONN_SOFT_ERROR;					\
-		}															\
-		if (ret_tmp != FIFO_OK) {									\
-			VL_MSG_ERR("FIFO internal error " msg_on_err			\
-				" (return was %i)\n", ret_tmp);						\
-			ret_final |= RRR_MQTT_CONN_INTERNAL_ERROR;				\
-			goto_or_break_hard;										\
-		}															\
-		goto_or_break_soft;											\
-	}} while(0)
-
 #define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(function,goto,msg_on_err) \
 		RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS(function,ret,goto,goto,msg_on_err)
+
+#define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(function,goto,msg_on_err) \
+		RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS(function,ret,goto,goto,msg_on_err)
 
 struct ip_accept_data;
 struct rrr_mqtt_data;
@@ -144,6 +194,11 @@ struct rrr_mqtt_p_publish;
 
 struct rrr_mqtt_type_handler_properties {
 	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
+};
+
+struct rrr_mqtt_common_remote_handle {
+	// Must be first
+	const struct rrr_mqtt_conn *connection;
 };
 
 struct rrr_mqtt_data {
@@ -208,11 +263,11 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		uint64_t close_wait_time_usec,
 		int max_socket_connections
 );
-int rrr_mqtt_common_data_register_connection (
+int rrr_mqtt_common_register_connection (
+		struct rrr_mqtt_common_remote_handle *target_handle,
 		struct rrr_mqtt_data *data,
 		const struct ip_accept_data *accept_data
 );
-
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
@@ -256,11 +311,15 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION);
-
 int rrr_mqtt_common_send_from_sessions_callback (
 		struct rrr_mqtt_p *packet,
 		void *arg
 );
 int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_data *data,
+		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+);
 
 #endif /* RRR_MQTT_COMMON_H */

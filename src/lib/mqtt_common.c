@@ -185,22 +185,38 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 		return ret;
 }
 
-int rrr_mqtt_common_data_register_connection (
+int rrr_mqtt_common_register_connection (
+		struct rrr_mqtt_common_remote_handle *target_handle,
 		struct rrr_mqtt_data *data,
 		const struct ip_accept_data *accept_data
 ) {
 	int ret = 0;
+	int ret_tmp = 0;
+
+	memset(target_handle, '\0', sizeof(*target_handle));
 
 	struct rrr_mqtt_conn *connection;
 
-	ret = rrr_mqtt_conn_collection_new_connection (
+	if ((ret_tmp = rrr_mqtt_conn_collection_new_connection (
 			&connection,
 			&data->connections,
 			&accept_data->ip_data,
 			&accept_data->addr,
 			data->retry_interval_usec,
 			data->close_wait_time_usec
-	);
+	)) != RRR_MQTT_CONN_OK) {
+		if ((ret_tmp & RRR_MQTT_CONN_BUSY) != 0) {
+			VL_MSG_ERR("Too many connections was open in rrr_mqtt_common_register_connection\n");
+			ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_BUSY);
+			ret |= RRR_MQTT_CONN_SOFT_ERROR;
+		}
+		if (ret_tmp != RRR_MQTT_CONN_OK) {
+			VL_MSG_ERR("Could not register new connection in rrr_mqtt_common_register_connection\n");
+		}
+	}
+	else {
+		target_handle->connection = connection;
+	}
 
 	return ret;
 }
@@ -835,7 +851,7 @@ static int __rrr_mqtt_common_handle_packets (
 	struct rrr_mqtt_data *data = arg;
 
 	struct handle_packets_callback callback_data = {
-			data, connection, RRR_MQTT_CONN_OK
+			data, connection
 	};
 
 	struct fifo_callback_args fifo_callback_data = {
@@ -959,6 +975,10 @@ static int __rrr_mqtt_common_send (
 		ret = RRR_MQTT_CONN_BUSY;
 		goto out_nolock;
 	}
+	if (connection->session == NULL) {
+		// No CONNECT yet
+		goto out_unlock;
+	}
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
 		goto out_unlock;
 	}
@@ -1023,4 +1043,21 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 	out:
 	// Only let internal error propagate
 	return ret & RRR_MQTT_CONN_INTERNAL_ERROR;
+}
+
+int rrr_mqtt_common_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_data *data,
+		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
+			data->sessions->methods->iterate_and_clear_local_delivery(data->sessions, callback, callback_arg),
+			goto out,
+			" while iterating local delivery queue in rrr_mqtt_common_iterate_and_clear_local_delivery"
+	);
+
+	out:
+	return ret & RRR_MQTT_SESSION_INTERNAL_ERROR;
 }

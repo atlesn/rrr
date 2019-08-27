@@ -31,13 +31,16 @@ endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
 	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
-	duplicator.la mqttbroker.la \
+	duplicator.la mqttbroker.la mqttclient.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
 mqttbroker_la_LDFLAGS = ${module_ldflags}
 mqttbroker_la_SOURCES = d_mqttbroker.c
+
+mqttclient_la_LDFLAGS = ${module_ldflags}
+mqttclient_la_SOURCES = p_mqttclient.c
 
 dummy_la_LDFLAGS = ${module_ldflags}
 dummy_la_SOURCES = src_dummy.c

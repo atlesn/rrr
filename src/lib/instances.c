@@ -276,7 +276,8 @@ int instance_add_senders (
 	);
 
 	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR ||
-		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE
+		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE ||
+		instance->dynamic_data->type == VL_MODULE_TYPE_DEADEND
 	) {
 		if (senders_check_empty(&instance->senders)) {
 			if (instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE) {

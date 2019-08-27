@@ -60,6 +60,15 @@ struct rrr_mqtt_session_properties {
 struct rrr_mqtt_session_collection_methods {
 	// COLLECTION METHODS
 
+	// Iterate local delivery queue (used by client). Packets are freed after
+	// callback returns. To keep packets in client program, do an INCREF. All
+	// packets are cleared from the buffer immediately.
+	int (*iterate_and_clear_local_delivery) (
+			struct rrr_mqtt_session_collection *sessions,
+			int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+			void *callback_arg
+	);
+
 	// Destroy old sessions, read from send queue
 	int (*maintain) (
 			struct rrr_mqtt_session_collection *
@@ -77,7 +86,8 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session_collection *collection,
 			const char *client_id,
 			int *session_present,
-			int no_creation
+			int no_creation,
+			int local_delivery
 	);
 
 	// SESSION METHODS
