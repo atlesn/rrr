@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../global.h"
 
-#define RRR_MQTT_SERVER_PORT 1883
+#define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_BROKER_MAX_CONNECTIONS 100
 
 struct mqtt_broker_data {
@@ -123,7 +123,7 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 		goto out;
 	}
 	else {
-		mqtt_port = RRR_MQTT_SERVER_PORT;
+		mqtt_port = RRR_MQTT_DEFAULT_SERVER_PORT;
 		ret = 0;
 	}
 

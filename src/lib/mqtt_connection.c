@@ -722,7 +722,7 @@ int rrr_mqtt_conn_collection_iterate (
 }
 
 struct connection_with_iterator_ctx_do_callback_data {
-	struct rrr_mqtt_conn *connection;
+	const struct rrr_mqtt_conn *connection;
 	struct rrr_mqtt_p *packet;
 	int (*callback)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet);
 	int connection_found;
@@ -735,7 +735,9 @@ static int __rrr_mqtt_connection_with_iterator_ctx_do_callback (struct rrr_mqtt_
 
 	if (connection == callback_data->connection) {
 		callback_data->connection_found = 1;
-		return callback_data->callback(connection, callback_data->packet);
+		RRR_MQTT_CONN_LOCK(connection);
+		ret = callback_data->callback(connection, callback_data->packet);
+		RRR_MQTT_CONN_UNLOCK(connection);
 	}
 
 	return ret;
@@ -743,7 +745,7 @@ static int __rrr_mqtt_connection_with_iterator_ctx_do_callback (struct rrr_mqtt_
 
 int rrr_mqtt_conn_with_iterator_ctx_do (
 		struct rrr_mqtt_conn_collection *connections,
-		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet,
 		int (*callback)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet)
 ) {
@@ -802,7 +804,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	if (read_session->rx_buf_wpos > read_session->target_size && read_session->target_size > 0) {
 		VL_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_read %li > %li (when starting read tick)\n",
 				read_session->rx_buf_wpos, read_session->target_size);
-		ret = RRR_MQTT_CONN_SOFT_ERROR;
+		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
 

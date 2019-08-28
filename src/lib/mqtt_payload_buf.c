@@ -140,3 +140,31 @@ int rrr_mqtt_payload_buf_put_raw_at_offset (
 
 	return ret;
 }
+
+int rrr_mqtt_payload_buf_put_variable_int (
+		struct rrr_mqtt_payload_buf_session *session,
+		uint32_t value
+) {
+	if (value > 0xfffffff) { // <-- Seven f's
+		VL_BUG("Value too large in rrr_mqtt_payload_buf_put_variable_int\n");
+	}
+
+	uint8_t chunks[4];
+
+	ssize_t used_bytes = 0;
+	for (int i = 0; i < 4; i--) {
+		used_bytes++;
+
+		chunks[i] = value & 0x7f;
+		value >>= 7;
+		if (value == 0) {
+			break;
+		}
+		else {
+			chunks[i] |= 1<<7;
+		}
+	}
+
+	return rrr_mqtt_payload_buf_put_raw(session, chunks, used_bytes);
+}
+

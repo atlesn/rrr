@@ -22,9 +22,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_CLIENT_H
 #define RRR_MQTT_CLIENT_H
 
-#define RRR_MQTT_CLIENT_RETRY_INTERVAL 5
-#define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME 3
-#define RRR_MQTT_CLIENT_MAX_SOCKETS 100
+#define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
+#define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
+#define RRR_MQTT_CLIENT_MAX_SOCKETS					100
+#define RRR_MQTT_CLIENT_SESSION_EXPIRY				0xffffffff
+#define RRR_MQTT_CLIENT_MAX_IN_FLIGHT				10
+#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME	10
+#define RRR_MQTT_CLIENT_KEEP_ALIVE					30
 
 #include <inttypes.h>
 
@@ -41,9 +45,15 @@ int rrr_mqtt_client_connect (
 		struct rrr_mqtt_common_remote_handle *result_handle,
 		struct rrr_mqtt_client_data *data,
 		const char *server,
-		uint16_t port
+		uint16_t port,
+		uint8_t version,
+		uint16_t keep_alive,
+		uint8_t clean_start
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
+static inline void rrr_mqtt_client_destroy_void (void *client) {
+	rrr_mqtt_client_destroy(client);
+}
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const char *client_name,

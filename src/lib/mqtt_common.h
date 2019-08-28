@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_connection.h"
 #include "mqtt_session.h"
 
-#define RRR_MQTT_DATA_CLIENT_NAME_LENGTH 64
 #define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE 4096
 
 #define RRR_MQTT_COMMON_CONN_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_destroy,ret_soft,ret_hard) \
@@ -203,7 +202,6 @@ struct rrr_mqtt_common_remote_handle {
 
 struct rrr_mqtt_data {
 	struct rrr_mqtt_conn_collection connections;
-	char client_name[RRR_MQTT_DATA_CLIENT_NAME_LENGTH + 1];
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
 	int (*event_handler)(
 			struct rrr_mqtt_conn *connection,
@@ -211,6 +209,7 @@ struct rrr_mqtt_data {
 			void *static_arg,
 			void *arg
 	);
+	char *client_name;
 	void *event_handler_static_arg;
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t retry_interval_usec;
@@ -283,7 +282,7 @@ int rrr_mqtt_common_handle_properties (
 		uint8_t *reason_v5
 );
 
-#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(target,callback,action_on_error)							\
+#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(target,packet,callback,action_on_error)					\
 	do {if ((ret = rrr_mqtt_common_handle_properties (												\
 			(target),																				\
 			callback,																				\

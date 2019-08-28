@@ -54,6 +54,10 @@ int rrr_mqtt_payload_buf_put_raw_at_offset (
 		ssize_t size,
 		ssize_t offset
 );
+int rrr_mqtt_payload_buf_put_variable_int (
+		struct rrr_mqtt_payload_buf_session *session,
+		uint32_t value
+);
 static inline ssize_t rrr_mqtt_payload_buf_get_written_size (struct rrr_mqtt_payload_buf_session *session) {
 	return session->wpos - session->buf;
 }

@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <pthread.h>
+
 #include "../global.h"
 #include "mqtt_packet.h"
 #include "mqtt_common.h"
@@ -27,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_property.h"
 #include "linked_list.h"
 
-const struct rrr_mqtt_session_properties default_session_properties = {
+static const struct rrr_mqtt_session_properties default_session_properties = {
 		session_expiry:					RRR_MQTT_BROKER_SESSION_EXPIRY,
 		receive_maximum:				0,
 		maximum_packet_size:			0,
@@ -511,6 +513,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connect->properties,
+			connect,
 			rrr_mqtt_common_handler_connect_handle_properties_callback,
 			goto out_send_connack
 	);

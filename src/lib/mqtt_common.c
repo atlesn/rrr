@@ -40,7 +40,7 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 		data->sessions->methods->destroy(data->sessions);
 	}
 
-	*(data->client_name) = '\0';
+	free(data->client_name);
 	data->handler_properties = NULL;
 }
 
@@ -146,8 +146,9 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 
 	memset (data, '\0', sizeof(*data));
 
-	if (strlen(client_name) > RRR_MQTT_DATA_CLIENT_NAME_LENGTH) {
-		VL_MSG_ERR("Client name was too long in rrr_mqtt_data_init\n");
+	data->client_name = malloc(strlen(client_name) + 1);
+	if (data->client_name == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_data_init\n");
 		ret = 1;
 		goto out;
 	}
@@ -447,7 +448,7 @@ int rrr_mqtt_common_handle_properties (
 	if ((ret = rrr_mqtt_property_collection_iterate (
 		source,
 		callback,
-		&callback_data
+		callback_data
 	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
 			VL_MSG_ERR("Soft error while iterating properties\n");
@@ -501,6 +502,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&publish->properties,
+			publish,
 			rrr_mqtt_common_handler_publish_handle_properties_callback,
 			goto out_generate_ack
 	);
@@ -1006,10 +1008,11 @@ static int __rrr_mqtt_common_send (
 
 int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 	int ret = 0;
+	int preserve_ret = 0;
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse, data),
-			ret,
+			ret = preserve_ret,
 			goto housekeeping,
 			goto out,
 			"in rrr_mqtt_common_read_parse_handle while reading and parsing"
@@ -1017,7 +1020,7 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_handle_packets, data),
-			ret,
+			ret = preserve_ret,
 			goto housekeeping,
 			goto out,
 			"in rrr_mqtt_common_read_parse_handle while handling packets"
@@ -1025,7 +1028,7 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_send, data),
-			ret,
+			ret = preserve_ret,
 			goto housekeeping,
 			goto out,
 			"in rrr_mqtt_common_read_parse_handle while sending packets"
@@ -1034,7 +1037,7 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 	housekeeping:
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, rrr_mqtt_conn_iterator_ctx_housekeeping, data),
-			ret,
+			ret, // <-- correct not to set preserve_ret
 			goto out,
 			goto out,
 			"in rrr_mqtt_common_read_parse_handle while doing housekeeping"
@@ -1042,7 +1045,7 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 
 	out:
 	// Only let internal error propagate
-	return ret & RRR_MQTT_CONN_INTERNAL_ERROR;
+	return (ret | preserve_ret) & RRR_MQTT_CONN_INTERNAL_ERROR;
 }
 
 int rrr_mqtt_common_iterate_and_clear_local_delivery (

@@ -53,12 +53,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		PUT_RAW(&data, sizeof(uint16_t));	\
 		} while (0)
 
+#define PUT_U32(byte) do {					\
+		uint32_t data = htobe32(byte);		\
+		PUT_RAW(&data, sizeof(uint32_t));	\
+		} while (0)
+
+
 #define PUT_RAW_WITH_LENGTH(data,size) do {														\
 		PUT_U16(size);																			\
 		if (rrr_mqtt_payload_buf_put_raw (session, data, size) != RRR_MQTT_PAYLOAD_BUF_OK) {	\
 			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;												\
 			goto out;																			\
 		}} while (0)
+
+#define PUT_AND_VERIFY_RAW_WITH_LENGTH(data,size,msg) do {			\
+			if ((data) == NULL) {									\
+				VL_BUG("Data was null " msg "\n");					\
+			}														\
+			if (*(data) == '\0' && (size) > 0) {					\
+				VL_BUG("Data was \\0 but length was > 0 " msg "\n");\
+			}														\
+			if ((size) > 0xffff) {									\
+				VL_BUG("Data was too long " msg "\n");				\
+			}														\
+			PUT_RAW_WITH_LENGTH(data,size);							\
+		} while(0)
 
 #define PUT_RAW_AT_OFFSET(data,size,offset) do {		\
 		if (rrr_mqtt_payload_buf_put_raw_at_offset (	\
@@ -67,18 +86,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				(size),									\
 				(offset)								\
 		) != RRR_MQTT_PAYLOAD_BUF_OK) {					\
-			ret = RRR_MQTT_ASSEMBLE_ERR;				\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
 			goto out;									\
 		}} while (0)
 
-#define PUT_VARIABLE_INT_AT_OFFSET(value,offset) do {			\
-			if (rrr_mqtt_payload_buf_put_variable_int_at_offset(\
-				session,										\
-				(value),										\
-				(offset)										\
-		) != RRR_MQTT_PAYLOAD_BUF_OK) {							\
-			ret = RRR_MQTT_ASSEMBLE_ERR;						\
-			goto out;											\
+#define PUT_VARIABLE_INT(value) do {					\
+		if (rrr_mqtt_payload_buf_put_variable_int(		\
+				session,								\
+				(value)									\
+		) != RRR_MQTT_PAYLOAD_BUF_OK) {					\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
+			goto out;									\
 		}} while (0)
 
 #define PUT_U8_AT_OFFSET(byte,offset) do {						\
@@ -94,9 +112,168 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		rrr_mqtt_payload_buf_destroy (session);						\
 		return (ret | (extra_ret_value))
 
+static int __rrr_mqtt_assemble_put_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+) {
+	int ret = RRR_MQTT_ASSEMBLE_OK;
+
+	struct rrr_mqtt_payload_buf_session *session = arg;
+
+	PUT_U8(property->definition->identifier);
+
+	switch (property->definition->type) {
+		case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
+			PUT_U8(*((uint8_t *) property->data));
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
+			PUT_U16(*((uint16_t *) property->data));
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_FOUR:
+			PUT_U32(*((uint32_t *) property->data));
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
+			if (*((uint32_t *) property->data) > 0xfffffff) { // <-- Seven f's
+				VL_BUG("Length of VINT field was too long in __rrr_mqtt_assemble_put_properties_callback");
+			}
+			PUT_VARIABLE_INT(*((uint32_t *) property->data));
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_BLOB:
+			if (property->length > 0xffff) {
+				VL_BUG("Length of BLOB field was too long in __rrr_mqtt_assemble_put_properties_callback");
+			}
+			PUT_RAW_WITH_LENGTH(property->data, property->length);
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
+			if (property->length > 0xffff) {
+				VL_BUG("Length of UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
+			}
+			PUT_RAW_WITH_LENGTH(property->data, property->length);
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
+			if (property->sibling == NULL || property->sibling->sibling != NULL) {
+				VL_BUG("Sibling problem of 2UTF8 property in __rrr_mqtt_assemble_put_properties_callback\n");
+			}
+			if (property->length > 0xffff || property->sibling->length > 0xffff) {
+				VL_BUG("Length of 2UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
+			}
+			PUT_RAW_WITH_LENGTH(property->data, property->length);
+			PUT_RAW_WITH_LENGTH(property->sibling->data, property->sibling->length);
+			break;
+		default:
+			VL_BUG("Unknown property type %u in __rrr_mqtt_assemble_put_properties_callback\n",
+					property->definition->type);
+	};
+
+	out:
+	return ret;
+}
+
+static int __rrr_mqtt_assemble_put_properties (
+		struct rrr_mqtt_payload_buf_session *session,
+		const struct rrr_mqtt_property_collection *properties
+) {
+	int ret = RRR_MQTT_ASSEMBLE_OK;
+
+	ssize_t total_size = 0;
+	ssize_t count = 0;
+	if (rrr_mqtt_property_collection_calculate_size (&total_size, &count, properties) != 0) {
+		VL_MSG_ERR("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
+		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
+		goto out;
+	}
+
+	// count becomes one byte for each property (it's ID)
+	total_size += count;
+
+	if (total_size + count> 0xfffffff) { // <-- Seven f's
+		// This should be checked prior to calling assembly function
+		VL_BUG("Size of collection was too large in __rrr_mqtt_assemble_put_properties\n");
+	}
+
+	PUT_VARIABLE_INT(total_size);
+
+	const char *begin = session->wpos;
+
+	if (rrr_mqtt_property_collection_iterate(properties, __rrr_mqtt_assemble_put_properties_callback, session) != 0) {
+		VL_MSG_ERR("Error while iterating properties in __rrr_mqtt_assemble_put_properties\n");
+		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
+		goto out;
+	}
+
+	const char *end = session->wpos;
+
+	if (end - begin != total_size) {
+		VL_BUG("Size mismatch in __rrr_mqtt_assemble_put_properties\n");
+	}
+
+	out:
+	return ret;
+}
+
+#define PUT_PROPERTIES(properties) do {					\
+		if (__rrr_mqtt_assemble_put_properties(			\
+				session,								\
+				(properties)							\
+		) != RRR_MQTT_ASSEMBLE_OK) {					\
+			ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;		\
+			goto out;									\
+		}} while (0)
+
 int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
+	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
+
+	BUF_INIT();
+
+	PUT_RAW_WITH_LENGTH("MQTT", 4);
+	PUT_U8(connect->protocol_version->id);
+	PUT_U8(connect->connect_flags);
+	PUT_U16(connect->keep_alive);
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		PUT_PROPERTIES(&connect->properties);
+	}
+
+	PUT_AND_VERIFY_RAW_WITH_LENGTH(
+			connect->client_identifier,
+			strlen(connect->client_identifier),
+			" for client identifier in trr_mqtt_assemble_connect"
+	);
+
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		PUT_PROPERTIES(&connect->will_properties);
+	}
+
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
+		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+			connect->will_topic,
+			strlen(connect->will_topic),
+			" for will topic in rrr_mqtt_assemble_connect"
+		);
+		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+			connect->will_message,
+			strlen(connect->will_message),
+			" for will message in rrr_mqtt_assemble_connect"
+		);
+	}
+
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect) != 0) {
+		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+			connect->username,
+			strlen(connect->username),
+			" for user name in rrr_mqtt_assemble_connect"
+		);
+	}
+
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(connect) != 0) {
+		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+			connect->password,
+			strlen(connect->password),
+			" for password in rrr_mqtt_assemble_connect"
+		);
+	}
+
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {

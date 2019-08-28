@@ -25,9 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 
 #define RRR_MQTT_SUBSCRIPTION_OK				0
+#define RRR_MQTT_SUBSCRIPTION_MATCH				0
 #define RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR	1
 #define RRR_MQTT_SUBSCRIPTION_MALFORMED			2
 #define RRR_MQTT_SUBSCRIPTION_REPLACED			3
+#define RRR_MQTT_SUBSCRIPTION_MISMATCH			4
 
 #define RRR_MQTT_SUBSCRIPTION_ITERATE_OK				0
 #define RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR	(1<<0)
@@ -79,11 +81,15 @@ void rrr_mqtt_subscription_replace_and_destroy (
 		struct rrr_mqtt_subscription *target,
 		struct rrr_mqtt_subscription *source
 );
-int rrr_mqtt_subscription_collection_match_publish (
-		struct rrr_mqtt_subscription_collection *subscriptions,
+int rrr_mqtt_subscription_collection_match_publish_callback (
+		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
+		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
 		void *callback_arg
+);
+int rrr_mqtt_subscription_collection_match_publish (
+		const struct rrr_mqtt_subscription_collection *subscriptions,
+		const struct rrr_mqtt_p_publish *publish
 );
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target

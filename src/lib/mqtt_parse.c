@@ -188,6 +188,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}																							\
 	end = start + bytes_parsed
 
+#define PARSE_VARIABLE_INT_RAW(target)															\
+	start = end;																				\
+	if ((ret = __rrr_mqtt_parse_variable_int (													\
+			&target,																			\
+			start,																				\
+			session->buf + session->buf_size,													\
+			&bytes_parsed																		\
+	)) != 0) {																					\
+		if (ret == RRR_MQTT_PARSE_OVERFLOW) {													\
+			VL_MSG_ERR("Carry of last byte was one while parsing VINT\n");						\
+			ret = RRR_MQTT_PARSE_PARAMETER_ERROR;												\
+		}																						\
+		else if (ret != RRR_MQTT_PARSE_INCOMPLETE) {											\
+			VL_MSG_ERR("Error while parsing VINT \n");											\
+			ret = RRR_MQTT_PARSE_INTERNAL_ERROR;												\
+		}																						\
+		return ret;																				\
+	}																							\
+	end = start + bytes_parsed
+
 #define PARSE_CHECK_ZERO_PAYLOAD()																\
 	do {payload_length = session->target_size - session->payload_pos;							\
 	if (payload_length < 0) {																	\
@@ -265,7 +285,7 @@ void rrr_mqtt_parse_session_update (
 	session->protocol_version = protocol_version;
 }
 
-static int __rrr_mqtt_parse_variable_int (uint32_t *target, ssize_t *bytes_parsed, const void *buf, ssize_t len) {
+static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, const char *final_end, ssize_t *bytes_parsed) {
 	ssize_t pos = 0;
 	uint32_t result = 0;
 	uint32_t exponent = 1;
@@ -274,21 +294,19 @@ static int __rrr_mqtt_parse_variable_int (uint32_t *target, ssize_t *bytes_parse
 	*target = 0;
 	*bytes_parsed = 0;
 
-	if (len == 0) {
-		VL_BUG("__rrr_mqtt_packet_parse_variable_int called with zero length");
-	}
+	const char *end = start;
 
 	while (carry) {
-		if (pos == len) {
-			/* Could not finish the value, input too short */
-			return RRR_MQTT_PARSE_INCOMPLETE;
-		}
 		if (pos > 3) {
 			/* Only four bytes allowed */
 			return RRR_MQTT_PARSE_OVERFLOW;
 		}
 
-		uint8_t current = *((uint8_t *) (buf + pos));
+		end++;
+		PARSE_CHECK_END_AND_RETURN_RAW(end, final_end);
+
+		uint8_t current = *((uint8_t*) start);
+
 		uint8_t value = current & 0x7f;
 		carry = current & 0x80;
 
@@ -386,20 +404,6 @@ static int __rrr_mqtt_parse_utf8 (
 		struct rrr_mqtt_property *target, struct rrr_mqtt_parse_session *session, \
 		const char *start, ssize_t *bytes_parsed_final
 
-static int __rrr_mqtt_parse_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
-	target->data = malloc(sizeof(value));
-	if (target->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
-		return RRR_MQTT_PARSE_INTERNAL_ERROR;
-	}
-
-	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32;
-	target->length = sizeof(value);
-	memcpy (target->data, &value, sizeof(value));
-
-	return RRR_MQTT_PARSE_OK;
-}
-
 static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, const char *start, ssize_t length) {
 	int ret = RRR_MQTT_PARSE_OK;
 
@@ -424,7 +428,7 @@ static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, 
 
 	int_merged.result = be32toh(int_merged.result);
 
-	if ((ret = __rrr_mqtt_parse_property_save_uint32(target, int_merged.result)) != 0) {
+	if ((ret = rrr_mqtt_property_save_uint32(target, int_merged.result)) != 0) {
 		return ret;
 	}
 
@@ -483,12 +487,12 @@ static int __rrr_mqtt_parse_property_vint (RRR_PROPERTY_PARSER_DEFINITION) {
 
 	uint32_t result = 0;
 
-	ret = __rrr_mqtt_parse_variable_int(&result, bytes_parsed_final, start, session->buf_size - (start - session->buf));
+	ret = __rrr_mqtt_parse_variable_int(&result, start, session->buf_size + session->buf, bytes_parsed_final);
 	if (ret != RRR_MQTT_PARSE_OK) {
 		return ret;
 	}
 
-	if ((ret = __rrr_mqtt_parse_property_save_uint32(target, result)) != 0) {
+	if ((ret = rrr_mqtt_property_save_uint32(target, result)) != 0) {
 		return ret;
 	}
 
@@ -568,32 +572,33 @@ static int __rrr_mqtt_parse_properties (
 		ssize_t *bytes_parsed_final
 ) {
 	int ret = 0;
-	const char *end = NULL;
+	const char *end = start;
 
 	*bytes_parsed_final = 0;
 
 	uint32_t property_length = 0;
 	ssize_t bytes_parsed = 0;
-	ssize_t bytes_parsed_total = 0;
 
 	rrr_mqtt_property_collection_destroy(target);
 
-	ret = __rrr_mqtt_parse_variable_int(&property_length, &bytes_parsed, start, (session->buf_size - (start - session->buf)));
+	const char *properties_length_start = start;
+
+	PARSE_VARIABLE_INT_RAW(property_length);
 
 	if (ret != RRR_MQTT_PARSE_OK) {
 		if (ret == RRR_MQTT_PARSE_OVERFLOW) {
 			VL_MSG_ERR("Overflow while parsing property length variable int\n");
+			return RRR_MQTT_PARSE_PARAMETER_ERROR;
 		}
 		return ret;
 	}
 
-	bytes_parsed_total += bytes_parsed;
-	start += bytes_parsed;
-	while (1) {
-		end = start + 1;
-		PARSE_CHECK_END_AND_RETURN(end,session);
+	start = end;
+	const char *properties_body_start = start;
 
-		uint8_t type = *((uint8_t *) start);
+	while (end - properties_body_start < property_length) {
+		uint8_t type;
+		PARSE_U8_RAW(type);
 
 		const struct rrr_mqtt_property_definition *property_def = rrr_mqtt_property_get_definition(type);
 		if (property_def == NULL) {
@@ -612,14 +617,12 @@ static int __rrr_mqtt_parse_properties (
 			rrr_mqtt_property_destroy(property);
 			return ret;
 		}
+		end = start + bytes_parsed;
 
 		rrr_mqtt_property_collection_add (target, property);
-
-		bytes_parsed_total += bytes_parsed;
-		start = end + bytes_parsed;
 	}
 
-	*bytes_parsed_final = bytes_parsed_total;
+	*bytes_parsed_final = end - properties_length_start;
 
 	return ret;
 }
@@ -1021,10 +1024,10 @@ int rrr_mqtt_packet_parse (
 		ssize_t bytes_parsed = 0;
 		if ((ret = __rrr_mqtt_parse_variable_int (
 				&remaining_length,
-				&bytes_parsed,
-				header->length,
-				session->buf_size - sizeof(header->type))
-		) != 0) {
+				session->buf + (sizeof(header->type)),
+				session->buf + session->buf_size,
+				&bytes_parsed
+		)) != 0) {
 			if (ret == RRR_MQTT_PARSE_INCOMPLETE) {
 				/* Not enough bytes were read */
 				ret = 0;

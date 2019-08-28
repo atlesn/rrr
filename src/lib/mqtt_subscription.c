@@ -173,7 +173,7 @@ void rrr_mqtt_subscription_replace_and_destroy (
 }
 
 static int __rrr_mqtt_subscription_match_publish (
-		struct rrr_mqtt_subscription *subscription,
+		const struct rrr_mqtt_subscription *subscription,
 		const struct rrr_mqtt_p_publish *publish
 ) {
 	int ret = RRR_MQTT_TOKEN_MISMATCH;
@@ -189,14 +189,14 @@ static int __rrr_mqtt_subscription_match_publish (
 	return ret;
 }
 
-int rrr_mqtt_subscription_collection_match_publish (
-		struct rrr_mqtt_subscription_collection *subscriptions,
+int rrr_mqtt_subscription_collection_match_publish_callback (
+		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
+		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
-	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, struct rrr_mqtt_subscription);
+	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
 			ret = match_callback(publish, node, callback_arg);
@@ -218,6 +218,29 @@ int rrr_mqtt_subscription_collection_match_publish (
 	RRR_LINKED_LIST_ITERATE_END(subscriptions);
 	return ret;
 }
+
+int rrr_mqtt_subscription_collection_match_publish (
+		const struct rrr_mqtt_subscription_collection *subscriptions,
+		const struct rrr_mqtt_p_publish *publish
+) {
+	int ret = RRR_MQTT_TOKEN_MISMATCH;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
+		ret = __rrr_mqtt_subscription_match_publish(node, publish);
+		if (ret == RRR_MQTT_TOKEN_MATCH) {
+			ret = RRR_MQTT_TOKEN_MATCH;
+			RRR_LINKED_LIST_SET_STOP();
+		}
+		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
+			VL_MSG_ERR("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+			RRR_LINKED_LIST_SET_STOP();
+		}
+	RRR_LINKED_LIST_ITERATE_END(subscriptions);
+
+	return ret;
+}
+
 
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target

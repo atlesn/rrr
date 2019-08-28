@@ -123,12 +123,21 @@ int rrr_mqtt_property_clone (
 		struct rrr_mqtt_property **target,
 		const struct rrr_mqtt_property *source
 );
+int rrr_mqtt_property_save_uint32 (
+		struct rrr_mqtt_property *target,
+		uint32_t value
+);
 uint32_t rrr_mqtt_property_get_uint32 (
 		const struct rrr_mqtt_property *property
 );
 const char *rrr_mqtt_property_get_blob (
 		const struct rrr_mqtt_property *property,
 		ssize_t *length
+);
+int rrr_mqtt_property_collection_add_uint32 (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t id,
+		uint32_t value
 );
 void rrr_mqtt_property_collection_add (
 		struct rrr_mqtt_property_collection *collection,
@@ -146,6 +155,11 @@ int rrr_mqtt_property_collection_iterate (
 unsigned int rrr_mqtt_property_collection_count_duplicates (
 		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *self
+);
+int rrr_mqtt_property_collection_calculate_size (
+		ssize_t *size,
+		ssize_t *count,
+		const struct rrr_mqtt_property_collection *collection
 );
 void rrr_mqtt_property_collection_destroy (
 		struct rrr_mqtt_property_collection *collection

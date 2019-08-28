@@ -48,9 +48,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/linked_list.h"
 #include "../global.h"
 
-#define RRR_MQTT_SERVER_PORT 1883
-#define RRR_MQTT_SERVER_QOS 1
-#define RRR_MQTT_SERVER_VERSION 3
+#define RRR_MQTT_DEFAULT_SERVER_PORT 1883
+#define RRR_MQTT_DEFAULT_QOS 1
+#define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 
 struct mqtt_client_topic {
 	RRR_LINKED_LIST_NODE(struct mqtt_client_topic);
@@ -92,7 +92,6 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 static void data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
 	fifo_buffer_invalidate(&data->output_buffer);
-	rrr_mqtt_client_destroy(data->mqtt_client_data);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
@@ -113,16 +112,6 @@ static int data_init (
 
 	if (ret != 0) {
 		VL_MSG_ERR("Could not initialize fifo buffer in mqtt client data_init\n");
-		goto out;
-	}
-
-	if ((ret = rrr_mqtt_client_new (
-			&data->mqtt_client_data,
-			INSTANCE_D_NAME(thread_data),
-			rrr_mqtt_session_collection_ram_new,
-			NULL
-		)) != 0) {
-		VL_MSG_ERR("Could not create new mqtt client\n");
 		goto out;
 	}
 
@@ -170,7 +159,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 	else {
-		mqtt_port = RRR_MQTT_SERVER_PORT;
+		mqtt_port = RRR_MQTT_DEFAULT_SERVER_PORT;
 		ret = 0;
 	}
 	data->server_port = mqtt_port;
@@ -188,7 +177,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 	else {
-		mqtt_qos = RRR_MQTT_SERVER_QOS;
+		mqtt_qos = RRR_MQTT_DEFAULT_QOS;
 		ret = 0;
 	}
 	data->qos = (uint8_t) mqtt_qos;
@@ -212,7 +201,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	}
 	else {
 		if (strcmp(data->version_str, "3.1.1") == 0) {
-			data->version = 3;
+			data->version = 4;
 		}
 		else if (strcmp (data->version_str, "5") == 0) {
 			data->version = 5;
@@ -296,6 +285,18 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	if (rrr_mqtt_client_new (
+			&data->mqtt_client_data,
+			data->client_identifier,
+			rrr_mqtt_session_collection_ram_new,
+			NULL
+		) != 0) {
+		VL_MSG_ERR("Could not create new mqtt client\n");
+		goto out_message;
+	}
+
+	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
+
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
 	if (poll_collection_count(&poll) > 0) {
@@ -315,7 +316,15 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
 
-	if (rrr_mqtt_client_connect(&data->server_handle, data->mqtt_client_data, data->server, data->server_port) != 0) {
+	if (rrr_mqtt_client_connect (
+			&data->server_handle,
+			data->mqtt_client_data,
+			data->server,
+			data->server_port,
+			data->version,
+			RRR_MQTT_CLIENT_KEEP_ALIVE,
+			0 // <-- Clean start
+	) != 0) {
 		VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
 				data->server, data->server_port, INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -341,6 +350,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

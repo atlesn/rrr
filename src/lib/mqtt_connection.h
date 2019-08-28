@@ -253,7 +253,7 @@ int rrr_mqtt_conn_collection_iterate (
 // the callback is not called and a soft error is returned.
 int rrr_mqtt_conn_with_iterator_ctx_do (
 		struct rrr_mqtt_conn_collection *connections,
-		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet,
 		int (*callback)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet)
 );
