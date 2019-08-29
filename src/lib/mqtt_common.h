@@ -242,13 +242,15 @@ struct rrr_mqtt_common_parse_properties_data {
 
 struct rrr_mqtt_common_parse_properties_data_connect {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
-	struct rrr_mqtt_session_properties session_properties;
+	struct rrr_mqtt_session_properties *session_properties;
 };
 
 struct rrr_mqtt_common_parse_properties_data_publish {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
 	struct rrr_mqtt_p_publish *publish;
 };
+
+extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties;
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
@@ -268,6 +270,10 @@ int rrr_mqtt_common_register_connection (
 		const struct ip_accept_data *accept_data
 );
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+);
+int rrr_mqtt_common_handler_connack_handle_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
@@ -314,7 +320,10 @@ int rrr_mqtt_common_send_from_sessions_callback (
 		struct rrr_mqtt_p *packet,
 		void *arg
 );
-int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_read_parse_handle (
+		struct rrr_mqtt_data *data,
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection)
+);
 int rrr_mqtt_common_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_data *data,
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),

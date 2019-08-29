@@ -27,6 +27,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_connection.h"
 #include "mqtt_session.h"
 
+const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
+		session_expiry:						0,
+		receive_maximum:					0,
+		maximum_qos:						0,
+		retain_available:					1,
+		maximum_packet_size:				0,
+		assigned_client_identifier:			NULL,
+		reason_string:						NULL,
+		wildcard_subscriptions_available:	1,
+		subscription_identifiers_availbable:1,
+		shared_subscriptions_available:		1,
+		server_keep_alive:					30,
+		response_information:				NULL,
+		server_reference:					NULL,
+
+		topic_alias_maximum:				0,
+		request_response_information:		0,
+		request_problem_information:		0,
+		user_properties:					{0},
+
+		auth_method:						NULL,
+		auth_data:							NULL
+};
+
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	if (data == NULL) {
 		return;
@@ -257,6 +281,16 @@ int rrr_mqtt_common_register_connection (
 			(target) = tmp_u32;												\
 			break
 
+#define HANDLE_PROPERTY_U32_QOS(target,id,error_msg)						\
+		case id:															\
+			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
+			if (tmp_u32 > 2) {												\
+				VL_MSG_ERR(error_msg "\n");									\
+				goto out_reason_protocol_error;								\
+			}																\
+			(target) = tmp_u32;												\
+			break
+
 #define HANDLE_PROPERTY_U32_ON_OFF_TO_U8(target,id,error_msg)				\
 		case id:															\
 			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
@@ -344,7 +378,7 @@ int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		void *arg
 ) {
 	struct rrr_mqtt_common_parse_properties_data_connect *callback_data = arg;
-	struct rrr_mqtt_session_properties *session_properties = &callback_data->session_properties;
+	struct rrr_mqtt_session_properties *session_properties = callback_data->session_properties;
 
 	HANDLE_PROPERTY_SWITCH_BEGIN();
 		HANDLE_PROPERTY_U32_UNCHECKED (
@@ -378,6 +412,88 @@ int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		HANDLE_PROPERTY_TO_COLLECTION (
 				&session_properties->user_properties,
 				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_method,
+				RRR_MQTT_PROPERTY_AUTH_METHOD
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->auth_data,
+				RRR_MQTT_PROPERTY_AUTH_DATA
+		);
+	HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+}
+
+int rrr_mqtt_common_handler_connack_handle_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+) {
+	struct rrr_mqtt_common_parse_properties_data_connect *callback_data = arg;
+	struct rrr_mqtt_session_properties *session_properties = callback_data->session_properties;
+
+	HANDLE_PROPERTY_SWITCH_BEGIN();
+		HANDLE_PROPERTY_U32_UNCHECKED (
+				session_properties->session_expiry,
+				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
+		);
+		HANDLE_PROPERTY_U32_NON_ZERO (
+				session_properties->receive_maximum,
+				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
+				"Receive maximum was 0 in CONNACK packet"
+		);
+		HANDLE_PROPERTY_U32_QOS (
+				session_properties->maximum_qos,
+				RRR_MQTT_PROPERTY_MAXIMUM_QOS,
+				"QOS was not 0, 1 or 2 in CONNACK packet"
+		);
+		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->retain_available,
+				RRR_MQTT_PROPERTY_RETAIN_AVAILABLE,
+				"Retain available field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_U32_NON_ZERO (
+				session_properties->maximum_packet_size,
+				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
+				"Maximum packet size was 0 in CONNECT packet"
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->assigned_client_identifier,
+				RRR_MQTT_PROPERTY_ASSIGNED_CLIENT_ID
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->reason_string,
+				RRR_MQTT_PROPERTY_REASON_STRING
+		);
+		HANDLE_PROPERTY_TO_COLLECTION (
+				&session_properties->user_properties,
+				RRR_MQTT_PROPERTY_USER_PROPERTY
+		);
+		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->wildcard_subscriptions_available,
+				RRR_MQTT_PROPERTY_WILDCARD_SUB_AVAILBABLE,
+				"Wildcard subscriptions available field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->subscription_identifiers_availbable,
+				RRR_MQTT_PROPERTY_SUBSCRIPTION_ID_AVAILABLE,
+				"Subscription identifiers available field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
+				session_properties->shared_subscriptions_available,
+				RRR_MQTT_PROPERTY_SHARED_SUB_AVAILABLE,
+				"Shared subscriptions available field in CONNECT packet was not 0 or 1"
+		);
+		HANDLE_PROPERTY_U32_UNCHECKED (
+				session_properties->server_keep_alive,
+				RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->response_information,
+				RRR_MQTT_PROPERTY_RESPONSE_INFO
+		);
+		HANDLE_PROPERTY_CLONE (
+				&session_properties->server_reference,
+				RRR_MQTT_PROPERTY_SERVER_REFERENCE
 		);
 		HANDLE_PROPERTY_CLONE (
 				&session_properties->auth_method,
@@ -1006,9 +1122,14 @@ static int __rrr_mqtt_common_send (
 		return ret;
 }
 
-int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
+int rrr_mqtt_common_read_parse_handle (
+		struct rrr_mqtt_data *data,
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection)
+) {
 	int ret = 0;
 	int preserve_ret = 0;
+
+	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data housekeeping_data = { exceeded_keep_alive_callback };
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse, data),
@@ -1036,7 +1157,7 @@ int rrr_mqtt_common_read_parse_handle (struct rrr_mqtt_data *data) {
 
 	housekeeping:
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
-			rrr_mqtt_conn_collection_iterate(&data->connections, rrr_mqtt_conn_iterator_ctx_housekeeping, data),
+			rrr_mqtt_conn_collection_iterate(&data->connections, rrr_mqtt_conn_iterator_ctx_housekeeping, &housekeeping_data),
 			ret, // <-- correct not to set preserve_ret
 			goto out,
 			goto out,

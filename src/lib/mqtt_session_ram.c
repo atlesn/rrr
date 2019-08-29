@@ -438,13 +438,21 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	struct receive_forwarded_publish_data *callback_data = arg;
 	struct rrr_mqtt_session_ram *session = callback_data->session;
 
-	int ret = RRR_MQTT_SESSION_OK;
+	if (session->session_properties.receive_maximum != 0 &&
+		publish->received_size > session->session_properties.receive_maximum) {
+		VL_DEBUG_MSG_1("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
+				publish->received_size, session->session_properties.receive_maximum);
+		return RRR_MQTT_SESSION_OK;
+	}
+
 
 	struct rrr_mqtt_p_publish *new_publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_clone((struct rrr_mqtt_p *) publish);
 	if (new_publish == NULL) {
 		VL_MSG_ERR("Could not clone PUBLISH packet in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
 		return RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
+
+	int ret = RRR_MQTT_SESSION_OK;
 
 	RRR_MQTT_P_LOCK(new_publish);
 
@@ -748,6 +756,30 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	free(sessions);
 }
 
+static void __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *ram_session) {
+	// Remove the packet ID free functions as the packets might call back in the
+	// session system to release packet ID when they are destroyed, which cause
+	// deadlock with ram session lock.
+	if (fifo_buffer_clear_with_callback (
+			&ram_session->to_client_queue.buffer,
+			__packet_id_release_callback,
+			NULL
+	) != 0) {
+		VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
+	}
+
+	if (fifo_buffer_clear_with_callback (
+			&ram_session->from_client_queue.buffer,
+			__packet_id_release_callback,
+			NULL
+	) != 0) {
+		VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
+	}
+
+	rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
+	rrr_mqtt_id_pool_clear(&ram_session->id_pool);
+}
+
 static int __rrr_mqtt_session_ram_init (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
@@ -777,35 +809,56 @@ static int __rrr_mqtt_session_ram_init (
 
 	if (clean_session == 1) {
 		*session_was_present = 0;
-
-		// Remove the packet ID free functions as the packets might call back in the
-		// session system to release packet ID when they are destroyed, which cause
-		// deadlock with ram session lock.
-		if (fifo_buffer_clear_with_callback (
-				&ram_session->to_client_queue.buffer,
-				__packet_id_release_callback,
-				NULL
-		) != 0) {
-			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
-		}
-
-		if (fifo_buffer_clear_with_callback (
-				&ram_session->from_client_queue.buffer,
-				__packet_id_release_callback,
-				NULL
-		) != 0) {
-			VL_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
-		}
-
-		rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
-		rrr_mqtt_id_pool_clear(&ram_session->id_pool);
+		__rrr_mqtt_session_ram_clean_unlocked(ram_session);
 	}
+
 	VL_DEBUG_MSG_1("Init session expiry interval: %" PRIu32 "\n",
 			ram_session->session_properties.session_expiry);
 
 	out_unlock:
 	SESSION_RAM_UNLOCK(ram_session);
 	SESSION_RAM_DECREF();
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_clean (
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+	SESSION_RAM_LOCK(ram_session);
+
+	__rrr_mqtt_session_ram_clean_unlocked(ram_session);
+
+	SESSION_RAM_UNLOCK(ram_session);
+	SESSION_RAM_DECREF();
+
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_reset_properties (
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find,
+		const struct rrr_mqtt_session_properties *session_properties
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+	SESSION_RAM_LOCK(ram_session);
+
+	rrr_mqtt_session_properties_destroy(&ram_session->session_properties);
+	ret = rrr_mqtt_session_properties_clone(&ram_session->session_properties, session_properties);
+	if (ret != 0) {
+		VL_MSG_ERR("Could not clone properties in __rrr_mqtt_session_reset_properties\n");
+		goto out_unlock;
+	}
+
+	out_unlock:
+	SESSION_RAM_UNLOCK(ram_session);
+	SESSION_RAM_DECREF();
+
 	return ret;
 }
 
@@ -1660,6 +1713,8 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,
 		__rrr_mqtt_session_ram_init,
+		__rrr_mqtt_session_ram_clean,
+		__rrr_mqtt_session_ram_reset_properties,
 		__rrr_mqtt_session_ram_heartbeat,
 		__rrr_mqtt_session_ram_notify_ack_received,
 		__rrr_mqtt_session_ram_notify_ack_sent,

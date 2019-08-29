@@ -29,18 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_property.h"
 #include "linked_list.h"
 
-static const struct rrr_mqtt_session_properties default_session_properties = {
-		session_expiry:					RRR_MQTT_BROKER_SESSION_EXPIRY,
-		receive_maximum:				0,
-		maximum_packet_size:			0,
-		topic_alias_maximum:			0,
-		request_response_information:	0,
-		request_problem_information:	0,
-		{0},
-		NULL,
-		NULL
-};
-
 static void __rrr_mqtt_broker_destroy_listen_fd (struct rrr_mqtt_listen_fd *fd) {
 	VL_DEBUG_MSG_1 ("mqtt broker close listen fd %i\n", fd->ip.fd);
 	ip_network_cleanup(&fd->ip);
@@ -374,6 +362,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_broker_data *broker = (struct rrr_mqtt_broker_data *) mqtt_data;
 	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
 
+	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
+
 	RRR_MQTT_P_LOCK(packet);
 
 	int session_present = 0;
@@ -497,8 +487,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 	}
 
-	struct rrr_mqtt_session_properties session_properties = default_session_properties;
-
 	if (!RRR_MQTT_P_IS_V5(packet)) {
 		// Default for version 3.1 is that sessions do not expire,
 		// only use clean session to control this
@@ -508,7 +496,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			session_properties
+			&session_properties
 	};
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
@@ -581,6 +569,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out:
 
+	rrr_mqtt_session_properties_destroy(&session_properties);
 	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;
@@ -862,7 +851,7 @@ int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data)) != 0) {
+	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, NULL)) != 0) {
 		goto out;
 	}
 

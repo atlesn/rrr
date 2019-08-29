@@ -25,18 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_client.h"
 #include "mqtt_common.h"
 
-const struct rrr_mqtt_session_properties default_session_properties = {
-		session_expiry:					RRR_MQTT_CLIENT_SESSION_EXPIRY,
-		receive_maximum:				0,
-		maximum_packet_size:			0,
-		topic_alias_maximum:			0,
-		request_response_information:	0,
-		request_problem_information:	0,
-		{0},
-		NULL,
-		NULL
-};
-
 int rrr_mqtt_client_connect (
 		struct rrr_mqtt_common_remote_handle *result_handle,
 		struct rrr_mqtt_client_data *data,
@@ -93,7 +81,7 @@ int rrr_mqtt_client_connect (
 
 	// TODO : Set connect properties
 
-	struct rrr_mqtt_session_properties session_properties = default_session_properties;
+	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
 
 	if (version >= 5) {
 		// Default for version 3.1 is that sessions do not expire,
@@ -110,7 +98,7 @@ int rrr_mqtt_client_connect (
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			session_properties
+			&session_properties
 	};
 
 	uint8_t reason_v5 = 0;
@@ -138,7 +126,7 @@ int rrr_mqtt_client_connect (
 	if ((ret = mqtt_data->sessions->methods->init_session (
 			mqtt_data->sessions,
 			&session,
-			&callback_data.session_properties,
+			callback_data.session_properties,
 			mqtt_data->retry_interval_usec,
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
 			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
@@ -166,6 +154,17 @@ int rrr_mqtt_client_connect (
 		goto out;
 	}
 
+	if (rrr_mqtt_conn_with_iterator_ctx_do (
+			&data->mqtt_data.connections,
+			result_handle->connection,
+			(struct rrr_mqtt_p *) connect,
+			rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive
+	) != 0) {
+		VL_MSG_ERR("Could not set protocol version and keep alive from CONNECT packet in rrr_mqtt_client_connect");
+		ret = 1;
+		goto out;
+	}
+
 	out:
 		RRR_MQTT_P_UNLOCK(connect);
 	out_nolock:
@@ -174,17 +173,95 @@ int rrr_mqtt_client_connect (
 		return ret;
 }
 
+static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	(void)(mqtt_data);
+	(void)(connection);
+
+	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
+
+	RRR_MQTT_P_LOCK(packet);
+
+	if (connack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		VL_MSG_ERR("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
+		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
+		goto out;
+	}
+
+	if (connack->session_present == 0) {
+		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+				mqtt_data->sessions->methods->clean_session(mqtt_data->sessions, &connection->session),
+				goto out,
+				" while cleaning session in __rrr_mqtt_client_handle_connack"
+		);
+	}
+
+	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
+
+	uint8_t reason_v5 = 0;
+	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
+			&connack->properties,
+			RRR_MQTT_P_5_REASON_OK,
+			&session_properties
+	};
+
+	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
+			&connack->properties,
+			connack,
+			rrr_mqtt_common_handler_connack_handle_properties_callback,
+			goto out
+	);
+
+	if (!RRR_MQTT_P_IS_V5(packet)) {
+		// Default for version 3.1 is that sessions do not expire,
+		// only use clean session to control this
+		session_properties.session_expiry = 0xffffffff;
+	}
+
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->reset_properties(mqtt_data->sessions, &connection->session, &session_properties),
+			goto out,
+			" while resetting properties in __rrr_mqtt_client_handle_connack"
+	);
+
+	if (session_properties.server_keep_alive > 0) {
+		if (session_properties.server_keep_alive > 0xffff) {
+			VL_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
+		}
+		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
+				rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw(connection, session_properties.server_keep_alive),
+				goto out,
+				" while setting server keep alive in __rrr_mqtt_client_handle_connack"
+		);
+	}
+
+	VL_DEBUG_MSG_1("Received CONNACK, now connected\n");
+
+	out:
+		rrr_mqtt_session_properties_destroy(&session_properties);
+		RRR_MQTT_P_UNLOCK(packet);
+		return ret;
+}
+
+static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	int ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+
+
+	return ret;
+}
+
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{NULL},
-	{NULL},
+	{__rrr_mqtt_client_handle_connack},
 	{rrr_mqtt_common_handle_publish},
 	{rrr_mqtt_common_handle_puback_pubcomp},
 	{rrr_mqtt_common_handle_pubrec},
 	{rrr_mqtt_common_handle_pubrel},
 	{rrr_mqtt_common_handle_puback_pubcomp},
 	{NULL},
-	{NULL},
+	{__rrr_mqtt_client_handle_suback},
 	{NULL},
 	{NULL},
 	{NULL},
@@ -277,10 +354,33 @@ int rrr_mqtt_client_new (
 		return ret;
 }
 
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	struct rrr_mqtt_p_pingreq *pingreq = NULL;
+
+	if (connection->protocol_version == NULL) {
+		// CONNECT/CONNACK not yet done
+		goto out;
+	}
+
+	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
+
+	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
+			rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) pingreq),
+			goto out,
+			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
+	);
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
+	return ret;
+}
+
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data)) != 0) {
+	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, __rrr_mqtt_client_exceeded_keep_alive_callback)) != 0) {
 		goto out;
 	}
 

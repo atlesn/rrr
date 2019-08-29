@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_P_31_REASON_OK							0
 #define RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION		1
-#define RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED		2
+#define RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED			2
 #define RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE			3
 #define RRR_MQTT_P_31_REASON_BAD_CREDENTIALS			4
 #define RRR_MQTT_P_31_REASON_NOT_AUTHORIZED				5
@@ -141,6 +141,19 @@ struct rrr_mqtt_p_type_properties {
 	void (*free)(RRR_MQTT_P_TYPE_FREE_DEFINITION);
 };
 
+struct rrr_mqtt_p_reason {
+	uint8_t v5_reason;
+	uint8_t v31_reason;
+
+	uint8_t for_connack;
+	uint8_t for_disconnect;
+	uint8_t for_puback_pubrec;
+	uint8_t for_pubrel_pubcomp;
+	uint8_t for_suback;
+
+	const char *description;
+};
+
 #define RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER					\
 	int users;													\
 	pthread_mutex_t refcount_lock;								\
@@ -178,6 +191,7 @@ struct rrr_mqtt_p_payload {
 	uint8_t type_flags;													\
 	uint8_t dup;														\
 	uint8_t reason_v5;													\
+	const struct rrr_mqtt_p_reason *reason;								\
 	int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id);	\
 	void *release_packet_id_arg1;										\
 	void *release_packet_id_arg2;										\
@@ -187,6 +201,7 @@ struct rrr_mqtt_p_payload {
 	uint64_t planned_expiry_time;										\
 	char *_assembled_data;												\
 	ssize_t assembled_data_size;										\
+	ssize_t received_size;												\
 	struct rrr_mqtt_p_payload *payload;									\
 	const struct rrr_mqtt_p_protocol_version *protocol_version;			\
 	const struct rrr_mqtt_p_type_properties *type_properties
@@ -202,6 +217,7 @@ struct rrr_mqtt_p {
 #define RRR_MQTT_P_GET_IDENTIFIER(p)		((p)->packet_identifier)
 #define RRR_MQTT_P_GET_TYPE_NAME(p)			((p)->type_properties->name)
 #define RRR_MQTT_P_GET_SIZE(p)				((p)->type_properties->packet_size)
+#define RRR_MQTT_P_GET_RECEIVED_SIZE(p)		((p)->type_properties->received_size)
 #define RRR_MQTT_P_GET_PROP_FLAGS(p)		((p)->type_properties->flags)
 #define RRR_MQTT_P_GET_PARSER(p)			((p)->type_properties->parse)
 #define RRR_MQTT_P_GET_ASSEMBLER(p)			((p)->type_properties->assemble)
@@ -337,8 +353,13 @@ struct rrr_mqtt_p_connack {
 	// Only least significant bit is used (session_present)
 	uint8_t ack_flags;
 
+	uint8_t session_present;
+
 	struct rrr_mqtt_property_collection properties;
 };
+
+#define RRR_MQTT_P_CONNACK_GET_FLAG_SESSION_PRESENT(p)	(((1<<0) &			((struct rrr_mqtt_p_connack *)(p))->ack_flags))
+#define RRR_MQTT_P_CONNACK_GET_FLAG_RESERVED(p)			(((0x7f<<1) &		((struct rrr_mqtt_p_connack *)(p))->ack_flags))
 
 #define RRR_MQTT_P_PACKET_PUBACK_PROPERTIES \
 		struct rrr_mqtt_property_collection properties
@@ -413,11 +434,28 @@ struct rrr_mqtt_p_subscribe {
 	struct rrr_mqtt_property_collection properties;
 	struct rrr_mqtt_subscription_collection *subscriptions;
 };
+
 struct rrr_mqtt_p_suback {
 	RRR_MQTT_P_PACKET_HEADER;
 	struct rrr_mqtt_property_collection properties;
 	struct rrr_mqtt_subscription_collection *subscriptions;
+
+	const uint8_t *acknowlegdements;
+	ssize_t acknowledgements_size;
 };
+
+#define RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,idx) \
+	((0x3<<0) & (suback)->acknowlegdements[(idx)])
+
+#define RRR_MQTT_SUBACK_GET_FLAGS_REASON(suback,idx) \
+	(((0x3f<<2) & (suback)->acknowlegdements[(idx)]) >> 7)
+
+#define RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback,idx) \
+	(((0x1f<<2) & (suback)->acknowlegdements[(idx)]) >> 2)
+
+#define RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,idx) \
+	((suback)->acknowlegdements[(idx)])
+
 struct rrr_mqtt_p_unsubscribe {
 	RRR_MQTT_P_PACKET_HEADER;
 };
@@ -505,6 +543,8 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
 	return properties->clone(source);
 }
 
+const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v5 (uint8_t reason_v5);
+const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v31 (uint8_t reason_v31);
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason);
 uint8_t rrr_mqtt_p_translate_reason_from_v31 (uint8_t v31_reason);
 

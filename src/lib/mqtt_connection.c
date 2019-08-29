@@ -1135,12 +1135,9 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		goto out_nolock;
 	}
 
-	(void)(arg);
-
-//	struct rrr_mqtt_data *data = arg;
+	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data *callback_data = arg;
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
-//		VL_DEBUG_MSG_1("Cleaning up connection which is to be closed\n");
 		ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
@@ -1151,6 +1148,12 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		if (connection->last_seen_time + limit < time_get_64()) {
 			VL_DEBUG_MSG_1("Keep-alive exceeded for connection\n");
 			ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
+			goto out;
+		}
+		else if ((callback_data->exceeded_keep_alive_callback != NULL) &&
+				(ret = callback_data->exceeded_keep_alive_callback(connection)) != RRR_MQTT_CONN_OK
+		) {
+			VL_MSG_ERR("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
 			goto out;
 		}
 	}
@@ -1368,6 +1371,19 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	}
 	RRR_FREE_IF_NOT_NULL(network_data);
 	return ret | ret_destroy;
+}
+
+int rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw (
+		struct rrr_mqtt_conn *connection,
+		uint16_t keep_alive
+) {
+	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
+		VL_BUG("Connection lock was not held in rrr_mqtt_connection_set_protocol_version_iterator_ctx\n");
+	}
+
+	connection->keep_alive = keep_alive;
+
+	return RRR_MQTT_CONN_OK;
 }
 
 int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (

@@ -115,6 +115,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PARSE_CHECK_V5(type)									\
 	((type)->protocol_version->id >= RRR_MQTT_VERSION_5)
 
+static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, uint8_t reason_v31_or_v5) {
+	int ret = RRR_MQTT_PARSE_OK;
+
+	const struct rrr_mqtt_p_reason *reason = NULL;
+	if (PARSE_CHECK_V5(packet)) {
+		reason = rrr_mqtt_p_reason_get_v5 (reason_v31_or_v5);
+		if (reason == NULL) {
+			VL_MSG_ERR("Unknown v5 reason %u in %s message\n",
+				reason_v31_or_v5, RRR_MQTT_P_GET_TYPE_NAME(packet));
+			return RRR_MQTT_PARSE_PARAMETER_ERROR;
+		}
+	}
+	else {
+		reason = rrr_mqtt_p_reason_get_v31 (reason_v31_or_v5);
+		if (reason == NULL) {
+			VL_MSG_ERR("Unknown v3.1 reason %u in %s message\n",
+				reason_v31_or_v5, RRR_MQTT_P_GET_TYPE_NAME(packet));
+			return RRR_MQTT_PARSE_PARAMETER_ERROR;
+		}
+	}
+	packet->reason = reason;
+	packet->reason_v5 = reason->v5_reason;
+
+	return ret;
+}
+
+#define PARSE_SAVE_AND_CHECK_REASON_STRUCT(packet,class,reason_v31_or_v5) do {	\
+	if (__rrr_mqtt_parse_save_and_check_reason (								\
+		(struct rrr_mqtt_p *) packet,											\
+		reason_v31_or_v5														\
+	) != RRR_MQTT_PARSE_OK) {													\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
+	}																			\
+	if (packet->reason->PASTE(for_,class) == 0) {								\
+			VL_MSG_ERR("Reason %u->%u '%s' is invalid for %s message\n",		\
+					reason_v31_or_v5, packet->reason->v5_reason,				\
+					packet->reason->description,								\
+				RRR_MQTT_P_GET_TYPE_NAME(packet));								\
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
+	}} while(0)
+
 #define PARSE_VALIDATE_QOS(qos)													\
 	if ((qos) > 2) {															\
 		VL_MSG_ERR("Invalid QoS flags %u in %s packet\n",						\
@@ -216,6 +257,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	if (payload_length == 0) {																	\
 		goto parse_done;																		\
 	}} while(0)
+
+#define PARSE_GET_PAYLOAD_SIZE()																\
+	(payload_length = session->target_size - session->payload_pos)
 
 #define PARSE_CHECK_NO_MORE_DATA()																\
 	do {if (PARSE_CHECK_TARGET_END()) {															\
@@ -732,16 +776,35 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
  }
 
 int rrr_mqtt_parse_connack (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_BEGIN(connack);
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(connack);
+
+	PARSE_U8(connack,ack_flags);
+
+	connack->session_present = RRR_MQTT_P_CONNACK_GET_FLAG_SESSION_PRESENT(connack);
+
+	if (RRR_MQTT_P_CONNACK_GET_FLAG_RESERVED(connack) != 0) {
+		VL_MSG_ERR("Reserved flags in CONNACK packet was not 0 but %u\n",
+				RRR_MQTT_P_CONNACK_GET_FLAG_RESERVED(connack));
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;
+	}
+
+	uint8_t reason_tmp;
+	PARSE_U8_RAW(reason_tmp);
+
+	PARSE_SAVE_AND_CHECK_REASON_STRUCT(connack,connack,reason_tmp);
+
+	PARSE_PROPERTIES_IF_V5(connack,properties);
+
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(connack);
+	PARSE_END_PAYLOAD();
 }
 
 int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(publish);
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(publish);
-
-	publish = (struct rrr_mqtt_p_publish *) session->packet;
 
 	publish->dup = RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(session);
 	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
@@ -809,10 +872,28 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 	PARSE_ALLOCATE(def_puback);
 	PARSE_PACKET_ID(def_puback);
 	PARSE_CHECK_NO_MORE_DATA();
+
 	if (PARSE_CHECK_V5(def_puback)) {
 		PARSE_U8(def_puback,reason_v5);
+
+		if (RRR_MQTT_P_GET_TYPE(def_puback) == RRR_MQTT_P_TYPE_PUBACK ||
+			RRR_MQTT_P_GET_TYPE(def_puback) == RRR_MQTT_P_TYPE_PUBREC
+		) {
+			PARSE_SAVE_AND_CHECK_REASON_STRUCT(def_puback,puback_pubrec,def_puback->reason_v5);
+		}
+		else if (RRR_MQTT_P_GET_TYPE(def_puback) == RRR_MQTT_P_TYPE_PUBREL ||
+				RRR_MQTT_P_GET_TYPE(def_puback) == RRR_MQTT_P_TYPE_PUBCOMP
+		) {
+			PARSE_SAVE_AND_CHECK_REASON_STRUCT(def_puback,pubrel_pubcomp,def_puback->reason_v5);
+		}
+		else {
+			VL_BUG("Unknown packet type %u in rrr_mqtt_parse_def_puback\n",
+					RRR_MQTT_P_GET_TYPE(def_puback));
+		}
+
 		PARSE_PROPERTIES_IF_V5(def_puback,properties);
 	}
+
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(def_puback);
 	PARSE_END_PAYLOAD();
 }
@@ -897,12 +978,68 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(suback);
-
 	PARSE_PACKET_ID(suback);
+	PARSE_PROPERTIES_IF_V5(suback,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback);
 
-	// XXX
+	PARSE_GET_PAYLOAD_SIZE();
+
+	if (payload_length == 0) {
+		VL_MSG_ERR("No subscriptions acknowlegded, payload was empty wil parsing SUBACK message\n");
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;
+	}
+	if (session->buf_size == session->target_size) {
+		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET);
+		goto process_reasons;
+	}
+	else if (session->buf_size > session->target_size) {
+		VL_BUG("Read too many bytes in rrr_mqtt_parse_publish %li > %li\n",
+				session->buf_size, session->target_size);
+	}
+	return RRR_MQTT_PARSE_INCOMPLETE;
+
+	process_reasons:
+
+	suback->acknowlegdements = (void*) (session->buf + session->payload_pos);
+	suback->acknowledgements_size = payload_length;
+
+	for (ssize_t i = 0; i < suback->acknowledgements_size; i++) {
+		const struct rrr_mqtt_p_reason *reason_struct = NULL;
+
+		if (PARSE_CHECK_V5(suback)) {
+			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,i);
+
+			// This will also catch invalid QoS
+			reason_struct = rrr_mqtt_p_reason_get_v5(reason);
+			if (reason_struct == NULL) {
+				VL_MSG_ERR("Unknown v5 reason %u for subscription index %li in SUBACK message\n",
+						reason, i);
+				return RRR_MQTT_PARSE_PARAMETER_ERROR;
+			}
+		}
+		else {
+			uint8_t qos = RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,i);
+			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_REASON(suback,i);
+			uint8_t reserved = RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback,i);
+
+			if (reserved != 0) {
+				VL_MSG_ERR("Reserved bits in v31 reason for subscription index %li in SUBACK message was not 0\n", i);
+				return RRR_MQTT_PARSE_PARAMETER_ERROR;
+			}
+			if (reason == 1 && qos != 0) {
+				VL_MSG_ERR("Failure was set for subscription index %li in v31 SUBACK but QoS was not 0\n", i);
+				return RRR_MQTT_PARSE_PARAMETER_ERROR;
+			}
+
+			PARSE_VALIDATE_QOS(qos);
+
+			// Use V5 reason getter because V31 reason 1 and 2 are for errors
+			reason_struct = rrr_mqtt_p_reason_get_v5(qos);
+		}
+
+		PARSE_SAVE_AND_CHECK_REASON_STRUCT(suback,suback,reason_struct->v5_reason);
+	}
 
 	PARSE_END_PAYLOAD();
 }
@@ -1083,6 +1220,7 @@ int rrr_mqtt_packet_parse (
 	}
 
 	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
+		session->packet->received_size = session->buf_size;
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_COMPLETE);
 	}
 

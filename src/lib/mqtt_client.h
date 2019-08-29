@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
 #define RRR_MQTT_CLIENT_MAX_SOCKETS					100
-#define RRR_MQTT_CLIENT_SESSION_EXPIRY				0xffffffff
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT				10
 #define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME	10
 #define RRR_MQTT_CLIENT_KEEP_ALIVE					30

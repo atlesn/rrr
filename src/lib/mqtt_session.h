@@ -42,7 +42,17 @@ struct rrr_mqtt_session {
 struct rrr_mqtt_session_properties {
 	uint32_t session_expiry;
 	uint32_t receive_maximum;
+	uint32_t maximum_qos;
+	uint32_t retain_available;
 	uint32_t maximum_packet_size;
+	struct rrr_mqtt_property *assigned_client_identifier;
+	struct rrr_mqtt_property *reason_string;
+	uint32_t wildcard_subscriptions_available;
+	uint32_t subscription_identifiers_availbable;
+	uint32_t shared_subscriptions_available;
+	uint32_t server_keep_alive;
+	struct rrr_mqtt_property *response_information;
+	struct rrr_mqtt_property *server_reference;
 	uint32_t topic_alias_maximum;
 	uint32_t request_response_information;
 	uint32_t request_problem_information;
@@ -113,6 +123,19 @@ struct rrr_mqtt_session_collection_methods {
 			uint32_t complete_publish_grace_time,
 			int clean_session,
 			int *session_was_present
+	);
+
+	// Clean a session, delete all packets
+	int (*clean_session) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session
+	);
+
+	// Reset properties for a session
+	int (*reset_properties) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			const struct rrr_mqtt_session_properties *properties
 	);
 
 	// Called upon reception of ANY packet from the client

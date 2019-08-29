@@ -30,6 +30,10 @@ void rrr_mqtt_session_properties_destroy (
 		struct rrr_mqtt_session_properties *target
 ) {
 	rrr_mqtt_property_collection_destroy(&target->user_properties);
+	rrr_mqtt_property_destroy(target->assigned_client_identifier);
+	rrr_mqtt_property_destroy(target->reason_string);
+	rrr_mqtt_property_destroy(target->response_information);
+	rrr_mqtt_property_destroy(target->server_reference);
 	rrr_mqtt_property_destroy(target->auth_method);
 	rrr_mqtt_property_destroy(target->auth_data);
 }

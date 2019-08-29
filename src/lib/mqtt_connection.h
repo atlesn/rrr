@@ -281,6 +281,10 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_mqtt_conn *connection,
 		int read_step_max_size
 );
+
+struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
+	int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection);
+};
 int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		struct rrr_mqtt_conn *connection,
 		void *arg
@@ -300,6 +304,10 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_p *packet
 );*/
 // No reference counting of packet performed
+int rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw (
+		struct rrr_mqtt_conn *connection,
+		uint16_t keep_alive
+);
 int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet

@@ -413,26 +413,17 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 	{15, 0,	"AUTH",			1, 0, sizeof(struct rrr_mqtt_p_auth),		__rrr_mqtt_p_allocate_raw,		NULL,						rrr_mqtt_parse_auth,		rrr_mqtt_assemble_auth,			__rrr_mqtt_p_free_auth}
 };
 
-struct rrr_mqtt_p_reason {
-	uint8_t v5_reason;
-	uint8_t v31_reason;
-	uint8_t for_connack;
-	uint8_t for_disconnect;
-	uint8_t for_puback_pubrec;
-	uint8_t for_pubrel;
-	uint8_t for_suback;
-	const char *description;
-};
-
 const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 		// The six version 3.1 reasons must be first
-		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 0, 0, 0, "Success"},
+		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 0, 0, 1, "Success"},
 		{ 0x84, RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION,	1, 0, 0, 0, 0, "Refused/unsupported protocol version"},
 		{ 0x85, RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED,	1, 0, 0, 0, 0, "Client identifier not valid/rejected"},
 		{ 0x86, RRR_MQTT_P_31_REASON_BAD_CREDENTIALS,		1, 0, 0, 0, 0, "Bad user name or password"},
 		{ 0x87, RRR_MQTT_P_31_REASON_NOT_AUTHORIZED,		1, 0, 1, 0, 1, "Not authorized"},
 		{ 0x88, RRR_MQTT_P_31_REASON_SERVER_UNAVAILABLE,	1, 0, 0, 0, 0, "Server unavailable"},
 
+		{ 0x01, RRR_MQTT_P_31_REASON_OK,					0, 0, 0, 0, 1, "Success with QoS 1"},
+		{ 0x02, RRR_MQTT_P_31_REASON_OK,					0, 0, 0, 0, 1, "Success with QoS 2"},
 		{ 0x04, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 0, "Disconnect with Will Message"},
 		{ 0x10, RRR_MQTT_P_31_REASON_NA,					0, 0, 1, 0, 0, "No matching subscribers"},
 
@@ -470,6 +461,33 @@ const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 		{ 0xA2, RRR_MQTT_P_31_REASON_NA,					0, 1, 0, 0, 1, "Wildcard Subscriptions not supported"},
 		{ 0,	0,											0, 0, 0, 0, 0, NULL}
 };
+
+const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v5 (uint8_t reason_v5) {
+	const struct rrr_mqtt_p_reason *test;
+	int i;
+
+	for (i = 0, test = &rrr_mqtt_p_reason_map[i]; test->v5_reason != 0; i++) {
+		if (test->v5_reason == reason_v5) {
+			return test;
+		}
+	}
+
+	return NULL;
+}
+
+const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v31 (uint8_t reason_v31) {
+	const struct rrr_mqtt_p_reason *test;
+	int i;
+
+	for (i = 0, test = &rrr_mqtt_p_reason_map[i]; test->v31_reason <= RRR_MQTT_P_31_REASON_MAX; i++) {
+		if (test->v31_reason == reason_v31) {
+			return test;
+		}
+	}
+
+	return NULL;
+}
+
 
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {
 	for (int i = 0; rrr_mqtt_p_reason_map[i].description != NULL; i++) {
