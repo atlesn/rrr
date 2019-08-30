@@ -152,6 +152,24 @@ int rrr_mqtt_property_clone (
 		return ret;
 }
 
+int rrr_mqtt_property_save_blob (
+		struct rrr_mqtt_property *target,
+		const char *value,
+		uint16_t size
+) {
+	target->data = malloc(size);
+	if (target->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
+		return 1;
+	}
+
+	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
+	target->length = size;
+	memcpy (target->data, value, size);
+
+	return 0;
+}
+
 int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
 	target->data = malloc(sizeof(value));
 	if (target->data == NULL) {
@@ -249,7 +267,7 @@ int rrr_mqtt_property_collection_add_uint32 (
 	struct rrr_mqtt_property *property = NULL;
 	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
 	if (definition == NULL) {
-		VL_BUG("Property %u not found in rr_mqtt_property_collection_add_uint32\n", id);
+		VL_BUG("Property %u not found in rrr_mqtt_property_collection_add_uint32\n", id);
 	}
 
 	uint32_t max = 0;
@@ -281,6 +299,53 @@ int rrr_mqtt_property_collection_add_uint32 (
 
 	if ((ret = rrr_mqtt_property_save_uint32(property, value)) != 0) {
 		VL_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_uint32\n");
+		goto out_free_property;
+	}
+
+	rrr_mqtt_property_collection_add(collection, property);
+
+	goto out;
+	out_free_property:
+		rrr_mqtt_property_destroy(property);
+	out:
+		return ret;
+}
+
+int rrr_mqtt_property_collection_add_blob_or_utf8 (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t id,
+		const char *value,
+		uint16_t size
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_property *property = NULL;
+	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
+	if (definition == NULL) {
+		VL_BUG("Property %u not found in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+	}
+
+	switch (definition->type) {
+		case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
+		case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
+		case RRR_MQTT_PROPERTY_DATA_TYPE_FOUR:
+		case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
+		case RRR_MQTT_PROPERTY_DATA_TYPE_BLOB:
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
+		default:
+			VL_BUG("Property %u was not a utf8/blob value in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+	};
+
+	if ((ret = rrr_mqtt_property_new(&property, definition)) != 0) {
+		VL_MSG_ERR("Could not create property in rrr_mqtt_property_collection_add_blob_or_utf8\n");
+		goto out;
+	}
+
+	if ((ret = rrr_mqtt_property_save_blob(property, value, size)) != 0) {
+		VL_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_blob_or_utf8\n");
 		goto out_free_property;
 	}
 
@@ -369,9 +434,40 @@ int rrr_mqtt_property_collection_calculate_size (
 
 	ssize_t result = 0;
 	ssize_t result_count = 0;
+	uint32_t tmp = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
-		result += node->length;
+		switch (node->definition->type) {
+			case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
+				result += 1; break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
+				result += 2; break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_FOUR:
+				result += 4; break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
+				tmp = *((uint32_t*)(node->data));
+				if ((tmp & ~0xfffffff) != 0) {
+					VL_BUG("VINT was too long in rrr_mqtt_property_collection_calculate_size\n");
+				}
+				do {
+					result += 1;
+					tmp >>= 7;
+				} while (tmp != 0);
+				break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_BLOB:
+				result += 2 + node->length; break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
+				result += 2 + node->length; break;
+			case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
+				result += 2 + node->length;
+				if (node->sibling == NULL) {
+					VL_BUG("2UTF8 had no sibling in rrr_mqtt_property_collection_calculate_size\n");
+				}
+				result += 2 + node->sibling->length;
+				break;
+			default:
+				VL_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->type);
+		};
 		result_count++;
 		if (result < 0) {
 			VL_MSG_ERR("Size overflow in rrr_mqtt_property_collection_calculate_size\n");

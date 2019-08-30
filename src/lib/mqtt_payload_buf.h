@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_PAYLOAD_BUF_H
 #define RRR_MQTT_PAYLOAD_BUF_H
 
-#define RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE 2
+#define RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE 64
 
 #define RRR_MQTT_PAYLOAD_BUF_OK 0
 #define RRR_MQTT_PAYLOAD_BUF_ERR 1

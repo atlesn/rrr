@@ -155,38 +155,37 @@ static int __rrr_mqtt_common_connection_event_handler (
 	return ret;
 }
 
-int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
-		const char *client_name,
+int rrr_mqtt_common_data_init (
+		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
+		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_static_arg,
-		uint64_t retry_interval_usec,
-		uint64_t close_wait_time_usec,
-		int max_socket_connections
+		void *event_handler_static_arg
 ) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
 
-	data->client_name = malloc(strlen(client_name) + 1);
+	data->client_name = malloc(strlen(init_data->client_name) + 1);
 	if (data->client_name == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_data_init\n");
 		ret = 1;
 		goto out;
 	}
 
+	strcpy(data->client_name, init_data->client_name);
 	data->event_handler = event_handler;
 	data->event_handler_static_arg = event_handler_static_arg;
-	data->retry_interval_usec = retry_interval_usec;
-	data->close_wait_time_usec = close_wait_time_usec;
+	data->retry_interval_usec = init_data->retry_interval_usec;
+	data->close_wait_time_usec = init_data->close_wait_time_usec;
 	data->handler_properties = handler_properties;
-	strcpy(data->client_name, client_name);
 
 	if (rrr_mqtt_conn_collection_init (
 			&data->connections,
-			max_socket_connections,
+			init_data->max_socket_connections,
+			init_data->close_wait_time_usec,
 			__rrr_mqtt_common_connection_event_handler,
 			data
 	) != 0) {
@@ -208,42 +207,6 @@ int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
 
 	out:
 		return ret;
-}
-
-int rrr_mqtt_common_register_connection (
-		struct rrr_mqtt_common_remote_handle *target_handle,
-		struct rrr_mqtt_data *data,
-		const struct ip_accept_data *accept_data
-) {
-	int ret = 0;
-	int ret_tmp = 0;
-
-	memset(target_handle, '\0', sizeof(*target_handle));
-
-	struct rrr_mqtt_conn *connection;
-
-	if ((ret_tmp = rrr_mqtt_conn_collection_new_connection (
-			&connection,
-			&data->connections,
-			&accept_data->ip_data,
-			&accept_data->addr,
-			data->retry_interval_usec,
-			data->close_wait_time_usec
-	)) != RRR_MQTT_CONN_OK) {
-		if ((ret_tmp & RRR_MQTT_CONN_BUSY) != 0) {
-			VL_MSG_ERR("Too many connections was open in rrr_mqtt_common_register_connection\n");
-			ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_BUSY);
-			ret |= RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		if (ret_tmp != RRR_MQTT_CONN_OK) {
-			VL_MSG_ERR("Could not register new connection in rrr_mqtt_common_register_connection\n");
-		}
-	}
-	else {
-		target_handle->connection = connection;
-	}
-
-	return ret;
 }
 
 #define HANDLE_PROPERTY_CHECK_DUP()																				\
@@ -359,7 +322,7 @@ int rrr_mqtt_common_register_connection (
 // for more errors. Caller checks for non-zero reason.
 #define HANDLE_PROPERTY_SWITCH_END_AND_RETURN() 													\
 		default:																					\
-			VL_MSG_ERR("Unknown property '%s' for packet", RRR_MQTT_PROPERTY_GET_NAME(property));	\
+			VL_MSG_ERR("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));			\
 			goto out_reason_protocol_error;															\
 	};																								\
 	goto out;																						\
@@ -485,7 +448,7 @@ int rrr_mqtt_common_handler_connack_handle_properties_callback (
 		);
 		HANDLE_PROPERTY_U32_UNCHECKED (
 				session_properties->server_keep_alive,
-				RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM
+				RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE
 		);
 		HANDLE_PROPERTY_CLONE (
 				&session_properties->response_information,
@@ -750,7 +713,7 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
 			VL_DEBUG_MSG_1("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_puback_pubcomp\n");
-			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
+			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 		VL_MSG_ERR("Error while handling received %s packet, reason: %u\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet), reason_v5);
@@ -798,7 +761,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 		}
 		if (reason_v5 == RRR_MQTT_P_5_REASON_OK) {
 			VL_DEBUG_MSG_1("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_pubrec_pubrel\n");
-			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
+			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
 
 		// For version 5, send a response with the error specified. For version 3.1,

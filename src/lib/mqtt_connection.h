@@ -110,7 +110,6 @@ struct rrr_mqtt_conn {
 	int read_complete;
 	int parse_complete;
 
-	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
 
@@ -126,7 +125,8 @@ struct rrr_mqtt_conn_collection {
 	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_conn);
 
 	int invalid;
-	int max;
+	ssize_t max;
+	uint64_t close_wait_time_usec;
 
 	pthread_mutex_t lock;
 	int readers;
@@ -202,7 +202,8 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 
 int rrr_mqtt_conn_collection_init (
 		struct rrr_mqtt_conn_collection *connections,
-		int max_connections,
+		unsigned int max_connections,
+		uint64_t close_wait_time_usec,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
 		void *event_handler_arg
 );
@@ -210,9 +211,19 @@ int rrr_mqtt_conn_collection_new_connection (
 		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_conn_collection *connections,
 		const struct ip_data *ip_data,
-		const struct sockaddr *remote_addr,
-		uint64_t retry_interval_usec,
-		uint64_t close_wait_time_usec
+		const struct sockaddr *remote_addr
+);
+int rrr_mqtt_conn_collection_connect (
+		struct rrr_mqtt_conn **connection,
+		struct rrr_mqtt_conn_collection *connections,
+		unsigned int port,
+		const char *host
+);
+int rrr_mqtt_conn_collection_accept (
+		struct rrr_mqtt_conn **connection,
+		struct rrr_mqtt_conn_collection *connections,
+		struct ip_data *ip,
+		const char *creator
 );
 
 // It is possible while being in a callback function for the collection iterator
@@ -247,10 +258,16 @@ int rrr_mqtt_conn_collection_iterate (
 		void *callback_arg
 );
 
-// Special iterator for functions which accept connection/packet arguments. The callback
-// is called exactly one time, and then with the provided connection as argument. The
-// return value from the callback is returned. If the connection was destroyed recently,
-// the callback is not called and a soft error is returned.
+// Special iterator for custom functions or connection functions which accept connection/packet
+// arguments. The callback is called exactly one time, and then with the provided connection as
+// argument. The return value from the callback is returned. If the connection was destroyed
+// recently, the callback is not called and a soft error is returned.
+int rrr_mqtt_conn_with_iterator_ctx_do_custom (
+		struct rrr_mqtt_conn_collection *connections,
+		const struct rrr_mqtt_conn *connection,
+		int (*callback)(struct rrr_mqtt_conn *connection, void *arg),
+		void *callback_arg
+);
 int rrr_mqtt_conn_with_iterator_ctx_do (
 		struct rrr_mqtt_conn_collection *connections,
 		const struct rrr_mqtt_conn *connection,
@@ -295,22 +312,11 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_p *packet
 );
-/*int rrr_mqtt_conn_iterator_ctx_send_packets (
-		struct rrr_mqtt_conn *connection
-);*/
-// Decref of packet guaranteed (some time in the future), immediately on errors
-/*int rrr_mqtt_conn_iterator_ctx_queue_outbound_packet (
+int rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
 		struct rrr_mqtt_conn *connection,
-		struct rrr_mqtt_p *packet
-);*/
-// No reference counting of packet performed
-int rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw (
-		struct rrr_mqtt_conn *connection,
-		uint16_t keep_alive
-);
-int rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive (
-		struct rrr_mqtt_conn *connection,
-		struct rrr_mqtt_p *packet
+		uint16_t keep_alive,
+		const struct rrr_mqtt_p_protocol_version *protocol_version,
+		struct rrr_mqtt_session *session
 );
 
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN		1

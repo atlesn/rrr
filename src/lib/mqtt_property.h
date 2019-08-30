@@ -94,6 +94,7 @@ struct rrr_mqtt_property {
 	const struct rrr_mqtt_property_definition *definition;
 	uint8_t internal_data_type;
 	ssize_t length;
+	ssize_t length_orig;
 	char *data;
 };
 
@@ -123,6 +124,11 @@ int rrr_mqtt_property_clone (
 		struct rrr_mqtt_property **target,
 		const struct rrr_mqtt_property *source
 );
+int rrr_mqtt_property_save_blob (
+		struct rrr_mqtt_property *target,
+		const char *value,
+		uint16_t size
+);
 int rrr_mqtt_property_save_uint32 (
 		struct rrr_mqtt_property *target,
 		uint32_t value
@@ -138,6 +144,12 @@ int rrr_mqtt_property_collection_add_uint32 (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t id,
 		uint32_t value
+);
+int rrr_mqtt_property_collection_add_blob_or_utf8 (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t id,
+		const char *value,
+		uint16_t size
 );
 void rrr_mqtt_property_collection_add (
 		struct rrr_mqtt_property_collection *collection,

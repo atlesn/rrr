@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 
 #define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE 4096
+#define RRR_MQTT_COMMON_CLOSE_WAIT_TIME 3
+#define RRR_MQTT_COMMON_RETRY_INTERVAL 5
+#define RRR_MQTT_COMMON_MAX_CONNECTIONS 260
 
 #define RRR_MQTT_COMMON_CONN_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_destroy,ret_soft,ret_hard) \
 	do {if (ret_tmp != RRR_MQTT_CONN_OK) {							\
@@ -195,11 +198,6 @@ struct rrr_mqtt_type_handler_properties {
 	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
 };
 
-struct rrr_mqtt_common_remote_handle {
-	// Must be first
-	const struct rrr_mqtt_conn *connection;
-};
-
 struct rrr_mqtt_data {
 	struct rrr_mqtt_conn_collection connections;
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
@@ -214,6 +212,13 @@ struct rrr_mqtt_data {
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
+};
+
+struct rrr_mqtt_common_init_data {
+	const char *client_name;
+	uint64_t retry_interval_usec;
+	uint64_t close_wait_time_usec;
+	unsigned int max_socket_connections;
 };
 
 struct rrr_mqtt_send_from_sessions_callback_data {
@@ -253,21 +258,14 @@ struct rrr_mqtt_common_parse_properties_data_publish {
 extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties;
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
-int rrr_mqtt_common_data_init (struct rrr_mqtt_data *data,
-		const char *client_name,
+int rrr_mqtt_common_data_init (
+		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
+		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_arg,
-		uint64_t retry_interval_usec,
-		uint64_t close_wait_time_usec,
-		int max_socket_connections
-);
-int rrr_mqtt_common_register_connection (
-		struct rrr_mqtt_common_remote_handle *target_handle,
-		struct rrr_mqtt_data *data,
-		const struct ip_accept_data *accept_data
+		void *event_handler_static_arg
 );
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		const struct rrr_mqtt_property *property,

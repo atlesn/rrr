@@ -476,7 +476,7 @@ static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, 
 		return ret;
 	}
 
-	target->length = length;
+	target->length_orig = length;
 
 	return ret;
 }

@@ -46,13 +46,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
-#define RRR_MQTT_BROKER_MAX_CONNECTIONS 100
 
 struct mqtt_broker_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
 	rrr_setting_uint server_port;
+	rrr_setting_uint max_keep_alive;
+	rrr_setting_uint retry_interval;
+	rrr_setting_uint close_wait_time;
 };
 
 static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -71,7 +73,6 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 static void data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
 	fifo_buffer_invalidate(&data->local_buffer);
-	rrr_mqtt_broker_destroy(data->mqtt_broker_data);
 }
 
 static int data_init (
@@ -90,16 +91,6 @@ static int data_init (
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_broker_new (
-			&data->mqtt_broker_data,
-			INSTANCE_D_NAME(thread_data),
-			rrr_mqtt_session_collection_ram_new,
-			NULL
-		)) != 0) {
-		VL_MSG_ERR("Could not create new mqtt broker\n");
-		goto out;
-	}
-
 	out:
 	if (ret != 0) {
 		data_cleanup(data);
@@ -113,6 +104,9 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	int ret = 0;
 
 	rrr_setting_uint mqtt_port = 0;
+	rrr_setting_uint max_keep_alive = 0;
+	rrr_setting_uint retry_interval = 0;
+	rrr_setting_uint close_wait_time = 0;
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_server_port")) == 0) {
 		// OK
@@ -126,8 +120,76 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 		mqtt_port = RRR_MQTT_DEFAULT_SERVER_PORT;
 		ret = 0;
 	}
-
 	data->server_port = mqtt_port;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&max_keep_alive, config, "mqtt_server_max_keep_alive")) == 0) {
+		if (max_keep_alive > 0xffff) {
+			VL_MSG_ERR("mqtt_server_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (max_keep_alive < 1) {
+			VL_MSG_ERR("mqtt_server_max_keep_alive was too small for instance %s, min is 1\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mqtt_server_max_keep_alive setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		max_keep_alive = 1;
+		ret = 0;
+	}
+	data->max_keep_alive = max_keep_alive;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&retry_interval, config, "mqtt_server_retry_interval")) == 0) {
+		if (retry_interval > 0xffff) {
+			VL_MSG_ERR("mqtt_server_retry_interval was too big for instance %s, max is 65535\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (retry_interval < 1) {
+			VL_MSG_ERR("mqtt_server_retry_interval was too small for instance %s, min is 1\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mqtt_server_retry_interval setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		retry_interval = 1;
+		ret = 0;
+	}
+	data->retry_interval = retry_interval;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&close_wait_time, config, "mqtt_server_close_wait_time")) == 0) {
+		if (close_wait_time > 0xffff) {
+			VL_MSG_ERR("mqtt_server_close_wait_time was too big for instance %s, max is 65535\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (close_wait_time < 1) {
+			VL_MSG_ERR("mqtt_server_close_wait_time was too small for instance %s, min is 1\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mqtt_server_close_wait_time setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		close_wait_time = 1;
+		ret = 0;
+	}
+	data->close_wait_time = close_wait_time;
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -165,14 +227,34 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	struct rrr_mqtt_common_init_data init_data = {
+			INSTANCE_D_NAME(thread_data),
+			data->retry_interval * 1000 * 1000,
+			data->close_wait_time * 1000 * 1000,
+			RRR_MQTT_COMMON_MAX_CONNECTIONS
+	};
+
+	if (rrr_mqtt_broker_new (
+			&data->mqtt_broker_data,
+			&init_data,
+			data->max_keep_alive,
+			rrr_mqtt_session_collection_ram_new,
+			NULL
+		) != 0) {
+		VL_MSG_ERR("Could not create new mqtt broker\n");
+		goto out_message;
+	}
+
+	pthread_cleanup_push(rrr_mqtt_broker_destroy_void, data->mqtt_broker_data);
+
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
 	VL_DEBUG_MSG_1 ("mqtt broker started thread %p\n", thread_data);
 
-	if (rrr_mqtt_broker_listen_ipv4_and_ipv6(data->mqtt_broker_data, data->server_port, RRR_MQTT_BROKER_MAX_CONNECTIONS) != 0) {
+	if (rrr_mqtt_broker_listen_ipv4_and_ipv6(data->mqtt_broker_data, data->server_port) != 0) {
 		VL_MSG_ERR("Could not start network in mqtt broker instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		goto out_message;
+		goto out_destroy_broker;
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -192,12 +274,14 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 		usleep (5000); // 50 ms
 	}
 
-	out_message:
-	VL_DEBUG_MSG_1 ("Thread mqtt broker %p exiting\n", thread_data->thread);
+	out_destroy_broker:
+		pthread_cleanup_pop(1);
 
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	out_message:
+		VL_DEBUG_MSG_1 ("Thread mqtt broker %p exiting\n", thread_data->thread);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 

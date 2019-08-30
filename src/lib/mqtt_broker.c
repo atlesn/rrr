@@ -116,69 +116,50 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 	return ret;
 }
 
-static int __rrr_mqtt_broker_listen_fd_accept_connections (
-		struct rrr_mqtt_listen_fd *fd,
-		const char *creator,
-		int (*callback)(const struct ip_accept_data *accept_data, void *arg),
-		void *callback_arg
-) {
-	struct ip_accept_data *accept_data = NULL;
-
-	int ret = 0;
-
-	do {
-		// TODO : Check if some errors can be managed without triggering internal error
-		if ((ret = ip_accept(&accept_data, &fd->ip, creator, 0)) != 0) {
-			VL_MSG_ERR("Error from ip_accept in __rrr_mqtt_broker_listen_fd_accept_connections\n");
-			break;
-		}
-
-		if (accept_data != NULL) {
-			RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-					callback(accept_data, callback_arg),
-					break,
-					" from callback function in __rrr_mqtt_broker_listen_fd_accept_connections"
-			);
-		}
-
-		RRR_FREE_IF_NOT_NULL(accept_data);
-	} while (accept_data != NULL);
-
-	RRR_FREE_IF_NOT_NULL(accept_data);
-
-	return ret;
-}
-
 static int __rrr_mqtt_broker_listen_fds_accept_connections (
 		struct rrr_mqtt_listen_fd_collection *fds,
 		const char *creator,
-		int (*callback)(const struct ip_accept_data *accept_data, void *arg),
-		void *callback_arg
+		struct rrr_mqtt_broker_data *data
 ) {
 	int ret = 0;
+	int ret_preserved = 0;
 
 	pthread_mutex_lock(&fds->lock);
 
+	int count = 0;
+
 	RRR_LINKED_LIST_ITERATE_BEGIN(fds, struct rrr_mqtt_listen_fd);
 		/* Save the error flag but loop the rest of the FDs even if one FD fails */
-		int ret_tmp = __rrr_mqtt_broker_listen_fd_accept_connections(node, creator, callback, callback_arg);
-		if (ret_tmp != 0) {
-			VL_MSG_ERR("Error while accepting connections in __rrr_mqtt_broker_listen_fds_accept_connections\n");
-			ret = ret_tmp;
-		}
+		struct rrr_mqtt_conn *connection = NULL;
+
+		do {
+			RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
+					rrr_mqtt_conn_collection_accept(&connection, &data->mqtt_data.connections, &node->ip, creator),
+					break,
+					" from callback function in __rrr_mqtt_broker_listen_fd_accept_connections"
+			);
+			if (connection != NULL) {
+				count++;
+			}
+		} while (connection != NULL);
+
+		ret_preserved |= ret;
 	RRR_LINKED_LIST_ITERATE_END(fds);
+
+	if (count > 0) {
+		VL_DEBUG_MSG_1 ("rrr_mqtt_broker_accept_connections: accepted %i connections\n", count);
+	}
 
 	pthread_mutex_unlock(&fds->lock);
 
-	return ret;
+	return ret | ret_preserved;
 }
 
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
-		int port,
-		int max_connections
+		int port
 ) {
-	return __rrr_mqtt_broker_listen_ipv4_and_ipv6(&broker->listen_fds, port, max_connections);
+	return __rrr_mqtt_broker_listen_ipv4_and_ipv6(&broker->listen_fds, port, broker->mqtt_data.connections.max);
 }
 
 void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker) {
@@ -366,6 +347,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_P_LOCK(packet);
 
+	int client_id_was_assigned = 0;
 	int session_present = 0;
 	int other_client_was_disconnected = 0;
 	uint8_t reason_v5 = 0;
@@ -375,8 +357,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if (connection->client_id != NULL) {
 		VL_BUG("Connection client ID was not NULL in rrr_mqtt_p_handler_connect\n");
 	}
-
-	rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive(connection, packet);
 
 	connack = (struct rrr_mqtt_p_connack *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_CONNACK, connect->protocol_version);
 	if (connack == NULL) {
@@ -396,6 +376,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				goto out,
 				"- Could not generate client identifier in rrr_mqtt_p_handler_connect"
 		);
+		client_id_was_assigned = 1;
 	}
 	else {
 		if (strlen(connect->client_identifier) >= strlen(RRR_MQTT_BROKER_CLIENT_PREFIX)) {
@@ -441,7 +422,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			 }
 			 VL_MSG_ERR("Error while checking if client id '%s' was unique\n", connect->client_identifier);
 			 ret = RRR_MQTT_CONN_SOFT_ERROR;
-			 reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
+			 reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 			 goto out_send_connack;
 		}
 
@@ -509,7 +490,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if ((ret = mqtt_data->sessions->methods->init_session (
 			mqtt_data->sessions,
 			&session,
-			&callback_data.session_properties,
+			callback_data.session_properties,
 			mqtt_data->retry_interval_usec,
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
 			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME,
@@ -524,11 +505,46 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
-		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_;
+		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		goto out_send_connack;
 	}
+
 	connack->ack_flags = session_present;
-	connection->session = session;
+
+	uint16_t use_keep_alive = connect->keep_alive;
+	if ((broker->max_keep_alive > 0 && use_keep_alive > broker->max_keep_alive) || use_keep_alive == 0) {
+		use_keep_alive = broker->max_keep_alive;
+	}
+
+	rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
+			connection,
+			use_keep_alive,
+			connect->protocol_version,
+			session
+	);
+
+	if (rrr_mqtt_property_collection_add_uint32 (
+			&connack->properties,
+			RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE,
+			use_keep_alive
+	) != 0) {
+		VL_MSG_ERR("Could not set server keep-alive of CONNACK");
+		reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+		goto out_send_connack;
+	}
+
+	if (client_id_was_assigned != 0) {
+		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
+				&connack->properties,
+				RRR_MQTT_PROPERTY_ASSIGNED_CLIENT_ID,
+				connection->client_id,
+				strlen(connection->client_id)
+		) != 0) {
+			VL_MSG_ERR("Could not set assigned client-ID of CONNACK");
+			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			goto out_send_connack;
+		}
+	}
 
 	out_send_connack:
 
@@ -726,20 +742,19 @@ void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
-		const char *client_name,
+		const struct rrr_mqtt_common_init_data *init_data,
+		uint16_t max_keep_alive,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 ) {
 	int ret = 0;
 
-	struct rrr_mqtt_broker_data *res = NULL;
+	if (max_keep_alive == 0) {
+		VL_DEBUG_MSG_1("Setting max keep alive to 1 in rrr_mqtt_broker_new\n");
+		max_keep_alive = 1;
+	}
 
-	// The max_clients is a soft limit which is checked when handling
-	// CONNECT packets, and CONNACKs with a reason is sent back if this.
-	// limit is reached. The max_socket_connections-limit is a harder
-	// limit which makes the connection framework close new connections
-	// when it is reached.
-	int max_socket_connections = RRR_MQTT_BROKER_MAX_SOCKETS;
+	struct rrr_mqtt_broker_data *res = NULL;
 
 	res = malloc(sizeof(*res));
 	if (res == NULL) {
@@ -752,15 +767,12 @@ int rrr_mqtt_broker_new (
 
 	if ((ret = rrr_mqtt_common_data_init (
 			&res->mqtt_data,
-			client_name,
 			handler_properties,
+			init_data,
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_broker_event_handler,
-			res,
-			RRR_MQTT_BROKER_RETRY_INTERVAL * 1000 * 1000,
-			RRR_MQTT_BROKER_CLOSE_WAIT_TIME * 1000 * 1000,
-			max_socket_connections
+			res
 	)) != 0) {
 		VL_MSG_ERR("Could not initialize mqtt data in rrr_mqtt_broker_new\n");
 		goto out_free;
@@ -776,7 +788,8 @@ int rrr_mqtt_broker_new (
 		goto out_destroy_listen_fds;
 	}
 
-	res->max_clients = RRR_MQTT_BROKER_MAX_CLIENTS;
+	res->max_clients = init_data->max_socket_connections - 10;
+	res->max_keep_alive = max_keep_alive;
 
 	goto out_success;
 
@@ -792,53 +805,17 @@ int rrr_mqtt_broker_new (
 		return ret;
 }
 
-struct accept_connections_callback_data {
-	struct rrr_mqtt_broker_data *data;
-	int connection_count;
-};
-
-static int __rrr_mqtt_broker_accept_connections_callback (
-		const struct ip_accept_data *accept_data,
-		void *callback_arg
-) {
-	struct accept_connections_callback_data *callback_data = callback_arg;
-	struct rrr_mqtt_broker_data *data = callback_data->data;
-
-	int ret = 0;
-
-	struct rrr_mqtt_common_remote_handle remote_handle;
-
-	if ((ret = rrr_mqtt_common_register_connection(&remote_handle, &data->mqtt_data, accept_data)) != RRR_MQTT_CONN_OK) {
-		VL_MSG_ERR("Could not register connection in __rrr_mqtt_broker_accept_connections_callback\n");
-	}
-	else {
-		callback_data->connection_count++;
-	}
-
-	return ret;
-}
-
 int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data) {
 	int ret = 0;
-
-	struct accept_connections_callback_data callback_data = {
-			data, 0
-	};
 
 	ret = __rrr_mqtt_broker_listen_fds_accept_connections (
 			&data->listen_fds,
 			data->mqtt_data.client_name,
-			__rrr_mqtt_broker_accept_connections_callback,
-			&callback_data
+			data
 	);
 
 	if (ret != 0) {
 		VL_MSG_ERR("Error while acceptign connections in rrr_mqtt_broker_accept_connections\n");
-	}
-
-	if (callback_data.connection_count > 0) {
-		VL_DEBUG_MSG_1 ("rrr_mqtt_broker_accept_connections: accepted %i connections\n",
-				callback_data.connection_count);
 	}
 
 	return ret;

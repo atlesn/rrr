@@ -186,7 +186,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	// count becomes one byte for each property (it's ID)
 	total_size += count;
 
-	if (total_size + count> 0xfffffff) { // <-- Seven f's
+	if (total_size + count > 0xfffffff) { // <-- Seven f's
 		// This should be checked prior to calling assembly function
 		VL_BUG("Size of collection was too large in __rrr_mqtt_assemble_put_properties\n");
 	}
@@ -284,10 +284,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		PUT_U8(connack->ack_flags);
 		PUT_U8(connack->reason_v5);
-		uint8_t zero = 0;
-		PUT_U8(zero);
-
-		// TODO : Replace zero byte with connack properties
+		PUT_PROPERTIES(&connack->properties);
 	}
 	else {
 		uint8_t reason_v31 = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);

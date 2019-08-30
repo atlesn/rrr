@@ -25,8 +25,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_client.h"
 #include "mqtt_common.h"
 
+struct set_connection_settings_callback_data {
+	uint16_t keep_alive;
+	const struct rrr_mqtt_p_protocol_version *protocol_version;
+	struct rrr_mqtt_session *session;
+};
+
+static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_conn *connection, void *arg) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	struct set_connection_settings_callback_data *callback_data = arg;
+
+	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
+			rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
+					connection,
+					callback_data->keep_alive,
+					callback_data->protocol_version,
+					callback_data->session
+			),
+			goto out,
+			" while setting new keep-alive on connection in __rrr_mqtt_client_connect_set_connection_settings"
+	);
+
+	out:
+	return ret;
+}
+
 int rrr_mqtt_client_connect (
-		struct rrr_mqtt_common_remote_handle *result_handle,
+		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_client_data *data,
 		const char *server,
 		uint16_t port,
@@ -38,23 +64,21 @@ int rrr_mqtt_client_connect (
 
 	struct rrr_mqtt_data *mqtt_data = &data->mqtt_data;
 
-	struct ip_accept_data *accept_data = NULL;
 	struct rrr_mqtt_p_connect *connect = NULL;
 	struct rrr_mqtt_session *session = NULL;
 
 	// Sleep a bit in case server runs in the same RRR program
 	usleep(500000); // 500ms
 
-	if (ip_network_connect_tcp_ipv4_or_ipv6 (&accept_data, port, server) != 0) {
+	if (rrr_mqtt_conn_collection_connect(connection, &data->mqtt_data.connections, port, server) != 0) {
 		VL_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
 
-	if (rrr_mqtt_common_register_connection(result_handle, &data->mqtt_data, accept_data) != 0) {
-		VL_MSG_ERR("Could not register connection to mqtt server %s\n", server);
-		ret = 1;
-		goto out_nolock;
+	if (*connection == NULL) {
+		VL_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
+		return 1;
 	}
 
 	const struct rrr_mqtt_p_protocol_version *protocol_version = rrr_mqtt_p_get_protocol_version(version);
@@ -74,7 +98,6 @@ int rrr_mqtt_client_connect (
 	strcpy(connect->client_identifier, data->mqtt_data.client_name);
 
 	connect->keep_alive = keep_alive;
-	// Clean start
 	connect->connect_flags |= (clean_start != 0)<<1;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
@@ -145,7 +168,7 @@ int rrr_mqtt_client_connect (
 
 	if (rrr_mqtt_conn_with_iterator_ctx_do (
 			&data->mqtt_data.connections,
-			result_handle->connection,
+			*connection,
 			(struct rrr_mqtt_p *) connect,
 			rrr_mqtt_conn_iterator_ctx_send_packet
 	) != 0) {
@@ -154,22 +177,29 @@ int rrr_mqtt_client_connect (
 		goto out;
 	}
 
-	if (rrr_mqtt_conn_with_iterator_ctx_do (
-			&data->mqtt_data.connections,
-			result_handle->connection,
-			(struct rrr_mqtt_p *) connect,
-			rrr_mqtt_conn_iterator_ctx_set_protocol_version_and_keep_alive
-	) != 0) {
-		VL_MSG_ERR("Could not set protocol version and keep alive from CONNECT packet in rrr_mqtt_client_connect");
-		ret = 1;
-		goto out;
+	{
+		struct set_connection_settings_callback_data callback_data = {
+			connect->keep_alive,
+			connect->protocol_version,
+			session
+		};
+
+		if (rrr_mqtt_conn_with_iterator_ctx_do_custom (
+				&data->mqtt_data.connections,
+				*connection,
+				__rrr_mqtt_client_connect_set_connection_settings,
+				&callback_data
+		) != 0) {
+			VL_MSG_ERR("Could not set protocol version and keep alive from CONNECT packet in rrr_mqtt_client_connect");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
 		RRR_MQTT_P_UNLOCK(connect);
 	out_nolock:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(connect);
-		RRR_FREE_IF_NOT_NULL(accept_data);
 		return ret;
 }
 
@@ -188,6 +218,8 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
+
+	rrr_mqtt_conn_iterator_ctx_update_state (connection, packet, RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN);
 
 	if (connack->session_present == 0) {
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
@@ -221,14 +253,19 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			" while resetting properties in __rrr_mqtt_client_handle_connack"
 	);
 
-	if (&client_data->session_properties.server_keep_alive > 0) {
-		if (&client_data->session_properties.server_keep_alive > 0xffff) {
+	if (client_data->session_properties.server_keep_alive > 0) {
+		if (client_data->session_properties.server_keep_alive > 0xffff) {
 			VL_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
 		}
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-				rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw(connection, &client_data->session_properties.server_keep_alive),
+				rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
+						connection,
+						client_data->session_properties.server_keep_alive,
+						connack->protocol_version,
+						connection->session
+				),
 				goto out,
-				" while setting server keep alive in __rrr_mqtt_client_handle_connack"
+				" while setting new keep-alive on connection"
 		);
 	}
 
@@ -242,6 +279,22 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 
+
+	(void)(mqtt_data);
+	(void)(connection);
+	(void)(packet);
+
+	return ret;
+}
+
+
+
+int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	(void)(mqtt_data);
+	(void)(connection);
+	(void)(packet);
 
 	return ret;
 }
@@ -260,7 +313,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{NULL},
 	{NULL},
-	{NULL},
+	{__rrr_mqtt_client_handle_pingresp},
 	{rrr_mqtt_common_handle_disconnect},
 	{NULL}
 };
@@ -306,7 +359,7 @@ void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
-		const char *client_name,
+		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 ) {
@@ -324,15 +377,12 @@ int rrr_mqtt_client_new (
 
 	ret = rrr_mqtt_common_data_init (
 			&result->mqtt_data,
-			client_name,
 			handler_properties,
+			init_data,
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_client_event_handler,
-			result,
-			RRR_MQTT_CLIENT_RETRY_INTERVAL * 1000 * 1000,
-			RRR_MQTT_CLIENT_CLOSE_WAIT_TIME * 1000 * 1000,
-			RRR_MQTT_CLIENT_MAX_SOCKETS
+			result
 	);
 
 	if (ret != 0) {
@@ -362,15 +412,19 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
+	RRR_MQTT_P_LOCK(pingreq);
+
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
 			rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) pingreq),
-			goto out,
+			goto out_unlock,
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
 	);
 
+	out_unlock:
+		RRR_MQTT_P_UNLOCK(pingreq);
 	out:
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
-	return ret;
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
+		return ret;
 }
 
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {

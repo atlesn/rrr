@@ -464,12 +464,16 @@ const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 
 const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v5 (uint8_t reason_v5) {
 	const struct rrr_mqtt_p_reason *test;
-	int i;
+	int i = 0;
 
-	for (i = 0, test = &rrr_mqtt_p_reason_map[i]; test->v5_reason != 0; i++) {
+	test = &rrr_mqtt_p_reason_map[i];
+
+	while (test != NULL && test->description != NULL) {
 		if (test->v5_reason == reason_v5) {
 			return test;
 		}
+
+		test = &rrr_mqtt_p_reason_map[i++];
 	}
 
 	return NULL;
@@ -477,13 +481,19 @@ const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v5 (uint8_t reason_v5) {
 
 const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v31 (uint8_t reason_v31) {
 	const struct rrr_mqtt_p_reason *test;
-	int i;
+	int i = 0;
 
-	for (i = 0, test = &rrr_mqtt_p_reason_map[i]; test->v31_reason <= RRR_MQTT_P_31_REASON_MAX; i++) {
+	test = &rrr_mqtt_p_reason_map[i];
+
+	while (test != NULL && test->v31_reason <= RRR_MQTT_P_31_REASON_MAX) {
 		if (test->v31_reason == reason_v31) {
 			return test;
 		}
+
+		test = &rrr_mqtt_p_reason_map[i++];
 	}
+
+	return NULL;
 
 	return NULL;
 }

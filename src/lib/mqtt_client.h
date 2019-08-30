@@ -39,10 +39,11 @@ struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
 	struct rrr_mqtt_session_properties session_properties;
+	ssize_t connection_count;
 };
 
 int rrr_mqtt_client_connect (
-		struct rrr_mqtt_common_remote_handle *result_handle,
+		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_client_data *data,
 		const char *server,
 		uint16_t port,
@@ -56,7 +57,7 @@ static inline void rrr_mqtt_client_destroy_void (void *client) {
 }
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
-		const char *client_name,
+		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 );

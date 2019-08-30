@@ -73,7 +73,7 @@ struct mqtt_client_data {
 	char *client_identifier;
 	uint8_t qos;
 	uint8_t version;
-	struct rrr_mqtt_common_remote_handle server_handle;
+	struct rrr_mqtt_conn *connection;
 };
 
 static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -285,9 +285,17 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+
+	struct rrr_mqtt_common_init_data init_data = {
+		INSTANCE_D_NAME(thread_data),
+		RRR_MQTT_COMMON_RETRY_INTERVAL,
+		RRR_MQTT_COMMON_CLOSE_WAIT_TIME,
+		RRR_MQTT_COMMON_MAX_CONNECTIONS
+	};
+
 	if (rrr_mqtt_client_new (
 			&data->mqtt_client_data,
-			data->client_identifier,
+			&init_data,
 			rrr_mqtt_session_collection_ram_new,
 			NULL
 		) != 0) {
@@ -303,21 +311,21 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		if (data->publish_topic == NULL || *(data->publish_topic) == '\0') {
 			VL_MSG_ERR("mqtt client instance %s has senders specified but no publish topic (mqtt_publish_topic) is set in configuration\n",
 					INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto out_destroy_client;
 		}
 	}
 	else {
 		if (data->publish_topic != NULL) {
 			VL_MSG_ERR("mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto out_destroy_client;
 		}
 	}
 
 	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
 
 	if (rrr_mqtt_client_connect (
-			&data->server_handle,
+			&data->connection,
 			data->mqtt_client_data,
 			data->server,
 			data->server_port,
@@ -327,7 +335,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	) != 0) {
 		VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
 				data->server, data->server_port, INSTANCE_D_NAME(thread_data));
-		goto out_message;
+		goto out_destroy_client;
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -347,14 +355,14 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		usleep (5000); // 50 ms
 	}
 
+	out_destroy_client:
+		pthread_cleanup_pop(1);
 	out_message:
-	VL_DEBUG_MSG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
-
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_exit(0);
+		VL_DEBUG_MSG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
+		pthread_exit(0);
 }
 
 static struct module_operations module_operations = {

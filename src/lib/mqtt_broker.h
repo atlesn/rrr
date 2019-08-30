@@ -35,12 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
 
 #define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	10
-#define RRR_MQTT_BROKER_CLOSE_WAIT_TIME 3
 #define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 10
-#define RRR_MQTT_BROKER_RETRY_INTERVAL 5
-
-#define RRR_MQTT_BROKER_MAX_CLIENTS 250
-#define RRR_MQTT_BROKER_MAX_SOCKETS 260
 
 struct rrr_mqtt_listen_fd {
 	RRR_LINKED_LIST_NODE(struct rrr_mqtt_listen_fd);
@@ -59,6 +54,7 @@ struct rrr_mqtt_broker_data {
 	struct rrr_mqtt_listen_fd_collection listen_fds;
 
 	int max_clients;
+	uint16_t max_keep_alive;
 
 	pthread_mutex_t client_serial_and_count_lock;
 	uint32_t client_serial;
@@ -67,16 +63,19 @@ struct rrr_mqtt_broker_data {
 
 int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
+static inline void rrr_mqtt_broker_destroy_void (void *broker) {
+	rrr_mqtt_broker_destroy (broker);
+}
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
-		const char *client_name,
+		const struct rrr_mqtt_common_init_data *init_data,
+		uint16_t max_keep_alive,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 );
 int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		struct rrr_mqtt_broker_data *broker,
-		int port,
-		int max_connections
+		int port
 );
 void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker);
 

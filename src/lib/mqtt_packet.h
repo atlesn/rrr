@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS			0x10
 
-#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR_				0x80
+#define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR				0x80
 #define RRR_MQTT_P_5_REASON_MALFORMED_PACKET				0x81
 #define RRR_MQTT_P_5_REASON_PROTOCOL_ERROR					0x82
 #define RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR				0x83
