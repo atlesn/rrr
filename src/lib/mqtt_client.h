@@ -38,6 +38,7 @@ struct rrr_mqtt_session_collection;
 struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
+	struct rrr_mqtt_session_properties session_properties;
 };
 
 int rrr_mqtt_client_connect (

@@ -81,24 +81,24 @@ int rrr_mqtt_client_connect (
 
 	// TODO : Set connect properties
 
-	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
+	data->session_properties = rrr_mqtt_common_default_session_properties;
 
 	if (version >= 5) {
 		// Default for version 3.1 is that sessions do not expire,
 		// only use clean session to control this
-		session_properties.session_expiry = 0xffffffff;
+		data->session_properties.session_expiry = 0xffffffff;
 
 		ret |= rrr_mqtt_property_collection_add_uint32 (
 				&connect->properties,
 				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
-				session_properties.session_expiry
+				data->session_properties.session_expiry
 		);
 	}
 
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			&session_properties
+			&data->session_properties
 	};
 
 	uint8_t reason_v5 = 0;
@@ -176,7 +176,7 @@ int rrr_mqtt_client_connect (
 static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
 
-	(void)(mqtt_data);
+	struct rrr_mqtt_client_data *client_data = (struct rrr_mqtt_client_data *) mqtt_data;
 	(void)(connection);
 
 	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
@@ -197,13 +197,11 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 	}
 
-	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
-
 	uint8_t reason_v5 = 0;
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connack->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			&session_properties
+			&client_data->session_properties
 	};
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
@@ -213,24 +211,22 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out
 	);
 
-	if (!RRR_MQTT_P_IS_V5(packet)) {
-		// Default for version 3.1 is that sessions do not expire,
-		// only use clean session to control this
-		session_properties.session_expiry = 0xffffffff;
-	}
-
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->reset_properties(mqtt_data->sessions, &connection->session, &session_properties),
+			mqtt_data->sessions->methods->reset_properties(
+					mqtt_data->sessions,
+					&connection->session,
+					&client_data->session_properties
+			),
 			goto out,
 			" while resetting properties in __rrr_mqtt_client_handle_connack"
 	);
 
-	if (session_properties.server_keep_alive > 0) {
-		if (session_properties.server_keep_alive > 0xffff) {
+	if (&client_data->session_properties.server_keep_alive > 0) {
+		if (&client_data->session_properties.server_keep_alive > 0xffff) {
 			VL_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
 		}
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-				rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw(connection, session_properties.server_keep_alive),
+				rrr_mqtt_conn_iterator_ctx_set_keep_alive_raw(connection, &client_data->session_properties.server_keep_alive),
 				goto out,
 				" while setting server keep alive in __rrr_mqtt_client_handle_connack"
 		);
@@ -239,7 +235,6 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	VL_DEBUG_MSG_1("Received CONNACK, now connected\n");
 
 	out:
-		rrr_mqtt_session_properties_destroy(&session_properties);
 		RRR_MQTT_P_UNLOCK(packet);
 		return ret;
 }
@@ -305,6 +300,7 @@ static int __rrr_mqtt_client_event_handler (
 
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	rrr_mqtt_common_data_destroy(&client->mqtt_data);
+	rrr_mqtt_session_properties_destroy(&client->session_properties);
 	free(client);
 }
 

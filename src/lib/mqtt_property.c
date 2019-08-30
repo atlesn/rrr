@@ -112,7 +112,9 @@ int rrr_mqtt_property_clone (
 ) {
 	int ret = 0;
 
-	*target = NULL;
+	if (*target != NULL) {
+		rrr_mqtt_property_destroy(*target);
+	}
 
 	if (source == NULL) {
 		goto out;
