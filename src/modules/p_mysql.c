@@ -300,7 +300,7 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 
 	sprintf(query_base + pos, "%s)", timestamp_column_questionmark);
 
-//	VL_DEBUG_MSG_3("mysql array SQL: %s\n", query_base);
+	VL_DEBUG_MSG_3("mysql array SQL: %s\n", query_base);
 
 	// Double check length
 	if (strlen(query_base) > query_base_max) {
@@ -627,6 +627,9 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	int column_count = 0;
+	int special_column_count = 0;
+	int special_value_count = 0;
 	char *mysql_colplan = NULL;
 	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
@@ -641,45 +644,45 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		VL_MSG_ERR("Warning: No mysql_colplan set for instance %s, defaulting to voltage\n", config->name);
 	}
 
+	// BLOB WRITE COLUMNS
+	ret = mysql_traverse_column_list (
+			data->mysql_columns_blob_writes, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_blob_write_columns"
+	);
+	VL_DEBUG_MSG_1("%i blob write columns specified for mysql instance %s\n", column_count, config->name);
+	if (mysql_verify_blob_write_colums (data) != 0) {
+		VL_MSG_ERR("Error in blob write column list for mysql instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	// SPECIAL COLUMNS AND THEIR VALUES
+	ret = mysql_traverse_column_list (
+			data->mysql_special_columns, RRR_MYSQL_BIND_MAX, &special_column_count, config, "mysql_special_columns"
+	);
+	ret = mysql_traverse_column_list (
+			data->mysql_special_values, RRR_MYSQL_BIND_MAX, &special_value_count, config, "mysql_special_values"
+	);
+	if (special_column_count != special_value_count) {
+		VL_MSG_ERR("Special column/value count mismatch %i vs %i for mysql instance %s\n",
+				special_column_count, special_value_count, config->name);
+		ret = 1;
+		goto out;
+	}
+
+	data->mysql_special_columns_count = special_column_count;
+
+	VL_DEBUG_MSG_1("%i special columns specified for mysql instance %s\n", special_column_count, config->name);
+
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
-
-		int column_count = 0;
 
 		// TABLE COLUMNS
 		ret = mysql_traverse_column_list (
 				data->mysql_columns, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_columns"
 		);
-		VL_DEBUG_MSG_1("%i columns specified for mysql instance %s in array column plan\n", column_count, config->name);
+		VL_DEBUG_MSG_1("%i ordinary columns specified for mysql instance %s\n", column_count, config->name);
 		if (column_count == 0) {
 			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-
-		// BLOB WRITE COLUMNS
-		ret = mysql_traverse_column_list (
-				data->mysql_columns_blob_writes, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_blob_write_columns"
-		);
-		VL_DEBUG_MSG_1("%i blob write columns specified for mysql instance %s in array column plan\n", column_count, config->name);
-		if (mysql_verify_blob_write_colums (data) != 0) {
-			VL_MSG_ERR("Error in blob write column list for mysql instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-
-		// SPECIAL COLUMNS AND THEIR VALUES
-		int special_column_count = 0;
-		int special_value_count = 0;
-		ret = mysql_traverse_column_list (
-				data->mysql_special_columns, RRR_MYSQL_BIND_MAX, &special_column_count, config, "mysql_special_columns"
-		);
-		ret = mysql_traverse_column_list (
-				data->mysql_special_values, RRR_MYSQL_BIND_MAX, &special_value_count, config, "mysql_special_values"
-		);
-		if (special_column_count != special_value_count) {
-			VL_MSG_ERR("Special column/value count mismatch %i vs %i for mysql instance %s\n",
-					special_column_count, special_value_count, config->name);
 			ret = 1;
 			goto out;
 		}
