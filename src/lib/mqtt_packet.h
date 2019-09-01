@@ -433,6 +433,7 @@ struct rrr_mqtt_p_subscribe {
 	int max_qos;
 	struct rrr_mqtt_property_collection properties;
 	struct rrr_mqtt_subscription_collection *subscriptions;
+	struct rrr_mqtt_p_suback *suback;
 };
 
 struct rrr_mqtt_p_suback {
@@ -464,6 +465,7 @@ struct rrr_mqtt_p_unsuback {
 };
 struct rrr_mqtt_p_pingreq {
 	RRR_MQTT_P_PACKET_HEADER;
+	int pingresp_received;
 };
 struct rrr_mqtt_p_pingresp {
 	RRR_MQTT_P_PACKET_HEADER;

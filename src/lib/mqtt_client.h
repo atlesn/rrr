@@ -40,6 +40,7 @@ struct rrr_mqtt_client_data {
 	struct rrr_mqtt_data mqtt_data;
 	struct rrr_mqtt_session_properties session_properties;
 	ssize_t connection_count;
+	uint64_t last_pingreq_time;
 };
 
 int rrr_mqtt_client_connect (

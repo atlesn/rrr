@@ -59,7 +59,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_CONN_EVENT_DISCONNECT		1
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
-#define RRR_MQTT_CONN_EVENT_ACK_SENT		3
 
 struct rrr_mqtt_data;
 struct rrr_mqtt_session;
@@ -300,7 +299,8 @@ int rrr_mqtt_conn_iterator_ctx_read (
 );
 
 struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
-	int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection);
+	int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);
+	void *callback_arg;
 };
 int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		struct rrr_mqtt_conn *connection,

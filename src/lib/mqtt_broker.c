@@ -605,33 +605,34 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 
 	// TODO : Check valid subscriptions (is done now while adding to session), set max QoS etc.
 
-	int ret_tmp = MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt_data, connection->session, subscribe->subscriptions);
-	if (ret_tmp != RRR_MQTT_SESSION_OK) {
-		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
-			VL_MSG_ERR("Session was deleted in rrr_mqtt_p_handler_subscribe\n");
-			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
-		}
-		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
-			VL_MSG_ERR("Soft error from session while adding subscriptions in rrr_mqtt_p_handler_subscribe\n");
-			ret |= RRR_MQTT_CONN_SOFT_ERROR;
-		}
-		ret_tmp = ret_tmp & ~(RRR_MQTT_SESSION_DELETED|RRR_MQTT_SESSION_ERROR);
+	unsigned int dummy;
 
-		if (ret_tmp != 0) {
-			VL_MSG_ERR("Internal error while adding subscriptions in rrr_mqtt_p_handler_subscribe\n");
-			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
-		}
-		goto out;
-	}
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->receive_packet(
+					mqtt_data->sessions,
+					&connection->session,
+					packet,
+					&dummy
+			),
+			goto out,
+			" while sending SUBSCRIBE message to session in rrr_mqtt_p_handler_subscribe"
+	);
 
 	RRR_MQTT_P_LOCK(suback);
-
 	suback->packet_identifier = subscribe->packet_identifier;
 	suback->subscriptions = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
-
-	ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) suback);
 	RRR_MQTT_P_UNLOCK(suback);
+
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->send_packet(
+					mqtt_data->sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) suback
+			),
+			goto out,
+			" while sending SUBACK to session in rrr_mqtt_p_handler_subscribe"
+	);
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(suback);
@@ -702,6 +703,7 @@ static int __rrr_mqtt_broker_event_handler (
 	struct rrr_mqtt_broker_data *data = static_arg;
 
 	(void)(connection);
+	(void)(arg);
 
 	int ret = RRR_MQTT_CONN_OK;
 
@@ -714,21 +716,10 @@ static int __rrr_mqtt_broker_event_handler (
 			}
 			pthread_mutex_unlock(&data->client_serial_and_count_lock);
 			break;
-		case RRR_MQTT_CONN_EVENT_ACK_SENT:
-			if ((ret = data->mqtt_data.sessions->methods->notify_ack_sent (
-					data->mqtt_data.sessions,
-					&connection->session,
-					(struct rrr_mqtt_p *) arg
-			)) != RRR_MQTT_SESSION_OK) {
-				VL_MSG_ERR("Error from session ACK notification function in __rrr_mqtt_broker_event_handler\n");
-				goto out;
-			}
-			break;
 		default:
 			break;
 	};
 
-	out:
 	return ret;
 }
 
@@ -828,7 +819,7 @@ int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data) {
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, NULL)) != 0) {
+	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, NULL, NULL)) != 0) {
 		goto out;
 	}
 

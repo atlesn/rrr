@@ -231,12 +231,6 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session,reason_v5) \
 		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session), reason_v5)
 
-#define MQTT_COMMON_CALL_SESSION_ADD_SUBSCRIPTIONS(mqtt,session,subscriptions) \
-		(mqtt)->sessions->methods->add_subscriptions((mqtt)->sessions, &(session), (subscriptions))
-
-#define MQTT_COMMON_CALL_SESSION_RECEIVE_PUBLISH(mqtt,session,publish) \
-		(mqtt)->sessions->methods->receive_publish((mqtt)->sessions, &(session), (publish))
-
 #define MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD	\
 	const struct rrr_mqtt_property_collection *source;		\
 	uint8_t reason_v5
@@ -320,7 +314,8 @@ int rrr_mqtt_common_send_from_sessions_callback (
 );
 int rrr_mqtt_common_read_parse_handle (
 		struct rrr_mqtt_data *data,
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection)
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		void *callback_arg
 );
 int rrr_mqtt_common_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_data *data,

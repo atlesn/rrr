@@ -121,10 +121,6 @@ static int __rrr_mqtt_common_connection_event_handler (
 		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
 			ret_tmp = MQTT_COMMON_CALL_SESSION_HEARTBEAT(data, connection->session);
 			break;
-		case RRR_MQTT_CONN_EVENT_ACK_SENT:
-			// Nothing to do
-			ret_tmp = RRR_MQTT_CONN_OK;
-			break;
 		default:
 			VL_BUG("Unknown event %i in __rrr_mqtt_common_connection_event_handler\n", event);
 	}
@@ -588,10 +584,12 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_INCREF(packet);
-	int ret_from_receive_publish = mqtt_data->sessions->methods->receive_publish(
+	unsigned int dummy;
+	int ret_from_receive_publish = mqtt_data->sessions->methods->receive_packet(
 			mqtt_data->sessions,
 			&connection->session,
-			publish
+			(struct rrr_mqtt_p *) publish,
+			&dummy
 	);
 	RRR_MQTT_P_DECREF(packet);
 	RRR_MQTT_P_LOCK(packet);
@@ -617,6 +615,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		RRR_MQTT_P_LOCK(puback);
 		puback->reason_v5 = reason_v5;
 		puback->packet_identifier = publish->packet_identifier;
+		RRR_MQTT_P_UNLOCK(puback);
 	}
 	else if (publish->qos == 2) {
 		struct rrr_mqtt_p_pubrec *pubrec = (struct rrr_mqtt_p_pubrec *) rrr_mqtt_p_allocate (
@@ -632,6 +631,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		RRR_MQTT_P_LOCK(pubrec);
 		pubrec->reason_v5 = reason_v5;
 		pubrec->packet_identifier = publish->packet_identifier;
+		RRR_MQTT_P_UNLOCK(pubrec);
 	}
 	else if (publish->qos != 0) {
 		VL_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", publish->qos);
@@ -642,12 +642,17 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		//        sent. We also need to unlock the packet because the original publish needs
 		//        to be locked when the ACK notification is processed.
 		RRR_MQTT_P_UNLOCK(packet);
-		if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, ack)) != 0) {
-			RRR_MQTT_P_UNLOCK(ack);
-			VL_MSG_ERR("Error while sending ACK for PUBLISH packet in __rrr_mqtt_broker_handle_publish\n");
-			goto out_nolock;
-		}
-		RRR_MQTT_P_UNLOCK(ack);
+
+		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->send_packet(
+					mqtt_data->sessions,
+					&connection->session,
+					ack
+			),
+			goto out_nolock,
+			" in session send packet function in rrr_mqtt_common_handle_publish"
+		);
+
 		RRR_MQTT_P_LOCK(packet);
 	}
 
@@ -667,11 +672,11 @@ static int __rrr_mqtt_common_handle_general_ack (
 
 	*reason_v5 = RRR_MQTT_P_5_REASON_OK;
 
-	int ret_from_notify = mqtt_data->sessions->methods->notify_ack_received (
-			match_count,
+	int ret_from_session = mqtt_data->sessions->methods->receive_packet (
 			mqtt_data->sessions,
 			&connection->session,
-			packet
+			packet,
+			match_count
 	);
 
 	// It is possible to receive PUBREC and PUBACK with unknown packet IDs (remains from
@@ -683,7 +688,7 @@ static int __rrr_mqtt_common_handle_general_ack (
 	}
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			ret_from_notify,
+			ret_from_session,
 			goto out,
 			" while handling packet"
 	);
@@ -795,20 +800,14 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	next_ack->reason_v5 = reason_v5;
 	next_ack->packet_identifier = packet->packet_identifier;
 
-	if ((ret = rrr_mqtt_conn_iterator_ctx_send_packet(connection, next_ack)) != 0) {
-		VL_MSG_ERR("Error while sending ACK for %s packet (%s) in __rrr_mqtt_broker_handle_pubrec_pubrel\n",
-				RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_TYPE_NAME_RAW(next_ack_type));
-		goto out_unlock_next_ack;
-	}
+	RRR_MQTT_P_UNLOCK(next_ack);
 
-	/*
-	TODO : Check if it's OK not to close a connection when we receive QoS2 handshake packets we don't know about
-	if (next_ack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
-	}
-*/
-	out_unlock_next_ack:
-		RRR_MQTT_P_UNLOCK(next_ack);
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->send_packet(mqtt_data->sessions, &connection->session, next_ack),
+			goto out,
+			" while sending ACK for packet to session in __rrr_mqtt_broker_handle_pubrec_pubrel"
+	);
+
 	out:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(next_ack);
 		RRR_MQTT_P_UNLOCK(packet);
@@ -851,7 +850,7 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out:
 	RRR_MQTT_P_UNLOCK(packet);
-	return ret | RRR_MQTT_CONN_DESTROY_CONNECTION;
+	return ret;
 }
 
 struct handle_packets_callback {
@@ -922,10 +921,7 @@ static int __rrr_mqtt_common_handle_packets (
 		goto out_nolock;
 	}
 
-	if (	!RRR_MQTT_CONN_STATE_RECEIVE_ANY_IS_ALLOWED(connection) &&
-			!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection) &&
-			!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)
-	) {
+	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
 		goto out;
 	}
 
@@ -1014,14 +1010,6 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	struct rrr_mqtt_conn *connection = callback_data->connection;
 
 	RRR_MQTT_P_LOCK(packet);
-	if (
-			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_PUBLISH &&
-			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_PUBREL &&
-			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_PUBREC
-	) {
-		VL_BUG ("Unsupported packet of type %s in __rrr_mqtt_common_send_from_sessions_callback\n",
-				RRR_MQTT_P_GET_TYPE_NAME(packet));
-	}
 
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(connection, packet) != 0) {
 		VL_MSG_ERR("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
@@ -1030,13 +1018,6 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	}
 
 	RRR_MQTT_P_UNLOCK(packet);
-
-	// This function guarantees to always decref a packet it receives, also on error.
-/*	RRR_MQTT_P_INCREF(packet);
-	if (rrr_mqtt_conn_iterator_ctx_queue_outbound_packet(connection, packet) != RRR_MQTT_CONN_OK) {
-		VL_MSG_ERR("Could not queue outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
-		ret = ret | FIFO_GLOBAL_ERR;
-	}*/
 
 	return ret;
 }
@@ -1087,12 +1068,16 @@ static int __rrr_mqtt_common_send (
 
 int rrr_mqtt_common_read_parse_handle (
 		struct rrr_mqtt_data *data,
-		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection)
+		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
+		void *callback_arg
 ) {
 	int ret = 0;
 	int preserve_ret = 0;
 
-	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data housekeeping_data = { exceeded_keep_alive_callback };
+	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data housekeeping_data = {
+			exceeded_keep_alive_callback,
+			callback_arg
+	};
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
 			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse, data),

@@ -145,19 +145,19 @@ struct rrr_mqtt_session_collection_methods {
 	);
 
 	// Receive an ACK for a packet from remote
-	int (*notify_ack_received) (
+/*	int (*notify_ack_received) (
 			unsigned int *match_count,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
-	);
+	);*/
 
 	// Notification that an ACK has been sent to remote
-	int (*notify_ack_sent) (
+/*	int (*notify_ack_sent) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p *packet
-	);
+	);*/
 
 	// Iterate send queue of session. If force=1, return everything. If not,
 	// return only non-sent and messages with exceeded retry interval.
@@ -177,20 +177,34 @@ struct rrr_mqtt_session_collection_methods {
 			uint8_t reason_v5
 	);
 
-	int (*add_subscriptions) (
+/*	int (*add_subscriptions) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			const struct rrr_mqtt_subscription_collection *subscriptions
+	);*/
+
+	int (*send_packet) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p *packet
 	);
 
-	// Receive PUBLISH from the client. Session handler must distribute this to
-	// the other clients and/or retain it based on protocol rules. QoS 2 packets
+	int (*receive_packet) (
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_p *packet,
+			unsigned int *ack_match_count
+	);
+
+	// Receive PUBLISH from remote. Session handler must distribute this to
+	// the other clients and/or retain it based on protocol rules. If local
+	// delivery is set, PUBLISH is delivered accordingly. QoS 1/2 packets
 	// will be stored until handshakes are complete.
-	int (*receive_publish) (
+/*	int (*receive_publish) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
 			struct rrr_mqtt_p_publish *publish
-	);
+	);*/
 };
 
 #define RRR_MQTT_SESSION_COLLECTION_HEAD \

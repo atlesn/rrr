@@ -1249,7 +1249,7 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		}
 		else if (callback_data->exceeded_keep_alive_callback != NULL &&
 				connection->last_seen_time + limit_ping < time_get_64() &&
-				(ret = callback_data->exceeded_keep_alive_callback(connection)) != RRR_MQTT_CONN_OK
+				(ret = callback_data->exceeded_keep_alive_callback(connection, callback_data->callback_arg)) != RRR_MQTT_CONN_OK
 		) {
 			VL_MSG_ERR("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
 			goto out;
@@ -1435,18 +1435,6 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 		}
 		if ((ret = __rrr_mqtt_connection_write (connection, payload->payload_start, payload->length)) != 0) {
 			VL_MSG_ERR("Error while sending payload data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
-			goto out;
-		}
-	}
-
-	if (RRR_MQTT_P_IS_ACK(packet)) {
-		RRR_MQTT_P_UNLOCK(packet);
-		ret = CALL_EVENT_HANDLER_ARG(RRR_MQTT_CONN_EVENT_ACK_SENT, packet);
-		RRR_MQTT_P_LOCK(packet);
-		if (ret != RRR_MQTT_CONN_OK) {
-			VL_MSG_ERR("Error from event handler in rrr_mqtt_conn_iterator_ctx_send_packet " \
-					"while handling ACK packet, return was %i\n",
-					ret);
 			goto out;
 		}
 	}

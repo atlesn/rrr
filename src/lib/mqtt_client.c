@@ -139,7 +139,7 @@ int rrr_mqtt_client_connect (
 			connect->client_identifier,
 			&session_present,
 			0,  // Create if non-existent client ID
-			1   // Local delivery (check received PUBLISH agains subscriptions and deliver locally)
+			1   // Local delivery (check received PUBLISH against subscriptions and deliver locally)
 	)) != RRR_MQTT_SESSION_OK || session == NULL) {
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		VL_MSG_ERR("Internal error getting session in rrr_mqtt_client_connect\n");
@@ -287,15 +287,26 @@ static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
-
-
 int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
 
-	(void)(mqtt_data);
-	(void)(connection);
-	(void)(packet);
+	unsigned int match_count = 0;
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+		mqtt_data->sessions->methods->receive_packet (
+					mqtt_data->sessions,
+					&connection->session,
+					packet,
+					&match_count
+			),
+			goto out,
+			" while handling PINGRESP packet"
+	);
 
+	if (match_count == 0) {
+		VL_DEBUG_MSG_1("Received PINGRESP with no matching PINGREQ\n");
+	}
+
+	out:
 	return ret;
 }
 
@@ -327,27 +338,18 @@ static int __rrr_mqtt_client_event_handler (
 	struct rrr_mqtt_client_data *data = static_arg;
 
 	(void)(connection);
+	(void)(data);
+	(void)(arg);
 
 	int ret = RRR_MQTT_CONN_OK;
 
 	switch (event) {
 		case RRR_MQTT_CONN_EVENT_DISCONNECT:
 			break;
-		case RRR_MQTT_CONN_EVENT_ACK_SENT:
-			if ((ret = data->mqtt_data.sessions->methods->notify_ack_sent (
-					data->mqtt_data.sessions,
-					&connection->session,
-					(struct rrr_mqtt_p *) arg
-			)) != RRR_MQTT_SESSION_OK) {
-				VL_MSG_ERR("Error from session ACK notification function in __rrr_mqtt_client_event_handler\n");
-				goto out;
-			}
-			break;
 		default:
 			break;
 	};
 
-	out:
 	return ret;
 }
 
@@ -391,6 +393,8 @@ int rrr_mqtt_client_new (
 		goto out_free;
 	}
 
+	result->last_pingreq_time = time_get_64();
+
 	*client = result;
 
 	goto out;
@@ -400,8 +404,15 @@ int rrr_mqtt_client_new (
 		return ret;
 }
 
-static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection) {
+struct exceeded_keep_alive_callback_data {
+	struct rrr_mqtt_client_data *data;
+};
+
+static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn *connection, void *arg) {
 	int ret = RRR_MQTT_CONN_OK;
+
+	struct exceeded_keep_alive_callback_data *callback_data = arg;
+	struct rrr_mqtt_client_data *data = callback_data->data;
 
 	struct rrr_mqtt_p_pingreq *pingreq = NULL;
 
@@ -410,18 +421,24 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 		goto out;
 	}
 
+	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > time_get_64()) {
+		goto out;
+	}
+
 	pingreq = (struct rrr_mqtt_p_pingreq *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PINGREQ, connection->protocol_version);
 
-	RRR_MQTT_P_LOCK(pingreq);
-
-	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-			rrr_mqtt_conn_iterator_ctx_send_packet(connection, (struct rrr_mqtt_p *) pingreq),
-			goto out_unlock,
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet(
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) pingreq
+			),
+			goto out,
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
 	);
 
-	out_unlock:
-		RRR_MQTT_P_UNLOCK(pingreq);
+	data->last_pingreq_time = time_get_64();
+
 	out:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);
 		return ret;
@@ -430,7 +447,12 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {
 	int ret = 0;
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, __rrr_mqtt_client_exceeded_keep_alive_callback)) != 0) {
+
+	struct exceeded_keep_alive_callback_data callback_data = {
+			data
+	};
+
+	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, __rrr_mqtt_client_exceeded_keep_alive_callback, &callback_data)) != 0) {
 		goto out;
 	}
 
