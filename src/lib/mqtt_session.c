@@ -47,7 +47,11 @@ int rrr_mqtt_session_properties_clone (
 
 	memcpy(target, source, sizeof(*target));
 
-	ret |= rrr_mqtt_property_collection_clone(&target->user_properties, &source->user_properties);
+	memset(&target->user_properties, '\0', sizeof(target->user_properties));
+	target->auth_method = NULL;
+	target->auth_data = NULL;
+
+	ret |= rrr_mqtt_property_collection_add_from_collection(&target->user_properties, &source->user_properties);
 	ret |= rrr_mqtt_property_clone(&target->auth_method, source->auth_method);
 	ret |= rrr_mqtt_property_clone(&target->auth_data, source->auth_data);
 

@@ -38,6 +38,7 @@ struct rrr_mqtt_session_collection;
 struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
+
 	struct rrr_mqtt_session_properties session_properties;
 	ssize_t connection_count;
 	uint64_t last_pingreq_time;
@@ -63,7 +64,8 @@ int rrr_mqtt_client_connect (
 		uint16_t port,
 		uint8_t version,
 		uint16_t keep_alive,
-		uint8_t clean_start
+		uint8_t clean_start,
+		const struct rrr_mqtt_property_collection *connect_properties
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
 static inline void rrr_mqtt_client_destroy_void (void *client) {
@@ -78,5 +80,16 @@ int rrr_mqtt_client_new (
 		void *suback_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
+static int rrr_mqtt_client_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_client_data *data,
+		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+) {
+	return rrr_mqtt_common_iterate_and_clear_local_delivery(
+			&data->mqtt_data,
+			callback,
+			callback_arg
+	) & 1; // Clear all errors but internal error
+}
 
 #endif /* RRR_MQTT_CLIENT_H */

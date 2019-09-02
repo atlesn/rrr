@@ -314,9 +314,7 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	}
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		uint8_t zero = 0;
-		PUT_U8(zero);
-		// TODO : Replace zero byte with publish properties
+		PUT_PROPERTIES(&publish->properties);
 	}
 
 	// Payload is added automatically
@@ -331,8 +329,9 @@ int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	PUT_U16(puback->packet_identifier);
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		PUT_U8(puback->reason_v5);
-		uint8_t zero = 0;
-		PUT_U8(zero);
+		if (RRR_MQTT_P_IS_V5(packet)) {
+			PUT_PROPERTIES(&puback->properties);
+		}
 		// TODO : Replace zero byte with properties
 	}
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);

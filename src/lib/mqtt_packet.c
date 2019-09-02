@@ -265,7 +265,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFI
 		goto out;
 	}
 
-	int ret = rrr_mqtt_property_collection_clone(&result->properties, &publish->properties);
+	int ret = rrr_mqtt_property_collection_add_from_collection(&result->properties, &publish->properties);
 	if (ret != 0) {
 		VL_MSG_ERR("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
 		goto out_free;
@@ -414,7 +414,7 @@ const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[] = {
 
 const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 		// The six version 3.1 reasons must be first
-		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 0, 0, 1, "Success"},
+		{ 0x00, RRR_MQTT_P_31_REASON_OK,					1, 1, 1, 1, 1, "Success"},
 		{ 0x84, RRR_MQTT_P_31_REASON_BAD_PROTOCOL_VERSION,	1, 0, 0, 0, 0, "Refused/unsupported protocol version"},
 		{ 0x85, RRR_MQTT_P_31_REASON_CLIENT_ID_REJECTED,	1, 0, 0, 0, 0, "Client identifier not valid/rejected"},
 		{ 0x86, RRR_MQTT_P_31_REASON_BAD_CREDENTIALS,		1, 0, 0, 0, 0, "Bad user name or password"},

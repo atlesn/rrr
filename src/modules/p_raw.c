@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct raw_data {
 	int message_count;
+	int print_data;
 };
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
@@ -43,8 +44,21 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct raw_data *raw_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u data %s timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->data, reading->timestamp_from, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->length, reading->timestamp_from, reading->data_numeric, size);
+
+	if (raw_data->print_data != 0) {
+		if (reading->length > MSG_DATA_MAX_LENGTH) {
+			VL_BUG("Reading length too long in raw poll_callback\n");
+		}
+
+		char buf[reading->length + 1];
+		memcpy(buf, reading->data, reading->length);
+		buf[reading->length] = '\0';
+
+		VL_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
+				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);
+	}
 
 	raw_data->message_count++;
 
@@ -54,6 +68,30 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 void data_init(struct raw_data *data) {
 	memset (data, '\0', sizeof(*data));
+}
+
+int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+	int yesno = 0;
+
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "raw_print_data")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0; // Default to no
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing raw_print_data setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->print_data = yesno;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
 }
 
 static void *thread_entry_raw (struct vl_thread *thread) {
@@ -72,6 +110,11 @@ static void *thread_entry_raw (struct vl_thread *thread) {
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+
+	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Error while parsing configuration for raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 

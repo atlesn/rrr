@@ -168,6 +168,11 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *self
 );
+struct rrr_mqtt_propterty *rrr_mqtt_property_collection_get_property (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t type_id,
+		ssize_t index
+);
 int rrr_mqtt_property_collection_calculate_size (
 		ssize_t *size,
 		ssize_t *count,
@@ -176,7 +181,7 @@ int rrr_mqtt_property_collection_calculate_size (
 void rrr_mqtt_property_collection_destroy (
 		struct rrr_mqtt_property_collection *collection
 );
-int rrr_mqtt_property_collection_clone (
+int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property_collection *target,
 		const struct rrr_mqtt_property_collection *source
 );

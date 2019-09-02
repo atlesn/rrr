@@ -120,6 +120,9 @@ int rrr_mqtt_client_subscribe (
 		return (ret != 0);
 }
 
+struct rrr_mqtt_client_property_override {
+	struct rrr_mqtt_property *property;
+};
 
 int rrr_mqtt_client_connect (
 		struct rrr_mqtt_conn **connection,
@@ -128,7 +131,8 @@ int rrr_mqtt_client_connect (
 		uint16_t port,
 		uint8_t version,
 		uint16_t keep_alive,
-		uint8_t clean_start
+		uint8_t clean_start,
+		const struct rrr_mqtt_property_collection *connect_properties
 ) {
 	int ret = 0;
 
@@ -172,22 +176,38 @@ int rrr_mqtt_client_connect (
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
 
-	// TODO : Set connect properties
+	if (rrr_mqtt_property_collection_add_from_collection(&connect->properties, connect_properties) != 0) {
+		VL_MSG_ERR("Could not add properties to CONNECT packet in rrr_mqtt_client_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (version >= 5) {
+		struct rrr_mqtt_propterty *session_expiry = rrr_mqtt_property_collection_get_property (
+				&connect->properties,
+				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
+				0
+		);
+
+		if (session_expiry == NULL) {
+			// Default for version 3.1 is that sessions do not expire,
+			// only use clean session to control this
+			data->session_properties.session_expiry = 0xffffffff;
+
+			if (rrr_mqtt_property_collection_add_uint32 (
+					&connect->properties,
+					RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
+					data->session_properties.session_expiry
+			) != 0) {
+				VL_MSG_ERR("Could not set session expiry for CONNECT packet in rrr_mqtt_client_connect\n");
+				ret = 1;
+				goto out;
+			}
+		}
+	}
 
 	data->protocol_version = protocol_version;
 	data->session_properties = rrr_mqtt_common_default_session_properties;
-
-	if (version >= 5) {
-		// Default for version 3.1 is that sessions do not expire,
-		// only use clean session to control this
-		data->session_properties.session_expiry = 0xffffffff;
-
-		ret |= rrr_mqtt_property_collection_add_uint32 (
-				&connect->properties,
-				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
-				data->session_properties.session_expiry
-		);
-	}
 
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
@@ -195,6 +215,9 @@ int rrr_mqtt_client_connect (
 			&data->session_properties
 	};
 
+	// After adding properties to the CONNECT packet, read out all values and
+	// update the session properties. This will fail if non-CONNECT properties
+	// has been used.
 	uint8_t reason_v5 = 0;
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connect->properties,
@@ -371,8 +394,9 @@ static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	if (client_data->suback_handler != NULL) {
-		if ((ret = client_data->suback_handler(client_data, packet, client_data->suback_handler_arg)) != 0) {
+		if (client_data->suback_handler(client_data, packet, client_data->suback_handler_arg) != 0) {
 			VL_MSG_ERR("Error from custom suback handler in __rrr_mqtt_client_handle_suback\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR;
 		}
 	}
 

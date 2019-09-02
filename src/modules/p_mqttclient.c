@@ -59,6 +59,7 @@ struct mqtt_client_data {
 	struct rrr_mqtt_client_data *mqtt_client_data;
 	rrr_setting_uint server_port;
 	struct rrr_mqtt_subscription_collection *subscriptions;
+	struct rrr_mqtt_property_collection connect_properties;
 	char *server;
 	char *publish_topic;
 	char *version_str;
@@ -89,6 +90,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
+	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 }
 
 static int data_init (
@@ -324,6 +326,85 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 	return 0;
 }
 
+static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
+	int ret = 0;
+
+	struct mqtt_client_data *data = arg;
+	struct vl_message *message = NULL;
+
+	message = malloc(sizeof(*message));
+	if (message == NULL) {
+		VL_MSG_ERR("Could not allocate message in mqtt client instance %s receive_publish\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	int did_init = 0;
+	if (publish->payload != NULL) {
+		RRR_MQTT_P_LOCK(publish->payload);
+	 	if (publish->payload->length > 0) {
+	 			if (publish->payload->length > MSG_DATA_MAX_LENGTH + 1) {
+	 				VL_MSG_ERR("Received a PUBLISH with too long payload (%li > %i) in mqtt client instance %s. Topic was '%s'.\n",
+	 						publish->payload->length,
+							MSG_DATA_MAX_LENGTH + 1,
+							INSTANCE_D_NAME(data->thread_data),
+							publish->topic
+					);
+	 				ret = 1;
+	 				goto unlock_payload;
+	 			}
+	 			if (init_message (
+	 					MSG_TYPE_MSG,
+						MSG_CLASS_POINT,
+						publish->create_time,
+						publish->create_time,
+						0,
+						publish->payload->payload_start,
+						publish->payload->length,
+						message
+				) != 0) {
+	 				VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (A)\n",
+	 						INSTANCE_D_NAME(data->thread_data));
+	 				ret = 1;
+	 				goto unlock_payload;
+	 			}
+	 			did_init = 1;
+	 	}
+
+	 	unlock_payload:
+	 	RRR_MQTT_P_UNLOCK(publish->payload);
+	 	if (ret != 0) {
+	 		goto out;
+	 	}
+	}
+
+ 	if (did_init == 0) {
+		if (init_message (
+				MSG_TYPE_MSG,
+				MSG_CLASS_POINT,
+				publish->create_time,
+				publish->create_time,
+				0,
+				"",
+				0,
+				message
+		) != 0) {
+			VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (B)\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto unlock_payload;
+		}
+ 	}
+
+ 	fifo_buffer_write(&data->output_buffer, (char*) message, sizeof(*message));
+ 	message = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
 static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
@@ -394,6 +475,16 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
 
+	if (rrr_mqtt_property_collection_add_uint32(
+			&data->connect_properties,
+			RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
+			MSG_DATA_MAX_LENGTH
+	) != 0) {
+		VL_MSG_ERR("Could not set CONNECT properties in mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_destroy_client;
+	}
+
 	reconnect:
 	for (int i = 20; i >= 0 && thread_check_encourage_stop(thread_data->thread) != 1; i--) {
 		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu'\n",
@@ -405,7 +496,8 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 				data->server_port,
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
-				0 // <-- Clean start
+				0, // <-- Clean start
+				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
 				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
@@ -442,7 +534,14 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		}
 
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
-			VL_MSG_ERR("Error from MQTT client while running tasks\n");
+			VL_MSG_ERR("Error int mqtt client instance %s while running tasks\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
+		}
+
+		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, receive_publish, data) != 0) {
+			VL_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 

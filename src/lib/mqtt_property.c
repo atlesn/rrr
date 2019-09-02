@@ -113,7 +113,7 @@ int rrr_mqtt_property_clone (
 	int ret = 0;
 
 	if (*target != NULL) {
-		rrr_mqtt_property_destroy(*target);
+		VL_BUG("Target was not NULL in rr_mqtt_property_clone\n");
 	}
 
 	if (source == NULL) {
@@ -422,6 +422,25 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 
 }
 
+struct rrr_mqtt_propterty *rrr_mqtt_property_collection_get_property (
+		struct rrr_mqtt_property_collection *collection,
+		uint8_t type_id,
+		ssize_t index
+) {
+	int match_count = 0;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
+		if (node->definition->type == type_id) {
+			if (match_count == index) {
+				return node;
+			}
+			match_count++;
+		}
+	RRR_LINKED_LIST_ITERATE_END(collection);
+
+	return NULL;
+}
+
 int rrr_mqtt_property_collection_calculate_size (
 		ssize_t *size,
 		ssize_t *count,
@@ -489,13 +508,11 @@ void rrr_mqtt_property_collection_destroy (
 	RRR_LINKED_LIST_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
 }
 
-int rrr_mqtt_property_collection_clone (
+int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property_collection *target,
 		const struct rrr_mqtt_property_collection *source
 ) {
 	int ret = 0;
-
-	memset(target, '\0', sizeof(*target));
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
 		struct rrr_mqtt_property *new_node = NULL;

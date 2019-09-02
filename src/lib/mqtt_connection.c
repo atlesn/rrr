@@ -1399,6 +1399,16 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	char *network_data = NULL;
 	ssize_t network_size = 0;
 
+	// Packets which originate from other hosts might have different protocol
+	// version.
+	if (connection->protocol_version != NULL &&
+		connection->protocol_version != packet->protocol_version
+	) {
+		packet->protocol_version = connection->protocol_version;
+		RRR_FREE_IF_NOT_NULL(packet->_assembled_data);
+		packet->assembled_data_size = 0;
+	}
+
 	if (packet->_assembled_data == NULL) {
 		int ret_tmp = RRR_MQTT_P_GET_ASSEMBLER(packet) (
 				&network_data,
