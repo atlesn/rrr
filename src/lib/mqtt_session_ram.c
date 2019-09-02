@@ -392,6 +392,10 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 ) {
 	struct rrr_mqtt_session_ram *found = NULL;
 
+	if (session == NULL) {
+		return NULL;
+	}
+
 	SESSION_COLLECTION_RAM_LOCK(data);
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
@@ -1105,14 +1109,22 @@ static int __rrr_mqtt_session_ram_process_ack_callback (FIFO_CALLBACK_ARGS) {
 			goto out;
 		}
 
+		struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) ack_packet;
 		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
 		if (subscribe->suback != NULL) {
 			VL_DEBUG_MSG_1("Received duplicate SUBACK for SUBSCRIBE with id %u\n",
 					RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
+			if (suback->dup == 0) {
+				VL_MSG_ERR("Duplicate SUBACK did not have DUP flag set\n");
+				ret = FIFO_CALLBACK_ERR;
+				goto out;
+			}
 			RRR_MQTT_P_DECREF(subscribe->suback);
 			subscribe->suback = NULL;
 		}
-		subscribe->suback = (struct rrr_mqtt_p_suback *) ack_packet;
+
+		suback->orig_subscribe = subscribe;
+		subscribe->suback = suback;
 		ack_packet = NULL;
 	}
 	else {
@@ -1165,6 +1177,92 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 	}
 
 	out:
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_add_subscriptions (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p_subscribe *subscribe
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_LOCK(ram_session);
+
+	ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			ram_session->subscriptions,
+			subscribe->subscriptions,
+			0 // <-- Don't include subscriptions with errors (QoS > 2)
+	);
+	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+		VL_MSG_ERR("Could not add subscriptions to session in __rrr_mqtt_session_ram_add_subscriptions\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	}
+
+	SESSION_RAM_UNLOCK(ram_session);
+
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_receive_suback (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p_suback *suback
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	if (suback->orig_subscribe == NULL) {
+		VL_BUG("orig_subscribe not set for SUBACK in __rrr_mqtt_session_ram_receive_suback\n");
+	}
+
+	int orig_count = rrr_mqtt_subscription_collection_count(suback->orig_subscribe->subscriptions);
+	int new_count = suback->acknowledgements_size;
+
+	if (orig_count != new_count) {
+		VL_MSG_ERR("Topic count in received SUBACK did not match the original SUBSCRIBE, broker error\n");
+		return 1;
+	}
+
+	SESSION_RAM_LOCK(ram_session);
+
+	for (int i = 0; i < new_count; i++) {
+		const struct rrr_mqtt_subscription *subscription;
+		subscription = rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
+				suback->orig_subscribe->subscriptions,
+				i
+		);
+
+		if (suback->acknowledgements[i] <= 2) {
+			continue;
+		}
+
+		int did_remove = 0;
+		if (rrr_mqtt_subscription_collection_remove_topic (
+				&did_remove,
+				ram_session->subscriptions,
+				subscription->topic_filter
+		) != 0) {
+			VL_MSG_ERR("Error while removing subscription from collection in __rrr_mqtt_session_ram_remove_subscriptions_with_errors\n");
+			return 1;
+		}
+
+		if (did_remove == 1) {
+			VL_DEBUG_MSG_1("Removed topic '%s' from session subscription collection as it was rejected by the broker\n",
+					subscription->topic_filter);
+		}
+		else {
+			VL_MSG_ERR("Tried to remove non-existent topic '%s' from collection in __rrr_mqtt_session_ram_remove_subscriptions_with_errors\n",
+					subscription->topic_filter);
+			return 1;
+		}
+
+	}
+
+	SESSION_RAM_UNLOCK(ram_session);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Error while iterating subscriptions in __rrr_mqtt_session_ram_receive_suback\n");
+		ret = RRR_MQTT_SESSION_ERROR;
+	}
+
 	return ret;
 }
 
@@ -1225,30 +1323,18 @@ static int __rrr_mqtt_session_ram_process_ack (
 		goto out;
 	}
 
-	out:
-	return ret;
-}
-
-static int __rrr_mqtt_session_ram_add_subscriptions (
-		struct rrr_mqtt_session_ram *ram_session,
-		struct rrr_mqtt_p_subscribe *subscribe
-) {
-	int ret = RRR_MQTT_SESSION_OK;
-
-	SESSION_RAM_LOCK(ram_session);
-
-	ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
-			ram_session->subscriptions,
-			subscribe->subscriptions,
-			0 // <-- Don't include subscriptions with errors (QoS > 2)
-	);
-	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		VL_MSG_ERR("Could not add subscriptions to session in __rrr_mqtt_session_ram_add_subscriptions\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBACK) {
+		if (packet_was_outbound == 0) {
+			VL_BUG("packet_was_outbound was zero for SUBACK in __rrr_mqtt_session_ram_process_ack\n");
+		}
+		if (__rrr_mqtt_session_ram_receive_suback(ram_session, (struct rrr_mqtt_p_suback *) packet) != 0) {
+			VL_MSG_ERR("Error while handling SUBACK packet in __rrr_mqtt_session_ram_process_ack\n");
+			ret = RRR_MQTT_SESSION_ERROR;
+			goto out;
+		}
 	}
 
-	SESSION_RAM_UNLOCK(ram_session);
-
+	out:
 	return ret;
 }
 
@@ -1552,6 +1638,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 		if (subscribe->suback != NULL) {
 			goto out_unlock;
 		}
+		packet_to_transmit = packet;
 	}
 	else {
 		packet_to_transmit = packet;
@@ -1809,6 +1896,9 @@ static int __rrr_mqtt_session_ram_receive_packet (
 
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
+		// The packet handler for SUBSCRIBE (in broker) is responsible for setting
+		// error flag on invalid subscriptions in the packet. These are not added
+		// to the session.
 		ret = __rrr_mqtt_session_ram_add_subscriptions(ram_session, (struct rrr_mqtt_p_subscribe *) packet);
 	}
 	else if (RRR_MQTT_P_IS_ACK(packet)) {

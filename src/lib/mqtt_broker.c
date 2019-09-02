@@ -620,7 +620,7 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 
 	RRR_MQTT_P_LOCK(suback);
 	suback->packet_identifier = subscribe->packet_identifier;
-	suback->subscriptions = subscribe->subscriptions;
+	suback->subscriptions_ = subscribe->subscriptions;
 	subscribe->subscriptions = NULL;
 	RRR_MQTT_P_UNLOCK(suback);
 

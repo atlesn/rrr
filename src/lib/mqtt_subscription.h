@@ -27,7 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBSCRIPTION_OK				0
 #define RRR_MQTT_SUBSCRIPTION_MATCH				0
 #define RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR	1
-#define RRR_MQTT_SUBSCRIPTION_MALFORMED			2
 #define RRR_MQTT_SUBSCRIPTION_REPLACED			3
 #define RRR_MQTT_SUBSCRIPTION_MISMATCH			4
 
@@ -64,7 +63,6 @@ struct rrr_mqtt_subscription_collection {
 int rrr_mqtt_subscription_destroy (
 		struct rrr_mqtt_subscription *subscription
 );
-
 int rrr_mqtt_subscription_new (
 		struct rrr_mqtt_subscription **target,
 		const char *topic_filter,
@@ -91,6 +89,9 @@ int rrr_mqtt_subscription_collection_match_publish (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish
 );
+int rrr_mqtt_subscription_collection_count (
+		const struct rrr_mqtt_subscription_collection *target
+);
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
 );
@@ -109,9 +110,30 @@ int rrr_mqtt_subscription_collection_iterate (
 		int (*callback)(struct rrr_mqtt_subscription *sub, void *arg),
 		void *callback_arg
 );
+struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
+		struct rrr_mqtt_subscription_collection *target,
+		ssize_t idx
+);
+const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
+		const struct rrr_mqtt_subscription_collection *target,
+		ssize_t idx
+);
+int rrr_mqtt_subscription_collection_remove_topic (
+		int *did_remove,
+		struct rrr_mqtt_subscription_collection *target,
+		const char *topic
+);
 int rrr_mqtt_subscription_collection_push_unique (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription **subscription
+);
+int rrr_mqtt_subscription_collection_push_unique_str (
+		struct rrr_mqtt_subscription_collection *target,
+		const char *topic,
+		uint8_t retain_handling,
+		uint8_t rap,
+		uint8_t nl,
+		uint8_t qos
 );
 int rrr_mqtt_subscription_collection_append_unique (
 		struct rrr_mqtt_subscription_collection *target,

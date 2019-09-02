@@ -83,6 +83,11 @@ int rrr_mqtt_topic_filter_validate_name (
 ) {
 	struct topic_name_seq seq = { 0, 0, topic_filter };
 
+	if (strlen(topic_filter) > 0xffff) {
+		VL_MSG_ERR("Topic filter too long in rrr_mqtt_topic_filter_validate_name\n");
+		return 1;
+	}
+
 	return rrr_utf8_validate_and_iterate (
 			topic_filter,
 			strlen(topic_filter),

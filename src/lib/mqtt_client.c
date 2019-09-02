@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_client.h"
 #include "mqtt_common.h"
+#include "mqtt_subscription.h"
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -52,12 +53,73 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_con
 }
 
 int rrr_mqtt_client_connection_is_alive (
-	int *alive,
-	struct rrr_mqtt_client_data *data,
-	struct rrr_mqtt_conn *connection
+		int *alive,
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection
 ) {
 	return rrr_mqtt_conn_check_alive(alive, &data->mqtt_data.connections, connection);
 }
+
+int rrr_mqtt_client_subscribe (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_subscription_collection *subscriptions
+) {
+	int ret = 0;
+
+	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
+		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+		goto out;
+	}
+	else if (ret < 0) {
+		VL_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_subscribe\n", ret);
+	}
+	ret = 0;
+
+	if (data->protocol_version == NULL) {
+		VL_MSG_ERR("Protocol version not set in rrr_mqtt_client_send_subscriptions\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) rrr_mqtt_p_allocate(
+			RRR_MQTT_P_TYPE_SUBSCRIBE,
+			data->protocol_version
+	);
+	if (subscribe == NULL) {
+		VL_MSG_ERR("Could not allocate SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(subscribe);
+
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(subscribe->subscriptions, subscriptions, 0) != 0) {
+		VL_MSG_ERR("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
+		goto out_unlock;
+	}
+
+	RRR_MQTT_P_UNLOCK(subscribe);
+
+	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet (
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) subscribe
+			),
+			goto out_decref,
+			" while sending SUBSCRIBE packet in rrr_mqtt_client_send_subscriptions\n"
+	);
+
+	goto out_decref;
+	out_unlock:
+		RRR_MQTT_P_UNLOCK(subscribe);
+	out_decref:
+		RRR_MQTT_P_DECREF(subscribe);
+	out:
+		return (ret != 0);
+}
+
 
 int rrr_mqtt_client_connect (
 		struct rrr_mqtt_conn **connection,
@@ -112,6 +174,7 @@ int rrr_mqtt_client_connect (
 
 	// TODO : Set connect properties
 
+	data->protocol_version = protocol_version;
 	data->session_properties = rrr_mqtt_common_default_session_properties;
 
 	if (version >= 5) {
@@ -285,13 +348,35 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 }
 
 static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+	int ret = RRR_MQTT_CONN_OK;
 
-
-	(void)(mqtt_data);
+	struct rrr_mqtt_client_data *client_data = (struct rrr_mqtt_client_data *) mqtt_data;
 	(void)(connection);
-	(void)(packet);
 
+	unsigned int match_count = 0;
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+		mqtt_data->sessions->methods->receive_packet (
+					mqtt_data->sessions,
+					&connection->session,
+					packet,
+					&match_count
+			),
+			goto out,
+			" while handling SUBACK packet"
+	);
+
+	if (match_count == 0) {
+		VL_MSG_ERR("Received SUBACK but did not find corresponding SUBSCRIBE packet, possible duplicate\n");
+		goto out;
+	}
+
+	if (client_data->suback_handler != NULL) {
+		if ((ret = client_data->suback_handler(client_data, packet, client_data->suback_handler_arg)) != 0) {
+			VL_MSG_ERR("Error from custom suback handler in __rrr_mqtt_client_handle_suback\n");
+		}
+	}
+
+	out:
 	return ret;
 }
 
@@ -371,7 +456,9 @@ int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
-		void *session_initializer_arg
+		void *session_initializer_arg,
+		int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg),
+		void *suback_handler_arg
 ) {
 	int ret = 0;
 
@@ -402,6 +489,8 @@ int rrr_mqtt_client_new (
 	}
 
 	result->last_pingreq_time = time_get_64();
+	result->suback_handler = suback_handler;
+	result->suback_handler_arg = suback_handler_arg;
 
 	*client = result;
 

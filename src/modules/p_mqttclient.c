@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt_client.h"
 #include "../lib/mqtt_common.h"
 #include "../lib/mqtt_session_ram.h"
+#include "../lib/mqtt_subscription.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -52,21 +53,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 
-struct mqtt_client_topic {
-	RRR_LINKED_LIST_NODE(struct mqtt_client_topic);
-	char topic[1];
-};
-
-struct mqtt_client_topic_list {
-	RRR_LINKED_LIST_HEAD(struct mqtt_client_topic);
-};
-
 struct mqtt_client_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer output_buffer;
 	struct rrr_mqtt_client_data *mqtt_client_data;
 	rrr_setting_uint server_port;
-	struct mqtt_client_topic_list topic_list;
+	struct rrr_mqtt_subscription_collection *subscriptions;
 	char *server;
 	char *publish_topic;
 	char *version_str;
@@ -96,7 +88,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
-	RRR_LINKED_LIST_DESTROY(&data->topic_list,struct mqtt_client_topic,free(node));
+	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 }
 
 static int data_init (
@@ -115,6 +107,11 @@ static int data_init (
 		goto out;
 	}
 
+	if (rrr_mqtt_subscription_collection_new(&data->subscriptions) != 0) {
+		VL_MSG_ERR("Could not create subscription collection in mqtt client data_init\n");
+		goto out;
+	}
+
 	out:
 	if (ret != 0) {
 		data_cleanup(data);
@@ -130,15 +127,17 @@ static int parse_sub_topic (const char *topic_str, void *arg) {
 		return 1;
 	}
 
-	struct mqtt_client_topic *topic = malloc(sizeof(*topic) + strlen(topic_str) + 1);
-	if (topic == NULL) {
-		VL_MSG_ERR("Could not allocate memory in parse_sub_topic\n");
+	if (rrr_mqtt_subscription_collection_push_unique_str (
+			data->subscriptions,
+			topic_str,
+			0,
+			0,
+			0,
+			data->qos
+	) != 0) {
+		VL_MSG_ERR("Could not add topic '%s' to subscription collection\n", topic_str);
 		return 1;
 	}
-
-	strcpy(topic->topic, topic_str);
-
-	RRR_LINKED_LIST_APPEND(&data->topic_list,topic);
 
 	return 0;
 }
@@ -255,6 +254,76 @@ static int poll_keep (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
+static int process_suback_subscription (
+		struct mqtt_client_data *data,
+		struct rrr_mqtt_subscription *subscription,
+		const int i,
+		const uint8_t qos_or_reason_v5
+) {
+	int ret = 0;
+
+	if (qos_or_reason_v5 > 2) {
+		const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
+		if (reason == NULL) {
+			VL_MSG_ERR("Unknown reason 0x%02x from mqtt broker in SUBACK topic index %i in mqtt client instance %s",
+					qos_or_reason_v5, i, INSTANCE_D_NAME(data->thread_data));
+			return 1;
+		}
+		VL_MSG_ERR("Warning: Subscription '%s' index '%i' rejected from broker in mqtt client instance %s with reason '%s'\n",
+				subscription->topic_filter,
+				i,
+				INSTANCE_D_NAME(data->thread_data),
+				reason->description
+		);
+	}
+	else if (qos_or_reason_v5 < subscription->qos_or_reason_v5) {
+		VL_MSG_ERR("Warning: Subscription '%s' index '%i' assigned QoS %u from server while %u was requested in mqtt client instance %s \n",
+				subscription->topic_filter,
+				i,
+				qos_or_reason_v5,
+				subscription->qos_or_reason_v5,
+				INSTANCE_D_NAME(data->thread_data)
+		);
+	}
+
+	return ret;
+}
+
+static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct rrr_mqtt_p *packet, void *arg) {
+	struct mqtt_client_data *data = arg;
+
+	(void)(mqtt_client_data);
+
+	if (RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_SUBACK) {
+		VL_BUG("Unknown packet of type %u received in mqtt client process_suback\n",
+				RRR_MQTT_P_GET_TYPE(packet));
+	}
+
+	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
+
+	int orig_count = rrr_mqtt_subscription_collection_count(data->subscriptions);
+	int new_count = suback->acknowledgements_size;
+
+	if (orig_count != new_count) {
+		// Session framework should catch this
+		VL_BUG("Count mismatch in SUBSCRIBE and SUBACK messages in mqtt client instance %s (%i vs %i)\n",
+				INSTANCE_D_NAME(data->thread_data), orig_count, new_count);
+	}
+
+	for (int i = 0; i < new_count; i++) {
+		struct rrr_mqtt_subscription *subscription;
+		subscription = rrr_mqtt_subscription_collection_get_subscription_by_idx (
+				data->subscriptions,
+				i
+		);
+		if (process_suback_subscription(data, subscription, i, suback->acknowledgements[i]) != 0) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
@@ -285,7 +354,6 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-
 	struct rrr_mqtt_common_init_data init_data = {
 		INSTANCE_D_NAME(thread_data),
 		RRR_MQTT_COMMON_RETRY_INTERVAL,
@@ -297,7 +365,9 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 			&data->mqtt_client_data,
 			&init_data,
 			rrr_mqtt_session_collection_ram_new,
-			NULL
+			NULL,
+			process_suback,
+			data
 		) != 0) {
 		VL_MSG_ERR("Could not create new mqtt client\n");
 		goto out_message;
@@ -349,6 +419,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		}
 	}
 
+	int subscriptions_sent = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
@@ -373,6 +444,19 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
 			VL_MSG_ERR("Error from MQTT client while running tasks\n");
 			break;
+		}
+
+		if (subscriptions_sent == 0) {
+			if (rrr_mqtt_client_subscribe (
+					data->mqtt_client_data,
+					data->connection,
+					data->subscriptions
+			) != 0) {
+				VL_MSG_ERR("Could not subscribe to topics in mqtt client instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				goto reconnect;
+			}
+			subscriptions_sent = 1;
 		}
 
 		usleep (5000); // 50 ms

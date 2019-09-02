@@ -363,9 +363,7 @@ static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 static void __rrr_mqtt_p_free_suback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
 	rrr_mqtt_property_collection_destroy(&suback->properties);
-	if (suback->subscriptions != NULL) {
-		rrr_mqtt_subscription_collection_destroy(suback->subscriptions);
-	}
+	rrr_mqtt_subscription_collection_destroy(suback->subscriptions_);
 	free(packet);
 }
 

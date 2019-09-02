@@ -54,6 +54,10 @@ int rrr_mqtt_subscription_new (
 
 	*target = NULL;
 
+	if (nl > 0 || rap > 0 || retain_handling > 2) {
+		VL_BUG("Invalid flags in rrr_mqtt_subscription_new\n");
+	}
+
 	struct rrr_mqtt_subscription *sub = malloc(sizeof(*sub));
 	if (sub == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_subscription_new_subscription A\n");
@@ -122,13 +126,8 @@ int rrr_mqtt_subscription_clone (
 			source->nl,
 			source->qos_or_reason_v5
 	)) != RRR_MQTT_SUBSCRIPTION_OK) {
-		if (ret == RRR_MQTT_SUBSCRIPTION_MALFORMED) {
-			VL_MSG_ERR("Subscription was malformed in rrr_mqtt_subscription_clone, subscription is tagged as invalid\n");
-		}
-		else {
-			VL_MSG_ERR("Could not clone subscription in rrr_mqtt_subscription_clone return was %i\n", ret);
-			goto out;
-		}
+		VL_MSG_ERR("Could not clone subscription in rrr_mqtt_subscription_clone return was %i\n", ret);
+		goto out;
 	}
 
 	*target = sub;
@@ -241,6 +240,11 @@ int rrr_mqtt_subscription_collection_match_publish (
 	return ret;
 }
 
+int rrr_mqtt_subscription_collection_count (
+		const struct rrr_mqtt_subscription_collection *target
+) {
+	return target->node_count;
+}
 
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
@@ -251,6 +255,9 @@ void rrr_mqtt_subscription_collection_clear (
 void rrr_mqtt_subscription_collection_destroy (
 		struct rrr_mqtt_subscription_collection *target
 ) {
+	if (target == NULL) {
+		return;
+	}
 	rrr_mqtt_subscription_collection_clear(target);
 	free(target);
 }
@@ -423,11 +430,116 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 	return ret;
 }
 
+struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
+		struct rrr_mqtt_subscription_collection *target,
+		ssize_t idx
+) {
+	if (idx > target->node_count - 1) {
+		VL_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
+	}
+
+	int i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
+		if (i == idx) {
+			return node;
+		}
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(target);
+
+	return NULL;
+}
+
+const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
+		const struct rrr_mqtt_subscription_collection *target,
+		ssize_t idx
+) {
+	if (idx > target->node_count - 1) {
+		VL_BUG("Index out of range in rrr_mqtt_subscription_collection_get_subscription_by_idx\n");
+	}
+
+	int i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
+		if (i == idx) {
+			return node;
+		}
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(target);
+
+	return NULL;
+}
+
+int rrr_mqtt_subscription_collection_remove_topic (
+		int *did_remove,
+		struct rrr_mqtt_subscription_collection *target,
+		const char *topic
+) {
+	*did_remove = 0;
+
+	int did_destroy = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
+		if (strcmp(node->topic_filter, topic) == 0) {
+			RRR_LINKED_LIST_SET_DESTROY();
+			did_destroy++;
+		}
+	RRR_LINKED_LIST_ITERATE_END(target);
+
+	if (did_destroy > 1) {
+		VL_BUG("More than 1 subscription matched in rrr_mqtt_subscription_collection_remove_topic\n");
+	}
+
+	*did_remove = did_destroy;
+
+	return 0;
+}
+
 int rrr_mqtt_subscription_collection_push_unique (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription **subscription
 ) {
 	return __rrr_mqtt_subscription_collection_add_unique (target, subscription, 0);
+}
+
+int rrr_mqtt_subscription_collection_push_unique_str (
+		struct rrr_mqtt_subscription_collection *target,
+		const char *topic,
+		uint8_t retain_handling,
+		uint8_t rap,
+		uint8_t nl,
+		uint8_t qos
+) {
+	int ret = 0;
+	struct rrr_mqtt_subscription *subscription = NULL;
+
+	if (rrr_mqtt_subscription_new(&subscription, topic, retain_handling, rap, nl, qos) != 0) {
+		VL_MSG_ERR("Could not create subscription in rrr_mqtt_subscription_collection_push_unique_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (subscription->qos_or_reason_v5 != qos) {
+		if (subscription->qos_or_reason_v5 == RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID) {
+			VL_MSG_ERR("Topic filter '%s' was invalid while pushing to subscription collection\n",
+					topic);
+			ret = 1;
+			goto out;
+		}
+		else {
+			VL_BUG("Unknown reason %u from rrr_mqtt_subscription_new in rrr_mqtt_subscription_collection_push_unique_str\n",
+					subscription->qos_or_reason_v5);
+		}
+	}
+
+	if (__rrr_mqtt_subscription_collection_add_unique (target, &subscription, 0) != 0) {
+		VL_MSG_ERR("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	subscription = NULL;
+
+	out:
+	rrr_mqtt_subscription_destroy(subscription);
+	return ret;
 }
 
 int rrr_mqtt_subscription_collection_append_unique (

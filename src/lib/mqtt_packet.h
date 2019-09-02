@@ -439,23 +439,31 @@ struct rrr_mqtt_p_subscribe {
 struct rrr_mqtt_p_suback {
 	RRR_MQTT_P_PACKET_HEADER;
 	struct rrr_mqtt_property_collection properties;
-	struct rrr_mqtt_subscription_collection *subscriptions;
 
-	const uint8_t *acknowlegdements;
+	// Used only when assembling
+	struct rrr_mqtt_subscription_collection *subscriptions_;
+
+	// Used only when parsing/handling
+	const uint8_t *acknowledgements;
 	ssize_t acknowledgements_size;
+
+	// We do not make any reference counting on this parameter because
+	// when set, the memory of the SUBACK packet is managed by the pointed
+	// to SUBSCRIBE packet, thus both will always be valid.
+	const struct rrr_mqtt_p_subscribe *orig_subscribe;
 };
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,idx) \
-	((0x3<<0) & (suback)->acknowlegdements[(idx)])
+	((0x3<<0) & (suback)->acknowledgements[(idx)])
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_REASON(suback,idx) \
-	(((0x3f<<2) & (suback)->acknowlegdements[(idx)]) >> 7)
+	(((0x3f<<2) & (suback)->acknowledgements[(idx)]) >> 7)
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback,idx) \
-	(((0x1f<<2) & (suback)->acknowlegdements[(idx)]) >> 2)
+	(((0x1f<<2) & (suback)->acknowledgements[(idx)]) >> 2)
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,idx) \
-	((suback)->acknowlegdements[(idx)])
+	((suback)->acknowledgements[(idx)])
 
 struct rrr_mqtt_p_unsubscribe {
 	RRR_MQTT_P_PACKET_HEADER;

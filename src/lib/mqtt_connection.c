@@ -821,7 +821,8 @@ int rrr_mqtt_conn_with_iterator_ctx_do_custom (
 	);
 
 	if (callback_data.connection_found != 1) {
-		VL_BUG("Connection not found in rrr_mqtt_connection_with_iterator_ctx_do\n");
+		VL_MSG_ERR("Connection not found in rrr_mqtt_connection_with_iterator_ctx_do\n");
+		ret = RRR_MQTT_CONN_SOFT_ERROR;
 	}
 
 	return ret;
@@ -1096,8 +1097,11 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		if (errno == EINTR) {
 			goto read_retry;
 		}
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			goto out_unlock;
+		}
 		VL_MSG_ERR("Error from read in rrr_mqtt_connection_read: %s\n", strerror(errno));
-		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+		ret = RRR_MQTT_CONN_SOFT_ERROR;
 		goto out_unlock;
 	}
 

@@ -946,16 +946,8 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 		struct rrr_mqtt_subscription *subscription = NULL;
 		ret = rrr_mqtt_subscription_new (&subscription, subscribe->data_tmp, retain, rap, nl, qos);
 		if (ret != 0) {
-			if (ret == RRR_MQTT_SUBSCRIPTION_MALFORMED) {
-				VL_MSG_ERR("Received mqtt SUBSCRIBE packet was malformed, will be rejected\n");
-				// We pass the packet on to the handler regardless of error. The handler will
-				// detect that *subscription is NULL and send SUBACK accordingly.
-				ret = RRR_MQTT_PARSE_OK;
-			}
-			else {
-				VL_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
-				return RRR_MQTT_PARSE_INTERNAL_ERROR;
-			}
+			VL_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
+			return RRR_MQTT_PARSE_INTERNAL_ERROR;
 		}
 
 		ret = rrr_mqtt_subscription_collection_append_unique (subscribe->subscriptions, &subscription);
@@ -1001,8 +993,13 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 
 	process_reasons:
 
-	suback->acknowlegdements = (void*) (session->buf + session->payload_pos);
+	suback->acknowledgements = (void*) (session->buf + session->payload_pos);
 	suback->acknowledgements_size = payload_length;
+
+	if (suback->acknowledgements_size == 0) {
+		VL_MSG_ERR("Zero payload in received SUBACK packet while parsing\n");
+		return RRR_MQTT_PARSE_PARAMETER_ERROR;
+	}
 
 	for (ssize_t i = 0; i < suback->acknowledgements_size; i++) {
 		const struct rrr_mqtt_p_reason *reason_struct = NULL;
