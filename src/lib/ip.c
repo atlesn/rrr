@@ -460,23 +460,21 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
     	}
 
     	if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
-    			break;
+    		break;
     	}
     	else if (errno == EINPROGRESS) {
-			struct timeval timeout = {
-				   5, 0
+			struct pollfd pollfd = {
+				fd, POLLOUT, 0
 			};
 
-			fd_set wfds;
-			FD_ZERO(&wfds);
-			FD_SET(fd, &wfds);
-
-			int numfds = select(fd + 1, &wfds, NULL, NULL, &timeout);
-			if (numfds == -1) {
-				VL_MSG_ERR("Error from select() while connecting: %s\n", strerror(errno));
+			if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+				VL_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
 			}
-			else if (numfds == 0) {
-				VL_MSG_ERR("Timeout from select() while connecting\n");
+			else if ((pollfd.revents & POLLOUT) != 0) {
+				break;
+			}
+			else if ((pollfd.revents & POLLOUT) == 0) {
+				VL_MSG_ERR("Timeout from poll() while connecting\n");
 			}
 			else {
 				int error = 0;

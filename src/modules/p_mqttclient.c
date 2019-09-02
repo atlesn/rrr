@@ -325,18 +325,28 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
 
 	reconnect:
-	if (rrr_mqtt_client_connect (
-			&data->connection,
-			data->mqtt_client_data,
-			data->server,
-			data->server_port,
-			data->version,
-			RRR_MQTT_CLIENT_KEEP_ALIVE,
-			0 // <-- Clean start
-	) != 0) {
-		VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
-				data->server, data->server_port, INSTANCE_D_NAME(thread_data));
-		goto out_destroy_client;
+	for (int i = 20; i >= 0 && thread_check_encourage_stop(thread_data->thread) != 1; i--) {
+		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu'\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port);
+		if (rrr_mqtt_client_connect (
+				&data->connection,
+				data->mqtt_client_data,
+				data->server,
+				data->server_port,
+				data->version,
+				RRR_MQTT_CLIENT_KEEP_ALIVE,
+				0 // <-- Clean start
+		) != 0) {
+			if (i == 0) {
+				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
+						data->server, data->server_port, INSTANCE_D_NAME(thread_data));
+				goto out_destroy_client;
+			}
+			usleep (100000);
+		}
+		else {
+			break;
+		}
 	}
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
