@@ -274,6 +274,13 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 		int (*callback)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet)
 );
 
+// May be called at any time to check if a connection is alive
+int rrr_mqtt_conn_check_alive (
+		int *alive,
+		struct rrr_mqtt_conn_collection *connections,
+		struct rrr_mqtt_conn *connection
+);
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // The iterator_ctx-functions MUST also be used ONLY in iterator context. The connection lock
 // AND packet lock (if packet argument present) MUST also be held when calling them.
@@ -282,12 +289,7 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 // iterator_ctx_do-function which can use these as callbacks.
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/* To call the outbound packet function safely, we MUST first incref the packet as the FIFO buffer
- * upon errors immediately will decref the packet, and the lock would then be destroyed. It is also
- * possible that another thread reads from the buffer before we continue and decrefs the packet.
- * Caller needs to hold the packet data lock to call the iterator_ctx function, and it cannot be
- * unlocked again if the packet is destroyed. */
-int rrr_mqtt_conn_iterator_ctx_check_finalize (
+int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 		struct rrr_mqtt_conn *connection
 );
 int rrr_mqtt_conn_iterator_ctx_parse (

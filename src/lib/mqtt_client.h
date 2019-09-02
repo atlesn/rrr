@@ -43,6 +43,11 @@ struct rrr_mqtt_client_data {
 	uint64_t last_pingreq_time;
 };
 
+int rrr_mqtt_client_connection_is_alive (
+	int *alive,
+	struct rrr_mqtt_client_data *data,
+	struct rrr_mqtt_conn *connection
+);
 int rrr_mqtt_client_connect (
 		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_client_data *data,

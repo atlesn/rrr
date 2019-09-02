@@ -984,7 +984,7 @@ static int __rrr_mqtt_common_read_and_parse (
 				"while parsing data from mqtt client"
 		);
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-				rrr_mqtt_conn_iterator_ctx_check_finalize (connection),
+				rrr_mqtt_conn_iterator_ctx_check_parse_finalize (connection),
 				goto out,
 				"while finalizing data from mqtt client"
 		);

@@ -324,6 +324,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
 
+	reconnect:
 	if (rrr_mqtt_client_connect (
 			&data->connection,
 			data->mqtt_client_data,
@@ -342,6 +343,18 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		update_watchdog_time(thread_data->thread);
 
 		// TODO : Figure out what to do with data from local senders
+
+		int alive = 0;
+		if (rrr_mqtt_client_connection_is_alive(&alive, data->mqtt_client_data, data->connection)) {
+			VL_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
+		}
+		if (alive == 0) {
+			VL_DEBUG_MSG_1("Connection lost for mqtt client instance %s, reconnecting\n",
+					INSTANCE_D_NAME(thread_data));
+			goto reconnect;
+		}
 
 		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;

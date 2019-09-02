@@ -866,7 +866,64 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 	return ret;
 }
 
-void __rrr_mqtt_connection_update_last_seen (struct rrr_mqtt_conn *connection) {
+struct check_alive_callback_data {
+	int alive;
+};
+
+int __rrr_mqtt_conn_iterator_ctx_check_alive_callback (
+		struct rrr_mqtt_conn *connection,
+		void *arg
+) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	struct check_alive_callback_data *callback_data = arg;
+	callback_data->alive = 1;
+
+	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection) ||
+		RRR_MQTT_CONN_STATE_IS_CLOSED(connection) ||
+		connection->session == NULL
+	) {
+		callback_data->alive = 0;
+	}
+
+	return ret;
+}
+
+int rrr_mqtt_conn_check_alive (
+		int *alive,
+		struct rrr_mqtt_conn_collection *connections,
+		struct rrr_mqtt_conn *connection
+) {
+	int ret = RRR_MQTT_CONN_OK;
+
+	*alive = 0;
+
+	struct check_alive_callback_data callback_data = {
+		0
+	};
+
+	ret = rrr_mqtt_conn_with_iterator_ctx_do_custom (
+			connections,
+			connection,
+			__rrr_mqtt_conn_iterator_ctx_check_alive_callback,
+			&callback_data
+	);
+
+	// Clear all errors (BUSY, SOFT ERROR) except INTERNAL ERROR
+	ret = ret & RRR_MQTT_CONN_INTERNAL_ERROR;
+
+	if (ret != RRR_MQTT_CONN_OK) {
+		VL_MSG_ERR("Internal error while checking keep-alive for connection in rrr_mqtt_check_alive\n");
+		goto out;
+	}
+
+	*alive = callback_data.alive;
+
+	out:
+	return ret;
+}
+
+void __rrr_mqtt_connection_update_last_seen_unlocked (struct rrr_mqtt_conn *connection) {
 	connection->last_seen_time = time_get_64();
 }
 
@@ -1079,7 +1136,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		}
 	}
 
-	__rrr_mqtt_connection_update_last_seen (connection);
+	__rrr_mqtt_connection_update_last_seen_unlocked (connection);
 
 	out_unlock:
 	RRR_MQTT_CONN_UNLOCK(connection);
@@ -1174,7 +1231,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 	return ret;
 }
 
-int rrr_mqtt_conn_iterator_ctx_check_finalize (
+int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 		struct rrr_mqtt_conn *connection
 ) {
 	int ret = RRR_MQTT_CONN_OK;

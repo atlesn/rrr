@@ -393,7 +393,7 @@ void ip_network_cleanup (void *arg) {
 }
 
 int ip_network_start_udp_ipv4 (struct ip_data *data) {
-	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
+	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
@@ -453,13 +453,55 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 
     struct addrinfo *rp;
     for (rp = result; rp != NULL; rp = rp->ai_next) {
-    	fd = rrr_socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol, "ip_network_start");
+    	fd = rrr_socket(rp->ai_family, rp->ai_socktype|SOCK_NONBLOCK, rp->ai_protocol, "ip_network_connect_tcp_ipv4_or_ipv6");
     	if (fd == -1) {
+    		VL_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
     		continue;
     	}
+
     	if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
-    		break;
+    			break;
     	}
+    	else if (errno == EINPROGRESS) {
+			struct timeval timeout = {
+				   5, 0
+			};
+
+			fd_set wfds;
+			FD_ZERO(&wfds);
+			FD_SET(fd, &wfds);
+
+			int numfds = select(fd + 1, &wfds, NULL, NULL, &timeout);
+			if (numfds == -1) {
+				VL_MSG_ERR("Error from select() while connecting: %s\n", strerror(errno));
+			}
+			else if (numfds == 0) {
+				VL_MSG_ERR("Timeout from select() while connecting\n");
+			}
+			else {
+				int error = 0;
+				socklen_t len = sizeof(error);
+				if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
+					VL_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
+				}
+				else if (error == 0) {
+					break;
+				}
+				else if (error == EINPROGRESS) {
+					VL_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
+				}
+				else if (error == ECONNREFUSED) {
+					VL_MSG_ERR("Connection refused while connecting\n");
+				}
+				else {
+					VL_MSG_ERR("Unknown error while connecting: %i\n", error);
+				}
+			}
+		}
+		else {
+			VL_MSG_ERR("Error while connecting: %s\n", strerror(errno));
+		}
+
     	rrr_socket_close(fd);
     }
 
@@ -499,7 +541,7 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 }
 
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
-	int fd = rrr_socket(AF_INET6, SOCK_CLOEXEC|SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
+	int fd = rrr_socket(AF_INET6, SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
@@ -590,6 +632,16 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 
 	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
 		VL_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", strerror(errno));
+		goto out_close_socket;
+	}
+
+	int flags = fcntl(fd, F_GETFL, 0);
+	if (flags == -1) {
+		VL_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", strerror(errno));
+		goto out_close_socket;
+	}
+	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+		VL_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", strerror(errno));
 		goto out_close_socket;
 	}
 
