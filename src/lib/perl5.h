@@ -90,7 +90,7 @@ void rrr_perl5_destruct_message_hv (
 		struct rrr_perl5_message_hv *source
 );
 int rrr_perl5_hv_to_message (
-		struct vl_message *target,
+		struct vl_message **target_final,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 );

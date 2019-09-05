@@ -422,23 +422,26 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 
 }
 
-struct rrr_mqtt_propterty *rrr_mqtt_property_collection_get_property (
+struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t type_id,
 		ssize_t index
 ) {
 	int match_count = 0;
 
+	struct rrr_mqtt_property *ret = NULL;
+
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
 		if (node->definition->type == type_id) {
 			if (match_count == index) {
-				return node;
+				ret = node;
+				RRR_LINKED_LIST_SET_STOP();
 			}
 			match_count++;
 		}
 	RRR_LINKED_LIST_ITERATE_END(collection);
 
-	return NULL;
+	return ret;
 }
 
 int rrr_mqtt_property_collection_calculate_size (

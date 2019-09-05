@@ -48,13 +48,13 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->length, reading->timestamp_from, reading->data_numeric, size);
 
 	if (raw_data->print_data != 0) {
-		if (reading->length > MSG_DATA_MAX_LENGTH) {
-			VL_BUG("Reading length too long in raw poll_callback\n");
+		ssize_t print_length = reading->length;
+		if (print_length > 100) {
+			print_length = 100;
 		}
-
-		char buf[reading->length + 1];
-		memcpy(buf, reading->data, reading->length);
-		buf[reading->length] = '\0';
+		char buf[print_length + 1];
+		memcpy(buf, reading->data_, print_length);
+		buf[print_length] = '\0';
 
 		VL_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
 				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);

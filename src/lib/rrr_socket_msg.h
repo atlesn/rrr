@@ -49,15 +49,18 @@ typedef unsigned long int vl_u64;
 typedef unsigned long long int vl_u64;
 #endif
 
-#define RRR_SOCKET_MSG_HEAD \
-	vl_u32 crc32; \
-	union { \
-		vl_u16 endian_two; \
-		vl_u8 endian_one; \
-	}; \
-	vl_u16 msg_type; \
-	vl_u32 msg_size; \
-	vl_u64 msg_value;
+struct rrr_socket_read_session;
+
+// The header_crc32 is calculated AFTER conversion to network
+// byte order (big endian). The crc32 is the converted itself.
+
+#define RRR_SOCKET_MSG_HEAD		\
+	vl_u32 header_crc32;		\
+	vl_u32 network_size;		\
+	vl_u16 msg_type;			\
+	vl_u32 msg_size;			\
+	vl_u64 msg_value;			\
+	vl_u32 data_crc32;
 
 struct rrr_socket_msg {
 	RRR_SOCKET_MSG_HEAD;
@@ -89,16 +92,19 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 
-void rrr_socket_msg_populate_head (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value);
-void rrr_socket_msg_checksum (
-	struct rrr_socket_msg *message,
-	ssize_t total_size
+void rrr_socket_msg_populate_head (
+		struct rrr_socket_msg *message,
+		vl_u16 type,
+		vl_u32 msg_size,
+		vl_u64 value
 );
-void rrr_socket_msg_head_to_network (struct rrr_socket_msg *message);
-int rrr_socket_msg_head_to_host (struct rrr_socket_msg *message);
+void rrr_socket_msg_checksum_and_to_network_endian (
+	struct rrr_socket_msg *message
+);
+void rrr_socket_msg_head_to_host (struct rrr_socket_msg *message);
+int rrr_socket_msg_get_packet_target_size(struct rrr_socket_read_session *read_session, void *arg);
 int rrr_socket_msg_checksum_check (
-	struct rrr_socket_msg *message,
-	ssize_t total_size
+	struct rrr_socket_msg *message
 );
 int rrr_socket_msg_head_validate (struct rrr_socket_msg *message);
 

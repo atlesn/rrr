@@ -70,7 +70,7 @@ int averager_poll (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_search(&avg_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
-// Messages when from polling sender comes in here
+// Messages when polling from sender comes in here
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct vl_message *message = (struct vl_message *) data;
 
@@ -80,7 +80,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
-		VL_DEBUG_MSG_2 ("Averager: %s size %lu measurement %" PRIu64 "\n", message->data, size, message->data_numeric);
+		VL_DEBUG_MSG_2 ("Averager: size %lu measurement %" PRIu64 "\n", size, message->data_numeric);
 		fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
 		if (averager_data->preserve_point_measurements == 1) {
 			struct vl_message *dup_message = message_duplicate(message);
@@ -90,7 +90,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 		}
 	}
 	else if (MSG_IS_MSG_INFO(message)) {
-		VL_DEBUG_MSG_2 ("Averager: size %lu information '%s'\n", size, message->data);
+		VL_DEBUG_MSG_2 ("Averager: size %lu information message\n", size);
 		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 	else if (averager_data->discard_unknown_messages) {
@@ -157,44 +157,49 @@ int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned
 	return FIFO_SEARCH_KEEP;
 }
 
-void averager_spawn_message (
+int averager_spawn_message (
 	struct averager_data *data,
 	long unsigned int class,
 	uint64_t time_from,
 	uint64_t time_to,
 	uint64_t measurement
 ) {
-	struct vl_message *message = malloc(sizeof(*message));
+	struct vl_message *message = NULL;
 
 	char buf[64];
 	sprintf(buf, "%" PRIu64, measurement);
 
-	if (init_message (
+	if (new_message (
+			&message,
 			MSG_TYPE_MSG,
+			0,
 			class,
 			time_from,
 			time_to,
 			measurement,
 			buf,
-			strlen(buf),
-			message
+			strlen(buf)
 	) != 0) {
-		free(message);
-		VL_MSG_ERR ("Bug: Could not initialize message\n");
-		exit (EXIT_FAILURE);
+		VL_MSG_ERR ("Could not create message in averager_spawn_message\n");
+		return 1;
 	}
 
 	fifo_buffer_write_ordered(&data->output_buffer, time_to, (char*) message, sizeof(*message));
+
+	return 0;
 }
 
-void averager_calculate_average(struct averager_data *data) {
+int averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
 	struct fifo_callback_args poll_data = {NULL, &calculation, 0};
+
+	int ret = 0;
+
 	fifo_search(&data->input_buffer, averager_callback, &poll_data, 50);
 
 	if (calculation.entries == 0) {
 		VL_DEBUG_MSG_2 ("Averager: No entries, not averaging\n");
-		return;
+		return ret;
 	}
 
 	unsigned long int average = calculation.sum/calculation.entries;
@@ -202,9 +207,16 @@ void averager_calculate_average(struct averager_data *data) {
 
 	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
 	// without newer timestamps getting written before older ones.
-	averager_spawn_message(data, MSG_CLASS_AVG, calculation.timestamp_from, calculation.timestamp_to, average);
-	averager_spawn_message(data, MSG_CLASS_MAX, calculation.timestamp_max, calculation.timestamp_to+1, calculation.max);
-	averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_to+2, calculation.min);
+	ret |= averager_spawn_message(data, MSG_CLASS_AVG, calculation.timestamp_from, calculation.timestamp_to, average);
+	ret |= averager_spawn_message(data, MSG_CLASS_MAX, calculation.timestamp_max, calculation.timestamp_to+1, calculation.max);
+	ret |= averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_to+2, calculation.min);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Error when spawning messages in averager_calculate_average\n");
+		return ret;
+	}
+
+	return ret;
 }
 
 void data_cleanup(void *arg) {
@@ -340,7 +352,9 @@ static void *thread_entry_averager(struct vl_thread *thread) {
 
 		uint64_t current_time = time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
-			averager_calculate_average(data);
+			if (averager_calculate_average(data) != 0) {
+				goto out_message;
+			}
 			previous_average_time = current_time;
 		}
 	}

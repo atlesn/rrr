@@ -183,7 +183,7 @@ int rrr_mqtt_client_connect (
 	}
 
 	if (version >= 5) {
-		struct rrr_mqtt_propterty *session_expiry = rrr_mqtt_property_collection_get_property (
+		struct rrr_mqtt_property *session_expiry = rrr_mqtt_property_collection_get_property (
 				&connect->properties,
 				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
 				0
@@ -584,4 +584,16 @@ int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {
 
 	out:
 	return ret;
+}
+
+int rrr_mqtt_client_iterate_and_clear_local_delivery (
+		struct rrr_mqtt_client_data *data,
+		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
+		void *callback_arg
+) {
+	return rrr_mqtt_common_iterate_and_clear_local_delivery(
+			&data->mqtt_data,
+			callback,
+			callback_arg
+	) & 1; // Clear all errors but internal error
 }

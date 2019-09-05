@@ -30,7 +30,7 @@ perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
-	ipclient.la ipserver.la blockdev.la controller.la udpreader.la \
+	ipclient.la ipserver.la controller.la udpreader.la \
 	duplicator.la mqttbroker.la mqttclient.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
@@ -56,9 +56,6 @@ ipclient_la_SOURCES = p_ipclient.c
 
 ipserver_la_LDFLAGS = ${module_ldflags}
 ipserver_la_SOURCES = p_ipserver.c
-
-blockdev_la_LDFLAGS = ${module_ldflags} -L${top_srcdir}/src/blockdevlogger/src/lib/.libs -lbdl
-blockdev_la_SOURCES = p_blockdev.c
 
 controller_la_LDFLAGS = ${module_ldflags}
 controller_la_SOURCES = p_controller.c

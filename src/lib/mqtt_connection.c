@@ -928,6 +928,8 @@ void __rrr_mqtt_connection_update_last_seen_unlocked (struct rrr_mqtt_conn *conn
 	connection->last_seen_time = time_get_64();
 }
 
+// TODO : Convert to use rrr_socket_read_message
+
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_mqtt_conn *connection,
 		int read_step_max_size

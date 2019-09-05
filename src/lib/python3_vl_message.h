@@ -26,7 +26,6 @@ struct vl_message;
 struct PyObject;
 
 struct vl_message *rrr_python3_vl_message_get_message (PyObject *self);
-PyObject *rrr_python3_vl_message_new (void);
 PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg);
 
 #endif /* RRR_PYTHON3_VL_MESSAGE_H */

@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "rrr_socket.h"
 #include "vl_time.h"
+#include "crc32.h"
 
 int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
@@ -100,138 +101,139 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 	pthread_mutex_unlock(&stats->lock);
 	return ret;
 }
+/*
+struct ip_buffer_entry_ *ip_buffer_entry_new (
+		struct sockaddr *sockaddr,
+		socklen_t addr_len,
+		const char *data,
+		ssize_t data_len
+) {
+
+	ssize_t size = sizeof(struct ip_buffer_entry_) + data_len - 1;
+
+	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry));
+	if (entry == NULL) {
+		VL_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
+	}
+
+	memset(entry, '\0', sizeof(struct ip_buffer_entry_) - 1); // Only zero the head
+
+	entry->addr_len = addr_len;
+	entry->addr = *sockaddr;
+	entry->data_length = data_len;
+	entry->time = time_get_64();
+
+	return entry;
+}
+*/
+struct receive_packets_callback_data {
+	int (*callback)(struct ip_buffer_entry_ *entry, void *arg);
+	void *callback_arg;
+	struct ip_stats *stats;
+};
+
+static int __ip_receive_packets_callback (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+) {
+	struct receive_packets_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if (read_session->read_complete == 0) {
+		VL_BUG("Read complete was 0 in __ip_receive_packets_callback\n");
+	}
+
+	struct ip_buffer_entry_ *entry = (struct ip_buffer_entry_ *) read_session->rx_buf_ptr;
+
+	entry->addr = read_session->src_addr;
+	entry->addr_len = read_session->src_addr_len;
+	entry->data_length = read_session->target_size;
+	read_session->rx_buf_ptr = NULL;
+
+	ret = callback_data->callback(entry, callback_data->callback_arg);
+	if (ret == VL_IP_RECEIVE_STOP) {
+		goto out;
+	}
+	else if (ret == VL_IP_RECEIVE_ERR) {
+		return 1;
+	}
+
+	if (callback_data->stats != NULL) {
+		ret = ip_stats_update(callback_data->stats, 1, VL_IP_RECEIVE_MAX_STEP_SIZE);
+		if (ret == VL_IP_STATS_UPDATE_ERR) {
+			VL_MSG_ERR("ip: Error returned from stats update function\n");
+			return 1;
+		}
+		if (ret == VL_IP_STATS_UPDATE_READY) {
+			if (ip_stats_print_reset(callback_data->stats, 1) != VL_IP_STATS_UPDATE_OK) {
+				VL_MSG_ERR("ip: Error returned from stats print function\n");
+				return 1;
+			}
+		}
+	}
+
+	out:
+	return ret;
+}
 
 /* Receive raw packets */
 int ip_receive_packets (
-	int fd,
-	int (*callback)(struct ip_buffer_entry *entry, void *arg),
-	void *arg,
-	struct ip_stats *stats
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
 ) {
-	struct sockaddr src_addr;
-	socklen_t src_addr_len = sizeof(src_addr);
+	int ret = 0;
 
-	struct pollfd fds;
-	fds.fd = fd;
-	fds.events = POLLIN;
+	struct receive_packets_callback_data callback_data = {
+			callback,
+			arg,
+			stats
+	};
 
-	char buffer[VL_IP_RECEIVE_MAX_SIZE];
+	ret = rrr_socket_read_message (
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			sizeof(struct ip_buffer_entry_) - sizeof(struct vl_message),
+			rrr_socket_msg_get_packet_target_size,
+			NULL,
+			__ip_receive_packets_callback,
+			&callback_data
+	);
 
-	while (1) {
-		int res;
-
-		VL_DEBUG_MSG_5 ("ip polling data\n");
-
-		int max_retries = 100;
-
-		retry_poll:
-		res = poll(&fds, 1, 10);
-		if (res == -1) {
-			if (--max_retries == 100) {
-				VL_MSG_ERR("Max retries for poll reached in ip_receive_packets for socket %i pid %i\n",
-						fd, getpid());
-				res = 1;
-				return 1;
-			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				usleep(10);
-				goto retry_poll;
-			}
-			else if (errno == EINTR) {
-				goto retry_poll;
-			}
-			VL_MSG_ERR ("Error from poll in ip_receive_packets: %s\n", strerror(errno));
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Warning: Soft error while reading data in ip_receive_packets\n");
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			VL_MSG_ERR("Hard error while reading data in ip_receive_packets\n");
 			return 1;
-		}
-		else if (!(fds.revents & POLLIN)) {
-			VL_DEBUG_MSG_5 ("ip no data available\n");
-			break;
-		}
-
-		memset(buffer, '\0', VL_IP_RECEIVE_MAX_SIZE);
-
-		VL_DEBUG_MSG_3 ("ip receiving data\n");
-
-		max_retries = 100;
-		ssize_t count;
-
-		retry_recv:
-		count = recvfrom(fd, buffer, VL_IP_RECEIVE_MAX_SIZE, 0, &src_addr, &src_addr_len);
-
-		if (count == -1) {
-			if (--max_retries == 100) {
-				VL_MSG_ERR("Max retries for recvfrom reached in ip_receive_packets for socket %i pid %i\n",
-						fd, getpid());
-				res = 1;
-				return 1;
-			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				usleep(10);
-				goto retry_recv;
-			}
-			else if (errno == EINTR) {
-				goto retry_recv;
-			}
-			VL_MSG_ERR ("Error from recvfrom in ip_receive_packets: %s\n", strerror(errno));
-			return 1;
-		}
-
-		struct ip_buffer_entry *entry = malloc(sizeof(*entry));
-		memset(entry, '\0', sizeof(*entry));
-
-		entry->addr = src_addr;
-		entry->addr_len = src_addr_len;
-		entry->data_length = count;
-
-		VL_ASSERT(sizeof(entry->data.data)==sizeof(buffer),sizes_of_buffers_equal)
-		memcpy (entry->data.data, buffer, count);
-
-		if (VL_DEBUGLEVEL_6) {
-			for (int i = 0; i < MSG_DATA_MAX_LENGTH; i++) {
-				VL_DEBUG_MSG ("%02x-", entry->data.data[i]);
-				if ((i + 1) % 32 == 0) {
-					VL_DEBUG_MSG ("\n");
-				}
-			}
-			VL_DEBUG_MSG ("\n");
-		}
-
-		res = callback(entry, arg);
-		if (res == VL_IP_RECEIVE_STOP) {
-			break;
-		}
-		else if (res == VL_IP_RECEIVE_ERR) {
-			return 1;
-		}
-
-		if (stats != NULL) {
-			res = ip_stats_update(stats, 1, VL_IP_RECEIVE_MAX_SIZE);
-			if (res == VL_IP_STATS_UPDATE_ERR) {
-				VL_MSG_ERR("ip: Error returned from stats update function\n");
-				return 1;
-			}
-			if (res == VL_IP_STATS_UPDATE_READY) {
-				if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
-					VL_MSG_ERR("ip: Error returned from stats print function\n");
-					return 1;
-				}
-			}
 		}
 	}
 
 	return 0;
 }
 
-struct ip_receive_messages_data {
-	int (*callback)(struct ip_buffer_entry *entry, void *arg);
+struct ip_receive_messages_callback_data {
+	int (*callback)(struct ip_buffer_entry_ *entry, void *arg);
 	void *arg;
 #ifdef VL_WITH_OPENSSL
 	struct module_crypt_data *crypt_data;
 #endif
 };
 
-int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
-	struct ip_receive_messages_data *data = arg;
+static int __ip_receive_messages_callback(struct ip_buffer_entry_ *entry, void *arg) {
+	int ret = 0;
+
+	struct ip_receive_messages_callback_data *data = arg;
 
 #ifdef VL_WITH_OPENSSL
 	struct module_crypt_data *crypt_data = data->crypt_data;
@@ -240,8 +242,12 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 
 	if (count < 10) {
 		VL_MSG_ERR ("Received short message/packet from network\n");
-		return 0;
+		goto out;
 	}
+
+	// Header CRC32 is checked when reading the data from remote and getting size
+
+	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) &entry->message);
 
 #ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL) {
@@ -250,51 +256,51 @@ int ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", input_length);
 		if (module_decrypt_message(
 				crypt_data,
-				(char*) entry->data.data,
+				(char*) entry->data + sizeof(struct rrr_socket_msg),
 				&input_length,
-				sizeof(entry->data.data)
+				entry->message.network_size - sizeof(struct rrr_socket_msg)
 		) != 0) {
 			VL_MSG_ERR("Error returned from module decrypt function\n");
-			free (entry);
-			return 1;
+			ret = 1;
+			goto out_free;
 		}
 
-		entry->data_length = input_length;
+		if (entry->data_length != input_length) {
+			VL_MSG_ERR("Size mismatch while decrypting message in __ip_receive_messages_callback\n");
+			ret = 1;
+			goto out_free;
+		}
 	}
 #endif
 
-/*	if (parse_message(start, input_length, &entry->data.message) != 0) {
-		VL_MSG_ERR ("Received invalid message\n");
-		free (entry);
-		return 0;
-	}*/
-
-	if (message_convert_endianess(&entry->data.message) != 0) {
-		VL_MSG_ERR ("Could not convert message endianess\n");
-		free (entry);
-		return 0;
-	}
-
-	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) &entry->data.message, sizeof(entry->data.message)) != 0) {
+	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) &entry->message) != 0) {
 		VL_MSG_ERR ("IP: Message checksum was invalid\n");
-		free (entry);
-		return 0;
+		goto out_free;
 	}
+
+	message_to_host(&entry->message);
 
 	return data->callback(entry, data->arg);
+
+	out_free:
+	free(entry);
+
+	out:
+	return ret;
 }
 
 /* Receive packets and parse vl_message struct or fail */
 int ip_receive_messages (
-	int fd,
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
 #ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data,
+		struct module_crypt_data *crypt_data,
 #endif
-	int (*callback)(struct ip_buffer_entry *entry, void *arg),
-	void *arg,
-	struct ip_stats *stats
+		int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
 ) {
-	struct ip_receive_messages_data data;
+	struct ip_receive_messages_callback_data data;
 
 	data.callback = callback;
 	data.arg = arg;
@@ -303,10 +309,11 @@ int ip_receive_messages (
 #endif
 
 	return ip_receive_packets (
-			fd,
-			ip_receive_messages_callback,
-			&data,
-			stats
+		read_session_collection,
+		fd,
+		__ip_receive_messages_callback,
+		&data,
+		stats
 	);
 }
 
@@ -318,38 +325,68 @@ int ip_send_message (
 	struct ip_send_packet_info *info,
 	struct ip_stats *stats
 ) {
-	char buf[VL_IP_RECEIVE_MAX_SIZE];
-	struct vl_message *final_message = (struct vl_message *) buf;
+	int ret = 0;
 
-	VL_ASSERT(sizeof(buf) >= sizeof(*input_message),ip_send_buf_can_hold_vl_message);
+	ssize_t final_size = sizeof(struct vl_message) + input_message->length - 1;
+	ssize_t buf_size = sizeof(struct vl_message) + input_message->length - 1;
 
-	memcpy(final_message, input_message, sizeof(*final_message));
+	if (final_size != input_message->network_size) {
+		VL_BUG("Size mismatch in ip_send_message\n");
+	}
+
+#ifdef VL_WITH_OPENSSL
+	buf_size += 1024;
+#endif
+
+	struct vl_message *final_message = malloc(buf_size);
+	if (final_message == NULL) {
+		VL_MSG_ERR("Could not allocate memory in ip_send_message\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(final_message, input_message, final_size);
 
 	message_prepare_for_network(final_message);
 
-	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 " data '%s'\n", input_message->timestamp_from, buf + 1);
+	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp_from);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) final_message,
+			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
+			final_size,
+			0
+	);
 
 #ifdef VL_WITH_OPENSSL
+	char *buf_start = ((char *) final_message) + sizeof(struct rrr_socket_msg);
+	unsigned int crypt_final_size = final_size - sizeof(struct rrr_socket_msg);
 	if (crypt_data->crypt != NULL && module_encrypt_message (
 			crypt_data,
-			buf + 1, strlen(buf + 1), // Remember that buf starts with zero
-			sizeof(buf)
+			buf_start,
+			&crypt_final_size,
+			buf_size
 	) != 0) {
-		return 1;
+		ret = 1;
+		goto out;
 	}
+	final_message->network_size = crypt_final_size + sizeof(struct rrr_socket_msg);
 #endif
 
-	VL_DEBUG_MSG_3("ip: Final message to send ready\n");
+	rrr_socket_msg_checksum_and_to_network_endian (
+			(struct rrr_socket_msg *) final_message
+	);
 
 	ssize_t bytes;
 	int max_retries = 100;
 
 	retry:
-	if ((bytes = sendto(info->fd, buf, sizeof(*final_message), 0, info->res->ai_addr,info->res->ai_addrlen)) == -1) {
+	if ((bytes = sendto(info->fd, final_message, final_size, 0, info->res->ai_addr,info->res->ai_addrlen)) == -1) {
 		if (--max_retries == 100) {
 			VL_MSG_ERR("Max retries for sendto reached in ip_send_message for socket %i pid %i\n",
 					info->fd, getpid());
-			return 1;
+			ret = 1;
+			goto out;
 		}
 		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			usleep(10);
@@ -359,29 +396,35 @@ int ip_send_message (
 			goto retry;
 		}
 		VL_MSG_ERR ("Error from sendto in ip_send_message: %s\n", strerror(errno));
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
-	if (bytes != sizeof(*final_message)) {
+	if (bytes != final_size) {
 		VL_MSG_ERR("All bytes were not sent in sendto in ip_send_message\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
 	if (stats != NULL) {
-		int res = ip_stats_update(stats, 1, sizeof(*final_message));
+		int res = ip_stats_update(stats, 1, final_size);
 		if (res == VL_IP_STATS_UPDATE_ERR) {
 			VL_MSG_ERR("ip: Error returned from stats update function\n");
-			return 1;
+			ret = 1;
+			goto out;
 		}
 		if (res == VL_IP_STATS_UPDATE_READY) {
 			if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
 				VL_MSG_ERR("ip: Error returned from stats print function\n");
-				return 1;
+				ret = 1;
+				goto out;
 			}
 		}
 	}
 
-	return 0;
+	out:
+	RRR_FREE_IF_NOT_NULL(final_message);
+	return ret;
 }
 
 void ip_network_cleanup (void *arg) {

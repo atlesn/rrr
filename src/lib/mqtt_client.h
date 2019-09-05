@@ -80,16 +80,10 @@ int rrr_mqtt_client_new (
 		void *suback_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
-static int rrr_mqtt_client_iterate_and_clear_local_delivery (
+int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
-) {
-	return rrr_mqtt_common_iterate_and_clear_local_delivery(
-			&data->mqtt_data,
-			callback,
-			callback_arg
-	) & 1; // Clear all errors but internal error
-}
+);
 
 #endif /* RRR_MQTT_CLIENT_H */

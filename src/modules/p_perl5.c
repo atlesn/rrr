@@ -234,22 +234,16 @@ int spawn_messages(struct perl5_data *perl5_data) {
 		char data_buf[64];
 		sprintf(data_buf, "%" PRIu64, now_time);
 
-		message = malloc(sizeof(*message));
-		if (message == NULL) {
-			VL_MSG_ERR("Could not allocate memory in perl5 spawn_messages\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (init_message (
+		if (new_message (
+				&message,
 				MSG_TYPE_MSG,
+				0,
 				MSG_CLASS_POINT,
 				now_time,
 				now_time,
 				0,
 				data_buf,
-				strlen(data_buf) + 1,
-				message
+				strlen(data_buf) + 1
 		) != 0) {
 			VL_MSG_ERR("Could not initialize message in perl5 spawn_messages of instance %s\n",
 					INSTANCE_D_NAME(perl5_data->thread_data));
@@ -259,7 +253,7 @@ int spawn_messages(struct perl5_data *perl5_data) {
 
 		rrr_perl5_message_to_hv(hv_message, ctx, message);
 		rrr_perl5_call_blessed_hvref(ctx, perl5_data->source_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
-		rrr_perl5_hv_to_message(message, ctx, hv_message);
+		rrr_perl5_hv_to_message(&message, ctx, hv_message);
 
 		fifo_buffer_write(&perl5_data->storage, (char*) message, sizeof(*message));
 
@@ -299,7 +293,7 @@ int process_message(struct perl5_data *perl5_data, struct vl_message *message) {
 		goto out;
 	}
 
-	ret |= rrr_perl5_hv_to_message(message, ctx, hv_message);
+	ret |= rrr_perl5_hv_to_message(&message, ctx, hv_message);
 	if (ret != 0) {
 		VL_MSG_ERR("Could not convertrrr_perl5_message_hv struct to message in process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(perl5_data->thread_data));
@@ -318,8 +312,8 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct perl5_data *perl5_data = thread_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("perl5 instance %s Result from buffer: %s measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("perl5 instance %s Result from buffer: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
 
 	return process_message(perl5_data, message);
 }

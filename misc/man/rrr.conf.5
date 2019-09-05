@@ -176,23 +176,6 @@ Preserve individual measurements and put them in output buffer. Defaults to no.
 .It avg_discard_unknowns={yes|no}
 Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
 .El
-.SS blockdev (PT)
-The blockdev module can puts messages it receives into a special round robin database and stores them untill overwritten.
-This can be used to store messages temoporarily before sending over network and preserving them also in case of the program
-stopping. On restart of
-.B rrr
-, all messages are read in from the database and can be read by other instances. If we receive a tag message for a message,
-the stored message is tagged and is no longer re-read in case of restart.
-.PP
-The database file is of fixed size and must first be initialized using 
-.B bdl(1).
-.PP
-.Bl -tag -width -indent
-.It device_path=FILE
-Path to an initialized block device file.
-.It blockdev_always_tag={yes|no}
-Always tag messages immediately as they are saved (as if we received a tag message for them), causing them not to be read in on restart.
-.El
 .SS controller (P)
 This module can route messages between a source and blockdev and ipclient to safely cache messages locally before sending them 
 over the network. An ipclient and a blockdev instance is set with a controller as sender, and the controller is set with
@@ -201,6 +184,8 @@ than one blockdev or ipclient might produce unwanted results.
 .PP
 The controller has two separate outbut buffers, one for ipclient and one for blockdev. If any other module tries to use
 controller as a sender, it will produce an error. 
+.PP
+Note ! blockdev module is removed temporarily.
 .PP
 .Bl -bullet -offset indent -compact
 .It

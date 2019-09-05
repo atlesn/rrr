@@ -73,7 +73,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct instance_thread_data *thread_data = poll_data->source;
 //	struct mqtt_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("mqtt: Result from buffer: %s measurement %" PRIu64 " size %lu, discarding data\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("mqtt: Result from buffer: measurement %" PRIu64 " size %lu, discarding data\n", reading->data_numeric, size);
 
 	free(data);
 
@@ -332,37 +332,20 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	struct mqtt_client_data *data = arg;
 	struct vl_message *message = NULL;
 
-	message = malloc(sizeof(*message));
-	if (message == NULL) {
-		VL_MSG_ERR("Could not allocate message in mqtt client instance %s receive_publish\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
 	int did_init = 0;
 	if (publish->payload != NULL) {
 		RRR_MQTT_P_LOCK(publish->payload);
 	 	if (publish->payload->length > 0) {
-	 			if (publish->payload->length > MSG_DATA_MAX_LENGTH + 1) {
-	 				VL_MSG_ERR("Received a PUBLISH with too long payload (%li > %i) in mqtt client instance %s. Topic was '%s'.\n",
-	 						publish->payload->length,
-							MSG_DATA_MAX_LENGTH + 1,
-							INSTANCE_D_NAME(data->thread_data),
-							publish->topic
-					);
-	 				ret = 1;
-	 				goto unlock_payload;
-	 			}
-	 			if (init_message (
+	 			if (new_message (
+	 					&message,
 	 					MSG_TYPE_MSG,
+						0,
 						MSG_CLASS_POINT,
 						publish->create_time,
 						publish->create_time,
 						0,
 						publish->payload->payload_start,
-						publish->payload->length,
-						message
+						publish->payload->length
 				) != 0) {
 	 				VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (A)\n",
 	 						INSTANCE_D_NAME(data->thread_data));
@@ -380,15 +363,16 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	}
 
  	if (did_init == 0) {
-		if (init_message (
+		if (new_message (
+				&message,
 				MSG_TYPE_MSG,
+				0,
 				MSG_CLASS_POINT,
 				publish->create_time,
 				publish->create_time,
 				0,
 				"",
-				0,
-				message
+				0
 		) != 0) {
 			VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (B)\n",
 					INSTANCE_D_NAME(data->thread_data));
@@ -478,7 +462,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	if (rrr_mqtt_property_collection_add_uint32(
 			&data->connect_properties,
 			RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
-			MSG_DATA_MAX_LENGTH
+			0xffffffff
 	) != 0) {
 		VL_MSG_ERR("Could not set CONNECT properties in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));

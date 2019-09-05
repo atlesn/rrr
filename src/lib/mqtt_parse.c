@@ -53,8 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	ssize_t bytes_parsed = 0; (void)(bytes_parsed);										\
 	uint16_t blob_length = 0; (void)(blob_length);										\
 	ssize_t payload_length = 0; (void)(payload_length);									\
-	struct PASTE(rrr_mqtt_p_,type) *type = NULL;									\
-	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {										\
+	struct PASTE(rrr_mqtt_p_,type) *type = NULL;										\
+	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {								\
 		VL_BUG("rrr_mqtt_parse called for same packet again after payload was done\n");	\
 	}																					\
 	if (RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(session)) {								\

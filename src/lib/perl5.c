@@ -337,7 +337,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 
 	err_tmp = ERRSV;
 
-	if (SvTRUE(err_tmp)) {
+	if ((SvTRUE(err_tmp))) {
 		VL_MSG_ERR("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
 		ret_tmp = POPs;
 		ret = 1;
@@ -345,7 +345,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	else if (numitems == 1) {
 		// Perl subs should return 1 on success
 		ret_tmp = POPs;
-		if (!SvTRUE(ret_tmp)) {
+		if (!(SvTRUE(ret_tmp))) {
 			VL_MSG_ERR("perl5 sub %s did not return true (false/0)\n", sub);
 			ret = 1;
 		}
@@ -622,28 +622,37 @@ void rrr_perl5_destruct_message_hv (
 }
 
 int rrr_perl5_hv_to_message (
-		struct vl_message *target,
+		struct vl_message **target_final,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
 	int ret = 0;
 
+	struct vl_message *target = *target_final;
+
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
+
+    ssize_t old_length = target->length;
+    ssize_t new_length = SvUV(source->length);
 
 	target->type = SvUV(source->type);
 	target->class = SvUV(source->class);
 	target->timestamp_from = SvUV(source->timestamp_from);
 	target->timestamp_to = SvUV(source->timestamp_to);
 	target->data_numeric = SvUV(source->data_numeric);
-	target->length = SvUV(source->length);
 
-	if (target->length > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR("Data length returned from perl5 function was too long (%" PRIu32 " > %i)\n",
-				target->length, MSG_DATA_MAX_LENGTH);
-		ret = 1;
-		goto out;
+	if (new_length > old_length) {
+		struct vl_message *new_message = realloc(target, sizeof(struct vl_message) + new_length - 1);
+		if (new_message == NULL) {
+			VL_MSG_ERR("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
+			ret = 1;
+			goto out;
+		}
+		target = new_message;
 	}
+
+	target->length = new_length;
 
 //	printf ("SvLEN: %lu SvUV(length): %lu\n", SvLEN(source->data), SvUV(source->length));
 	if (SvLEN(source->data) < target->length) {
@@ -654,14 +663,11 @@ int rrr_perl5_hv_to_message (
 
 	STRLEN len = target->length;
 	char *data_str = sv_2pvbyte(source->data, &len);
-	memcpy(target->data, data_str, target->length);
+	memcpy(target->data_, data_str, target->length);
+
+	*target_final = target;
 
 	out:
-	if (ret != 0) {
-
-	}
-
-
 	return ret;
 }
 
@@ -676,10 +682,6 @@ int rrr_perl5_message_to_hv (
 		VL_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
 	}
 
-	if (message->length > MSG_DATA_MAX_LENGTH) {
-		VL_BUG("Message length was too long in rrr_perl5_message_to_hv\n");
-	}
-
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
@@ -689,7 +691,7 @@ int rrr_perl5_message_to_hv (
     sv_setuv(message_hv->timestamp_to, message->timestamp_to);
     sv_setuv(message_hv->data_numeric, message->data_numeric);
     sv_setuv(message_hv->length, message->length);
-    sv_setpvn(message_hv->data, message->data, message->length);
+    sv_setpvn(message_hv->data, message->data_, message->length);
 
     out:
 	return ret;
@@ -730,7 +732,7 @@ int rrr_perl5_message_send (HV *hv) {
 
 	struct rrr_perl5_message_hv *message_new_hv = __rrr_perl5_allocate_message_hv (ctx, hv);
 	struct vl_message *message_new = message_new_reading(0, 0);
-	if (rrr_perl5_hv_to_message(message_new, ctx, message_new_hv) != 0) {
+	if (rrr_perl5_hv_to_message(&message_new, ctx, message_new_hv) != 0) {
 		return FALSE;
 	}
 

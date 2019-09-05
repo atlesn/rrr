@@ -56,6 +56,7 @@ struct rrr_python3_socket_data {
 	uint64_t time_start;
 	pthread_mutex_t stats_lock;
 	pthread_mutex_t send_lock;
+	struct rrr_socket_read_session_collection read_sessions;
 };
 
 static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
@@ -74,6 +75,8 @@ static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 		free(socket_data->filename);
 		socket_data->filename = NULL;
 	}
+
+	rrr_socket_read_session_collection_destroy(&socket_data->read_sessions);
 }
 
 static void rrr_python3_socket_f_dealloc (PyObject *self) {
@@ -523,11 +526,27 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			VL_BUG("Received a setting with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
 		rrr_settings_packed_prepare_for_network((struct rrr_setting_packed*) msg_new);
+		rrr_socket_msg_populate_head (
+				message,
+				RRR_SOCKET_MSG_TYPE_SETTING,
+				message->msg_size,
+				0
+		);
+		rrr_socket_msg_checksum_and_to_network_endian (
+				message
+		);
+
 	}
 	else if (RRR_SOCKET_MSG_IS_CTRL(msg_new)) {
-		rrr_socket_msg_populate_head(msg_new, msg_new->msg_type, msg_new->msg_size, message->msg_value);
-		rrr_socket_msg_checksum(msg_new, sizeof(*msg_new));
-		rrr_socket_msg_head_to_network(msg_new);
+		rrr_socket_msg_populate_head (
+				msg_new,
+				msg_new->msg_type,
+				msg_new->msg_size,
+				message->msg_value
+		);
+		rrr_socket_msg_checksum_and_to_network_endian(
+				msg_new
+		);
 	}
 	else {
 		VL_MSG_ERR("Received socket message of unkown type %u in rrr_python3_socket_send\n", message->msg_type);
@@ -597,13 +616,86 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	return ret;
 }
 
+struct socket_recv_callback_data {
+	struct rrr_socket_msg *result;
+};
+
+static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *read_session, void *arg) {
+	int ret = 0;
+
+	struct socket_recv_callback_data *callback_data = arg;
+
+	struct rrr_socket_msg *tmp_head = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
+
+	if (rrr_socket_msg_checksum_check(tmp_head) != 0) {
+		VL_MSG_ERR("Received message in python3 socket receive function with wrong checksum\n");
+		ret = 1;
+		goto out;
+	}
+
+	rrr_socket_msg_head_to_host(tmp_head);
+/*
+	if (ret != (int)tmp_head.msg_size) {
+		VL_MSG_ERR("Received a message in python3 socket receive function which says it has %u bytes, but we have read %i\n", tmp_head.msg_size, ret);
+		ret = 1;
+		goto out;
+	}
+*/
+	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(tmp_head)) {
+		struct vl_message *message = (struct vl_message *) read_session->rx_buf_ptr;
+		if (tmp_head->msg_size - sizeof(struct rrr_socket_msg) < sizeof(*message)) {
+			VL_MSG_ERR("Received vl_message in python3 socket receive function which was too short\n");
+		}
+		message_to_host(message);
+		if (message_validate (message)) {
+			VL_MSG_ERR("Received vl_message in python3 socket receive function which could not be validated\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(tmp_head)) {
+		struct rrr_setting_packed *message = (struct rrr_setting_packed *) read_session->rx_buf_ptr;
+		rrr_settings_packed_to_host (message);
+		if (rrr_settings_packed_validate(message)) {
+			VL_MSG_ERR("Received setting message in python3 socket receive function which could not be validated\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
+	}
+	else {
+		VL_MSG_ERR("Received a message in python3 socket receive function  of unknown type %u\n", tmp_head->msg_type);
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
+		if (rrr_socket_msg_head_validate(tmp_head) != 0) {
+			VL_MSG_ERR("Received control message was invalid in python3 socket receive\n");
+			ret = 1;
+			goto out;
+		}
+
+		// Above validate function should catch invalid flags
+		VL_BUG("Unknown flags in control message in python3 socket receive (control message not supported)\n");
+
+		// Do not return control messages to application
+		goto out;
+	}
+
+	callback_data->result = tmp_head;
+	read_session->rx_buf_ptr = NULL;
+
+	out:
+	return ret;
+}
+
 int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, int timeout) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
 	*result = NULL;
-
-	union merged_buf *buf = NULL;
 
 	if (socket_data->connected_fd == 0) {
 		VL_MSG_ERR("Cannot receive in python3 socket: Not connected\n");
@@ -611,161 +703,41 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, i
 		goto out;
 	}
 
-	int numitems = rrr_python3_socket_poll(socket, timeout);
-	if (numitems == -1) {
-		VL_MSG_ERR("Could not poll in python3 socket recv function\n");
-		ret = 1;
-		goto out;
-	}
-	else if (numitems == 0) {
-		goto out;
-	}
+	struct socket_recv_callback_data callback_data = { NULL };
 
-	VL_DEBUG_MSG_7 ("python3 socket recv on socket %s fd %i pid %i poll result %i\n",
-			rrr_python3_socket_get_filename(socket),
-			rrr_python3_socket_get_fd(socket),
-			getpid(), numitems
+	ret = rrr_socket_read_message (
+			&socket_data->read_sessions,
+			socket_data->connected_fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			0,
+			rrr_socket_msg_get_packet_target_size,
+			NULL,
+			__rrr_python3_socket_recv_callback,
+			&callback_data
 	);
 
-	// For now we only support receiving one at a time
-	numitems = 1;
-
-	buf = malloc(sizeof(*buf));
-
-	if (buf == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_python3_socket_recv\n");
-		ret = 1;
-		goto out;
-	}
-
-	int max_retries = 100;
-
-	retry:
-	ret = recvfrom(socket_data->connected_fd, buf, sizeof(*buf), /*MSG_DONTWAIT*/0, NULL, NULL);
-
-	if (ret >= (int) sizeof(buf->msg)) {
-		VL_DEBUG_MSG_7 ("python3 socket recv on socket %s fd %i pid %i size %u\n",
-				rrr_python3_socket_get_filename(socket),
-				rrr_python3_socket_get_fd(socket),
-				getpid(), ret
-		);
-
-		// We need to duplicate the head as the downstream structs do no convert
-		// if they find the head already having correct endianess
-		struct rrr_socket_msg tmp_head = buf->msg;
-		rrr_socket_msg_head_to_host(&tmp_head);
-
-		if (ret != (int)tmp_head.msg_size) {
-			VL_MSG_ERR("Received a message in python3 socket receive function which says it has %u bytes, but we have read %i\n", tmp_head.msg_size, ret);
-			ret = 1;
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			ret = 0;
 			goto out;
 		}
-
-		// The type specified in the header is validated implicitly in the if's below, and
-		// the actual size is checked within each type. Only check for min/max size here.
-		if (tmp_head.msg_size < sizeof(struct rrr_socket_msg) || tmp_head.msg_size > sizeof(union merged_buf)) {
-			VL_MSG_ERR("Received a message in python3 socket receive function with invalid size %u\n", tmp_head.msg_size);
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Soft error from python3 socket\n");
 			ret = 1;
 			goto out;
-		}
-
-		if (RRR_SOCKET_MSG_IS_VL_MESSAGE(&tmp_head)) {
-			if (message_convert_endianess(&(buf->vl_message)) != 0) {
-				VL_MSG_ERR("Received vl_message in python3 socket receive function with unknown endianess\n");
-				ret = 1;
-				goto out;
-			}
-			if (message_validate (&(buf->vl_message))) {
-				VL_MSG_ERR("Received vl_message in python3 socket receive function which could not be validated\n");
-				ret = 1;
-				goto out;
-			}
-		}
-		else if (RRR_SOCKET_MSG_IS_SETTING(&tmp_head)) {
-			if (rrr_settings_packed_convert_endianess (&buf->setting) != 0) {
-				VL_MSG_ERR("Received setting message in python3 socket receive function with unknown endianess\n");
-				ret = 1;
-				goto out;
-			}
-			if (rrr_settings_packed_validate(&(buf->setting))) {
-				VL_MSG_ERR("Received setting message in python3 socket receive function which could not be validated\n");
-				ret = 1;
-				goto out;
-			}
-		}
-		else if (RRR_SOCKET_MSG_IS_CTRL(&tmp_head)) {
-			buf->msg = tmp_head;
 		}
 		else {
-			VL_MSG_ERR("Received a message in python3 socket receive function  of unknown type %u\n", buf->msg.msg_type);
-			ret = 1;
-			goto out;
-		}
-
-		ret = rrr_socket_msg_checksum_check(&buf->msg, buf->msg.msg_size);
-		if (ret != 0) {
-			VL_MSG_ERR("Received message in python3 socket receive function with wrong checksum\n");
-			ret = 1;
-			goto out;
-		}
-		if (RRR_SOCKET_MSG_IS_CTRL(&buf->msg)) {
-			if (rrr_socket_msg_head_validate(&buf->msg) != 0) {
-				VL_MSG_ERR("Received control message was invalid in python3 socket receive\n");
-				ret = 1;
-				goto out;
-			}
-
-			// Above validate function should catch invalid flags
-			VL_BUG("Unknown flags in control message in python3 socket receive\n");
-
-			// Do not return control messages to application
-			goto out_free;
-		}
-
-		ret = 0;
-	}
-	else if (ret == 0) {
-		goto out_free;
-	}
-	else if (ret == -1) {
-		if (--max_retries == 0) {
-			VL_MSG_ERR("Max retries reached in rrr_python3_socket_recv for socket %i pid %i\n",
-					socket_data->connected_fd, getpid());
-			ret = 1;
-			goto out;
-		}
-		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			goto retry;
-		}
-		else if (errno == EINTR) {
-			goto retry;
-		}
-		else {
-			VL_MSG_ERR("Error from recvfrom function in python3 unix socket fd %i pid %i: %s\n",
-					socket_data->connected_fd, getpid(), strerror(errno));
+			VL_MSG_ERR("Hard error from python3 socket\n");
 			ret = 1;
 			goto out;
 		}
 	}
-	else {
-		VL_MSG_ERR("Warning: Received message of unknown length %i in python3 socket receive function\n", ret);
-		ret = 0;
-		goto out_free;
-	}
+
+	*result = callback_data.result;
 
 	out:
-		if (ret == 0) {
-			*result = &buf->msg;
-		}
-		else {
-			RRR_FREE_IF_NOT_NULL(buf);
-		}
-		return ret;
-
-	out_free:
-		free(buf);
-		buf = NULL;
-		return ret;
+	return ret;
 }
 
 int rrr_python3_socket_accept (PyObject *self) {

@@ -92,7 +92,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	struct vl_message *message = (struct vl_message *) data;
-	struct rrr_data_collection *collection = NULL;
+	struct rrr_type_template_collection collection = {0};
 
 	result->message = message;
 
@@ -110,7 +110,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (collection->definitions.count != TEST_DATA_ELEMENTS) {
+	if (collection.node_count != TEST_DATA_ELEMENTS) {
 		TEST_MSG("Wrong number of elements in result from output in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_collection;
@@ -118,15 +118,27 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_type_length final_length = rrr_get_raw_length(collection);
 
-	if (!RRR_TYPE_IS_64(collection->definitions.definitions[0].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[1].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[2].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[3].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[4].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[5].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[6].type) ||
-		!RRR_TYPE_IS_64(collection->definitions.definitions[7].type) ||
-		!RRR_TYPE_IS_BLOB(collection->definitions.definitions[8].type)
+	struct rrr_type_template *types[9];
+
+	types[0] = rrr_type_template_collection_get_by_idx(collection, 0);
+	types[1] = rrr_type_template_collection_get_by_idx(collection, 1);
+	types[2] = rrr_type_template_collection_get_by_idx(collection, 2);
+	types[3] = rrr_type_template_collection_get_by_idx(collection, 3);
+	types[4] = rrr_type_template_collection_get_by_idx(collection, 4);
+	types[5] = rrr_type_template_collection_get_by_idx(collection, 5);
+	types[6] = rrr_type_template_collection_get_by_idx(collection, 6);
+	types[7] = rrr_type_template_collection_get_by_idx(collection, 7);
+	types[8] = rrr_type_template_collection_get_by_idx(collection, 8);
+
+	if (!RRR_TYPE_IS_64(types[0]) ||
+		!RRR_TYPE_IS_64(types[1]) ||
+		!RRR_TYPE_IS_64(types[2]) ||
+		!RRR_TYPE_IS_64(types[3]) ||
+		!RRR_TYPE_IS_64(types[4]) ||
+		!RRR_TYPE_IS_64(types[5]) ||
+		!RRR_TYPE_IS_64(types[6]) ||
+		!RRR_TYPE_IS_64(types[7]) ||
+		!RRR_TYPE_IS_BLOB(types[8])
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -265,7 +277,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_FREE_IF_NOT_NULL(final_data_converted);
 
 	out_free_collection:
-	rrr_types_destroy_data(collection);
+	rrr_type_data_collection_destroy(collection);
 
 	out:
 	if (ret != 0) {
@@ -341,10 +353,10 @@ int test_type_array (
 	}
 
 	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not a vl_message)
-	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry) + sizeof(struct test_data) - 1);
 	memset(entry, '\0', sizeof(*entry));
 
-	struct test_data *data = (struct test_data *) entry->data.data;
+	struct test_data *data = (struct test_data *) entry->data;
 	entry->data_length = sizeof(*data);
 
 	data->be4[0] = 1;
@@ -527,7 +539,7 @@ int test_type_array_mysql_and_network (
 	struct test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 
-	struct ip_buffer_entry *entry = NULL;
+	struct ip_buffer_entry_ *entry = NULL;
 
 	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
@@ -535,11 +547,11 @@ int test_type_array_mysql_and_network (
 
 	VL_ASSERT(sizeof(*message) < sizeof(*entry),vl_message_smaller_than_ip_buffer_entry);
 
-	entry = malloc(sizeof(*entry));
+	entry = malloc(sizeof(*entry) + message->length - 1);
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(entry, message, sizeof(*message)); // Note: Message is smaller than entry
+	memcpy(&entry->message, message, MSG_TOTAL_LENGTH(message)); // Note: Message is smaller than entry
 
-	uint64_t expected_ack_timestamp = entry->data.message.timestamp_from;
+	uint64_t expected_ack_timestamp = entry->message.timestamp_from;
 
 	struct instance_metadata *input_buffer = instance_find(instances, input_buffer_name);
 	struct instance_metadata *tag_buffer = instance_find(instances, tag_buffer_name);

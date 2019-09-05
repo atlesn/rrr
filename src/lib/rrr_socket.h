@@ -24,6 +24,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/socket.h>
 #include <unistd.h>
+#include <inttypes.h>
+
+#include "linked_list.h"
+
+#define RRR_SOCKET_OK				0
+#define RRR_SOCKET_HARD_ERROR		1
+#define RRR_SOCKET_SOFT_ERROR		2
+#define RRR_SOCKET_READ_INCOMPLETE	3
+
+#define RRR_SOCKET_READ_TIMEOUT		30
+
+struct rrr_socket_read_session {
+	/* A packet read action might be temporarily paused if the payload
+	 * is large (exceeds step_size_limit is < 0). It will resume in the next process tick.
+	 *
+	 * When rx_buf_wpos reaches target_size, the retrieval is complete and the processing
+	 * of the packet may begin. */
+
+	RRR_LINKED_LIST_NODE(struct rrr_socket_read_session);
+
+	struct sockaddr src_addr;
+	socklen_t src_addr_len;
+	uint64_t last_read_time;
+
+	ssize_t target_size;
+
+	char *rx_buf_ptr;
+	char *rx_buf_start;
+	ssize_t rx_buf_size;
+	ssize_t rx_buf_wpos;
+
+	char *rx_overshoot;
+	ssize_t rx_overshoot_size;
+
+	int read_complete;
+};
+
+struct rrr_socket_read_session_collection {
+	RRR_LINKED_LIST_HEAD(struct rrr_socket_read_session);
+};
+
 
 int rrr_socket_with_lock_do (int (*callback)(void *arg), void *arg);
 int rrr_socket_accept (int fd_in, struct sockaddr *addr, socklen_t *__restrict addr_len, const char *creator);
@@ -33,4 +74,21 @@ int rrr_socket_close (int fd);
 int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all (void);
 
+void rrr_socket_read_session_collection_init (
+		struct rrr_socket_read_session_collection *collection
+);
+void rrr_socket_read_session_collection_destroy (
+		struct rrr_socket_read_session_collection *collection
+);
+int rrr_socket_read_message (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		ssize_t buffer_front_reserved_size,
+		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
+		void *complete_callback_arg
+);
 #endif /* RRR_SOCKET_H */

@@ -1,3 +1,0 @@
-[submodule "cmdlineparser"]
-	path = src/cmdlineparser
-	url = git@github.com:atlesn/cmdlineparser.git

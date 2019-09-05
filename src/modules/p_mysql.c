@@ -95,7 +95,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char *target, unsigned int target_size, struct mysql_data *data);
-	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry *entry);
+	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry_ *entry);
 };
 
 /* Check order with function pointers */
@@ -167,7 +167,7 @@ int colplan_voltage_create_sql(char *target, unsigned int target_size, struct my
 	return 0;
 }
 
-int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
 	MYSQL_BIND *bind = data->data->bind;
 
 	memset(bind, '\0', sizeof(*bind));
@@ -179,21 +179,12 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 	char ipv4_string[strlen(ipv4_string_tmp)+1];
 	sprintf(ipv4_string, "%s", ipv4_string_tmp);
 
-	struct vl_message *message = &entry->data.message;
+	struct vl_message *message = &entry->message;
 
 	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
 			message->type, message->timestamp_to);
 
-	/* Attempt to make an integer value if possible */
-	unsigned long long int value = message->data_numeric;
-	if (value == 0 && message->length > 0) {
-		char *pos;
-		value = strtoull(message->data, &pos, 10);
-		if (errno == ERANGE || pos == message->data) {
-			value = 0;
-		}
-	}
-
+	// TODO : Check that message length fits in unsigned long
 	// TODO : We are not very careful with int sizes here
 
 	// Timestamp
@@ -223,13 +214,13 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 	bind[4].is_unsigned = 1;
 
 	// Value
-	bind[5].buffer = &value;
+	bind[5].buffer = &message->data_numeric;
 	bind[5].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[5].is_unsigned = 1;
 
 	// Message
 	unsigned long message_length = message->length;
-	bind[6].buffer = message->data;
+	bind[6].buffer = message->data_;
 	bind[6].length = &message_length;
 	bind[6].buffer_type = MYSQL_TYPE_STRING;
 
@@ -321,33 +312,27 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 void free_collection(void *arg) {
 	struct vl_thread_double_pointer *data = arg;
 	if (*data->ptr != NULL) {
-		rrr_types_destroy_data(*data->ptr);
+		rrr_type_template_collection_clear(*data->ptr);
 	}
 }
 
-int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
 	int res = 0;
 
-	struct rrr_data_collection *collection = NULL;
+	struct rrr_type_template_collection collection;
+	pthread_cleanup_push(free_collection, &collection);
 
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER_CUSTOM(collection_cleanup,free_collection,collection);
-	if (rrr_types_message_to_collection(&collection, &entry->data.message) != 0) {
+	if (rrr_types_message_to_collection(&collection, &entry->message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		res = 1;
 		goto out_cleanup;
 	}
 
-	if (rrr_types_collection_data_to_host(collection) != 0) {
-		VL_MSG_ERR("Could not convert data collection to host endianess in mysql\n");
-		res = 1;
-		goto out_cleanup;
-	}
-
-	struct rrr_type_definition_collection *definitions = &collection->definitions;
 	MYSQL_BIND *bind = data->data->bind;
 
-	if (definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
-		VL_MSG_ERR("Number of types exceeded maximum (%i vs %i)\n", definitions->count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
+	if (collection.node_count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
+		VL_MSG_ERR("Number of types exceeded maximum (%i vs %i)\n",
+				collection.node_count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
 		res = 1;
 		goto out_cleanup;
 	}
@@ -355,43 +340,49 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	unsigned long string_lengths[RRR_MYSQL_BIND_MAX];
 	memset(string_lengths, '\0', sizeof(string_lengths));
 
-	rrr_def_count bind_pos;
-	for (bind_pos = 0; bind_pos < definitions->count; bind_pos++) {
-		struct rrr_type_definition *definition = &definitions->definitions[bind_pos];
+	rrr_def_count bind_pos = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
+		struct rrr_type_template *definition = node;
 
 		if (definition->array_size > 1) {
 			// Arrays must be inserted as blobs. They might be shorter than the
 			// maximum length, the input definition decides.
 			string_lengths[bind_pos] = definition->length * definition->array_size;
-			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_BLOB;
 		}
-		else if (RRR_TYPE_IS_BLOB(definition->type) || mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])) {
-			if (definition->length > definition->max_length) {
+		else if (RRR_TYPE_IS_BLOB(definition->definition->type) ||
+				mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])
+		) {
+			if (definition->length > definition->definition->max_length &&
+					definition->definition->max_length > 0
+			) {
 				VL_MSG_ERR("Type length defined for column with index %ul exceeds maximum of %ul when binding with mysql\n",
-						definition->length, definition->max_length);
+						definition->length, definition->definition->max_length);
 				res = 1;
 				goto out_cleanup;
 			}
 
 			string_lengths[bind_pos] = definition->length;
-			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 		}
-		else if (RRR_TYPE_IS_64(definition->type)) {
+		else if (RRR_TYPE_IS_64(definition->definition->type)) {
 			// TODO : Support signed
-			bind[bind_pos].buffer = collection->data[bind_pos];
+			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 			bind[bind_pos].is_unsigned = 1;
 		}
 		else {
-			VL_MSG_ERR("Unkown type %ul when binding with mysql\n", definition->type);
+			VL_MSG_ERR("Unknown type %ul when binding with mysql\n", definition->definition->type);
 			res = 1;
 			goto out_cleanup;
 		}
-	}
+
+		bind_pos++;
+	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	for (rrr_def_count i = 0; i < data->data->mysql_special_columns_count; i++) {
 		string_lengths[bind_pos] = strlen(data->data->mysql_special_values[i]);
@@ -411,17 +402,18 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	res = mysql_bind_and_execute(data);
 
-	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		struct rrr_type_definition *definition = &definitions->definitions[i];
-
-// TODO : Figure out what this test is meant to do
-		if (RRR_TYPE_IS_BLOB(definition->type)) {
-			if (string_lengths[i] < definition->length) {
+	// Produce warning if blob data was chopped of by mysql
+	bind_pos = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
+		struct rrr_type_template *definition = node;
+		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
+			if (string_lengths[bind_pos] < definition->length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
-						string_lengths[i], definition->length, i);
+						string_lengths[bind_pos], definition->length, bind_pos);
 			}
 		}
-	}
+		bind_pos++;
+	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	out_cleanup:
 	if (res != 0) {
@@ -840,9 +832,9 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	struct vl_message *reading = (struct vl_message *) data;
 
 	// Convert message to IP buffer entry
-	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry) + reading->length - 1);
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
+	memcpy(&entry->message, reading, sizeof(entry->message) + reading->length - 1);
 	free (reading);
 
 	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): size %lu\n", size);
@@ -866,13 +858,13 @@ int mysql_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_read_clear_forward(&mysql_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds);
 }
 
-int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
+int mysql_save(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
 	if (data->data->mysql_connected != 1) {
 		return 1;
 	}
 
 	struct mysql_data *mysql_data = data->data;
-	struct vl_message *message = &entry->data.message;
+	struct vl_message *message = &entry->message;
 
 	// TODO : Don't default to old voltage/info-message, should have it's own class
 
@@ -910,7 +902,7 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	struct process_entries_data *process_data = callback_data->private_data;
 	struct instance_thread_data *thread_data = callback_data->source;
 	struct mysql_data *mysql_data = process_data->data;
-	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+	struct ip_buffer_entry_ *entry = (struct ip_buffer_entry_ *) data;
 
 	update_watchdog_time(thread_data->thread);
 
@@ -923,7 +915,7 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		goto out;
 	}*/
 
-	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->data.message.timestamp_from);
+	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
 
 	int mysql_save_res = mysql_save (process_data, entry);
 
@@ -934,16 +926,17 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		}
 		else {
 			// Put back in buffer
-			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->data.message.timestamp_from);
+			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
 			fifo_buffer_write(&mysql_data->input_buffer, data, size);
 			err = 1;
 		}
 	}
 	else {
 		// Tag message as saved to sender
-		struct vl_message *message = &entry->data.message;
+		struct vl_message *message = &entry->message;
 		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
+		message->length = 0;
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally
 			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);

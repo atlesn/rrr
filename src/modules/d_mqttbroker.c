@@ -61,7 +61,8 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct instance_thread_data *thread_data = poll_data->source;
 //	struct mqtt_data *private_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("mqtt: Result from buffer: %s measurement %" PRIu64 " size %lu, discarding data\n", reading->data, reading->data_numeric, size);
+	VL_DEBUG_MSG_2 ("mqtt: Result from buffer: measurement %" PRIu64 " size %lu, discarding data\n",
+			reading->data_numeric, size);
 
 	free(data);
 

@@ -44,7 +44,7 @@ struct fifo_callback_args;
 struct vl_thread_start_data;
 struct rrr_instance_config;
 struct vl_message;
-struct ip_buffer_entry;
+struct ip_buffer_entry_;
 struct vl_thread;
 
 struct module_load_data {
@@ -67,7 +67,7 @@ struct module_load_data {
 
 #define RRR_MODULE_INJECT_SIGNATURE \
 		struct instance_thread_data *thread_data, \
-		struct ip_buffer_entry *message
+		struct ip_buffer_entry_ *message
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {

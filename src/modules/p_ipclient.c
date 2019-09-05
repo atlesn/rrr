@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/vl_time.h"
 #include "../lib/poll_helper.h"
 #include "../lib/ip.h"
+#include "../lib/rrr_socket.h"
 #include "../global.h"
 
 // Should not be smaller than module max
@@ -71,6 +72,8 @@ struct ipclient_data {
 	int receive_thread_started;
 	struct ip_stats_twoway stats;
 	int no_ack;
+
+	struct rrr_socket_read_session_collection read_sessions;
 };
 
 void data_cleanup(void *arg) {
@@ -82,6 +85,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->ip_server);
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->receive_buffer);
+	rrr_socket_read_session_collection_destroy(&data->read_sessions);
 }
 
 int data_init(struct ipclient_data *data) {
@@ -186,9 +190,9 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", reading->timestamp_from, reading->data_numeric, size);
 
-	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry) + reading->length -1);
 	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->data.message, reading, sizeof(entry->data.message));
+	memcpy(&entry->message, reading, sizeof(entry->message) + reading->length - 1);
 	free(data);
 
 	fifo_buffer_write(&private_data->send_buffer, (char*)entry, sizeof(*entry));
@@ -200,8 +204,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	struct ip_send_packet_info *info = poll_data->private_data;
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *ipclient_data = thread_data->private_data;
-	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &entry->data.message;
+	struct ip_buffer_entry_ *entry = (struct ip_buffer_entry_ *) data;
+	struct vl_message *message = &entry->message;
 
 	uint64_t time_now = time_get_64();
 
@@ -246,8 +250,8 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 int receive_packets_search_callback (struct fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct vl_message *message_to_match = callback_data->private_data;
-	struct ip_buffer_entry *checked_entry = (struct ip_buffer_entry *) data;
-	struct vl_message *message = &checked_entry->data.message;
+	struct ip_buffer_entry_ *checked_entry = (struct ip_buffer_entry_ *) data;
+	struct vl_message *message = &checked_entry->message;
 
 	VL_DEBUG_MSG_4("ipclient reive_packets_search_callback got packet from buffer of size %lu\n", size);
 
@@ -270,9 +274,9 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 	return FIFO_SEARCH_KEEP;
 }
 
-int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
+int receive_packets_callback(struct ip_buffer_entry_ *entry, void *arg) {
 	struct ipclient_data *data = arg;
-	struct vl_message *message = &entry->data.message;
+	struct vl_message *message = &entry->message;
 
 	VL_DEBUG_MSG_3 ("ipclient: Received packet from server type %" PRIu32 " with timestamp %" PRIu64 "\n",
 			message->type, message->timestamp_to);
@@ -307,6 +311,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 int receive_packets(struct ipclient_data *data) {
 //	struct fifo_callback_args poll_data = {NULL, data, 0};
 	return ip_receive_messages (
+			&data->read_sessions,
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL
 			&data->crypt_data,

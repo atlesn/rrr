@@ -36,24 +36,23 @@ struct vl_message *message_new_reading (
 		vl_u64 reading_millis,
 		vl_u64 time
 ) {
-	struct vl_message *res = malloc(sizeof(*res));
+	struct vl_message *res;
 
 	char buf[64];
 	sprintf (buf, "%" PRIu64, reading_millis);
 
-	if (init_message (
+	if (new_message (
+			&res,
 			MSG_TYPE_MSG,
+			0,
 			MSG_CLASS_POINT,
 			time,
 			time,
 			reading_millis,
 			buf,
-			strlen(buf),
-			res
+			strlen(buf)
 	) != 0) {
-		free(res);
-		VL_MSG_ERR ("Bug: Could not initialize message\n");
-		exit (EXIT_FAILURE);
+		return NULL;
 	}
 
 	return res;
@@ -63,49 +62,47 @@ struct vl_message *message_new_info (
 		vl_u64 time,
 		const char *msg_terminated
 ) {
-	struct vl_message *res = malloc(sizeof(*res));
+	struct vl_message *res;
 
-	if (init_message (
+	if (new_message (
+			&res,
 			MSG_TYPE_MSG,
+			0,
 			MSG_CLASS_INFO,
 			time,
 			time,
 			0,
 			msg_terminated,
-			strlen(msg_terminated),
-			res
+			strlen(msg_terminated) + 1
 	) != 0) {
-		free(res);
-		VL_MSG_ERR ("Bug: Could not initialize info message\n");
-		exit (EXIT_FAILURE);
+		return NULL;
 	}
 
 	return res;
 }
 
-struct vl_message *message_new_array (
+struct vl_message_array *message_new_array (
 	vl_u64 time,
 	vl_u32 length
 ) {
-	struct vl_message *res = malloc(sizeof(*res));
+	struct vl_message_array *res;
 
-	if (init_empty_message (
+	if (new_empty_message (
+			(struct vl_message **) &res,
 			MSG_TYPE_MSG,
+			0,
 			MSG_CLASS_ARRAY,
 			time,
 			time,
 			0,
-			length,
-			res
+			length + sizeof(res->type_head) - 1
 	) != 0) {
-		free(res);
-		VL_MSG_ERR ("BUG: Could not initialize array message\n");
-		exit (EXIT_FAILURE);
+		return NULL;
 	}
 
 	return res;
 }
-
+/*
 int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
 	unsigned long int search_length = strlen(search);
 
@@ -155,62 +152,71 @@ int find_number(const char *str, unsigned long int size, const char **end, vl_u6
 	*end = *end + 1;
 	return 0;
 }
-
-int init_empty_message (
-	unsigned long int type,
-	unsigned long int class,
-	vl_u64 timestamp_from,
-	vl_u64 timestamp_to,
-	vl_u64 data_numeric,
-	unsigned long int data_size,
-	struct vl_message *result
+*/
+int new_empty_message (
+		struct vl_message **final_result,
+		vl_u16 type,
+		vl_u16 type_flags,
+		vl_u32 class,
+		vl_u64 timestamp_from,
+		vl_u64 timestamp_to,
+		vl_u64 data_numeric,
+		vl_u32 data_size
 ) {
-	memset(result, '\0', sizeof(*result));
+	// -1 because the char which points to the data holds 1 byte
+	struct vl_message *result = malloc(sizeof(*result) + data_size - 1);
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in new_empty_message\n");
+		return 1;
+	}
 
-	rrr_socket_msg_populate_head((struct rrr_socket_msg *) result, RRR_SOCKET_MSG_TYPE_VL_MESSAGE, sizeof(*result), 0);
+	memset(result, '\0', sizeof(*result) + data_size - 1);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) result,
+			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
+			sizeof(*result),
+			0
+	);
 
 	result->type = type;
+	result->type_flags = type_flags;
 	result->class = class;
 	result->timestamp_from = timestamp_from;
 	result->timestamp_to = timestamp_to;
 	result->data_numeric = data_numeric;
-
-	// Always have a \0 at the end
-	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message length was too long (%lu vs %d)\n", data_size, MSG_DATA_MAX_LENGTH);
-		return 1;
-	}
-
 	result->length = data_size;
-	result->data[0] = '\0';
+
+	*final_result = result;
 
 	return 0;
 }
 
-int init_message (
-	unsigned long int type,
-	unsigned long int class,
-	vl_u64 timestamp_from,
-	vl_u64 timestamp_to,
-	vl_u64 data_numeric,
-	const char *data,
-	unsigned long int data_size,
-	struct vl_message *result
+int new_message (
+		struct vl_message **final_result,
+		vl_u16 type,
+		vl_u16 type_flags,
+		vl_u32 class,
+		vl_u64 timestamp_from,
+		vl_u64 timestamp_to,
+		vl_u64 data_numeric,
+		const char *data,
+		vl_u32 data_size
 ) {
-	if (init_empty_message (
-		type,
-		class,
-		timestamp_from,
-		timestamp_to,
-		data_numeric,
-		data_size,
-		result
+	if (new_empty_message (
+			final_result,
+			type,
+			type_flags,
+			class,
+			timestamp_from,
+			timestamp_to,
+			data_numeric,
+			data_size
 	) != 0) {
 		return 1;
 	}
 
-	memcpy (result->data, data, data_size);
-	result->data[data_size+1] = '\0';
+	memcpy ((*final_result)->data_, data, data_size);
 
 	return 0;
 }
@@ -402,59 +408,24 @@ void flip_endianess_32(vl_u32 *value) {
 	*value = result;
 }
 
-int message_convert_endianess (struct vl_message *message) {
-	if (RRR_SOCKET_MSG_IS_LE(message)) {
-		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message) != 0) {
-			return 1;
-		}
-		message->type = le32toh(message->type);
-		message->class = le32toh(message->class);
-		message->timestamp_from = le64toh(message->timestamp_from);
-		message->timestamp_to = le64toh(message->timestamp_to);
-		message->data_numeric = le64toh(message->data_numeric);
-		message->length = le32toh(message->length);
-	}
-	else if (RRR_SOCKET_MSG_IS_BE(message)) {
-		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message) != 0) {
-			return 1;
-		}
-		message->type = be32toh(message->type);
-		message->class = be32toh(message->class);
-		message->timestamp_from = be64toh(message->timestamp_from);
-		message->timestamp_to = be64toh(message->timestamp_to);
-		message->data_numeric = be64toh(message->data_numeric);
-		message->length = be32toh(message->length);
-	}
-	else {
-		VL_MSG_ERR("Unknown endian bytes found in message\n");
-		return 1;
-	}
-
-	return 0;
+void message_to_host (struct vl_message *message) {
+	message->type = be16toh(message->type);
+	message->type_flags = be16toh(message->type_flags);
+	message->class = be32toh(message->class);
+	message->timestamp_from = be64toh(message->timestamp_from);
+	message->timestamp_to = be64toh(message->timestamp_to);
+	message->data_numeric = be64toh(message->data_numeric);
+	message->length = be32toh(message->length);
 }
 
 void message_prepare_for_network (struct vl_message *message) {
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) message,
-			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
-			sizeof(*message),
-			0
-	);
-	rrr_socket_msg_checksum (
-			(struct rrr_socket_msg *) message,
-			sizeof(*message)
-	);
-	rrr_socket_msg_head_to_network (
-			(struct rrr_socket_msg *) message
-	);
-
-	message->type = htobe32(message->type);
+	message->type = htobe16(message->type);
+	message->type_flags = htobe16(message->type);
 	message->class = htobe32(message->class);
 	message->timestamp_from = htobe64(message->timestamp_from);
 	message->timestamp_to = htobe64(message->timestamp_to);
 	message->data_numeric = htobe64(message->data_numeric);
 	message->length = htobe32(message->length);
-
 
 	if (VL_DEBUGLEVEL_6) {
 		VL_DEBUG_MSG("Message prepared for network: ");
@@ -473,15 +444,19 @@ void message_prepare_for_network (struct vl_message *message) {
 }
 
 struct vl_message *message_duplicate(struct vl_message *message) {
-	struct vl_message *ret = malloc(sizeof(*ret));
-	memcpy(ret, message, sizeof(*ret));
+	struct vl_message *ret = malloc(sizeof(*ret) + message->length - 1);
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		return NULL;
+	}
+	memcpy(ret, message, sizeof(*ret) + message->length - 1);
 	return ret;
 }
 
 int message_validate (const struct vl_message *message){
 	int ret = 0;
 
-	if (message->msg_size != sizeof(*message)) {
+	if (message->msg_size < sizeof(*message) - 1) {
 		VL_MSG_ERR("Received a message in message_validate with invalid header size field (%u)\n", message->msg_size);
 		ret = 1;
 	}
@@ -491,10 +466,6 @@ int message_validate (const struct vl_message *message){
 	}
 	if (!MSG_TYPE_OK(message)) {
 		VL_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
-		ret = 1;
-	}
-	if (!MSG_DATA_LENGTH_OK(message)) {
-		VL_MSG_ERR("Invalid data length %u in message to message_validate\n", message->length);
 		ret = 1;
 	}
 

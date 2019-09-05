@@ -38,159 +38,385 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_TYPES_MATCH_RETURN(str,name) \
 	if (strcmp(str,PASTER(RRR_TYPE_NAME,name)) == 0){return PASTER(RRR_TYPE,name);}
 
-rrr_type rrr_types_get_type(const char *type) {
-	rrr_type ret = 0;
-
-	RRR_TYPES_MATCH_RETURN(type,BE)
-	RRR_TYPES_MATCH_RETURN(type,LE)
-	RRR_TYPES_MATCH_RETURN(type,H)
-	RRR_TYPES_MATCH_RETURN(type,BLOB)
-
-	return ret;
-}
-
-#define RRR_TYPE_LENGTH_CHECK_CASE(type,length,max) \
-		case PASTER(RRR_TYPE,type): \
-			max = PASTER(RRR_TYPE_MAX,type); \
-			return ((length <= PASTER(RRR_TYPE_MAX,type)) == 1 ? 0 : 1)
-
-int rrr_types_check_size (rrr_type type, rrr_type_length length, rrr_type_length *max) {
-	switch (type) {
-		RRR_TYPE_LENGTH_CHECK_CASE(LE,length,*max);
-		RRR_TYPE_LENGTH_CHECK_CASE(BE,length,*max);
-		RRR_TYPE_LENGTH_CHECK_CASE(H,length,*max);
-		RRR_TYPE_LENGTH_CHECK_CASE(BLOB,length,*max);
-		default:
-			VL_MSG_ERR("BUG: Unknown type '%d' given too rrr_types_check_size\n", type);
-			exit(EXIT_FAILURE);
-	};
-
-	return 1;
-}
-
-int import_le(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
-	if (length > sizeof(rrr_type_le)) {
-		VL_MSG_ERR("BUG: import_le received length > %lu", sizeof(rrr_type_le));
+int convert_integer_10(char **end, long long int *result, const char *value) {
+	if (*value == '\0') {
 		return 1;
 	}
-
-	if (array_size > 1) {
-		int ret = 0;
-		for (rrr_array_size i = 0; i < array_size; i++) {
-			ret = import_le(target + (i * length), data + (i * length), 1, length);
-			if (ret != 0) {
-				break;
-			}
-		}
-		return ret;
+	*result = strtoll(value, end, 10);
+	if (*end == value) {
+		return 1;
 	}
-
-	union leunion {
-		rrr_type_le temp_f;
-		char temp_b[sizeof(rrr_type_le)];
-	};
-
-	union leunion temp;
-
-	temp.temp_f = 0;
-
-	/* Little endian:
-	 * (0x01 0x00 0x00)le = 1
-	 * (0x01 0x00 0x00 0x00 0x00 0x00)le = 1
-	 */
-
-	rrr_type_length pos = 0;
-	while (pos < length) {
-		temp.temp_b[pos] = data[pos];
-		pos++;
-	}
-
-	memcpy(target, &temp.temp_f, sizeof(temp.temp_f));
-
-	VL_DEBUG_MSG_3("Imported a le64: 0x%" PRIx64 "\n", le64toh(temp.temp_f));
-
 	return 0;
 }
 
-int import_be(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
-	if (length > sizeof(rrr_type_be)) {
-		VL_MSG_ERR("BUG: convert_be received length > %lu", sizeof(rrr_type_be));
+int convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
+	if (*value == '\0') {
 		return 1;
 	}
-
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("import_be input: 0x");
-		for (rrr_type_length i = 0; i < length; i++) {
-			char c = data[i];
-			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
-			}
-			VL_DEBUG_MSG("%x", c);
-		}
-		VL_DEBUG_MSG("\n");
+	*result = strtoull(value, end, 10);
+	if (*end == value) {
+		return 1;
 	}
-
-	if (array_size > 1) {
-		int ret = 0;
-		for (rrr_array_size i = 0; i < array_size; i++) {
-			ret = import_be(target + (i * length), data + (i * length), 1, length);
-			if (ret != 0) {
-				break;
-			}
-		}
-		return ret;
-	}
-
-	union beunion {
-		rrr_type_be temp_f;
-		char temp_b[sizeof(rrr_type_be)];
-	};
-
-	union beunion temp;
-
-	temp.temp_f = 0;
-
-	rrr_type_length wpos = sizeof(temp.temp_f) - 1;
-	rrr_type_length rpos = length - 1;
-
-	// VL_DEBUG_MSG_3("rpos: %d, wpos: %d\n", rpos, wpos);
-
-	/* Big endian:
-	 * (0x00 0x00 0x01)be = 1
-	 * (0x00 0x00 0x00 0x00 0x00 0x01)be = 1
-	 */
-
-	while (1) {
-		temp.temp_b[wpos] = data[rpos];
-
-		if (rpos == 0) {
-			break;
-		}
-
-		wpos--;
-		rpos--;
-	}
-
-	memcpy(target, &temp.temp_f, sizeof(temp.temp_f));
-
-	VL_DEBUG_MSG_3("Imported a be64: 0x%" PRIx64 "\n", be64toh(temp.temp_f));
-
 	return 0;
 }
 
-int import_h(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
+#define CHECK_END_AND_RETURN(length)		\
+	if (start + length > end) {				\
+		return RRR_TYPE_PARSE_INCOMPLETE;	\
+	}
+
+static int import_le (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	if (node->length > (rrr_type_length) sizeof(rrr_type_le)) {
+		VL_BUG("BUG: import_le received length > %lu", sizeof(rrr_type_le));
+	}
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_le\n");
+	}
+
+	CHECK_END_AND_RETURN(node->length * node->array_size);
+
+	node->data = malloc(sizeof(rrr_type_le) * node->array_size);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_le\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	char *target_wpos = node->data;
+	const char *data_rpos = start;
+
+	rrr_array_size array_size = node->array_size;
+	while (array_size-- > 0) {
+		union leunion {
+			rrr_type_le temp_f;
+			char temp_b[sizeof(rrr_type_le)];
+		};
+
+		union leunion temp;
+
+		temp.temp_f = 0;
+
+		/* Little endian:
+		 * (0x01 0x00 0x00)le = 1
+		 * (0x01 0x00 0x00 0x00 0x00 0x00)le = 1
+		 */
+
+		rrr_type_length pos = 0;
+		while (pos < node->length) {
+			temp.temp_b[pos] = data_rpos[pos];
+			pos++;
+		}
+
+		memcpy(target_wpos, &temp.temp_f, sizeof(temp.temp_f));
+
+		VL_DEBUG_MSG_3("Imported a le64: 0x%" PRIx64 "\n", le64toh(temp.temp_f));
+
+		data_rpos += node->length;
+		target_wpos += sizeof(temp.temp_f);
+	}
+
+	*parsed_bytes = node->length * node->array_size;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+static int import_be (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	if (node->length > (rrr_type_length) sizeof(rrr_type_be)) {
+		VL_BUG("BUG: convert_be received length > %lu", sizeof(rrr_type_be));
+	}
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_be\n");
+	}
+
+	CHECK_END_AND_RETURN(node->length * node->array_size);
+
+	node->data = malloc(sizeof(rrr_type_be) * node->array_size);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_be\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	char *target_wpos = node->data;
+	const char *data_rpos = start;
+
+	rrr_array_size array_size = node->array_size;
+	while (array_size-- > 0) {
+		union beunion {
+			rrr_type_be temp_f;
+			char temp_b[sizeof(rrr_type_be)];
+		};
+
+		union beunion temp;
+
+		temp.temp_f = 0;
+
+		rrr_type_length wpos = sizeof(temp.temp_f) - 1;
+		rrr_type_length rpos = node->length - 1;
+
+		// VL_DEBUG_MSG_3("rpos: %d, wpos: %d\n", rpos, wpos);
+
+		/* Big endian:
+		 * (0x00 0x00 0x01)be = 1
+		 * (0x00 0x00 0x00 0x00 0x00 0x01)be = 1
+		 */
+
+		while (1) {
+			temp.temp_b[wpos] = data_rpos[rpos];
+
+			if (rpos == 0) {
+				break;
+			}
+
+			wpos--;
+			rpos--;
+		}
+
+		memcpy(target_wpos, &temp.temp_f, sizeof(temp.temp_f));
+
+		VL_DEBUG_MSG_3("Imported a be64: 0x%" PRIx64 "\n", be64toh(temp.temp_f));
+
+		data_rpos += node->length;
+		target_wpos += sizeof(temp.temp_f);
+	}
+
+	*parsed_bytes = node->length * node->array_size;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+static int import_h (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
 	return (RRR_TYPE_SYSTEM_ENDIAN_IS_LE ?
-			import_le(target, data, array_size, length) :
-			import_be(target, data, array_size, length)
+			import_le(node, parsed_bytes, start, end) :
+			import_be(node, parsed_bytes, start, end)
 	);
 }
 
-int import_blob(void *target, const char *data, rrr_array_size array_size, rrr_type_length length) {
-	memcpy(target, data, array_size * length);
-	return 0;
+static int import_blob (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_blob\n");
+	}
+
+	CHECK_END_AND_RETURN(node->length * node->array_size);
+
+	node->data = malloc(node->length * node->array_size);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_blob\n");
+		return 1;
+	}
+	memcpy(node->data, start, node->length * node->array_size);
+
+	*parsed_bytes = node->length;
+
+	return RRR_TYPE_PARSE_OK;
 }
 
-int convert_le_64_to_host(void *data) {
+static int import_ustr (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_ustr\n");
+	}
+	if (node->array_size != 1) {
+		VL_BUG("array size was not 1 in import_ustr\n");
+	}
+	if (node->length != 0) {
+		VL_BUG("length was not 0 in import_ustr\n");
+	}
+
+	CHECK_END_AND_RETURN(1);
+
+	ssize_t max = end - start;
+	if (max > 30) {
+		max = 30;
+	}
+	char tmp[max];
+	memset(tmp, '\0', sizeof(tmp));
+	strncpy(tmp, start, max - 1);
+
+	int found_end_char = 0;
+	for (const char *pos = tmp; pos < tmp + sizeof(tmp); pos++) {
+		if (*pos >= '0' && *pos <= '9') {
+			continue;
+		}
+		else {
+			found_end_char = 1;
+			break;
+		}
+	}
+
+	if (found_end_char == 0) {
+		return RRR_TYPE_PARSE_INCOMPLETE;
+	}
+
+	char *convert_end = NULL;
+	unsigned long long int result = 0;
+
+	if (convert_unsigned_integer_10(&convert_end, &result, tmp)) {
+		VL_MSG_ERR("Error while converting unsigned integer in import_ustr\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	node->data = malloc(sizeof(rrr_type_ustr));
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_ustr\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	memcpy(node->data, &result, sizeof(rrr_type_ustr));
+
+	node->length = sizeof(rrr_type_ustr);
+
+	*parsed_bytes = convert_end - tmp;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+static int import_istr (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_istr\n");
+	}
+	if (node->array_size != 1) {
+		VL_BUG("array size was not 1 in import_istr\n");
+	}
+	if (node->length != 0) {
+		VL_BUG("length was not -1 in import_istr\n");
+	}
+
+	CHECK_END_AND_RETURN(1);
+
+	ssize_t max = end - start;
+	if (max > 30) {
+		max = 30;
+	}
+	char tmp[max];
+	memset(tmp, '\0', sizeof(tmp));
+	strncpy(tmp, start, max - 1);
+
+	int found_end_char = 0;
+	for (const char *pos = tmp + (tmp[0] == '-' || tmp[0] == '+' ? 1 : 0); pos < tmp + sizeof(tmp); pos++) {
+		if (*pos >= '0' && *pos <= '9') {
+			continue;
+		}
+		else {
+			found_end_char = 1;
+			break;
+		}
+	}
+
+	if (found_end_char == 0) {
+		return RRR_TYPE_PARSE_INCOMPLETE;
+	}
+
+	char *convert_end = NULL;
+	long long int result = 0;
+
+	if (convert_integer_10(&convert_end, &result, tmp)) {
+		VL_MSG_ERR("Error while converting unsigned integer in import_istr\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	node->data = malloc(sizeof(rrr_type_istr));
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_istr\n");
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	memcpy(node->data, &result, sizeof(rrr_type_istr));
+
+	node->length = sizeof(rrr_type_ustr);
+
+	*parsed_bytes = convert_end - tmp;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+
+static int import_sep (
+		struct rrr_type_template *node,
+		ssize_t *parsed_bytes,
+		const char *start_orig,
+		const char *end
+) {
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in import_sep\n");
+	}
+
+	ssize_t found = 0;
+	for (const char *start = start; start < end && found < node->length * node->array_size; start++) {
+		CHECK_END_AND_RETURN(1);
+
+		unsigned char c = *start;
+
+		if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+		}
+		else if (c >= 33 && c <= 47) {
+			// ! " # $ % & ' ( ) * + , - . /
+		}
+		else if (c >= 58 && c <= 64) {
+			// : ; < = > ? @
+		}
+		else if (c >= 91 && c <= 96) {
+			// [ \ ] ^ _ `
+		}
+		else if (c >= 123 && c <= 126) {
+			// { | } ~
+		}
+		else {
+			VL_MSG_ERR("Invalid separator character %c\n", c);
+			return 1;
+		}
+		found++;
+	}
+
+	if (found != node->length * node->array_size) {
+		VL_MSG_ERR("Not enough separator characters found\n");
+		return 1;
+	}
+
+	node->data = malloc(found);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in import_sep\n");
+		return 1;
+	}
+	memcpy (node->data, start_orig, found);
+
+	*parsed_bytes = found;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+int convert_le_64_to_host(void *data, rrr_type_length length) {
+	if (length != sizeof(uint64_t)) {
+		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_le_64_to_host\n");
+		return 1;
+	}
 	uint64_t temp;
 	memcpy (&temp, data, sizeof(temp));
 
@@ -199,7 +425,11 @@ int convert_le_64_to_host(void *data) {
 	return 0;
 }
 
-int convert_be_64_to_host(void *data) {
+int convert_be_64_to_host(void *data, rrr_type_length length) {
+	if (length != sizeof(uint64_t)) {
+		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_be_64_to_host\n");
+		return 1;
+	}
 	uint64_t temp;
 	memcpy (&temp, data, sizeof(temp));
 
@@ -208,74 +438,144 @@ int convert_be_64_to_host(void *data) {
 	return 0;
 }
 
-int convert_h_64_to_host(void *data) {
+int convert_h_64_to_host(void *data, rrr_type_length length) {
+	if (length != sizeof(uint64_t)) {
+		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_h_64_to_host\n");
+		return 1;
+	}
 	uint64_t num = *((uint64_t*) data);
 	VL_DEBUG_MSG_4("convert_h_64_to_host dummy convert of 0x%" PRIx64 "\n", num);
 	return 0;
 }
 
-int convert_blob_to_host(void *target) {
+int convert_blob_to_host(void *target, rrr_type_length length) {
+	if (length == 0) {
+		VL_MSG_ERR("Length of blob type was 0 in convert_blob_to_host\n");
+		return 1;
+	}
 	VL_DEBUG_MSG_4("convert_blob_to_host dummy convert first byte is %02x\n", *((char*)target));
 	return 0;
 }
 
-/* Must be in same positions as type ID in types.h */
-static int (*rrr_types_import_functions[]) (void *target, const char *data, rrr_array_size array_size, rrr_type_length length) = {
-		NULL,
-		&import_le,
-		&import_be,
-		&import_h,
-		&import_blob
+// If there are types which begin with the same letters, the longest names must be first in the array
+static const struct rrr_type_definition type_templates[] = {
+		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	import_le,		convert_le_64_to_host,	RRR_TYPE_NAME_LE},
+		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	import_be,		convert_be_64_to_host,	RRR_TYPE_NAME_BE},
+		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		import_h,		convert_h_64_to_host,	RRR_TYPE_NAME_H},
+		{RRR_TYPE_BLOB,		RRR_TYPE_MAX_BLOB,	import_blob,	convert_blob_to_host,	RRR_TYPE_NAME_BLOB},
+		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	import_ustr,	convert_h_64_to_host,	RRR_TYPE_NAME_USTR},
+		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	import_istr,	convert_h_64_to_host,	RRR_TYPE_NAME_ISTR},
+		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	import_sep,		convert_blob_to_host,	RRR_TYPE_NAME_SEP},
+		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,			NULL,					RRR_TYPE_NAME_ARRAY},
+		{0,					0,					NULL,			NULL,					NULL}
 };
 
-/* Must be in same positions as type ID in types.h */
-/*static int (*rrr_types_convert_functions[]) (void *target, const char *data, rrr_array_size array_size, rrr_type_length length) = {
-		NULL,
-		&convert_le,
-		&convert_be,
-		&convert_blob
-};*/
+static const struct rrr_type_definition *__rrr_type_get_from_identifier (
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+) {
+	*parsed_bytes = 0;
 
-/* Must be in same positions as type ID in types.h */
-/*static int (*rrr_types_to_le[]) (void *data) = {
-		NULL,
-		&convert_64_to_le,
-		&convert_64_to_le,
-		&convert_blob_to_le
-};*/
-
-/* Must be in same positions as type ID in types.h */
-static int (*rrr_types_to_host[]) (void *data) = {
-		NULL,
-		&convert_le_64_to_host,
-		&convert_be_64_to_host,
-		&convert_h_64_to_host,
-		&convert_blob_to_host
-};
-
-int convert_integer_10(const char *value, int *result) {
-	char *err;
-	*result = strtol(value, &err, 10);
-
-	if (err[0] != '\0') {
-		return 1;
+	for (unsigned int i = 0; i < sizeof(type_templates) / sizeof(type_templates[0]) - 1; i++) {
+		const struct rrr_type_definition *type = &type_templates[i];
+		ssize_t len = strlen(type->identifier);
+		if (start + len > end) {
+			continue;
+		}
+		if (strncmp(type->identifier, start, len) == 0) {
+			*parsed_bytes = len;
+			return type;
+		}
 	}
 
-	return 0;
+	return NULL;
 }
 
-int rrr_types_parse_definition (
-		struct rrr_type_definition_collection *target,
+static const struct rrr_type_definition *__rrr_type_get_from_type (uint8_t type_in) {
+	for (unsigned int i = 0; i < sizeof(type_templates) / sizeof(type_templates[0]) - 1; i++) {
+		const struct rrr_type_definition *type = &type_templates[i];
+		if (type->type == type_in) {
+			return type;
+		}
+	}
+
+	return NULL;
+}
+
+static int __rrr_types_parse_identifier_and_size (
+		const struct rrr_type_definition **type_return,
+		unsigned int *length_return,
+		ssize_t *bytes_parsed_return,
+		const char *start,
+		const char *end
+) {
+	int ret = 0;
+	ssize_t parsed_bytes;
+
+	*type_return = NULL;
+	*length_return = 0;
+	*bytes_parsed_return = 0;
+
+	const struct rrr_type_definition *type = __rrr_type_get_from_identifier(&parsed_bytes, start, end);
+	if (type == NULL) {
+		VL_MSG_ERR("Unknown type identifier in type definition here --> '%s'\n", start);
+		ret = 1;
+		goto out;
+	}
+	start += parsed_bytes;
+
+	unsigned long long int length = 0;
+	if (type->max_length > 0) {
+		if (*start == '\0' || start >= end) {
+			VL_MSG_ERR("Missing size for type '%s' in type definition\n", type->identifier);
+			ret = 1;
+			goto out;
+		}
+
+		char *integer_end = NULL;
+		if (convert_unsigned_integer_10(&integer_end, &length, start) != 0) {
+			VL_MSG_ERR("Size argument '%s' in type definition '%s' was not a valid number\n",
+					start, type->identifier);
+			ret = 1;
+			goto out;
+		}
+
+		if (length > 0xffffffff) {
+			VL_MSG_ERR("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
+					start, type->identifier);
+			ret = 1;
+			goto out;
+		}
+
+		parsed_bytes += integer_end - start;
+
+		if (length <= 0) {
+			VL_MSG_ERR("Size argument '%lli' in type definition '%s' must be >0\n",
+					length, type->identifier);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	*type_return = type;
+	*length_return = length;
+	*bytes_parsed_return = parsed_bytes;
+
+	out:
+	return ret;
+
+}
+
+int rrr_type_parse_definition (
+		struct rrr_type_template_collection *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key
 ) {
 	int ret = 0;
-	rrr_def_count count = 0;
 	struct rrr_settings_list *list = NULL;
 
 	memset (target, '\0', sizeof(*target));
-
-	target->endian_two = RRR_TYPE_ENDIAN_BYTES;
 
 	if (rrr_instance_config_split_commas_to_array (&list, config, cmd_key) != 0) {
 		VL_MSG_ERR("Error while splitting comma list to array for instance %s setting %s\n", config->name, cmd_key);
@@ -283,117 +583,108 @@ int rrr_types_parse_definition (
 		goto out_nofree;
 	}
 
-	if (list->length % 2 != 0) {
-		VL_MSG_ERR ("Number of elements in type definition was not even for instance %s setting %s\n", config->name, cmd_key);
-		ret = 1;
-		goto out;
-	}
+	ssize_t parsed_bytes = 0;
+	for (unsigned int i = 0; i < list->length; i++) {
+		const char *start = list->list[i];
+		const char *end = start + strlen(start);
+		rrr_array_size array_size = 1;
 
-	if (list->length / 2 > RRR_TYPE_MAX_DEFINITIONS) {
-		VL_MSG_ERR ("Too many elements in type definition (%i vs %i) for instance %s setting %s\n",
-				list->length, RRR_TYPE_MAX_DEFINITIONS, config->name, cmd_key);
-		ret = 1;
-		goto out;
-	}
-
-	int do_array = 0;
-	rrr_array_size array_size = 1;
-	for (unsigned int i = 0; i < list->length; i += 2) {
-		const char *type_c = list->list[i];
-		if (*type_c == '\0') {
+		if (*start == '\0' || start >= end) {
 			break;
 		}
 
-		const char *length_c = list->list[i + 1];
-		if (length_c == NULL) {
-			VL_MSG_ERR("Missing size definition for '%s' type definition in '%s'\n", type_c, cmd_key);
+		const struct rrr_type_definition *type = NULL;
+		unsigned int length = 0;
+
+		if ((ret = __rrr_types_parse_identifier_and_size (
+				&type,
+				&length,
+				&parsed_bytes,
+				start,
+				end
+		)) != 0) {
+			VL_MSG_ERR("Error while parsing type identifier and size\n");
+			goto out;
+		}
+
+		start += parsed_bytes;
+
+		if (*start != '\0') {
+			VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
 			ret = 1;
 			goto out;
 		}
 
-		if (strcmp(type_c, RRR_TYPE_NAME_ARRAY) == 0) {
-			int length;
-			if (convert_integer_10(length_c, &length) != 0) {
-				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not a valid number\n", length_c, cmd_key);
-				ret = 1;
-				goto out;
-			}
-			if (length < 1 || length > RRR_TYPE_MAX_ARRAY) {
-				VL_MSG_ERR("Size argument '%s' in type definition for array in '%s' was not within range\n", length_c, cmd_key);
-				ret = 1;
-				goto out;
+		if (type->type == RRR_TYPE_ARRAY) {
+			if (++i == list->length) {
+				VL_MSG_ERR("Missing type definition after array\n");
 			}
 
-			do_array = 1;
 			array_size = length;
-			continue;
+			if (array_size > RRR_TYPE_MAX_ARRAY) {
+				VL_MSG_ERR("Array size in type definition exceeded maximum of %i (%i given)\n",
+						RRR_TYPE_MAX_ARRAY, array_size);
+			}
+
+			if ((ret = __rrr_types_parse_identifier_and_size (
+					&type,
+					&length,
+					&parsed_bytes,
+					start,
+					end
+			)) != 0) {
+				VL_MSG_ERR("Error while parsing type identifier and size after array\n");
+				goto out;
+			}
 		}
 
-		rrr_type type = rrr_types_get_type(type_c);
-		if (type == 0) {
-			VL_MSG_ERR("Unknown type '%s' in '%s\n", type_c, cmd_key);
+		if (length > type->max_length) {
+			VL_MSG_ERR("Size argument '%i' in type definition '%s' in '%s' is too large, max is '%u'\n",
+					i, type->identifier, cmd_key, type->max_length);
 			ret = 1;
 			goto out;
 		}
 
-		int length;
-		if (convert_integer_10(length_c, &length) != 0) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' was not a valid number\n", length_c, type_c, cmd_key);
+		if (i + 1 == list->length && type->max_length == 0) {
+			VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
+					type->identifier);
+			return 1;
+		}
+
+		struct rrr_type_template *template = malloc(sizeof(*template));
+		if (template == NULL) {
+			VL_MSG_ERR("Could not allocate template in rrr_types_parse_definition\n");
 			ret = 1;
 			goto out;
 		}
 
-		if (length <= 0) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' must be >0\n", length_c, type_c, cmd_key);
-			ret = 1;
-			goto out;
-		}
+		memset(template, '\0', sizeof(*template));
 
-		rrr_type_length max;
-		if (rrr_types_check_size(type, length, &max) != 0) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' in '%s' is too large, max is '%u'\n", length_c, type_c, cmd_key, max);
-			ret = 1;
-			goto out;
-		}
+		template->array_size = array_size;
+		template->length = length;
+		template->definition = type;
 
-		target->definitions[count].max_length = max;
-		target->definitions[count].length = length;
-		target->definitions[count].type = type;
-		target->definitions[count].array_size = array_size;
-
-		count++;
-		do_array = 0;
-		array_size = 1;
+		RRR_LINKED_LIST_APPEND(target,template);
 	}
-
-	if (do_array) {
-		VL_MSG_ERR("Array was specified at end of type definition in '%s'\n", cmd_key);
-		ret = 1;
-		goto out;
-	}
-
-	target->count = count;
-	target->version = RRR_TYPE_VERSION;
 
 	out:
-	rrr_settings_list_destroy(list);
-
+		rrr_settings_list_destroy(list);
 	out_nofree:
-
-	return ret;
+		return ret;
 }
 
-int rrr_types_parse_data (
-		struct rrr_data_collection *target,
-		const char *data, const rrr_type_length length
+int rrr_type_parse_data_from_definition (
+		struct rrr_type_template_collection *target,
+		const char *data,
+		const rrr_type_length length
 ) {
+	int ret = RRR_TYPE_PARSE_OK;
+
 	const char *pos = data;
 	const char *end = data + length;
-	const struct rrr_type_definition_collection *definitions = &target->definitions;
 
 	if (length == 0) {
-		VL_MSG_ERR("BUG: Length was 0 in rrr_types_parse_data\n");
-		exit(EXIT_FAILURE);
+		VL_BUG("BUG: Length was 0 in rrr_types_parse_data\n");
 	}
 
 	if (VL_DEBUGLEVEL_3) {
@@ -408,438 +699,243 @@ int rrr_types_parse_data (
 		VL_DEBUG_MSG("\n");
 	}
 
-	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		const struct rrr_type_definition *def = &definitions->definitions[i];
+	int i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_type_template);
+		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->array_size);
 
-		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, def->type, def->array_size);
-		if (rrr_types_import_functions[def->type] == NULL) {
-			VL_MSG_ERR("BUG: No convert function found for type %d\n", def->type);
-			exit (EXIT_FAILURE);
+		if (node->definition->import == NULL) {
+			VL_BUG("BUG: No convert function found for type %d\n", node->definition->type);
 		}
-		if (pos > end || pos + def->length > end) {
-			VL_MSG_ERR("Input data was too short according to configuration in type conversion\n");
-			VL_MSG_ERR("Received length was '%u'\n", length);
-			return 1;
-		}
-		if (rrr_types_import_functions[def->type](target->data[i], pos, def->array_size, def->length) != 0) {
+
+		ssize_t parsed_bytes = 0;
+
+		if ((ret = node->definition->import(node, &parsed_bytes, pos, end)) != 0) {
+			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+				goto out;
+			}
 			VL_MSG_ERR("Invalid data in type conversion\n");
-			return 1;
+			goto out;
 		}
 
-		pos += (def->length * def->array_size);
-	}
-
-	return 0;
-}
-
-struct rrr_data_collection *rrr_types_allocate_data (
-		const struct rrr_type_definition_collection *definitions
-) {
-	struct rrr_data_collection *collection = malloc(sizeof(struct rrr_data_collection));
-	if (collection == NULL) {
-		VL_MSG_ERR("Could not allocate memory for data collection\n");
-		return NULL;
-	}
-
-	memset (collection->data, '\0', sizeof(collection->data));
-
-	collection->definitions.endian_two = RRR_TYPE_ENDIAN_BYTES;
-
-	if (definitions->count > RRR_TYPE_MAX_DEFINITIONS) {
-		VL_MSG_ERR("BUG: Too many definitions in rrr_types_parse_data\n");
-		exit (EXIT_FAILURE);
-	}
-
-	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		const struct rrr_type_definition *def = &definitions->definitions[i];
-		if (!RRR_TYPE_OK(def->type)) {
-			VL_MSG_ERR("Invalid type %d received in rrr_types_allocate_data\n",
-					def->type);
-			goto out_free_elements;
+		if (parsed_bytes == 0) {
+			VL_BUG("Parsed bytes was zero in rrr_types_parse_data\n");
 		}
 
-		rrr_type_length max_length;
-		if (rrr_types_check_size(def->type, def->length, &max_length) != 0) {
-			VL_MSG_ERR("Invalid length %d received in rrr_types_allocate_data, max length is %d\n",
-					def->length, max_length);
-			goto out_free_elements;
+		if (node->data != NULL) {
+			VL_BUG("node->data was not NULL in rrr_types_parse_data\n");
 		}
 
-		if (def->max_length != max_length) {
-			VL_MSG_ERR("Max length mismatch from default in rrr_types_allocate_data, %d vs %d",
-					def->max_length, max_length);
-			goto out_free_elements;
-		}
-
-		if (def->array_size < 1 || def->array_size > RRR_TYPE_MAX_ARRAY) {
-			VL_MSG_ERR("Invalid array length %d received in rrr_types_allocate_data, bounds are %d to %d\n",
-					def->array_size, 1, RRR_TYPE_MAX_ARRAY);
-			goto out_free_elements;
-		}
-
-		int allocate = (RRR_TYPE_IS_64(def->type) ? def->max_length : def->length) * def->array_size;
-
-		VL_DEBUG_MSG_3("Allocating memory for type in definition: %d\n", allocate);
-
-		collection->data[i] = malloc (allocate);
-
-		if (collection->data[i] == NULL) {
-			VL_MSG_ERR("Could not allocate %u bytes of memory for collection type data\n", allocate);
-			goto out_free_elements;
-		}
-	}
-
-	memcpy (&collection->definitions, definitions, sizeof(collection->definitions));
-
-	return collection;
-
-	out_free_elements:
-	for (rrr_def_count i = 0; i < definitions->count; i++) {
-		if (collection->data[i] != NULL) {
-			free(collection->data[i]);
-		}
-	}
-
-	free (collection);
-
-	return NULL;
-}
-
-rrr_type_length rrr_get_total_integer_max_length(const struct rrr_data_collection *data) {
-	rrr_type_length ret = 0;
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		if (RRR_TYPE_IS_64(data->definitions.definitions[i].type)) {
-			ret += data->definitions.definitions[i].max_length * data->definitions.definitions[i].array_size;
-		}
-	}
-	return ret;
-}
-
-rrr_type_length rrr_get_total_blob_length(const struct rrr_data_collection *data) {
-	rrr_type_length ret = 0;
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		if (RRR_TYPE_IS_BLOB(data->definitions.definitions[i].type)) {
-			ret += data->definitions.definitions[i].length * data->definitions.definitions[i].array_size;
-		}
-	}
-	return ret;
-}
-
-rrr_type_length rrr_get_raw_length(const struct rrr_data_collection *data) {
-	rrr_type_length ret = 0;
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		const struct rrr_type_definition *def = &data->definitions.definitions[i];
-
-		if (RRR_TYPE_IS_64(def->type)) {
-			ret += def->max_length * def->array_size;
-		}
-		else if (RRR_TYPE_IS_BLOB(def->type)) {
-			ret += def->length * def->array_size;
-		}
-		else {
-			VL_MSG_ERR("BUG: Unknown type %u in rrr_get_raw_length\n", def->type);
-			exit(EXIT_FAILURE);
-		}
-	}
-	return ret;
-}
-
-void rrr_types_destroy_data (struct rrr_data_collection *collection) {
-	for (rrr_def_count i = 0; i < collection->definitions.count; i++) {
-		free(collection->data[i]);
-	}
-	free (collection);
-}
-
-int rrr_types_collection_data_to_host (struct rrr_data_collection *data) {
-	int ret = 0;
-
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		struct rrr_type_definition *def = &data->definitions.definitions[i];
-
-		if (!RRR_TYPE_OK(def->type)) {
-			VL_MSG_ERR("BUG: Unknown type %u in rrr_types_collection_data_to_host\n", i);
-			exit(EXIT_FAILURE);
-		}
-
-		if (rrr_types_to_host[def->type](data->data[i]) != 0) {
-			VL_MSG_ERR("Error while converting member with index %u in rrr_types_collection_data_to_host\n", i);
-			return 1;
-		}
-
-		if (RRR_TYPE_IS_64(def->type)) {
-			def->type = RRR_TYPE_H;
-		}
-	}
-
-	return ret;
-}
-
-int rrr_types_definition_to_host(struct rrr_type_definition_collection *definition) {
-	int ret = 0;
-
-	struct rrr_type_definition_collection new;
-	memset (&new, '\0', sizeof(new));
-
-	if (RRR_TYPE_DEF_IS_LE(definition)) {
-		new.count = le32toh(definition->count);
-		new.version = le16toh(definition->version);
-
-		for (rrr_def_count i = 0; i < definition->count; i++) {
-			new.definitions[i].length = le32toh(definition->definitions[i].length);
-			new.definitions[i].max_length = le32toh(definition->definitions[i].max_length);
-			new.definitions[i].type = definition->definitions[i].type;
-			new.definitions[i].array_size = le32toh(definition->definitions[i].array_size);
-		}
-	}
-	else if (RRR_TYPE_DEF_IS_BE(definition)) {
-		new.count = be32toh(definition->count);
-		new.version = be16toh(definition->version);
-
-		for (rrr_def_count i = 0; i < definition->count; i++) {
-			new.definitions[i].length = be32toh(definition->definitions[i].length);
-			new.definitions[i].max_length = be32toh(definition->definitions[i].max_length);
-			new.definitions[i].type = definition->definitions[i].type;
-			new.definitions[i].array_size = be32toh(definition->definitions[i].array_size);
-		}
-	}
-	else {
-		VL_MSG_ERR("Unknown endian indicator 0x%02x in rrr_types_definition_to_host\n", definition->endian_two);
-		ret = 1;
-		goto out;
-	}
-
-	memcpy (definition, &new, sizeof (*definition));
+		pos += parsed_bytes;
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(definitions);
 
 	out:
 	return ret;
 }
 
-int rrr_types_extract_blob (char **target, rrr_size *size, const struct rrr_data_collection *collection, rrr_def_count pos, rrr_def_count array_pos, int do_zero_terminate) {
-	int ret = 0;
-	*target = NULL;
-	*size = 0;
+int rrr_type_definition_collection_clone (
+		struct rrr_type_template_collection *target,
+		const struct rrr_type_template_collection *source
+) {
+	memset(target, '\0', sizeof(*target));
 
-	if (pos > collection->definitions.count) {
-		VL_MSG_ERR("BUG: Out of bounds access in rrr_types_extract_host_64\n");
-		return 1;
-	}
+	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_type_template);
+		struct rrr_type_template *template = malloc(sizeof(*template));
+		if (template == NULL) {
+			VL_MSG_ERR("Could not allocate memory in rrr_type_definition_collection_clone\n");
+			goto out_err;
+		}
+		memcpy(template, node, sizeof(*template));
 
-	const struct rrr_type_definition *def = &collection->definitions.definitions[pos];
+		template->data = NULL;
 
-	if (array_pos > def->array_size) {
-		VL_MSG_ERR("BUG: Out of bounds array access in rrr_types_extract_host_64\n");
-		return 1;
-	}
-
-	if (!RRR_TYPE_IS_BLOB(def->type)) {
-		VL_MSG_ERR("BUG: Tries to access an element which was not a blob in rrr_types_extract_blob\n");
-		return 1;
-	}
-
-	rrr_size def_size = def->length;
-	if (def_size > def->max_length) {
-		VL_MSG_ERR("BUG: Wrong sizes in rrr_types_extract_blob\n");
-		return 1;
-	}
-
-	char *out = malloc(def_size + 1);
-	if (out == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_types_extract_blob\n");
-		return 1;
-	}
-
-	memcpy(out, collection->data[pos] + def_size * array_pos, def_size);
-
-	*target = out;
-	*size = def->length;
-
-	if (do_zero_terminate) {
-		out[def_size] = '\0';
-		(*size)++;
-	}
-
-	return ret;
-}
-
-int rrr_types_extract_host_64 (uint64_t *target, const struct rrr_data_collection *collection, rrr_def_count pos, rrr_def_count array_pos) {
-	if (pos > collection->definitions.count) {
-		VL_MSG_ERR("BUG: Out of bounds access in rrr_types_extract_host_64\n");
-		return 1;
-	}
-
-	const struct rrr_type_definition *def = &collection->definitions.definitions[pos];
-
-	if (array_pos > def->array_size) {
-		VL_MSG_ERR("BUG: Out of bounds array access in rrr_types_extract_host_64\n");
-		return 1;
-	}
-
-	if (!RRR_TYPE_IS_64(def->type)) {
-		VL_MSG_ERR("BUG: Tries to access an element which was not a 64 in rrr_types_extract_host_64\n");
-		return 1;
-	}
-
-	if (def->max_length != sizeof(*target) || def->length > def->max_length) {
-		VL_MSG_ERR("BUG: Wrong sizes in rrr_types_extract_host_64\n");
-		return 1;
-	}
-
-	memcpy(target, collection->data[pos] + sizeof(def->max_length) * array_pos, sizeof(*target));
-
-	if (rrr_types_to_host[def->type](target) != 0) {
-		VL_MSG_ERR("BUG: Received error from endian convert function in rrr_types_extract_host_64\n");
-		return 1;
-	}
+		RRR_LINKED_LIST_APPEND(target,template);
+	RRR_LINKED_LIST_ITERATE_END(source);
 
 	return 0;
+
+	out_err:
+		RRR_LINKED_LIST_DESTROY(target, struct rrr_type_template, free(node));
+		memset(target, '\0', sizeof(*target));
+		return 1;
 }
 
-int rrr_types_extract_raw_from_collection_static(char *target, rrr_size target_size, rrr_size *return_size, const struct rrr_data_collection *data) {
-	rrr_type_length length = rrr_get_raw_length(data);
-	*return_size = 0;
 
-	if (target_size < length) {
-		VL_MSG_ERR("BUG: Target size was too small in rrr_types_extract_raw_from_collection_static\n");
-		return 1;
-	}
-
-	char *out = target;
-
-	char *pos = out;
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		const struct rrr_type_definition *def = &data->definitions.definitions[i];
-
-		if (RRR_TYPE_IS_64(def->type)) {
-			memcpy(pos, data->data[i], def->max_length * def->array_size);
-			pos += def->max_length * def->array_size;
-		}
-		else if (RRR_TYPE_IS_BLOB(def->type)) {
-			memcpy(pos, data->data[i], def->length * def->array_size);
-			pos += def->length * def->array_size;
-		}
-		else {
-			VL_MSG_ERR("BUG: Unknown type %u in rrr_types_extract_raw_from_collection\n", def->type);
-			exit(EXIT_FAILURE);
-		}
-
-	}
-
-	*return_size = length;
-	return 0;
+static void __rrr_type_template_destroy (struct rrr_type_template *template) {
+	RRR_FREE_IF_NOT_NULL(template->data);
+	free(template);
 }
 
-int rrr_types_extract_raw_from_collection(char **target, rrr_size *size, const struct rrr_data_collection *data) {
-	rrr_type_length length = rrr_get_raw_length(data);
-
-	char *out = malloc(length);
-	if (out == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_types_extract_raw_from_collection\n");
-		return 1;
-	}
-
-	int ret = rrr_types_extract_raw_from_collection_static(out, length, size, data);
-	if (ret != 0) {
-		free(out);
-		return 1;
-	}
-
-	*target = out;
-
-	return 0;
+void rrr_type_template_collection_clear (struct rrr_type_template_collection *collection) {
+	RRR_LINKED_LIST_DESTROY(collection,struct rrr_type_template,__rrr_type_template_destroy(node));
 }
 
-struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data, uint64_t time) {
-	rrr_type_length total_length = sizeof(struct rrr_type_definition_collection) + rrr_get_raw_length(data);
-	struct vl_message *message = NULL;
+struct rrr_type_template *rrr_type_template_collection_get_by_idx (
+		struct rrr_type_template_collection *definition,
+		int idx
+) {
+	int i = 0;
 
-	message = message_new_array(time, total_length);
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, struct rrr_type_template);
+		if (i == idx) {
+			return node;
+		}
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(definition);
+
+	return NULL;
+}
+
+static ssize_t __rrr_type_get_packet_length (const struct rrr_type_template_collection *definition) {
+	ssize_t result = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_template);
+		result += node->array_size * node->length + sizeof(struct rrr_type_data_packed) - 1;
+	RRR_LINKED_LIST_ITERATE_END(definition);
+	return result;
+}
+
+int rrr_type_new_message (
+		struct vl_message **final_message,
+		const struct rrr_type_template_collection *definition,
+		uint64_t time
+) {
+	rrr_type_length total_data_length = __rrr_type_get_packet_length(definition);
+
+	*final_message = NULL;
+
+	struct vl_message_array *message = message_new_array(time, total_data_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
-		return NULL;
+		return 1;
 	}
 
-	struct rrr_type_definition_collection *new_definition = (void*) message->data;
-	char *new_datastream = message->data + sizeof(*new_definition);
+	message->type_head.endian_two = RRR_TYPE_ENDIAN_BYTES;
+	message->type_head.version = RRR_TYPE_VERSION;
 
-	memcpy (new_definition, &data->definitions, sizeof(*new_definition));
+	char *pos = message->type_head.data_;
 
-	char *pos = new_datastream;
-	for (rrr_def_count i = 0; i < data->definitions.count; i++) {
-		const struct rrr_type_definition *def = &data->definitions.definitions[i];
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_template);
+		struct rrr_type_data_packed head = {0};
 
-		char *new_pos = pos;
-		if (RRR_TYPE_IS_64(def->type)) {
-			memcpy(pos, data->data[i], def->max_length * def->array_size);
-			new_pos += def->max_length * def->array_size;
-		}
-		else {
-			memcpy(pos, data->data[i], def->length * def->array_size);
-			new_pos += def->length * def->array_size;
+		head.type = node->definition->type;
+		head.length = node->length;
+		head.array_size = node->array_size;
+
+		if (node->data == NULL) {
+			VL_BUG("Data not set for node in __rrr_type_pack_message\n");
 		}
 
-/*		if (rrr_types_to_le[def->type](pos) != 0) {
-			VL_MSG_ERR("Error while converting type index %lu to le\n", (long unsigned int) i);
-			return NULL;
-		}*/
+		memcpy(pos, &head, sizeof(head) - 1);
+		pos += sizeof(head) - 1;
+		memcpy(pos, node->data, node->length * node->array_size);
+		pos += node->length * node->array_size;
+	RRR_LINKED_LIST_ITERATE_END(definition);
 
-		pos = new_pos;
-	}
+	*final_message = (struct vl_message *) message;
 
-//	rrr_types_definition_to_le(new_definition);
-
-	return message;
+	return 0;
 }
 
-int rrr_types_message_to_collection(struct rrr_data_collection **target, const struct vl_message *message_orig) {
-	struct rrr_type_definition_collection definitions;
-	memcpy (&definitions, message_orig->data, sizeof(definitions));
-	const char *data_pos = message_orig->data + sizeof(definitions);
+int rrr_types_message_to_collection (
+		struct rrr_type_template_collection *target,
+		const struct vl_message *message_orig
+) {
+	memset(target, '\0', sizeof(*target));
 
-	if (rrr_types_definition_to_host(&definitions) != 0) {
-		VL_MSG_ERR("Error while converting type definition to host endianess\n");
-		return 1;
+	if (message_orig->class != MSG_CLASS_ARRAY) {
+		VL_BUG("Message was not array in rrr_types_message_to_collection\n");
 	}
 
-	if (definitions.version != RRR_TYPE_VERSION) {
-		VL_MSG_ERR("rrr_types received array of incompatible version %u, expected %d\n", definitions.version, RRR_TYPE_VERSION);
-		return 1;
+	const struct vl_message_array *array = (struct vl_message_array *) message_orig;
+
+	int is_be = 0;
+
+	uint16_t version = (array->type_head.version);
+
+	if (RRR_TYPE_DEF_IS_BE(&array->type_head)) {
+		version = be16toh(version);
+		is_be = 1;
+	}
+	else {
+		version = le16toh(version);
 	}
 
-	struct rrr_data_collection *new_data = *target = rrr_types_allocate_data(&definitions);
-
-	if (new_data == NULL) {
-		VL_MSG_ERR("Could not allocate data for new data collection in rrr_types_message_to_collection\n");
-		return 1;
+	if (version != RRR_TYPE_VERSION) {
+		VL_MSG_ERR("Array message version mismatch in rrr_types_message_to_collection. Need V%i but got V%u.\n",
+				RRR_TYPE_VERSION, array->type_head.version);
+		goto out_free_data;
 	}
 
-	for (rrr_def_count i = 0; i < definitions.count; i++) {
-		struct rrr_type_definition *def = &definitions.definitions[i];
+	const char *pos = array->type_head.data_;
+	const char *end = array->type_head.data_ + array->length - sizeof(array->type_head) - 1;
 
-		if (RRR_TYPE_IS_64(def->type)) {
-			memcpy ((char *) new_data->data[i], data_pos, def->max_length * def->array_size);
-			data_pos += def->max_length * def->array_size;
-		}
-		else {
-			memcpy ((char *) new_data->data[i], data_pos, def->length * def->array_size);
-			data_pos += def->length * def->array_size;
-		}
+	int i = 0;
+	while (pos < end) {
+		struct rrr_type_data_packed *data_packed = (struct rrr_type_data_packed *) pos;
+		pos += sizeof(struct rrr_type_data_packed);
 
-		if (data_pos > message_orig->data + message_orig->length) {
-			VL_MSG_ERR("Data read position exceeded message length in rrr_types_message_to_collection\n");
-			exit(EXIT_FAILURE);
-		}
-
-		if (!RRR_TYPE_OK(def->type)) {
-			VL_MSG_ERR("Invalid type %u found when parsing array message to collection\n", def->type);
+		if (pos > end) {
+			VL_MSG_ERR("Data type with index %i was too short in array\n", i);
 			goto out_free_data;
 		}
+
+		rrr_type type = data_packed->type;
+		rrr_type_length length = data_packed->length;
+		rrr_array_size array_size = data_packed->array_size;
+
+		if (is_be != 0) {
+			length = be32toh(length);
+			array_size = be32toh(array_size);
+		}
+		else {
+			length = le32toh(length);
+			array_size = le32toh(array_size);
+		}
+
+		if (pos + length > end) {
+			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length\n", type, i);
+			goto out_free_data;
+		}
+
+		const struct rrr_type_definition *def = __rrr_type_get_from_type(type);
+		if (def == NULL) {
+			VL_MSG_ERR("Unknown type %u in type index %i of array message\n", type, i);
+			goto out_free_data;
+		}
+
+		struct rrr_type_template *template = malloc(sizeof(*template));
+		if (template == NULL) {
+			VL_MSG_ERR("Could not allocate memory for template in rrr_types_message_to_collection\n");
+			goto out_free_data;
+		}
+		memset (template, '\0', sizeof(*template));
+
+		RRR_LINKED_LIST_APPEND(target,template);
+
+		template->data = malloc(length);
+		if (template->data == NULL) {
+			VL_MSG_ERR("Could no allocate memory for template data in rrr_types_message_to_collection\n");
+			goto out_free_data;
+		}
+
+		template->array_size = array_size;
+		template->length = length;
+		template->definition = def;
+		memcpy (template->data, pos, template->length);
+
+		pos += template->length;
+
+		if (template->definition->to_host(template->data, template->length) != 0) {
+			VL_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
+			goto out_free_data;
+		}
+
+		i++;
 	}
 
 	return 0;
 
 	out_free_data:
-	*target = NULL;
-	free(new_data);
-	return 1;
+		rrr_type_template_collection_clear(target);
+		return 1;
 }

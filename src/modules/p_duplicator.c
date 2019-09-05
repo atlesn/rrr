@@ -243,8 +243,8 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 
 	int ret = 0;
 
-	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: %s measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
 	/*
 	readers_read_lock(duplicator_data);
 

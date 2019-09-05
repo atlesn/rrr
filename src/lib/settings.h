@@ -132,7 +132,7 @@ void rrr_settings_update_used (
 				void *callback_args
 		)
 );
-int rrr_settings_packed_convert_endianess (struct rrr_setting_packed *setting_packed);
+void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed);
 void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message);
 int rrr_settings_packed_validate (const struct rrr_setting_packed *setting_packed);
 
