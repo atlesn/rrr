@@ -84,9 +84,12 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_SEP	64
 #define RRR_TYPE_MAX_ARRAY	65535
 
-#define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE || type == RRR_TYPE_H || type == RRR_TYPE_USTR || type == RRR_TYPE_ISTR)
-#define RRR_TYPE_IS_BLOB(type)	(type == RRR_TYPE_BLOB || RRR_TYPE_SEP)
-#define RRR_TYPE_OK(type)		(type > 0 && type <= RRR_TYPE_MAX)
+#define RRR_TYPE_IS_64(type) 	(														\
+			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
+			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
+		)
+#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || RRR_TYPE_SEP)
+#define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_ENDIAN_BYTES	0x0102
 #define RRR_TYPE_ENDIAN_LE		0x02
@@ -107,8 +110,7 @@ struct rrr_type_definition {
 			const char *end
 	);
 	int (*to_host)(
-			void *data,
-			rrr_type_length length
+			struct rrr_type_template *node
 	);
 	const char *identifier;
 };
@@ -133,9 +135,14 @@ struct rrr_type_data_packed {
  * of the data is not touched until extracted with extractor functions.-
  */
 struct rrr_type_template_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_type_template);
+		RRR_LINKED_LIST_HEAD(struct rrr_type_template);
 };
-
+const struct rrr_type_definition *rrr_type_get_from_identifier (
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+);
+const struct rrr_type_definition *rrr_type_get_from_type (uint8_t type_in);
 int rrr_type_parse_definition (
 		struct rrr_type_template_collection *target,
 		struct rrr_instance_config *config,

@@ -111,6 +111,8 @@ static int import_le (
 			pos++;
 		}
 
+		temp.temp_f = le64toh(temp.temp_f);
+
 		memcpy(target_wpos, &temp.temp_f, sizeof(temp.temp_f));
 
 		VL_DEBUG_MSG_3("Imported a le64: 0x%" PRIx64 "\n", le64toh(temp.temp_f));
@@ -120,6 +122,9 @@ static int import_le (
 	}
 
 	*parsed_bytes = node->length * node->array_size;
+
+	node->definition = rrr_type_get_from_type(RRR_TYPE_H);
+	node->length = sizeof(rrr_type_h);
 
 	return RRR_TYPE_PARSE_OK;
 }
@@ -180,6 +185,8 @@ static int import_be (
 			rpos--;
 		}
 
+		temp.temp_f = be64toh(temp.temp_f);
+
 		memcpy(target_wpos, &temp.temp_f, sizeof(temp.temp_f));
 
 		VL_DEBUG_MSG_3("Imported a be64: 0x%" PRIx64 "\n", be64toh(temp.temp_f));
@@ -189,6 +196,9 @@ static int import_be (
 	}
 
 	*parsed_bytes = node->length * node->array_size;
+
+	node->definition = rrr_type_get_from_type(RRR_TYPE_H);
+	node->length = sizeof(rrr_type_h);
 
 	return RRR_TYPE_PARSE_OK;
 }
@@ -286,7 +296,8 @@ static int import_ustr (
 
 	memcpy(node->data, &result, sizeof(rrr_type_ustr));
 
-	node->length = sizeof(rrr_type_ustr);
+	node->definition = rrr_type_get_from_type(RRR_TYPE_H);
+	node->length = sizeof(rrr_type_h);
 
 	*parsed_bytes = convert_end - tmp;
 
@@ -350,7 +361,8 @@ static int import_istr (
 
 	memcpy(node->data, &result, sizeof(rrr_type_istr));
 
-	node->length = sizeof(rrr_type_ustr);
+	node->definition = rrr_type_get_from_type(RRR_TYPE_H);
+	node->length = sizeof(rrr_type_h);
 
 	*parsed_bytes = convert_end - tmp;
 
@@ -412,65 +424,47 @@ static int import_sep (
 	return RRR_TYPE_PARSE_OK;
 }
 
-int convert_le_64_to_host(void *data, rrr_type_length length) {
-	if (length != sizeof(uint64_t)) {
-		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_le_64_to_host\n");
+int convert_be_64_to_host(struct rrr_type_template *node) {
+	if (node->length != sizeof(rrr_type_be)) {
+		VL_MSG_ERR("Size of 64 type was not 8 bytes in convert_be_64_to_host\n");
 		return 1;
 	}
-	uint64_t temp;
-	memcpy (&temp, data, sizeof(temp));
+	if (node->array_size == 0) {
+		VL_MSG_ERR("Array of be64 type was 0 in convert_be_64_to_host\n");
+		return 1;
+	}
 
-	uint64_t *result = data;
-	*result = le64toh(temp);
+	const char *pos = node->data;
+	for (unsigned int i = 0; i < node->array_size; i++) {
+		*((rrr_type_be *) pos) = be64toh(*((rrr_type_be *) pos));
+		pos += node->length;
+	}
+
 	return 0;
 }
 
-int convert_be_64_to_host(void *data, rrr_type_length length) {
-	if (length != sizeof(uint64_t)) {
-		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_be_64_to_host\n");
+int convert_blob_to_host(struct rrr_type_template *node) {
+	if (node->length == 0 || node->array_size == 0) {
+		VL_MSG_ERR("Length or array of blob type was 0 in convert_blob_to_host\n");
 		return 1;
 	}
-	uint64_t temp;
-	memcpy (&temp, data, sizeof(temp));
-
-	uint64_t *result = data;
-	*result = be64toh(temp);
-	return 0;
-}
-
-int convert_h_64_to_host(void *data, rrr_type_length length) {
-	if (length != sizeof(uint64_t)) {
-		VL_MSG_ERR("Size of 64 type was not 4 bytes in convert_h_64_to_host\n");
-		return 1;
-	}
-	uint64_t num = *((uint64_t*) data);
-	VL_DEBUG_MSG_4("convert_h_64_to_host dummy convert of 0x%" PRIx64 "\n", num);
-	return 0;
-}
-
-int convert_blob_to_host(void *target, rrr_type_length length) {
-	if (length == 0) {
-		VL_MSG_ERR("Length of blob type was 0 in convert_blob_to_host\n");
-		return 1;
-	}
-	VL_DEBUG_MSG_4("convert_blob_to_host dummy convert first byte is %02x\n", *((char*)target));
 	return 0;
 }
 
 // If there are types which begin with the same letters, the longest names must be first in the array
 static const struct rrr_type_definition type_templates[] = {
-		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	import_le,		convert_le_64_to_host,	RRR_TYPE_NAME_LE},
 		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	import_be,		convert_be_64_to_host,	RRR_TYPE_NAME_BE},
-		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		import_h,		convert_h_64_to_host,	RRR_TYPE_NAME_H},
+		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		import_h,		NULL,					RRR_TYPE_NAME_H},
+		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	import_le,		NULL,					RRR_TYPE_NAME_LE},
 		{RRR_TYPE_BLOB,		RRR_TYPE_MAX_BLOB,	import_blob,	convert_blob_to_host,	RRR_TYPE_NAME_BLOB},
-		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	import_ustr,	convert_h_64_to_host,	RRR_TYPE_NAME_USTR},
-		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	import_istr,	convert_h_64_to_host,	RRR_TYPE_NAME_ISTR},
+		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	import_ustr,	NULL,					RRR_TYPE_NAME_USTR},
+		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	import_istr,	NULL,					RRR_TYPE_NAME_ISTR},
 		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	import_sep,		convert_blob_to_host,	RRR_TYPE_NAME_SEP},
 		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,			NULL,					RRR_TYPE_NAME_ARRAY},
 		{0,					0,					NULL,			NULL,					NULL}
 };
 
-static const struct rrr_type_definition *__rrr_type_get_from_identifier (
+const struct rrr_type_definition *rrr_type_get_from_identifier (
 		ssize_t *parsed_bytes,
 		const char *start,
 		const char *end
@@ -492,7 +486,7 @@ static const struct rrr_type_definition *__rrr_type_get_from_identifier (
 	return NULL;
 }
 
-static const struct rrr_type_definition *__rrr_type_get_from_type (uint8_t type_in) {
+const struct rrr_type_definition *rrr_type_get_from_type (uint8_t type_in) {
 	for (unsigned int i = 0; i < sizeof(type_templates) / sizeof(type_templates[0]) - 1; i++) {
 		const struct rrr_type_definition *type = &type_templates[i];
 		if (type->type == type_in) {
@@ -517,7 +511,7 @@ static int __rrr_types_parse_identifier_and_size (
 	*length_return = 0;
 	*bytes_parsed_return = 0;
 
-	const struct rrr_type_definition *type = __rrr_type_get_from_identifier(&parsed_bytes, start, end);
+	const struct rrr_type_definition *type = rrr_type_get_from_identifier(&parsed_bytes, start, end);
 	if (type == NULL) {
 		VL_MSG_ERR("Unknown type identifier in type definition here --> '%s'\n", start);
 		ret = 1;
@@ -609,16 +603,17 @@ int rrr_type_parse_definition (
 
 		start += parsed_bytes;
 
-		if (*start != '\0') {
-			VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
-			ret = 1;
-			goto out;
-		}
-
 		if (type->type == RRR_TYPE_ARRAY) {
-			if (++i == list->length) {
+			if (*start == '\0') {
 				VL_MSG_ERR("Missing type definition after array\n");
+
 			}
+			if (*start != '@') {
+				VL_MSG_ERR("Expected @ followed by type after array definition\n");
+
+			}
+
+			start++;
 
 			array_size = length;
 			if (array_size > RRR_TYPE_MAX_ARRAY) {
@@ -636,7 +631,16 @@ int rrr_type_parse_definition (
 				VL_MSG_ERR("Error while parsing type identifier and size after array\n");
 				goto out;
 			}
+
+			start += parsed_bytes;
 		}
+
+		if (*start != '\0') {
+			VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
+			ret = 1;
+			goto out;
+		}
+
 
 		if (length > type->max_length) {
 			VL_MSG_ERR("Size argument '%i' in type definition '%s' in '%s' is too large, max is '%u'\n",
@@ -687,7 +691,7 @@ int rrr_type_parse_data_from_definition (
 		VL_BUG("BUG: Length was 0 in rrr_types_parse_data\n");
 	}
 
-	if (VL_DEBUGLEVEL_3) {
+	if (VL_DEBUGLEVEL_3 || 1) {
 		VL_DEBUG_MSG("rrr_types_parse_data input: 0x");
 		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
@@ -709,6 +713,10 @@ int rrr_type_parse_data_from_definition (
 
 		ssize_t parsed_bytes = 0;
 
+		if (node->data != NULL) {
+			VL_BUG("node->data was not NULL in rrr_types_parse_data\n");
+		}
+
 		if ((ret = node->definition->import(node, &parsed_bytes, pos, end)) != 0) {
 			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
 				goto out;
@@ -719,10 +727,6 @@ int rrr_type_parse_data_from_definition (
 
 		if (parsed_bytes == 0) {
 			VL_BUG("Parsed bytes was zero in rrr_types_parse_data\n");
-		}
-
-		if (node->data != NULL) {
-			VL_BUG("node->data was not NULL in rrr_types_parse_data\n");
 		}
 
 		pos += parsed_bytes;
@@ -786,7 +790,7 @@ struct rrr_type_template *rrr_type_template_collection_get_by_idx (
 	return NULL;
 }
 
-static ssize_t __rrr_type_get_packet_length (const struct rrr_type_template_collection *definition) {
+static ssize_t __rrr_type_get_packed_length (const struct rrr_type_template_collection *definition) {
 	ssize_t result = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_template);
 		result += node->array_size * node->length + sizeof(struct rrr_type_data_packed) - 1;
@@ -799,7 +803,7 @@ int rrr_type_new_message (
 		const struct rrr_type_template_collection *definition,
 		uint64_t time
 ) {
-	rrr_type_length total_data_length = __rrr_type_get_packet_length(definition);
+	rrr_type_length total_data_length = __rrr_type_get_packed_length(definition);
 
 	*final_message = NULL;
 
@@ -809,27 +813,51 @@ int rrr_type_new_message (
 		return 1;
 	}
 
-	message->type_head.endian_two = RRR_TYPE_ENDIAN_BYTES;
-	message->type_head.version = RRR_TYPE_VERSION;
+	message->type_head.version = htobe16(RRR_TYPE_VERSION);
 
 	char *pos = message->type_head.data_;
+	char tmp_data[sizeof(rrr_type_be)];
+
+	ssize_t written_bytes = sizeof(message->type_head) - 1;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_template);
 		struct rrr_type_data_packed head = {0};
-
-		head.type = node->definition->type;
-		head.length = node->length;
-		head.array_size = node->array_size;
 
 		if (node->data == NULL) {
 			VL_BUG("Data not set for node in __rrr_type_pack_message\n");
 		}
 
+		uint8_t type = node->definition->type;
+		const char *data = node->data;
+
+		if (type == RRR_TYPE_H) {
+			type = RRR_TYPE_BE;
+			*((rrr_type_be *) tmp_data) = htobe64(*((rrr_type_be *) node->data));
+			data = tmp_data;
+		}
+		else if (
+			type != RRR_TYPE_BLOB &&
+			type != RRR_TYPE_SEP
+		) {
+			VL_BUG("Illegal type %u in rrr_type_new_message\n", type);
+		}
+
+		head.type = type;
+		head.length = htobe32(node->length);
+		head.array_size = htobe32(node->array_size);
+
 		memcpy(pos, &head, sizeof(head) - 1);
 		pos += sizeof(head) - 1;
-		memcpy(pos, node->data, node->length * node->array_size);
+		memcpy(pos, data, node->length * node->array_size);
 		pos += node->length * node->array_size;
+
+		written_bytes += sizeof(head) - 1 + node->length * node->array_size;
 	RRR_LINKED_LIST_ITERATE_END(definition);
+
+	if (written_bytes != message->length) {
+		VL_BUG("Length mismatch after assembling message in rrr_type_new_message %li<>%" PRIu32 "\n",
+				written_bytes, message->length);
+	}
 
 	*final_message = (struct vl_message *) message;
 
@@ -848,17 +876,7 @@ int rrr_types_message_to_collection (
 
 	const struct vl_message_array *array = (struct vl_message_array *) message_orig;
 
-	int is_be = 0;
-
-	uint16_t version = (array->type_head.version);
-
-	if (RRR_TYPE_DEF_IS_BE(&array->type_head)) {
-		version = be16toh(version);
-		is_be = 1;
-	}
-	else {
-		version = le16toh(version);
-	}
+	uint16_t version = be16toh(array->type_head.version);
 
 	if (version != RRR_TYPE_VERSION) {
 		VL_MSG_ERR("Array message version mismatch in rrr_types_message_to_collection. Need V%i but got V%u.\n",
@@ -867,12 +885,12 @@ int rrr_types_message_to_collection (
 	}
 
 	const char *pos = array->type_head.data_;
-	const char *end = array->type_head.data_ + array->length - sizeof(array->type_head) - 1;
+	const char *end = array->type_head.data_ + array->length - sizeof (struct vl_message_type_head) + 1;
 
 	int i = 0;
 	while (pos < end) {
 		struct rrr_type_data_packed *data_packed = (struct rrr_type_data_packed *) pos;
-		pos += sizeof(struct rrr_type_data_packed);
+		pos += sizeof(struct rrr_type_data_packed) - 1;
 
 		if (pos > end) {
 			VL_MSG_ERR("Data type with index %i was too short in array\n", i);
@@ -880,26 +898,24 @@ int rrr_types_message_to_collection (
 		}
 
 		rrr_type type = data_packed->type;
-		rrr_type_length length = data_packed->length;
-		rrr_array_size array_size = data_packed->array_size;
+		rrr_type_length length = be32toh(data_packed->length);
+		rrr_array_size array_size = be32toh(data_packed->array_size);
 
-		if (is_be != 0) {
-			length = be32toh(length);
-			array_size = be32toh(array_size);
-		}
-		else {
-			length = le32toh(length);
-			array_size = le32toh(array_size);
-		}
-
-		if (pos + length > end) {
-			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length\n", type, i);
+		if (pos + length * array_size > end) {
+			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
+					type, i, length * array_size, end - pos);
 			goto out_free_data;
 		}
 
-		const struct rrr_type_definition *def = __rrr_type_get_from_type(type);
+		const struct rrr_type_definition *def = rrr_type_get_from_type(type);
 		if (def == NULL) {
 			VL_MSG_ERR("Unknown type %u in type index %i of array message\n", type, i);
+			goto out_free_data;
+		}
+
+		if (def->to_host == NULL) {
+			VL_MSG_ERR("Illegal type in array message %u/%s\n",
+					def->type, def->identifier);
 			goto out_free_data;
 		}
 
@@ -921,15 +937,15 @@ int rrr_types_message_to_collection (
 		template->array_size = array_size;
 		template->length = length;
 		template->definition = def;
-		memcpy (template->data, pos, template->length);
+		memcpy (template->data, pos, template->length * template->array_size);
 
-		pos += template->length;
 
-		if (template->definition->to_host(template->data, template->length) != 0) {
+		if (template->definition->to_host(template) != 0) {
 			VL_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
 			goto out_free_data;
 		}
 
+		pos += template->length * template->array_size;
 		i++;
 	}
 

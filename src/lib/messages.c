@@ -175,7 +175,7 @@ int new_empty_message (
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) result,
 			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
-			sizeof(*result),
+			sizeof(struct vl_message) + data_size - 1,
 			0
 	);
 

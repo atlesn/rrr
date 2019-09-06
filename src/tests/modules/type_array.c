@@ -94,8 +94,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct vl_message *message = (struct vl_message *) data;
 	struct rrr_type_template_collection collection = {0};
 
-	result->message = message;
-
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
 
 	if (!MSG_IS_ARRAY(message)) {
@@ -116,29 +114,34 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_collection;
 	}
 
-	rrr_type_length final_length = rrr_get_raw_length(collection);
+	rrr_type_length final_length = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
+		final_length += node->length;
+	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	struct rrr_type_template *types[9];
 
-	types[0] = rrr_type_template_collection_get_by_idx(collection, 0);
-	types[1] = rrr_type_template_collection_get_by_idx(collection, 1);
-	types[2] = rrr_type_template_collection_get_by_idx(collection, 2);
-	types[3] = rrr_type_template_collection_get_by_idx(collection, 3);
-	types[4] = rrr_type_template_collection_get_by_idx(collection, 4);
-	types[5] = rrr_type_template_collection_get_by_idx(collection, 5);
-	types[6] = rrr_type_template_collection_get_by_idx(collection, 6);
-	types[7] = rrr_type_template_collection_get_by_idx(collection, 7);
-	types[8] = rrr_type_template_collection_get_by_idx(collection, 8);
+	// After the array has been assembled and then disassembled again, all numbers
+	// become be64
+	types[0] = rrr_type_template_collection_get_by_idx(&collection, 0);
+	types[1] = rrr_type_template_collection_get_by_idx(&collection, 1);
+	types[2] = rrr_type_template_collection_get_by_idx(&collection, 2);
+	types[3] = rrr_type_template_collection_get_by_idx(&collection, 3);
+	types[4] = rrr_type_template_collection_get_by_idx(&collection, 4);
+	types[5] = rrr_type_template_collection_get_by_idx(&collection, 5);
+	types[6] = rrr_type_template_collection_get_by_idx(&collection, 6);
+	types[7] = rrr_type_template_collection_get_by_idx(&collection, 7);
+	types[8] = rrr_type_template_collection_get_by_idx(&collection, 8);
 
-	if (!RRR_TYPE_IS_64(types[0]) ||
-		!RRR_TYPE_IS_64(types[1]) ||
-		!RRR_TYPE_IS_64(types[2]) ||
-		!RRR_TYPE_IS_64(types[3]) ||
-		!RRR_TYPE_IS_64(types[4]) ||
-		!RRR_TYPE_IS_64(types[5]) ||
-		!RRR_TYPE_IS_64(types[6]) ||
-		!RRR_TYPE_IS_64(types[7]) ||
-		!RRR_TYPE_IS_BLOB(types[8])
+	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
+		!RRR_TYPE_IS_64(types[1]->definition->type) ||
+		!RRR_TYPE_IS_64(types[2]->definition->type) ||
+		!RRR_TYPE_IS_64(types[3]->definition->type) ||
+		!RRR_TYPE_IS_64(types[4]->definition->type) ||
+		!RRR_TYPE_IS_64(types[5]->definition->type) ||
+		!RRR_TYPE_IS_64(types[6]->definition->type) ||
+		!RRR_TYPE_IS_64(types[7]->definition->type) ||
+		!RRR_TYPE_IS_BLOB(types[8]->definition->type)
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -146,51 +149,29 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	struct test_final_data *final_data_raw = malloc(sizeof(*final_data_raw));
-	struct test_final_data *final_data_converted = malloc(sizeof(*final_data_converted));
 
-	if (sizeof(*final_data_raw) != final_length) {
-		TEST_MSG("Wrong size of type collection in test_type_array_callback\n");
+	final_data_raw->be4 = *((uint64_t*) (types[0]->data));
+	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
+	final_data_raw->be2 = *((uint64_t*) (types[2]->data));
+	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
+	final_data_raw->le4 = *((uint64_t*) (types[4]->data));
+	final_data_raw->le3 = *((uint64_t*) (types[5]->data));
+	final_data_raw->le2 = *((uint64_t*) (types[6]->data));
+	final_data_raw->le1 = *((uint64_t*) (types[7]->data));
+
+	rrr_size blob_a_length = types[8]->length;
+	rrr_size blob_b_length = types[8]->length;
+
+	const char *blob_a = types[8]->data;
+	const char *blob_b = types[8]->data + types[8]->length;
+
+	if (types[8]->array_size != 2) {
+		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
-	rrr_size final_data_raw_length;
-	if (rrr_types_extract_raw_from_collection_static((char*) final_data_raw, sizeof(*final_data_raw), &final_data_raw_length, collection) != 0) {
-		TEST_MSG("Error while extracting data from collection in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	ret |= rrr_types_extract_host_64(&final_data_converted->be4, collection, 0, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->be3, collection, 1, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->be2, collection, 2, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->be1, collection, 3, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->le4, collection, 4, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->le3, collection, 5, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->le2, collection, 6, 0);
-	ret |= rrr_types_extract_host_64(&final_data_converted->le1, collection, 7, 0);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error while extracting ints in test_type_array_callback\n");
-		goto out_free_final_data;
-	}
-
-	char *blob_a = NULL;
-	char *blob_b = NULL;
-
-	rrr_size blob_a_length = 0;
-	rrr_size blob_b_length = 0;
-
-	ret |= rrr_types_extract_blob(&blob_a, &blob_a_length, collection, 8, 0, 0);
-	ret |= rrr_types_extract_blob(&blob_b, &blob_b_length, collection, 8, 1, 0);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (blob_a_length != sizeof(final_data_converted->blob_a)) {
+	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
 		VL_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
@@ -208,12 +189,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
-	if (strcmp(blob_a, final_data_raw->blob_a) != 0 || strcmp(blob_b, final_data_raw->blob_b) != 0) {
-		VL_MSG_ERR("Returned blobs from different extractor functions did not match in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
@@ -226,12 +201,12 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		VL_DEBUG_MSG("\n");
 	}
 
-	if (be64toh(final_data_raw->be1) != le64toh(final_data_raw->le1) ||
-		be64toh(final_data_raw->be2) != le64toh(final_data_raw->le2) ||
-		be64toh(final_data_raw->be3) != le64toh(final_data_raw->le3) ||
-		be64toh(final_data_raw->be4) != le64toh(final_data_raw->le4)
+	if (final_data_raw->be1 != final_data_raw->le1 ||
+		final_data_raw->be2 != final_data_raw->le2 ||
+		final_data_raw->be3 != final_data_raw->le3 ||
+		final_data_raw->be4 != final_data_raw->le4
 	) {
-		TEST_MSG("Error with endianess conversion in collection in test_type_array_callback\n");
+		TEST_MSG("Mismatch of data, possible corruption in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -246,24 +221,10 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
-	if (be64toh(final_data_raw->be2) != 33 ||
-		le64toh(final_data_raw->le2) != 33
+	if (final_data_raw->be2 != 33 ||
+		final_data_raw->le2 != 33
 	) {
 		TEST_MSG("Received wrong data from collection in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (be64toh(final_data_raw->be4) != final_data_converted->be4 ||
-		be64toh(final_data_raw->be3) != final_data_converted->be3 ||
-		be64toh(final_data_raw->be2) != final_data_converted->be2 ||
-		be64toh(final_data_raw->be1) != final_data_converted->be1 ||
-		le64toh(final_data_raw->le4) != final_data_converted->le4 ||
-		le64toh(final_data_raw->le3) != final_data_converted->le3 ||
-		le64toh(final_data_raw->le2) != final_data_converted->le2 ||
-		le64toh(final_data_raw->le1) != final_data_converted->le1
-	) {
-		TEST_MSG("Retrieved ints from different extractor functions did not match\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -271,13 +232,10 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->result = 2;
 
 	out_free_final_data:
-	RRR_FREE_IF_NOT_NULL(blob_a);
-	RRR_FREE_IF_NOT_NULL(blob_b);
 	RRR_FREE_IF_NOT_NULL(final_data_raw);
-	RRR_FREE_IF_NOT_NULL(final_data_converted);
 
 	out_free_collection:
-	rrr_type_data_collection_destroy(collection);
+	rrr_type_template_collection_clear(&collection);
 
 	out:
 	if (ret != 0) {

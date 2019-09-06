@@ -83,12 +83,8 @@ struct vl_message {
 
 struct vl_message_type_head {
 	uint16_t version;
-	union {
-		uint16_t endian_two;
-		uint8_t endian_one;
-	};
 	char data_[1];
-};
+} __attribute__((packed));
 
 struct vl_message_array {
 	RRR_SOCKET_MSG_HEAD;

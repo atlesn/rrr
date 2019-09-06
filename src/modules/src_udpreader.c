@@ -121,7 +121,7 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 
 	// Parse expected input data
 	if (rrr_type_parse_definition (&data->definitions, config, "udpr_input_types") != 0) {
-		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
+ 		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
 		return 1;
 	}
 
@@ -142,6 +142,7 @@ void free_message(void *msg) {
 
 int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
 	struct udpreader_data *data = arg;
+	struct vl_message *message = NULL;
 	int ret = 0;
 
 	struct rrr_type_template_collection definitions;
@@ -163,8 +164,6 @@ int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
 		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
 	}
 	free (entry);
-
-	struct vl_message *message = NULL;
 
 	if ((ret = rrr_type_new_message(&message, &definitions, time_get_64())) != 0) {
 		VL_MSG_ERR("Could not create message in udpreader instance %s read_data_callback\n",
@@ -203,8 +202,16 @@ int read_data(struct udpreader_data *data) {
 		NULL
 	);
 
+	if (ret != 0) {
+		VL_MSG_ERR("Error from ip_receive_packets in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
+
 	struct fifo_callback_args callback_data = {NULL, data, 0};
 	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Error from buffer in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	}
 
 	ret = (ret != 0 ? 1 : 0);
 
@@ -260,7 +267,7 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 	data->ip.port = data->listen_port;
 	if (ip_network_start_udp_ipv4(&data->ip) != 0) {
 		VL_MSG_ERR("Could not initialize network in udpreader\n");
-		pthread_exit(0);
+		goto out_message;
 	}
 	VL_DEBUG_MSG_2("udpreader: listening on port %d\n", data->listen_port);
 

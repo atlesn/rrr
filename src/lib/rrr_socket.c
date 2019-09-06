@@ -348,12 +348,12 @@ int rrr_socket_read_message (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		VL_MSG_ERR("Poll error in rrr_mqtt_socket_read_message\n");
+		VL_MSG_ERR("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		VL_MSG_ERR("Poll error in rrr_mqtt_socket_read_message\n");
+		VL_MSG_ERR("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -363,7 +363,7 @@ int rrr_socket_read_message (
 	}
 
 	if (ioctl (fd, FIONREAD, &bytes_int) != 0) {
-		VL_MSG_ERR("Error from ioctl in rrr_mqtt_socket_read_message: %s\n", strerror(errno));
+		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -395,14 +395,14 @@ int rrr_socket_read_message (
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			goto out;
 		}
-		VL_MSG_ERR("Error from read in rrr_mqtt_socket_read_message: %s\n", strerror(errno));
+		VL_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
 	if (bytes == 0) {
-		VL_MSG_ERR("Bytes was 0 after read in rrr_mqtt_socket_read_message, despite polling first\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
+//		VL_MSG_ERR("Bytes was 0 after read in rrr_socket_read_message, despite polling first\n");
+//		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
@@ -431,7 +431,7 @@ int rrr_socket_read_message (
 		else {
 			read_session->rx_buf_ptr = malloc((bytes > read_step_max_size ? bytes : read_step_max_size) + buffer_front_reserved_size);
 			if (read_session->rx_buf_ptr == NULL) {
-				VL_MSG_ERR("Could not allocate memory in rrr_mqtt_socket_read_message\n");
+				VL_MSG_ERR("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -454,7 +454,7 @@ int rrr_socket_read_message (
 		ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 		char *new_buf = realloc(read_session->rx_buf_ptr, new_size + buffer_front_reserved_size);
 		if (new_buf == NULL) {
-			VL_MSG_ERR("Could not re-allocate memory in rrr_mqtt_socket_read_message\n");
+			VL_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -483,7 +483,7 @@ int rrr_socket_read_message (
 		}
 
 		if (read_session->target_size == 0) {
-			VL_BUG("target_size was still zero after get_target_size in rrr_mqtt_socket_read_message\n");
+			VL_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
 		}
 	}
 
@@ -501,7 +501,7 @@ int rrr_socket_read_message (
 
 			read_session->rx_overshoot = malloc(buffer_front_reserved_size + read_session->rx_overshoot_size);
 			if (read_session->rx_overshoot == NULL) {
-				VL_MSG_ERR("Could not allocate memory for overshoot in rrr_mqtt_socket_read_message\n");
+				VL_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
