@@ -38,10 +38,7 @@ struct vl_message *message_new_reading (
 ) {
 	struct vl_message *res;
 
-	char buf[64];
-	sprintf (buf, "%" PRIu64, reading_millis);
-
-	if (new_message (
+	if (message_new_empty (
 			&res,
 			MSG_TYPE_MSG,
 			0,
@@ -49,8 +46,7 @@ struct vl_message *message_new_reading (
 			time,
 			time,
 			reading_millis,
-			buf,
-			strlen(buf)
+			0
 	) != 0) {
 		return NULL;
 	}
@@ -58,36 +54,13 @@ struct vl_message *message_new_reading (
 	return res;
 }
 
-struct vl_message *message_new_info (
-		vl_u64 time,
-		const char *msg_terminated
-) {
-	struct vl_message *res;
-
-	if (new_message (
-			&res,
-			MSG_TYPE_MSG,
-			0,
-			MSG_CLASS_INFO,
-			time,
-			time,
-			0,
-			msg_terminated,
-			strlen(msg_terminated) + 1
-	) != 0) {
-		return NULL;
-	}
-
-	return res;
-}
-
-struct vl_message_array *message_new_array (
+struct vl_message *message_new_array (
 	vl_u64 time,
 	vl_u32 length
 ) {
-	struct vl_message_array *res;
+	struct vl_message *res;
 
-	if (new_empty_message (
+	if (message_new_empty (
 			(struct vl_message **) &res,
 			MSG_TYPE_MSG,
 			0,
@@ -95,65 +68,15 @@ struct vl_message_array *message_new_array (
 			time,
 			time,
 			0,
-			length + sizeof(res->type_head) - 1
+			length
 	) != 0) {
 		return NULL;
 	}
 
 	return res;
 }
-/*
-int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
-	unsigned long int search_length = strlen(search);
 
-	if (search_length > size) {
-		VL_MSG_ERR ("Message was to short\n");
-		return 1;
-	}
-	if (strncmp(str, search, search_length) != 0) {
-		return 1;
-	}
-
-	*result = str + strlen(search) + 1;
-
-	return 0;
-}
-
-int find_number(const char *str, unsigned long int size, const char **end, vl_u64 *result) {
-	*end = memchr(str, ':', size);
-	if (*end == NULL) {
-		VL_MSG_ERR ("Missing delimeter in message while searching for number\n");
-		return 1;
-	}
-
-	if (*end == str) {
-		VL_MSG_ERR ("Missing number argument in message\n");
-		return 1;
-	}
-
-	char tmp[MSG_TMP_SIZE];
-	if (*end - str + 1 > MSG_TMP_SIZE) {
-		VL_MSG_ERR ("Too long argument while searching for number in message\n");
-		return 1;
-	}
-
-	strncpy(tmp, str, *end-str);
-	tmp[*end-str] = '\0';
-
-	printf ("Orig: '%s', Tmp: '%s'\n", str, tmp);
-
-	char *endptr;
-	*result = strtoull(tmp, &endptr, 10);
-	if (*endptr != '\0') {
-		VL_MSG_ERR ("Invalid characters in number argument of message\n");
-		return 1;
-	}
-
-	*end = *end + 1;
-	return 0;
-}
-*/
-int new_empty_message (
+int message_new_empty (
 		struct vl_message **final_result,
 		vl_u16 type,
 		vl_u16 type_flags,
@@ -203,7 +126,7 @@ int new_message (
 		const char *data,
 		vl_u32 data_size
 ) {
-	if (new_empty_message (
+	if (message_new_empty (
 			final_result,
 			type,
 			type_flags,
@@ -220,167 +143,6 @@ int new_message (
 
 	return 0;
 }
-/*
-int parse_message(const char *msg, unsigned long int size, struct vl_message *result) {
-	const char *pos = msg;
-	const char *end = msg + size;
-
-	VL_DEBUG_MSG_3("Parse message: %s\n", msg);
-
-	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_MSG;
-	}
-	else if (find_string(pos, end - pos, MSG_TYPE_ACK_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_ACK;
-	}
-	else if (find_string(pos, end - pos, MSG_TYPE_TAG_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_TAG;
-	}
-	else {
-		char buf[16];
-		snprintf(buf, 16, "%s", msg);
-		VL_MSG_ERR ("Unknown message type '%s' of size %lu\n", buf, size);
-		return 1;
-	}
-
-	// {AVG|MAX|MIN|POINT|INFO|ARRAY}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string (pos, end - pos, MSG_CLASS_AVG_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_AVG;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_MAX_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_MAX;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_MIN_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_MIN;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_POINT_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_POINT;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_INFO_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_INFO;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_ARRAY_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_ARRAY;
-	}
-	else {
-		VL_MSG_ERR ("Unknown message class\n");
-		return 1;
-	}
-
-	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	vl_native_64 tmp;
-	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
-	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
-		VL_MSG_ERR ("Could not parse CRC32 of message '%s'\n", msg);
-		return 1;
-	}
-	result->crc32 = tmp;
-
-	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
-	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
-		VL_MSG_ERR ("Could not parse length of message '%s'\n", msg);
-		return 1;
-	}
-	result->length = tmp;
-
-	// {TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
-	if (find_number(pos, end-pos, &pos, &result->timestamp_from) != 0) {
-		VL_MSG_ERR ("Could not parse timestamp from of message '%s'\n", msg);
-		return 1;
-	}
-
-	// {TIMESTAMP_TO}:{DATA}
-	VL_DEBUG_MSG_3("Parse message pos: %s\n", pos);
-	if (find_number(pos, end-pos, &pos, &result->timestamp_to) != 0) {
-		VL_MSG_ERR ("Could not parse timestamp to of message '%s'\n", msg);
-		return 1;
-	}
-
-	// {DATA}
-	if (result->length > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message data size was too long\n");
-		return 1;
-	}
-	// Ignore this, just accept what's there if it's enough
-	if (result->length != data_length) {
-		VL_MSG_ERR ("Message reported data length did not match actual length\n");
-		return 1;
-	}
-
-	memcpy(result->data, pos, result->length);
-
-	return 0;
-}
-
-int message_to_string (
-	struct vl_message *message,
-	char *target,
-	unsigned long int target_size
-) {
-	if (target_size < MSG_STRING_MAX_LENGTH) {
-		VL_MSG_ERR ("Message target size was too small when converting to string\n");
-		return 1;
-	}
-
-	const char *type;
-	switch (message->type) {
-	case MSG_TYPE_MSG:
-		type = MSG_TYPE_MSG_STRING;
-		break;
-	case MSG_TYPE_ACK:
-		type = MSG_TYPE_ACK_STRING;
-		break;
-	case MSG_TYPE_TAG:
-		type = MSG_TYPE_TAG_STRING;
-		break;
-	default:
-		VL_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
-		return 1;
-	}
-
-	const char *class;
-	switch (message->class) {
-	case MSG_CLASS_POINT:
-		class = MSG_CLASS_POINT_STRING;
-		break;
-	case MSG_CLASS_AVG:
-		class = MSG_CLASS_AVG_STRING;
-		break;
-	case MSG_CLASS_MAX:
-		class = MSG_CLASS_MAX_STRING;
-		break;
-	case MSG_CLASS_MIN:
-		class = MSG_CLASS_MIN_STRING;
-		break;
-	case MSG_CLASS_INFO:
-		class = MSG_CLASS_INFO_STRING;
-		break;
-	case MSG_CLASS_ARRAY:
-		class = MSG_CLASS_ARRAY_STRING;
-		break;
-	default:
-		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
-		return 1;
-	}
-
-	sprintf(target, "%s:%s:%" PRIu32 ":%" PRIu32 ":%" PRIu64 ":%" PRIu64 ":",
-			type, class,
-			message->crc32,
-			message->length,
-			message->timestamp_from,
-			message->timestamp_to
-	);
-
-	int length = strlen(target);
-	memcpy(target + length, message->data, message->length);
-	target[length + message->length + 1] = '\0';
-
-	return 0;
-}
-*/
 
 void flip_endianess_64(vl_u64 *value) {
 	vl_u64 result = 0;
@@ -411,7 +173,8 @@ void flip_endianess_32(vl_u32 *value) {
 void message_to_host (struct vl_message *message) {
 	message->type = be16toh(message->type);
 	message->type_flags = be16toh(message->type_flags);
-	message->class = be32toh(message->class);
+	message->class = be16toh(message->class);
+	message->version = be16toh(message->version);
 	message->timestamp_from = be64toh(message->timestamp_from);
 	message->timestamp_to = be64toh(message->timestamp_to);
 	message->data_numeric = be64toh(message->data_numeric);
@@ -421,7 +184,8 @@ void message_to_host (struct vl_message *message) {
 void message_prepare_for_network (struct vl_message *message) {
 	message->type = htobe16(message->type);
 	message->type_flags = htobe16(message->type);
-	message->class = htobe32(message->class);
+	message->class = htobe16(message->class);
+	message->version = htobe16(message->version);
 	message->timestamp_from = htobe64(message->timestamp_from);
 	message->timestamp_to = htobe64(message->timestamp_to);
 	message->data_numeric = htobe64(message->data_numeric);
@@ -443,7 +207,7 @@ void message_prepare_for_network (struct vl_message *message) {
 */
 }
 
-struct vl_message *message_duplicate(struct vl_message *message) {
+struct vl_message *message_duplicate (const struct vl_message *message) {
 	struct vl_message *ret = malloc(sizeof(*ret) + message->length - 1);
 	if (ret == NULL) {
 		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
@@ -453,11 +217,26 @@ struct vl_message *message_duplicate(struct vl_message *message) {
 	return ret;
 }
 
+struct vl_message *message_duplicate_no_data(struct vl_message *message) {
+	struct vl_message *ret = malloc(sizeof(*ret) - 1);
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		return NULL;
+	}
+	memcpy(ret, message, sizeof(*ret) - 1);
+	ret->length = 0;
+	ret->network_size = sizeof(*ret) - 1;
+	return ret;
+}
+
 int message_validate (const struct vl_message *message){
 	int ret = 0;
 
-	if (message->msg_size < sizeof(*message) - 1) {
-		VL_MSG_ERR("Received a message in message_validate with invalid header size field (%u)\n", message->msg_size);
+	if (message->msg_size < sizeof(*message) - 1 ||
+			sizeof(*message) + message->length - 1 != message->msg_size
+	) {
+		VL_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
+				message->msg_size, message->length);
 		ret = 1;
 	}
 	if (!MSG_CLASS_OK(message)) {

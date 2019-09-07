@@ -51,7 +51,6 @@ struct rrr_socket_read_session {
 	ssize_t target_size;
 
 	char *rx_buf_ptr;
-	char *rx_buf_start;
 	ssize_t rx_buf_size;
 	ssize_t rx_buf_wpos;
 
@@ -85,7 +84,6 @@ int rrr_socket_read_message (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		ssize_t buffer_front_reserved_size,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),

@@ -411,7 +411,7 @@ void __rrr_py_start_onetime_thread_rw_child (PyObject *function, struct python3_
 
 	int max_tries = 1000000;
 	while (did_receive == 0 && rrr_py_fork_running && --max_tries != 0) {
-		ret = fork->recv(&message, socket, 0);
+		ret = fork->recv(&message, socket);
 		if (ret != 0) {
 			VL_MSG_ERR("Error from python3 socket receive function in child\n");
 			ret = 1;
@@ -540,7 +540,7 @@ void __rrr_py_start_persistent_thread_rw_child (PyObject *function, struct pytho
 	while (rrr_py_fork_running) {
 		int max = 100;
 		while (rrr_py_fork_running && (--max != 0)) {
-			ret = fork->recv(&message, rrr_socket, 10);
+			ret = fork->recv(&message, rrr_socket);
 			if (ret != 0) {
 				VL_MSG_ERR("Error from socket receive function in python3 persistent rw child process\n");
 				goto out;
@@ -594,7 +594,7 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 
 		if (--ack_check_interval == 0) {
 			struct rrr_socket_msg *result = NULL;
-			ret = rrr_python3_socket_recv(&result, socket, 0);
+			ret = rrr_python3_socket_recv(&result, socket);
 			if (ret != 0) {
 				VL_MSG_ERR("Error while checking for ACK packets in __rrr_py_start_persistent_thread_ro_child pid %i\n",
 						getpid());
@@ -927,7 +927,7 @@ int rrr_py_start_onetime_rw_thread (
 
 	int max_attempts = 1000000;
 	while (--max_attempts != 0 && message == NULL) {
-		ret = fork->recv(&message, fork->socket_main, 10);
+		ret = fork->recv(&message, fork->socket_main);
 		if (ret != 0) {
 			VL_MSG_ERR("Could not receive message from read-write thread with function %s from module %s\n",
 					function_name, module_name);
@@ -963,9 +963,6 @@ int rrr_py_persistent_receive_message (
 		void *callback_arg
 ) {
 	int ret = 0;
-
-	VL_DEBUG_MSG_3("rrr_py_persistent_receive_message getting message\n");
-
 	struct rrr_socket_msg *message = NULL;
 
 	int counter = 0;
@@ -975,7 +972,7 @@ int rrr_py_persistent_receive_message (
 			ret = 1;
 			break;
 		}
-		ret = fork->recv(&message, fork->socket_main, 10);
+		ret = fork->recv(&message, fork->socket_main);
 		if (ret != 0) {
 			VL_MSG_ERR("Error while receiving message from python3 child\n");
 			ret = 1;
@@ -985,6 +982,8 @@ int rrr_py_persistent_receive_message (
 		if (message == NULL) {
 			break;
 		}
+
+		VL_DEBUG_MSG_3("rrr_py_persistent_receive_message got a message\n");
 
 		// If ret == 0, callback has taken control of memory
 		// If ret != 0, there is an error and we must free memory

@@ -53,7 +53,12 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct dummy_data *data = thread_data->private_data;
 	VL_DEBUG_MSG_2("dummy: writing data from inject function\n");
-	fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+
+	fifo_buffer_write(&data->buffer, message->message, message->data_length);
+	message->message = NULL;
+
+	ip_buffer_entry_destroy(message);
+
 	return 0;
 }
 

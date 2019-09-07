@@ -336,7 +336,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	if (publish->payload != NULL) {
 		RRR_MQTT_P_LOCK(publish->payload);
 	 	if (publish->payload->length > 0) {
-	 			if (new_message (
+	 			if (message_new_empty (
 	 					&message,
 	 					MSG_TYPE_MSG,
 						0,
@@ -344,7 +344,6 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 						publish->create_time,
 						publish->create_time,
 						0,
-						publish->payload->payload_start,
 						publish->payload->length
 				) != 0) {
 	 				VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (A)\n",
@@ -352,6 +351,9 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	 				ret = 1;
 	 				goto unlock_payload;
 	 			}
+
+	 			memcpy(message->data_, publish->payload->payload_start, publish->payload->length);
+
 	 			did_init = 1;
 	 	}
 
@@ -363,7 +365,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	}
 
  	if (did_init == 0) {
-		if (new_message (
+		if (message_new_empty (
 				&message,
 				MSG_TYPE_MSG,
 				0,
@@ -371,7 +373,6 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 				publish->create_time,
 				publish->create_time,
 				0,
-				"",
 				0
 		) != 0) {
 			VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (B)\n",

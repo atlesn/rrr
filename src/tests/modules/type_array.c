@@ -85,11 +85,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->message = NULL;
 	result->result = 1;
 
-	if (size > sizeof(struct vl_message)) {
-		TEST_MSG("Size of message_1 in test_type_array_callback exceeds struct vl_message size\n");
-		ret = 1;
-		goto out;
-	}
+	(void)(size);
 
 	struct vl_message *message = (struct vl_message *) data;
 	struct rrr_type_template_collection collection = {0};
@@ -189,6 +185,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
+	strcpy(final_data_raw->blob_a, blob_a);
+	strcpy(final_data_raw->blob_b, blob_b);
+
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
@@ -287,6 +286,9 @@ int test_type_array (
 	*result_message_1 = NULL;
 	*result_message_2 = NULL;
 
+	struct ip_buffer_entry *entry = NULL;
+	struct test_data *data = NULL;
+
 	struct instance_metadata *input = instance_find(instances, input_name);
 	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
 	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
@@ -311,11 +313,9 @@ int test_type_array (
 	}
 
 	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not a vl_message)
-	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry) + sizeof(struct test_data) - 1);
-	memset(entry, '\0', sizeof(*entry));
 
-	struct test_data *data = (struct test_data *) entry->data;
-	entry->data_length = sizeof(*data);
+	data = malloc(sizeof(*data));
+	memset(data, '\0', sizeof(*data));
 
 	data->be4[0] = 1;
 	data->be4[2] = 2;
@@ -340,13 +340,20 @@ int test_type_array (
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	ret = inject(input->thread_data, entry);
-	if (ret != 0) {
-		TEST_MSG("Error from inject function in test_type_array\n");
-		free(entry);
+	if (ip_buffer_entry_new(&entry, sizeof(struct test_data), NULL, 0, data) != 0) {
+		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
 		ret = 1;
 		goto out;
 	}
+	data = NULL;
+
+	ret = inject(input->thread_data, entry);
+	if (ret != 0) {
+		TEST_MSG("Error from inject function in test_type_array\n");
+		ret = 1;
+		goto out;
+	}
+	entry = NULL;
 
 	// Poll from first output
 	struct test_result test_result_1 = {1, NULL};
@@ -364,6 +371,10 @@ int test_type_array (
 	ret |= (test_result_1.result != 2) | (test_result_2.result != 2);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(data);
+	if (entry != NULL) {
+		ip_buffer_entry_destroy(entry);
+	}
 	return ret;
 }
 
@@ -496,20 +507,28 @@ int test_type_array_mysql_and_network (
 
 	struct test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-
-	struct ip_buffer_entry_ *entry = NULL;
+	struct vl_message *new_message = NULL;
+	struct ip_buffer_entry *entry = NULL;
+	uint64_t expected_ack_timestamp = message->timestamp_from;
 
 	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
 
-	VL_ASSERT(sizeof(*message) < sizeof(*entry),vl_message_smaller_than_ip_buffer_entry);
+	new_message = message_duplicate(message);
+	if (new_message == NULL) {
+		VL_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
+		ret = 1;
+		goto out;
+	}
 
-	entry = malloc(sizeof(*entry) + message->length - 1);
-	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, message, MSG_TOTAL_LENGTH(message)); // Note: Message is smaller than entry
-
-	uint64_t expected_ack_timestamp = entry->message.timestamp_from;
+	if (ip_buffer_entry_new(&entry, message->length, NULL, 0, new_message) != 0) {
+		TEST_MSG("Could not allocate ip buffer entry in test_type_array_mysql_and_network\n");
+		ret = 1;
+		goto out;
+	}
+	new_message = NULL;
 
 	struct instance_metadata *input_buffer = instance_find(instances, input_buffer_name);
 	struct instance_metadata *tag_buffer = instance_find(instances, tag_buffer_name);
@@ -585,6 +604,7 @@ int test_type_array_mysql_and_network (
 	}
 
 	out:
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

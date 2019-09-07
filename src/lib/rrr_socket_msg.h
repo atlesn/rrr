@@ -104,7 +104,8 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 void rrr_socket_msg_head_to_host (struct rrr_socket_msg *message);
 int rrr_socket_msg_get_packet_target_size(struct rrr_socket_read_session *read_session, void *arg);
 int rrr_socket_msg_checksum_check (
-	struct rrr_socket_msg *message
+	struct rrr_socket_msg *message,
+	ssize_t data_size
 );
 int rrr_socket_msg_head_validate (struct rrr_socket_msg *message);
 

@@ -691,7 +691,7 @@ int rrr_type_parse_data_from_definition (
 		VL_BUG("BUG: Length was 0 in rrr_types_parse_data\n");
 	}
 
-	if (VL_DEBUGLEVEL_3 || 1) {
+	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("rrr_types_parse_data input: 0x");
 		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
@@ -807,18 +807,18 @@ int rrr_type_new_message (
 
 	*final_message = NULL;
 
-	struct vl_message_array *message = message_new_array(time, total_data_length);
+	struct vl_message *message = message_new_array(time, total_data_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
 		return 1;
 	}
 
-	message->type_head.version = htobe16(RRR_TYPE_VERSION);
+	message->version = RRR_TYPE_VERSION;
 
-	char *pos = message->type_head.data_;
+	char *pos = message->data_;
 	char tmp_data[sizeof(rrr_type_be)];
 
-	ssize_t written_bytes = sizeof(message->type_head) - 1;
+	ssize_t written_bytes = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_template);
 		struct rrr_type_data_packed head = {0};
@@ -859,6 +859,18 @@ int rrr_type_new_message (
 				written_bytes, message->length);
 	}
 
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG("rrr_type_new_message output (data of message only): 0x");
+		for (rrr_type_length i = 0; i < message->length; i++) {
+			char c = message->data_[i];
+			if (c < 0x10) {
+				VL_DEBUG_MSG("0");
+			}
+			VL_DEBUG_MSG("%x", c);
+		}
+		VL_DEBUG_MSG("\n");
+	}
+
 	*final_message = (struct vl_message *) message;
 
 	return 0;
@@ -874,18 +886,30 @@ int rrr_types_message_to_collection (
 		VL_BUG("Message was not array in rrr_types_message_to_collection\n");
 	}
 
-	const struct vl_message_array *array = (struct vl_message_array *) message_orig;
+	const struct vl_message *array = (struct vl_message *) message_orig;
 
-	uint16_t version = be16toh(array->type_head.version);
+	uint16_t version = array->version;
 
 	if (version != RRR_TYPE_VERSION) {
 		VL_MSG_ERR("Array message version mismatch in rrr_types_message_to_collection. Need V%i but got V%u.\n",
-				RRR_TYPE_VERSION, array->type_head.version);
+				RRR_TYPE_VERSION, array->version);
 		goto out_free_data;
 	}
 
-	const char *pos = array->type_head.data_;
-	const char *end = array->type_head.data_ + array->length - sizeof (struct vl_message_type_head) + 1;
+	const char *pos = array->data_;
+	const char *end = array->data_ + array->length;
+
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG("rrr_types_message_to_collection input (data of message only): 0x");
+		for (rrr_type_length i = 0; i < array->length; i++) {
+			char c = array->data_[i];
+			if (c < 0x10) {
+				VL_DEBUG_MSG("0");
+			}
+			VL_DEBUG_MSG("%x", c);
+		}
+		VL_DEBUG_MSG("\n");
+	}
 
 	int i = 0;
 	while (pos < end) {
@@ -928,24 +952,24 @@ int rrr_types_message_to_collection (
 
 		RRR_LINKED_LIST_APPEND(target,template);
 
-		template->data = malloc(length);
+		template->data = malloc(length * array_size);
 		if (template->data == NULL) {
 			VL_MSG_ERR("Could no allocate memory for template data in rrr_types_message_to_collection\n");
 			goto out_free_data;
 		}
 
+		memcpy (template->data, pos, length * array_size);
+
 		template->array_size = array_size;
 		template->length = length;
 		template->definition = def;
-		memcpy (template->data, pos, template->length * template->array_size);
-
 
 		if (template->definition->to_host(template) != 0) {
 			VL_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
 			goto out_free_data;
 		}
 
-		pos += template->length * template->array_size;
+		pos += length * array_size;
 		i++;
 	}
 

@@ -46,6 +46,110 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "crc32.h"
 
+void ip_buffer_entry_destroy (
+		struct ip_buffer_entry *entry
+) {
+	RRR_FREE_IF_NOT_NULL(entry->message);
+	free(entry);
+}
+
+void ip_buffer_entry_destroy_void (
+		void *entry
+) {
+	ip_buffer_entry_destroy(entry);
+}
+
+void ip_buffer_entry_set_message (
+		struct ip_buffer_entry *entry,
+		void *message,
+		ssize_t data_length
+) {
+	entry->message = message;
+	entry->data_length = data_length;
+}
+
+int ip_buffer_entry_new (
+		struct ip_buffer_entry **result,
+		ssize_t data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		void *message
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	if (entry == NULL) {
+		VL_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (addr == NULL) {
+		memset(&entry->addr, '\0', sizeof(entry->addr));
+	}
+	else {
+		entry->addr = *addr;
+	}
+
+	if (addr_len > sizeof(entry->addr)) {
+		VL_BUG("addr_len too long in ip_buffer_entry_new\n");
+	}
+	entry->addr_len = addr_len;
+
+	entry->send_time = 0;
+	entry->message = message;
+	entry->data_length = data_length;
+
+	*result = entry;
+
+	out:
+	return ret;
+}
+
+int ip_buffer_entry_new_with_empty_message (
+		struct ip_buffer_entry **result,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	struct ip_buffer_entry *entry = NULL;
+	struct vl_message *message = NULL;
+
+	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
+
+	message = malloc(message_size);
+	if (message == NULL) {
+		VL_MSG_ERR("Could not allocate message in ip_buffer_entry_new_with_message\n");
+		goto out;
+	}
+
+	memset(message, '\0', message_size);
+
+	if (ip_buffer_entry_new (
+			&entry,
+			message_size,
+			addr,
+			addr_len,
+			message
+	) != 0) {
+		VL_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
+		ret = 1;
+		goto out;
+	}
+
+	message = NULL;
+
+	*result = entry;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
 int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
 	stats->name = name;
@@ -101,33 +205,9 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 	pthread_mutex_unlock(&stats->lock);
 	return ret;
 }
-/*
-struct ip_buffer_entry_ *ip_buffer_entry_new (
-		struct sockaddr *sockaddr,
-		socklen_t addr_len,
-		const char *data,
-		ssize_t data_len
-) {
 
-	ssize_t size = sizeof(struct ip_buffer_entry_) + data_len - 1;
-
-	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry));
-	if (entry == NULL) {
-		VL_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
-	}
-
-	memset(entry, '\0', sizeof(struct ip_buffer_entry_) - 1); // Only zero the head
-
-	entry->addr_len = addr_len;
-	entry->addr = *sockaddr;
-	entry->data_length = data_len;
-	entry->time = time_get_64();
-
-	return entry;
-}
-*/
 struct receive_packets_callback_data {
-	int (*callback)(struct ip_buffer_entry_ *entry, void *arg);
+	int (*callback)(struct ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
 	struct ip_stats *stats;
 };
@@ -144,11 +224,20 @@ static int __ip_receive_packets_callback (
 		VL_BUG("Read complete was 0 in __ip_receive_packets_callback\n");
 	}
 
-	struct ip_buffer_entry_ *entry = (struct ip_buffer_entry_ *) read_session->rx_buf_ptr;
+	struct ip_buffer_entry *entry = NULL;
 
-	entry->addr = read_session->src_addr;
-	entry->addr_len = read_session->src_addr_len;
-	entry->data_length = read_session->target_size;
+	if (ip_buffer_entry_new (
+			&entry,
+			read_session->target_size,
+			&read_session->src_addr,
+			read_session->src_addr_len,
+			read_session->rx_buf_ptr
+	) != 0) {
+		VL_MSG_ERR("Could not allocate ip buffer entry in __ip_receive_packets_callback\b");
+		ret = 1;
+		goto out;
+	}
+
 	read_session->rx_buf_ptr = NULL;
 
 	ret = callback_data->callback(entry, callback_data->callback_arg);
@@ -181,7 +270,7 @@ static int __ip_receive_packets_callback (
 int ip_receive_packets (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
-		int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {
@@ -198,7 +287,6 @@ int ip_receive_packets (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			sizeof(struct ip_buffer_entry_) - sizeof(struct vl_message),
 			rrr_socket_msg_get_packet_target_size,
 			NULL,
 			__ip_receive_packets_callback,
@@ -223,17 +311,18 @@ int ip_receive_packets (
 }
 
 struct ip_receive_messages_callback_data {
-	int (*callback)(struct ip_buffer_entry_ *entry, void *arg);
+	int (*callback)(struct ip_buffer_entry *entry, void *arg);
 	void *arg;
 #ifdef VL_WITH_OPENSSL
 	struct module_crypt_data *crypt_data;
 #endif
 };
 
-static int __ip_receive_messages_callback(struct ip_buffer_entry_ *entry, void *arg) {
+static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
 	int ret = 0;
 
 	struct ip_receive_messages_callback_data *data = arg;
+	struct vl_message *message = entry->message;
 
 #ifdef VL_WITH_OPENSSL
 	struct module_crypt_data *crypt_data = data->crypt_data;
@@ -246,39 +335,56 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry_ *entry, void *
 	}
 
 	// Header CRC32 is checked when reading the data from remote and getting size
+	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) entry->message);
 
-	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) &entry->message);
+	if (message->network_size != entry->data_length) {
+		VL_MSG_ERR("Message network size was not equal to ip buffer entry size in __ip_receive_messages_callback (%" PRIu32 " vs %li)\n",
+				message->network_size, entry->data_length);
+		goto out;
+	}
 
 #ifdef VL_WITH_OPENSSL
 	if (crypt_data->crypt != NULL) {
-		unsigned int input_length = count;
+		ssize_t new_size = sizeof(struct vl_message) - 1 + entry->data_length + 1024;
+		struct vl_message *new_message = realloc(entry->message, new_size);
+		if (new_message == NULL) {
+			VL_MSG_ERR("Could not realloc message before decryption in __ip_receive_messages_callback\n");
+			goto out;
+		}
+		entry->message = new_message;
 
-		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", input_length);
+		char *crypt_start = ((char*) message) + sizeof(struct rrr_socket_msg);
+		unsigned int crypt_length_orig = message->network_size - sizeof(struct rrr_socket_msg);
+		unsigned int crypt_length = crypt_length_orig;
+
+		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", crypt_length);
 		if (module_decrypt_message(
 				crypt_data,
-				(char*) entry->data + sizeof(struct rrr_socket_msg),
-				&input_length,
-				entry->message.network_size - sizeof(struct rrr_socket_msg)
+				crypt_start,
+				&crypt_length,
+				new_size
 		) != 0) {
 			VL_MSG_ERR("Error returned from module decrypt function\n");
 			ret = 1;
 			goto out_free;
 		}
 
-		if (entry->data_length != input_length) {
-			VL_MSG_ERR("Size mismatch while decrypting message in __ip_receive_messages_callback\n");
-			ret = 1;
-			goto out_free;
-		}
+		message->network_size = crypt_length;
+		ip_buffer_entry_set_message(entry, message, crypt_length);
 	}
 #endif
 
-	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) &entry->message) != 0) {
+	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
 		VL_MSG_ERR ("IP: Message checksum was invalid\n");
 		goto out_free;
 	}
 
-	message_to_host(&entry->message);
+	message_to_host(entry->message);
+
+	if (message->length + sizeof(struct vl_message) - 1 != message->msg_size) {
+		VL_MSG_ERR("Size mismatch in vl_message in __ip_receive_messages_callback (%lu<>%" PRIu32 ")\n",
+				message->length + sizeof(struct vl_message) - 1, message->msg_size);
+	}
 
 	return data->callback(entry, data->arg);
 
@@ -296,7 +402,7 @@ int ip_receive_messages (
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif
-		int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {
@@ -330,10 +436,6 @@ int ip_send_message (
 	ssize_t final_size = sizeof(struct vl_message) + input_message->length - 1;
 	ssize_t buf_size = sizeof(struct vl_message) + input_message->length - 1;
 
-	if (final_size != input_message->network_size) {
-		VL_BUG("Size mismatch in ip_send_message\n");
-	}
-
 #ifdef VL_WITH_OPENSSL
 	buf_size += 1024;
 #endif
@@ -347,6 +449,9 @@ int ip_send_message (
 
 	memcpy(final_message, input_message, final_size);
 
+	final_message->network_size = final_size;
+	final_message->msg_size = final_size;
+
 	message_prepare_for_network(final_message);
 
 	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp_from);
@@ -359,18 +464,21 @@ int ip_send_message (
 	);
 
 #ifdef VL_WITH_OPENSSL
-	char *buf_start = ((char *) final_message) + sizeof(struct rrr_socket_msg);
-	unsigned int crypt_final_size = final_size - sizeof(struct rrr_socket_msg);
-	if (crypt_data->crypt != NULL && module_encrypt_message (
-			crypt_data,
-			buf_start,
-			&crypt_final_size,
-			buf_size
-	) != 0) {
-		ret = 1;
-		goto out;
+	if (crypt_data->crypt != NULL) {
+		char *buf_start = ((char *) final_message) + sizeof(struct rrr_socket_msg);
+		unsigned int crypt_final_size = final_size - sizeof(struct rrr_socket_msg);
+		if (module_encrypt_message (
+				crypt_data,
+				buf_start,
+				&crypt_final_size,
+				buf_size
+		) != 0) {
+			ret = 1;
+			goto out;
+		}
+		final_message->network_size = crypt_final_size + sizeof(struct rrr_socket_msg);
+		final_size = crypt_final_size;
 	}
-	final_message->network_size = crypt_final_size + sizeof(struct rrr_socket_msg);
 #endif
 
 	rrr_socket_msg_checksum_and_to_network_endian (
@@ -423,7 +531,6 @@ int ip_send_message (
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(final_message);
 	return ret;
 }
 

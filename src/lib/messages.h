@@ -69,7 +69,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MESSAGE_HEAD 	\
 	vl_u16 type;			\
 	vl_u16 type_flags;		\
-	vl_u32 class;			\
+	vl_u16 class;			\
+	vl_u16 version;			\
 	vl_u64 timestamp_from;	\
 	vl_u64 timestamp_to;	\
 	vl_u64 data_numeric;	\
@@ -81,21 +82,10 @@ struct vl_message {
 	char data_[1];
 } __attribute__((packed));
 
-struct vl_message_type_head {
-	uint16_t version;
-	char data_[1];
-} __attribute__((packed));
-
-struct vl_message_array {
-	RRR_SOCKET_MSG_HEAD;
-	VL_MESSAGE_HEAD;
-	struct vl_message_type_head type_head;
-} __attribute__((packed));
-
 static inline struct rrr_socket_msg *rrr_vl_message_safe_cast (struct vl_message *message) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
 	ret->msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
-	ret->msg_size = sizeof(*message);
+	ret->msg_size = sizeof(*message) + message->length - 1;
 	ret->msg_value = 0;
 	return ret;
 }
@@ -103,15 +93,11 @@ struct vl_message *message_new_reading (
 	vl_u64 reading_millis,
 	vl_u64 time
 );
-struct vl_message *message_new_info (
-	vl_u64 time,
-	const char *msg_terminated
-);
-struct vl_message_array *message_new_array (
+struct vl_message *message_new_array (
 	vl_u64 time,
 	vl_u32 length
 );
-int new_empty_message (
+int message_new_empty (
 		struct vl_message **final_result,
 		vl_u16 type,
 		vl_u16 type_flags,
@@ -121,20 +107,11 @@ int new_empty_message (
 		vl_u64 data_numeric,
 		vl_u32 data_size
 );
-int new_message (
-		struct vl_message **final_result,
-		vl_u16 type,
-		vl_u16 type_flags,
-		vl_u32 class,
-		vl_u64 timestamp_from,
-		vl_u64 timestamp_to,
-		vl_u64 data_numeric,
-		const char *data,
-		vl_u32 data_size
-);
+
 void message_to_host (struct vl_message *message);
 void message_prepare_for_network (struct vl_message *message);
-struct vl_message *message_duplicate (struct vl_message *message);
+struct vl_message *message_duplicate (const struct vl_message *message);
+struct vl_message *message_duplicate_no_data(struct vl_message *message);
 int message_validate (const struct vl_message *message);
 
 #endif

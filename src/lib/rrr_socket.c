@@ -322,7 +322,6 @@ int rrr_socket_read_message (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		ssize_t buffer_front_reserved_size,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
@@ -382,8 +381,8 @@ int rrr_socket_read_message (
 	bytes = recvfrom (
 			fd,
 			buf,
-			0,
 			read_step_max_size,
+			0,
 			&src_addr,
 			&src_addr_len
 	);
@@ -401,8 +400,8 @@ int rrr_socket_read_message (
 	}
 
 	if (bytes == 0) {
-//		VL_MSG_ERR("Bytes was 0 after read in rrr_socket_read_message, despite polling first\n");
-//		ret = RRR_SOCKET_SOFT_ERROR;
+		VL_MSG_ERR("Bytes was 0 after read in rrr_socket_read_message, despite polling first\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
@@ -421,7 +420,6 @@ int rrr_socket_read_message (
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
 			read_session->rx_buf_ptr = read_session->rx_overshoot;
-			read_session->rx_buf_start = read_session->rx_buf_ptr + buffer_front_reserved_size;
 			read_session->rx_buf_size = read_session->rx_overshoot_size;
 			read_session->rx_buf_wpos = read_session->rx_overshoot_size;
 
@@ -429,13 +427,12 @@ int rrr_socket_read_message (
 			read_session->rx_overshoot_size = 0;
 		}
 		else {
-			read_session->rx_buf_ptr = malloc((bytes > read_step_max_size ? bytes : read_step_max_size) + buffer_front_reserved_size);
+			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
 			if (read_session->rx_buf_ptr == NULL) {
 				VL_MSG_ERR("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
-			read_session->rx_buf_start = read_session->rx_buf_ptr + buffer_front_reserved_size;
 			read_session->rx_buf_size = read_step_max_size;
 			read_session->rx_buf_wpos = 0;
 		}
@@ -452,33 +449,33 @@ int rrr_socket_read_message (
 	/* Check for expansion of buffer */
 	if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 		ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-		char *new_buf = realloc(read_session->rx_buf_ptr, new_size + buffer_front_reserved_size);
+		char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
 		if (new_buf == NULL) {
 			VL_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 		read_session->rx_buf_ptr = new_buf;
-		read_session->rx_buf_start = new_buf + buffer_front_reserved_size;
 		read_session->rx_buf_size = new_size;
 	}
+
+	memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
+	read_session->rx_buf_wpos += bytes;
+	read_session->last_read_time = time_get_64();
 
 	if (get_target_size == NULL) {
 		read_session->target_size = read_step_initial;
 	}
-	// In the first read, we take a sneak peak at the first bytes to find a length field
-	// if it is present. If there is not target size function, the target size becomes
-	// the initial bytes parameter (set at the top of the function).
 	else if (read_session->target_size == 0) {
+		// In the first read, we take a sneak peak at the first bytes to find a length field
+		// if it is present. If there is not target size function, the target size becomes
+		// the initial bytes parameter (set at the top of the function).
 		if (read_session->rx_buf_wpos < read_session->target_size) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;
 			goto out;
 		}
 
-		if ((ret = get_target_size(read_session, get_target_size_arg)) == RRR_SOCKET_OK) {
-			goto read_retry;
-		}
-		else {
+		if ((ret = get_target_size(read_session, get_target_size_arg)) != RRR_SOCKET_OK) {
 			goto out;
 		}
 
@@ -486,10 +483,6 @@ int rrr_socket_read_message (
 			VL_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
 		}
 	}
-
-	memcpy (read_session->rx_buf_start + read_session->rx_buf_wpos, buf, bytes);
-	read_session->rx_buf_wpos += bytes;
-	read_session->last_read_time = time_get_64();
 
 	if (read_session->rx_buf_wpos > read_session->target_size) {
 			if (read_session->rx_overshoot != NULL) {
@@ -499,14 +492,14 @@ int rrr_socket_read_message (
 			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
 			read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-			read_session->rx_overshoot = malloc(buffer_front_reserved_size + read_session->rx_overshoot_size);
+			read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
 			if (read_session->rx_overshoot == NULL) {
 				VL_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
 
-			memcpy(read_session->rx_overshoot + buffer_front_reserved_size, read_session->rx_buf_start + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+			memcpy(read_session->rx_overshoot, read_session->rx_buf_ptr + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 	}
 
 	if (read_session->rx_buf_wpos == read_session->target_size && read_session->target_size > 0) {

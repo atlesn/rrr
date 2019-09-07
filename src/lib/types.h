@@ -88,7 +88,7 @@ static const union type_system_endian {
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || RRR_TYPE_SEP)
+#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) ==  RRR_TYPE_SEP)
 #define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_ENDIAN_BYTES	0x0102

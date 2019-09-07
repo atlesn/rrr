@@ -481,12 +481,6 @@ int rrr_python3_socket_poll (PyObject *socket, int timeout) {
 	return ret;
 }
 
-union merged_buf {
-	struct rrr_setting_packed setting; // The two others have this struct at the top
-	struct rrr_socket_msg msg;
-	struct vl_message vl_message;
-};
-
 int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
@@ -497,11 +491,9 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			getpid(), message->msg_size
 	);
 
-	if (message->msg_size < sizeof(struct rrr_socket_msg) ||  message->msg_size > sizeof(union merged_buf)) {
+	if (message->msg_size < sizeof(struct rrr_socket_msg)) {
 		VL_BUG("Received a socket message of wrong size in rrr_python3_socket_send (it says %u bytes)\n", message->msg_size);
 	}
-
-	char buf[message->msg_size];
 
 	if (socket_data->connected_fd == 0) {
 		VL_MSG_ERR("Cannot send in python3 socket: Not connected\n");
@@ -509,44 +501,37 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		goto out;
 	}
 
-	memcpy(buf, message, sizeof(buf));
-	struct rrr_socket_msg *msg_new = (struct rrr_socket_msg *) buf;
+	uint8_t msg_type = 0;
+	uint32_t msg_size = 0;
+	uint64_t msg_value = 0;
 
-	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(msg_new)) {
-		if (message->msg_size != sizeof(struct vl_message)) {
+	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
+		if (message->msg_size < sizeof(struct vl_message)) {
 			VL_BUG("Received a vl_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
-		if (message_validate((struct vl_message *) msg_new) != 0) {
+		if (message_validate((struct vl_message *) message) != 0) {
 			VL_BUG("Received an invalid vl_message in  rrr_python3_socket_send\n");
 		}
-		message_prepare_for_network((struct vl_message *) msg_new);
+
+		msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+		msg_size = sizeof(struct vl_message) + ((struct vl_message *) message)->length - 1;
+
+		message_prepare_for_network((struct vl_message *) message);
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(msg_new)) {
+	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		if (message->msg_size != sizeof(struct rrr_setting_packed)) {
 			VL_BUG("Received a setting with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
-		rrr_settings_packed_prepare_for_network((struct rrr_setting_packed*) msg_new);
-		rrr_socket_msg_populate_head (
-				message,
-				RRR_SOCKET_MSG_TYPE_SETTING,
-				message->msg_size,
-				0
-		);
-		rrr_socket_msg_checksum_and_to_network_endian (
-				message
-		);
 
+		msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+		msg_size = sizeof(struct rrr_setting_packed);
+
+		rrr_settings_packed_prepare_for_network((struct rrr_setting_packed*) message);
 	}
-	else if (RRR_SOCKET_MSG_IS_CTRL(msg_new)) {
-		rrr_socket_msg_populate_head (
-				msg_new,
-				msg_new->msg_type,
-				msg_new->msg_size,
-				message->msg_value
-		);
-		rrr_socket_msg_checksum_and_to_network_endian(
-				msg_new
-		);
+	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
+		msg_type = RRR_SOCKET_MSG_TYPE_CTRL;
+		msg_size = message->msg_size;
+		msg_value = message->msg_value;
 	}
 	else {
 		VL_MSG_ERR("Received socket message of unkown type %u in rrr_python3_socket_send\n", message->msg_type);
@@ -554,6 +539,15 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		goto out;
 	}
 
+	rrr_socket_msg_populate_head (
+			message,
+			msg_type,
+			msg_size,
+			msg_value
+	);
+	rrr_socket_msg_checksum_and_to_network_endian (
+			message
+	);
 
 	pthread_mutex_lock(&socket_data->stats_lock);
 	uint64_t time_send_start = time_get_64();
@@ -573,9 +567,9 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 
 	retry:
 	pthread_mutex_lock(&socket_data->send_lock);
-	ret = sendto(socket_data->connected_fd, &buf, sizeof(buf), MSG_EOR|MSG_DONTWAIT, NULL, 0);
+	ret = sendto(socket_data->connected_fd, message, msg_size, MSG_EOR|MSG_DONTWAIT, NULL, 0);
 	pthread_mutex_unlock(&socket_data->send_lock);
-	if (ret != (int) sizeof(buf)) {
+	if (ret != (ssize_t) msg_size) {
 		if (ret == -1) {
 			if (--max_retries == 0) {
 				VL_MSG_ERR("Max retries reached in rrr_python3_socket_send for socket %i pid %i\n",
@@ -600,8 +594,8 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			}
 		}
 		else {
-			VL_MSG_ERR("Error while sending message in python3 socket, sent %i of %lu bytes\n",
-					ret, sizeof(buf));
+			VL_MSG_ERR("Error while sending message in python3 socket, sent %i of %" PRIu32 " bytes\n",
+					ret, msg_size);
 			ret = 1;
 			goto out;
 		}
@@ -627,13 +621,14 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 
 	struct rrr_socket_msg *tmp_head = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
 
-	if (rrr_socket_msg_checksum_check(tmp_head) != 0) {
+	rrr_socket_msg_head_to_host(tmp_head);
+
+	if (rrr_socket_msg_checksum_check(tmp_head, tmp_head->network_size) != 0) {
 		VL_MSG_ERR("Received message in python3 socket receive function with wrong checksum\n");
 		ret = 1;
 		goto out;
 	}
 
-	rrr_socket_msg_head_to_host(tmp_head);
 /*
 	if (ret != (int)tmp_head.msg_size) {
 		VL_MSG_ERR("Received a message in python3 socket receive function which says it has %u bytes, but we have read %i\n", tmp_head.msg_size, ret);
@@ -691,7 +686,7 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 	return ret;
 }
 
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, int timeout) {
+int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
@@ -710,7 +705,6 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, i
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			0,
 			rrr_socket_msg_get_packet_target_size,
 			NULL,
 			__rrr_python3_socket_recv_callback,

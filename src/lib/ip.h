@@ -60,15 +60,12 @@ struct ip_stats_twoway {
 	struct ip_stats receive;
 };
 
-struct ip_buffer_entry_ {
+struct ip_buffer_entry {
 	ssize_t data_length;
 	struct sockaddr addr;
 	socklen_t addr_len;
-	uint64_t time;
-	union {
-		struct vl_message message;
-		char data[1];
-	};
+	uint64_t send_time;
+	void *message;
 };
 
 struct ip_send_packet_info {
@@ -93,6 +90,30 @@ struct ip_accept_data {
 #define VL_IP_STATS_UPDATE_ERR 1	// Error
 #define VL_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
+void ip_buffer_entry_destroy (
+		struct ip_buffer_entry *entry
+);
+void ip_buffer_entry_destroy_void (
+		void *entry
+);
+void ip_buffer_entry_set_message (
+		struct ip_buffer_entry *entry,
+		void *message,
+		ssize_t data_length
+);
+int ip_buffer_entry_new (
+		struct ip_buffer_entry **result,
+		ssize_t data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		void *message
+);
+int ip_buffer_entry_new_with_empty_message (
+		struct ip_buffer_entry **result,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
 int ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
@@ -108,7 +129,7 @@ int ip_stats_print_reset(
 int ip_receive_packets (
 	struct rrr_socket_read_session_collection *read_session_collection,
 	int fd,
-	int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+	int (*callback)(struct ip_buffer_entry *entry, void *arg),
 	void *arg,
 	struct ip_stats *stats
 );
@@ -118,7 +139,7 @@ int ip_receive_messages (
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif
-		int (*callback)(struct ip_buffer_entry_ *entry, void *arg),
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );

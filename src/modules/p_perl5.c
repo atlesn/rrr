@@ -231,10 +231,8 @@ int spawn_messages(struct perl5_data *perl5_data) {
 	uint64_t time_start = time_get_64();
 	for (int i = 0; i < 50; i++) {
 		uint64_t now_time = time_get_64();
-		char data_buf[64];
-		sprintf(data_buf, "%" PRIu64, now_time);
 
-		if (new_message (
+		if (message_new_empty (
 				&message,
 				MSG_TYPE_MSG,
 				0,
@@ -242,8 +240,7 @@ int spawn_messages(struct perl5_data *perl5_data) {
 				now_time,
 				now_time,
 				0,
-				data_buf,
-				strlen(data_buf) + 1
+				0
 		) != 0) {
 			VL_MSG_ERR("Could not initialize message in perl5 spawn_messages of instance %s\n",
 					INSTANCE_D_NAME(perl5_data->thread_data));

@@ -32,7 +32,7 @@ const char *rrr_python3_socket_get_filename(PyObject *self);
 PyObject *rrr_python3_socket_new (const char *filename);
 int rrr_python3_socket_poll (PyObject *socket, int timeout);
 int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message);
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket, int timeout);
+int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket);
 int rrr_python3_socket_accept (PyObject *self);
 void rrr_python3_socket_close (PyObject *self);
 

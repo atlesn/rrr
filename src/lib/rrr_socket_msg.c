@@ -66,7 +66,7 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	message->msg_type = htobe16(message->msg_type);
 	message->msg_size = htobe32(message->msg_size);
 	message->msg_value = htobe64(message->msg_value);
-	message->data_crc32 = htobe64(message->data_crc32);
+	message->data_crc32 = htobe32(message->data_crc32);
 
 	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
 	ssize_t head_size = sizeof(*message) - sizeof(message->header_crc32);
@@ -90,14 +90,14 @@ int rrr_socket_msg_get_packet_target_size (struct rrr_socket_read_session *read_
 
 	(void)(arg);
 
-	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) read_session->rx_buf_start;
+	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
 
 	if (crc32cmp (
 			((char*) socket_msg) + sizeof(socket_msg->header_crc32),
 			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
 			be32toh(socket_msg->header_crc32)
 	) != 0) {
-		VL_MSG_ERR("Warning: Header checksum of message failed in __ip_get_packet_target_size\n");
+		VL_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_msg_get_packet_target_size\n");
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
@@ -107,7 +107,8 @@ int rrr_socket_msg_get_packet_target_size (struct rrr_socket_read_session *read_
 }
 
 int rrr_socket_msg_checksum_check (
-	struct rrr_socket_msg *message
+	struct rrr_socket_msg *message,
+	ssize_t data_size
 ) {
 	// HEX dumper
 /*	for (unsigned int i = 0; i < total_size; i++) {
@@ -118,12 +119,10 @@ int rrr_socket_msg_checksum_check (
 
 	printf ("Check crc32 %lu\n", message->crc32);*/
 
-	vl_u32 checksum = be32toh(message->data_crc32);
+	vl_u32 checksum = message->data_crc32;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	ssize_t data_size = message->network_size - sizeof(*message);
-
-	return crc32cmp(data_begin, data_size, checksum) != 0;
+	return crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
 }
 
 int rrr_socket_msg_head_validate (struct rrr_socket_msg *message) {

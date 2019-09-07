@@ -95,7 +95,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char *target, unsigned int target_size, struct mysql_data *data);
-	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry_ *entry);
+	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry *entry);
 };
 
 /* Check order with function pointers */
@@ -167,7 +167,7 @@ int colplan_voltage_create_sql(char *target, unsigned int target_size, struct my
 	return 0;
 }
 
-int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
+int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	MYSQL_BIND *bind = data->data->bind;
 
 	memset(bind, '\0', sizeof(*bind));
@@ -179,7 +179,7 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 	char ipv4_string[strlen(ipv4_string_tmp)+1];
 	sprintf(ipv4_string, "%s", ipv4_string_tmp);
 
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = entry->message;
 
 	VL_DEBUG_MSG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
 			message->type, message->timestamp_to);
@@ -291,12 +291,9 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 
 	sprintf(query_base + pos, "%s)", timestamp_column_questionmark);
 
-	VL_DEBUG_MSG_3("mysql array SQL: %s\n", query_base);
-
 	// Double check length
 	if (strlen(query_base) > query_base_max) {
-		VL_MSG_ERR("BUG: query_base was too long in colplan_array_create_sql");
-		exit(EXIT_FAILURE);
+		VL_BUG("BUG: query_base was too long in colplan_array_create_sql");
 	}
 
 	if (target_size < strlen(query_base)) {
@@ -316,13 +313,13 @@ void free_collection(void *arg) {
 	}
 }
 
-int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
+int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	int res = 0;
 
 	struct rrr_type_template_collection collection;
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_types_message_to_collection(&collection, &entry->message) != 0) {
+	if (rrr_types_message_to_collection(&collection, entry->message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		res = 1;
 		goto out_cleanup;
@@ -830,18 +827,24 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
+	struct ip_buffer_entry *entry = NULL;
+	int ret = 0;
 
-	// Convert message to IP buffer entry
-	struct ip_buffer_entry_ *entry = malloc(sizeof(*entry) + reading->length - 1);
-	memset(entry, '\0', sizeof(*entry));
-	memcpy(&entry->message, reading, sizeof(entry->message) + reading->length - 1);
-	free (reading);
+	(void)(size);
 
-	VL_DEBUG_MSG_3 ("mysql: Result from buffer (local): size %lu\n", size);
+	if (ip_buffer_entry_new(&entry, sizeof(*reading) - 1 + reading->length, NULL, 0, reading) != 0) {
+		VL_MSG_ERR("Could not allocate ip buffer entry in poll_callback_local\n");
+		ret = 1;
+		goto out;
+	}
 
 	fifo_buffer_write(&mysql_data->input_buffer, (char*) entry, sizeof(*entry));
 
-	return 0;
+	reading = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(reading);
+	return ret;
 }
 
 // Poll request from other local modules
@@ -858,13 +861,13 @@ int mysql_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_read_clear_forward(&mysql_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds);
 }
 
-int mysql_save(struct process_entries_data *data, struct ip_buffer_entry_ *entry) {
+int mysql_save(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	if (data->data->mysql_connected != 1) {
 		return 1;
 	}
 
 	struct mysql_data *mysql_data = data->data;
-	struct vl_message *message = &entry->message;
+	struct vl_message *message = entry->message;
 
 	// TODO : Don't default to old voltage/info-message, should have it's own class
 
@@ -902,7 +905,8 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	struct process_entries_data *process_data = callback_data->private_data;
 	struct instance_thread_data *thread_data = callback_data->source;
 	struct mysql_data *mysql_data = process_data->data;
-	struct ip_buffer_entry_ *entry = (struct ip_buffer_entry_ *) data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+	struct vl_message *message = entry->message;
 
 	update_watchdog_time(thread_data->thread);
 
@@ -915,7 +919,7 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		goto out;
 	}*/
 
-	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", entry->message.timestamp_from);
+	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
 
 	int mysql_save_res = mysql_save (process_data, entry);
 
@@ -926,17 +930,18 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		}
 		else {
 			// Put back in buffer
-			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", entry->message.timestamp_from);
+			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp_from);
 			fifo_buffer_write(&mysql_data->input_buffer, data, size);
 			err = 1;
 		}
 	}
 	else {
 		// Tag message as saved to sender
-		struct vl_message *message = &entry->message;
 		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
 		message->length = 0;
+		message->network_size = sizeof(*message) - 1;
+		entry->data_length = sizeof(*message) - 1;
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally
 			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
@@ -988,6 +993,12 @@ int process_entries (struct instance_thread_data *thread_data) {
 				mysql_error(&data->mysql));
 		mysql_disconnect(data);
 		goto out;
+	}
+
+	if (VL_DEBUGLEVEL_3) {
+		if (fifo_buffer_get_entry_count(&data->input_buffer) > 0) {
+			VL_MSG("mysql SQL: %s\n", query);
+		}
 	}
 
 	ret = fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data, 50);

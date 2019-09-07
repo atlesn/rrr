@@ -78,7 +78,6 @@ int signal_interrupt (int s, void *arg) {
 	return 0;
 }
 
-
 int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;

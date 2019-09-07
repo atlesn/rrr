@@ -404,9 +404,6 @@ static void *thread_entry_voltmonitor (struct vl_thread *thread) {
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
 			VL_MSG_ERR ("voltmonitor: Voltage reading failed\n");
-			struct vl_message *reading = message_new_info(time, "Voltmonitor: problems with USB-device");
-			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
-
 			usleep (1000000); // 1000 ms
 			continue;
 		}

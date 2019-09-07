@@ -9,7 +9,7 @@ SUBDIRS = modules
 # endif
 
 noinst_PROGRAMS = test ${python}
-test_LDFLAGS = -ldl -lpthread -L../lib -lrrr
+test_LDFLAGS = -ldl -lpthread -L../lib -lrrr -O0
 test_SOURCES = test.c ../global.c ../main.c
 test_CFLAGS = ${AM_CFLAGS} \
 	-DVL_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \

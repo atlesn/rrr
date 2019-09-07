@@ -140,7 +140,7 @@ void free_message(void *msg) {
 	}
 }
 
-int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
+int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 	struct vl_message *message = NULL;
 	int ret = 0;
@@ -154,16 +154,14 @@ int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
 	}
 
 	// ATTENTION! - Received ip message does not contain a vl_message struct
-	if (rrr_type_parse_data_from_definition(&definitions, entry->data, entry->data_length) != 0) {
+	if (rrr_type_parse_data_from_definition(&definitions, entry->message, entry->data_length) != 0) {
 		VL_MSG_ERR("udpreader received an invalid packet\n");
-		free (entry);
 		ret = 0;
 		goto out_destroy;
 	}
 	else {
 		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
 	}
-	free (entry);
 
 	if ((ret = rrr_type_new_message(&message, &definitions, time_get_64())) != 0) {
 		VL_MSG_ERR("Could not create message in udpreader instance %s read_data_callback\n",
@@ -179,6 +177,7 @@ int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
 	}
 
 	out_destroy:
+	ip_buffer_entry_destroy_void(entry);
 	rrr_type_template_collection_clear(&definitions);
 	RRR_FREE_IF_NOT_NULL(message);
 
@@ -188,7 +187,7 @@ int read_data_callback (struct ip_buffer_entry_ *entry, void *arg) {
 int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	VL_DEBUG_MSG_4("udpreader inject callback size %lu\n", size);
 	struct udpreader_data *udpreader_data = poll_data->private_data;
-	return read_data_callback((struct ip_buffer_entry_ *) data, udpreader_data);
+	return read_data_callback((struct ip_buffer_entry *) data, udpreader_data);
 }
 
 int read_data(struct udpreader_data *data) {
@@ -273,8 +272,6 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
-
-		VL_DEBUG_MSG_2("udpreader: reading from network\n");
 
 		if (read_data(data) != 0) {
 			break;

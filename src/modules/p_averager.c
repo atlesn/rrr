@@ -166,10 +166,7 @@ int averager_spawn_message (
 ) {
 	struct vl_message *message = NULL;
 
-	char buf[64];
-	sprintf(buf, "%" PRIu64, measurement);
-
-	if (new_message (
+	if (message_new_empty (
 			&message,
 			MSG_TYPE_MSG,
 			0,
@@ -177,8 +174,7 @@ int averager_spawn_message (
 			time_from,
 			time_to,
 			measurement,
-			buf,
-			strlen(buf)
+			0
 	) != 0) {
 		VL_MSG_ERR ("Could not create message in averager_spawn_message\n");
 		return 1;

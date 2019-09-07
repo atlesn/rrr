@@ -654,7 +654,7 @@ int rrr_perl5_hv_to_message (
 
 	target->length = new_length;
 
-//	printf ("SvLEN: %lu SvUV(length): %lu\n", SvLEN(source->data), SvUV(source->length));
+	VL_DEBUG_MSG_3("SvLEN: %lu, SvUV(length): %lu, old length: %li\n", SvLEN(source->data), SvUV(source->length), old_length);
 	if (SvLEN(source->data) < target->length) {
 		VL_MSG_ERR("Data length returned from perl5 function was shorter than given length in length field\n");
 		ret = 1;
@@ -664,6 +664,18 @@ int rrr_perl5_hv_to_message (
 	STRLEN len = target->length;
 	char *data_str = sv_2pvbyte(source->data, &len);
 	memcpy(target->data_, data_str, target->length);
+
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG("rrr_perl5_hv_to_message output (data of message only): 0x");
+		for (unsigned int i = 0; i < target->length; i++) {
+			char c = target->data_[i];
+			if (c < 0x10) {
+				VL_DEBUG_MSG("0");
+			}
+			VL_DEBUG_MSG("%x", c);
+		}
+		VL_DEBUG_MSG("\n");
+	}
 
 	*target_final = target;
 
