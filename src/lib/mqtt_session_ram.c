@@ -145,8 +145,7 @@ static int __rrr_mqtt_session_ram_delivery_local (
 static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		struct rrr_mqtt_session_ram **target,
 		struct rrr_mqtt_session_collection_ram_data *data,
-		const char *client_id,
-		int local_delivery
+		const char *client_id
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
 	int ret = RRR_MQTT_SESSION_OK;
@@ -201,10 +200,6 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	result->users = 1;
 	result->ram_data = data;
-	result->delivery_method = (local_delivery != 0
-			? __rrr_mqtt_session_ram_delivery_local
-			: __rrr_mqtt_session_ram_delivery_forward
-	);
 
 	RRR_LINKED_LIST_PUSH(data,result);
 
@@ -342,8 +337,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		struct rrr_mqtt_session_collection *sessions,
 		const char *client_id,
 		int *session_present,
-		int no_creation,
-		int local_delivery
+		int no_creation
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
@@ -364,8 +358,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 				&result,
 				data,
-				client_id,
-				local_delivery
+				client_id
 		);
 		if (ret != RRR_MQTT_SESSION_OK) {
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -843,6 +836,7 @@ static int __rrr_mqtt_session_ram_init (
 		uint32_t max_in_flight,
 		uint32_t complete_publish_grace_time,
 		int clean_session,
+		int local_delivery,
 		int *session_was_present
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
@@ -866,6 +860,13 @@ static int __rrr_mqtt_session_ram_init (
 		*session_was_present = 0;
 		__rrr_mqtt_session_ram_clean_unlocked(ram_session);
 	}
+
+
+	ram_session->delivery_method = (local_delivery != 0
+			? __rrr_mqtt_session_ram_delivery_local
+			: __rrr_mqtt_session_ram_delivery_forward
+	);
+
 
 	VL_DEBUG_MSG_1("Init session expiry interval: %" PRIu32 "\n",
 			ram_session->session_properties.session_expiry);

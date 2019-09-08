@@ -232,8 +232,7 @@ int rrr_mqtt_client_connect (
 			mqtt_data->sessions,
 			connect->client_identifier,
 			&session_present,
-			0,  // Create if non-existent client ID
-			1   // Local delivery (check received PUBLISH against subscriptions and deliver locally)
+			0 // Create if non-existent client ID
 	)) != RRR_MQTT_SESSION_OK || session == NULL) {
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		VL_MSG_ERR("Internal error getting session in rrr_mqtt_client_connect\n");
@@ -248,6 +247,7 @@ int rrr_mqtt_client_connect (
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
 			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
+			1, // Local delivery (check received PUBLISH against subscriptions and deliver locally)
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {

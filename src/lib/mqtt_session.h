@@ -96,8 +96,7 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session_collection *collection,
 			const char *client_id,
 			int *session_present,
-			int no_creation,
-			int local_delivery
+			int no_creation
 	);
 
 	// SESSION METHODS
@@ -116,12 +115,13 @@ struct rrr_mqtt_session_collection_methods {
 	// Initialize a session based on the clean_session value
 	int (*init_session) (
 			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
+			struct rrr_mqtt_session **session_to_find,
 			const struct rrr_mqtt_session_properties *session_properties,
 			uint64_t retry_interval_usec,
 			uint32_t max_in_flight,
 			uint32_t complete_publish_grace_time,
 			int clean_session,
+			int local_delivery,
 			int *session_was_present
 	);
 
@@ -144,21 +144,6 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Receive an ACK for a packet from remote
-/*	int (*notify_ack_received) (
-			unsigned int *match_count,
-			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet
-	);*/
-
-	// Notification that an ACK has been sent to remote
-/*	int (*notify_ack_sent) (
-			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet
-	);*/
-
 	// Iterate send queue of session. If force=1, return everything. If not,
 	// return only non-sent and messages with exceeded retry interval.
 	int (*iterate_send_queue) (
@@ -177,12 +162,6 @@ struct rrr_mqtt_session_collection_methods {
 			uint8_t reason_v5
 	);
 
-/*	int (*add_subscriptions) (
-			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
-			const struct rrr_mqtt_subscription_collection *subscriptions
-	);*/
-
 	int (*send_packet) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
@@ -195,16 +174,6 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_p *packet,
 			unsigned int *ack_match_count
 	);
-
-	// Receive PUBLISH from remote. Session handler must distribute this to
-	// the other clients and/or retain it based on protocol rules. If local
-	// delivery is set, PUBLISH is delivered accordingly. QoS 1/2 packets
-	// will be stored until handshakes are complete.
-/*	int (*receive_publish) (
-			struct rrr_mqtt_session_collection *collection,
-			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p_publish *publish
-	);*/
 };
 
 #define RRR_MQTT_SESSION_COLLECTION_HEAD \
