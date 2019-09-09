@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>
-#include <endian.h>
 
+#include "rrr_endian.h"
 #include "../global.h"
 #include "rrr_socket.h"
 #include "vl_time.h"

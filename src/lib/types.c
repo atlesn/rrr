@@ -23,9 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <endian.h>
 #include <inttypes.h>
 
+#include "rrr_endian.h"
 #include "cmdlineparser/cmdline.h"
 #include "types.h"
 #include "settings.h"
