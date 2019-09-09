@@ -52,6 +52,11 @@ int rrr_mqtt_client_connection_is_alive (
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection
 );
+int rrr_mqtt_client_publish (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_publish *publish
+);
 int rrr_mqtt_client_subscribe (
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection,

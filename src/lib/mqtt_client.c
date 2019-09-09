@@ -61,6 +61,28 @@ int rrr_mqtt_client_connection_is_alive (
 	return rrr_mqtt_conn_check_alive(alive, &data->mqtt_data.connections, connection);
 }
 
+int rrr_mqtt_client_publish (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = 0;
+
+	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet (
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) publish
+			),
+			goto out,
+			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
+	);
+
+	out:
+	return ret;
+}
+
+
 int rrr_mqtt_client_subscribe (
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection,

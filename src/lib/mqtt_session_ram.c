@@ -1825,6 +1825,11 @@ static int __rrr_mqtt_session_ram_send_packet (
 			goto out_unlock;
 		}
 	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+		packet->packet_identifier = 0;
+		VL_DEBUG_MSG_3("Send new PUBLISH packet with topic '%s'\n", publish->topic);
+	}
 	else if (RRR_MQTT_P_IS_ACK(packet)) {
 		VL_DEBUG_MSG_3("Send ACK packet %p with identifier %u of type %s\n",
 				packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));

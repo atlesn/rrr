@@ -75,16 +75,93 @@ struct mqtt_client_data {
 static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct mqtt_client_data *private_data = thread_data->private_data;
+	struct rrr_mqtt_p_publish *publish = NULL;
+	const struct vl_message *reading = (struct vl_message *) data;
 
-	struct vl_message *reading = (struct vl_message *) data;
+	(void)(size);
+
+	char *payload = NULL;
+	ssize_t payload_size = 0;
+	int ret = 0;
+
 	VL_DEBUG_MSG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, discarding data\n",
 			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
 
-	free(data);
 
-	// fifo_buffer_write(&private_data->output_buffer, data, size);
+	if (private_data->mqtt_client_data->protocol_version == NULL) {
+		VL_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
 
-	return 0;
+	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, private_data->mqtt_client_data->protocol_version);
+	if (publish == NULL) {
+		VL_MSG_ERR("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	RRR_FREE_IF_NOT_NULL(publish->topic);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
+
+	publish->topic = strdup(private_data->publish_topic);
+	if (publish->topic == NULL) {
+		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	if (private_data->publish_vl_message != 0) {
+		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
+				&publish->properties,
+				RRR_MQTT_PROPERTY_CONTENT_TYPE,
+				RRR_MESSAGE_MIME_TYPE,
+				strlen(RRR_MESSAGE_MIME_TYPE)
+		) != 0) {
+			VL_MSG_ERR("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+		payload = data;
+		payload_size = sizeof(struct vl_message) - 1 + reading->length;
+		data = NULL;
+	}
+	else {
+		payload = malloc(reading->length);
+		if (payload == NULL) {
+			VL_MSG_ERR("could not allocate memory for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+		payload_size = reading->length;
+	}
+
+	if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
+		VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+	payload = NULL;
+
+	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
+		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	out_free:
+	RRR_FREE_IF_NOT_NULL(data);
+	RRR_FREE_IF_NOT_NULL(payload);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
+
+	return ret;
 }
 
 static void data_cleanup(void *arg) {
