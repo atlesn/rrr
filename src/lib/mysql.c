@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <mysql/mysql.h>
 
+#include "../global.h"
 #include "rrr_mysql.h"
 
 static pthread_mutex_t mysql_global_lock = PTHREAD_MUTEX_INITIALIZER;

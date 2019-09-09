@@ -19,19 +19,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-<<<<<<< HEAD
-#include "rrr_socket_msg.h"
-#include "settings.h"
-#include "../global.h"
-
-#include <bits/endian.h>
-=======
->>>>>>> freebsd
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
-<<<<<<< HEAD
+#include "rrr_endian.h"
+#include "rrr_socket.h"
+#include "settings.h"
+#include "../global.h"
+
 struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
 	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
@@ -39,12 +35,6 @@ struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting
 	ret->msg_value = 0;
 	return ret;
 }
-=======
-#include "rrr_endian.h"
-#include "rrr_socket.h"
-#include "settings.h"
-#include "../global.h"
->>>>>>> freebsd
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	if (list->data != NULL) {

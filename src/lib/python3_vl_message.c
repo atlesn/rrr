@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_vl_message.h"
 #include "rrr_socket_msg.h"
 #include "messages.h"
+#include "../global.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;
