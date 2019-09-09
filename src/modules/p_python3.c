@@ -710,7 +710,7 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 	if ((res = python3_swap_thread_out(&data->python3_thread_ctx))) {
 		VL_MSG_ERR("python3 return from thread swap out was not 0 but %i in instance %s\n",
 				res, INSTANCE_D_NAME(thread_data));
-		break;
+		goto out_message;
 	}
 
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING_FORKED);
