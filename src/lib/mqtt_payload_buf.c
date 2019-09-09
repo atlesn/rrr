@@ -108,7 +108,7 @@ char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *
 
 int rrr_mqtt_payload_buf_put_raw (
 		struct rrr_mqtt_payload_buf_session *session,
-		void *data,
+		const void *data,
 		ssize_t size
 ) {
 	if (rrr_mqtt_payload_buf_ensure (session, size) != RRR_MQTT_PAYLOAD_BUF_OK) {
@@ -127,7 +127,7 @@ int rrr_mqtt_payload_buf_put_raw (
 
 int rrr_mqtt_payload_buf_put_raw_at_offset (
 		struct rrr_mqtt_payload_buf_session *session,
-		void *data,
+		const void *data,
 		ssize_t size,
 		ssize_t offset
 ) {

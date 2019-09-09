@@ -203,7 +203,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
-		data->version = 3;
+		data->version = RRR_MQTT_DEFAULT_VERSION;
 	}
 	else {
 		if (strcmp(data->version_str, "3.1.1") == 0) {
