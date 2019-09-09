@@ -25,8 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#include "messages.h"
-
 #ifdef VL_WITH_OPENSSL
 #include "module_crypt.h"
 #endif

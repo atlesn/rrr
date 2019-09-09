@@ -25,7 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "cmdlineparser/cmdline.h"
-#include "messages.h"
 #include "instance_config.h"
 #include "linked_list.h"
 
@@ -98,6 +97,7 @@ static const union type_system_endian {
 #define RRR_TYPE_DEF_IS_LE(def)	((def)->endian_one == RRR_TYPE_ENDIAN_LE)
 #define RRR_TYPE_DEF_IS_BE(def)	((def)->endian_one == RRR_TYPE_ENDIAN_BE)
 
+struct vl_message;
 struct rrr_type_template;
 
 struct rrr_type_definition {

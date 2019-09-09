@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
+#include "../lib/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
 #include "../global.h"
@@ -66,6 +67,8 @@ struct mqtt_client_data {
 	char *client_identifier;
 	uint8_t qos;
 	uint8_t version;
+	int publish_vl_message;
+	int receive_vl_message;
 	struct rrr_mqtt_conn *connection;
 };
 
@@ -148,6 +151,8 @@ static int parse_sub_topic (const char *topic_str, void *arg) {
 static int parse_config (struct mqtt_client_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	int yesno = 0;
+
 	rrr_setting_uint mqtt_port = 0;
 	rrr_setting_uint mqtt_qos = 0;
 
@@ -220,6 +225,31 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		ret = 1;
 		goto out;
 	}
+
+	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_publish_rrr_message")
+	)) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Could not interpret mqtt_publish_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (yesno != 0) {
+		data->publish_vl_message = 1;
+	}
+
+	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
+	)) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Could not interpret mqtt_receive_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (yesno != 0) {
+		data->receive_vl_message = 1;
+	}
+
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_topic, config, "mqtt_publish_topic")) == 0) {
 		if (strlen(data->publish_topic) == 0) {
@@ -326,67 +356,210 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 	return 0;
 }
 
+static int __try_create_vl_message_with_publish_data (
+		struct vl_message **result,
+		struct rrr_mqtt_p_publish *publish,
+		struct mqtt_client_data *data
+) {
+	*result = NULL;
+
+	int ret = 0;
+
+	if (publish->payload == NULL) {
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(publish->payload);
+
+	if (publish->payload->length == 0) {
+		goto out_unlock_payload;
+	}
+
+	if (message_new_empty (
+			result,
+			MSG_TYPE_MSG,
+			0,
+			MSG_CLASS_POINT,
+			publish->create_time,
+			publish->create_time,
+			0,
+			publish->payload->length
+	) != 0) {
+		VL_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (A)\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out_unlock_payload;
+	}
+
+	memcpy((*result)->data_, publish->payload->payload_start, publish->payload->length);
+
+	out_unlock_payload:
+	RRR_MQTT_P_UNLOCK(publish->payload);
+
+	out:
+	return ret;
+}
+
+static int __try_get_vl_message_from_publish (
+		struct vl_message **result,
+		struct rrr_mqtt_p_publish *publish,
+		struct mqtt_client_data *data
+) {
+	ssize_t message_actual_length = publish->payload->length;
+	ssize_t message_stated_length = 0;
+	struct vl_message *message = (struct vl_message *) publish->payload->payload_start;
+
+	int ret = 0;
+
+	*result = NULL;
+
+	if (publish->payload == NULL) {
+		goto out_nolock;
+	}
+
+	RRR_MQTT_P_LOCK(publish->payload);
+
+	if (message_actual_length < (ssize_t) sizeof(struct rrr_socket_msg)) {
+		VL_DEBUG_MSG_1("RRR Message of unknown length %li in mqtt client instance %s\n",
+				message_actual_length, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (rrr_socket_msg_get_packet_target_size_and_checksum (
+			&message_stated_length,
+			(struct rrr_socket_msg *) message,
+			message_actual_length)
+	) {
+		VL_DEBUG_MSG_1("RRR Message of size %li with corrupted header in mqtt client instance %s\n",
+				message_actual_length, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	if (message_actual_length != message_stated_length) {
+		VL_DEBUG_MSG_1("RRR message_final size mismatch, have %li bytes but packet states %li in mqtt client instance %s\n",
+				message_actual_length, message_stated_length, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message);
+
+	if (rrr_socket_msg_head_validate((struct rrr_socket_msg *) message) != 0) {
+		VL_DEBUG_MSG_1("RRR Message with invalid header in mqtt client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	message_to_host(message);
+
+	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) message, message_actual_length) != 0) {
+		VL_MSG_ERR("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	*result = malloc(message_actual_length);
+	if (*result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __try_get_vl_message_from_publish\n");
+		ret = 1;
+		goto out;
+	}
+	memcpy(*result, message, message_actual_length);
+
+	out:
+	RRR_MQTT_P_UNLOCK(publish->payload);
+
+	out_nolock:
+	return ret;
+}
+
 static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
 
 	struct mqtt_client_data *data = arg;
-	struct vl_message *message = NULL;
+	struct vl_message *message_final = NULL;
 
-	int did_init = 0;
-	if (publish->payload != NULL) {
-		RRR_MQTT_P_LOCK(publish->payload);
-	 	if (publish->payload->length > 0) {
-	 			if (message_new_empty (
-	 					&message,
-	 					MSG_TYPE_MSG,
-						0,
-						MSG_CLASS_POINT,
-						publish->create_time,
-						publish->create_time,
-						0,
-						publish->payload->length
-				) != 0) {
-	 				VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (A)\n",
-	 						INSTANCE_D_NAME(data->thread_data));
-	 				ret = 1;
-	 				goto unlock_payload;
-	 			}
+	struct rrr_mqtt_property *property = NULL;
+	const char *content_type = NULL;
 
-	 			memcpy(message->data_, publish->payload->payload_start, publish->payload->length);
-
-	 			did_init = 1;
-	 	}
-
-	 	unlock_payload:
-	 	RRR_MQTT_P_UNLOCK(publish->payload);
-	 	if (ret != 0) {
-	 		goto out;
-	 	}
+	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
+		ssize_t length = 0;
+		content_type = rrr_mqtt_property_get_blob(property, &length);
+		if (content_type[length] != '\0') {
+			VL_BUG("Content type was not zero-terminated in mqtt client receive_publish\n");
+		}
 	}
 
- 	if (did_init == 0) {
-		if (message_new_empty (
-				&message,
-				MSG_TYPE_MSG,
-				0,
-				MSG_CLASS_POINT,
-				publish->create_time,
-				publish->create_time,
-				0,
-				0
-		) != 0) {
-			VL_MSG_ERR("Could not initialize message in receive_publish of mqtt client instance %s (B)\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto unlock_payload;
-		}
- 	}
+	// is_vl_message is set to 1 if we want the data to be a message. It is set to zero
+	// again if the data turns out not to be a message after all. If receive_vl_message
+	// is not set, data which is not auto-detected as message (V5 only) will be wrapped
+	// inside a new vl_message. If receive_vl_message is set and the data is incorrect,
+	// it will be dropped.
+	int is_vl_message = data->receive_vl_message;
+	int expecting_vl_message = data->receive_vl_message;
 
- 	fifo_buffer_write(&data->output_buffer, (char*) message, sizeof(*message));
- 	message = NULL;
+	if (content_type != NULL && strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
+		is_vl_message = 1;
+	}
+
+	// Try to extract a message from the data of the publish
+	if (is_vl_message) {
+		if ((ret = __try_get_vl_message_from_publish (
+				&message_final,
+				publish,
+				data
+		)) != 0) {
+			VL_MSG_ERR("Error while parsing RRR message in receive_publish of mqtt client instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+
+		if (message_final == NULL && expecting_vl_message != 0) {
+			VL_MSG_ERR("Received supposed RRR message_final turned out not to be, dropping it in mqtt client instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		else if (message_final != NULL) {
+			goto out_write_to_buffer;
+		}
+	}
+
+	// Try to create a message with the data being the data of the publish
+	if ((ret = __try_create_vl_message_with_publish_data (
+			&message_final,
+			publish,
+			data
+	)) != 0) {
+		VL_MSG_ERR("Error while creating RRR message from publish data in mqtt client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+	else if (message_final != NULL) {
+		goto out_write_to_buffer;
+	}
+
+	// Try to create a message with the data being the topic of the publish
+	if (message_new_with_data (
+			&message_final,
+			MSG_TYPE_MSG,
+			0,
+			MSG_CLASS_POINT,
+			publish->create_time,
+			publish->create_time,
+			0,
+			publish->topic,
+			strlen(publish->topic) + 1
+	) != 0) {
+		VL_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (B)\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+ 	out_write_to_buffer:
+ 	fifo_buffer_write(&data->output_buffer, (char*) message_final, sizeof(*message_final));
+ 	message_final = NULL;
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_FREE_IF_NOT_NULL(message_final);
 	return ret;
 }
 
@@ -463,7 +636,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	if (rrr_mqtt_property_collection_add_uint32(
 			&data->connect_properties,
 			RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
-			0xffffffff
+			0xffff
 	) != 0) {
 		VL_MSG_ERR("Could not set CONNECT properties in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));

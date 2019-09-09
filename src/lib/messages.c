@@ -115,7 +115,7 @@ int message_new_empty (
 	return 0;
 }
 
-int new_message (
+int message_new_with_data (
 		struct vl_message **final_result,
 		vl_u16 type,
 		vl_u16 type_flags,

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_VL_MESSAGE_H
 #define RRR_PYTHON3_VL_MESSAGE_H
 
+struct rrr_socket_msg;
 struct vl_message;
 struct PyObject;
 

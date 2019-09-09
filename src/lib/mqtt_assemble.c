@@ -225,7 +225,12 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	PUT_RAW_WITH_LENGTH("MQTT", 4);
+	if (connect->protocol_version->id == 3) {
+		PUT_RAW_WITH_LENGTH("MQIDSP", 4);
+	}
+	else {
+		PUT_RAW_WITH_LENGTH("MQTT", 4);
+	}
 	PUT_U8(connect->protocol_version->id);
 	PUT_U8(connect->connect_flags);
 	PUT_U16(connect->keep_alive);

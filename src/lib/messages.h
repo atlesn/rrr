@@ -107,6 +107,17 @@ int message_new_empty (
 		vl_u64 data_numeric,
 		vl_u32 data_size
 );
+int message_new_with_data (
+		struct vl_message **final_result,
+		vl_u16 type,
+		vl_u16 type_flags,
+		vl_u32 class,
+		vl_u64 timestamp_from,
+		vl_u64 timestamp_to,
+		vl_u64 data_numeric,
+		const char *data,
+		vl_u32 data_size
+);
 
 void message_to_host (struct vl_message *message);
 void message_prepare_for_network (struct vl_message *message);

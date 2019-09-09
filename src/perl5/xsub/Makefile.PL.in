@@ -7,3 +7,5 @@ WriteMakefile (
 	VENDORPREFIX	=> '@prefix@/lib/rrr/perl5/',
 	XSMULTI		=> 1
 );
+
+system ("echo \"\\n\ncheck :\n\ttrue\n\" >> Makefile");

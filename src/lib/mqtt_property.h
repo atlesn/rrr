@@ -127,7 +127,8 @@ int rrr_mqtt_property_clone (
 int rrr_mqtt_property_save_blob (
 		struct rrr_mqtt_property *target,
 		const char *value,
-		uint16_t size
+		uint16_t size,
+		int add_zero_if_needed
 );
 int rrr_mqtt_property_save_uint32 (
 		struct rrr_mqtt_property *target,

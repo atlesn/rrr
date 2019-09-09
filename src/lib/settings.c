@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "rrr_socket.h"
+#include "rrr_socket_msg.h"
 #include "settings.h"
 #include "../global.h"
 
@@ -27,6 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+
+struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
+	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
+	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
+	ret->msg_size = sizeof(*setting);
+	ret->msg_value = 0;
+	return ret;
+}
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	if (list->data != NULL) {

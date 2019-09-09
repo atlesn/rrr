@@ -25,8 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <structmember.h>
 
-#include "rrr_socket_msg.h"
-
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"
 #define RRR_PYTHON3_VL_MESSAGE_TYPE_NAME "vl_message"

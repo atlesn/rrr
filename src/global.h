@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <limits.h>
 
 #ifndef VL_GLOBAL_H
 #define VL_GLOBAL_H
@@ -132,6 +134,31 @@ extern struct rrr_global_config rrr_global_config;
 	do { VL_MSG_ERR(__VA_ARGS__); abort(); } while (0)
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
+
+
+/* Common structures */
+#if UCHAR_MAX == 0xff
+typedef unsigned char vl_u8;
+#endif
+
+#if USHRT_MAX == 0xffff
+typedef unsigned short vl_u16;
+#endif
+
+#if UINT_MAX == 0xffffffff
+typedef unsigned int vl_u32;
+#elif ULONG_MAX == 0xffffffff
+typedef unsigned long int vl_u32;
+#define RRR_SOCKET_32_IS_LONG 1
+#endif
+
+#if ULONG_MAX == 0xffffffffffffffff
+typedef unsigned long int vl_u64;
+#define RRR_SOCKET_64_IS_LONG 1
+#elif ULLONG_MAX == 0xffffffffffffffff
+typedef unsigned long long int vl_u64;
+#endif
+
 
 void rrr_set_debuglevel_orig(void);
 void rrr_set_debuglevel_on_exit(void);
