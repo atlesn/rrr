@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <Python.h>
 
+#include "../global.h"
 #include "vl_time.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
@@ -282,7 +283,7 @@ static PyMethodDef socket_methods[] = {
 		},
 		{
 				ml_name:	"start",
-				ml_meth:	(PyCFunction) rrr_python3_socket_f_start,
+				ml_meth:	(PyCFunctionWithKeywords) rrr_python3_socket_f_start,
 				ml_flags:	METH_O,
 				ml_doc:		"Start a new socket or connect to existing if filename provided"
 		},
