@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <netdb.h>
 #include <poll.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #ifdef VL_WITH_OPENSSL
 #include "../lib/module_crypt.h"

@@ -771,7 +771,7 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 
 	int enable = 1;
 	if (tcp_nodelay == 1) {
-		if (setsockopt(fd, SOL_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
+		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
 			VL_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", strerror(errno));
 			ret = 1;
 			goto out_close_socket;
