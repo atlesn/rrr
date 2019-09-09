@@ -77,13 +77,7 @@ struct rrr_settings_list {
 	unsigned int length;
 };
 
-static inline struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
-	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
-	ret->msg_size = sizeof(*setting);
-	ret->msg_value = 0;
-	return ret;
-}
+struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting);
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list);
 
