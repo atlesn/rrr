@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <endian.h>
 
+#include "rrr_endian.h"
 #include "rrr_socket.h"
 #include "messages.h"
 #include "../global.h"

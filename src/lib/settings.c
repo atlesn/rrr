@@ -19,14 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "rrr_socket.h"
-#include "settings.h"
-#include "../global.h"
-
-#include <bits/endian.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "rrr_endian.h"
+#include "rrr_socket.h"
+#include "settings.h"
+#include "../global.h"
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	if (list->data != NULL) {

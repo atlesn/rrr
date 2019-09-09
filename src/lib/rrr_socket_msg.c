@@ -19,8 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <endian.h>
-
+#include "rrr_endian.h"
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "../global.h"
