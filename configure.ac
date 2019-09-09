@@ -139,13 +139,13 @@ AS_IF([test "x$enable_python3" = xno], [
 
 	AM_PATH_PYTHON([3.6])
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
-		 AC_SUBST([PYTHON3_MAJOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[[^0-9]]*' '$0=$1'`])
-		 AC_SUBST([PYTHON3_MINOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[[^0-9]]*' '$0=$2'`])
+		 AC_SUBST([PYTHON3_MAJOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[^0-9]*' '$1=$2 {print $1}`])
+		 AC_SUBST([PYTHON3_MINOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[^0-9]*' '$1=$2 {print $3}`])
 	else
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,python3,yes)
 		if test x"${PYTHON3_INTERPRETER}" = x"yes"; then
-			AC_SUBST([PYTHON3_MAJOR_VERSION],[`python3 --version | awk -F'[[^0-9]]*' '$0=$2'`])
-			AC_SUBST([PYTHON3_MINOR_VERSION],[`python3 --version | awk -F'[[^0-9]]*' '$0=$3'`])
+			AC_SUBST([PYTHON3_MAJOR_VERSION],[$(python3 --version | awk -F'[^0-9]*' '$1=$2 {print $1}')])
+			AC_SUBST([PYTHON3_MINOR_VERSION],[$(python3 --version | awk -F'[^0-9]*' '$1=$2 {print $3}')])
 		else
 			AC_MSG_ERROR("Could not find python3 interpreter")
 		fi
