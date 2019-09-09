@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../global.h"
 #include "ip.h"
 #include "mqtt_common.h"
 #include "mqtt_connection.h"

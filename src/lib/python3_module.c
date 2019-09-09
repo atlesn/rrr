@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_common.h"
 #include "python3_module.h"
 #include "python3_module_common.h"
+#include "../global.h"
 
 static PyMethodDef module_methods[] = {
 		{ NULL, NULL, 0, NULL }

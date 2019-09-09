@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <ctype.h>
 
+#include "../global.h"
 #include "rrr_endian.h"
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"

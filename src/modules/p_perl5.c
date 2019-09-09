@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/perl5.h"
 #include "../lib/cmdlineparser/cmdline.h"
+#include "../global.h"
 
 #include <EXTERN.h>
 #include <perl.h>

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <string.h>
 
+#include "../global.h"
 #include "mqtt_assemble.h"
 #include "mqtt_parse.h"
 #include "mqtt_packet.h"
