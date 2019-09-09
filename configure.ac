@@ -137,26 +137,33 @@ AS_IF([test "x$enable_python3" = xno], [
 
 	AC_DEFINE([VL_WITH_PYTHON3], [1], [Enable python3 extensions])
 
-	AM_PATH_PYTHON([3.6])
+	python3=""
+
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
-		 AC_SUBST([PYTHON3_MAJOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[^0-9]*' '$1=$2 {print $1}`])
-		 AC_SUBST([PYTHON3_MINOR_VERSION],[`echo "${PYTHON3_FORCE_VERSION}" | awk -F'[^0-9]*' '$1=$2 {print $3}`])
+		python3="python${PYTHON3_FORCE_VERSION}"
+		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		AC_CHECK_PROG(PYTHON3_INTERPRETER,python3,yes)
-		if test x"${PYTHON3_INTERPRETER}" = x"yes"; then
-			AC_SUBST([PYTHON3_MAJOR_VERSION],[$(python3 --version | awk -F'[^0-9]*' '$1=$2 {print $1}')])
-			AC_SUBST([PYTHON3_MINOR_VERSION],[$(python3 --version | awk -F'[^0-9]*' '$1=$2 {print $3}')])
-		else
-			AC_MSG_ERROR("Could not find python3 interpreter")
-		fi
+		for python_interpreter_test in python3.8 python3.7; do
+			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python_interpreter_test},yes)
+			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
+				python3=${python_interpreter_test}
+				break
+			fi
+		done
 	fi
+
+	AC_MSG_CHECKING([python version >= 3.7 or forced version])
+	if test "x${python3}" = "x"; then
+		AC_MSG_ERROR("Supported version of python3 not found")
+	fi
+	AC_MSG_RESULT([${python3}])
 
 	AC_MSG_CHECKING([for python3 debug enabled])
 	if test "x$enable_python3_debug" = x"yes"; then
-		python3_config_bin="python${PYTHON3_MAJOR_VERSION}.${PYTHON3_MINOR_VERSION}-dbg-config"
+		python3_config_bin="${python3}-dbg-config"
 		AC_MSG_RESULT([$python3_config_bin])
 	else
-		python3_config_bin="python${PYTHON3_MAJOR_VERSION}.${PYTHON3_MINOR_VERSION}-config"
+		python3_config_bin="${python3}-config"
 		AC_MSG_RESULT([no])
 	fi
 
@@ -164,29 +171,12 @@ AS_IF([test "x$enable_python3" = xno], [
 	if test x"${PYTHON3_CONFIG}" = x"yes"; then
 		AC_DEFINE([VL_WITH_PYTHON3], [1], [Build with python3 support], [])
 	else
-		AC_MSG_ERROR("Could not find python3-config for version $PYTHON3_MAJOR_VERSION.$PYTHON3_MINOR_VERSION")
+		AC_MSG_ERROR("Could not find python3-config for ${python3}")
 	fi
 
 	PYTHON3_CFLAGS="`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'` ${AM_CFLAGS}"
 	AC_SUBST([PYTHON3_CFLAGS])
 	AC_SUBST([PYTHON3_LDFLAGS], `$python3_config_bin --ldflags`)
-
-	AC_MSG_CHECKING([python version >= 3.3])
-	AC_MSG_RESULT([$PYTHON3_MAJOR_VERSION.$PYTHON3_MINOR_VERSION])
-	if test ${PYTHON3_MINOR_VERSION} -lt 3; then
-		if test ${PYTHON3_MAJOR_VERSION} != 3; then
-			AC_MSG_ERROR([Python3 version >= 3.3 is required])
-		fi
-	fi
-
-	AC_MSG_CHECKING([python version >= 3.7])
-	if test ${PYTHON3_MINOR_VERSION} -lt 7; then
-		AC_MSG_RESULT([no])
-		AC_DEFINE([RRR_PYTHON_VERSION_LT_3_7], [1], [Python version is 3.6 or earlier], [])
-	else
-		AC_MSG_RESULT([yes])
-		AC_DEFINE([RRR_PYTHON_VERSION_GTEQ_3_7], [1], [Python version is 3.7 or greater], [])
-	fi
 
 	chmod +x test_python3.sh
 	./test_python3.sh "$python3_config_bin"
