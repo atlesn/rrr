@@ -81,7 +81,9 @@ void module_crypt_data_cleanup(void *arg) {
 
 int module_encrypt_message (
 		struct module_crypt_data *crypt_data,
-		char *buf, unsigned int buf_length, unsigned int buf_size
+		char *buf,
+		unsigned int *buf_length,
+		unsigned int buf_size
 ) {
 	int ret = 0;
 
@@ -97,7 +99,7 @@ int module_encrypt_message (
 	pthread_cleanup_push(vl_crypt_global_unlock, crypt_data);
 	if (vl_crypt_aes256 (
 			crypt,
-			buf, buf_length,
+			buf, *buf_length,
 			&cipher_string, &cipher_length
 	) != 0) {
 		VL_MSG_ERR("Error while encrypting message\n");
@@ -113,13 +115,13 @@ int module_encrypt_message (
 			cipher_length + 1 + strlen(crypt->iv) + 1;
 
 	if (message_total_length + 1 > buf_size) {
-		VL_MSG_ERR("Bug: Encrypted message was too big\n");
-		exit(EXIT_FAILURE);
+		VL_BUG("Bug: Encrypted message was too big\n");
 	}
 
 	((char*) cipher_string)[cipher_length] = '\0';
 
 	sprintf(buf, "%s:%s", crypt->iv, (char*) cipher_string);
+	*buf_length = message_total_length;
 
 	pthread_cleanup_pop(1);
 

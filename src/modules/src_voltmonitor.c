@@ -308,7 +308,7 @@ int convert_float(const char *value, float *result) {
 	return 0;
 }
 
-int convert_integer_10(const char *value, int *result) {
+int averager_convert_integer_10(const char *value, int *result) {
 	char *err;
 	*result = strtol(value, &err, 10);
 
@@ -339,13 +339,13 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 		}
 	}
 	if (vm_channel != NULL) {
-		if (convert_integer_10(vm_channel, &channel) != 0) {
+		if (averager_convert_integer_10(vm_channel, &channel) != 0) {
 			VL_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
 			ret = 1;
 			goto out;
 		}
 		if (channel != 1 && channel != 2) {
-			VL_MSG_ERR ("vm_channel must be 1 or 2");
+			VL_MSG_ERR ("vm_channel must be 1 or 2\n");
 			ret = 1;
 			goto out;
 		}
@@ -404,9 +404,6 @@ static void *thread_entry_voltmonitor (struct vl_thread *thread) {
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
 			VL_MSG_ERR ("voltmonitor: Voltage reading failed\n");
-			struct vl_message *reading = message_new_info(time, "Voltmonitor: problems with USB-device");
-			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
-
 			usleep (1000000); // 1000 ms
 			continue;
 		}

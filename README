@@ -163,13 +163,6 @@ Ipclient sends messages read from other modules and waits for `ACK` message from
 is received, we continue try sending the messages. The server is expected to also run Read Route Record, but with
 the ipserver module listening for packets.
 
-### blockdev (log messages to block device or file)
-Specify block device or file to log entries, this storage must first be initialized
-using Block Device Logger command line application.
-
-Messages stored on the device will be re-read into memory on start-up untill they are
-tagged as saved.
-
 ### mysql (store messages to database)
 Mysql reads data from for other modules and stores the to a database. It also generates tag messages
 upon successful saves.
@@ -183,6 +176,8 @@ can generate messages which we also send back.
 
 The intention of this module is to store messages locally untill they are recevied and stored by a remote
 server, even in case of a power failure.
+
+NOTE ! blockdev module is removed temporarily
 
 A network like this might be used:
 

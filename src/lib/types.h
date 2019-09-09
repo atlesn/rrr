@@ -27,16 +27,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "messages.h"
 #include "instance_config.h"
+#include "linked_list.h"
 
 typedef uint8_t rrr_type;
 typedef uint32_t rrr_type_length;
 typedef uint32_t rrr_def_count;
 typedef uint32_t rrr_array_size;
-typedef ssize_t rrr_size;
+typedef uint32_t rrr_size;
 typedef uint64_t rrr_type_le;
 typedef uint64_t rrr_type_be;
 typedef uint64_t rrr_type_h;
-typedef uint16_t rrr_version;
+typedef uint64_t rrr_type_istr;
+typedef uint64_t rrr_type_ustr;
 
 static const union type_system_endian {
 	uint16_t two;
@@ -46,7 +48,11 @@ static const union type_system_endian {
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_LE (type_system_endian.one == 1)
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_BE (type_system_endian.one == 0)
 
-#define RRR_TYPE_VERSION 2
+#define RRR_TYPE_VERSION 3
+
+#define RRR_TYPE_PARSE_OK			0
+#define RRR_TYPE_PARSE_ERR			1
+#define RRR_TYPE_PARSE_INCOMPLETE	2
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
@@ -54,90 +60,116 @@ static const union type_system_endian {
 #define RRR_TYPE_BE			2 // Big endian number
 #define RRR_TYPE_H			3 // Host endian number (can be both)
 #define RRR_TYPE_BLOB		4
-#define RRR_TYPE_MAX		4
+#define RRR_TYPE_USTR		5 // Unsigned int given as a string
+#define RRR_TYPE_ISTR		6 // Signed int given as a string
+#define RRR_TYPE_SEP		7 // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
+#define RRR_TYPE_ARRAY		8 // Type which holds many of another type
+#define RRR_TYPE_MAX		8
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
 #define RRR_TYPE_NAME_H		"h"
 #define RRR_TYPE_NAME_BLOB	"blob"
+#define RRR_TYPE_NAME_USTR	"ustr"
+#define RRR_TYPE_NAME_ISTR	"istr"
+#define RRR_TYPE_NAME_SEP	"sep"
 #define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
 #define RRR_TYPE_MAX_H		sizeof(rrr_type_h)
 #define RRR_TYPE_MAX_BLOB	RRR_TYPE_MAX_BLOB_LENGTH
+#define RRR_TYPE_MAX_USTR	0
+#define RRR_TYPE_MAX_ISTR	0
+#define RRR_TYPE_MAX_SEP	64
 #define RRR_TYPE_MAX_ARRAY	65535
 
-#define RRR_TYPE_IS_64(type) 	(type == RRR_TYPE_LE || type == RRR_TYPE_BE || type == RRR_TYPE_H)
-#define RRR_TYPE_IS_BLOB(type)	(type == RRR_TYPE_BLOB)
-#define RRR_TYPE_OK(type)		(type > 0 && type <= RRR_TYPE_MAX)
+#define RRR_TYPE_IS_64(type) 	(														\
+			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
+			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
+		)
+#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) ==  RRR_TYPE_SEP)
+#define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_ENDIAN_BYTES	0x0102
 #define RRR_TYPE_ENDIAN_LE		0x02
 #define RRR_TYPE_ENDIAN_BE		0x01
 
-#define RRR_TYPE_DEF_IS_LE(def)	(def->endian_one == RRR_TYPE_ENDIAN_LE)
-#define RRR_TYPE_DEF_IS_BE(def)	(def->endian_one == RRR_TYPE_ENDIAN_BE)
+#define RRR_TYPE_DEF_IS_LE(def)	((def)->endian_one == RRR_TYPE_ENDIAN_LE)
+#define RRR_TYPE_DEF_IS_BE(def)	((def)->endian_one == RRR_TYPE_ENDIAN_BE)
+
+struct rrr_type_template;
 
 struct rrr_type_definition {
-	rrr_type		type;
-	rrr_type_length		length;
-	rrr_type_length 	max_length;
-	rrr_array_size		array_size; // 1 = no array
+	rrr_type type;
+	rrr_type_length max_length;
+	int (*import)(
+			struct rrr_type_template *node,
+			ssize_t *parsed_bytes,
+			const char *start,
+			const char *end
+	);
+	int (*to_host)(
+			struct rrr_type_template *node
+	);
+	const char *identifier;
 };
+
+struct rrr_type_template {
+	RRR_LINKED_LIST_NODE(struct rrr_type_template);
+	const struct rrr_type_definition *definition;
+	rrr_type_length length;
+	rrr_array_size array_size; // 1 = no array
+	char *data;
+};
+
+struct rrr_type_data_packed {
+	rrr_type type;
+	rrr_type_length length;
+	rrr_array_size array_size;
+	char data[1];
+} __attribute((packed));
 
 /*
  * The collection header is always converted to host endianess. The endianess
  * of the data is not touched until extracted with extractor functions.-
  */
-struct rrr_type_definition_collection {
-	rrr_version version;
-	rrr_def_count count;
-	union {
-		uint16_t endian_two;
-		uint8_t endian_one;
-	};
-	struct rrr_type_definition definitions[RRR_TYPE_MAX_DEFINITIONS];
+struct rrr_type_template_collection {
+		RRR_LINKED_LIST_HEAD(struct rrr_type_template);
 };
-
-struct rrr_data_collection {
-	struct rrr_type_definition_collection definitions;
-	char *data[RRR_TYPE_MAX_DEFINITIONS];
-};
-
-//static int (*rrr_types_convert_functions[]) (char *target, const char *data, rrr_type_length length);
-
-int rrr_types_parse_definition (
-		struct rrr_type_definition_collection *target,
+const struct rrr_type_definition *rrr_type_get_from_identifier (
+		ssize_t *parsed_bytes,
+		const char *start,
+		const char *end
+);
+const struct rrr_type_definition *rrr_type_get_from_type (uint8_t type_in);
+int rrr_type_parse_definition (
+		struct rrr_type_template_collection *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key
 );
-
-int rrr_types_parse_data (
-		struct rrr_data_collection *target,
-		const char *data, const rrr_type_length length
+int rrr_type_parse_data_from_definition (
+		struct rrr_type_template_collection *target,
+		const char *data,
+		const rrr_type_length length
 );
-struct rrr_data_collection *rrr_types_allocate_data (
-		const struct rrr_type_definition_collection *definitions
+int rrr_type_definition_collection_clone (
+		struct rrr_type_template_collection *target,
+		const struct rrr_type_template_collection *source
 );
-
-void rrr_types_destroy_data(struct rrr_data_collection *collection);
-
-struct vl_message *rrr_types_create_message(const struct rrr_data_collection *data, uint64_t time);
-
-int rrr_types_message_to_collection(struct rrr_data_collection **target, const struct vl_message *message_orig);
-int rrr_types_collection_data_to_host (struct rrr_data_collection *data);
-int rrr_types_definition_to_host(struct rrr_type_definition_collection *definition);
-
-int rrr_types_extract_blob (char **target, rrr_size *size, const struct rrr_data_collection *collection, rrr_def_count pos, rrr_def_count array_pos, int do_zero_terminate);
-int rrr_types_extract_host_64 (uint64_t *target, const struct rrr_data_collection *collection, rrr_def_count pos, rrr_def_count array_pos);
-
-int rrr_types_extract_raw_from_collection_static(char *target, rrr_size target_size, rrr_size *return_size, const struct rrr_data_collection *data);
-int rrr_types_extract_raw_from_collection(char **target, rrr_size *size, const struct rrr_data_collection *data);
-
-
-rrr_type_length rrr_get_total_integer_max_length(const struct rrr_data_collection *data);
-rrr_type_length rrr_get_total_blob_length(const struct rrr_data_collection *data);
-rrr_type_length rrr_get_raw_length(const struct rrr_data_collection *data);
+void rrr_type_template_collection_clear (struct rrr_type_template_collection *collection);
+struct rrr_type_template *rrr_type_template_collection_get_by_idx (
+		struct rrr_type_template_collection *definition,
+		int idx
+);
+int rrr_type_new_message (
+		struct vl_message **final_message,
+		const struct rrr_type_template_collection *definition,
+		uint64_t time
+);
+int rrr_types_message_to_collection (
+		struct rrr_type_template_collection *target,
+		const struct vl_message *message_orig
+);
 
 #endif /* RRR_TYPES_H */

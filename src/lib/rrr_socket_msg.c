@@ -21,24 +21,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <endian.h>
 
+#include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "../global.h"
 #include "crc32.h"
 
-void rrr_socket_msg_populate_head  (struct rrr_socket_msg *message, vl_u16 type, vl_u32 msg_size, vl_u64 value) {
+void rrr_socket_msg_populate_head (
+		struct rrr_socket_msg *message,
+		vl_u16 type,
+		vl_u32 msg_size,
+		vl_u64 value
+) {
 	if (msg_size < sizeof(*message)) {
 		VL_BUG("Size was too small in rrr_socket_msg_head_to_network\n");
 	}
 
-	message->endian_two = RRR_SOCKET_MSG_ENDIAN_BYTES;
+	message->network_size = msg_size;
 	message->msg_type = type;
 	message->msg_size = msg_size;
 	message->msg_value = value;
 }
 
-void rrr_socket_msg_checksum (
-	struct rrr_socket_msg *message,
-	ssize_t total_size
+void rrr_socket_msg_checksum_and_to_network_endian (
+	struct rrr_socket_msg *message
 ) {
 	// HEX dumper
 /*	for (unsigned int i = 0; i < total_size; i++) {
@@ -46,54 +51,64 @@ void rrr_socket_msg_checksum (
 		printf("%x-", *(buf+i));
 	}
 	printf("\n");*/
-	if (total_size < (int) sizeof(*message)) {
-		VL_BUG("Size was too small in rrr_socket_msg_checksum\n");
+
+	message->header_crc32 = 0;
+	message->data_crc32 = 0;
+
+	char *data_begin = ((char *) message) + sizeof(*message);
+	ssize_t data_size = message->network_size - sizeof(*message);
+
+	if (data_size > 0) {
+		message->data_crc32 = crc32buf(data_begin, data_size);
 	}
-	if (((void*) &message->crc32) != ((void*) message)) {
-		VL_BUG("CRC32 was not at beginning of message struct");
-	}
 
-	void *start_pos = ((void *) message) + sizeof(message->crc32);
-	ssize_t checksum_data_length = total_size - sizeof(message->crc32);
-
-	vl_u32 result = crc32buf((char *) start_pos, checksum_data_length);
-	message->crc32 = result;
-//	printf ("Result crc32 %lu\n", result);
-}
-
-void rrr_socket_msg_head_to_network (struct rrr_socket_msg *message) {
-	message->crc32 = htobe32(message->crc32);
-	message->endian_two = htobe16(message->endian_two);
+	message->network_size = htobe32(message->network_size);
 	message->msg_type = htobe16(message->msg_type);
 	message->msg_size = htobe32(message->msg_size);
 	message->msg_value = htobe64(message->msg_value);
+	message->data_crc32 = htobe32(message->data_crc32);
+
+	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
+	ssize_t head_size = sizeof(*message) - sizeof(message->header_crc32);
+
+	message->header_crc32 = htobe32(crc32buf(head_begin, head_size));
 }
 
-int rrr_socket_msg_head_to_host (struct rrr_socket_msg *message) {
-	if (RRR_SOCKET_MSG_IS_LE(message)) {
-		message->endian_two = le16toh(message->endian_two);
-		message->crc32 = le32toh(message->crc32);
-		message->msg_type = le16toh(message->msg_type);
-		message->msg_size = le32toh(message->msg_size);
-		message->msg_value = le64toh(message->msg_value);
+void rrr_socket_msg_head_to_host (struct rrr_socket_msg *message) {
+	message->header_crc32 = 0;
+	message->network_size = be32toh(message->network_size);
+	message->data_crc32 = be32toh(message->data_crc32);
+	message->msg_type = be16toh(message->msg_type);
+	message->msg_size = be32toh(message->msg_size);
+	message->msg_value = be64toh(message->msg_value);
+}
+
+int rrr_socket_msg_get_packet_target_size (struct rrr_socket_read_session *read_session, void *arg) {
+	if (read_session->rx_buf_wpos < (ssize_t) sizeof(struct rrr_socket_msg)) {
+		return RRR_SOCKET_READ_INCOMPLETE;
 	}
-	else if (RRR_SOCKET_MSG_IS_BE(message)) {
-		message->endian_two = be16toh(message->endian_two);
-		message->crc32 = be32toh(message->crc32);
-		message->msg_type = be16toh(message->msg_type);
-		message->msg_size = be32toh(message->msg_size);
-		message->msg_value = be64toh(message->msg_value);
+
+	(void)(arg);
+
+	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
+
+	if (crc32cmp (
+			((char*) socket_msg) + sizeof(socket_msg->header_crc32),
+			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
+			be32toh(socket_msg->header_crc32)
+	) != 0) {
+		VL_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_msg_get_packet_target_size\n");
+		return RRR_SOCKET_SOFT_ERROR;
 	}
-	else {
-		VL_MSG_ERR("Unknown endianess in rrr_socket_msg_head_to_host\n");
-		return 1;
-	}
-	return 0;
+
+	read_session->target_size = be32toh(socket_msg->network_size);
+
+	return RRR_SOCKET_OK;
 }
 
 int rrr_socket_msg_checksum_check (
 	struct rrr_socket_msg *message,
-	ssize_t total_size
+	ssize_t data_size
 ) {
 	// HEX dumper
 /*	for (unsigned int i = 0; i < total_size; i++) {
@@ -104,14 +119,10 @@ int rrr_socket_msg_checksum_check (
 
 	printf ("Check crc32 %lu\n", message->crc32);*/
 
-	vl_u32 checksum = message->crc32;
+	vl_u32 checksum = message->data_crc32;
 
-	void *start_pos = ((void *) message) + sizeof(message->crc32);
-	ssize_t checksum_data_length = total_size - sizeof(message->crc32);
-
-	int res = crc32cmp((char *) start_pos, checksum_data_length, checksum);
-
-	return (res == 0 ? 0 : 1);
+	char *data_begin = ((char *) message) + sizeof(*message);
+	return crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
 }
 
 int rrr_socket_msg_head_validate (struct rrr_socket_msg *message) {

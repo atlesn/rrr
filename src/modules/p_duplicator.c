@@ -155,27 +155,27 @@ struct read_minimum_data {
 int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned long int size) {
 	int ret = 0;
 
+	(void)(size);
+
 	struct read_minimum_data *minimum_callback_data = args->private_data;
 	struct fifo_callback_args *fifo_callback_data_orig = minimum_callback_data->poll_data;
-
-	if (size < sizeof(struct vl_message)) {
-		VL_MSG_ERR("Bug: Size was too small in read_minimum_callback\n");
-		exit (EXIT_FAILURE);
-	}
 
 	struct vl_message *message = (struct vl_message *) data;
 
 	uint64_t timestamp = message->timestamp_from;
 
-	char *new_data = malloc(size);
+	ssize_t data_length = message->length;
+	ssize_t total_length = sizeof(*message) + data_length - 1;
+
+	char *new_data = malloc(total_length);
 	if (new_data == NULL) {
 		VL_MSG_ERR("Could not allocate data in duplicator read_minimum_callback\n");
 		return 1;
 	}
 
-	memcpy(new_data, data, size);
+	memcpy(new_data, data, total_length);
 
-	int res = minimum_callback_data->callback(fifo_callback_data_orig, new_data, size);
+	int res = minimum_callback_data->callback(fifo_callback_data_orig, new_data, total_length);
 
 	if (res == 0) {
 		if (timestamp > minimum_callback_data->result_timestamp) {
@@ -243,8 +243,8 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 
 	int ret = 0;
 
-	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: %s measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("duplicator %s: Result from duplicator: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
 	/*
 	readers_read_lock(duplicator_data);
 

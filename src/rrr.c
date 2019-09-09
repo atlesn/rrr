@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/configuration.h"
 #include "lib/threads.h"
 #include "lib/version.h"
+#include "lib/rrr_socket.h"
 
 const char *module_library_paths[] = {
 		VL_MODULE_PATH,
@@ -159,6 +160,8 @@ int main (int argc, const char *argv[]) {
 
 	threads_restart:
 
+	rrr_socket_close_all();
+
 	// During preload stage, signals are temporarily deactivated.
 	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
 
@@ -215,6 +218,7 @@ int main (int argc, const char *argv[]) {
 		if (count > 0) {
 			VL_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
+		rrr_socket_close_all();
 
 	out_unload_modules:
 #ifndef VL_NO_MODULE_UNLOAD

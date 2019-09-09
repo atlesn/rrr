@@ -1,3 +1,22 @@
+rrr (0.13) unstable; urgency=medium
+
+  * New MQTT modules, client and server V3.1(.1) and V5
+  * Arbitary length of the main vl_message struct as opposed to fixed
+  * New socket message reading fitted to dynamic message sizes on
+    UDP from multiple clients simultaneously
+  * Removed blockdev module, does not work with arbitary length messages
+  * Internal changes to data structures in ip_buffer messages
+  * Changes in CRC32 checksumming, separate checksum for header and data
+  * Array types:
+    * Arbitary number of data types in array
+    * Changes in configuration file syntax
+    * Support for new ISTR and USTR types (numbers as text) as well
+      as separator characters
+    * Internal changes to array type with fixed endianess. Internal
+    messages between modules are always BE32
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 08 Sep 2019 00:58:56 +0200
+
 rrr (0.12) unstable; urgency=medium
 
   * New perl5 module with source, process and config functions

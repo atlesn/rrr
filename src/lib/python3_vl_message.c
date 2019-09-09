@@ -34,7 +34,8 @@ static const unsigned long int max_64 = 0xffffffffffffffff;
 
 struct rrr_python3_vl_message_data {
 	PyObject_HEAD
-	struct vl_message message;
+	struct vl_message message_static;
+	struct vl_message *message_dynamic;
 };
 
 int __rrr_python3_vl_message_set_data (PyObject *self, PyObject *byte_data) {
@@ -56,14 +57,22 @@ int __rrr_python3_vl_message_set_data (PyObject *self, PyObject *byte_data) {
 		goto out;
 	}
 
-	if (len > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR("Specified length of data to vl_message.set() exceeds maximum of %i\n", MSG_DATA_MAX_LENGTH);
-		ret = 1;
-		goto out;
+	ssize_t new_size = sizeof(data->message_dynamic) + len - 1;
+	ssize_t old_size = sizeof(data->message_dynamic) + data->message_dynamic->length;
+
+	if (new_size > old_size) {
+		struct vl_message *new_message = realloc(data->message_dynamic, new_size);
+		if (new_message == NULL) {
+			VL_MSG_ERR("Could not re-allocate memory in __rrr_python3_vl_message_set_data\n");
+			ret = 1;
+			goto out;
+		}
+		data->message_dynamic = new_message;
 	}
 
-	memcpy(data->message.data, str, len);
-	data->message.length = len;
+	memcpy(data->message_dynamic->data_, str, len);
+	data->message_dynamic->length = len;
+	data->message_static.length = len;
 
 	out:
 	return ret;
@@ -96,11 +105,13 @@ static PyObject *rrr_python3_vl_message_f_set (PyObject *self, PyObject **args, 
 		goto out;
 	}
 
-	data->message.type = type;
-	data->message.class = class;
-	data->message.timestamp_from = timestamp_from;
-	data->message.timestamp_to = timestamp_to;
-	data->message.data_numeric = data_numeric;
+	data->message_dynamic->type = type;
+	data->message_dynamic->class = class;
+	data->message_dynamic->timestamp_from = timestamp_from;
+	data->message_dynamic->timestamp_to = timestamp_to;
+	data->message_dynamic->data_numeric = data_numeric;
+
+	memcpy(&data->message_static, data->message_dynamic, sizeof(data->message_static) - 1);
 
 	out:
 	if (ret) {
@@ -117,7 +128,14 @@ static PyObject *rrr_python3_vl_message_f_new (PyTypeObject *type, PyObject *arg
 
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 
-	memset (&data->message, '\0', sizeof(data->message));
+	data->message_dynamic = malloc(sizeof(*(data->message_dynamic)) - 1);
+	if (data->message_dynamic == NULL) {
+		VL_MSG_ERR("Could not allocate memory for message in rrr_python3_vl_message_f_new\n");
+		return NULL;
+	}
+
+	memset (data->message_dynamic, '\0', sizeof(*(data->message_dynamic)) - 1);
+	memset (&data->message_static, '\0', sizeof(data->message_static));
 
 	return self;
 }
@@ -126,7 +144,8 @@ static PyObject *rrr_python3_vl_message_f_new (PyTypeObject *type, PyObject *arg
 static int rrr_python3_vl_message_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 
-	memset (&data->message, '\0', sizeof(data->message));
+	memset (&data->message_static, '\0', sizeof(data->message_static));
+	memset (data->message_dynamic, '\0', sizeof(*(data->message_dynamic)) - 1);
 
 	if (kwds != NULL && PyDict_Size(kwds) != 0) {
 		VL_MSG_ERR("Keywords not supported in vl_message init\n");
@@ -161,13 +180,15 @@ static int rrr_python3_vl_message_f_init(PyObject *self, PyObject *args, PyObjec
 }
 
 static void rrr_python3_vl_message_f_dealloc (PyObject *self) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+	free(data->message_dynamic);
 	PyObject_Del(self);
 }
 
 static PyObject *rrr_python3_vl_message_f_get_data(PyObject *self, PyObject *args) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 	(void)(args);
-	return PyByteArray_FromStringAndSize(data->message.data, data->message.length);
+	return PyByteArray_FromStringAndSize(data->message_dynamic->data_, data->message_dynamic->length);
 }
 
 static PyMethodDef vl_message_methods[] = {
@@ -194,11 +215,9 @@ static PyMethodDef vl_message_methods[] = {
 
 struct rrr_python3_vl_message_data dummy;
 #define RRR_PY_VL_MESSAGE_OFFSET(member) \
-	(((void*) &(dummy.message.member)) - ((void*) &(dummy)))
+	(((void*) &(dummy.message_static.member)) - ((void*) &(dummy)))
 
 static PyMemberDef vl_message_members[] = {
-		{"endian_two",		RRR_PY_16,	RRR_PY_VL_MESSAGE_OFFSET(endian_two),		0, "Both endian bytes"},
-		{"endian_one",		RRR_PY_8,	RRR_PY_VL_MESSAGE_OFFSET(endian_one),		0, "First endian byte"},
 		{"type",			RRR_PY_32,	RRR_PY_VL_MESSAGE_OFFSET(type),				0, "Type"},
 		{"class",			RRR_PY_32,	RRR_PY_VL_MESSAGE_OFFSET(class),			0, "Class"},
 		{"timestamp_from",	RRR_PY_64,	RRR_PY_VL_MESSAGE_OFFSET(timestamp_from),	0, "From timestamp"},
@@ -261,28 +280,29 @@ PyTypeObject rrr_python3_vl_message_type = {
 
 struct vl_message *rrr_python3_vl_message_get_message (PyObject *self) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
-	return &data->message;
-}
-
-PyObject *rrr_python3_vl_message_new (void) {
-	struct rrr_python3_vl_message_data *ret = PyObject_New(struct rrr_python3_vl_message_data, &rrr_python3_vl_message_type);
-	if (ret) {
-		memset(&ret->message, '\0', sizeof(ret->message));
-	}
-	return (PyObject *) ret;
+	memcpy (data->message_dynamic, &data->message_static, sizeof(data->message_static) - 1);
+	return data->message_dynamic;
 }
 
 PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 	struct rrr_python3_vl_message_data *ret = NULL;
 
-	if (msg->msg_size != sizeof(ret->message)) {
+	if (msg->msg_size < sizeof(ret->message_static)) {
 		VL_BUG("Received object of wrong size in rrr_python3_vl_message_new_from_message\n");
 	}
 
 	ret = PyObject_New(struct rrr_python3_vl_message_data, &rrr_python3_vl_message_type);
-	if (ret) {
-		memcpy(&ret->message, msg, msg->msg_size);
+	if (ret == NULL) {
+		return NULL;
 	}
+
+
+	ret->message_dynamic = malloc(msg->msg_size);
+	if (ret->message_dynamic == NULL) {
+		return NULL;
+	}
+	memcpy(ret->message_dynamic, msg, msg->msg_size);
+	memcpy(&ret->message_static, ret->message_dynamic, sizeof(ret->message_static) - 1);
 
 	return (PyObject *) ret;
 }

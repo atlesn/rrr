@@ -51,7 +51,7 @@ struct python3_fork {
 	int invalid;
 
 	int (*poll)(PyObject *socket, int timeout);
-	int (*recv)(struct rrr_socket_msg **result, PyObject *socket, int timeout);
+	int (*recv)(struct rrr_socket_msg **result, PyObject *socket);
 	int (*send)(PyObject *socket, struct rrr_socket_msg *message);
 };
 

@@ -85,7 +85,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 			&array_message,
 			&array_message_python3,
 			thread_data->init_data.module->all_instances,
-			"instance_udpreader","instance_buffer", "instance_python3");
+			"instance_udpreader","instance_buffer_from_perl5", "instance_buffer_from_python3");
 	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
 
 	update_watchdog_time(thread_data->thread);

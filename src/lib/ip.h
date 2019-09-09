@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "messages.h"
+
 #ifdef VL_WITH_OPENSSL
 #include "module_crypt.h"
 #endif
@@ -36,10 +37,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IP_RECEIVE_ERR 1
 #define VL_IP_RECEIVE_STOP 2
 
-#define VL_IP_RECEIVE_MAX_SIZE 8096
+#define VL_IP_RECEIVE_MAX_STEP_SIZE 8096
 
 // Print/reset stats every X seconds
 #define VL_IP_STATS_DEFAULT_PERIOD 3
+
+struct vl_message;
+struct rrr_socket_read_session_collection;
 
 struct ip_stats {
 	pthread_mutex_t lock;
@@ -56,17 +60,12 @@ struct ip_stats_twoway {
 	struct ip_stats receive;
 };
 
-union ip_buffer_data {
-	char data[VL_IP_RECEIVE_MAX_SIZE];
-	struct vl_message message;
-};
-
 struct ip_buffer_entry {
-	union ip_buffer_data data; // Must be first, we do dangerous casts :)
 	ssize_t data_length;
 	struct sockaddr addr;
 	socklen_t addr_len;
-	uint64_t time;
+	uint64_t send_time;
+	void *message;
 };
 
 struct ip_send_packet_info {
@@ -81,10 +80,40 @@ struct ip_data {
 	unsigned int port;
 };
 
+struct ip_accept_data {
+	struct sockaddr addr;
+	socklen_t len;
+	struct ip_data ip_data;
+};
+
 #define VL_IP_STATS_UPDATE_OK 0		// Stats was updated
 #define VL_IP_STATS_UPDATE_ERR 1	// Error
 #define VL_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
+void ip_buffer_entry_destroy (
+		struct ip_buffer_entry *entry
+);
+void ip_buffer_entry_destroy_void (
+		void *entry
+);
+void ip_buffer_entry_set_message (
+		struct ip_buffer_entry *entry,
+		void *message,
+		ssize_t data_length
+);
+int ip_buffer_entry_new (
+		struct ip_buffer_entry **result,
+		ssize_t data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		void *message
+);
+int ip_buffer_entry_new_with_empty_message (
+		struct ip_buffer_entry **result,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
 int ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
@@ -97,19 +126,20 @@ int ip_stats_update(
 int ip_stats_print_reset(
 		struct ip_stats *stats, int do_reset
 );
-
 int ip_receive_packets (
-		int fd,
-		int (*callback)(struct ip_buffer_entry *ip, void *arg),
-		void *arg,
-		struct ip_stats *stats
+	struct rrr_socket_read_session_collection *read_session_collection,
+	int fd,
+	int (*callback)(struct ip_buffer_entry *entry, void *arg),
+	void *arg,
+	struct ip_stats *stats
 );
 int ip_receive_messages (
+		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif
-		int (*callback)(struct ip_buffer_entry *ip, void *arg),
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
@@ -122,6 +152,10 @@ int ip_send_message (
 		struct ip_stats *stats
 );
 void ip_network_cleanup (void *arg);
-int ip_network_start (struct ip_data *data);
+int ip_network_start_udp_ipv4 (struct ip_data *data);
+int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, unsigned int port, const char *host);
+int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections);
+int ip_close (struct ip_data *data);
+int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator, int tcp_nodelay);
 
 #endif

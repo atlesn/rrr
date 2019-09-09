@@ -783,46 +783,13 @@ int rrr_settings_iterate_packed (
 	return ret;
 }
 
-int rrr_settings_packed_convert_endianess (struct rrr_setting_packed *setting_packed) {
-	if (RRR_SOCKET_MSG_IS_LE(setting_packed)) {
-		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) setting_packed) != 0) {
-			return 1;
-		}
-		setting_packed->type = le32toh(setting_packed->type);
-		setting_packed->was_used = le32toh(setting_packed->was_used);
-		setting_packed->data_size = le32toh(setting_packed->data_size);
-	}
-	else if (RRR_SOCKET_MSG_IS_BE(setting_packed)) {
-		if (rrr_socket_msg_head_to_host((struct rrr_socket_msg *) setting_packed) != 0) {
-			return 1;
-		}
-		setting_packed->type = be32toh(setting_packed->type);
-		setting_packed->was_used = be32toh(setting_packed->was_used);
-		setting_packed->data_size = be32toh(setting_packed->data_size);
-	}
-	else {
-		VL_MSG_ERR("Unknown endian bytes found in message\n");
-		return 1;
-	}
-
-	return 0;
+void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed) {
+	setting_packed->type = be32toh(setting_packed->type);
+	setting_packed->was_used = be32toh(setting_packed->was_used);
+	setting_packed->data_size = be32toh(setting_packed->data_size);
 }
 
 void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message) {
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) message,
-			RRR_SOCKET_MSG_TYPE_SETTING,
-			sizeof(*message),
-			0
-	);
-	rrr_socket_msg_checksum (
-			(struct rrr_socket_msg *) message,
-			sizeof(*message)
-	);
-	rrr_socket_msg_head_to_network (
-			(struct rrr_socket_msg *) message
-	);
-
 	message->type = htobe32(message->type);
 	message->was_used = htobe32(message->was_used);
 	message->data_size = htobe32(message->data_size);

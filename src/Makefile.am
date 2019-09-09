@@ -1,4 +1,4 @@
-SUBDIRS = blockdevlogger lib modules tests python
+SUBDIRS = lib modules tests python
 bin_PROGRAMS = rrr
 rrr_LDFLAGS = -ldl -lpthread -L./lib -lrrr
 rrr_SOURCES = rrr.c global.c main.c

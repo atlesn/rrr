@@ -217,6 +217,15 @@ int instance_load_and_save (
 		return 1;
 	}
 
+	if (module->dynamic_data->type == VL_MODULE_TYPE_DEADEND && (
+			module->dynamic_data->operations.poll != NULL ||
+			module->dynamic_data->operations.poll_delete != NULL ||
+			module->dynamic_data->operations.poll_delete_ip != NULL
+	)) {
+		VL_BUG("Poll functions specified for module %s which is of dead end type\n",
+				module->dynamic_data->instance_name);
+	}
+
 	return 0;
 }
 
@@ -267,7 +276,8 @@ int instance_add_senders (
 	);
 
 	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR ||
-		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE
+		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE ||
+		instance->dynamic_data->type == VL_MODULE_TYPE_DEADEND
 	) {
 		if (senders_check_empty(&instance->senders)) {
 			if (instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE) {
@@ -288,6 +298,13 @@ int instance_add_senders (
 					sender->dynamic_data->instance_name,
 					sender->dynamic_data->module_name
 			);
+
+			if (sender->dynamic_data->type == VL_MODULE_TYPE_DEADEND) {
+				VL_MSG_ERR("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
+						instance->dynamic_data->instance_name, sender->dynamic_data->instance_name);
+				ret = 1;
+				goto out;
+			}
 
 			if (sender == instance) {
 				VL_MSG_ERR("Instance %s set with itself as sender\n",

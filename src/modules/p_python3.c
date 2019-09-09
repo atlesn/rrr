@@ -477,10 +477,11 @@ int read_from_source_or_processor(struct python3_reader_data *data) {
 
 //	printf ("%s read %i messages\n", data->thread->name, callback_data.message_count);
 
-	if (ret == 0) {
-		VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program in thread '%s'\n",
-				INSTANCE_D_NAME(python3_data->thread_data), data->thread->name);
-	}
+
+//	if (ret == 0) {
+//		VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program in thread '%s'\n",
+//				INSTANCE_D_NAME(python3_data->thread_data), data->thread->name);
+//	}
 
 	return ret;
 }

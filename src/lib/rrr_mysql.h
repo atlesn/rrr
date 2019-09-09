@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 struct instance_thread_data;
-struct rrr_type_definition_collection;
+struct rrr_type_template_collection;
 
 #define MYSQL_CREATE_TABLE_DEFINITION \
 	struct instance_thread_data *thread_data, \

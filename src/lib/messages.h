@@ -52,17 +52,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_INFO_STRING "INFO"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_EXTRA_MAX_LENGTH 8
-#define MSG_DATA_MAX_LENGTH 1024
-#define MSG_DATA_MAX_LENGTH_STR "1024"
-
-#define MSG_DATA_LENGTH_OK(msg) \
-	((msg)->length <= MSG_DATA_MAX_LENGTH)
-
-#define MSG_SEND_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
-
-#define MSG_TMP_SIZE 64
-
 #define MSG_IS_MSG(message)			(message->type == MSG_TYPE_MSG)
 #define MSG_IS_ACK(message)			(message->type == MSG_TYPE_ACK)
 #define MSG_IS_TAG(message)			(message->type == MSG_TYPE_TAG)
@@ -75,24 +64,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
+#define MSG_TOTAL_LENGTH(message)	(sizeof(*(message)) + (message)->length - 1)
+
+#define VL_MESSAGE_HEAD 	\
+	vl_u16 type;			\
+	vl_u16 type_flags;		\
+	vl_u16 class;			\
+	vl_u16 version;			\
+	vl_u64 timestamp_from;	\
+	vl_u64 timestamp_to;	\
+	vl_u64 data_numeric;	\
+	vl_u32 length
+
 struct vl_message {
 	RRR_SOCKET_MSG_HEAD;
-
-	vl_u32 type;
-	vl_u32 class;
-	vl_u64 timestamp_from;
-	vl_u64 timestamp_to;
-	vl_u64 data_numeric;
-
-	vl_u32 length;
-	char data[MSG_DATA_MAX_LENGTH+2];
-//	char extra[MSG_EXTRA_MAX_LENGTH];
+	VL_MESSAGE_HEAD;
+	char data_[1];
 } __attribute__((packed));
 
 static inline struct rrr_socket_msg *rrr_vl_message_safe_cast (struct vl_message *message) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
 	ret->msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
-	ret->msg_size = sizeof(*message);
+	ret->msg_size = sizeof(*message) + message->length - 1;
 	ret->msg_value = 0;
 	return ret;
 }
@@ -100,36 +93,25 @@ struct vl_message *message_new_reading (
 	vl_u64 reading_millis,
 	vl_u64 time
 );
-struct vl_message *message_new_info (
-	vl_u64 time,
-	const char *msg_terminated
-);
 struct vl_message *message_new_array (
 	vl_u64 time,
 	vl_u32 length
 );
-int init_empty_message (
-	unsigned long int type,
-	unsigned long int class,
-	vl_u64 timestamp_from,
-	vl_u64 timestamp_to,
-	vl_u64 data_numeric,
-	unsigned long int data_size,
-	struct vl_message *result
+int message_new_empty (
+		struct vl_message **final_result,
+		vl_u16 type,
+		vl_u16 type_flags,
+		vl_u32 class,
+		vl_u64 timestamp_from,
+		vl_u64 timestamp_to,
+		vl_u64 data_numeric,
+		vl_u32 data_size
 );
-int init_message (
-	unsigned long int type,
-	unsigned long int class,
-	vl_u64 timestamp_from,
-	vl_u64 timestamp_to,
-	vl_u64 data_numeric,
-	const char *data,
-	unsigned long int data_size,
-	struct vl_message *result
-);
-int message_convert_endianess (struct vl_message *message);
+
+void message_to_host (struct vl_message *message);
 void message_prepare_for_network (struct vl_message *message);
-struct vl_message *message_duplicate (struct vl_message *message);
+struct vl_message *message_duplicate (const struct vl_message *message);
+struct vl_message *message_duplicate_no_data(struct vl_message *message);
 int message_validate (const struct vl_message *message);
 
 #endif
