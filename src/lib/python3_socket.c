@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_socket.h"
 #include "python3_setting.h"
 #include "rrr_socket.h"
+#include "rrr_socket_common.h"
 #include "messages.h"
 #include "settings.h"
 #include "../../config.h"
@@ -148,7 +149,13 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 		}
 	}
 
-	int new_socket = rrr_socket(AF_UNIX, SOCK_SEQPACKET/*|O_NONBLOCK*/, 0, "rrr_python3_socket_f_start - socket");
+	int new_socket = rrr_socket (
+			AF_UNIX,
+			SOCK_SEQPACKET/*|O_NONBLOCK*/,
+			0,
+			"rrr_python3_socket_f_start - socket",
+			NULL // We unlink the file ourselves after closing
+	);
 
 	if (new_socket == -1) {
 		VL_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", strerror(errno));
@@ -179,12 +186,6 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 			goto out;
 		}
 		rrr_socket_close(fd);
-
-		if (unlink (filename) != 0) {
-			VL_MSG_ERR("Could not unlink file to be used for socket in python3 socket __init__ (%s): %s\n", arg_filename, strerror(errno));
-			ret = 1;
-			goto out;
-		}
 	}
 
 	socket_data->filename = malloc(strlen(filename)+1);
@@ -226,7 +227,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 	Py_RETURN_TRUE;
 }
 
-static PyObject *rrr_python3_socket_f_get_filename(PyObject *self, PyObject *args) {
+static PyObject *rrr_python3_socket_f_get_filename (PyObject *self, PyObject *args) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
 
 	(void)(args);
@@ -282,8 +283,8 @@ static PyMethodDef socket_methods[] = {
 		},
 		{
 				ml_name:	"start",
-				ml_meth:	(PyCFunctionWithKeywords) rrr_python3_socket_f_start,
-				ml_flags:	METH_O,
+				ml_meth:	(PyCFunction) rrr_python3_socket_f_start,
+				ml_flags:	METH_VARARGS | METH_KEYWORDS,
 				ml_doc:		"Start a new socket or connect to existing if filename provided"
 		},
 		{
@@ -705,7 +706,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_read_session_get_target_length_from_message_and_checksum,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
 			&callback_data

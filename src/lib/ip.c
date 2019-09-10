@@ -45,6 +45,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
+#include "rrr_socket_common.h"
+#include "rrr_socket_msg.h"
+#include "rrr_socket_read.h"
 
 void ip_buffer_entry_destroy (
 		struct ip_buffer_entry *entry
@@ -287,7 +290,7 @@ int ip_receive_packets (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_read_session_get_target_length_from_message_and_checksum,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__ip_receive_packets_callback,
 			&callback_data
@@ -544,7 +547,13 @@ void ip_network_cleanup (void *arg) {
 }
 
 int ip_network_start_udp_ipv4 (struct ip_data *data) {
-	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
+	int fd = rrr_socket (
+			AF_INET,
+			SOCK_DGRAM|SOCK_NONBLOCK,
+			IPPROTO_UDP,
+			"ip_network_start",
+			NULL
+	);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
@@ -604,7 +613,13 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 
     struct addrinfo *rp;
     for (rp = result; rp != NULL; rp = rp->ai_next) {
-    	fd = rrr_socket(rp->ai_family, rp->ai_socktype|SOCK_NONBLOCK, rp->ai_protocol, "ip_network_connect_tcp_ipv4_or_ipv6");
+    	fd = rrr_socket (
+    			rp->ai_family,
+				rp->ai_socktype|SOCK_NONBLOCK,
+				rp->ai_protocol,
+				"ip_network_connect_tcp_ipv4_or_ipv6",
+				NULL
+		);
     	if (fd == -1) {
     		VL_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
     		continue;
@@ -690,7 +705,13 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 }
 
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
-	int fd = rrr_socket(AF_INET6, SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
+	int fd = rrr_socket (
+			AF_INET6,
+			SOCK_NONBLOCK|SOCK_STREAM,
+			0,
+			"ip_network_start",
+			NULL
+	);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;

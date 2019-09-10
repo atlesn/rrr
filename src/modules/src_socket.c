@@ -25,13 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <src/lib/types.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include "../lib/settings.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
-#include "../lib/ip.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
@@ -40,25 +42,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
 
-struct udpreader_data {
+struct socket_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer buffer;
 	struct fifo_buffer inject_buffer;
-	unsigned int listen_port;
-	struct ip_data ip;
+	char *socket_path;
 	struct rrr_type_template_collection definitions;
-	struct rrr_socket_read_session_collection read_sessions;
+	struct rrr_socket_client_collection clients;
+	int socket_fd;
 };
 
 void data_cleanup(void *arg) {
-	struct udpreader_data *data = (struct udpreader_data *) arg;
+	struct socket_data *data = (struct socket_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
 	fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_type_template_collection_clear(&data->definitions);
-	rrr_socket_read_session_collection_destroy(&data->read_sessions);
+	rrr_socket_client_collection_destroy(&data->clients);
+	RRR_FREE_IF_NOT_NULL(data->socket_path);
 }
 
-int data_init(struct udpreader_data *data, struct instance_thread_data *thread_data) {
+int data_init(struct socket_data *data, struct instance_thread_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -76,57 +79,39 @@ int data_init(struct udpreader_data *data, struct instance_thread_data *thread_d
 }
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct udpreader_data *udpreader_data = data->private_data;
-	return fifo_read_clear_forward(&udpreader_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+	struct socket_data *socket_data = data->private_data;
+	return fifo_read_clear_forward(&socket_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct udpreader_data *udpreader_data = data->private_data;
-	return fifo_search(&udpreader_data->buffer, callback, poll_data, wait_milliseconds);
+	struct socket_data *socket_data = data->private_data;
+	return fifo_search(&socket_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
-int config_parse_port (struct udpreader_data *data, struct rrr_instance_config *config) {
+int parse_config (struct socket_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	rrr_setting_uint tmp_uint;
-	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "udpr_port");
+	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
+		VL_MSG_ERR("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
+	}
 
-	if (ret != 0) {
-		if (ret == RRR_SETTING_PARSE_ERROR) {
-			VL_MSG_ERR("Could not parse udpr_port for instance %s\n", config->name);
-		}
-		else if (ret == RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Could not find required udpr_port setting for instance %s\n", config->name);
-		}
-		else {
-			VL_MSG_ERR("Error while parsing udpr port setting for instance %s\n", config->name);
-		}
+	struct sockaddr_un addr;
+
+	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
+		VL_MSG_ERR("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
+				config->name, sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}
 
-	data->listen_port = tmp_uint;
-
-	out:
-	return ret;
-}
-
-int parse_config (struct udpreader_data *data, struct rrr_instance_config *config) {
-	int ret = 0;
-
-	// Parse listen port
-	if ((ret = config_parse_port (data, config)) != 0) {
-		goto out;
-	}
-
 	// Parse expected input data
-	if (rrr_type_parse_definition (&data->definitions, config, "udpr_input_types") != 0) {
- 		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
+	if (rrr_type_parse_definition (&data->definitions, config, "socket_input_types") != 0) {
+ 		VL_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n", config->name);
 		return 1;
 	}
 
 	if (data->definitions.node_count == 0) {
-		VL_MSG_ERR("No data types defined in udpr_input_types\n");
+		VL_MSG_ERR("No data types defined in socket_input_types\n");
 		return 1;
 	}
 
@@ -135,37 +120,37 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 }
 
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
-	struct udpreader_data *data = arg;
+	struct socket_data *data = arg;
 	struct vl_message *message = NULL;
 	int ret = 0;
 
-	struct rrr_type_template_collection definitions;
+/*	struct rrr_type_template_collection definitions;
 
 	if (rrr_type_definition_collection_clone(&definitions, &data->definitions) != 0) {
-		VL_MSG_ERR("Could not clone defintions in read_data_callback og udpreader instance %s\n",
+		VL_MSG_ERR("Could not clone defintions in read_data_callback og socket instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		return 1;
 	}
 
 	// ATTENTION! - Received ip message does not contain a vl_message struct
 	if (rrr_type_parse_data_from_definition(&definitions, entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("udpreader received an invalid packet\n");
+		VL_MSG_ERR("socket received an invalid packet\n");
 		ret = 0;
 		goto out_destroy;
 	}
 	else {
-		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
+		VL_DEBUG_MSG_2("socket received a valid packet in callback\n");
 	}
 
 	if ((ret = rrr_type_new_message(&message, &definitions, time_get_64())) != 0) {
-		VL_MSG_ERR("Could not create message in udpreader instance %s read_data_callback\n",
+		VL_MSG_ERR("Could not create message in socket instance %s read_data_callback\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out_destroy;
 	}
 
 	if (message != NULL) {
 		fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
-		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
+		VL_DEBUG_MSG_3("socket created a message with timestamp %llu size %lu\n",
 				(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 		message = NULL;
 	}
@@ -173,20 +158,20 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	out_destroy:
 	ip_buffer_entry_destroy_void(entry);
 	rrr_type_template_collection_clear(&definitions);
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_FREE_IF_NOT_NULL(message);*/
 
 	return ret;
 }
 
 int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	VL_DEBUG_MSG_4("udpreader inject callback size %lu\n", size);
-	struct udpreader_data *udpreader_data = poll_data->private_data;
-	return read_data_callback((struct ip_buffer_entry *) data, udpreader_data);
+	VL_DEBUG_MSG_4("socket inject callback size %lu\n", size);
+	struct socket_data *socket_data = poll_data->private_data;
+	return read_data_callback((struct ip_buffer_entry *) data, socket_data);
 }
 
-int read_data(struct udpreader_data *data) {
+int read_data(struct socket_data *data) {
 	int ret = 0;
-
+/*
 	ret |= ip_receive_packets (
 		&data->read_sessions,
 		data->ip.fd,
@@ -196,73 +181,88 @@ int read_data(struct udpreader_data *data) {
 	);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Error from ip_receive_packets in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		VL_MSG_ERR("Error from ip_receive_packets in socket instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
 
 	struct fifo_callback_args callback_data = {NULL, data, 0};
 	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Error from buffer in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		VL_MSG_ERR("Error from buffer in socket instance %s\n", INSTANCE_D_NAME(data->thread_data));
 	}
 
 	ret = (ret != 0 ? 1 : 0);
-
+*/
 	return ret;
 }
 
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
-	struct udpreader_data *data = thread_data->private_data;
-	VL_DEBUG_MSG_2("udpreader: writing data from inject function\n");
+static int socket_start (struct socket_data *data) {
+	int ret = 0;
 
-	if (data->inject_buffer.invalid) {
-		return 1;
+	char socket_name[64 + 1];
+	snprintf(socket_name, 64, "socket for instance %s", INSTANCE_D_NAME(data->thread_data));
+	socket_name[64] = '\0';
+
+	int fd = 0;
+	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1) != 0) {
+		VL_MSG_ERR("Could not create socket in socket_start of instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
 	}
 
-	fifo_buffer_write(&data->inject_buffer, (char *) message, sizeof(*message));
+	data->socket_fd = fd;
 
-	return 0;
+	rrr_socket_client_collection_init(&data->clients, fd, socket_name);
+
+	out:
+	return ret;
 }
 
+static void socket_stop (void *arg) {
+	struct socket_data *data = arg;
+	if (data->socket_fd != 0) {
+		rrr_socket_close(data->socket_fd);
+	}
+	rrr_socket_client_collection_destroy(&data->clients);
+}
 
-static void *thread_entry_udpreader (struct vl_thread *thread) {
+static void *thread_entry_socket (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
-	struct udpreader_data *data = thread_data->private_data = thread_data->private_memory;
+	struct socket_data *data = thread_data->private_data = thread_data->private_memory;
+
+	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
-		VL_MSG_ERR("Could not initalize data in udpreader instance %s\n", INSTANCE_D_NAME(thread_data));
+		VL_MSG_ERR("Could not initalize data in socket instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	VL_DEBUG_MSG_1 ("UDPreader thread data is %p\n", thread_data);
+	VL_DEBUG_MSG_1 ("Socket thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
-
-	int config_error = 0;
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
-		config_error = 1;
-	}
+	pthread_cleanup_push(socket_stop, data);
 
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
-	if (config_error) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parsing failed for socket instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	pthread_cleanup_push(ip_network_cleanup, &data->ip);
-
-	data->ip.port = data->listen_port;
-	if (ip_network_start_udp_ipv4(&data->ip) != 0) {
-		VL_MSG_ERR("Could not initialize network in udpreader\n");
+	if (socket_start(data) != 0) {
+		VL_MSG_ERR("Could not start socket in socket instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
-	VL_DEBUG_MSG_2("udpreader: listening on port %d\n", data->listen_port);
+
+	VL_DEBUG_MSG_2("socket instance %s listening on socket %s\n",
+			INSTANCE_D_NAME(thread_data), data->socket_path);
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
@@ -272,19 +272,18 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 		}
 	}
 
-	pthread_cleanup_pop(1);
-
 	out_message:
+	VL_DEBUG_MSG_1 ("socket instance %s received encourage stop\n",
+			INSTANCE_D_NAME(thread_data));
 
-	VL_DEBUG_MSG_1 ("udpreader %s received encourage stop\n", thread_data->init_data.instance_config->name);
-
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
 static int test_config (struct rrr_instance_config *config) {
-	struct udpreader_data data;
+	struct socket_data data;
 	int ret = 0;
 	if ((ret = data_init(&data, NULL)) != 0) {
 		goto err;
@@ -297,18 +296,18 @@ static int test_config (struct rrr_instance_config *config) {
 
 static struct module_operations module_operations = {
 	NULL,
-	thread_entry_udpreader,
+	thread_entry_socket,
 	NULL,
 	poll,
 	NULL,
 	poll_delete,
 	NULL,
 	test_config,
-	inject,
+	NULL,
 	NULL
 };
 
-static const char *module_name = "udpreader";
+static const char *module_name = "socket";
 
 __attribute__((constructor)) void load(void) {
 }
