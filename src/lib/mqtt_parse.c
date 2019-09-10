@@ -350,7 +350,7 @@ static int __rrr_mqtt_parse_variable_int (uint32_t *target, const char *start, c
 		end++;
 		PARSE_CHECK_END_AND_RETURN_RAW(end, final_end);
 
-		uint8_t current = *((uint8_t*) start);
+		uint8_t current = *((uint8_t*) start + pos);
 
 		uint8_t value = current & 0x7f;
 		carry = current & 0x80;
@@ -554,7 +554,9 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 		return ret;
 	}
 
+
 	target->length = blob_length;
+	target->length_orig = blob_length;
 	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
 
 	bytes_parsed += blob_length;
@@ -568,6 +570,9 @@ static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = 0;
 
 	ret = __rrr_mqtt_parse_utf8 (&target->data, start, session->buf + session->buf_size, bytes_parsed_final);
+
+	target->length = target->length_orig = (*bytes_parsed_final) - sizeof(uint16_t);
+	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
 
 	return ret;
 }
@@ -657,7 +662,7 @@ static int __rrr_mqtt_parse_properties (
 		}
 
 		start = end;
-		ret = property_parsers[property_def->type](property, session, start, &bytes_parsed);
+		ret = property_parsers[property_def->internal_data_type](property, session, start, &bytes_parsed);
 		if (ret != 0) {
 			rrr_mqtt_property_destroy(property);
 			return ret;
@@ -979,7 +984,7 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 	PARSE_GET_PAYLOAD_SIZE();
 
 	if (payload_length == 0) {
-		VL_MSG_ERR("No subscriptions acknowlegded, payload was empty wil parsing SUBACK message\n");
+		VL_MSG_ERR("No subscriptions acknowlegded, payload was empty while parsing SUBACK message\n");
 		return RRR_MQTT_PARSE_PARAMETER_ERROR;
 	}
 	if (session->buf_size == session->target_size) {
@@ -1032,11 +1037,20 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 
 			PARSE_VALIDATE_QOS(qos);
 
-			// Use V5 reason getter because V31 reason 1 and 2 are for errors
-			reason_struct = rrr_mqtt_p_reason_get_v5(qos);
+			if (reason != 0) {
+				reason_struct = rrr_mqtt_p_reason_get_v5(0x80);
+			}
+			else {
+				// Use V5 reason getter because V31 reason 1 and 2 are for errors
+				reason_struct = rrr_mqtt_p_reason_get_v5(qos);
+			}
 		}
 
-		PARSE_SAVE_AND_CHECK_REASON_STRUCT(suback,suback,reason_struct->v5_reason);
+		if (reason_struct->for_suback == 0) {
+			VL_MSG_ERR("Received unknown reason '%s' in SUBACK subscription acknowledgment with index %li\n",
+					reason_struct->description, i);
+			return RRR_MQTT_PARSE_PARAMETER_ERROR;
+		}
 	}
 
 	PARSE_END_PAYLOAD();
@@ -1169,8 +1183,8 @@ int rrr_mqtt_packet_parse (
 				goto out;
 			}
 			else {
-				VL_MSG_ERR("Parse error in packet fixed header remaining length of type %s\n",
-						properties->name);
+				VL_MSG_ERR("Parse error in packet fixed header remaining length of type %s, return was %i\n",
+						properties->name, ret);
 				RRR_MQTT_PARSE_STATUS_SET_ERR(session);
 				goto out;
 			}

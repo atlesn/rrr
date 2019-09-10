@@ -47,8 +47,9 @@ struct rrr_mqtt_client_data {
 	void *suback_handler_arg;
 };
 
-int rrr_mqtt_client_connection_is_alive (
+int rrr_mqtt_client_connection_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection
 );

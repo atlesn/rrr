@@ -75,9 +75,9 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	struct rrr_socket_msg *message
 ) {
 	// HEX dumper
-/*	for (unsigned int i = 0; i < total_size; i++) {
+/*	for (unsigned int i = 0; i < message->msg_size; i++) {
 		unsigned char *buf = (unsigned char *) message;
-		printf("%x-", *(buf+i));
+		printf("%02x-", *(buf+i));
 	}
 	printf("\n");*/
 
@@ -90,6 +90,8 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	if (data_size > 0) {
 		message->data_crc32 = crc32buf(data_begin, data_size);
 	}
+
+//	printf ("Put crc32 %lu data size %li\n", message->data_crc32, message->network_size - sizeof(*message));
 
 	message->network_size = htobe32(message->network_size);
 	message->msg_type = htobe16(message->msg_type);
@@ -141,13 +143,12 @@ int rrr_socket_msg_checksum_check (
 	ssize_t data_size
 ) {
 	// HEX dumper
-/*	for (unsigned int i = 0; i < total_size; i++) {
+/*	for (unsigned int i = 0; i < data_size; i++) {
 		unsigned char *buf = (unsigned char *) message;
-		printf("%x-", *(buf+i));
+		printf("%02x-", *(buf+i));
 	}
 	printf("\n");
-
-	printf ("Check crc32 %lu\n", message->crc32);*/
+	printf ("Check crc32 %lu data size %li\n", message->data_crc32, data_size - sizeof(*message));*/
 
 	vl_u32 checksum = message->data_crc32;
 

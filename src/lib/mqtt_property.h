@@ -77,7 +77,7 @@ struct rrr_mqtt_p_properties_header {
 };
 
 struct rrr_mqtt_property_definition {
-	int type;
+	int internal_data_type;
 	uint8_t identifier;
 
 	/* Human readable name */

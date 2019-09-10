@@ -58,7 +58,7 @@ const struct rrr_mqtt_property_definition property_definitions[] = {
 };
 
 const struct rrr_mqtt_property_definition *rrr_mqtt_property_get_definition(uint8_t id) {
-	for (int i = 0; property_definitions[i].type != 0; i++) {
+	for (int i = 0; property_definitions[i].internal_data_type != 0; i++) {
 		if (property_definitions[i].identifier == id) {
 			return &property_definitions[i];
 		}
@@ -281,7 +281,7 @@ int rrr_mqtt_property_collection_add_uint32 (
 	}
 
 	uint32_t max = 0;
-	switch (definition->type) {
+	switch (definition->internal_data_type) {
 		case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
 			max = 0xff; break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
@@ -338,7 +338,7 @@ int rrr_mqtt_property_collection_add_blob_or_utf8 (
 
 	int add_zero_if_needed = 0;
 
-	switch (definition->type) {
+	switch (definition->internal_data_type) {
 		case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
 		case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
 		case RRR_MQTT_PROPERTY_DATA_TYPE_FOUR:
@@ -438,7 +438,7 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
-		uint8_t type_id,
+		uint8_t identifier,
 		ssize_t index
 ) {
 	int match_count = 0;
@@ -446,7 +446,7 @@ struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 	struct rrr_mqtt_property *ret = NULL;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
-		if (node->definition->type == type_id) {
+		if (node->definition->identifier == identifier) {
 			if (match_count == index) {
 				ret = node;
 				RRR_LINKED_LIST_SET_STOP();
@@ -473,7 +473,7 @@ int rrr_mqtt_property_collection_calculate_size (
 	uint32_t tmp = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
-		switch (node->definition->type) {
+		switch (node->definition->internal_data_type) {
 			case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
 				result += 1; break;
 			case RRR_MQTT_PROPERTY_DATA_TYPE_TWO:
@@ -502,7 +502,7 @@ int rrr_mqtt_property_collection_calculate_size (
 				result += 2 + node->sibling->length;
 				break;
 			default:
-				VL_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->type);
+				VL_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->internal_data_type);
 		};
 		result_count++;
 		if (result < 0) {

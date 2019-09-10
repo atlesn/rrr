@@ -183,7 +183,7 @@ void message_to_host (struct vl_message *message) {
 
 void message_prepare_for_network (struct vl_message *message) {
 	message->type = htobe16(message->type);
-	message->type_flags = htobe16(message->type);
+	message->type_flags = htobe16(message->type_flags);
 	message->class = htobe16(message->class);
 	message->version = htobe16(message->version);
 	message->timestamp_from = htobe64(message->timestamp_from);

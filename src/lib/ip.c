@@ -531,6 +531,7 @@ int ip_send_message (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(final_message);
 	return ret;
 }
 

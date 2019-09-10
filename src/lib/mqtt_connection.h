@@ -276,6 +276,7 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 // May be called at any time to check if a connection is alive
 int rrr_mqtt_conn_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_conn_collection *connections,
 		struct rrr_mqtt_conn *connection
 );

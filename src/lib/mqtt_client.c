@@ -53,12 +53,13 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_con
 	return ret;
 }
 
-int rrr_mqtt_client_connection_is_alive (
+int rrr_mqtt_client_connection_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection
 ) {
-	return rrr_mqtt_conn_check_alive(alive, &data->mqtt_data.connections, connection);
+	return rrr_mqtt_conn_check_alive(alive, send_allowed, &data->mqtt_data.connections, connection);
 }
 
 int rrr_mqtt_client_publish (

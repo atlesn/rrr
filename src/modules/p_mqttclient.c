@@ -72,98 +72,6 @@ struct mqtt_client_data {
 	struct rrr_mqtt_conn *connection;
 };
 
-static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
-	struct mqtt_client_data *private_data = thread_data->private_data;
-	struct rrr_mqtt_p_publish *publish = NULL;
-	const struct vl_message *reading = (struct vl_message *) data;
-
-	(void)(size);
-
-	char *payload = NULL;
-	ssize_t payload_size = 0;
-	int ret = 0;
-
-	VL_DEBUG_MSG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, discarding data\n",
-			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
-
-
-	if (private_data->mqtt_client_data->protocol_version == NULL) {
-		VL_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, private_data->mqtt_client_data->protocol_version);
-	if (publish == NULL) {
-		VL_MSG_ERR("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	RRR_FREE_IF_NOT_NULL(publish->topic);
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
-
-	publish->topic = strdup(private_data->publish_topic);
-	if (publish->topic == NULL) {
-		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	if (private_data->publish_vl_message != 0) {
-		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
-				&publish->properties,
-				RRR_MQTT_PROPERTY_CONTENT_TYPE,
-				RRR_MESSAGE_MIME_TYPE,
-				strlen(RRR_MESSAGE_MIME_TYPE)
-		) != 0) {
-			VL_MSG_ERR("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			ret = 1;
-			goto out_free;
-		}
-		payload = data;
-		payload_size = sizeof(struct vl_message) - 1 + reading->length;
-		data = NULL;
-	}
-	else {
-		payload = malloc(reading->length);
-		if (payload == NULL) {
-			VL_MSG_ERR("could not allocate memory for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			ret = 1;
-			goto out_free;
-		}
-		payload_size = reading->length;
-	}
-
-	if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
-		VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
-	}
-	payload = NULL;
-
-	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
-		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
-	}
-
-	out_free:
-	RRR_FREE_IF_NOT_NULL(data);
-	RRR_FREE_IF_NOT_NULL(payload);
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
-
-	return ret;
-}
-
 static void data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
 	fifo_buffer_invalidate(&data->output_buffer);
@@ -435,6 +343,107 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 	return 0;
 }
 
+static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = poll_data->source;
+	struct mqtt_client_data *private_data = thread_data->private_data;
+	struct rrr_mqtt_p_publish *publish = NULL;
+	struct vl_message *reading = (struct vl_message *) data;
+
+	(void)(size);
+
+	char *payload = NULL;
+	ssize_t payload_size = 0;
+	int ret = 0;
+
+	VL_DEBUG_MSG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
+			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
+
+	if (private_data->mqtt_client_data->protocol_version == NULL) {
+		VL_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, private_data->mqtt_client_data->protocol_version);
+	if (publish == NULL) {
+		VL_MSG_ERR("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	RRR_FREE_IF_NOT_NULL(publish->topic);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
+
+	publish->topic = strdup(private_data->publish_topic);
+	if (publish->topic == NULL) {
+		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	publish->qos = private_data->qos;
+
+	if (private_data->publish_vl_message != 0) {
+		ssize_t network_size = sizeof(struct vl_message) - 1 + reading->length;
+
+		reading->network_size = network_size;
+
+		message_prepare_for_network(reading);
+
+		rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) reading);
+
+		if (rrr_mqtt_property_collection_add_blob_or_utf8 (
+				&publish->properties,
+				RRR_MQTT_PROPERTY_CONTENT_TYPE,
+				RRR_MESSAGE_MIME_TYPE,
+				strlen(RRR_MESSAGE_MIME_TYPE)
+		) != 0) {
+			VL_MSG_ERR("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+		payload = data;
+		payload_size = network_size;
+		data = NULL;
+	}
+	else {
+		payload = malloc(reading->length);
+		if (payload == NULL) {
+			VL_MSG_ERR("could not allocate memory for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+		payload_size = reading->length;
+	}
+
+	if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
+		VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+	payload = NULL;
+
+	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
+		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out_free;
+	}
+
+	out_free:
+	RRR_FREE_IF_NOT_NULL(data);
+	RRR_FREE_IF_NOT_NULL(payload);
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
+
+	return ret;
+}
+
 static int __try_create_vl_message_with_publish_data (
 		struct vl_message **result,
 		struct rrr_mqtt_p_publish *publish,
@@ -484,17 +493,17 @@ static int __try_get_vl_message_from_publish (
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
 ) {
-	ssize_t message_actual_length = publish->payload->length;
-	ssize_t message_stated_length = 0;
-	struct vl_message *message = (struct vl_message *) publish->payload->payload_start;
-
 	int ret = 0;
-
-	*result = NULL;
 
 	if (publish->payload == NULL) {
 		goto out_nolock;
 	}
+
+	ssize_t message_actual_length = publish->payload->length;
+	ssize_t message_stated_length = 0;
+	struct vl_message *message = (struct vl_message *) publish->payload->payload_start;
+
+	*result = NULL;
 
 	RRR_MQTT_P_LOCK(publish->payload);
 
@@ -528,12 +537,12 @@ static int __try_get_vl_message_from_publish (
 		goto out;
 	}
 
-	message_to_host(message);
-
 	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) message, message_actual_length) != 0) {
 		VL_MSG_ERR("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
+
+	message_to_host(message);
 
 	*result = malloc(message_actual_length);
 	if (*result == NULL) {
@@ -559,6 +568,9 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
+	VL_DEBUG_MSG_2 ("mqtt client %s: Receive PUBLISH payload length %li\n",
+			INSTANCE_D_NAME(data->thread_data), publish->payload->length);
+
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
 		ssize_t length = 0;
 		content_type = rrr_mqtt_property_get_blob(property, &length);
@@ -580,7 +592,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	}
 
 	// Try to extract a message from the data of the publish
-	if (is_vl_message) {
+	if (is_vl_message != 0) {
 		if ((ret = __try_get_vl_message_from_publish (
 				&message_final,
 				publish,
@@ -755,19 +767,36 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		// TODO : Figure out what to do with data from local senders
 
 		int alive = 0;
-		if (rrr_mqtt_client_connection_is_alive(&alive, data->mqtt_client_data, data->connection)) {
+		int send_allowed = 0;
+		if (rrr_mqtt_client_connection_check_alive(&alive, &send_allowed, data->mqtt_client_data, data->connection)) {
 			VL_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
+
 		if (alive == 0) {
 			VL_DEBUG_MSG_1("Connection lost for mqtt client instance %s, reconnecting\n",
 					INSTANCE_D_NAME(thread_data));
 			goto reconnect;
 		}
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-			break;
+		if (send_allowed != 0) {
+			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
+				break;
+			}
+
+			if (subscriptions_sent == 0) {
+				if (rrr_mqtt_client_subscribe (
+						data->mqtt_client_data,
+						data->connection,
+						data->subscriptions
+				) != 0) {
+					VL_MSG_ERR("Could not subscribe to topics in mqtt client instance %s\n",
+							INSTANCE_D_NAME(thread_data));
+					goto reconnect;
+				}
+				subscriptions_sent = 1;
+			}
 		}
 
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
@@ -780,19 +809,6 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 			VL_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
-		}
-
-		if (subscriptions_sent == 0) {
-			if (rrr_mqtt_client_subscribe (
-					data->mqtt_client_data,
-					data->connection,
-					data->subscriptions
-			) != 0) {
-				VL_MSG_ERR("Could not subscribe to topics in mqtt client instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				goto reconnect;
-			}
-			subscriptions_sent = 1;
 		}
 
 		usleep (5000); // 50 ms
