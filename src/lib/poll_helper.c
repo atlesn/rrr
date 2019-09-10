@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 
 static int __poll_collection_entry_destroy(struct poll_collection_entry *entry) {
-	printf ("__poll_collection_entry_destroy %p\n", entry);
 	free(entry);
 	return 0;
 }
@@ -89,8 +88,6 @@ int poll_collection_add (
 		ret = RRR_POLL_ERR;
 		goto out;
 	}
-
-	printf ("poll_collection_add allocate %p\n", entry);
 
 	memset(entry, '\0', sizeof(*entry));
 

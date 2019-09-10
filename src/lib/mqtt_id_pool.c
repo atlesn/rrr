@@ -60,10 +60,9 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssiz
 		return 1;
 	}
 
-	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
+//	ssize_t old_size = pool->allocated_majors * sizeof(*(pool->pool));
 	ssize_t new_size = new_majors * sizeof(*(pool->pool));
 
-	printf ("realloc old size %li new size %li\n", old_size, new_size);
 	uint32_t *new_pool = realloc(pool->pool, new_size);
 	if (new_pool == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");

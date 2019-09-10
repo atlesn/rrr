@@ -117,7 +117,6 @@ void rrr_signal (int s) {
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;
 		while (test) {
-			printf ("-> calling handler\n");
 			int ret = test->handler(s, test->private_arg);
 			if (ret == 0) {
 				// Handlers may also return non-zero for signal to continue
@@ -128,7 +127,6 @@ void rrr_signal (int s) {
 		}
 
 		if (handler_res == 0) {
-			printf ("Signal processed by handler, stop\n");
 			return;
 		}
 	}
