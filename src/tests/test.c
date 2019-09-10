@@ -121,7 +121,7 @@ int main (int argc, const char **argv) {
 	struct rrr_config *config;
 
 	TEST_BEGIN("non-existent config file") {
-	config = rrr_config_parse_file("nonexistent_file");
+		config = rrr_config_parse_file("nonexistent_file");
 	} TEST_RESULT(config == NULL);
 
 	if (config != NULL) {

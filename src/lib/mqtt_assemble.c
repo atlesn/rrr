@@ -121,9 +121,13 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 
 	struct rrr_mqtt_payload_buf_session *session = arg;
 
+	if (property->data == NULL || property->length == 0) {
+		VL_BUG("Property data and/or length was 0 in __rrr_mqtt_assemble_put_properties_callback\n");
+	}
+
 	PUT_U8(property->definition->identifier);
 
-	switch (property->definition->type) {
+	switch (property->definition->internal_data_type) {
 		case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
 			PUT_U8(*((uint8_t *) property->data));
 			break;
@@ -163,7 +167,7 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 			break;
 		default:
 			VL_BUG("Unknown property type %u in __rrr_mqtt_assemble_put_properties_callback\n",
-					property->definition->type);
+					property->definition->internal_data_type);
 	};
 
 	out:
@@ -226,7 +230,7 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	PUT_RAW_WITH_LENGTH("MQTT", 4);
+	PUT_RAW_WITH_LENGTH(connect->protocol_version->name, strlen(connect->protocol_version->name));
 	PUT_U8(connect->protocol_version->id);
 	PUT_U8(connect->connect_flags);
 	PUT_U16(connect->keep_alive);

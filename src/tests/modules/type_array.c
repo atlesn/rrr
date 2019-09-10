@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/types.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip.h"
+#include "../../lib/messages.h"
 
 struct test_result {
 	int result;

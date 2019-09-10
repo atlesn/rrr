@@ -303,7 +303,7 @@ int fifo_buffer_clear_with_callback (
 	int freed_counter = 0;
 	while (entry != NULL) {
 		struct fifo_buffer_entry *next = entry->next;
-		VL_DEBUG_MSG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+		VL_DEBUG_MSG_3 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		if (callback != NULL && (ret = callback(callback_data, entry->data, entry->size)) != FIFO_OK) {
 			VL_BUG("Non-zero return from callback not allowed in fifo_buffer_clear_with_callback, return was %i\n", ret);
@@ -315,7 +315,7 @@ int fifo_buffer_clear_with_callback (
 		entry = next;
 	}
 
-	VL_DEBUG_MSG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	VL_DEBUG_MSG_3 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;

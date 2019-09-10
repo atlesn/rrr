@@ -53,13 +53,36 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_con
 	return ret;
 }
 
-int rrr_mqtt_client_connection_is_alive (
+int rrr_mqtt_client_connection_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection
 ) {
-	return rrr_mqtt_conn_check_alive(alive, &data->mqtt_data.connections, connection);
+	return rrr_mqtt_conn_check_alive(alive, send_allowed, &data->mqtt_data.connections, connection);
 }
+
+int rrr_mqtt_client_publish (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = 0;
+
+	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet (
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) publish
+			),
+			goto out,
+			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
+	);
+
+	out:
+	return ret;
+}
+
 
 int rrr_mqtt_client_subscribe (
 		struct rrr_mqtt_client_data *data,
@@ -233,8 +256,7 @@ int rrr_mqtt_client_connect (
 			mqtt_data->sessions,
 			connect->client_identifier,
 			&session_present,
-			0,  // Create if non-existent client ID
-			1   // Local delivery (check received PUBLISH against subscriptions and deliver locally)
+			0 // Create if non-existent client ID
 	)) != RRR_MQTT_SESSION_OK || session == NULL) {
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		VL_MSG_ERR("Internal error getting session in rrr_mqtt_client_connect\n");
@@ -249,6 +271,7 @@ int rrr_mqtt_client_connect (
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
 			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
+			1, // Local delivery (check received PUBLISH against subscriptions and deliver locally)
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {

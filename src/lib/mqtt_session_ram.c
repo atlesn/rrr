@@ -145,8 +145,7 @@ static int __rrr_mqtt_session_ram_delivery_local (
 static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		struct rrr_mqtt_session_ram **target,
 		struct rrr_mqtt_session_collection_ram_data *data,
-		const char *client_id,
-		int local_delivery
+		const char *client_id
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
 	int ret = RRR_MQTT_SESSION_OK;
@@ -201,10 +200,6 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	result->users = 1;
 	result->ram_data = data;
-	result->delivery_method = (local_delivery != 0
-			? __rrr_mqtt_session_ram_delivery_local
-			: __rrr_mqtt_session_ram_delivery_forward
-	);
 
 	RRR_LINKED_LIST_PUSH(data,result);
 
@@ -342,8 +337,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		struct rrr_mqtt_session_collection *sessions,
 		const char *client_id,
 		int *session_present,
-		int no_creation,
-		int local_delivery
+		int no_creation
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
@@ -364,8 +358,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		ret = __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 				&result,
 				data,
-				client_id,
-				local_delivery
+				client_id
 		);
 		if (ret != RRR_MQTT_SESSION_OK) {
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -658,7 +651,7 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 	);
 }
 
-static int __rrr_mqtt_session_ram_maintain (struct rrr_mqtt_session_ram *session) {
+static int __rrr_mqtt_session_ram_maintain_queues (struct rrr_mqtt_session_ram *session) {
 	int ret = RRR_MQTT_SESSION_OK;
 
 	ret |= __rrr_mqtt_session_ram_maintain_queue(
@@ -843,6 +836,7 @@ static int __rrr_mqtt_session_ram_init (
 		uint32_t max_in_flight,
 		uint32_t complete_publish_grace_time,
 		int clean_session,
+		int local_delivery,
 		int *session_was_present
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
@@ -866,6 +860,13 @@ static int __rrr_mqtt_session_ram_init (
 		*session_was_present = 0;
 		__rrr_mqtt_session_ram_clean_unlocked(ram_session);
 	}
+
+
+	ram_session->delivery_method = (local_delivery != 0
+			? __rrr_mqtt_session_ram_delivery_local
+			: __rrr_mqtt_session_ram_delivery_forward
+	);
+
 
 	VL_DEBUG_MSG_1("Init session expiry interval: %" PRIu32 "\n",
 			ram_session->session_properties.session_expiry);
@@ -931,7 +932,7 @@ static int __rrr_mqtt_session_ram_heartbeat (
 	SESSION_RAM_UNLOCK(ram_session);
 
 	// TODO : Maybe not do this all the time
-	if (__rrr_mqtt_session_ram_maintain(ram_session) != 0) {
+	if (__rrr_mqtt_session_ram_maintain_queues(ram_session) != 0) {
 		VL_MSG_ERR("Error in __rrr_mqtt_session_ram_heartbeat while maintaining session\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
@@ -1398,6 +1399,9 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		VL_BUG("Invalid QoS %u in __rrr_mqtt_session_ram_receive_publish\n", publish->qos);
 	}
 
+	// Make sure newly generated ACKs aren't re-sent immediately when the queues are maintained
+	publish->last_attempt = time_get_64();
+
 	if (publish->qos == 0) {
 		// QOS 0 packets are released immediately
 
@@ -1559,8 +1563,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 				goto out_unlock;
 			}
 
-			VL_DEBUG_MSG_3("Setting new packet identifier %u for packet %p while iterating send queue\n",
-					packet_identifier, packet);
+			VL_DEBUG_MSG_3("Setting new packet identifier %u for packet type %s while iterating send queue\n",
+					packet_identifier, RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 			RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (
 					packet,
@@ -1599,21 +1603,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 		// NOTE ! This functions handles packets in both directions. For a given PUBLISH packet,
 		//        the most recent ACK not acknowledged by remote will be sent.
 
-		if (publish->qos == 0) {
-			if (publish->last_attempt == 0) {
-				packet_to_transmit = packet;
-			}
-			else {
-				// No retransmission of QOS0
-				goto out_unlock;
-			}
-		}
-		else if (publish->qos == 1) {
-			if (publish->is_outbound == 1) {
-				if (publish->qos_packets.puback == NULL) {
-					packet_to_transmit = packet;
-				}
-			}
+		if ((publish->qos == 0 || publish->qos == 1) && publish->is_outbound == 1) {
+			packet_to_transmit = packet;
 		}
 		else if (publish->qos == 2) {
 			if (publish->is_outbound == 1) {
@@ -1659,6 +1650,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (FIFO_CALLBACK_ARG
 		VL_DEBUG_MSG_1("!! Retransmit !! Packet of type %s id %u\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet_to_transmit), RRR_MQTT_P_GET_IDENTIFIER(packet_to_transmit));
 	}
+
+	VL_DEBUG_MSG_3 ("Transmission of %s %p identifier %u last attempt %" PRIu64 " holder packet is %p\n",
+			RRR_MQTT_P_GET_TYPE_NAME(packet_to_transmit), packet_to_transmit, packet_to_transmit->packet_identifier, packet->last_attempt, packet);
 
 	ret = iterate_callback_data->callback (
 			packet_to_transmit,
@@ -1824,6 +1818,12 @@ static int __rrr_mqtt_session_ram_send_packet (
 			goto out_unlock;
 		}
 	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+		publish->packet_identifier = 0;
+		publish->is_outbound = 1;
+		VL_DEBUG_MSG_3("Send new PUBLISH packet with topic '%s'\n", publish->topic);
+	}
 	else if (RRR_MQTT_P_IS_ACK(packet)) {
 		VL_DEBUG_MSG_3("Send ACK packet %p with identifier %u of type %s\n",
 				packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
@@ -1893,7 +1893,6 @@ static int __rrr_mqtt_session_ram_receive_packet (
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		ret = __rrr_mqtt_session_ram_receive_publish(ram_session, (struct rrr_mqtt_p_publish *) packet);
-
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
 		// The packet handler for SUBSCRIBE (in broker) is responsible for setting

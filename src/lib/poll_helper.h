@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "senders.h"
 #include "modules.h"
+#include "linked_list.h"
 
 #define RRR_POLL_POLL			(1<<0)
 #define RRR_POLL_POLL_DELETE	(1<<1)
@@ -34,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_NOT_FOUND 2
 
 struct poll_collection_entry {
-	struct poll_collection_entry *next;
+	RRR_LINKED_LIST_NODE(struct poll_collection_entry);
 	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
 	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
@@ -43,11 +44,8 @@ struct poll_collection_entry {
 };
 
 struct poll_collection {
-	struct poll_collection_entry *first;
+	RRR_LINKED_LIST_HEAD(struct poll_collection_entry);
 };
-
-#define POLL_COLLECTION_LOOP(entry,collection) \
-		for (struct poll_collection_entry *entry = collection->first; entry != NULL; entry = entry->next)
 
 void poll_collection_clear(struct poll_collection *collection);
 void poll_collection_clear_void(void *data);

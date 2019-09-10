@@ -869,6 +869,7 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 
 struct check_alive_callback_data {
 	int alive;
+	int send_allowed;
 };
 
 int __rrr_mqtt_conn_iterator_ctx_check_alive_callback (
@@ -887,20 +888,26 @@ int __rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 		callback_data->alive = 0;
 	}
 
+	if (RRR_MQTT_CONN_STATE_SEND_ANY_IS_ALLOWED(connection)) {
+		callback_data->send_allowed = 1;
+	}
+
 	return ret;
 }
 
 int rrr_mqtt_conn_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_conn_collection *connections,
 		struct rrr_mqtt_conn *connection
 ) {
 	int ret = RRR_MQTT_CONN_OK;
 
 	*alive = 0;
+	*send_allowed = 0;
 
 	struct check_alive_callback_data callback_data = {
-		0
+		0, 0
 	};
 
 	ret = rrr_mqtt_conn_with_iterator_ctx_do_custom (
@@ -919,6 +926,7 @@ int rrr_mqtt_conn_check_alive (
 	}
 
 	*alive = callback_data.alive;
+	*send_allowed = callback_data.send_allowed;
 
 	out:
 	return ret;
@@ -1583,7 +1591,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 
 		RRR_MQTT_CONN_STATE_SET (connection,
 				direction == RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_OUT
-					? RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED | RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED
+					? RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED
 					: RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED
 		);
 	}

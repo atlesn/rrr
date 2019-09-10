@@ -45,12 +45,12 @@ ssize_t rrr_mqtt_payload_buf_get_touched_size (struct rrr_mqtt_payload_buf_sessi
 char *rrr_mqtt_payload_buf_extract_buffer (struct rrr_mqtt_payload_buf_session *session);
 int rrr_mqtt_payload_buf_put_raw (
 		struct rrr_mqtt_payload_buf_session *session,
-		void *data,
+		const void *data,
 		ssize_t size
 );
 int rrr_mqtt_payload_buf_put_raw_at_offset (
 		struct rrr_mqtt_payload_buf_session *session,
-		void *data,
+		const void *data,
 		ssize_t size,
 		ssize_t offset
 );

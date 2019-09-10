@@ -29,8 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "instance_config.h"
 
-#define RRR_CONFIGFILE_DEBUG
-
 struct parse_pos {
 	const char *data;
 	int pos;
@@ -397,10 +395,10 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 		*did_parse = 0;
 	}
 
-#ifdef RRR_CONFIGFILE_DEBUG
-	printf("\nDumping settings for instance %s:\n", instance_config->name);
-	rrr_settings_dump(instance_config->settings);
-#endif
+	if (VL_DEBUGLEVEL_1) {
+		VL_DEBUG_MSG("\nDumping settings for instance %s:\n", instance_config->name);
+		rrr_settings_dump(instance_config->settings);
+	}
 
 	if (ret == 0) {
 		*did_parse = 1;

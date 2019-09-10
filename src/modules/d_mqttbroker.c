@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
+#define RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE 30
 
 struct mqtt_broker_data {
 	struct instance_thread_data *thread_data;
@@ -141,7 +142,7 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 		goto out;
 	}
 	else {
-		max_keep_alive = 1;
+		max_keep_alive = RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE;
 		ret = 0;
 	}
 	data->max_keep_alive = max_keep_alive;
@@ -274,6 +275,10 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 		usleep (5000); // 50 ms
 	}
+
+	// If clients run on the same machine, we hope they close the connection first
+	// to await TCP timeout
+	usleep(500000); // 500 ms
 
 	out_destroy_broker:
 		pthread_cleanup_pop(1);

@@ -103,7 +103,6 @@ struct rrr_mqtt_conn {
 	struct rrr_mqtt_conn_read_session read_session;
 	struct rrr_mqtt_parse_session parse_session;
 
-//	struct rrr_mqtt_p_queue send_queue;
 	struct rrr_mqtt_p_queue receive_queue;
 
 	int read_complete;
@@ -277,6 +276,7 @@ int rrr_mqtt_conn_with_iterator_ctx_do (
 // May be called at any time to check if a connection is alive
 int rrr_mqtt_conn_check_alive (
 		int *alive,
+		int *send_allowed,
 		struct rrr_mqtt_conn_collection *connections,
 		struct rrr_mqtt_conn *connection
 );

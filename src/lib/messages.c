@@ -115,7 +115,7 @@ int message_new_empty (
 	return 0;
 }
 
-int new_message (
+int message_new_with_data (
 		struct vl_message **final_result,
 		vl_u16 type,
 		vl_u16 type_flags,
@@ -183,7 +183,7 @@ void message_to_host (struct vl_message *message) {
 
 void message_prepare_for_network (struct vl_message *message) {
 	message->type = htobe16(message->type);
-	message->type_flags = htobe16(message->type);
+	message->type_flags = htobe16(message->type_flags);
 	message->class = htobe16(message->class);
 	message->version = htobe16(message->version);
 	message->timestamp_from = htobe64(message->timestamp_from);

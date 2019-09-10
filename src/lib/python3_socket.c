@@ -38,7 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_socket.h"
 #include "python3_setting.h"
 #include "rrr_socket.h"
-#include "rrr_socket_msg.h"
 #include "messages.h"
 #include "settings.h"
 #include "../../config.h"
@@ -706,7 +705,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_msg_get_packet_target_size,
+			rrr_socket_read_session_get_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
 			&callback_data

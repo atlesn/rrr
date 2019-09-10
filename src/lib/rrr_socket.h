@@ -25,8 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <sys/types.h>
+#include <stdint.h>
 
 #include "linked_list.h"
+#include "rrr_socket_msg.h"
 
 #define RRR_SOCKET_OK				0
 #define RRR_SOCKET_HARD_ERROR		1
@@ -64,20 +67,60 @@ struct rrr_socket_read_session_collection {
 	RRR_LINKED_LIST_HEAD(struct rrr_socket_read_session);
 };
 
+struct rrr_socket_read_session;
 
-int rrr_socket_with_lock_do (int (*callback)(void *arg), void *arg);
-int rrr_socket_accept (int fd_in, struct sockaddr *addr, socklen_t *__restrict addr_len, const char *creator);
-int rrr_socket_mkstemp (char *filename, const char *creator);
-int rrr_socket (int domain, int type, int protocol, const char *creator);
+void rrr_socket_msg_populate_head (
+		struct rrr_socket_msg *message,
+		vl_u16 type,
+		vl_u32 msg_size,
+		vl_u64 value
+);
+void rrr_socket_msg_checksum_and_to_network_endian (
+		struct rrr_socket_msg *message
+);
+void rrr_socket_msg_head_to_host (struct rrr_socket_msg *message);
+int rrr_socket_msg_get_packet_target_size_and_checksum (
+		ssize_t *target_size,
+		struct rrr_socket_msg *socket_msg,
+		ssize_t buf_size
+);
+int rrr_socket_msg_checksum_check (
+		struct rrr_socket_msg *message,
+		ssize_t data_size
+);
+int rrr_socket_msg_head_validate (struct rrr_socket_msg *message);
+int rrr_socket_with_lock_do (
+		int (*callback)(void *arg),
+		void *arg
+);
+int rrr_socket_accept (
+		int fd_in,
+		struct sockaddr *addr,
+		socklen_t *__restrict addr_len,
+		const char *creator
+);
+int rrr_socket_mkstemp (
+		char *filename,
+		const char *creator
+);
+int rrr_socket (
+		int domain,
+		int type,
+		int protocol,
+		const char *creator
+);
 int rrr_socket_close (int fd);
 int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all (void);
-
 void rrr_socket_read_session_collection_init (
 		struct rrr_socket_read_session_collection *collection
 );
 void rrr_socket_read_session_collection_destroy (
 		struct rrr_socket_read_session_collection *collection
+);
+int rrr_socket_read_session_get_target_length_from_message_and_checksum (
+		struct rrr_socket_read_session *read_session,
+		void *arg
 );
 int rrr_socket_read_message (
 		struct rrr_socket_read_session_collection *read_session_collection,

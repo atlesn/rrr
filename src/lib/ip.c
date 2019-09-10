@@ -287,7 +287,7 @@ int ip_receive_packets (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_msg_get_packet_target_size,
+			rrr_socket_read_session_get_target_length_from_message_and_checksum,
 			NULL,
 			__ip_receive_packets_callback,
 			&callback_data
@@ -531,6 +531,7 @@ int ip_send_message (
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(final_message);
 	return ret;
 }
 

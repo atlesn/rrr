@@ -391,8 +391,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 						mqtt_data->sessions,
 						connect->client_identifier,
 						&session_present,
-						1,  // No creation if non-existent client ID
-						0   // No local delivery (forward publish to other sessions)
+						1 // No creation if non-existent client ID
 				)) != RRR_MQTT_SESSION_OK) {
 					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 					VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect A\n");
@@ -459,8 +458,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				mqtt_data->sessions,
 				connect->client_identifier,
 				&session_present,
-				0,  // Create if non-existent client ID
-				0   // No local delivery (forward publish to other sessions)
+				0 // Create if non-existent client ID
 		)) != RRR_MQTT_SESSION_OK || session == NULL) {
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			VL_MSG_ERR("Internal error getting session in rrr_mqtt_p_handler_connect B\n");
@@ -495,6 +493,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
 			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
+			0, // No local delivery (forward publish to other sessions)
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {
