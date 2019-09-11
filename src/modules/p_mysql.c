@@ -30,10 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <src/lib/array.h>
 #include <src/lib/rrr_mysql.h>
 
 #include "../lib/poll_helper.h"
-#include "../lib/types.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -309,17 +309,17 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 void free_collection(void *arg) {
 	struct vl_thread_double_pointer *data = arg;
 	if (*data->ptr != NULL) {
-		rrr_type_template_collection_clear(*data->ptr);
+		rrr_array_clear(*data->ptr);
 	}
 }
 
 int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	int res = 0;
 
-	struct rrr_type_template_collection collection;
+	struct rrr_array collection;
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_types_message_to_collection(&collection, entry->message) != 0) {
+	if (rrr_array_message_to_collection(&collection, entry->message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		res = 1;
 		goto out_cleanup;
@@ -338,8 +338,8 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	memset(string_lengths, '\0', sizeof(string_lengths));
 
 	rrr_def_count bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
-		struct rrr_type_template *definition = node;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		struct rrr_type_value *definition = node;
 
 		if (definition->array_size > 1) {
 			// Arrays must be inserted as blobs. They might be shorter than the
@@ -401,8 +401,8 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	// Produce warning if blob data was chopped of by mysql
 	bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
-		struct rrr_type_template *definition = node;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		struct rrr_type_value *definition = node;
 		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
 			if (string_lengths[bind_pos] < definition->length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",

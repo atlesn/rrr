@@ -10,7 +10,7 @@ lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LDFLAGS}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c ${encryption} \
-ip.c types.c version.c configuration.c settings.c instance_config.c common.c \
+ip.c array.c type.c version.c configuration.c settings.c instance_config.c common.c \
 mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
 mqtt_topic.c mqtt_id_pool.c mqtt_client.c rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c \

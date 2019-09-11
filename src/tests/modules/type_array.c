@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 #include <mysql/mysql.h>
+#include <src/lib/array.h>
 #include "../../lib/rrr_mysql.h"
 
 #include "type_array.h"
@@ -29,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../global.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
-#include "../../lib/types.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip.h"
 #include "../../lib/messages.h"
@@ -89,7 +89,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	(void)(size);
 
 	struct vl_message *message = (struct vl_message *) data;
-	struct rrr_type_template_collection collection = {0};
+	struct rrr_array collection = {0};
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
 
@@ -99,7 +99,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (rrr_types_message_to_collection(&collection, message) != 0) {
+	if (rrr_array_message_to_collection(&collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
 		ret = 1;
 		goto out;
@@ -112,23 +112,23 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	rrr_type_length final_length = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		final_length += node->length;
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
-	struct rrr_type_template *types[9];
+	struct rrr_type_value *types[9];
 
 	// After the array has been assembled and then disassembled again, all numbers
 	// become be64
-	types[0] = rrr_type_template_collection_get_by_idx(&collection, 0);
-	types[1] = rrr_type_template_collection_get_by_idx(&collection, 1);
-	types[2] = rrr_type_template_collection_get_by_idx(&collection, 2);
-	types[3] = rrr_type_template_collection_get_by_idx(&collection, 3);
-	types[4] = rrr_type_template_collection_get_by_idx(&collection, 4);
-	types[5] = rrr_type_template_collection_get_by_idx(&collection, 5);
-	types[6] = rrr_type_template_collection_get_by_idx(&collection, 6);
-	types[7] = rrr_type_template_collection_get_by_idx(&collection, 7);
-	types[8] = rrr_type_template_collection_get_by_idx(&collection, 8);
+	types[0] = rrr_array_value_get_by_index(&collection, 0);
+	types[1] = rrr_array_value_get_by_index(&collection, 1);
+	types[2] = rrr_array_value_get_by_index(&collection, 2);
+	types[3] = rrr_array_value_get_by_index(&collection, 3);
+	types[4] = rrr_array_value_get_by_index(&collection, 4);
+	types[5] = rrr_array_value_get_by_index(&collection, 5);
+	types[6] = rrr_array_value_get_by_index(&collection, 6);
+	types[7] = rrr_array_value_get_by_index(&collection, 7);
+	types[8] = rrr_array_value_get_by_index(&collection, 8);
 
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
@@ -235,7 +235,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_FREE_IF_NOT_NULL(final_data_raw);
 
 	out_free_collection:
-	rrr_type_template_collection_clear(&collection);
+	rrr_array_clear(&collection);
 
 	out:
 	if (ret != 0) {

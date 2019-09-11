@@ -23,9 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <inttypes.h>
-#include <src/lib/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <src/lib/array.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
@@ -47,7 +47,7 @@ struct socket_data {
 	struct fifo_buffer buffer;
 	struct fifo_buffer inject_buffer;
 	char *socket_path;
-	struct rrr_type_template_collection definitions;
+	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
 };
@@ -56,7 +56,7 @@ void data_cleanup(void *arg) {
 	struct socket_data *data = (struct socket_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
 	fifo_buffer_invalidate(&data->inject_buffer);
-	rrr_type_template_collection_clear(&data->definitions);
+	rrr_array_clear(&data->definitions);
 	rrr_socket_client_collection_destroy(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 }
@@ -105,7 +105,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	}
 
 	// Parse expected input data
-	if (rrr_type_parse_definition (&data->definitions, config, "socket_input_types") != 0) {
+	if (rrr_array_parse_definition (&data->definitions, config, "socket_input_types") != 0) {
  		VL_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n", config->name);
 		return 1;
 	}
