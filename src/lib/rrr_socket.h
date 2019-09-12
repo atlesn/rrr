@@ -36,12 +36,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_SOFT_ERROR		2
 #define RRR_SOCKET_READ_INCOMPLETE	3
 
+#define RRR_SOCKET_CLIENT_TIMEOUT 30
+
 struct rrr_socket_client {
 	RRR_LINKED_LIST_NODE(struct rrr_socket_client);
 	struct rrr_socket_read_session_collection read_sessions;
 	int connected_fd;
 	struct sockaddr addr;
 	socklen_t addr_len;
+	uint64_t last_seen;
 };
 
 struct rrr_socket_client_collection {

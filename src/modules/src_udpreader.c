@@ -175,9 +175,10 @@ int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned l
 int read_data(struct udpreader_data *data) {
 	int ret = 0;
 
-	ret |= ip_receive_packets (
+	ret |= ip_receive_array (
 		&data->read_sessions,
 		data->ip.fd,
+		&data->definitions,
 		read_data_callback,
 		data,
 		NULL

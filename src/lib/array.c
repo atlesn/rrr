@@ -328,6 +328,44 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 	return NULL;
 }
 
+int rrr_array_get_packed_length_from_buffer (
+		ssize_t *import_length,
+		const struct rrr_array *definition,
+		const char *buf,
+		ssize_t buf_length
+) {
+	int ret = RRR_TYPE_PARSE_OK;
+
+	*import_length = 0;
+
+	const char *pos = buf;
+	ssize_t remaining_buf_length = buf_length;
+	ssize_t result_final = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (remaining_buf_length <= 0) {
+			return RRR_TYPE_PARSE_INCOMPLETE;
+		}
+
+		ssize_t result = 0;
+		if ((ret = node->definition->get_import_length (
+				&result,
+				node,
+				pos,
+				remaining_buf_length
+		)) != RRR_TYPE_PARSE_OK) {
+			return ret;
+		}
+
+		pos += result;
+		remaining_buf_length -= result;
+		result_final += result;
+	RRR_LINKED_LIST_ITERATE_END(definition);
+
+	*import_length = result_final;
+
+	return ret;
+}
+
 static ssize_t __rrr_array_get_packed_length (
 		const struct rrr_array *definition
 ) {

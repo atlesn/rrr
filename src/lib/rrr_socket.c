@@ -390,6 +390,32 @@ static int __rrr_socket_client_destroy (
 	return 0;
 }
 
+static int __rrr_socket_client_new (
+		struct rrr_socket_client **result,
+		int fd,
+		struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	*result = NULL;
+
+	struct rrr_socket_client *client = malloc (sizeof(*client));
+	if (client == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_socket_client_new\n");
+		return 1;
+	}
+
+	memset(client, '\0', sizeof(*client));
+
+	client->connected_fd = fd;
+	client->addr = *addr;
+	client->addr_len = addr_len;
+	client->last_seen = time_get_64();
+
+	*result = client;
+
+	return 0;
+}
+
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 ) {
@@ -430,13 +456,11 @@ int rrr_socket_client_collection_accept (
 
 	temp.connected_fd = ret;
 
-	struct rrr_socket_client *client_new = malloc(sizeof(*client_new));
-	if (client_new == NULL) {
+	struct rrr_socket_client *client_new = NULL;
+	if (__rrr_socket_client_new(&client_new, temp.connected_fd, &temp.addr, temp.addr_len) != 0) {
 		VL_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_accept\n");
 		return 1;
 	}
-
-	*client_new = temp;
 
 	RRR_LINKED_LIST_PUSH(collection, client_new);
 
@@ -453,6 +477,8 @@ int rrr_socket_client_collection_read (
 		void *complete_callback_arg
 ) {
 	int ret = 0;
+	uint64_t time_now = time_get_64();
+	uint64_t timeout = time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000);
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		ret = rrr_socket_read_message (
@@ -465,12 +491,20 @@ int rrr_socket_client_collection_read (
 				complete_callback,
 				complete_callback_arg
 		);
-		if (ret != 0) {
+
+		if (ret == RRR_SOCKET_OK) {
+			node->last_seen = time_now;
+		}
+		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
 				VL_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LINKED_LIST_SET_DESTROY();
 			}
 			ret = 0;
+		}
+
+		if (node->last_seen < timeout) {
+			RRR_LINKED_LIST_SET_DESTROY();
 		}
 	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_client_destroy(node));
 

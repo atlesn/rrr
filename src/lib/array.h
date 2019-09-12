@@ -65,6 +65,12 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 		struct rrr_array *definition,
 		int idx
 );
+int rrr_array_get_packed_length_from_buffer (
+		ssize_t *import_length,
+		const struct rrr_array *definition,
+		const char *buf,
+		ssize_t buf_length
+);
 int rrr_array_new_message_from_buffer (
 		const char *buf,
 		ssize_t buf_len,

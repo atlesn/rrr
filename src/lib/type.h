@@ -78,13 +78,19 @@ static const union type_system_endian {
 #define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG)
 #define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
 
-#define RRR_TYPE_IMPORT_ARGS		\
-		struct rrr_type_value *node,\
-		ssize_t *parsed_bytes,		\
-		const char *start,			\
+#define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
+		ssize_t *import_length,				\
+		const struct rrr_type_value *node,	\
+		const char *buf,					\
+		ssize_t buf_size
+
+#define RRR_TYPE_IMPORT_ARGS				\
+		struct rrr_type_value *node,		\
+		ssize_t *parsed_bytes,				\
+		const char *start,					\
 		const char *end
 
-#define RRR_TYPE_UNPACK_ARGS		\
+#define RRR_TYPE_UNPACK_ARGS				\
 		struct rrr_type_value *node
 
 #define RRR_TYPE_PACK_ARGS					\
@@ -109,6 +115,7 @@ struct rrr_type_value;
 struct rrr_type_definition {
 	rrr_type type;
 	rrr_type_length max_length;
+	int (*get_import_length)(RRR_TYPE_GET_IMPORT_LENGTH_ARGS);
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
 	int (*unpack)(RRR_TYPE_UNPACK_ARGS);
 	int (*pack)(RRR_TYPE_PACK_ARGS);

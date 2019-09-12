@@ -55,17 +55,26 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 	return ret;
 }
 
-int rrr_socket_common_read_raw_array_from_read_session_callback (
+int rrr_socket_common_get_session_target_length_from_array (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 ) {
-	struct  rrr_socket_common_read_raw_array_from_read_session_callback_data *data = arg;
+	struct rrr_socket_common_get_session_target_length_from_array_data *data = arg;
 
-	return rrr_array_new_message_from_buffer (
+	ssize_t import_length = 0;
+	int ret = rrr_array_get_packed_length_from_buffer (
+			&import_length,
+			data->definition,
 			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			data->definitions,
-			data->callback,
-			data->callback_arg
+			read_session->rx_buf_size
 	);
+
+	if (ret != 0) {
+		if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+			return RRR_SOCKET_READ_INCOMPLETE;
+		}
+		return RRR_SOCKET_SOFT_ERROR;
+	}
+
+	return RRR_SOCKET_OK;
 }

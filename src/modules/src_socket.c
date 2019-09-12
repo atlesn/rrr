@@ -41,8 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../global.h"
 
-#define RRR_UDPREADER_DEFAULT_PORT 2222
-
 struct socket_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer buffer;
@@ -120,51 +118,41 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
+int read_data_receive_message_callback (struct vl_message *message, void *arg) {
+	struct socket_data *data = arg;
+
+	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
+	VL_DEBUG_MSG_3("socket created a message with timestamp %llu size %lu\n",
+			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+
+	return 0;
+}
+
 int read_data_callback(struct rrr_socket_read_session *read_session, void *arg) {
 	struct socket_data *data = arg;
 
-	int ret = 0;
-
-
-
-	return ret;
+	return rrr_array_new_message_from_buffer (
+			read_session->rx_buf_ptr,
+			read_session->rx_buf_wpos,
+			&data->definitions,
+			read_data_receive_message_callback,
+			data
+	);
 }
 
 int read_data(struct socket_data *data) {
-	int ret = 0;
-
-	rrr_socket_client_collection_read(
+	struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
+			&data->definitions
+	};
+	return rrr_socket_client_collection_read (
 			&data->clients,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
-			NULL,
+			rrr_socket_common_get_session_target_length_from_array,
+			&callback_data,
 			read_data_callback,
 			data
 	);
-/*
-	ret |= ip_receive_packets (
-		&data->read_sessions,
-		data->ip.fd,
-		read_data_callback,
-		data,
-		NULL
-	);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error from ip_receive_packets in socket instance %s\n", INSTANCE_D_NAME(data->thread_data));
-	}
-
-	struct fifo_callback_args callback_data = {NULL, data, 0};
-	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error from buffer in socket instance %s\n", INSTANCE_D_NAME(data->thread_data));
-	}
-
-	ret = (ret != 0 ? 1 : 0);
-*/
-	return ret;
 }
 
 static int socket_start (struct socket_data *data) {

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "type.h"
+#include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "messages.h"
 
@@ -629,18 +630,97 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 	return 0;
 }
 
+static int __get_import_length_default (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	(void)(buf);
+	(void)(buf_size);
+
+	*import_length = node->import_elements * node->import_length;
+
+	return 0;
+}
+
+static int __get_import_length_ustr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	(void)(node);
+
+	int found_end_char = 0;
+	ssize_t length = 0;
+	for (length = 0; length < buf_size; length++) {
+		const char *pos = buf + length;
+		if (*pos >= '0' && *pos <= '9') {
+			continue;
+		}
+		else {
+			found_end_char = 1;
+			break;
+		}
+	}
+
+	if (found_end_char == 1) {
+		*import_length = length;
+		return RRR_TYPE_PARSE_OK;
+	}
+
+	return RRR_TYPE_PARSE_INCOMPLETE;
+}
+
+static int __get_import_length_istr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	const char *start = buf;
+	const char *end = buf + buf_size;
+
+	CHECK_END_AND_RETURN(1);
+
+	ssize_t sign_length = 0;
+	if (*start == '-' || *start == '+') {
+		start++;
+		sign_length = 1;
+	}
+
+	ssize_t length = 0;
+	if (__get_import_length_ustr(&length, node, start, start - end) == 0) {
+		*import_length = sign_length + length;
+		return RRR_TYPE_PARSE_OK;
+	}
+
+	return RRR_TYPE_PARSE_INCOMPLETE;
+}
+
+static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	(void)(node);
+
+	if (buf_size < (ssize_t) sizeof(struct rrr_socket_msg)) {
+		return RRR_TYPE_PARSE_INCOMPLETE;
+	}
+
+	int ret = rrr_socket_msg_get_target_size_and_check_checksum (
+			import_length,
+			(struct rrr_socket_msg *) buf,
+			buf_size
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return RRR_TYPE_PARSE_INCOMPLETE;
+		}
+
+		VL_MSG_ERR("Error while getting message length in __get_import_length_msg, return was %i\n", ret);
+		return RRR_TYPE_PARSE_ERR;
+	}
+
+	return RRR_TYPE_PARSE_OK;
+}
+
 // If there are types which begin with the same letters, the longest names must be first in the array
 static const struct rrr_type_definition type_templates[] = {
-		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__rrr_type_import_be,	__rrr_type_be_unpack,		NULL,					RRR_TYPE_NAME_BE},
-		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		__rrr_type_import_host,	NULL,						__rrr_type_host_pack,	RRR_TYPE_NAME_H},
-		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__rrr_type_import_le,	NULL,						NULL,					RRR_TYPE_NAME_LE},
-		{RRR_TYPE_BLOB,		RRR_TYPE_MAX_BLOB,	__rrr_type_import_blob,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_BLOB},
-		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	__rrr_type_import_ustr,	NULL,						NULL,					RRR_TYPE_NAME_USTR},
-		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	__rrr_type_import_istr,	NULL,						NULL,					RRR_TYPE_NAME_ISTR},
-		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__rrr_type_import_sep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_SEP},
-		{RRR_TYPE_MSG,		RRR_TYPE_MAX_SEP,	__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
-		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,					NULL,						NULL,					RRR_TYPE_NAME_ARRAY},
-		{0,					0,					NULL,					NULL,						NULL,					NULL}
+		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	__rrr_type_be_unpack,		NULL,					RRR_TYPE_NAME_BE},
+		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,						__rrr_type_host_pack,	RRR_TYPE_NAME_H},
+		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__get_import_length_default,	__rrr_type_import_le,	NULL,						NULL,					RRR_TYPE_NAME_LE},
+		{RRR_TYPE_BLOB,		RRR_TYPE_MAX_BLOB,	__get_import_length_default,	__rrr_type_import_blob,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_BLOB},
+		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,						NULL,					RRR_TYPE_NAME_USTR},
+		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,						NULL,					RRR_TYPE_NAME_ISTR},
+		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_SEP},
+		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
+		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,							NULL,					NULL,						NULL,					RRR_TYPE_NAME_ARRAY},
+		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
 };
 
 const struct rrr_type_definition *rrr_type_parse_from_string (

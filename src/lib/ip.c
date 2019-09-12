@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "../global.h"
 #include "messages.h"
+#include "array.h"
 #include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
@@ -215,7 +216,7 @@ struct receive_packets_callback_data {
 	struct ip_stats *stats;
 };
 
-static int __ip_receive_packets_callback (
+static int __ip_receive_callback (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 ) {
@@ -269,8 +270,51 @@ static int __ip_receive_packets_callback (
 	return ret;
 }
 
-/* Receive raw packets */
-int ip_receive_packets (
+int ip_receive_array (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		const struct rrr_array *definition,
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
+) {
+	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
+			definition
+	};
+
+	struct receive_packets_callback_data callback_data_ip = {
+			callback, arg, stats
+	};
+
+	int ret = rrr_socket_read_message (
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			rrr_socket_common_get_session_target_length_from_array,
+			&callback_data_array,
+			__ip_receive_callback,
+			&callback_data_ip
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Warning: Soft error while reading data in ip_receive_raw\n");
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			VL_MSG_ERR("Hard error while reading data in ip_receive_raw\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
@@ -292,7 +336,7 @@ int ip_receive_packets (
 			4096,
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
-			__ip_receive_packets_callback,
+			__ip_receive_callback,
 			&callback_data
 	);
 
@@ -321,7 +365,7 @@ struct ip_receive_messages_callback_data {
 #endif
 };
 
-static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
+static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void *arg) {
 	int ret = 0;
 
 	struct ip_receive_messages_callback_data *data = arg;
@@ -394,7 +438,7 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 }
 
 /* Receive packets and parse vl_message struct or fail */
-int ip_receive_messages (
+int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 #ifdef VL_WITH_OPENSSL
@@ -412,10 +456,10 @@ int ip_receive_messages (
 	data.crypt_data = crypt_data;
 #endif
 
-	return ip_receive_packets (
+	return ip_receive_socket_msg (
 		read_session_collection,
 		fd,
-		__ip_receive_messages_callback,
+		__ip_receive_vl_message_callback,
 		&data,
 		stats
 	);
