@@ -65,6 +65,13 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 		struct rrr_array *definition,
 		int idx
 );
+int rrr_array_new_message_from_buffer (
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition,
+		int (*callback)(struct vl_message *message, void *arg),
+		void *callback_arg
+);
 int rrr_array_new_message (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,

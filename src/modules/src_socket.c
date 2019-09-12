@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/rrr_socket.h"
+#include "../lib/rrr_socket_common.h"
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -119,58 +120,28 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
+int read_data_callback(struct rrr_socket_read_session *read_session, void *arg) {
 	struct socket_data *data = arg;
-	struct vl_message *message = NULL;
+
 	int ret = 0;
 
-/*	struct rrr_type_template_collection definitions;
 
-	if (rrr_type_definition_collection_clone(&definitions, &data->definitions) != 0) {
-		VL_MSG_ERR("Could not clone defintions in read_data_callback og socket instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return 1;
-	}
-
-	// ATTENTION! - Received ip message does not contain a vl_message struct
-	if (rrr_type_parse_data_from_definition(&definitions, entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("socket received an invalid packet\n");
-		ret = 0;
-		goto out_destroy;
-	}
-	else {
-		VL_DEBUG_MSG_2("socket received a valid packet in callback\n");
-	}
-
-	if ((ret = rrr_type_new_message(&message, &definitions, time_get_64())) != 0) {
-		VL_MSG_ERR("Could not create message in socket instance %s read_data_callback\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out_destroy;
-	}
-
-	if (message != NULL) {
-		fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
-		VL_DEBUG_MSG_3("socket created a message with timestamp %llu size %lu\n",
-				(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
-		message = NULL;
-	}
-
-	out_destroy:
-	ip_buffer_entry_destroy_void(entry);
-	rrr_type_template_collection_clear(&definitions);
-	RRR_FREE_IF_NOT_NULL(message);*/
 
 	return ret;
 }
 
-int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	VL_DEBUG_MSG_4("socket inject callback size %lu\n", size);
-	struct socket_data *socket_data = poll_data->private_data;
-	return read_data_callback((struct ip_buffer_entry *) data, socket_data);
-}
-
 int read_data(struct socket_data *data) {
 	int ret = 0;
+
+	rrr_socket_client_collection_read(
+			&data->clients,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			read_data_callback,
+			data
+	);
 /*
 	ret |= ip_receive_packets (
 		&data->read_sessions,
@@ -266,6 +237,10 @@ static void *thread_entry_socket (struct vl_thread *thread) {
 
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
+
+		if (rrr_socket_client_collection_accept(&data->clients) != 0) {
+			break;
+		}
 
 		if (read_data(data) != 0) {
 			break;

@@ -25,14 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 
+#include "../global.h"
 #include "array.h"
 #include "rrr_endian.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
 #include "messages.h"
-#include "../global.h"
 #include "type.h"
+#include "vl_time.h"
 
 static int __rrr_array_convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -335,6 +336,46 @@ static ssize_t __rrr_array_get_packed_length (
 		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
 	RRR_LINKED_LIST_ITERATE_END(definition);
 	return result;
+}
+
+int rrr_array_new_message_from_buffer (
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition,
+		int (*callback)(struct vl_message *message, void *arg),
+		void *callback_arg
+) {
+	struct vl_message *message = NULL;
+	int ret = 0;
+
+	struct rrr_array definitions;
+
+	if (rrr_array_definition_collection_clone(&definitions, definition) != 0) {
+		VL_MSG_ERR("Could not clone definitions in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		return 1;
+	}
+
+	if (rrr_array_parse_data_from_definition(&definitions, buf, buf_len) != 0) {
+		VL_MSG_ERR("Invalid packet in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		ret = 0;
+		goto out_destroy;
+	}
+
+	if ((ret = rrr_array_new_message(&message, &definitions, time_get_64())) != 0) {
+		VL_MSG_ERR("Could not create message in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		goto out_destroy;
+	}
+
+	if (message != NULL) {
+		ret = callback(message, callback_arg);
+		message = NULL;
+	}
+
+	out_destroy:
+	rrr_array_clear(&definitions);
+	RRR_FREE_IF_NOT_NULL(message);
+
+	return ret;
 }
 
 int rrr_array_new_message (

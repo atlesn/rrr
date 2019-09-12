@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/array.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
@@ -134,47 +135,34 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 	return ret;
 }
 
+int read_data_receive_message_callback (struct vl_message *message, void *arg) {
+	struct udpreader_data *data = arg;
+
+	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
+	VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
+			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+
+	return 0;
+}
+
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
-	struct vl_message *message = NULL;
 	int ret = 0;
 
-	struct rrr_array definitions;
-
-	if (rrr_array_definition_collection_clone(&definitions, &data->definitions) != 0) {
-		VL_MSG_ERR("Could not clone defintions in read_data_callback og udpreader instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return 1;
-	}
-
-	// ATTENTION! - Received ip message does not contain a vl_message struct
-	if (rrr_array_parse_data_from_definition(&definitions, entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("udpreader received an invalid packet\n");
-		ret = 0;
-		goto out_destroy;
-	}
-	else {
-		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
-	}
-
-	if ((ret = rrr_array_new_message(&message, &definitions, time_get_64())) != 0) {
+	if ((ret = rrr_array_new_message_from_buffer (
+			entry->message,
+			entry->data_length,
+			&data->definitions,
+			read_data_receive_message_callback,
+			data
+	)) != 0) {
 		VL_MSG_ERR("Could not create message in udpreader instance %s read_data_callback\n",
 				INSTANCE_D_NAME(data->thread_data));
-		goto out_destroy;
+		goto out;
 	}
 
-	if (message != NULL) {
-		fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
-		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
-				(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
-		message = NULL;
-	}
-
-	out_destroy:
+	out:
 	ip_buffer_entry_destroy_void(entry);
-	rrr_array_clear(&definitions);
-	RRR_FREE_IF_NOT_NULL(message);
-
 	return ret;
 }
 

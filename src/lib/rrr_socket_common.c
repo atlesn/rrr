@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
+#include "rrr_socket_common.h"
+#include "array.h"
 
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_socket_read_session *read_session,
@@ -51,4 +53,19 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 
 	out:
 	return ret;
+}
+
+int rrr_socket_common_read_raw_array_from_read_session_callback (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+) {
+	struct  rrr_socket_common_read_raw_array_from_read_session_callback_data *data = arg;
+
+	return rrr_array_new_message_from_buffer (
+			read_session->rx_buf_ptr,
+			read_session->rx_buf_wpos,
+			data->definitions,
+			data->callback,
+			data->callback_arg
+	);
 }

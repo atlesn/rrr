@@ -22,6 +22,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_COMMON_H
 #define RRR_SOCKET_COMMON_H
 
+struct rrr_array;
+struct vl_message;
+struct rrr_socket_read_session;
+
+struct rrr_socket_common_read_raw_array_from_read_session_callback_data {
+	const struct rrr_array *definitions;
+	int (*callback)(struct vl_message *message, void *arg);
+	void *callback_arg;
+};
+
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_socket_read_session *read_session,
 		void *arg
