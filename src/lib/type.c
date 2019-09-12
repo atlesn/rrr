@@ -588,7 +588,7 @@ static int __rrr_type_blob_pack (RRR_TYPE_PACK_ARGS) {
 
 	memcpy(target, node->data, node->total_stored_length);
 
-	*new_type_id = RRR_TYPE_BLOB;
+	*new_type_id = node->definition->type;
 	*written_bytes = node->total_stored_length;
 
 	return 0;

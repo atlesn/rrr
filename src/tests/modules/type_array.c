@@ -22,12 +22,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 #include <mysql/mysql.h>
-#include <src/lib/array.h>
-#include "../../lib/rrr_mysql.h"
 
 #include "type_array.h"
 #include "../test.h"
 #include "../../global.h"
+#include "../../lib/array.h"
+#include "../../lib/rrr_mysql.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
@@ -39,7 +39,7 @@ struct test_result {
 	struct vl_message *message;
 };
 
-/* udpr_input_types=be,4,be,3,be,2,be,1,le,4,le,3,le,2,le,1,array,2,blob,8 */
+/* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
 
 /* Remember to disable compiler alignment */
 struct test_data {
@@ -48,10 +48,14 @@ struct test_data {
 	uint16_t be2;
 	char be1;
 
+	char sep1;
+
 	char le4[4];
 	char le3[3];
 	uint16_t le2;
 	char le1;
+
+	char sep2[2];
 
 	char blob_a[8];
 	char blob_b[8];
@@ -63,16 +67,20 @@ struct test_final_data {
 	uint64_t be2;
 	uint64_t be1;
 
+	char sep1;
+
 	uint64_t le4;
 	uint64_t le3;
 	uint64_t le2;
 	uint64_t le1;
 
+	char sep2[2];
+
 	char blob_a[8];
 	char blob_b[8];
 };
 
-#define TEST_DATA_ELEMENTS 9
+#define TEST_DATA_ELEMENTS 11
 
 
 /*
@@ -92,7 +100,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_array collection = {0};
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
-
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump message: 0x");
@@ -137,21 +144,29 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	types[1] = rrr_array_value_get_by_index(&collection, 1);
 	types[2] = rrr_array_value_get_by_index(&collection, 2);
 	types[3] = rrr_array_value_get_by_index(&collection, 3);
+
 	types[4] = rrr_array_value_get_by_index(&collection, 4);
+
 	types[5] = rrr_array_value_get_by_index(&collection, 5);
 	types[6] = rrr_array_value_get_by_index(&collection, 6);
 	types[7] = rrr_array_value_get_by_index(&collection, 7);
 	types[8] = rrr_array_value_get_by_index(&collection, 8);
 
+	types[9] = rrr_array_value_get_by_index(&collection, 9);
+
+	types[10] = rrr_array_value_get_by_index(&collection, 10);
+
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
 		!RRR_TYPE_IS_64(types[2]->definition->type) ||
 		!RRR_TYPE_IS_64(types[3]->definition->type) ||
-		!RRR_TYPE_IS_64(types[4]->definition->type) ||
+
 		!RRR_TYPE_IS_64(types[5]->definition->type) ||
 		!RRR_TYPE_IS_64(types[6]->definition->type) ||
 		!RRR_TYPE_IS_64(types[7]->definition->type) ||
-		!RRR_TYPE_IS_BLOB(types[8]->definition->type)
+		!RRR_TYPE_IS_64(types[8]->definition->type) ||
+
+		!RRR_TYPE_IS_BLOB(types[10]->definition->type)
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -164,23 +179,23 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
 	final_data_raw->be2 = *((uint64_t*) (types[2]->data));
 	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
-	final_data_raw->le4 = *((uint64_t*) (types[4]->data));
-	final_data_raw->le3 = *((uint64_t*) (types[5]->data));
-	final_data_raw->le2 = *((uint64_t*) (types[6]->data));
-	final_data_raw->le1 = *((uint64_t*) (types[7]->data));
 
-	rrr_size blob_a_length = types[8]->total_stored_length / types[8]->element_count;
-	rrr_size blob_b_length = types[8]->total_stored_length / types[8]->element_count;
+	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
+	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
+	final_data_raw->le2 = *((uint64_t*) (types[7]->data));
+	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
 
-	if (types[8]->element_count != 2) {
+	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
+
+	if (types[10]->element_count != 2) {
 		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
-	const char *blob_a = types[8]->data;
-	const char *blob_b = types[8]->data + types[8]->total_stored_length / types[8]->element_count;
-
+	const char *blob_a = types[10]->data;
+	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
 
 	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
 		VL_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
@@ -342,6 +357,8 @@ int test_type_array (
 
 	data->be1 = 1;
 
+	data->sep1 = ';';
+
 	data->le4[1] = 2;
 	data->le4[3] = 1;
 
@@ -351,6 +368,9 @@ int test_type_array (
 	data->le2 = htole16(33);
 
 	data->le1 = 1;
+
+	data->sep2[0] = '|';
+	data->sep2[1] = '|';
 
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");

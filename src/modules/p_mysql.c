@@ -79,6 +79,7 @@ struct mysql_data {
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
+	int strip_array_separators;
 	unsigned int mysql_special_columns_count;
 
 	/* Must be traversed and non-nulls freed at thread exit */
@@ -341,6 +342,10 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		struct rrr_type_value *definition = node;
 
+		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+			goto next;
+		}
+
 		if (	// Arrays must be inserted as blobs. They might be shorter than the
 				// maximum length, the input definition decides.
 				definition->element_count > 1 ||
@@ -365,6 +370,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 		}
 
 		bind_pos++;
+		next:
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	for (rrr_def_count i = 0; i < data->data->mysql_special_columns_count; i++) {
@@ -602,9 +608,13 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	int yesno = 0;
+
 	int column_count = 0;
 	int special_column_count = 0;
 	int special_value_count = 0;
+	int strip_separators_was_defined = 0;
+
 	char *mysql_colplan = NULL;
 	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
@@ -643,10 +653,22 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		ret = 1;
 		goto out;
 	}
-
 	data->mysql_special_columns_count = special_column_count;
-
 	VL_DEBUG_MSG_1("%i special columns specified for mysql instance %s\n", special_column_count, config->name);
+
+	// STRIP OUT SEPARATORS
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		data->strip_array_separators = yesno;
+		strip_separators_was_defined = 1;
+	}
 
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
@@ -665,21 +687,27 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
+		if (data->strip_array_separators != 0) {
+			VL_MSG_ERR("Cannot use mysql_strip_array_separators with voltage column plan for instance %s\n", config->name);
+			ret = 1;
+		}
+
 		if (data->add_timestamp_col != 0) {
 			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
-			goto out;
 		}
 
 		if (data->mysql_special_columns_count > 0) {
 			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
-			goto out;
 		}
 
 		if (data->mysql_columns_blob_writes[0] != NULL) {
 			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan for instance %s\n", config->name);
 			ret = 1;
+		}
+
+		if (ret != 0) {
 			goto out;
 		}
 
@@ -897,13 +925,6 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	update_watchdog_time(thread_data->thread);
 
 	int err = 0;
-
-/*	if (message_fix_endianess (&entry->data.message) != 0) {
-		VL_MSG_ERR("mysql: Endianess could not be determined for message\n");
-		fifo_buffer_write(&mysql_data->input_buffer, data, size);
-		err = 1;
-		goto out;
-	}*/
 
 	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
 
