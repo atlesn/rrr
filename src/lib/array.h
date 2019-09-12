@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TYPES_H
-#define RRR_TYPES_H
+#ifndef RRR_ARRAY_H
+#define RRR_ARRAY_H
 
 #include <stdint.h>
 
@@ -29,14 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "type.h"
 
-#define RRR_ARRAY_VERSION 3
+#define RRR_ARRAY_VERSION 4
 
 struct vl_message;
 
 struct rrr_array_value_packed {
 	rrr_type type;
-	rrr_type_length length;
-	rrr_type_array_size array_size;
+	rrr_type_length total_length;
+	rrr_type_length elements;
 	char data[1];
 } __attribute((packed));
 
@@ -75,4 +75,4 @@ int rrr_array_message_to_collection (
 		const struct vl_message *message_orig
 );
 
-#endif /* RRR_TYPES_H */
+#endif /* RRR_ARRAY_H */

@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -206,7 +205,7 @@ int rrr_array_parse_definition (
 
 		struct rrr_type_value *template = NULL;
 
-		if (rrr_type_value_new(&template, type, length, array_size) != 0) {
+		if (rrr_type_value_new(&template, type, length, array_size, 0) != 0) {
 			VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
 			ret = 1;
 			goto out;
@@ -232,7 +231,7 @@ int rrr_array_parse_data_from_definition (
 	const char *end = data + length;
 
 	if (length == 0) {
-		VL_BUG("BUG: Length was 0 in rrr_types_parse_data\n");
+		VL_BUG("BUG: Length was 0 in rrr_array_parse_data_from_definition\n");
 	}
 
 	if (VL_DEBUGLEVEL_3) {
@@ -249,7 +248,7 @@ int rrr_array_parse_data_from_definition (
 
 	int i = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_type_value);
-		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->array_size);
+		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->element_count);
 
 		if (node->definition->import == NULL) {
 			VL_BUG("BUG: No convert function found for type %d\n", node->definition->type);
@@ -258,7 +257,7 @@ int rrr_array_parse_data_from_definition (
 		ssize_t parsed_bytes = 0;
 
 		if (node->data != NULL) {
-			VL_BUG("node->data was not NULL in rrr_types_parse_data\n");
+			VL_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
 		}
 
 		if ((ret = node->definition->import(node, &parsed_bytes, pos, end)) != 0) {
@@ -270,7 +269,7 @@ int rrr_array_parse_data_from_definition (
 		}
 
 		if (parsed_bytes == 0) {
-			VL_BUG("Parsed bytes was zero in rrr_types_parse_data\n");
+			VL_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 		}
 
 		pos += parsed_bytes;
@@ -333,7 +332,7 @@ static ssize_t __rrr_array_get_packed_length (
 ) {
 	ssize_t result = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		result += node->array_size * node->length + sizeof(struct rrr_array_value_packed) - 1;
+		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
 	RRR_LINKED_LIST_ITERATE_END(definition);
 	return result;
 }
@@ -343,60 +342,68 @@ int rrr_array_new_message (
 		const struct rrr_array *definition,
 		uint64_t time
 ) {
-	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+	int ret = 0;
 
 	*final_message = NULL;
+
+	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
 
 	struct vl_message *message = message_new_array(time, total_data_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
 	message->version = RRR_ARRAY_VERSION;
 
 	char *pos = message->data_;
-	char tmp_data[sizeof(rrr_type_be)];
-
-	ssize_t written_bytes = 0;
+	ssize_t written_bytes_total = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		struct rrr_array_value_packed head = {0};
-
 		if (node->data == NULL) {
 			VL_BUG("Data not set for node in rrr_array_new_message\n");
 		}
 
 		uint8_t type = node->definition->type;
-		const char *data = node->data;
 
-		if (type == RRR_TYPE_H) {
-			type = RRR_TYPE_BE;
-			*((rrr_type_be *) tmp_data) = htobe64(*((rrr_type_be *) node->data));
-			data = tmp_data;
-		}
-		else if (
-			type != RRR_TYPE_BLOB &&
-			type != RRR_TYPE_SEP
-		) {
-			VL_BUG("Illegal type %u in rrr_array_new_message\n", type);
+		if (node->definition->pack == NULL) {
+			VL_BUG("No pack function defined for type %u\n", type);
 		}
 
-		head.type = type;
-		head.length = htobe32(node->length);
-		head.array_size = htobe32(node->array_size);
+		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
 
-		memcpy(pos, &head, sizeof(head) - 1);
-		pos += sizeof(head) - 1;
-		memcpy(pos, data, node->length * node->array_size);
-		pos += node->length * node->array_size;
+		head->type = type;
+		head->elements = htobe32(node->element_count);
+		head->total_length = htobe32(node->total_stored_length);
 
-		written_bytes += sizeof(head) - 1 + node->length * node->array_size;
+		pos += sizeof(*head) - 1;
+		written_bytes_total += sizeof(*head) - 1;
+
+		uint8_t new_type = 0;
+		ssize_t written_bytes = 0;
+
+		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
+			VL_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
+			ret = 1;
+			goto out;
+		}
+
+		if (new_type != head->type) {
+			head->type = new_type;
+		}
+
+		if (written_bytes != node->total_stored_length) {
+			VL_BUG("Size mismatch in rrr_array_new_message\n");
+		}
+
+		pos += written_bytes;
+		written_bytes_total += written_bytes;
 	RRR_LINKED_LIST_ITERATE_END(definition);
 
-	if (written_bytes != message->length) {
+	if (written_bytes_total != total_data_length) {
 		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%" PRIu32 "\n",
-				written_bytes, message->length);
+				written_bytes_total, message->length);
 	}
 
 	if (VL_DEBUGLEVEL_3) {
@@ -412,8 +419,11 @@ int rrr_array_new_message (
 	}
 
 	*final_message = (struct vl_message *) message;
+	message = NULL;
 
-	return 0;
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
 }
 
 int rrr_array_message_to_collection (
@@ -462,12 +472,12 @@ int rrr_array_message_to_collection (
 		}
 
 		rrr_type type = data_packed->type;
-		rrr_type_length length = be32toh(data_packed->length);
-		rrr_type_array_size array_size = be32toh(data_packed->array_size);
+		rrr_type_length total_length = be32toh(data_packed->total_length);
+		rrr_type_length elements = be32toh(data_packed->elements);
 
-		if (pos + length * array_size > end) {
+		if (pos + total_length > end) {
 			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
-					type, i, length * array_size, end - pos);
+					type, i, total_length, end - pos);
 			goto out_free_data;
 		}
 
@@ -477,39 +487,27 @@ int rrr_array_message_to_collection (
 			goto out_free_data;
 		}
 
-		if (def->to_host == NULL) {
+		if (def->unpack == NULL) {
 			VL_MSG_ERR("Illegal type in array message %u/%s\n",
 					def->type, def->identifier);
 			goto out_free_data;
 		}
 
-		struct rrr_type_value *template = malloc(sizeof(*template));
-		if (template == NULL) {
-			VL_MSG_ERR("Could not allocate memory for template in rrr_array_message_to_collection\n");
+		struct rrr_type_value *template = NULL;
+		if (rrr_type_value_new(&template, def, total_length, elements, total_length) != 0) {
+			VL_MSG_ERR("Could not allocate value in rrr_array_message_to_collection\n");
 			goto out_free_data;
 		}
-		memset (template, '\0', sizeof(*template));
-
 		RRR_LINKED_LIST_APPEND(target,template);
 
-		template->data = malloc(length * array_size);
-		if (template->data == NULL) {
-			VL_MSG_ERR("Could no allocate memory for template data in rrr_array_message_to_collection\n");
-			goto out_free_data;
-		}
+		memcpy (template->data, pos, total_length);
 
-		memcpy (template->data, pos, length * array_size);
-
-		template->array_size = array_size;
-		template->length = length;
-		template->definition = def;
-
-		if (template->definition->to_host(template) != 0) {
+		if (template->definition->unpack(template) != 0) {
 			VL_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
 			goto out_free_data;
 		}
 
-		pos += length * array_size;
+		pos += total_length;
 		i++;
 	}
 

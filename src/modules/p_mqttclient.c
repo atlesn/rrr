@@ -513,7 +513,7 @@ static int __try_get_vl_message_from_publish (
 		goto out;
 	}
 
-	if (rrr_socket_msg_get_packet_target_size_and_checksum (
+	if (rrr_socket_msg_get_target_size_and_check_checksum (
 			&message_stated_length,
 			(struct rrr_socket_msg *) message,
 			message_actual_length)
@@ -529,20 +529,21 @@ static int __try_get_vl_message_from_publish (
 		goto out;
 	}
 
-	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) message);
-
-	if (rrr_socket_msg_head_validate((struct rrr_socket_msg *) message) != 0) {
+	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, message_actual_length) != 0) {
 		VL_DEBUG_MSG_1("RRR Message with invalid header in mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) message, message_actual_length) != 0) {
+	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, message_actual_length) != 0) {
 		VL_MSG_ERR("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	message_to_host(message);
+	if (message_to_host_and_verify(message, message_actual_length) != 0) {
+		VL_MSG_ERR("RRR message_final was invalid in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
 	*result = malloc(message_actual_length);
 	if (*result == NULL) {

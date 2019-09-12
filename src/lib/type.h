@@ -26,42 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 
-typedef uint8_t rrr_type;
-typedef uint32_t rrr_type_length;
-typedef uint32_t rrr_def_count;
-typedef uint32_t rrr_type_array_size;
-typedef uint32_t rrr_size;
-typedef uint64_t rrr_type_le;
-typedef uint64_t rrr_type_be;
-typedef uint64_t rrr_type_h;
-typedef uint64_t rrr_type_istr;
-typedef uint64_t rrr_type_ustr;
-
-struct rrr_type_value;
-
-struct rrr_type_definition {
-	rrr_type type;
-	rrr_type_length max_length;
-	int (*import)(
-			struct rrr_type_value *node,
-			ssize_t *parsed_bytes,
-			const char *start,
-			const char *end
-	);
-	int (*to_host)(
-			struct rrr_type_value *node
-	);
-	const char *identifier;
-};
-
-struct rrr_type_value {
-	RRR_LINKED_LIST_NODE(struct rrr_type_value);
-	const struct rrr_type_definition *definition;
-	rrr_type_length length;
-	rrr_type_array_size array_size; // 1 = no array
-	char *data;
-};
-
 static const union type_system_endian {
 	uint16_t two;
 	uint8_t one;
@@ -79,12 +43,13 @@ static const union type_system_endian {
 #define RRR_TYPE_LE			1 // Little endian number
 #define RRR_TYPE_BE			2 // Big endian number
 #define RRR_TYPE_H			3 // Host endian number (can be both)
-#define RRR_TYPE_BLOB		4
+#define RRR_TYPE_BLOB		4 // Type which holds arbitary data
 #define RRR_TYPE_USTR		5 // Unsigned int given as a string
 #define RRR_TYPE_ISTR		6 // Signed int given as a string
 #define RRR_TYPE_SEP		7 // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
-#define RRR_TYPE_ARRAY		8 // Type which holds many of another type
-#define RRR_TYPE_MAX		8
+#define RRR_TYPE_MSG		8 // Type which holds an RRR message
+#define RRR_TYPE_ARRAY		9 // Type which holds many instances of another type
+#define RRR_TYPE_MAX		9
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -93,6 +58,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_USTR	"ustr"
 #define RRR_TYPE_NAME_ISTR	"istr"
 #define RRR_TYPE_NAME_SEP	"sep"
+#define RRR_TYPE_NAME_MSG	"msg"
 #define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
@@ -102,14 +68,62 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_USTR	0
 #define RRR_TYPE_MAX_ISTR	0
 #define RRR_TYPE_MAX_SEP	64
+#define RRR_TYPE_MAX_MSG	0
 #define RRR_TYPE_MAX_ARRAY	65535
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) ==  RRR_TYPE_SEP)
+#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG)
 #define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
+
+#define RRR_TYPE_IMPORT_ARGS		\
+		struct rrr_type_value *node,\
+		ssize_t *parsed_bytes,		\
+		const char *start,			\
+		const char *end
+
+#define RRR_TYPE_UNPACK_ARGS		\
+		struct rrr_type_value *node
+
+#define RRR_TYPE_PACK_ARGS					\
+		char *target,						\
+		ssize_t *written_bytes,				\
+		uint8_t *new_type_id,				\
+		const struct rrr_type_value *node
+
+typedef uint8_t rrr_type;
+typedef uint32_t rrr_type_length;
+typedef uint32_t rrr_def_count;
+typedef uint32_t rrr_type_array_size;
+typedef uint32_t rrr_size;
+typedef uint64_t rrr_type_le;
+typedef uint64_t rrr_type_be;
+typedef uint64_t rrr_type_h;
+typedef uint64_t rrr_type_istr;
+typedef uint64_t rrr_type_ustr;
+
+struct rrr_type_value;
+
+struct rrr_type_definition {
+	rrr_type type;
+	rrr_type_length max_length;
+	int (*import)(RRR_TYPE_IMPORT_ARGS);
+	int (*unpack)(RRR_TYPE_UNPACK_ARGS);
+	int (*pack)(RRR_TYPE_PACK_ARGS);
+	const char *identifier;
+};
+
+struct rrr_type_value {
+	RRR_LINKED_LIST_NODE(struct rrr_type_value);
+	const struct rrr_type_definition *definition;
+	rrr_type_length import_length;
+	rrr_type_length import_elements;
+	rrr_type_length total_stored_length;
+	rrr_type_array_size element_count; // 1 = no array, 0 = auto
+	char *data;
+};
 
 const struct rrr_type_definition *rrr_type_parse_from_string (
 		ssize_t *parsed_bytes,
@@ -125,8 +139,9 @@ void rrr_type_value_destroy (
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
-		rrr_type_length length,
-		rrr_type_array_size array_size
+		rrr_type_length import_length,
+		rrr_type_array_size element_count,
+		rrr_type_length stored_length
 );
 
 #endif /* RRR_TYPE_HEADER */

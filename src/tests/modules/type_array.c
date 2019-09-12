@@ -93,6 +93,19 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
 
+
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG("dump message: 0x");
+		for (unsigned int i = 0; i < sizeof(*message) + message->length - 1; i++) {
+			char c = ((char*)message)[i];
+			if (c < 0x10) {
+				VL_DEBUG_MSG("0");
+			}
+			VL_DEBUG_MSG("%x", c);
+		}
+		VL_DEBUG_MSG("\n");
+	}
+
 	if (!MSG_IS_ARRAY(message)) {
 		TEST_MSG("Message received in test_type_array_callback was not an array\n");
 		ret = 1;
@@ -113,7 +126,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_type_length final_length = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		final_length += node->length;
+		final_length += node->total_stored_length;
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	struct rrr_type_value *types[9];
@@ -156,17 +169,18 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	final_data_raw->le2 = *((uint64_t*) (types[6]->data));
 	final_data_raw->le1 = *((uint64_t*) (types[7]->data));
 
-	rrr_size blob_a_length = types[8]->length;
-	rrr_size blob_b_length = types[8]->length;
+	rrr_size blob_a_length = types[8]->total_stored_length / types[8]->element_count;
+	rrr_size blob_b_length = types[8]->total_stored_length / types[8]->element_count;
 
-	const char *blob_a = types[8]->data;
-	const char *blob_b = types[8]->data + types[8]->length;
-
-	if (types[8]->array_size != 2) {
+	if (types[8]->element_count != 2) {
 		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
+
+	const char *blob_a = types[8]->data;
+	const char *blob_b = types[8]->data + types[8]->total_stored_length / types[8]->element_count;
+
 
 	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
 		VL_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");

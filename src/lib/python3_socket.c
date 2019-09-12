@@ -510,9 +510,6 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		if (message->msg_size < sizeof(struct vl_message)) {
 			VL_BUG("Received a vl_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
-		if (message_validate((struct vl_message *) message) != 0) {
-			VL_BUG("Received an invalid vl_message in  rrr_python3_socket_send\n");
-		}
 
 		msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
 		msg_size = sizeof(struct vl_message) + ((struct vl_message *) message)->length - 1;
@@ -622,9 +619,13 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 
 	struct rrr_socket_msg *tmp_head = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
 
-	rrr_socket_msg_head_to_host(tmp_head);
+	if (rrr_socket_msg_head_to_host_and_verify(tmp_head, read_session->rx_buf_wpos) != 0) {
+		VL_MSG_ERR("Error while converting message head in python3 socket receive\n");
+		ret = 1;
+		goto out;
+	}
 
-	if (rrr_socket_msg_checksum_check(tmp_head, tmp_head->network_size) != 0) {
+	if (rrr_socket_msg_check_data_checksum_and_length (tmp_head, read_session->rx_buf_wpos) != 0) {
 		VL_MSG_ERR("Received message in python3 socket receive function with wrong checksum\n");
 		ret = 1;
 		goto out;
@@ -641,9 +642,10 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 		struct vl_message *message = (struct vl_message *) read_session->rx_buf_ptr;
 		if (tmp_head->msg_size - sizeof(struct rrr_socket_msg) < sizeof(*message)) {
 			VL_MSG_ERR("Received vl_message in python3 socket receive function which was too short\n");
+			ret = 1;
+			goto out;
 		}
-		message_to_host(message);
-		if (message_validate (message)) {
+		if (message_to_host_and_verify (message, tmp_head->msg_size)) {
 			VL_MSG_ERR("Received vl_message in python3 socket receive function which could not be validated\n");
 			ret = 1;
 			goto out;
@@ -652,7 +654,7 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 	else if (RRR_SOCKET_MSG_IS_SETTING(tmp_head)) {
 		struct rrr_setting_packed *message = (struct rrr_setting_packed *) read_session->rx_buf_ptr;
 		rrr_settings_packed_to_host (message);
-		if (rrr_settings_packed_validate(message)) {
+		if (rrr_settings_packed_validate (message)) {
 			VL_MSG_ERR("Received setting message in python3 socket receive function which could not be validated\n");
 			ret = 1;
 			goto out;
@@ -667,12 +669,6 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 	}
 
 	if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
-		if (rrr_socket_msg_head_validate(tmp_head) != 0) {
-			VL_MSG_ERR("Received control message was invalid in python3 socket receive\n");
-			ret = 1;
-			goto out;
-		}
-
 		// Above validate function should catch invalid flags
 		VL_BUG("Unknown flags in control message in python3 socket receive (control message not supported)\n");
 

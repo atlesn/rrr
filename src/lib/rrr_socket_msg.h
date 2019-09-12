@@ -67,20 +67,18 @@ void rrr_socket_msg_populate_head (
 void rrr_socket_msg_checksum_and_to_network_endian (
 		struct rrr_socket_msg *message
 );
-void rrr_socket_msg_head_to_host (
-		struct rrr_socket_msg *message
+int rrr_socket_msg_head_to_host_and_verify (
+		struct rrr_socket_msg *message,
+		ssize_t expected_size
 );
-int rrr_socket_msg_get_packet_target_size_and_checksum (
+int rrr_socket_msg_get_target_size_and_check_checksum (
 		ssize_t *target_size,
 		struct rrr_socket_msg *socket_msg,
 		ssize_t buf_size
 );
-int rrr_socket_msg_checksum_check (
+int rrr_socket_msg_check_data_checksum_and_length (
 		struct rrr_socket_msg *message,
 		ssize_t data_size
-);
-int rrr_socket_msg_head_validate (
-		struct rrr_socket_msg *message
 );
 
 #endif /* RRR_SOCKET_MSG_H */

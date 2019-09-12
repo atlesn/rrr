@@ -34,7 +34,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 	}
 
 	ssize_t target_size = 0;
-	int ret = rrr_socket_msg_get_packet_target_size_and_checksum(
+	int ret = rrr_socket_msg_get_target_size_and_check_checksum(
 			&target_size,
 			(struct rrr_socket_msg *) read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos

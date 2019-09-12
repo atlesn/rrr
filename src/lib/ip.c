@@ -334,16 +334,13 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 
 	if (count < 10) {
 		VL_MSG_ERR ("Received short message/packet from network\n");
-		goto out;
+		goto out_free;
 	}
 
 	// Header CRC32 is checked when reading the data from remote and getting size
-	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) entry->message);
-
-	if (message->network_size != entry->data_length) {
-		VL_MSG_ERR("Message network size was not equal to ip buffer entry size in __ip_receive_messages_callback (%" PRIu32 " vs %li)\n",
-				message->network_size, entry->data_length);
-		goto out;
+	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
+		VL_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
+		goto out_free;
 	}
 
 #ifdef VL_WITH_OPENSSL
@@ -352,7 +349,7 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 		struct vl_message *new_message = realloc(entry->message, new_size);
 		if (new_message == NULL) {
 			VL_MSG_ERR("Could not realloc message before decryption in __ip_receive_messages_callback\n");
-			goto out;
+			goto out_free;
 		}
 		entry->message = new_message;
 
@@ -377,24 +374,22 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 	}
 #endif
 
-	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
+	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
 		VL_MSG_ERR ("IP: Message checksum was invalid\n");
 		goto out_free;
 	}
 
-	message_to_host(entry->message);
-
-	if (message->length + sizeof(struct vl_message) - 1 != message->msg_size) {
-		VL_MSG_ERR("Size mismatch in vl_message in __ip_receive_messages_callback (%lu<>%" PRIu32 ")\n",
+	if (message_to_host_and_verify(entry->message, entry->data_length) != 0) {
+		VL_MSG_ERR("Message verification failed in __ip_receive_messages_callback (size: %lu<>%" PRIu32 ")\n",
 				message->length + sizeof(struct vl_message) - 1, message->msg_size);
+		ret = 1;
+		goto out_free;
 	}
 
 	return data->callback(entry, data->arg);
 
 	out_free:
-	free(entry);
-
-	out:
+	ip_buffer_entry_destroy(entry);
 	return ret;
 }
 

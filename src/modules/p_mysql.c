@@ -341,27 +341,13 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		struct rrr_type_value *definition = node;
 
-		if (definition->array_size > 1) {
-			// Arrays must be inserted as blobs. They might be shorter than the
-			// maximum length, the input definition decides.
-			string_lengths[bind_pos] = definition->length * definition->array_size;
-			bind[bind_pos].buffer = definition->data;
-			bind[bind_pos].length = &string_lengths[bind_pos];
-			bind[bind_pos].buffer_type = MYSQL_TYPE_BLOB;
-		}
-		else if (RRR_TYPE_IS_BLOB(definition->definition->type) ||
+		if (	// Arrays must be inserted as blobs. They might be shorter than the
+				// maximum length, the input definition decides.
+				definition->element_count > 1 ||
+				RRR_TYPE_IS_BLOB(definition->definition->type) ||
 				mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])
 		) {
-			if (definition->length > definition->definition->max_length &&
-					definition->definition->max_length > 0
-			) {
-				VL_MSG_ERR("Type length defined for column with index %ul exceeds maximum of %ul when binding with mysql\n",
-						definition->length, definition->definition->max_length);
-				res = 1;
-				goto out_cleanup;
-			}
-
-			string_lengths[bind_pos] = definition->length;
+			string_lengths[bind_pos] = definition->total_stored_length;
 			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
@@ -404,9 +390,9 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		struct rrr_type_value *definition = node;
 		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
-			if (string_lengths[bind_pos] < definition->length) {
+			if (string_lengths[bind_pos] < definition->total_stored_length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
-						string_lengths[bind_pos], definition->length, bind_pos);
+						string_lengths[bind_pos], definition->total_stored_length, bind_pos);
 			}
 		}
 		bind_pos++;

@@ -170,7 +170,33 @@ void flip_endianess_32(vl_u32 *value) {
 	*value = result;
 }
 
-void message_to_host (struct vl_message *message) {
+static int __message_validate (const struct vl_message *message){
+	int ret = 0;
+
+	if (message->msg_size < sizeof(*message) - 1 ||
+			sizeof(*message) + message->length - 1 != message->msg_size
+	) {
+		VL_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
+				message->msg_size, message->length);
+		ret = 1;
+	}
+	if (!MSG_CLASS_OK(message)) {
+		VL_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
+		ret = 1;
+	}
+	if (!MSG_TYPE_OK(message)) {
+		VL_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
+		ret = 1;
+	}
+
+	return ret;
+}
+
+int message_to_host_and_verify (struct vl_message *message, ssize_t expected_size) {
+	if (expected_size < ((ssize_t) sizeof(*message)) - 1) {
+		VL_MSG_ERR("Message was too short in message_to_host_and_verify\n");
+		return 1;
+	}
 	message->type = be16toh(message->type);
 	message->type_flags = be16toh(message->type_flags);
 	message->class = be16toh(message->class);
@@ -179,6 +205,14 @@ void message_to_host (struct vl_message *message) {
 	message->timestamp_to = be64toh(message->timestamp_to);
 	message->data_numeric = be64toh(message->data_numeric);
 	message->length = be32toh(message->length);
+
+	if (sizeof(*message) - 1 + message->length != (unsigned int) expected_size) {
+		VL_MSG_ERR("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %li\n",
+				expected_size, sizeof(*message) - 1 + message->length);
+		return 1;
+	}
+
+	return __message_validate(message);
 }
 
 void message_prepare_for_network (struct vl_message *message) {
@@ -226,27 +260,5 @@ struct vl_message *message_duplicate_no_data(struct vl_message *message) {
 	memcpy(ret, message, sizeof(*ret) - 1);
 	ret->length = 0;
 	ret->network_size = sizeof(*ret) - 1;
-	return ret;
-}
-
-int message_validate (const struct vl_message *message){
-	int ret = 0;
-
-	if (message->msg_size < sizeof(*message) - 1 ||
-			sizeof(*message) + message->length - 1 != message->msg_size
-	) {
-		VL_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
-				message->msg_size, message->length);
-		ret = 1;
-	}
-	if (!MSG_CLASS_OK(message)) {
-		VL_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
-		ret = 1;
-	}
-	if (!MSG_TYPE_OK(message)) {
-		VL_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
-		ret = 1;
-	}
-
 	return ret;
 }
