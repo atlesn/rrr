@@ -59,6 +59,8 @@ struct test_data {
 
 	char blob_a[8];
 	char blob_b[8];
+
+	struct vl_message msg;
 } __attribute__((packed));
 
 struct test_final_data {
@@ -78,9 +80,11 @@ struct test_final_data {
 
 	char blob_a[8];
 	char blob_b[8];
+
+	struct vl_message msg;
 };
 
-#define TEST_DATA_ELEMENTS 11
+#define TEST_DATA_ELEMENTS 12
 
 
 /*
@@ -136,7 +140,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		final_length += node->total_stored_length;
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
-	struct rrr_type_value *types[9];
+	struct rrr_type_value *types[12];
 
 	// After the array has been assembled and then disassembled again, all numbers
 	// become be64
@@ -156,6 +160,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	types[10] = rrr_array_value_get_by_index(&collection, 10);
 
+	types[11] = rrr_array_value_get_by_index(&collection, 11);
+
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
 		!RRR_TYPE_IS_64(types[2]->definition->type) ||
@@ -166,7 +172,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		!RRR_TYPE_IS_64(types[7]->definition->type) ||
 		!RRR_TYPE_IS_64(types[8]->definition->type) ||
 
-		!RRR_TYPE_IS_BLOB(types[10]->definition->type)
+		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
+		types[11]->definition->type != RRR_TYPE_MSG
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -218,6 +225,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	strcpy(final_data_raw->blob_a, blob_a);
 	strcpy(final_data_raw->blob_b, blob_b);
 
+	final_data_raw->msg = *((struct vl_message *) types[11]->data);
+
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
@@ -254,6 +263,13 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		final_data_raw->le2 != 33
 	) {
 		TEST_MSG("Received wrong data from collection in test_type_array_callback\n");
+		ret = 1;
+		goto out_free_final_data;
+	}
+
+	if (final_data_raw->msg.data_numeric != 33) {
+		TEST_MSG("Received wrong value %" PRIu64 " in message of array in test_type_array_callback\n",
+				final_data_raw->msg.data_numeric);
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -375,7 +391,18 @@ int test_type_array (
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	if (ip_buffer_entry_new(&entry, sizeof(struct test_data), NULL, 0, data) != 0) {
+	data->msg.network_size = sizeof(struct vl_message) - 1;
+	data->msg.msg_size = sizeof(struct vl_message) - 1;
+	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+	data->msg.length = 0;
+	data->msg.data_numeric = 33;
+	data->msg.type = MSG_TYPE_MSG;
+	data->msg.class = MSG_CLASS_POINT;
+
+	message_prepare_for_network(&data->msg);
+	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
+
+	if (ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
 		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
 		ret = 1;
 		goto out;
@@ -451,6 +478,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
+		"`vl_message` blob NOT NULL,"
 		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";

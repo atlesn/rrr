@@ -228,17 +228,12 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
 
-	int config_error = 0;
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
-		config_error = 1;
-	}
-
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
-	if (config_error) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
 

@@ -470,16 +470,15 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	ssize_t target_size_total = 0;
 	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) start;
 
-	if (max_size_total < (ssize_t) (sizeof (struct vl_message) - 1)) {
-		ret = RRR_TYPE_PARSE_INCOMPLETE;
-		goto out;
-	}
-
 	unsigned int count = 0;
 	ssize_t max_size = max_size_total;
 	while (max_size > 0) {
-		ssize_t target_size = 0;
+		if (max_size < (ssize_t) (sizeof (struct vl_message) - 1)) {
+			ret = RRR_TYPE_PARSE_INCOMPLETE;
+			goto out;
+		}
 
+		ssize_t target_size = 0;
 		if (rrr_socket_msg_get_target_size_and_check_checksum (
 				&target_size,
 				socket_msg,
@@ -527,6 +526,8 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 		ret = 1;
 		goto out;
 	}
+
+	*parsed_bytes = target_size_total;
 
 	out:
 	return ret;
@@ -594,7 +595,6 @@ static int __rrr_type_blob_pack (RRR_TYPE_PACK_ARGS) {
 	return 0;
 }
 
-
 static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 	ssize_t pos = 0;
 
@@ -614,10 +614,10 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 		head = wpos;
 		msg = wpos;
 
+		pos += msg->network_size;
+
 		message_prepare_for_network(msg);
 		rrr_socket_msg_checksum_and_to_network_endian(head);
-
-		pos += msg->network_size;
 	}
 
 	if (pos != node->total_stored_length) {
@@ -735,12 +735,14 @@ const struct rrr_type_definition *rrr_type_parse_from_string (
 		const struct rrr_type_definition *type = &type_templates[i];
 		ssize_t len = strlen(type->identifier);
 		if (start + len > end) {
-			continue;
+			goto next;
 		}
 		if (strncmp(type->identifier, start, len) == 0) {
 			*parsed_bytes = len;
 			return type;
 		}
+
+		next:
 		i++;
 	} while(type_templates[i].type != 0);
 

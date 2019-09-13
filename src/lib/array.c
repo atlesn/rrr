@@ -100,6 +100,14 @@ static int __rrr_array_parse_identifier_and_size (
 			goto out;
 		}
 	}
+	else {
+		if (*start != '\0') {
+			VL_MSG_ERR("Extra data or size argument after type definition '%s' which has automatic size\n",
+					type->identifier);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	*type_return = type;
 	*length_return = length;
@@ -198,7 +206,7 @@ int rrr_array_parse_definition (
 			goto out;
 		}
 
-		if (i + 1 == list->length && type->max_length == 0) {
+		if (i + 1 == list->length && type->max_length == 0 && !(type->type == RRR_TYPE_MSG)) {
 			VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
 					type->identifier);
 			return 1;
@@ -389,18 +397,18 @@ int rrr_array_new_message_from_buffer (
 	struct rrr_array definitions;
 
 	if (rrr_array_definition_collection_clone(&definitions, definition) != 0) {
-		VL_MSG_ERR("Could not clone definitions in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		VL_MSG_ERR("Could not clone definitions in rrr_array_new_message_from_buffer\n");
 		return 1;
 	}
 
 	if (rrr_array_parse_data_from_definition(&definitions, buf, buf_len) != 0) {
-		VL_MSG_ERR("Invalid packet in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		VL_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
 		ret = 0;
 		goto out_destroy;
 	}
 
 	if ((ret = rrr_array_new_message(&message, &definitions, time_get_64())) != 0) {
-		VL_MSG_ERR("Could not create message in rrr_socket_common_read_raw_array_from_read_session_callback\n");
+		VL_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
 		goto out_destroy;
 	}
 
