@@ -85,7 +85,11 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 			&array_message,
 			&array_message_python3,
 			thread_data->init_data.module->all_instances,
-			"instance_udpreader","instance_buffer_from_perl5", "instance_buffer_from_python3");
+			"instance_udpreader",
+			"instance_socket",
+			"instance_buffer_from_perl5",
+			"instance_buffer_from_python3"
+	);
 	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
 
 	update_watchdog_time(thread_data->thread);
@@ -94,17 +98,12 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 		goto configtest_done;
 	}
 
-	if (array_message->timestamp_from + 1 != array_message_python3->timestamp_from) {
-		TEST_MSG("Received message from python3 did not have timestamp incremented by 1 (%" PRIu64 " < %" PRIu64 ")\n",
-				array_message->timestamp_from, array_message_python3->timestamp_from);
-		ret = 1;
-		goto configtest_done;
-	}
-
 	/* Test which sets up the MySQL database and then listens on a
 	 * buffer for ACK message */
 	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
-			"instance_dummy_input", "instance_buffer_msg", "instance_mysql",
+			"instance_dummy_input",
+			"instance_buffer_msg",
+			"instance_mysql",
 			array_message
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);

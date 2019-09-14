@@ -38,6 +38,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_SOCKET_CLIENT_TIMEOUT 30
 
+struct rrr_socket_options {
+	int fd;
+	int domain;
+	int type;
+	int protocol;
+};
+
 struct rrr_socket_client {
 	RRR_LINKED_LIST_NODE(struct rrr_socket_client);
 	struct rrr_socket_read_session_collection read_sessions;
@@ -54,7 +61,10 @@ struct rrr_socket_client_collection {
 };
 
 struct rrr_socket_read_session;
-
+int rrr_socket_get_options_from_fd (
+		struct rrr_socket_options *target,
+		int fd
+);
 int rrr_socket_with_lock_do (
 		int (*callback)(void *arg),
 		void *arg
@@ -72,7 +82,7 @@ int rrr_socket_mkstemp (
 int rrr_socket_bind_and_listen (
 		int fd,
 		struct sockaddr *addr,
-		socklen_t *addr_len,
+		socklen_t addr_len,
 		int num_clients
 );
 int rrr_socket (
@@ -91,6 +101,11 @@ int rrr_socket_unix_create_bind_and_listen (
 		const char *filename,
 		int num_clients,
 		int nonblock
+);
+int rrr_socket_connect_nonblock (
+		int fd,
+		struct sockaddr *addr,
+		socklen_t addr_len
 );
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection

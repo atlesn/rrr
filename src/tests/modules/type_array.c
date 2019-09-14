@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <inttypes.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <mysql/mysql.h>
 
 #include "type_array.h"
@@ -28,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../global.h"
 #include "../../lib/array.h"
 #include "../../lib/rrr_mysql.h"
+#include "../../lib/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
@@ -320,11 +323,84 @@ int test_do_poll_loop (
 	return ret;
 }
 
+int test_type_array_write_to_socket (struct test_data *data, struct instance_metadata *socket_metadata) {
+	char *socket_path = NULL;
+	int ret = 0;
+	int socket_fd = 0;
+
+	ret = rrr_instance_config_get_string_noconvert (&socket_path, socket_metadata->config, "socket_path");
+	if (ret != 0) {
+		TEST_MSG("Could not get configuration parameter from socket module\n");
+		goto out;
+	}
+
+	struct sockaddr_un addr;
+	socklen_t addr_len = sizeof(addr);
+	memset(&addr, '\0', sizeof(addr));
+
+	if (strlen(socket_path) > sizeof(addr.sun_path) - 1) {
+		TEST_MSG("socket path from config was too long in test_type_array_write_to_socket\n");
+		ret = 1;
+		goto out;
+	}
+
+	addr.sun_family = AF_UNIX;
+	strcpy(addr.sun_path, socket_path);
+
+	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|SOCK_NONBLOCK, 0, "test_type_array_write_to_socket", NULL);
+	if (socket_fd < 0) {
+		TEST_MSG("Error while creating socket in test_type_array_write_to_socket: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int connected = 0;
+	for (int i = 0; i < 10 && connected == 0; i++) {
+		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
+			TEST_MSG("Could not connect to socket %s try %i of %i: %s\n",
+					socket_path, i, 10, strerror(errno));
+			usleep(250000);
+		}
+		else {
+			connected = 1;
+			break;
+		}
+	}
+
+	if (connected != 1) {
+		goto out;
+	}
+
+	ret = write (socket_fd, data, sizeof(*data) - 1);
+	if ((ret = write (socket_fd, data, sizeof(*data) - 1)) == -1) {
+		TEST_MSG("Error while writing to socket in test_type_array_write_to_socket: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+	else if (ret >= 0 && ret != sizeof(*data) - 1) {
+		TEST_MSG("Only %i of %lu bytes written in test_type_array_write_to_socket\n",
+				ret, sizeof(*data) - 1);
+		ret = 1;
+		goto out;
+	}
+	else {
+		ret = 0;
+	}
+
+	out:
+	if (socket_fd > 0) {
+		rrr_socket_close(socket_fd);
+	}
+	RRR_FREE_IF_NOT_NULL(socket_path);
+	return ret;
+}
+
 int test_type_array (
 		struct vl_message **result_message_1,
 		struct vl_message **result_message_2,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
+		const char *input_socket_name,
 		const char *output_name_1,
 		const char *output_name_2
 ) {
@@ -336,10 +412,11 @@ int test_type_array (
 	struct test_data *data = NULL;
 
 	struct instance_metadata *input = instance_find(instances, input_name);
+	struct instance_metadata *input_buffer_socket = instance_find(instances, input_socket_name);
 	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
 	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
 
-	if (input == NULL || output_1 == NULL || output_2 == NULL) {
+	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL) {
 		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
 				input_name, output_name_1);
 		return 1;
@@ -401,6 +478,13 @@ int test_type_array (
 
 	message_prepare_for_network(&data->msg);
 	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
+
+	ret = test_type_array_write_to_socket(data, input_buffer_socket);
+	if (ret != 0) {
+		TEST_MSG("Could not write to socket in test_type_array\n");
+		ret = 1;
+		goto out;
+	}
 
 	if (ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
 		TEST_MSG("Could not create ip buffer entry in test_type_array\n");

@@ -169,6 +169,9 @@ static int socket_start (struct socket_data *data) {
 		goto out;
 	}
 
+	VL_DEBUG_MSG_1("socket instance %s listening on %s\n",
+			INSTANCE_D_NAME(data->thread_data), data->socket_path);
+
 	data->socket_fd = fd;
 
 	rrr_socket_client_collection_init(&data->clients, fd, socket_name);

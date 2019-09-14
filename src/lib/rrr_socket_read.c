@@ -276,21 +276,21 @@ int rrr_socket_read_message (
 	}
 
 	if (read_session->rx_buf_wpos > read_session->target_size) {
-			if (read_session->rx_overshoot != NULL) {
-				VL_BUG("overshoot was not NULL in rrr_socket_read_message\n");
-			}
+		if (read_session->rx_overshoot != NULL) {
+			VL_BUG("overshoot was not NULL in rrr_socket_read_message\n");
+		}
 
-			read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
-			read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
+		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
+		read_session->rx_buf_wpos -= read_session->rx_overshoot_size;
 
-			read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
-			if (read_session->rx_overshoot == NULL) {
-				VL_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
-				ret = RRR_SOCKET_HARD_ERROR;
-				goto out;
-			}
+		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
+		if (read_session->rx_overshoot == NULL) {
+			VL_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out;
+		}
 
-			memcpy(read_session->rx_overshoot, read_session->rx_buf_ptr + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
+		memcpy(read_session->rx_overshoot, read_session->rx_buf_ptr + read_session->rx_buf_wpos, read_session->rx_overshoot_size);
 	}
 
 	if (read_session->rx_buf_wpos == read_session->target_size && read_session->target_size > 0) {

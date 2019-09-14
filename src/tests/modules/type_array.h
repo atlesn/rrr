@@ -29,6 +29,7 @@ int test_type_array (
 		struct vl_message **result_message_2,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
+		const char *input_socket_name,
 		const char *output_name_1,
 		const char *output_name_2
 );

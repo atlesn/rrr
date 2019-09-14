@@ -197,7 +197,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 	strncpy(addr.sun_path, socket_data->filename, sizeof(addr.sun_path)-1);
 
 	if (socket_data->socket_fd > 0) {
-		if (bind(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
+/*		if (bind(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
 			VL_MSG_ERR("Could not bind to socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
 			ret = 1;
 			goto out;
@@ -205,6 +205,11 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 		if (listen(socket_data->socket_fd, 1) != 0) {
 			VL_MSG_ERR("Could not listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
+			ret = 1;
+			goto out;
+		}*/
+		if (rrr_socket_bind_and_listen(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr), 1) != 0) {
+			VL_MSG_ERR("Could not bind and listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
 			ret = 1;
 			goto out;
 		}

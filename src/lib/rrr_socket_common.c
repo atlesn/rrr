@@ -76,5 +76,7 @@ int rrr_socket_common_get_session_target_length_from_array (
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
+	read_session->target_size = import_length;
+
 	return RRR_SOCKET_OK;
 }

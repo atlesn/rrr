@@ -53,7 +53,7 @@ struct rrr_socket_holder {
 	RRR_LINKED_LIST_NODE(struct rrr_socket_holder);
 	char *creator;
 	char *filename;
-	int fd;
+	struct rrr_socket_options options;
 };
 
 struct rrr_socket_holder_collection {
@@ -65,13 +65,13 @@ static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder) {
 	int ret = 0;
-	if (holder->fd > 0) {
-		ret = close(holder->fd);
+	if (holder->options.fd > 0) {
+		ret = close(holder->options.fd);
 		if (ret != 0) {
 			// A socket is sometimes closed by the other host
 			if (errno != EBADF) {
 				VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n",
-						holder->fd, strerror(errno));
+						holder->options.fd, strerror(errno));
 			}
 		}
 	}
@@ -91,7 +91,10 @@ int __rrr_socket_holder_new (
 		struct rrr_socket_holder **holder,
 		const char *creator,
 		const char *filename,
-		int fd
+		int fd,
+		int domain,
+		int type,
+		int protocol
 ) {
 	int ret = 0;
 
@@ -110,6 +113,8 @@ int __rrr_socket_holder_new (
 		VL_BUG("Creator was NULL in __rrr_socket_holder_new\n");
 	}
 
+	result->creator = strdup(creator);
+
 	if (filename != NULL) {
 		result->filename = strdup(filename);
 		if (result->filename == NULL) {
@@ -119,13 +124,39 @@ int __rrr_socket_holder_new (
 		}
 	}
 
-	result->fd = fd;
+	result->options.fd = fd;
+	result->options.domain = domain;
+	result->options.type = type;
+	result->options.protocol = protocol;
 
 	*holder = result;
 	result = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(result);
+	return ret;
+}
+
+int rrr_socket_get_options_from_fd (
+		struct rrr_socket_options *target,
+		int fd
+) {
+	memset (target, '\0', sizeof(*target));
+
+	int ret = 1;
+
+	pthread_mutex_lock(&socket_lock);
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			*target = node->options;
+			ret = 0;
+			RRR_LINKED_LIST_SET_STOP();
+		}
+	RRR_LINKED_LIST_ITERATE_END(&socket_list);
+
+	pthread_mutex_unlock(&socket_lock);
+
 	return ret;
 }
 
@@ -142,20 +173,23 @@ int rrr_socket_with_lock_do (
 
 static void __rrr_socket_dump_unlocked (void) {
 	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		VL_DEBUG_MSG_7 ("fd %i pid %i creator %s\n", node->fd, getpid(), node->creator);
+		VL_DEBUG_MSG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
 	RRR_LINKED_LIST_ITERATE_END(&socket_list);
 	VL_DEBUG_MSG_7("---\n");
 }
 
 static int __rrr_socket_add_unlocked (
 		int fd,
+		int domain,
+		int type,
+		int protocol,
 		const char *creator,
 		const char *filename
 ) {
 	int ret = 0;
 	struct rrr_socket_holder *holder = NULL;
 
-	if (__rrr_socket_holder_new(&holder, creator, filename, fd) != 0) {
+	if (__rrr_socket_holder_new(&holder, creator, filename, fd, domain, type, protocol) != 0) {
 		VL_MSG_ERR("Could not create socket holder in __rrr_socket_add_unlocked\n");
 		ret = 1;
 		goto out;
@@ -181,13 +215,40 @@ int rrr_socket_accept (
 		const char *creator
 ) {
 	int fd_out = 0;
+
+	struct rrr_socket_options options;
+
+	if (rrr_socket_get_options_from_fd(&options, fd_in) != 0) {
+		VL_MSG_ERR("Could not get socket options in rrr_socket_accept\n");
+		fd_out = -1;
+		goto out;
+	}
+
 	pthread_mutex_lock(&socket_lock);
 	fd_out = accept(fd_in, addr, addr_len);
 	if (fd_out != -1) {
-		__rrr_socket_add_unlocked(fd_out, creator, NULL);
+		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL);
 	}
 	pthread_mutex_unlock(&socket_lock);
+
+	if (fd_out != -1 && (options.type & O_NONBLOCK) != 0) {
+		int flags = fcntl(fd_out, F_GETFL, 0);
+		if (flags == -1) {
+			VL_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", strerror(errno));
+			goto out_close;
+		}
+		if (fcntl(fd_out, F_SETFL, flags | O_NONBLOCK) == -1) {
+			VL_MSG_ERR("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", strerror(errno));
+			goto out_close;
+		}
+	}
+
+	out:
 	return fd_out;
+
+	out_close:
+	rrr_socket_close(fd_out);
+	return -1;
 }
 
 int rrr_socket_mkstemp (
@@ -195,22 +256,24 @@ int rrr_socket_mkstemp (
 		const char *creator
 ) {
 	int fd = 0;
+
 	pthread_mutex_lock(&socket_lock);
 	fd = mkstemp(filename);
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, creator, filename);
+		__rrr_socket_add_unlocked(fd, 0, 0, 0, creator, filename);
 	}
 	pthread_mutex_unlock(&socket_lock);
+
 	return fd;
 }
 
 int rrr_socket_bind_and_listen (
 		int fd,
 		struct sockaddr *addr,
-		socklen_t *addr_len,
+		socklen_t addr_len,
 		int num_clients
 ) {
-	if (bind(fd, addr, *addr_len) != 0) {
+	if (bind(fd, addr, addr_len) != 0) {
 		VL_MSG_ERR("Could not bind to socket: %s\n",strerror(errno));
 		return 1;
 	}
@@ -233,7 +296,7 @@ int rrr_socket (
 	fd = socket(domain, type, protocol);
 
 	if (fd != -1) {
-		__rrr_socket_add_unlocked(fd, creator, filename);
+		__rrr_socket_add_unlocked(fd, domain, type, protocol, creator, filename);
 	}
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
@@ -253,7 +316,7 @@ int rrr_socket_close (int fd) {
 	__rrr_socket_dump_unlocked();
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		if (node->fd == fd) {
+		if (node->options.fd == fd) {
 			RRR_LINKED_LIST_SET_DESTROY();
 			RRR_LINKED_LIST_SET_STOP();
 			did_destroy = 1;
@@ -293,7 +356,7 @@ int rrr_socket_close_all_except (int fd) {
 	pthread_mutex_lock(&socket_lock);
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		if (node->fd != fd) {
+		if (node->options.fd != fd) {
 			RRR_LINKED_LIST_SET_DESTROY();
 			count++;
 		}
@@ -346,7 +409,7 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	if (access (filename, F_OK) != 1) {
+	if (access (filename, F_OK) == 0) {
 		VL_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
 				filename);
 		ret = 1;
@@ -354,6 +417,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	}
 
 	strcpy(addr.sun_path, filename);
+	addr.sun_family = AF_UNIX;
 
 	fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET | (nonblock != 0 ? O_NONBLOCK : 0), 0, creator, filename);
 	if (fd < 0) {
@@ -362,11 +426,14 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, &addr_len, num_clients) != 0) {
+	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, addr_len, num_clients) != 0) {
 		VL_MSG_ERR("Could not bind an listen to socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
 		goto out;
 	}
+
+	VL_DEBUG_MSG_7("rrr_socket_unix_create_bind_and_listen fd %i file %s pid %i clients %i\n",
+			fd, addr.sun_path, getpid(), num_clients);
 
 	*fd_result = fd;
 	fd = 0;
@@ -375,6 +442,72 @@ int rrr_socket_unix_create_bind_and_listen (
 	if (fd > 0) {
 		rrr_socket_close(fd);
 	}
+	return ret;
+}
+
+int rrr_socket_connect_nonblock (
+		int fd,
+		struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	if (connect(fd, addr, addr_len) == 0) {
+		goto out;
+	}
+	else if (errno == EINPROGRESS) {
+		struct pollfd pollfd = {
+			fd, POLLOUT, 0
+		};
+
+		if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+			VL_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		else if ((pollfd.revents & POLLOUT) != 0) {
+			goto out;
+		}
+		else if ((pollfd.revents & POLLOUT) == 0) {
+			VL_MSG_ERR("Timeout from poll() while connecting\n");
+			ret = 1;
+			goto out;
+		}
+		else {
+			int error = 0;
+			socklen_t len = sizeof(error);
+			if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
+				VL_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
+				ret = 1;
+				goto out;
+			}
+			else if (error == 0) {
+				goto out;
+			}
+			else if (error == EINPROGRESS) {
+				VL_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
+				ret = 1;
+				goto out;
+			}
+			else if (error == ECONNREFUSED) {
+				VL_MSG_ERR("Connection refused while connecting\n");
+				ret = 1;
+				goto out;
+			}
+			else {
+				VL_MSG_ERR("Unknown error while connecting: %i\n", error);
+				ret = 1;
+				goto out;
+			}
+		}
+	}
+	else {
+		VL_MSG_ERR("Error while connecting: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
