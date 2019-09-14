@@ -93,14 +93,14 @@ int main_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{1, 'c',	"config",				"{-c|--config[=]CONFIGURATION FILE}"},
-		{1, 'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{1, 'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
-		{0,	'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
-		{0,	'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
-		{0, 'h',	"help",					"[-h|--help]"},
-		{0, 'v',	"version",				"[-v|--version]"},
-		{0, '\0',	NULL,					NULL}
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"config",				"{-c|--config[=]CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
+		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
+		{0,							'h',	"help",					"[-h|--help]"},
+		{0,							'v',	"version",				"[-v|--version]"},
+		{0,							'\0',	NULL,					NULL}
 };
 
 int main (int argc, const char *argv[]) {
@@ -139,7 +139,7 @@ int main (int argc, const char *argv[]) {
 
 	int help_or_version_printed = 0;
 	if (cmd_exists(&cmd, "version", 0)) {
-		VL_MSG("ReadRouteRecord version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
+		VL_MSG(PACKAGE_NAME " version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
 	}
 

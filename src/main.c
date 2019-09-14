@@ -131,7 +131,7 @@ void main_threads_stop (struct vl_thread_collection *collection, struct instance
 }
 
 int main_parse_cmd_arguments(struct cmd_data *cmd) {
-	if (cmd_parse(cmd, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
+	if (cmd_parse(cmd, CMD_CONFIG_NOCOMMAND) != 0) {
 		VL_MSG_ERR("Error while parsing command line\n");
 		return EXIT_FAILURE;
 	}

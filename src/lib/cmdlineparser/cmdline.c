@@ -51,10 +51,12 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 	}
 	memset(value, '\0', sizeof(*value));
 
-	if ((value->value = strdup(value_str)) == NULL) {
-		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
-		ret = 1;
-		goto out;
+	if (value_str != NULL) {
+		if ((value->value = strdup(value_str)) == NULL) {
+			fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	*target = value;
@@ -294,7 +296,9 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	}
 
 	RRR_FREE_IF_NOT_NULL(buf);
-	RRR_FREE_IF_NOT_NULL(value);
+	if (value != NULL) {
+		__cmd_arg_value_destroy(value);
+	}
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
@@ -413,9 +417,17 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 					fprintf (stderr, "Error: Argument '%c' is unknown\n", *(pos+j));
 					return 1;
 				}
-				if (rule->has_argument != 0 && key_length != 1) {
+				if ((rule->flags & CMD_ARG_FLAG_HAS_ARGUMENT) != 0 && key_length != 1) {
 					fprintf (stderr, "Error: Argument '%c' has arguments and must be declared by itself\n", *(pos+j));
 					return 1;
+				}
+				else if ((rule->flags & CMD_ARG_FLAG_HAS_ARGUMENT) == 0) {
+					struct cmd_arg_pair *pair = NULL;
+					if (__cmd_arg_pair_new(&pair, rule) != 0) {
+						return 1;
+					}
+					RRR_LINKED_LIST_APPEND(data,pair);
+					rule = NULL;
 				}
 			}
 		}
@@ -431,8 +443,12 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			}
 		}
 
+		if (rule == NULL) {
+			continue;
+		}
+
 		const char *value = NULL;
-		if (rule->has_argument != 0) {
+		if ((rule->flags & CMD_ARG_FLAG_HAS_ARGUMENT) != 0) {
 			if (pos_equal == NULL) {
 				i++;
 				if (i == data->argc) {
@@ -463,7 +479,7 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			if (__cmd_arg_pair_append_value(pair, value) != 0) {
 				return 1;
 			}
-			if ((config & CMD_CONFIG_SPLIT_COMMA) != 0) {
+			if ((rule->flags & CMD_ARG_FLAG_SPLIT_COMMA) != 0) {
 				cmd_pair_split_comma(pair);
 			}
 		}
