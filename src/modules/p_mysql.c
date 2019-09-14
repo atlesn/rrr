@@ -687,7 +687,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
-		if (data->strip_array_separators != 0) {
+		if (strip_separators_was_defined != 0) {
 			VL_MSG_ERR("Cannot use mysql_strip_array_separators with voltage column plan for instance %s\n", config->name);
 			ret = 1;
 		}

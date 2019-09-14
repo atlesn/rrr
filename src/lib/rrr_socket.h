@@ -83,6 +83,7 @@ int rrr_socket_bind_and_listen (
 		int fd,
 		struct sockaddr *addr,
 		socklen_t addr_len,
+		int sockopts,
 		int num_clients
 );
 int rrr_socket (

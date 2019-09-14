@@ -271,8 +271,16 @@ int rrr_socket_bind_and_listen (
 		int fd,
 		struct sockaddr *addr,
 		socklen_t addr_len,
+		int sockopts,
 		int num_clients
 ) {
+	if (sockopts != 0) {
+		int enable = 1;
+		if (setsockopt (fd, SOL_SOCKET, sockopts, &enable, sizeof(enable)) != 0) {
+			VL_MSG_ERR ("Could not set SO_REUSEADDR for socket: %s\n", strerror(errno));
+			return 1;
+		}
+	}
 	if (bind(fd, addr, addr_len) != 0) {
 		VL_MSG_ERR("Could not bind to socket: %s\n",strerror(errno));
 		return 1;
@@ -426,7 +434,7 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, addr_len, num_clients) != 0) {
+	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, addr_len, 0, num_clients) != 0) {
 		VL_MSG_ERR("Could not bind an listen to socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
 		goto out;

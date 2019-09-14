@@ -151,7 +151,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 	int new_socket = rrr_socket (
 			AF_UNIX,
-			SOCK_SEQPACKET/*|O_NONBLOCK*/,
+			SOCK_SEQPACKET|O_NONBLOCK,
 			0,
 			"rrr_python3_socket_f_start - socket",
 			NULL // We unlink the file ourselves after closing
@@ -197,25 +197,14 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 	strncpy(addr.sun_path, socket_data->filename, sizeof(addr.sun_path)-1);
 
 	if (socket_data->socket_fd > 0) {
-/*		if (bind(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
-			VL_MSG_ERR("Could not bind to socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
-			ret = 1;
-			goto out;
-		}
-
-		if (listen(socket_data->socket_fd, 1) != 0) {
-			VL_MSG_ERR("Could not listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
-			ret = 1;
-			goto out;
-		}*/
-		if (rrr_socket_bind_and_listen(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr), 1) != 0) {
+		if (rrr_socket_bind_and_listen(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr), 0, 1) != 0) {
 			VL_MSG_ERR("Could not bind and listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
-		if (connect(socket_data->connected_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
+		if (rrr_socket_connect_nonblock(socket_data->connected_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
 			VL_MSG_ERR("Could not connect to existing socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
 			ret = 1;
 			goto out;

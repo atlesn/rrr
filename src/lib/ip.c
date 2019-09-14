@@ -664,46 +664,9 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
     		continue;
     	}
 
-    	if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
+    	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
     		break;
     	}
-    	else if (errno == EINPROGRESS) {
-			struct pollfd pollfd = {
-				fd, POLLOUT, 0
-			};
-
-			if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
-				VL_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
-			}
-			else if ((pollfd.revents & POLLOUT) != 0) {
-				break;
-			}
-			else if ((pollfd.revents & POLLOUT) == 0) {
-				VL_MSG_ERR("Timeout from poll() while connecting\n");
-			}
-			else {
-				int error = 0;
-				socklen_t len = sizeof(error);
-				if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-					VL_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
-				}
-				else if (error == 0) {
-					break;
-				}
-				else if (error == EINPROGRESS) {
-					VL_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
-				}
-				else if (error == ECONNREFUSED) {
-					VL_MSG_ERR("Connection refused while connecting\n");
-				}
-				else {
-					VL_MSG_ERR("Unknown error while connecting: %i\n", error);
-				}
-			}
-		}
-		else {
-			VL_MSG_ERR("Error while connecting: %s\n", strerror(errno));
-		}
 
     	rrr_socket_close(fd);
     }
@@ -767,19 +730,8 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 	si.sin6_port = htons(data->port);
 	si.sin6_addr = in6addr_any;
 
-	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		VL_MSG_ERR ("Could not bind to port %d: %s\n", data->port, strerror(errno));
-		goto out_close_socket;
-	}
-
-	int enable = 1;
-	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
-		VL_MSG_ERR ("Could not set SO_REUSEADDR for socket bound to port %d: %s\n", data->port, strerror(errno));
-		goto out_close_socket;
-	}
-
-	if (listen (fd, max_connections) < 0) {
-		VL_MSG_ERR ("Could not listen to port %d: %s\n", data->port, strerror(errno));
+	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
+		VL_MSG_ERR ("Could not listen on port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
