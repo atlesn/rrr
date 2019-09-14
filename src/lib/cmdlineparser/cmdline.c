@@ -30,53 +30,116 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //#define CMD_DBG_CMDLINE
 
-/* Needed to change the name to MAX and make uses other places fail at compilation due to change to RRR_MAX_INSTANCES */
-#define CMD_ARGUMENT_MAX CMD_ARGUMENT_MAXIMUM
-
 static const char *cmd_blank_argument = "";
 static const char *cmd_help = "help";
 
-void cmd_init(struct cmd_data *data) {
-	data->command = NULL;
-	data->program = NULL;
+static void __cmd_arg_value_destroy(struct cmd_arg_value *value) {
+	RRR_FREE_IF_NOT_NULL(value->value);
+	free(value);
+}
 
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		data->args[i] = NULL;
-		data->args_used[i] = 0;
-		memset(&data->arg_pairs[i], '\0', sizeof(data->arg_pairs[i]));
+static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value_str) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct cmd_arg_value *value = malloc(sizeof(*value));
+	if (value == NULL) {
+		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
+		ret = 1;
+		goto out;
 	}
+	memset(value, '\0', sizeof(*value));
+
+	if ((value->value = strdup(value_str)) == NULL) {
+		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	*target = value;
+	value = NULL;
+
+	out:
+	if (value != NULL) {
+		__cmd_arg_value_destroy(value);
+	}
+	return ret;
+}
+
+static void __cmd_arg_pair_destroy(struct cmd_arg_pair *pair) {
+	RRR_LINKED_LIST_DESTROY(pair, struct cmd_arg_value, __cmd_arg_value_destroy(node));
+	free(pair);
+}
+
+static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_arg_rule *rule) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct cmd_arg_pair *pair = malloc(sizeof(*pair));
+	if (pair == NULL) {
+		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_pair_new\n");
+		ret = 1;
+		goto out;
+	}
+	memset(pair, '\0', sizeof(*pair));
+
+	pair->rule = rule;
+
+	*target = pair;
+	pair = NULL;
+
+	out:
+	if (pair != NULL) {
+		__cmd_arg_pair_destroy(pair);
+	}
+	return ret;
+}
+
+static int __cmd_arg_pair_append_value (struct cmd_arg_pair *target, const char *value_str) {
+	struct cmd_arg_value *value = NULL;
+
+	if (__cmd_arg_value_new(&value, value_str) != 0) {
+		return 1;
+	}
+
+	RRR_LINKED_LIST_APPEND(target, value);
+
+	return 0;
+}
+
+void cmd_destroy(struct cmd_data *data) {
+	RRR_LINKED_LIST_DESTROY(data, struct cmd_arg_pair, __cmd_arg_pair_destroy(node));
+}
+
+void cmd_init(struct cmd_data *data, const struct cmd_arg_rule *rules, int argc, const char *argv[]) {
+	memset (data, '\0', sizeof(*data));
+	data->argc = argc;
+	data->argv = argv;
+	data->rules = rules;
 }
 
 int cmd_check_all_args_used(struct cmd_data *data) {
 	int err = 0;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && *(data->args[i]) != '\0'; i++) {
-		if (data->args_used[i] != 1) {
-			fprintf (stderr, "Error: Argument %lu ('%s') was not used, possible junk or typo\n", i, data->args[i]);
-			err = 1;
+	unsigned long int i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+		if (node->was_used != 1) {
+			fprintf (stderr, "Error: Argument %lu ('%s') was not used\n", i, node->rule->longname);
 		}
-	}
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(data);
 	return err;
 }
-/*
-int cmd_get_value_index(struct cmd_data *data, const char *key, unsigned long int index) {
-	unsigned long int index_counter == 0;
-	for (int i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
-		if (strcmp(data->arg_pairs[i].key, key) == 0 && index_counter++ == index) {
-			return i;
-		}
-	}
-
-	return -1;
-}*/
 
 struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, cmd_arg_count index) {
 	cmd_arg_count index_counter = 0;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
-		if (strcmp(data->arg_pairs[i].key, key) == 0 && index_counter++ == index) {
-			data->args_used[i] = 1;
-			return &data->arg_pairs[i];
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+		if (strcmp(node->rule->longname, key) == 0 && index_counter++ == index) {
+			node->was_used = 1;
+			return node;
 		}
-	}
+	RRR_LINKED_LIST_ITERATE_END(data);
 	return NULL;
 }
 
@@ -139,62 +202,82 @@ int cmd_convert_float(const char *value, float *result) {
 	return 0;
 }
 
+void cmd_dump_usage(struct cmd_data *data) {
+	const char *usage_format = "Usage: %s ";
+	printf(usage_format, data->program);
+
+	ssize_t spaces_length = strlen(usage_format) + strlen(data->program) - 1;
+	char spaces[spaces_length];
+	memset(spaces, ' ', sizeof(spaces) - 1);
+	spaces[spaces_length - 1] = '\0';
+
+	int i = 0;
+	const struct cmd_arg_rule *rule = NULL;
+	rule = &data->rules[i];
+	while (rule->longname != NULL) {
+		if (i > 0) {
+			printf("%s", spaces);
+		}
+		printf("%s\n", rule->legend);
+		i++;
+		rule = &data->rules[i];
+	}
+}
+
+int cmd_exists(struct cmd_data *data, const char *key, cmd_arg_count index) {
+	cmd_arg_count i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+		if (strcmp (node->rule->longname, key) == 0) {
+			if (i == index) {
+				return 1;
+			}
+			i++;
+		}
+	RRR_LINKED_LIST_ITERATE_END(data);
+	return 0;
+}
+
 const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_count req_index, cmd_arg_count sub_index) {
-	if (req_index > CMD_ARGUMENT_MAX) {
-		fprintf (stderr, "Requested cmd value index out of range\n");
-		exit (EXIT_FAILURE);
-	}
-
-	if (sub_index > CMD_ARGUMENT_MAX) {
-		fprintf (stderr, "Requested cmd sub value index out of range");
-		exit (EXIT_FAILURE);
-	}
-
 	struct cmd_arg_pair *pair = cmd_find_pair(data, key, req_index);
 	if (pair == NULL) {
 		return NULL;
 	}
 
-	return pair->sub_values[sub_index];
+	cmd_arg_count i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
+		if (i == sub_index) {
+			return node->value;
+		}
+	RRR_LINKED_LIST_ITERATE_END(pair);
+
+	return NULL;
 }
 
 const char *cmd_get_value(struct cmd_data *data, const char *key, cmd_arg_count index) {
-	if (index > CMD_ARGUMENT_MAX) {
-		fprintf (stderr, "Requested cmd value index out of range\n");
-		exit (EXIT_FAILURE);
-	}
-
-	struct cmd_arg_pair *pair = cmd_find_pair(data, key, index);
-	if (pair != NULL) {
-		return pair->value;
-	}
-
-	return NULL;
-}
-
-const char *cmd_get_argument(struct cmd_data *data, cmd_arg_count index) {
-	if (index >= CMD_ARGUMENT_MAX || *(data->args[index]) == '\0') {
-		return NULL;
-	}
-	data->args_used[index] = 1;
-	return data->args[index];
-}
-
-/* Get last argument after already read arg=val pairs */
-const char *cmd_get_last_argument(struct cmd_data *data) {
-	for (int i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		if (data->args_used[i] == 0 && data->args[i] != NULL && *(data->args[i]) != '\0') {
-			data->args_used[i] = 1;
-			return data->args[i];
-		}
-	}
-	return NULL;
+	return cmd_get_subvalue (data, key, index, 0);
 }
 
 void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
-	cmd_arg_count sub_value_counter = 0;
-	const char *pos = pair->value;
+	struct cmd_arg_value *value = NULL;
+	char *buf = NULL;
+
+	if (RRR_LINKED_LIST_COUNT(pair) != 1) {
+		fprintf(stderr, "Bug: Length of argument values was not 1 in cmd_pair_split_comma\n");
+		abort();
+	}
+
+	value = pair->ptr_first;
+	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(pair);
+
+	const char *pos = value->value;
 	const char *end = pos + strlen(pos);
+
+	buf = malloc(end - pos + 1);
+	if (buf == NULL) {
+		fprintf(stderr, "Error: Could not allocate memory in cmd_pair_split_comma\n");
+		abort();
+	}
+
 	while (pos < end) {
 		const char *comma_pos = strstr(pos, ",");
 		if (comma_pos == NULL) {
@@ -202,16 +285,16 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 		}
 		cmd_arg_size length = comma_pos - pos;
 
-		memcpy(pair->sub_values[sub_value_counter], pos, length);
-		pair->sub_values[sub_value_counter][length] = '\0';
+		memcpy(buf, pos, length);
+		buf[length] = '\0';
+
+		__cmd_arg_pair_append_value(pair, buf);
 
 		pos = comma_pos + 1;
-		sub_value_counter++;
-		if (sub_value_counter == CMD_ARGUMENT_MAX) {
-			fprintf(stderr, "Too many comma separated values, maximum is %i\n", CMD_ARGUMENT_MAX);
-			exit(EXIT_FAILURE);
-		}
 	}
+
+	RRR_FREE_IF_NOT_NULL(buf);
+	RRR_FREE_IF_NOT_NULL(value);
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {
@@ -244,17 +327,35 @@ void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
 	free(target);
 }
 
-struct cmd_data cmd_new(int argc, const char *argv[]) {
-	struct cmd_data ret = {
-			.argc = argc,
-			.argv = argv
-	};
-	return ret;
+static const struct cmd_arg_rule *__cmd_get_rule_by_longname (const struct cmd_arg_rule *rules, const char *longname) {
+	int i = 0;
+	const struct cmd_arg_rule *rule = NULL;
+	rule = &rules[i];
+	while (rule->longname != NULL) {
+		if (strcmp(rule->longname, longname) == 0) {
+			return rule;
+		}
+		i++;
+		rule = &rules[i];
+	}
+	return NULL;
 }
 
-int cmd_parse(struct cmd_data *data, cmd_conf config) {
-	cmd_init(data);
+static const struct cmd_arg_rule *__cmd_get_rule_by_shortname (const struct cmd_arg_rule *rules, const char shortname) {
+	int i = 0;
+	const struct cmd_arg_rule *rule = NULL;
+	rule = &rules[i];
+	while (rule->longname != NULL) {
+		if (rule->shortname == shortname) {
+			return rule;
+		}
+		i++;
+		rule = &rules[i];
+	}
+	return NULL;
+}
 
+int cmd_parse (struct cmd_data *data, cmd_conf config) {
 	data->program = data->argv[0];
 	data->command = cmd_help;
 
@@ -262,7 +363,7 @@ int cmd_parse(struct cmd_data *data, cmd_conf config) {
 		return 0;
 	}
 
-	int argc_begin = 2;
+	cmd_arg_count argc_begin = 2;
 
 	if ((config & CMD_CONFIG_NOCOMMAND) > 0) {
 		data->command = cmd_blank_argument;
@@ -272,52 +373,100 @@ int cmd_parse(struct cmd_data *data, cmd_conf config) {
 		data->command = data->argv[1];
 	}
 
-	// Initialize all to empty strings
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX; i++) {
-		data->args[i] = cmd_blank_argument;
-	}
+	for (int i = argc_begin; i < data->argc; i++) {
+		const char *pos = data->argv[i];
+		ssize_t key_length = 0;
+		const char *pos_equal = NULL;
+		const struct cmd_arg_rule *rule = NULL;
+		int dash_count = 0;
 
-	// Store pointers to all arguments
-	int arg_pos = argc_begin;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && arg_pos < data->argc; i++) {
-		data->args[i] = data->argv[arg_pos];
-		arg_pos++;
-	}
+		if (strncmp(pos, "--", 2) == 0) {
+			dash_count = 2;
+			pos += 2;
+		}
+		else if (strncmp(pos, "-", 1) == 0) {
+			dash_count = 1;
+			pos += 1;
+		}
 
-	// Parse key-value pairs separated by =
-	int pairs_pos = 0;
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
-			const char *pos;
-			if ((pos = strstr(data->args[i], "=")) != NULL) {
-				const char *value = pos + 1;
-				cmd_arg_size key_length = pos - data->args[i];
-				cmd_arg_size value_length = strlen(value);
+		if ((pos_equal = strstr(pos, "=")) != NULL) {
+			key_length = pos_equal - pos;
+		}
+		else {
+			key_length = strlen(pos);
+		}
 
-				if (key_length == 0 || value_length == 0) {
-					fprintf (stderr, "Error: Syntax error with = syntax in argument %lu ('%s'), use key=value\n", i, data->args[i]);
+		if (key_length == 0) {
+			fprintf (stderr, "Error: Argument index %i was empty\n", i);
+			return 1;
+		}
+		if (key_length == 0) {
+			fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n",
+					i, data->argv[i]);
+			return 1;
+		}
+
+		if (dash_count == 1) {
+			for (int j = 0; j < key_length; j++) {
+				rule = __cmd_get_rule_by_shortname(data->rules, *(pos+j));
+				if (rule == NULL) {
+					fprintf (stderr, "Error: Argument '%c' is unknown\n", *(pos+j));
 					return 1;
 				}
-				if (key_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument key %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
+				if (rule->has_argument != 0 && key_length != 1) {
+					fprintf (stderr, "Error: Argument '%c' has arguments and must be declared by itself\n", *(pos+j));
 					return 1;
 				}
-				if (value_length > CMD_ARGUMENT_SIZE - 1) {
-					fprintf (stderr, "Error: Argument value %lu too long ('%s'), maximum size is %d\n", i, data->args[i], CMD_ARGUMENT_SIZE - 1);
-					return 1;
-				}
-
-				strncpy(data->arg_pairs[pairs_pos].key, data->args[i], key_length);
-				data->arg_pairs[pairs_pos].key[key_length] = '\0';
-
-				strncpy(data->arg_pairs[pairs_pos].value, value, value_length);
-				data->arg_pairs[pairs_pos].value[value_length] = '\0';
-
-				if ((config & CMD_CONFIG_SPLIT_COMMA) != 0) {
-					cmd_pair_split_comma(&data->arg_pairs[pairs_pos]);
-				}
-
-				pairs_pos++;
 			}
+		}
+		else {
+			char key[key_length + 1];
+			strncpy(key, pos, key_length);
+			key[key_length] = '\0';
+
+			rule = __cmd_get_rule_by_longname(data->rules, key);
+			if (rule == NULL) {
+				fprintf (stderr, "Error: Argument '%s' is unknown\n", key);
+				return 1;
+			}
+		}
+
+		const char *value = NULL;
+		if (rule->has_argument != 0) {
+			if (pos_equal == NULL) {
+				i++;
+				if (i == data->argc) {
+					fprintf (stderr, "Error: Required argument missing for '%s'\n", rule->longname);
+					return 1;
+				}
+				value = data->argv[i];
+			}
+			else {
+				value = pos_equal + 1;
+			}
+			if (strlen(value) < 1) {
+				fprintf (stderr, "Error: Required argument missing or was empty for '%s'\n", rule->longname);
+				return 1;
+			}
+		}
+		else if (pos_equal != NULL)  {
+			fprintf (stderr, "Error: Argument given to '%s' which takes no arguments\n", rule->longname);
+			return 1;
+		}
+
+		struct cmd_arg_pair *pair = NULL;
+		if (__cmd_arg_pair_new(&pair, rule) != 0) {
+			return 1;
+		}
+		RRR_LINKED_LIST_APPEND(data,pair);
+		if (value != NULL) {
+			if (__cmd_arg_pair_append_value(pair, value) != 0) {
+				return 1;
+			}
+			if ((config & CMD_CONFIG_SPLIT_COMMA) != 0) {
+				cmd_pair_split_comma(pair);
+			}
+		}
 	}
 
 	#ifdef CMD_DBG_CMDLINE
@@ -325,14 +474,15 @@ int cmd_parse(struct cmd_data *data, cmd_conf config) {
 	printf ("Program: %s\n", data->program);
 	printf ("Command: %s\n", data->command);
 
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->args[i] != NULL; i++) {
-		printf ("Argument %i: %s\n", i, data->args[i]);
-	}
-
-	for (cmd_arg_count i = 0; i < CMD_ARGUMENT_MAX && data->arg_pairs[i].key[0] != '\0'; i++) {
-		printf ("Argument %i key: %s\n", i, data->arg_pairs[i].key);
-		printf ("Argument %i value: %s\n", i, data->arg_pairs[i].value);
-	}
+	int i = 0;
+	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+		struct cmd_arg_pair *pair = node;
+		printf ("Argument %i key: %s\n", i, pair->rule->longname);
+		RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
+			printf ("Argument %i value: %s\n", i, node->value);
+		RRR_LINKED_LIST_ITERATE_END(node);
+		i++;
+	RRR_LINKED_LIST_ITERATE_END(data);
 
 	#endif
 

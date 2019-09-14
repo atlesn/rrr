@@ -78,9 +78,17 @@ int signal_interrupt (int s, void *arg) {
 	return 0;
 }
 
+static const struct cmd_arg_rule cmd_rules[] = {
+		{1, 'd',	"debuglevel", ""},
+		{0, '\0',	NULL, ""}
+};
+
 int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
+
+	struct cmd_data cmd;
+	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
 			rrr_signal_handler_set_active,
@@ -105,7 +113,6 @@ int main (int argc, const char **argv) {
 		goto out;
 	}
 
-	struct cmd_data cmd = cmd_new(argc, argv);
 	TEST_BEGIN("PARSE CMD") {
 		if (main_parse_cmd_arguments(&cmd) != 0) {
 			ret = 1;
@@ -199,5 +206,6 @@ int main (int argc, const char **argv) {
 	out:
 	rrr_signal_handler_remove(signal_handler);
 	rrr_exit_cleanup_methods_run_and_free();
+	cmd_destroy(&cmd);
 	return ret;
 }

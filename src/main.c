@@ -130,7 +130,7 @@ void main_threads_stop (struct vl_thread_collection *collection, struct instance
 #endif
 }
 
-int main_parse_cmd_arguments(struct cmd_data* cmd) {
+int main_parse_cmd_arguments(struct cmd_data *cmd) {
 	if (cmd_parse(cmd, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
 		VL_MSG_ERR("Error while parsing command line\n");
 		return EXIT_FAILURE;
@@ -145,7 +145,7 @@ int main_parse_cmd_arguments(struct cmd_data* cmd) {
 	if (debuglevel_string != NULL) {
 		int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
-			debuglevel = __VL_DEBUGLEVEL_ALL;
+			debuglevel_tmp = __VL_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
 			VL_MSG_ERR(
@@ -166,7 +166,7 @@ int main_parse_cmd_arguments(struct cmd_data* cmd) {
 	if (debuglevel_on_exit_string != NULL) {
 		int debuglevel_on_exit_tmp;
 		if (strcmp(debuglevel_on_exit_string, "all") == 0) {
-			debuglevel_on_exit = __VL_DEBUGLEVEL_ALL;
+			debuglevel_on_exit_tmp = __VL_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
 			VL_MSG_ERR(
@@ -183,22 +183,12 @@ int main_parse_cmd_arguments(struct cmd_data* cmd) {
 		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
 
-	const char *no_watchdog_timers_string = cmd_get_value(cmd, "no_watchdog_timers", 0);
-	if (no_watchdog_timers_string != NULL) {
-		if (cmdline_check_yesno(no_watchdog_timers_string, &no_watchdog_timers) != 0) {
-			VL_MSG_ERR("Could not understand argument no_watchdog_timer=%s, please specify 'yes' or 'no'\n",
-					no_watchdog_timers_string);
-			return EXIT_FAILURE;
-		}
+	if (cmd_exists(cmd, "no_watchdog_timers", 0)) {
+		no_watchdog_timers = 1;
 	}
 
-	const char *no_thread_restart_string = cmd_get_value(cmd, "no_thread_restart", 0);
-	if (no_thread_restart_string != NULL) {
-		if (cmdline_check_yesno(no_thread_restart_string, &no_thread_restart) != 0) {
-			VL_MSG_ERR("Could not understand argument no_thread_restart=%s, please specify 'yes' or 'no'\n",
-					no_thread_restart_string);
-			return EXIT_FAILURE;
-		}
+	if (cmd_exists(cmd, "no_thread_restart", 0)) {
+		no_thread_restart = 1;
 	}
 
 	rrr_init_global_config(debuglevel, debuglevel_on_exit, no_watchdog_timers, no_thread_restart);

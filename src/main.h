@@ -23,6 +23,7 @@ struct vl_thread_collection;
 struct instance_metadata_collection;
 struct rrr_config;
 struct cmd_data;
+struct cmd_arg_rule;
 
 #ifndef RRR_MAIN_H
 #define RRR_MAIN_H
@@ -35,6 +36,6 @@ int main_start_threads (
 );
 
 void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances);
-int main_parse_cmd_arguments(struct cmd_data* cmd);
+int main_parse_cmd_arguments(struct cmd_data *cmd);
 
 #endif /* RRR_MAIN_H */

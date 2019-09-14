@@ -92,6 +92,17 @@ int main_signal_handler(int s, void *arg) {
 	return RRR_SIGNAL_NOT_HANDLED;
 }
 
+static const struct cmd_arg_rule cmd_rules[] = {
+		{1, 'c',	"config",				"{-c|--config[=]CONFIGURATION FILE}"},
+		{1, 'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{1, 'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{0,	'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
+		{0,	'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
+		{0, 'h',	"help",					"[-h|--help]"},
+		{0, 'v',	"version",				"[-v|--version]"},
+		{0, '\0',	NULL,					NULL}
+};
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
@@ -106,7 +117,8 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	struct cmd_data cmd = cmd_new(argc, argv);
+	struct cmd_data cmd;
+	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
 			rrr_signal_handler_set_active,
@@ -122,7 +134,22 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
-		goto out_cleanup_signal;
+		goto out_destroy_metadata_collection;
+	}
+
+	int help_or_version_printed = 0;
+	if (cmd_exists(&cmd, "version", 0)) {
+		VL_MSG("ReadRouteRecord version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
+		help_or_version_printed = 1;
+	}
+
+	if (cmd_exists(&cmd, "help", 0)) {
+		cmd_dump_usage(&cmd);
+		help_or_version_printed = 1;
+	}
+
+	if (help_or_version_printed) {
+		goto out_destroy_metadata_collection;
 	}
 
 	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
@@ -228,6 +255,7 @@ int main (int argc, const char *argv[]) {
 			rrr_config_destroy(config);
 		}
 
+	out_destroy_metadata_collection:
 		instance_metadata_collection_destroy(instances);
 
 	out_cleanup_signal:
@@ -239,5 +267,6 @@ int main (int argc, const char *argv[]) {
 		else {
 			VL_DEBUG_MSG_1("Exiting program with errors\n");
 		}
+		cmd_destroy(&cmd);
 		return ret;
 }
