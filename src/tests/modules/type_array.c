@@ -21,15 +21,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <inttypes.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <mysql/mysql.h>
-#include "../../lib/rrr_mysql.h"
 
 #include "type_array.h"
 #include "../test.h"
 #include "../../global.h"
+#include "../../lib/array.h"
+#include "../../lib/rrr_mysql.h"
+#include "../../lib/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
-#include "../../lib/types.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip.h"
 #include "../../lib/messages.h"
@@ -39,7 +42,7 @@ struct test_result {
 	struct vl_message *message;
 };
 
-/* udpr_input_types=be,4,be,3,be,2,be,1,le,4,le,3,le,2,le,1,array,2,blob,8 */
+/* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
 
 /* Remember to disable compiler alignment */
 struct test_data {
@@ -48,13 +51,19 @@ struct test_data {
 	uint16_t be2;
 	char be1;
 
+	char sep1;
+
 	char le4[4];
 	char le3[3];
 	uint16_t le2;
 	char le1;
 
+	char sep2[2];
+
 	char blob_a[8];
 	char blob_b[8];
+
+	struct vl_message msg;
 } __attribute__((packed));
 
 struct test_final_data {
@@ -63,16 +72,22 @@ struct test_final_data {
 	uint64_t be2;
 	uint64_t be1;
 
+	char sep1;
+
 	uint64_t le4;
 	uint64_t le3;
 	uint64_t le2;
 	uint64_t le1;
 
+	char sep2[2];
+
 	char blob_a[8];
 	char blob_b[8];
+
+	struct vl_message msg;
 };
 
-#define TEST_DATA_ELEMENTS 9
+#define TEST_DATA_ELEMENTS 12
 
 
 /*
@@ -89,9 +104,21 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	(void)(size);
 
 	struct vl_message *message = (struct vl_message *) data;
-	struct rrr_type_template_collection collection = {0};
+	struct rrr_array collection = {0};
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
+
+	if (VL_DEBUGLEVEL_3) {
+		VL_DEBUG_MSG("dump message: 0x");
+		for (unsigned int i = 0; i < sizeof(*message) + message->length - 1; i++) {
+			char c = ((char*)message)[i];
+			if (c < 0x10) {
+				VL_DEBUG_MSG("0");
+			}
+			VL_DEBUG_MSG("%x", c);
+		}
+		VL_DEBUG_MSG("\n");
+	}
 
 	if (!MSG_IS_ARRAY(message)) {
 		TEST_MSG("Message received in test_type_array_callback was not an array\n");
@@ -99,7 +126,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (rrr_types_message_to_collection(&collection, message) != 0) {
+	if (rrr_array_message_to_collection(&collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
 		ret = 1;
 		goto out;
@@ -112,33 +139,44 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	rrr_type_length final_length = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
-		final_length += node->length;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		final_length += node->total_stored_length;
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
-	struct rrr_type_template *types[9];
+	struct rrr_type_value *types[12];
 
 	// After the array has been assembled and then disassembled again, all numbers
 	// become be64
-	types[0] = rrr_type_template_collection_get_by_idx(&collection, 0);
-	types[1] = rrr_type_template_collection_get_by_idx(&collection, 1);
-	types[2] = rrr_type_template_collection_get_by_idx(&collection, 2);
-	types[3] = rrr_type_template_collection_get_by_idx(&collection, 3);
-	types[4] = rrr_type_template_collection_get_by_idx(&collection, 4);
-	types[5] = rrr_type_template_collection_get_by_idx(&collection, 5);
-	types[6] = rrr_type_template_collection_get_by_idx(&collection, 6);
-	types[7] = rrr_type_template_collection_get_by_idx(&collection, 7);
-	types[8] = rrr_type_template_collection_get_by_idx(&collection, 8);
+	types[0] = rrr_array_value_get_by_index(&collection, 0);
+	types[1] = rrr_array_value_get_by_index(&collection, 1);
+	types[2] = rrr_array_value_get_by_index(&collection, 2);
+	types[3] = rrr_array_value_get_by_index(&collection, 3);
+
+	types[4] = rrr_array_value_get_by_index(&collection, 4);
+
+	types[5] = rrr_array_value_get_by_index(&collection, 5);
+	types[6] = rrr_array_value_get_by_index(&collection, 6);
+	types[7] = rrr_array_value_get_by_index(&collection, 7);
+	types[8] = rrr_array_value_get_by_index(&collection, 8);
+
+	types[9] = rrr_array_value_get_by_index(&collection, 9);
+
+	types[10] = rrr_array_value_get_by_index(&collection, 10);
+
+	types[11] = rrr_array_value_get_by_index(&collection, 11);
 
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
 		!RRR_TYPE_IS_64(types[2]->definition->type) ||
 		!RRR_TYPE_IS_64(types[3]->definition->type) ||
-		!RRR_TYPE_IS_64(types[4]->definition->type) ||
+
 		!RRR_TYPE_IS_64(types[5]->definition->type) ||
 		!RRR_TYPE_IS_64(types[6]->definition->type) ||
 		!RRR_TYPE_IS_64(types[7]->definition->type) ||
-		!RRR_TYPE_IS_BLOB(types[8]->definition->type)
+		!RRR_TYPE_IS_64(types[8]->definition->type) ||
+
+		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
+		types[11]->definition->type != RRR_TYPE_MSG
 	) {
 		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
 		ret = 1;
@@ -151,22 +189,23 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
 	final_data_raw->be2 = *((uint64_t*) (types[2]->data));
 	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
-	final_data_raw->le4 = *((uint64_t*) (types[4]->data));
-	final_data_raw->le3 = *((uint64_t*) (types[5]->data));
-	final_data_raw->le2 = *((uint64_t*) (types[6]->data));
-	final_data_raw->le1 = *((uint64_t*) (types[7]->data));
 
-	rrr_size blob_a_length = types[8]->length;
-	rrr_size blob_b_length = types[8]->length;
+	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
+	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
+	final_data_raw->le2 = *((uint64_t*) (types[7]->data));
+	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
 
-	const char *blob_a = types[8]->data;
-	const char *blob_b = types[8]->data + types[8]->length;
+	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
 
-	if (types[8]->array_size != 2) {
+	if (types[10]->element_count != 2) {
 		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
+
+	const char *blob_a = types[10]->data;
+	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
 
 	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
 		VL_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
@@ -188,6 +227,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	strcpy(final_data_raw->blob_a, blob_a);
 	strcpy(final_data_raw->blob_b, blob_b);
+
+	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");
@@ -229,13 +270,20 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
+	if (final_data_raw->msg.data_numeric != 33) {
+		TEST_MSG("Received wrong value %" PRIu64 " in message of array in test_type_array_callback\n",
+				final_data_raw->msg.data_numeric);
+		ret = 1;
+		goto out_free_final_data;
+	}
+
 	result->result = 2;
 
 	out_free_final_data:
 	RRR_FREE_IF_NOT_NULL(final_data_raw);
 
 	out_free_collection:
-	rrr_type_template_collection_clear(&collection);
+	rrr_array_clear(&collection);
 
 	out:
 	if (ret != 0) {
@@ -275,11 +323,84 @@ int test_do_poll_loop (
 	return ret;
 }
 
+int test_type_array_write_to_socket (struct test_data *data, struct instance_metadata *socket_metadata) {
+	char *socket_path = NULL;
+	int ret = 0;
+	int socket_fd = 0;
+
+	ret = rrr_instance_config_get_string_noconvert (&socket_path, socket_metadata->config, "socket_path");
+	if (ret != 0) {
+		TEST_MSG("Could not get configuration parameter from socket module\n");
+		goto out;
+	}
+
+	struct sockaddr_un addr;
+	socklen_t addr_len = sizeof(addr);
+	memset(&addr, '\0', sizeof(addr));
+
+	if (strlen(socket_path) > sizeof(addr.sun_path) - 1) {
+		TEST_MSG("socket path from config was too long in test_type_array_write_to_socket\n");
+		ret = 1;
+		goto out;
+	}
+
+	addr.sun_family = AF_UNIX;
+	strcpy(addr.sun_path, socket_path);
+
+	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|SOCK_NONBLOCK, 0, "test_type_array_write_to_socket", NULL);
+	if (socket_fd < 0) {
+		TEST_MSG("Error while creating socket in test_type_array_write_to_socket: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int connected = 0;
+	for (int i = 0; i < 10 && connected == 0; i++) {
+		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
+			TEST_MSG("Could not connect to socket %s try %i of %i: %s\n",
+					socket_path, i, 10, strerror(errno));
+			usleep(250000);
+		}
+		else {
+			connected = 1;
+			break;
+		}
+	}
+
+	if (connected != 1) {
+		goto out;
+	}
+
+	ret = write (socket_fd, data, sizeof(*data) - 1);
+	if ((ret = write (socket_fd, data, sizeof(*data) - 1)) == -1) {
+		TEST_MSG("Error while writing to socket in test_type_array_write_to_socket: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+	else if (ret >= 0 && ret != sizeof(*data) - 1) {
+		TEST_MSG("Only %i of %lu bytes written in test_type_array_write_to_socket\n",
+				ret, sizeof(*data) - 1);
+		ret = 1;
+		goto out;
+	}
+	else {
+		ret = 0;
+	}
+
+	out:
+	if (socket_fd > 0) {
+		rrr_socket_close(socket_fd);
+	}
+	RRR_FREE_IF_NOT_NULL(socket_path);
+	return ret;
+}
+
 int test_type_array (
 		struct vl_message **result_message_1,
 		struct vl_message **result_message_2,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
+		const char *input_socket_name,
 		const char *output_name_1,
 		const char *output_name_2
 ) {
@@ -291,10 +412,11 @@ int test_type_array (
 	struct test_data *data = NULL;
 
 	struct instance_metadata *input = instance_find(instances, input_name);
+	struct instance_metadata *input_buffer_socket = instance_find(instances, input_socket_name);
 	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
 	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
 
-	if (input == NULL || output_1 == NULL || output_2 == NULL) {
+	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL) {
 		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
 				input_name, output_name_1);
 		return 1;
@@ -328,6 +450,8 @@ int test_type_array (
 
 	data->be1 = 1;
 
+	data->sep1 = ';';
+
 	data->le4[1] = 2;
 	data->le4[3] = 1;
 
@@ -338,10 +462,31 @@ int test_type_array (
 
 	data->le1 = 1;
 
+	data->sep2[0] = '|';
+	data->sep2[1] = '|';
+
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	if (ip_buffer_entry_new(&entry, sizeof(struct test_data), NULL, 0, data) != 0) {
+	data->msg.network_size = sizeof(struct vl_message) - 1;
+	data->msg.msg_size = sizeof(struct vl_message) - 1;
+	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+	data->msg.length = 0;
+	data->msg.data_numeric = 33;
+	data->msg.type = MSG_TYPE_MSG;
+	data->msg.class = MSG_CLASS_POINT;
+
+	message_prepare_for_network(&data->msg);
+	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
+
+	ret = test_type_array_write_to_socket(data, input_buffer_socket);
+	if (ret != 0) {
+		TEST_MSG("Could not write to socket in test_type_array\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
 		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
 		ret = 1;
 		goto out;
@@ -417,6 +562,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
+		"`vl_message` blob NOT NULL,"
 		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";

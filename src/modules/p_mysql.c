@@ -30,10 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <src/lib/array.h>
 #include <src/lib/rrr_mysql.h>
 
 #include "../lib/poll_helper.h"
-#include "../lib/types.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -79,6 +79,7 @@ struct mysql_data {
 	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
+	int strip_array_separators;
 	unsigned int mysql_special_columns_count;
 
 	/* Must be traversed and non-nulls freed at thread exit */
@@ -307,19 +308,17 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 }
 
 void free_collection(void *arg) {
-	struct vl_thread_double_pointer *data = arg;
-	if (*data->ptr != NULL) {
-		rrr_type_template_collection_clear(*data->ptr);
-	}
+	rrr_array_clear(arg);
 }
 
 int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	int res = 0;
 
-	struct rrr_type_template_collection collection;
+	struct rrr_array collection;
+	memset(&collection, '\0', sizeof(collection));
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_types_message_to_collection(&collection, entry->message) != 0) {
+	if (rrr_array_message_to_collection(&collection, entry->message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
 		res = 1;
 		goto out_cleanup;
@@ -338,30 +337,20 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	memset(string_lengths, '\0', sizeof(string_lengths));
 
 	rrr_def_count bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
-		struct rrr_type_template *definition = node;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		struct rrr_type_value *definition = node;
 
-		if (definition->array_size > 1) {
-			// Arrays must be inserted as blobs. They might be shorter than the
-			// maximum length, the input definition decides.
-			string_lengths[bind_pos] = definition->length * definition->array_size;
-			bind[bind_pos].buffer = definition->data;
-			bind[bind_pos].length = &string_lengths[bind_pos];
-			bind[bind_pos].buffer_type = MYSQL_TYPE_BLOB;
+		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+			goto next;
 		}
-		else if (RRR_TYPE_IS_BLOB(definition->definition->type) ||
+
+		if (	// Arrays must be inserted as blobs. They might be shorter than the
+				// maximum length, the input definition decides.
+				definition->element_count > 1 ||
+				RRR_TYPE_IS_BLOB(definition->definition->type) ||
 				mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])
 		) {
-			if (definition->length > definition->definition->max_length &&
-					definition->definition->max_length > 0
-			) {
-				VL_MSG_ERR("Type length defined for column with index %ul exceeds maximum of %ul when binding with mysql\n",
-						definition->length, definition->definition->max_length);
-				res = 1;
-				goto out_cleanup;
-			}
-
-			string_lengths[bind_pos] = definition->length;
+			string_lengths[bind_pos] = definition->total_stored_length;
 			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].length = &string_lengths[bind_pos];
 			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
@@ -379,6 +368,7 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 		}
 
 		bind_pos++;
+		next:
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	for (rrr_def_count i = 0; i < data->data->mysql_special_columns_count; i++) {
@@ -401,15 +391,22 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	// Produce warning if blob data was chopped of by mysql
 	bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_template);
-		struct rrr_type_template *definition = node;
+	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		struct rrr_type_value *definition = node;
+
+		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+			goto next_;
+		}
+
 		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
-			if (string_lengths[bind_pos] < definition->length) {
+			if (string_lengths[bind_pos] < definition->total_stored_length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
-						string_lengths[bind_pos], definition->length, bind_pos);
+						string_lengths[bind_pos], definition->total_stored_length, bind_pos);
 			}
 		}
+
 		bind_pos++;
+		next_:
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	out_cleanup:
@@ -616,9 +613,13 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	int yesno = 0;
+
 	int column_count = 0;
 	int special_column_count = 0;
 	int special_value_count = 0;
+	int strip_separators_was_defined = 0;
+
 	char *mysql_colplan = NULL;
 	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
@@ -657,10 +658,22 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		ret = 1;
 		goto out;
 	}
-
 	data->mysql_special_columns_count = special_column_count;
-
 	VL_DEBUG_MSG_1("%i special columns specified for mysql instance %s\n", special_column_count, config->name);
+
+	// STRIP OUT SEPARATORS
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Could not parse mysql_strip_array_separators of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		data->strip_array_separators = yesno;
+		strip_separators_was_defined = 1;
+	}
 
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
@@ -679,21 +692,27 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
+		if (strip_separators_was_defined != 0) {
+			VL_MSG_ERR("Cannot use mysql_strip_array_separators with voltage column plan for instance %s\n", config->name);
+			ret = 1;
+		}
+
 		if (data->add_timestamp_col != 0) {
 			VL_MSG_ERR("Cannot use mysql_add_timestamp_col=yes along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
-			goto out;
 		}
 
 		if (data->mysql_special_columns_count > 0) {
 			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
-			goto out;
 		}
 
 		if (data->mysql_columns_blob_writes[0] != NULL) {
 			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan for instance %s\n", config->name);
 			ret = 1;
+		}
+
+		if (ret != 0) {
 			goto out;
 		}
 
@@ -911,13 +930,6 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 	update_watchdog_time(thread_data->thread);
 
 	int err = 0;
-
-/*	if (message_fix_endianess (&entry->data.message) != 0) {
-		VL_MSG_ERR("mysql: Endianess could not be determined for message\n");
-		fifo_buffer_write(&mysql_data->input_buffer, data, size);
-		err = 1;
-		goto out;
-	}*/
 
 	VL_DEBUG_MSG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
 

@@ -119,10 +119,9 @@ int message_new_with_data (
 		vl_u32 data_size
 );
 
-void message_to_host (struct vl_message *message);
+int message_to_host_and_verify (struct vl_message *message, ssize_t expected_size);
 void message_prepare_for_network (struct vl_message *message);
 struct vl_message *message_duplicate (const struct vl_message *message);
 struct vl_message *message_duplicate_no_data(struct vl_message *message);
-int message_validate (const struct vl_message *message);
 
 #endif

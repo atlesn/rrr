@@ -42,9 +42,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "../global.h"
 #include "messages.h"
+#include "array.h"
 #include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
+#include "rrr_socket_common.h"
+#include "rrr_socket_msg.h"
+#include "rrr_socket_read.h"
 
 void ip_buffer_entry_destroy (
 		struct ip_buffer_entry *entry
@@ -212,7 +216,7 @@ struct receive_packets_callback_data {
 	struct ip_stats *stats;
 };
 
-static int __ip_receive_packets_callback (
+static int __ip_receive_callback (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 ) {
@@ -266,8 +270,51 @@ static int __ip_receive_packets_callback (
 	return ret;
 }
 
-/* Receive raw packets */
-int ip_receive_packets (
+int ip_receive_array (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		const struct rrr_array *definition,
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
+) {
+	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
+			definition
+	};
+
+	struct receive_packets_callback_data callback_data_ip = {
+			callback, arg, stats
+	};
+
+	int ret = rrr_socket_read_message (
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			rrr_socket_common_get_session_target_length_from_array,
+			&callback_data_array,
+			__ip_receive_callback,
+			&callback_data_ip
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Warning: Soft error while reading data in ip_receive_raw\n");
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			VL_MSG_ERR("Hard error while reading data in ip_receive_raw\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
@@ -287,9 +334,9 @@ int ip_receive_packets (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
-			rrr_socket_read_session_get_target_length_from_message_and_checksum,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
-			__ip_receive_packets_callback,
+			__ip_receive_callback,
 			&callback_data
 	);
 
@@ -318,7 +365,7 @@ struct ip_receive_messages_callback_data {
 #endif
 };
 
-static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *arg) {
+static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void *arg) {
 	int ret = 0;
 
 	struct ip_receive_messages_callback_data *data = arg;
@@ -331,16 +378,13 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 
 	if (count < 10) {
 		VL_MSG_ERR ("Received short message/packet from network\n");
-		goto out;
+		goto out_free;
 	}
 
 	// Header CRC32 is checked when reading the data from remote and getting size
-	rrr_socket_msg_head_to_host((struct rrr_socket_msg *) entry->message);
-
-	if (message->network_size != entry->data_length) {
-		VL_MSG_ERR("Message network size was not equal to ip buffer entry size in __ip_receive_messages_callback (%" PRIu32 " vs %li)\n",
-				message->network_size, entry->data_length);
-		goto out;
+	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
+		VL_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
+		goto out_free;
 	}
 
 #ifdef VL_WITH_OPENSSL
@@ -349,7 +393,7 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 		struct vl_message *new_message = realloc(entry->message, new_size);
 		if (new_message == NULL) {
 			VL_MSG_ERR("Could not realloc message before decryption in __ip_receive_messages_callback\n");
-			goto out;
+			goto out_free;
 		}
 		entry->message = new_message;
 
@@ -374,29 +418,27 @@ static int __ip_receive_messages_callback(struct ip_buffer_entry *entry, void *a
 	}
 #endif
 
-	if (rrr_socket_msg_checksum_check((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
+	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
 		VL_MSG_ERR ("IP: Message checksum was invalid\n");
 		goto out_free;
 	}
 
-	message_to_host(entry->message);
-
-	if (message->length + sizeof(struct vl_message) - 1 != message->msg_size) {
-		VL_MSG_ERR("Size mismatch in vl_message in __ip_receive_messages_callback (%lu<>%" PRIu32 ")\n",
+	if (message_to_host_and_verify(entry->message, entry->data_length) != 0) {
+		VL_MSG_ERR("Message verification failed in __ip_receive_messages_callback (size: %lu<>%" PRIu32 ")\n",
 				message->length + sizeof(struct vl_message) - 1, message->msg_size);
+		ret = 1;
+		goto out_free;
 	}
 
 	return data->callback(entry, data->arg);
 
 	out_free:
-	free(entry);
-
-	out:
+	ip_buffer_entry_destroy(entry);
 	return ret;
 }
 
 /* Receive packets and parse vl_message struct or fail */
-int ip_receive_messages (
+int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 #ifdef VL_WITH_OPENSSL
@@ -414,10 +456,10 @@ int ip_receive_messages (
 	data.crypt_data = crypt_data;
 #endif
 
-	return ip_receive_packets (
+	return ip_receive_socket_msg (
 		read_session_collection,
 		fd,
-		__ip_receive_messages_callback,
+		__ip_receive_vl_message_callback,
 		&data,
 		stats
 	);
@@ -544,7 +586,13 @@ void ip_network_cleanup (void *arg) {
 }
 
 int ip_network_start_udp_ipv4 (struct ip_data *data) {
-	int fd = rrr_socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, IPPROTO_UDP, "ip_network_start");
+	int fd = rrr_socket (
+			AF_INET,
+			SOCK_DGRAM|SOCK_NONBLOCK,
+			IPPROTO_UDP,
+			"ip_network_start",
+			NULL
+	);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
@@ -604,52 +652,21 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 
     struct addrinfo *rp;
     for (rp = result; rp != NULL; rp = rp->ai_next) {
-    	fd = rrr_socket(rp->ai_family, rp->ai_socktype|SOCK_NONBLOCK, rp->ai_protocol, "ip_network_connect_tcp_ipv4_or_ipv6");
+    	fd = rrr_socket (
+    			rp->ai_family,
+				rp->ai_socktype|SOCK_NONBLOCK,
+				rp->ai_protocol,
+				"ip_network_connect_tcp_ipv4_or_ipv6",
+				NULL
+		);
     	if (fd == -1) {
     		VL_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
     		continue;
     	}
 
-    	if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
+    	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
     		break;
     	}
-    	else if (errno == EINPROGRESS) {
-			struct pollfd pollfd = {
-				fd, POLLOUT, 0
-			};
-
-			if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
-				VL_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
-			}
-			else if ((pollfd.revents & POLLOUT) != 0) {
-				break;
-			}
-			else if ((pollfd.revents & POLLOUT) == 0) {
-				VL_MSG_ERR("Timeout from poll() while connecting\n");
-			}
-			else {
-				int error = 0;
-				socklen_t len = sizeof(error);
-				if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-					VL_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
-				}
-				else if (error == 0) {
-					break;
-				}
-				else if (error == EINPROGRESS) {
-					VL_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
-				}
-				else if (error == ECONNREFUSED) {
-					VL_MSG_ERR("Connection refused while connecting\n");
-				}
-				else {
-					VL_MSG_ERR("Unknown error while connecting: %i\n", error);
-				}
-			}
-		}
-		else {
-			VL_MSG_ERR("Error while connecting: %s\n", strerror(errno));
-		}
 
     	rrr_socket_close(fd);
     }
@@ -690,7 +707,13 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 }
 
 int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
-	int fd = rrr_socket(AF_INET6, SOCK_NONBLOCK|SOCK_STREAM, 0, "ip_network_start");
+	int fd = rrr_socket (
+			AF_INET6,
+			SOCK_NONBLOCK|SOCK_STREAM,
+			0,
+			"ip_network_start",
+			NULL
+	);
 	if (fd == -1) {
 		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
@@ -707,19 +730,8 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 	si.sin6_port = htons(data->port);
 	si.sin6_addr = in6addr_any;
 
-	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		VL_MSG_ERR ("Could not bind to port %d: %s\n", data->port, strerror(errno));
-		goto out_close_socket;
-	}
-
-	int enable = 1;
-	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
-		VL_MSG_ERR ("Could not set SO_REUSEADDR for socket bound to port %d: %s\n", data->port, strerror(errno));
-		goto out_close_socket;
-	}
-
-	if (listen (fd, max_connections) < 0) {
-		VL_MSG_ERR ("Could not listen to port %d: %s\n", data->port, strerror(errno));
+	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
+		VL_MSG_ERR ("Could not listen on port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 

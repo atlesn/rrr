@@ -58,4 +58,27 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 
+void rrr_socket_msg_populate_head (
+		struct rrr_socket_msg *message,
+		vl_u16 type,
+		vl_u32 msg_size,
+		vl_u64 value
+);
+void rrr_socket_msg_checksum_and_to_network_endian (
+		struct rrr_socket_msg *message
+);
+int rrr_socket_msg_head_to_host_and_verify (
+		struct rrr_socket_msg *message,
+		ssize_t expected_size
+);
+int rrr_socket_msg_get_target_size_and_check_checksum (
+		ssize_t *target_size,
+		struct rrr_socket_msg *socket_msg,
+		ssize_t buf_size
+);
+int rrr_socket_msg_check_data_checksum_and_length (
+		struct rrr_socket_msg *message,
+		ssize_t data_size
+);
+
 #endif /* RRR_SOCKET_MSG_H */

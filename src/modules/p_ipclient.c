@@ -315,7 +315,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 
 int receive_packets(struct ipclient_data *data) {
 //	struct fifo_callback_args poll_data = {NULL, data, 0};
-	return ip_receive_messages (
+	return ip_receive_vl_message (
 			&data->read_sessions,
 			data->ip.fd,
 #ifdef VL_WITH_OPENSSL

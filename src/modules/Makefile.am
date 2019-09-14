@@ -31,7 +31,7 @@ endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
 	ipclient.la ipserver.la controller.la udpreader.la \
-	duplicator.la mqttbroker.la mqttclient.la \
+	duplicator.la mqttbroker.la mqttclient.la socket.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
@@ -68,5 +68,8 @@ duplicator_la_SOURCES = p_duplicator.c
 
 udpreader_la_LDFLAGS = ${module_ldflags}
 udpreader_la_SOURCES = src_udpreader.c
+
+socket_la_LDFLAGS = ${module_ldflags}
+socket_la_SOURCES = src_socket.c
 
 libdir=${exec_prefix}/lib/rrr

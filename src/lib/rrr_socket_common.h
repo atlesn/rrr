@@ -19,13 +19,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-struct instance_thread_data;
+#ifndef RRR_SOCKET_COMMON_H
+#define RRR_SOCKET_COMMON_H
+
+struct rrr_socket_read_session;
 struct rrr_array;
 
-#define MYSQL_CREATE_TABLE_DEFINITION \
-	struct instance_thread_data *thread_data, \
-	const char *name, \
-	const struct rrr_type_definition_collection *definition
+struct rrr_socket_common_get_session_target_length_from_array_data {
+	const struct rrr_array *definition;
+};
 
-void rrr_mysql_library_init(void);
-void rrr_mysql_library_end(void);
+int rrr_socket_common_get_session_target_length_from_message_and_checksum (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+);
+int rrr_socket_common_get_session_target_length_from_array (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+);
+
+#endif /* RRR_SOCKET_COMMON_H */

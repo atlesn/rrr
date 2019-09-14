@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IP_STATS_DEFAULT_PERIOD 3
 
 struct vl_message;
+struct rrr_array;
 struct rrr_socket_read_session_collection;
 
 struct ip_stats {
@@ -118,20 +119,28 @@ int ip_stats_init (
 int ip_stats_init_twoway (
 		struct ip_stats_twoway *stats, unsigned int period, const char *name
 );
-int ip_stats_update(
+int ip_stats_update (
 		struct ip_stats *stats, unsigned long int packets, unsigned long int bytes
 );
-int ip_stats_print_reset(
+int ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
-int ip_receive_packets (
-	struct rrr_socket_read_session_collection *read_session_collection,
-	int fd,
-	int (*callback)(struct ip_buffer_entry *entry, void *arg),
-	void *arg,
-	struct ip_stats *stats
+int ip_receive_array (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		const struct rrr_array *definition,
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
 );
-int ip_receive_messages (
+int ip_receive_socket_msg (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		void *arg,
+		struct ip_stats *stats
+);
+int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 #ifdef VL_WITH_OPENSSL

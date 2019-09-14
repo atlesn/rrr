@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <inttypes.h>
-#include <src/lib/types.h>
+#include <src/lib/array.h>
 #include <unistd.h>
 
 #include "../lib/settings.h"
@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/array.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
@@ -46,7 +47,7 @@ struct udpreader_data {
 	struct fifo_buffer inject_buffer;
 	unsigned int listen_port;
 	struct ip_data ip;
-	struct rrr_type_template_collection definitions;
+	struct rrr_array definitions;
 	struct rrr_socket_read_session_collection read_sessions;
 };
 
@@ -54,7 +55,7 @@ void data_cleanup(void *arg) {
 	struct udpreader_data *data = (struct udpreader_data *) arg;
 	fifo_buffer_invalidate(&data->buffer);
 	fifo_buffer_invalidate(&data->inject_buffer);
-	rrr_type_template_collection_clear(&data->definitions);
+	rrr_array_clear(&data->definitions);
 	rrr_socket_read_session_collection_destroy(&data->read_sessions);
 }
 
@@ -120,7 +121,7 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 	}
 
 	// Parse expected input data
-	if (rrr_type_parse_definition (&data->definitions, config, "udpr_input_types") != 0) {
+	if (rrr_array_parse_definition (&data->definitions, config, "udpr_input_types") != 0) {
  		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
 		return 1;
 	}
@@ -134,53 +135,34 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 	return ret;
 }
 
-void free_message(void *msg) {
-	if (msg != NULL) {
-		free(msg);
-	}
+int read_data_receive_message_callback (struct vl_message *message, void *arg) {
+	struct udpreader_data *data = arg;
+
+	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
+	VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
+			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+
+	return 0;
 }
 
 int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
-	struct vl_message *message = NULL;
 	int ret = 0;
 
-	struct rrr_type_template_collection definitions;
-
-	if (rrr_type_definition_collection_clone(&definitions, &data->definitions) != 0) {
-		VL_MSG_ERR("Could not clone defintions in read_data_callback og udpreader instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		return 1;
-	}
-
-	// ATTENTION! - Received ip message does not contain a vl_message struct
-	if (rrr_type_parse_data_from_definition(&definitions, entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("udpreader received an invalid packet\n");
-		ret = 0;
-		goto out_destroy;
-	}
-	else {
-		VL_DEBUG_MSG_2("udpreader received a valid packet in callback\n");
-	}
-
-	if ((ret = rrr_type_new_message(&message, &definitions, time_get_64())) != 0) {
+	if ((ret = rrr_array_new_message_from_buffer (
+			entry->message,
+			entry->data_length,
+			&data->definitions,
+			read_data_receive_message_callback,
+			data
+	)) != 0) {
 		VL_MSG_ERR("Could not create message in udpreader instance %s read_data_callback\n",
 				INSTANCE_D_NAME(data->thread_data));
-		goto out_destroy;
+		goto out;
 	}
 
-	if (message != NULL) {
-		fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
-		VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
-				(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
-		message = NULL;
-	}
-
-	out_destroy:
+	out:
 	ip_buffer_entry_destroy_void(entry);
-	rrr_type_template_collection_clear(&definitions);
-	RRR_FREE_IF_NOT_NULL(message);
-
 	return ret;
 }
 
@@ -193,9 +175,10 @@ int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned l
 int read_data(struct udpreader_data *data) {
 	int ret = 0;
 
-	ret |= ip_receive_packets (
+	ret |= ip_receive_array (
 		&data->read_sessions,
 		data->ip.fd,
+		&data->definitions,
 		read_data_callback,
 		data,
 		NULL
@@ -245,17 +228,12 @@ static void *thread_entry_udpreader (struct vl_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
 
-	int config_error = 0;
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
-		config_error = 1;
-	}
-
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
-	if (config_error) {
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Configuration parsing failed for udpreader instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
 

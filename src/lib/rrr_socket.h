@@ -29,66 +29,42 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "linked_list.h"
-#include "rrr_socket_msg.h"
+#include "rrr_socket_read.h"
 
 #define RRR_SOCKET_OK				0
 #define RRR_SOCKET_HARD_ERROR		1
 #define RRR_SOCKET_SOFT_ERROR		2
 #define RRR_SOCKET_READ_INCOMPLETE	3
 
-#define RRR_SOCKET_READ_TIMEOUT		30
+#define RRR_SOCKET_CLIENT_TIMEOUT 30
 
-struct rrr_socket_read_session {
-	/* A packet read action might be temporarily paused if the payload
-	 * is large (exceeds step_size_limit is < 0). It will resume in the next process tick.
-	 *
-	 * When rx_buf_wpos reaches target_size, the retrieval is complete and the processing
-	 * of the packet may begin. */
-
-	RRR_LINKED_LIST_NODE(struct rrr_socket_read_session);
-
-	struct sockaddr src_addr;
-	socklen_t src_addr_len;
-	uint64_t last_read_time;
-
-	ssize_t target_size;
-
-	char *rx_buf_ptr;
-	ssize_t rx_buf_size;
-	ssize_t rx_buf_wpos;
-
-	char *rx_overshoot;
-	ssize_t rx_overshoot_size;
-
-	int read_complete;
+struct rrr_socket_options {
+	int fd;
+	int domain;
+	int type;
+	int protocol;
 };
 
-struct rrr_socket_read_session_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_socket_read_session);
+struct rrr_socket_client {
+	RRR_LINKED_LIST_NODE(struct rrr_socket_client);
+	struct rrr_socket_read_session_collection read_sessions;
+	int connected_fd;
+	struct sockaddr addr;
+	socklen_t addr_len;
+	uint64_t last_seen;
+};
+
+struct rrr_socket_client_collection {
+	RRR_LINKED_LIST_HEAD(struct rrr_socket_client);
+	int listen_fd;
+	char *creator;
 };
 
 struct rrr_socket_read_session;
-
-void rrr_socket_msg_populate_head (
-		struct rrr_socket_msg *message,
-		vl_u16 type,
-		vl_u32 msg_size,
-		vl_u64 value
+int rrr_socket_get_options_from_fd (
+		struct rrr_socket_options *target,
+		int fd
 );
-void rrr_socket_msg_checksum_and_to_network_endian (
-		struct rrr_socket_msg *message
-);
-void rrr_socket_msg_head_to_host (struct rrr_socket_msg *message);
-int rrr_socket_msg_get_packet_target_size_and_checksum (
-		ssize_t *target_size,
-		struct rrr_socket_msg *socket_msg,
-		ssize_t buf_size
-);
-int rrr_socket_msg_checksum_check (
-		struct rrr_socket_msg *message,
-		ssize_t data_size
-);
-int rrr_socket_msg_head_validate (struct rrr_socket_msg *message);
 int rrr_socket_with_lock_do (
 		int (*callback)(void *arg),
 		void *arg
@@ -103,28 +79,48 @@ int rrr_socket_mkstemp (
 		char *filename,
 		const char *creator
 );
+int rrr_socket_bind_and_listen (
+		int fd,
+		struct sockaddr *addr,
+		socklen_t addr_len,
+		int sockopts,
+		int num_clients
+);
 int rrr_socket (
 		int domain,
 		int type,
 		int protocol,
-		const char *creator
+		const char *creator,
+		const char *filename
 );
 int rrr_socket_close (int fd);
 int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all (void);
-void rrr_socket_read_session_collection_init (
-		struct rrr_socket_read_session_collection *collection
+int rrr_socket_unix_create_bind_and_listen (
+		int *fd_result,
+		const char *creator,
+		const char *filename,
+		int num_clients,
+		int nonblock
 );
-void rrr_socket_read_session_collection_destroy (
-		struct rrr_socket_read_session_collection *collection
-);
-int rrr_socket_read_session_get_target_length_from_message_and_checksum (
-		struct rrr_socket_read_session *read_session,
-		void *arg
-);
-int rrr_socket_read_message (
-		struct rrr_socket_read_session_collection *read_session_collection,
+int rrr_socket_connect_nonblock (
 		int fd,
+		struct sockaddr *addr,
+		socklen_t addr_len
+);
+void rrr_socket_client_collection_destroy (
+		struct rrr_socket_client_collection *collection
+);
+int rrr_socket_client_collection_init (
+		struct rrr_socket_client_collection *collection,
+		int listen_fd,
+		const char *creator
+);
+int rrr_socket_client_collection_accept (
+		struct rrr_socket_client_collection *collection
+);
+int rrr_socket_client_collection_read (
+		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
@@ -132,4 +128,5 @@ int rrr_socket_read_message (
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *complete_callback_arg
 );
+
 #endif /* RRR_SOCKET_H */

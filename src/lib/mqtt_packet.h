@@ -280,7 +280,7 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
-//	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
+	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);

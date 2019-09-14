@@ -202,7 +202,7 @@ int receive_packets(struct ipserver_data *data) {
 	struct receive_packets_data callback_data;
 	callback_data.data = data;
 	callback_data.counter = 0;
-	return ip_receive_messages (
+	return ip_receive_vl_message (
 		&data->read_sessions,
 		data->ip.fd,
 #ifdef VL_WITH_OPENSSL
