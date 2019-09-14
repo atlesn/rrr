@@ -393,13 +393,20 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 	bind_pos = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		struct rrr_type_value *definition = node;
+
+		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+			goto next_;
+		}
+
 		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
 			if (string_lengths[bind_pos] < definition->total_stored_length) {
 				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
 						string_lengths[bind_pos], definition->total_stored_length, bind_pos);
 			}
 		}
+
 		bind_pos++;
+		next_:
 	RRR_LINKED_LIST_ITERATE_END(&collection);
 
 	out_cleanup:
