@@ -228,7 +228,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	strcpy(final_data_raw->blob_a, blob_a);
 	strcpy(final_data_raw->blob_b, blob_b);
 
-	final_data_raw->msg = *((struct vl_message *) types[11]->data);
+	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump final_data_raw: 0x");

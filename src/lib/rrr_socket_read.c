@@ -57,6 +57,7 @@ static int __rrr_socket_read_session_destroy (
 ) {
 	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
+	free(read_session);
 	return 0;
 }
 
@@ -166,6 +167,7 @@ int rrr_socket_read_message (
 
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
+	memset(&src_addr, '\0', src_addr_len);
 
 	/* Read */
 	read_retry:

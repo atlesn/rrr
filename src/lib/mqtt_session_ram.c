@@ -1409,8 +1409,8 @@ static int __rrr_mqtt_session_ram_receive_publish (
 				publish, RRR_MQTT_P_GET_IDENTIFIER(publish));
 
 		RRR_MQTT_P_INCREF(publish);
-
 		ram_session->delivery_method(ram_session, publish);
+		RRR_MQTT_P_DECREF(publish);
 	}
 	else if (publish->qos == 1) {
 		// QOS 1 packets are released when we send PUBACK

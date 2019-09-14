@@ -308,16 +308,14 @@ int colplan_array_create_sql(char *target, unsigned int target_size, struct mysq
 }
 
 void free_collection(void *arg) {
-	struct vl_thread_double_pointer *data = arg;
-	if (*data->ptr != NULL) {
-		rrr_array_clear(*data->ptr);
-	}
+	rrr_array_clear(arg);
 }
 
 int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
 	int res = 0;
 
 	struct rrr_array collection;
+	memset(&collection, '\0', sizeof(collection));
 	pthread_cleanup_push(free_collection, &collection);
 
 	if (rrr_array_message_to_collection(&collection, entry->message) != 0) {
