@@ -39,50 +39,85 @@ struct rrr_python3_vl_message_data {
 	struct vl_message *message_dynamic;
 };
 
-int __rrr_python3_vl_message_set_data (PyObject *self, PyObject *byte_data) {
-	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+static int __rrr_python3_vl_message_set_topic_and_data (
+		struct rrr_python3_vl_message_data *data,
+		const char *topic_str,
+		Py_ssize_t topic_length,
+		const char *data_str,
+		Py_ssize_t data_length
+) {
 	int ret = 0;
 
-	const char *str;
-	Py_ssize_t len;
-	if (PyByteArray_Check(byte_data)) {
-		len = PyByteArray_Size(byte_data);
-		str = PyByteArray_AsString(byte_data);
-	}
-	else if (PyUnicode_Check(byte_data)) {
-		str = PyUnicode_AsUTF8AndSize(byte_data, &len);
-	}
-	else {
-		VL_MSG_ERR("Unknown data type to vl_message.set(), must be Bytearray or Unicode\n");
+	struct vl_message *new_message = message_duplicate_no_data_with_size(data->message_dynamic, topic_length, data_length);
+	if (new_message == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_python3_vl_message_set_topic_and_data\n");
 		ret = 1;
 		goto out;
 	}
 
-	ssize_t new_size = sizeof(data->message_dynamic) + len - 1;
-	ssize_t old_size = sizeof(data->message_dynamic) + data->message_dynamic->length;
+	memcpy(MSG_TOPIC_PTR(new_message), topic_str, topic_length);
+	memcpy(MSG_DATA_PTR(new_message), data_str, data_length);
 
-	if (new_size > old_size) {
-		struct vl_message *new_message = realloc(data->message_dynamic, new_size);
-		if (new_message == NULL) {
-			VL_MSG_ERR("Could not re-allocate memory in __rrr_python3_vl_message_set_data\n");
-			ret = 1;
-			goto out;
-		}
-		data->message_dynamic = new_message;
-	}
-
-	memcpy(data->message_dynamic->data_, str, len);
-	data->message_dynamic->length = len;
-	data->message_static.length = len;
+	free(data->message_dynamic);
+	data->message_dynamic = new_message;
 
 	out:
 	return ret;
 }
 
 static PyObject *rrr_python3_vl_message_f_set_data (PyObject *self, PyObject *args) {
-	if (__rrr_python3_vl_message_set_data (self, args) != 0) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+
+	const char *str;
+	Py_ssize_t len;
+	if (PyByteArray_Check(args)) {
+		len = PyByteArray_Size(args);
+		str = PyByteArray_AsString(args);
+	}
+	else if (PyUnicode_Check(args)) {
+		str = PyUnicode_AsUTF8AndSize(args, &len);
+	}
+	else {
+		VL_MSG_ERR("Unknown data type to vl_message.set_data(), must be Bytearray or Unicode\n");
 		Py_RETURN_FALSE;
 	}
+
+	if (__rrr_python3_vl_message_set_topic_and_data (
+			data,
+			MSG_TOPIC_PTR(data->message_dynamic),
+			MSG_TOPIC_LENGTH(data->message_dynamic),
+			str,
+			len
+	) != 0) {
+		Py_RETURN_FALSE;
+	}
+
+	Py_RETURN_TRUE;
+}
+
+static PyObject *rrr_python3_vl_message_f_set_topic (PyObject *self, PyObject *args) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+
+	const char *str;
+	Py_ssize_t len;
+	if (PyUnicode_Check(args)) {
+		str = PyUnicode_AsUTF8AndSize(args, &len);
+	}
+	else {
+		VL_MSG_ERR("Unknown data type to vl_message.set_data(), must be Bytearray or Unicode\n");
+		Py_RETURN_FALSE;
+	}
+
+	if (__rrr_python3_vl_message_set_topic_and_data (
+			data,
+			str,
+			len,
+			MSG_DATA_PTR(data->message_dynamic),
+			MSG_DATA_LENGTH(data->message_dynamic)
+	) != 0) {
+		Py_RETURN_FALSE;
+	}
+
 	Py_RETURN_TRUE;
 }
 
@@ -189,7 +224,37 @@ static void rrr_python3_vl_message_f_dealloc (PyObject *self) {
 static PyObject *rrr_python3_vl_message_f_get_data(PyObject *self, PyObject *args) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 	(void)(args);
-	return PyByteArray_FromStringAndSize(data->message_dynamic->data_, data->message_dynamic->length);
+
+	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), MSG_DATA_LENGTH(data->message_dynamic));
+
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not create bytearray object for topic in rrr_python3_vl_message_f_get_data\n");
+		PyErr_Print();
+		Py_RETURN_FALSE;
+	}
+
+	return ret;
+}
+
+
+static PyObject *rrr_python3_vl_message_f_get_topic(PyObject *self, PyObject *args) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+	(void)(args);
+
+	PyObject *ret = NULL;
+	if (MSG_TOPIC_LENGTH(data->message_dynamic) > 0) {
+		ret = PyUnicode_FromStringAndSize(MSG_TOPIC_PTR(data->message_dynamic), MSG_TOPIC_LENGTH(data->message_dynamic));
+	}
+	else {
+		ret = PyUnicode_FromString("");
+	}
+	if (ret == NULL) {
+		VL_MSG_ERR("Could not create unicode object for topic in rrr_python3_vl_message_f_get_topic\n");
+		PyErr_Print();
+		Py_RETURN_FALSE;
+	}
+
+	return ret;
 }
 
 static PyMethodDef vl_message_methods[] = {
@@ -211,6 +276,18 @@ static PyMethodDef vl_message_methods[] = {
 				ml_flags:	METH_NOARGS,
 				ml_doc:		"Get data parameter from message as byte array"
 		},
+		{
+				ml_name:	"set_topic",
+				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_set_topic,
+				ml_flags:	METH_O,
+				ml_doc:		"Set topic parameter"
+		},
+		{
+				ml_name:	"get_topic",
+				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_get_topic,
+				ml_flags:	METH_NOARGS,
+				ml_doc:		"Get topic parameter from message as a string"
+		},
 		{ NULL, NULL, 0, NULL }
 };
 
@@ -223,7 +300,6 @@ static PyMemberDef vl_message_members[] = {
 		{"class",			RRR_PY_32,	RRR_PY_VL_MESSAGE_OFFSET(class),			0, "Class"},
 		{"timestamp_from",	RRR_PY_64,	RRR_PY_VL_MESSAGE_OFFSET(timestamp_from),	0, "From timestamp"},
 		{"timestamp_to",	RRR_PY_64,	RRR_PY_VL_MESSAGE_OFFSET(timestamp_to),		0, "To timestamp"},
-		{"length",			RRR_PY_32,	RRR_PY_VL_MESSAGE_OFFSET(length),			0, "Length of data field"},
 		{"data_numeric",	RRR_PY_64, 	RRR_PY_VL_MESSAGE_OFFSET(data_numeric),		0, "Numeric data"},
 		{ NULL, 0, 0, 0, NULL}
 };

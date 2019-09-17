@@ -137,18 +137,7 @@ int main (int argc, const char *argv[]) {
 		goto out_destroy_metadata_collection;
 	}
 
-	int help_or_version_printed = 0;
-	if (cmd_exists(&cmd, "version", 0)) {
-		VL_MSG(PACKAGE_NAME " version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
-		help_or_version_printed = 1;
-	}
-
-	if (cmd_exists(&cmd, "help", 0)) {
-		cmd_dump_usage(&cmd);
-		help_or_version_printed = 1;
-	}
-
-	if (help_or_version_printed) {
+	if (rrr_print_help_and_version(&cmd) != 0) {
 		goto out_destroy_metadata_collection;
 	}
 

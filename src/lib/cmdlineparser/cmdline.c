@@ -204,7 +204,7 @@ int cmd_convert_float(const char *value, float *result) {
 	return 0;
 }
 
-void cmd_dump_usage(struct cmd_data *data) {
+void cmd_print_usage(struct cmd_data *data) {
 	const char *usage_format = "Usage: %s ";
 	printf(usage_format, data->program);
 

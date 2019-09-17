@@ -25,9 +25,10 @@ sub source {
 sub process {
 	my $message = shift;
 
-	$message->{'timestamp_from'} = $message->{'timestamp_from'};
-
 	print "perl5 timestamp: " . $message->{'timestamp_from'} . "\n";
+	print "perl5 old topic: " . $message->{'topic'} . "\n";
+	$message->{'topic'} .= "/perl5";
+	print "perl5 new topic: " . $message->{'topic'} . "\n";
 
-	return 1;
+
 }

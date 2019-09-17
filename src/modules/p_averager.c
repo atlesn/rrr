@@ -174,6 +174,7 @@ int averager_spawn_message (
 			time_from,
 			time_to,
 			measurement,
+			0,
 			0
 	) != 0) {
 		VL_MSG_ERR ("Could not create message in averager_spawn_message\n");

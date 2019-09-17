@@ -506,7 +506,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		}
 
 		msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
-		msg_size = sizeof(struct vl_message) + ((struct vl_message *) message)->length - 1;
+		msg_size = MSG_TOTAL_SIZE((struct vl_message *) message);
 
 		message_prepare_for_network((struct vl_message *) message);
 	}

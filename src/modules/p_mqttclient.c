@@ -387,7 +387,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	publish->qos = private_data->qos;
 
 	if (private_data->publish_vl_message != 0) {
-		ssize_t network_size = sizeof(struct vl_message) - 1 + reading->length;
+		ssize_t network_size = MSG_TOTAL_SIZE(reading);
 
 		reading->network_size = network_size;
 
@@ -411,14 +411,15 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		data = NULL;
 	}
 	else {
-		payload = malloc(reading->length);
+		payload = malloc(MSG_DATA_LENGTH(reading));
 		if (payload == NULL) {
 			VL_MSG_ERR("could not allocate memory for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
 		}
-		payload_size = reading->length;
+		payload_size = MSG_DATA_LENGTH(reading);
+		memcpy(payload, MSG_DATA_PTR(reading), MSG_DATA_LENGTH(reading));
 	}
 
 	if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
@@ -463,6 +464,8 @@ static int __try_create_vl_message_with_publish_data (
 		goto out_unlock_payload;
 	}
 
+	ssize_t topic_len = strlen(publish->topic);
+
 	if (message_new_empty (
 			result,
 			MSG_TYPE_MSG,
@@ -471,6 +474,7 @@ static int __try_create_vl_message_with_publish_data (
 			publish->create_time,
 			publish->create_time,
 			0,
+			topic_len,
 			publish->payload->length
 	) != 0) {
 		VL_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (A)\n",
@@ -479,7 +483,8 @@ static int __try_create_vl_message_with_publish_data (
 		goto out_unlock_payload;
 	}
 
-	memcpy((*result)->data_, publish->payload->payload_start, publish->payload->length);
+	memcpy(MSG_TOPIC_PTR(*result), publish->topic, topic_len);
+	memcpy(MSG_DATA_PTR(*result), publish->payload->payload_start, publish->payload->length);
 
 	out_unlock_payload:
 	RRR_MQTT_P_UNLOCK(publish->payload);
@@ -637,6 +642,8 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			publish->create_time,
 			publish->create_time,
 			0,
+			publish->topic,
+			strlen(publish->topic) + 1,
 			publish->topic,
 			strlen(publish->topic) + 1
 	) != 0) {

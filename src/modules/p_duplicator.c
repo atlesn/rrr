@@ -160,22 +160,15 @@ int read_minimum_callback (struct fifo_callback_args *args, char *data, unsigned
 	struct read_minimum_data *minimum_callback_data = args->private_data;
 	struct fifo_callback_args *fifo_callback_data_orig = minimum_callback_data->poll_data;
 
-	struct vl_message *message = (struct vl_message *) data;
-
-	uint64_t timestamp = message->timestamp_from;
-
-	ssize_t data_length = message->length;
-	ssize_t total_length = sizeof(*message) + data_length - 1;
-
-	char *new_data = malloc(total_length);
-	if (new_data == NULL) {
+	struct vl_message *message_new = message_duplicate((struct vl_message *) data);
+	if (message_new == NULL) {
 		VL_MSG_ERR("Could not allocate data in duplicator read_minimum_callback\n");
 		return 1;
 	}
 
-	memcpy(new_data, data, total_length);
+	uint64_t timestamp = message_new->timestamp_from;
 
-	int res = minimum_callback_data->callback(fifo_callback_data_orig, new_data, total_length);
+	int res = minimum_callback_data->callback(fifo_callback_data_orig, (char*) message_new, MSG_TOTAL_SIZE(message_new));
 
 	if (res == 0) {
 		if (timestamp > minimum_callback_data->result_timestamp) {

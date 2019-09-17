@@ -110,7 +110,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("dump message: 0x");
-		for (unsigned int i = 0; i < sizeof(*message) + message->length - 1; i++) {
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			char c = ((char*)message)[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
@@ -184,6 +184,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	struct test_final_data *final_data_raw = malloc(sizeof(*final_data_raw));
+
+	memset(final_data_raw, '\0', sizeof(*final_data_raw));
 
 	final_data_raw->be4 = *((uint64_t*) (types[0]->data));
 	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
@@ -371,7 +373,6 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 		goto out;
 	}
 
-	ret = write (socket_fd, data, sizeof(*data) - 1);
 	if ((ret = write (socket_fd, data, sizeof(*data) - 1)) == -1) {
 		TEST_MSG("Error while writing to socket in test_type_array_write_to_socket: %s\n", strerror(errno));
 		ret = 1;
@@ -471,7 +472,7 @@ int test_type_array (
 	data->msg.network_size = sizeof(struct vl_message) - 1;
 	data->msg.msg_size = sizeof(struct vl_message) - 1;
 	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
-	data->msg.length = 0;
+	data->msg.topic_length = 0;
 	data->msg.data_numeric = 33;
 	data->msg.type = MSG_TYPE_MSG;
 	data->msg.class = MSG_CLASS_POINT;
@@ -670,7 +671,7 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	if (ip_buffer_entry_new(&entry, message->length, NULL, 0, new_message) != 0) {
+	if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, new_message) != 0) {
 		TEST_MSG("Could not allocate ip buffer entry in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;

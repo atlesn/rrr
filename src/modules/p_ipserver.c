@@ -164,7 +164,7 @@ int receive_packets_callback(struct ip_buffer_entry *entry, void *arg) {
 	}
 
 	ack_message->type = MSG_TYPE_ACK;
-	ack_message->length = 0;
+	ack_message->msg_size = MSG_TOTAL_SIZE(ack_message) - MSG_DATA_LENGTH(ack_message);
 
 	if (ip_buffer_entry_new (
 			&ack_entry,

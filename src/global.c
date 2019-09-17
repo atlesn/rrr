@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
+#include "lib/cmdlineparser/cmdline.h"
+#include "../build_timestamp.h"
 #include "global.h"
 
 struct rrr_global_config rrr_global_config;
@@ -53,4 +55,25 @@ void rrr_init_global_config (
 	rrr_global_config.no_watchdog_timers = no_watcdog_timers;
 	rrr_global_config.no_thread_restart = no_thread_restart;
 	pthread_mutex_unlock(&global_config_mutex);
+}
+
+int rrr_print_help_and_version (
+		struct cmd_data *cmd
+) {
+	int help_or_version_printed = 0;
+	if (cmd_exists(cmd, "version", 0)) {
+		VL_MSG(PACKAGE_NAME " version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
+		help_or_version_printed = 1;
+	}
+
+	if (cmd_exists(cmd, "help", 0)) {
+		cmd_print_usage(cmd);
+		help_or_version_printed = 1;
+	}
+
+	if (help_or_version_printed) {
+		return 1;
+	}
+
+	return 0;
 }

@@ -282,6 +282,21 @@ int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_sett
 	return ret;
 }
 
+int rrr_settings_exists (struct rrr_instance_settings *source, const char *name) {
+	int ret = 0;
+
+	__rrr_settings_lock(source);
+
+	if (__rrr_settings_find_setting_nolock(source, name) != NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	__rrr_settings_unlock(source);
+	return ret;
+}
+
 int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
 	return __rrr_settings_get_string_noconvert(target, source, name, 0);
 }

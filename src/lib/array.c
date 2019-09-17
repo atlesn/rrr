@@ -435,7 +435,7 @@ int rrr_array_new_message (
 
 	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	struct vl_message *message = message_new_array(time, total_data_length);
+	struct vl_message *message = message_new_array(time, 0, total_data_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
 		ret = 1;
@@ -444,7 +444,7 @@ int rrr_array_new_message (
 
 	message->version = RRR_ARRAY_VERSION;
 
-	char *pos = message->data_;
+	char *pos = MSG_DATA_PTR(message);
 	ssize_t written_bytes_total = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
@@ -490,13 +490,13 @@ int rrr_array_new_message (
 
 	if (written_bytes_total != total_data_length) {
 		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%" PRIu32 "\n",
-				written_bytes_total, message->length);
+				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("rrr_array_new_message output (data of message only): 0x");
-		for (rrr_type_length i = 0; i < message->length; i++) {
-			char c = message->data_[i];
+		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(message); i++) {
+			char c = MSG_DATA_PTR(message)[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
 			}
@@ -533,13 +533,13 @@ int rrr_array_message_to_collection (
 		goto out_free_data;
 	}
 
-	const char *pos = array->data_;
-	const char *end = array->data_ + array->length;
+	const char *pos = MSG_DATA_PTR(array);
+	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("rrr_array_message_to_collection input (data of message only): 0x");
-		for (rrr_type_length i = 0; i < array->length; i++) {
-			char c = array->data_[i];
+		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(array); i++) {
+			char c = MSG_DATA_PTR(array)[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
 			}

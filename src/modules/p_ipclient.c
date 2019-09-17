@@ -195,7 +195,7 @@ int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned lo
 
 	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", message->timestamp_from, message->data_numeric, size);
 
-	if (ip_buffer_entry_new(&entry, sizeof(*message) - 1 + message->length, NULL, 0, message) != 0) {
+	if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
 		VL_MSG_ERR("Could not create ip buffer entry in ipclient poll_callback\n");
 		ret = 1;
 		free(data);
@@ -266,7 +266,7 @@ int receive_packets_search_callback (struct fifo_callback_args *callback_data, c
 		VL_DEBUG_MSG ("ipclient: match class %" PRIu32 " vs %" PRIu32 "\n", message_to_match->class, message->class);
 		VL_DEBUG_MSG ("ipclient: match timestamp from %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_from, message->timestamp_from);
 		VL_DEBUG_MSG ("ipclient: match timestamp to %" PRIu64 " vs %" PRIu64 "\n", message_to_match->timestamp_to, message->timestamp_to);
-		VL_DEBUG_MSG ("ipclient: match length %" PRIu32 " vs %" PRIu32 "\n", message_to_match->length, message->length);
+		VL_DEBUG_MSG ("ipclient: match length %" PRIu32 " vs %" PRIu32 "\n", MSG_TOTAL_SIZE(message_to_match), MSG_TOTAL_SIZE(message));
 	}
 
 	if (	message_to_match->class == message->class &&

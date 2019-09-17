@@ -138,14 +138,14 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 int read_data_receive_message_callback (struct vl_message *message, void *arg) {
 	struct udpreader_data *data = arg;
 
-	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
+	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_SIZE(message));
 	VL_DEBUG_MSG_3("udpreader created a message with timestamp %llu size %lu\n",
 			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 	return 0;
 }
 
-int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
+int read_raw_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 	int ret = 0;
 
@@ -169,7 +169,7 @@ int read_data_callback (struct ip_buffer_entry *entry, void *arg) {
 int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	VL_DEBUG_MSG_4("udpreader inject callback size %lu\n", size);
 	struct udpreader_data *udpreader_data = poll_data->private_data;
-	return read_data_callback((struct ip_buffer_entry *) data, udpreader_data);
+	return read_raw_data_callback((struct ip_buffer_entry *) data, udpreader_data);
 }
 
 int read_data(struct udpreader_data *data) {
@@ -179,7 +179,7 @@ int read_data(struct udpreader_data *data) {
 		&data->read_sessions,
 		data->ip.fd,
 		&data->definitions,
-		read_data_callback,
+		read_raw_data_callback,
 		data,
 		NULL
 	);

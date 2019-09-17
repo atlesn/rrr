@@ -64,7 +64,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
-#define MSG_TOTAL_LENGTH(message)	(sizeof(*(message)) + (message)->length - 1)
+#define MSG_TOTAL_SIZE(message)		((message)->msg_size)
+#define MSG_TOPIC_LENGTH(message)	((message)->topic_length)
+#define MSG_TOPIC_PTR(message)		((message)->data + 0)
+#define MSG_DATA_LENGTH(message)	((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
+#define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
 
 #define VL_MESSAGE_HEAD 	\
 	vl_u16 type;			\
@@ -74,18 +78,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	vl_u64 timestamp_from;	\
 	vl_u64 timestamp_to;	\
 	vl_u64 data_numeric;	\
-	vl_u32 length
+	vl_u16 topic_length;	\
+	vl_u16 reserved
 
 struct vl_message {
 	RRR_SOCKET_MSG_HEAD;
 	VL_MESSAGE_HEAD;
-	char data_[1];
+	char data[1];
 } __attribute__((packed));
 
 static inline struct rrr_socket_msg *rrr_vl_message_safe_cast (struct vl_message *message) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
 	ret->msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
-	ret->msg_size = sizeof(*message) + message->length - 1;
+	ret->msg_size = MSG_TOTAL_SIZE(message);
 	ret->msg_value = 0;
 	return ret;
 }
@@ -95,7 +100,8 @@ struct vl_message *message_new_reading (
 );
 struct vl_message *message_new_array (
 	vl_u64 time,
-	vl_u32 length
+	vl_u16 topic_length,
+	vl_u32 data_length
 );
 int message_new_empty (
 		struct vl_message **final_result,
@@ -105,7 +111,8 @@ int message_new_empty (
 		vl_u64 timestamp_from,
 		vl_u64 timestamp_to,
 		vl_u64 data_numeric,
-		vl_u32 data_size
+		vl_u16 topic_length,
+		vl_u32 data_length
 );
 int message_new_with_data (
 		struct vl_message **final_result,
@@ -115,13 +122,29 @@ int message_new_with_data (
 		vl_u64 timestamp_from,
 		vl_u64 timestamp_to,
 		vl_u64 data_numeric,
+		const char *topic,
+		vl_u16 topic_length,
 		const char *data,
-		vl_u32 data_size
+		vl_u32 data_length
 );
 
 int message_to_host_and_verify (struct vl_message *message, ssize_t expected_size);
 void message_prepare_for_network (struct vl_message *message);
-struct vl_message *message_duplicate (const struct vl_message *message);
-struct vl_message *message_duplicate_no_data(struct vl_message *message);
+struct vl_message *message_duplicate_no_data_with_size (
+		const struct vl_message *message,
+		ssize_t topic_length,
+		ssize_t data_length
+);
+struct vl_message *message_duplicate (
+		const struct vl_message *message
+);
+struct vl_message *message_duplicate_no_data (
+		struct vl_message *message
+);
+int message_set_topic (
+		struct vl_message **message,
+		const char *topic,
+		ssize_t topic_len
+);
 
 #endif

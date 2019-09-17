@@ -57,7 +57,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
-	struct vl_message *array_message = NULL;
+	struct vl_message *array_message_perl5 = NULL;
 	struct vl_message *array_message_python3 = NULL;
 
 	data_init(data);
@@ -65,7 +65,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
 
@@ -82,7 +82,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
-			&array_message,
+			&array_message_perl5,
 			&array_message_python3,
 			thread_data->init_data.module->all_instances,
 			"instance_udpreader",
@@ -90,7 +90,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 			"instance_buffer_from_perl5",
 			"instance_buffer_from_python3"
 	);
-	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
+	TEST_MSG("Result from array test: %i %p and %p\n", ret, array_message_perl5, array_message_python3);
 
 	update_watchdog_time(thread_data->thread);
 
@@ -104,7 +104,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 			"instance_dummy_input",
 			"instance_buffer_msg",
 			"instance_mysql",
-			array_message
+			array_message_perl5
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);
 

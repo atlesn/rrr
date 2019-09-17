@@ -220,13 +220,14 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 	bind[5].is_unsigned = 1;
 
 	// Message
-	unsigned long message_length = message->length;
-	bind[6].buffer = message->data_;
-	bind[6].length = &message_length;
+	unsigned long message_length_a = MSG_DATA_LENGTH(message);
+	bind[6].buffer = MSG_DATA_PTR(message);
+	bind[6].length = &message_length_a;
 	bind[6].buffer_type = MYSQL_TYPE_STRING;
 
 	// Message length
-	bind[7].buffer = &message->length;
+	unsigned long message_length_b = MSG_DATA_LENGTH(message);
+	bind[7].buffer = &message_length_b;
 	bind[7].buffer_type = MYSQL_TYPE_LONG;
 	bind[7].is_unsigned = 1;
 
@@ -851,7 +852,7 @@ int poll_callback_local(struct fifo_callback_args *poll_data, char *data, unsign
 
 	(void)(size);
 
-	if (ip_buffer_entry_new(&entry, sizeof(*reading) - 1 + reading->length, NULL, 0, reading) != 0) {
+	if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(reading), NULL, 0, reading) != 0) {
 		VL_MSG_ERR("Could not allocate ip buffer entry in poll_callback_local\n");
 		ret = 1;
 		goto out;
@@ -951,9 +952,9 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 		// Tag message as saved to sender
 		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
 		message->type = MSG_TYPE_TAG;
-		message->length = 0;
-		message->network_size = sizeof(*message) - 1;
-		entry->data_length = sizeof(*message) - 1;
+		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
+		message->network_size = message->msg_size;
+		entry->data_length = MSG_TOTAL_SIZE(message);
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally
 			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);

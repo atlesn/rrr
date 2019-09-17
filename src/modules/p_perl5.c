@@ -241,6 +241,7 @@ int spawn_messages(struct perl5_data *perl5_data) {
 				now_time,
 				now_time,
 				0,
+				0,
 				0
 		) != 0) {
 			VL_MSG_ERR("Could not initialize message in perl5 spawn_messages of instance %s\n",

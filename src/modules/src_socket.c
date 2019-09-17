@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
+#include "../lib/utf8.h"
 #include "../global.h"
 
 struct socket_data {
@@ -46,6 +47,8 @@ struct socket_data {
 	struct fifo_buffer buffer;
 	struct fifo_buffer inject_buffer;
 	char *socket_path;
+	char *default_topic;
+	int receive_rrr_message;
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
@@ -58,6 +61,7 @@ void data_cleanup(void *arg) {
 	rrr_array_clear(&data->definitions);
 	rrr_socket_client_collection_destroy(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
+	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
 
 int data_init(struct socket_data *data, struct instance_thread_data *thread_data) {
@@ -90,12 +94,12 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 int parse_config (struct socket_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	// Socket path
 	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
 		VL_MSG_ERR("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
 	}
 
 	struct sockaddr_un addr;
-
 	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
 		VL_MSG_ERR("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
 				config->name, sizeof(addr.sun_path) - 1);
@@ -103,14 +107,49 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		goto out;
 	}
 
-	// Parse expected input data
-	if (rrr_array_parse_definition (&data->definitions, config, "socket_input_types") != 0) {
- 		VL_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n", config->name);
-		return 1;
+	// Message default topic
+	if ((ret = rrr_settings_get_string_noconvert(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
+			VL_MSG_ERR("socket_default_topic for instance %s was not valid UTF-8\n", config->name);
+			ret = 1;
+			goto out;
+		}
 	}
 
-	if (data->definitions.node_count == 0) {
-		VL_MSG_ERR("No data types defined in socket_input_types\n");
+	// Receive full rrr message
+	int yesno = 0;
+	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
+		VL_MSG_ERR ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
+				config->name);
+		return 1;
+	}
+	data->receive_rrr_message = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// Parse expected input data
+	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
+		if ((ret = rrr_array_parse_definition (&data->definitions, config, "socket_input_types")) != 0) {
+			VL_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n",
+					config->name);
+			return 1;
+		}
+	}
+
+	if (data->receive_rrr_message != 0 && RRR_LINKED_LIST_COUNT(&data->definitions) > 0) {
+		VL_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
+				config->name);
+		return 1;
+	}
+	else if (data->receive_rrr_message == 0 && RRR_LINKED_LIST_COUNT(&data->definitions) == 0) {
+		VL_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
+				config->name);
 		return 1;
 	}
 
@@ -121,14 +160,26 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 int read_data_receive_message_callback (struct vl_message *message, void *arg) {
 	struct socket_data *data = arg;
 
-	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_LENGTH(message));
+	if (MSG_TOPIC_LENGTH(message) == 0 && data->default_topic != NULL) {
+		if (message_set_topic(&message, data->default_topic, strlen(data->default_topic)) != 0) {
+			VL_MSG_ERR("Could not set topic of message in read_data_receive_message_callback of instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out_err;
+		}
+	}
+
+	fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_SIZE(message));
 	VL_DEBUG_MSG_3("socket created a message with timestamp %llu size %lu\n",
 			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 	return 0;
+
+	out_err:
+		free(message);
+		return 1;
 }
 
-int read_data_callback(struct rrr_socket_read_session *read_session, void *arg) {
+int read_raw_data_callback(struct rrr_socket_read_session *read_session, void *arg) {
 	struct socket_data *data = arg;
 
 	return rrr_array_new_message_from_buffer (
@@ -141,18 +192,34 @@ int read_data_callback(struct rrr_socket_read_session *read_session, void *arg) 
 }
 
 int read_data(struct socket_data *data) {
-	struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
-			&data->definitions
-	};
-	return rrr_socket_client_collection_read (
-			&data->clients,
-			sizeof(struct rrr_socket_msg),
-			4096,
-			rrr_socket_common_get_session_target_length_from_array,
-			&callback_data,
-			read_data_callback,
-			data
-	);
+	if (data->receive_rrr_message != 0) {
+		struct rrr_socket_common_receive_message_callback_data callback_data = {
+				read_data_receive_message_callback, data
+		};
+		return rrr_socket_client_collection_read (
+				&data->clients,
+				sizeof(struct rrr_socket_msg),
+				4096,
+				rrr_socket_common_get_session_target_length_from_message_and_checksum,
+				NULL,
+				rrr_socket_common_receive_message_callback,
+				&callback_data
+		);
+	}
+	else {
+		struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
+				&data->definitions
+		};
+		return rrr_socket_client_collection_read (
+				&data->clients,
+				sizeof(struct rrr_socket_msg),
+				4096,
+				rrr_socket_common_get_session_target_length_from_array,
+				&callback_data,
+				read_raw_data_callback,
+				data
+		);
+	}
 }
 
 static int socket_start (struct socket_data *data) {

@@ -411,20 +411,29 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
     tmp = hv_fetch(message_hv->hv, "data_numeric", strlen("data_numeric"), 1);
     message_hv->data_numeric = *tmp;
 
-    tmp = hv_fetch(message_hv->hv, "length", strlen("length"), 1);
-    message_hv->length = *tmp;
+    tmp = hv_fetch(message_hv->hv, "data_length", strlen("data_length"), 1);
+    message_hv->data_length = *tmp;
 
     if (use_old_data) {
         tmp = hv_fetch(message_hv->hv, "data", strlen("data"), 1);
+        message_hv->data = *tmp;
+
+        tmp = hv_fetch(message_hv->hv, "topic", strlen("topic"), 1);
+        message_hv->topic = *tmp;
     }
     else {
     	message_hv->data = newSV(0);
         SvUTF8_off(message_hv->data);
     	sv_setpvn(message_hv->data, "0", 1);
         tmp = hv_store(message_hv->hv, "data", strlen("data"), message_hv->data, 0);
-    }
+        message_hv->data = *tmp;
 
-    message_hv->data = *tmp;
+    	message_hv->topic = newSV(0);
+        SvUTF8_on(message_hv->topic);
+    	sv_setpvn(message_hv->topic, "0", 1);
+        tmp = hv_store(message_hv->hv, "topic", strlen("topic"), message_hv->topic, 0);
+        message_hv->topic = *tmp;
+    }
 
     out:
     return message_hv;
@@ -634,17 +643,30 @@ int rrr_perl5_hv_to_message (
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
-    ssize_t old_length = target->length;
-    ssize_t new_length = SvUV(source->length);
+	STRLEN new_data_len = 0;
+	SvUTF8_off(source->data);
+	char *data_str = SvPVbyte_force(source->data, new_data_len);
 
-	target->type = SvUV(source->type);
-	target->class = SvUV(source->class);
-	target->timestamp_from = SvUV(source->timestamp_from);
-	target->timestamp_to = SvUV(source->timestamp_to);
-	target->data_numeric = SvUV(source->data_numeric);
+	STRLEN new_topic_len = 0;
+	SvUTF8_on(source->topic);
+	char *topic_str = SvPVutf8_force(source->topic, new_topic_len);
 
-	if (new_length > old_length) {
-		struct vl_message *new_message = realloc(target, sizeof(struct vl_message) + new_length - 1);
+	VL_DEBUG_MSG_3("Perl new hv_to_message reported size of data %lu returned size of data %lu\n",
+			SvUV(source->data_length), new_data_len);
+
+    ssize_t old_total_len = MSG_TOTAL_SIZE(target);
+
+    target->topic_length = new_topic_len;
+    target->msg_size =
+    		MSG_TOTAL_SIZE(target) -
+    		MSG_DATA_LENGTH(target) -
+			MSG_TOPIC_LENGTH(target) +
+			new_data_len +
+			new_topic_len;
+    target->network_size = target->msg_size;
+
+	if (MSG_TOTAL_SIZE(target) > old_total_len) {
+		struct vl_message *new_message = realloc(target, MSG_TOTAL_SIZE(target));
 		if (new_message == NULL) {
 			VL_MSG_ERR("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
 			ret = 1;
@@ -653,23 +675,19 @@ int rrr_perl5_hv_to_message (
 		target = new_message;
 	}
 
-	target->length = new_length;
+	target->type = SvUV(source->type);
+	target->class = SvUV(source->class);
+	target->timestamp_from = SvUV(source->timestamp_from);
+	target->timestamp_to = SvUV(source->timestamp_to);
+	target->data_numeric = SvUV(source->data_numeric);
 
-	VL_DEBUG_MSG_3("SvLEN: %lu, SvUV(length): %lu, old length: %li\n", SvLEN(source->data), SvUV(source->length), old_length);
-	if (SvLEN(source->data) < target->length) {
-		VL_MSG_ERR("Data length returned from perl5 function was shorter than given length in length field\n");
-		ret = 1;
-		goto out;
-	}
-
-	STRLEN len = target->length;
-	char *data_str = sv_2pvbyte(source->data, &len);
-	memcpy(target->data_, data_str, target->length);
+	memcpy (MSG_TOPIC_PTR(target), topic_str, new_topic_len);
+	memcpy (MSG_DATA_PTR(target), data_str, new_data_len);
 
 	if (VL_DEBUGLEVEL_3) {
 		VL_DEBUG_MSG("rrr_perl5_hv_to_message output (data of message only): 0x");
-		for (unsigned int i = 0; i < target->length; i++) {
-			char c = target->data_[i];
+		for (unsigned int i = 0; i < MSG_DATA_LENGTH(target); i++) {
+			char c = MSG_DATA_PTR(target)[i];
 			if (c < 0x10) {
 				VL_DEBUG_MSG("0");
 			}
@@ -703,8 +721,9 @@ int rrr_perl5_message_to_hv (
     sv_setuv(message_hv->timestamp_from, message->timestamp_from);
     sv_setuv(message_hv->timestamp_to, message->timestamp_to);
     sv_setuv(message_hv->data_numeric, message->data_numeric);
-    sv_setuv(message_hv->length, message->length);
-    sv_setpvn(message_hv->data, message->data_, message->length);
+    sv_setpvn(message_hv->topic, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
+    sv_setuv(message_hv->data_length, MSG_DATA_LENGTH(message));
+    sv_setpvn(message_hv->data, MSG_DATA_PTR(message), MSG_DATA_LENGTH(message));
 
     out:
 	return ret;

@@ -32,6 +32,9 @@ struct rrr_instance_config {
 
 void rrr_config_destroy_instance_config(struct rrr_instance_config *config);
 struct rrr_instance_config *rrr_config_new_instance_config (const char *name_begin, const int name_length, const int max_settings);
+static inline int rrr_instance_config_setting_exists (struct rrr_instance_config *source, const char *name) {
+	return rrr_settings_exists(source->settings, name);
+}
 static inline int rrr_instance_config_get_string_noconvert (char **target, struct rrr_instance_config *source, const char *name) {
 	return rrr_settings_get_string_noconvert(target, source->settings, name);
 }

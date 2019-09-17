@@ -88,7 +88,7 @@ int cmd_convert_uint64_10		(const char *value, uint64_t *result);
 int cmd_convert_integer_10		(const char *value, int *result);
 int cmd_convert_float			(const char *value, float *result);
 
-void cmd_dump_usage				(struct cmd_data *data);
+void cmd_print_usage				(struct cmd_data *data);
 
 int cmd_exists					(struct cmd_data *data, const char *key, cmd_arg_count index);
 const char *cmd_get_value		(struct cmd_data *data, const char *key, cmd_arg_count index);

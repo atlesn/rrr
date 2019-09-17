@@ -25,7 +25,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "rrr_socket_common.h"
+#include "messages.h"
 #include "array.h"
+
+int rrr_socket_common_receive_message_callback (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+) {
+	struct vl_message *message = (struct vl_message *) read_session->rx_buf_ptr;
+	struct rrr_socket_common_receive_message_callback_data *data = arg;
+
+	int ret = 0;
+
+	// Header CRC32 is checked when reading the data from remote and getting size
+	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, read_session->rx_buf_wpos) != 0) {
+		VL_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_callback\n");
+		goto out_free;
+	}
+
+	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, read_session->rx_buf_wpos) != 0) {
+		VL_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_callback\n");
+		goto out_free;
+	}
+
+	if (message_to_host_and_verify(message, read_session->rx_buf_wpos) != 0) {
+		VL_MSG_ERR("Message verification failed in read_message_callback (size: %u<>%u)\n",
+				MSG_TOTAL_SIZE(message), message->msg_size);
+		ret = 1;
+		goto out_free;
+	}
+
+	read_session->rx_buf_ptr = NULL;
+	ret = data->callback(message, data->callback_arg);
+
+	out_free:
+	return ret;
+}
+
 
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_socket_read_session *read_session,

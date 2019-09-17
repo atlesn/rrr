@@ -159,6 +159,7 @@ typedef unsigned long int vl_u64;
 typedef unsigned long long int vl_u64;
 #endif
 
+struct cmd_data;
 
 void rrr_set_debuglevel_orig(void);
 void rrr_set_debuglevel_on_exit(void);
@@ -167,6 +168,9 @@ void rrr_init_global_config (
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart
+);
+int rrr_print_help_and_version (
+		struct cmd_data *cmd
 );
 
 #endif

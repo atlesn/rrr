@@ -45,6 +45,8 @@ typedef unsigned long long int rrr_setting_uint;
 #define RRR_SETTING_PARSE_ERROR 2
 #define RRR_SETTING_NOT_FOUND 3
 
+// TODO : convert to RRR linked list
+
 struct rrr_setting {
 	vl_u32 type;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
@@ -88,6 +90,7 @@ int rrr_settings_traverse_split_commas (struct rrr_instance_settings *source, co
 int rrr_settings_traverse_split_commas_silent_fail (struct rrr_instance_settings *source, const char *name,
 		int (*callback)(const char *value, void *arg), void *arg);
 int rrr_settings_split_commas_to_array (struct rrr_settings_list **target, struct rrr_instance_settings *source, const char *name);
+int rrr_settings_exists (struct rrr_instance_settings *source, const char *name);
 int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name);
 int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value);

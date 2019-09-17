@@ -424,8 +424,8 @@ static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void 
 	}
 
 	if (message_to_host_and_verify(entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("Message verification failed in __ip_receive_messages_callback (size: %lu<>%" PRIu32 ")\n",
-				message->length + sizeof(struct vl_message) - 1, message->msg_size);
+		VL_MSG_ERR("Message verification failed in __ip_receive_messages_callback (size: %u<>%u)\n",
+				MSG_TOTAL_SIZE(message), message->msg_size);
 		ret = 1;
 		goto out_free;
 	}
@@ -475,8 +475,8 @@ int ip_send_message (
 ) {
 	int ret = 0;
 
-	ssize_t final_size = sizeof(struct vl_message) + input_message->length - 1;
-	ssize_t buf_size = sizeof(struct vl_message) + input_message->length - 1;
+	ssize_t final_size = MSG_TOTAL_SIZE(input_message);
+	ssize_t buf_size = MSG_TOTAL_SIZE(input_message);
 
 #ifdef VL_WITH_OPENSSL
 	buf_size += 1024;

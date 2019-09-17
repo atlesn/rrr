@@ -45,15 +45,15 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 	struct vl_message *reading = (struct vl_message *) data;
 
 	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), poll_data->flags, reading->length, reading->timestamp_from, reading->data_numeric, size);
+			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
 
 	if (raw_data->print_data != 0) {
-		ssize_t print_length = reading->length;
+		ssize_t print_length = MSG_DATA_LENGTH(reading);
 		if (print_length > 100) {
 			print_length = 100;
 		}
 		char buf[print_length + 1];
-		memcpy(buf, reading->data_, print_length);
+		memcpy(buf, MSG_DATA_PTR(reading), print_length);
 		buf[print_length] = '\0';
 
 		VL_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",

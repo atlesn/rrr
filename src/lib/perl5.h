@@ -46,7 +46,8 @@ struct rrr_perl5_message_hv {
     SV *timestamp_from;
     SV *timestamp_to;
     SV *data_numeric;
-    SV *length;
+    SV *topic;
+    SV *data_length;
     SV *data;
 };
 
