@@ -121,7 +121,7 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 	}
 
 	// Parse expected input data
-	if (rrr_array_parse_definition (&data->definitions, config, "udpr_input_types") != 0) {
+	if (rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "udpr_input_types") != 0) {
  		VL_MSG_ERR("Could not parse command line argument udpr_input_types in udpreader\n");
 		return 1;
 	}

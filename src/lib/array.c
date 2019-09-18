@@ -118,34 +118,48 @@ static int __rrr_array_parse_identifier_and_size (
 
 }
 
-int rrr_array_parse_definition (
+int rrr_array_parse_single_definition (
 		struct rrr_array *target,
-		struct rrr_instance_config *config,
-		const char *cmd_key
+		const char *start,
+		const char *end
 ) {
 	int ret = 0;
-	struct rrr_settings_list *list = NULL;
-
-	memset (target, '\0', sizeof(*target));
-
-	if (rrr_instance_config_split_commas_to_array (&list, config, cmd_key) != 0) {
-		VL_MSG_ERR("Error while splitting comma list to array for instance %s setting %s\n", config->name, cmd_key);
-		ret = 1;
-		goto out_nofree;
-	}
 
 	ssize_t parsed_bytes = 0;
-	for (unsigned int i = 0; i < list->length; i++) {
-		const char *start = list->list[i];
-		const char *end = start + strlen(start);
-		rrr_type_array_size array_size = 1;
+	rrr_type_array_size array_size = 1;
+	const struct rrr_type_definition *type = NULL;
+	unsigned int length = 0;
 
-		if (*start == '\0' || start >= end) {
-			break;
+	if ((ret = __rrr_array_parse_identifier_and_size (
+			&type,
+			&length,
+			&parsed_bytes,
+			start,
+			end
+	)) != 0) {
+		VL_MSG_ERR("Error while parsing type identifier and size\n");
+		goto out;
+	}
+
+	start += parsed_bytes;
+
+	if (type->type == RRR_TYPE_ARRAY) {
+		if (*start == '\0') {
+			VL_MSG_ERR("Missing type definition after array\n");
+
+		}
+		if (*start != '@') {
+			VL_MSG_ERR("Expected @ followed by type after array definition\n");
+
 		}
 
-		const struct rrr_type_definition *type = NULL;
-		unsigned int length = 0;
+		start++;
+
+		array_size = length;
+		if (array_size > RRR_TYPE_MAX_ARRAY) {
+			VL_MSG_ERR("Array size in type definition exceeded maximum of %i (%i given)\n",
+					RRR_TYPE_MAX_ARRAY, array_size);
+		}
 
 		if ((ret = __rrr_array_parse_identifier_and_size (
 				&type,
@@ -154,78 +168,58 @@ int rrr_array_parse_definition (
 				start,
 				end
 		)) != 0) {
-			VL_MSG_ERR("Error while parsing type identifier and size\n");
+			VL_MSG_ERR("Error while parsing type identifier and size after array\n");
 			goto out;
 		}
 
 		start += parsed_bytes;
+	}
 
-		if (type->type == RRR_TYPE_ARRAY) {
-			if (*start == '\0') {
-				VL_MSG_ERR("Missing type definition after array\n");
+	if (*start != '\0') {
+		VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
+		ret = 1;
+		goto out;
+	}
 
-			}
-			if (*start != '@') {
-				VL_MSG_ERR("Expected @ followed by type after array definition\n");
+	if (length > type->max_length) {
+		VL_MSG_ERR("Size argument in type definition '%s' is too large, max is '%u'\n",
+				type->identifier, type->max_length);
+		ret = 1;
+		goto out;
+	}
 
-			}
+	struct rrr_type_value *template = NULL;
 
-			start++;
+	if (rrr_type_value_new(&template, type, length, array_size, 0) != 0) {
+		VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
+		ret = 1;
+		goto out;
+	}
 
-			array_size = length;
-			if (array_size > RRR_TYPE_MAX_ARRAY) {
-				VL_MSG_ERR("Array size in type definition exceeded maximum of %i (%i given)\n",
-						RRR_TYPE_MAX_ARRAY, array_size);
-			}
+	RRR_LINKED_LIST_APPEND(target,template);
 
-			if ((ret = __rrr_array_parse_identifier_and_size (
-					&type,
-					&length,
-					&parsed_bytes,
-					start,
-					end
-			)) != 0) {
-				VL_MSG_ERR("Error while parsing type identifier and size after array\n");
-				goto out;
-			}
+	out:
+	return ret;
+}
 
-			start += parsed_bytes;
-		}
+int rrr_array_validate_definition (
+		struct rrr_array *target
+) {
+	int ret = 0;
 
-		if (*start != '\0') {
-			VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
-			ret = 1;
-			goto out;
-		}
+	struct rrr_type_value *node = RRR_LINKED_LIST_LAST(target);
 
+	if (node == NULL) {
+		goto out;
+	}
 
-		if (length > type->max_length) {
-			VL_MSG_ERR("Size argument '%i' in type definition '%s' in '%s' is too large, max is '%u'\n",
-					i, type->identifier, cmd_key, type->max_length);
-			ret = 1;
-			goto out;
-		}
-
-		if (i + 1 == list->length && type->max_length == 0 && !(type->type == RRR_TYPE_MSG)) {
-			VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
-					type->identifier);
-			return 1;
-		}
-
-		struct rrr_type_value *template = NULL;
-
-		if (rrr_type_value_new(&template, type, length, array_size, 0) != 0) {
-			VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
-			ret = 1;
-			goto out;
-		}
-
-		RRR_LINKED_LIST_APPEND(target,template);
+	if (node->definition->max_length == 0 && node->definition->type != RRR_TYPE_MSG) {
+		VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
+				node->definition->identifier);
+		return 1;
 	}
 
 	out:
-		rrr_settings_list_destroy(list);
-	out_nofree:
 		return ret;
 }
 
@@ -393,6 +387,10 @@ int rrr_array_new_message_from_buffer (
 ) {
 	struct vl_message *message = NULL;
 	int ret = 0;
+
+	if (rrr_array_validate_definition(definition) != 0) {
+		VL_BUG("Definition was not valid in rrr_array_definition_collection_clone\n");
+	}
 
 	struct rrr_array definitions;
 

@@ -2,7 +2,7 @@
 
 Command Line Parser
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -255,20 +255,41 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 	return NULL;
 }
 
+int cmd_iterate_subvalues (
+		struct cmd_data *data,
+		const char *key,
+		cmd_arg_count req_index,
+		int (*callback)(const char *value, void *arg),
+		void *callback_arg
+) {
+	struct cmd_arg_pair *pair = cmd_find_pair(data, key, req_index);
+	if (pair == NULL) {
+		return 1;
+	}
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
+		if (callback(node->value, callback_arg) != 0) {
+			return 1;
+		}
+	RRR_LINKED_LIST_ITERATE_END(pair);
+
+	return 0;
+}
+
 const char *cmd_get_value(struct cmd_data *data, const char *key, cmd_arg_count index) {
 	return cmd_get_subvalue (data, key, index, 0);
 }
 
-void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
+static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	struct cmd_arg_value *value = NULL;
 	char *buf = NULL;
 
 	if (RRR_LINKED_LIST_COUNT(pair) != 1) {
-		fprintf(stderr, "Bug: Length of argument values was not 1 in cmd_pair_split_comma\n");
+		fprintf(stderr, "Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
 		abort();
 	}
 
-	value = pair->ptr_first;
+	value = RRR_LINKED_LIST_FIRST(pair);
 	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(pair);
 
 	const char *pos = value->value;
@@ -276,8 +297,8 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 
 	buf = malloc(end - pos + 1);
 	if (buf == NULL) {
-		fprintf(stderr, "Error: Could not allocate memory in cmd_pair_split_comma\n");
-		abort();
+		fprintf(stderr, "Error: Could not allocate memory A in __cmd_pair_split_comma\n");
+		return 1;
 	}
 
 	while (pos < end) {
@@ -290,7 +311,10 @@ void cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 		memcpy(buf, pos, length);
 		buf[length] = '\0';
 
-		__cmd_arg_pair_append_value(pair, buf);
+		if (__cmd_arg_pair_append_value(pair, buf) != 0) {
+			fprintf(stderr, "Error: Could not allocate memory B in __cmd_pair_split_comma\n");
+			return 1;
+		}
 
 		pos = comma_pos + 1;
 	}
@@ -480,7 +504,9 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 				return 1;
 			}
 			if ((rule->flags & CMD_ARG_FLAG_SPLIT_COMMA) != 0) {
-				cmd_pair_split_comma(pair);
+				if (__cmd_pair_split_comma(pair) != 0) {
+					return 1;
+				}
 			}
 		}
 	}

@@ -86,6 +86,11 @@ int rrr_socket_bind_and_listen (
 		int sockopts,
 		int num_clients
 );
+int rrr_socket_open (
+		const char *filename,
+		int flags,
+		const char *creator
+);
 int rrr_socket (
 		int domain,
 		int type,
@@ -107,6 +112,12 @@ int rrr_socket_connect_nonblock (
 		int fd,
 		struct sockaddr *addr,
 		socklen_t addr_len
+);
+int rrr_socket_unix_create_and_connect (
+		int *socket_fd_final,
+		const char *creator,
+		const char *filename,
+		int nonblock
 );
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection

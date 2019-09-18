@@ -79,31 +79,98 @@ struct rrr_settings_list {
 	unsigned int length;
 };
 
-struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting);
-
-void rrr_settings_list_destroy (struct rrr_settings_list *list);
-
-struct rrr_instance_settings *rrr_settings_new(const int count);
-void rrr_settings_destroy(struct rrr_instance_settings *target);
-int rrr_settings_traverse_split_commas (struct rrr_instance_settings *source, const char *name,
-		int (*callback)(const char *value, void *arg), void *arg);
-int rrr_settings_traverse_split_commas_silent_fail (struct rrr_instance_settings *source, const char *name,
-		int (*callback)(const char *value, void *arg), void *arg);
-int rrr_settings_split_commas_to_array (struct rrr_settings_list **target, struct rrr_instance_settings *source, const char *name);
-int rrr_settings_exists (struct rrr_instance_settings *source, const char *name);
-int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name);
-int rrr_settings_get_string_noconvert_silent (char **target, struct rrr_instance_settings *source, const char *name);
-int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value);
-int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value);
-int rrr_settings_replace_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
-int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value);
-int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting);
-int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting);
-int rrr_settings_read_string (char **target, struct rrr_instance_settings *settings, const char *name);
-int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_instance_settings *settings, const char *name);
-int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *settings, const char *name);
-int rrr_settings_check_all_used (struct rrr_instance_settings *settings);
-int rrr_settings_dump (struct rrr_instance_settings *settings);
+struct rrr_socket_msg *rrr_setting_safe_cast (
+		struct rrr_setting_packed *setting
+);
+void rrr_settings_list_destroy (
+		struct rrr_settings_list *list
+);
+struct rrr_instance_settings *rrr_settings_new (
+		const int count
+);
+void rrr_settings_destroy (
+		struct rrr_instance_settings *target
+);
+int rrr_settings_traverse_split_commas (
+		struct rrr_instance_settings *source,
+		const char *name,
+		int (*callback)(const char *value, void *arg),
+		void *arg
+);
+int rrr_settings_traverse_split_commas_silent_fail (
+		struct rrr_instance_settings *source,
+		const char *name,
+		int (*callback)(const char *value, void *arg),
+		void *arg
+);
+int rrr_settings_split_commas_to_array (
+		struct rrr_settings_list **target,
+		struct rrr_instance_settings *source,
+		const char *name
+);
+int rrr_settings_exists (
+		struct rrr_instance_settings *source,
+		const char *name
+);
+int rrr_settings_get_string_noconvert (
+		char **target,
+		struct rrr_instance_settings *source,
+		const char *name
+);
+int rrr_settings_get_string_noconvert_silent (
+		char **target,
+		struct rrr_instance_settings *source,
+		const char *name
+);
+int rrr_settings_replace_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value
+);
+int rrr_settings_add_string (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const char *value
+);
+int rrr_settings_replace_unsigned_integer (
+		struct rrr_instance_settings *target,
+		const char *name,
+		rrr_setting_uint value
+);
+int rrr_settings_add_unsigned_integer (
+		struct rrr_instance_settings *target,
+		const char *name,
+		rrr_setting_uint value
+);
+int rrr_settings_setting_to_string_nolock (
+		char **target,
+		struct rrr_setting *setting
+);
+int rrr_settings_setting_to_uint_nolock (
+		rrr_setting_uint *target,
+		struct rrr_setting *setting
+);
+int rrr_settings_read_string (
+		char **target,
+		struct rrr_instance_settings *settings,
+		const char *name
+);
+int rrr_settings_read_unsigned_integer (
+		rrr_setting_uint *target,
+		struct rrr_instance_settings *settings,
+		const char *name
+);
+int rrr_settings_check_yesno (
+		int *result,
+		struct rrr_instance_settings *settings,
+		const char *name
+);
+int rrr_settings_check_all_used (
+		struct rrr_instance_settings *settings
+);
+int rrr_settings_dump (
+		struct rrr_instance_settings *settings
+);
 int rrr_settings_iterate_nolock (
 		struct rrr_instance_settings *settings,
 		int (*callback)(struct rrr_setting *settings, void *callback_args),
@@ -129,8 +196,14 @@ void rrr_settings_update_used (
 				void *callback_args
 		)
 );
-void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed);
-void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message);
-int rrr_settings_packed_validate (const struct rrr_setting_packed *setting_packed);
+void rrr_settings_packed_to_host (
+		struct rrr_setting_packed *setting_packed
+);
+void rrr_settings_packed_prepare_for_network (
+		struct rrr_setting_packed *message
+);
+int rrr_settings_packed_validate (
+		const struct rrr_setting_packed *setting_packed
+);
 
 #endif /* RRR_SETTINGS_H */

@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_LINKED_LIST_H
 #define RRR_LINKED_LIST_H
 
+#include <stdlib.h>
+
 #define RRR_LINKED_LIST_DID_DESTROY		0
 #define RRR_LINKED_LIST_DESTROY_ERR		1
 #define RRR_LINKED_LIST_DIDNT_DESTROY	2
@@ -108,6 +110,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}													\
 	(head)->node_count++; } while (0)
 
+#define RRR_LINKED_LIST_FIRST(head)						\
+	((head)->ptr_first)
+
+#define RRR_LINKED_LIST_LAST(head)						\
+	((head)->ptr_last)
 
 #define RRR_LINKED_LIST_DESTROY(head, type, destroy_func) do {	\
 	type *node = (head)->ptr_first;								\
@@ -199,5 +206,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
+
+struct rrr_linked_list_node {
+	RRR_LINKED_LIST_NODE(struct rrr_linked_list_node);
+	void *data;
+	ssize_t size;
+};
+
+struct rrr_linked_list {
+	RRR_LINKED_LIST_HEAD(struct rrr_linked_list_node);
+};
+
+static inline void rrr_linked_list_destroy_node (struct rrr_linked_list_node *node) {
+	if (node->data != NULL) {
+		free(node->data);
+	}
+	free(node);
+}
+
+static inline void rrr_linked_list_destroy (struct rrr_linked_list *list) {
+	RRR_LINKED_LIST_DESTROY(list, struct rrr_linked_list_node, rrr_linked_list_destroy_node(node));
+}
 
 #endif /* RRR_LINKED_LIST_H */

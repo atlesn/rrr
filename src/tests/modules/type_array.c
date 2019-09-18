@@ -336,40 +336,14 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 		goto out;
 	}
 
-	struct sockaddr_un addr;
-	socklen_t addr_len = sizeof(addr);
-	memset(&addr, '\0', sizeof(addr));
-
-	if (strlen(socket_path) > sizeof(addr.sun_path) - 1) {
-		TEST_MSG("socket path from config was too long in test_type_array_write_to_socket\n");
+	if (rrr_socket_unix_create_and_connect (
+			&socket_fd,
+			"test_type_array_write_to_socket",
+			socket_path,
+			1
+	) != 0) {
+		TEST_MSG("Could not connect to socket %s in test_type_array_write_to_socket\n", socket_path);
 		ret = 1;
-		goto out;
-	}
-
-	addr.sun_family = AF_UNIX;
-	strcpy(addr.sun_path, socket_path);
-
-	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|SOCK_NONBLOCK, 0, "test_type_array_write_to_socket", NULL);
-	if (socket_fd < 0) {
-		TEST_MSG("Error while creating socket in test_type_array_write_to_socket: %s\n", strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	int connected = 0;
-	for (int i = 0; i < 10 && connected == 0; i++) {
-		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
-			TEST_MSG("Could not connect to socket %s try %i of %i: %s\n",
-					socket_path, i, 10, strerror(errno));
-			usleep(250000);
-		}
-		else {
-			connected = 1;
-			break;
-		}
-	}
-
-	if (connected != 1) {
 		goto out;
 	}
 

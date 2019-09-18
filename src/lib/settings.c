@@ -336,6 +336,7 @@ int __rrr_settings_traverse_split_commas (
 		if (ret != 0) {
 			break;
 		}
+		*comma_pos = ',';
 
 		current_pos = comma_pos + 1;
 	}
@@ -362,7 +363,11 @@ int rrr_settings_traverse_split_commas_silent_fail (
 	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 1);
 }
 
-int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, struct rrr_instance_settings *source, const char *name) {
+int rrr_settings_split_commas_to_array (
+		struct rrr_settings_list **target_ptr,
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	int ret = 0;
 
 	*target_ptr = NULL;

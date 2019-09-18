@@ -208,6 +208,13 @@ static int __rrr_socket_add_unlocked (
 	return ret;
 }
 
+static int __rrr_socket_add_unlocked_basic (
+		int fd,
+		const char *creator
+) {
+	return __rrr_socket_add_unlocked(fd, 0, 0, 0, creator, NULL);
+}
+
 int rrr_socket_accept (
 		int fd_in,
 		struct sockaddr *addr,
@@ -290,6 +297,23 @@ int rrr_socket_bind_and_listen (
 		return 1;
 	}
 	return 0;
+}
+
+int rrr_socket_open (
+		const char *filename,
+		int flags,
+		const char *creator
+) {
+	int fd = 0;
+	pthread_mutex_lock(&socket_lock);
+	fd = open(filename, flags);
+
+	if (fd != -1) {
+		__rrr_socket_add_unlocked_basic(fd, creator);
+	}
+
+	pthread_mutex_unlock(&socket_lock);
+	return fd;
 }
 
 int rrr_socket (
@@ -519,6 +543,60 @@ int rrr_socket_connect_nonblock (
 	return ret;
 }
 
+int rrr_socket_unix_create_and_connect (
+		int *socket_fd_final,
+		const char *creator,
+		const char *filename,
+		int nonblock
+) {
+	int ret = 0;
+	int socket_fd = 0;
+	struct sockaddr_un addr;
+	socklen_t addr_len = sizeof(addr);
+	memset(&addr, '\0', sizeof(addr));
+
+	*socket_fd_final = 0;
+
+	if (strlen(filename) > sizeof(addr.sun_path) - 1) {
+		VL_MSG_ERR("Socket path from config was too long in rrr_socket_unix_create_and_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	addr.sun_family = AF_UNIX;
+	strcpy(addr.sun_path, filename);
+
+	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
+	if (socket_fd < 0) {
+		VL_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	int connected = 0;
+	for (int i = 0; i < 10 && connected == 0; i++) {
+		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
+			VL_MSG_ERR("Could not connect to socket %s try %i of %i: %s\n",
+					filename, i, 10, strerror(errno));
+			usleep(25000);
+		}
+		else {
+			connected = 1;
+			break;
+		}
+	}
+
+	if (connected != 1) {
+		ret = 1;
+		rrr_socket_close(socket_fd);
+		goto out;
+	}
+
+	*socket_fd_final = socket_fd;
+
+	out:
+	return ret;
+}
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client

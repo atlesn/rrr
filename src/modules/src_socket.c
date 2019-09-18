@@ -135,7 +135,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
-		if ((ret = rrr_array_parse_definition (&data->definitions, config, "socket_input_types")) != 0) {
+		if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "socket_input_types")) != 0) {
 			VL_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n",
 					config->name);
 			return 1;
