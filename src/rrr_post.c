@@ -36,13 +36,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/array.h"
 #include "lib/linked_list.h"
 #include "lib/rrr_socket.h"
+#include "lib/vl_time.h"
+#include "lib/messages.h"
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"socket",				"{-s|--socket[=]RRR SOCKET}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT |
+		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -97,7 +100,7 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 						VL_MSG_ERR("Error in reading '%s', not an unsigned integer\n", reading);
 						return 1;
 					}
-					struct rrr_post_reading *reading_new = malloc(sizeof(*reading));
+					struct rrr_post_reading *reading_new = malloc(sizeof(*reading_new));
 					if (reading_new == NULL) {
 						VL_MSG_ERR("Could not allocate memory in __rrr_post_add_readings\n");
 						return 1;
@@ -146,6 +149,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		VL_MSG_ERR("Error: Only one filename argument may be specified\n");
 		ret = 1;
 		goto out;
+	}
+	if (filename != NULL) {
+		data->filename = strdup(filename);
+		if (data->filename == NULL) {
+			VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	const char *topic = cmd_get_value(cmd, "topic", 0);
@@ -260,9 +271,50 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 	}
 }
 
+static int __rrr_post_send_message(struct rrr_post_data *data, struct vl_message *message) {
+	int ret = 0;
+
+	ssize_t msg_size = MSG_TOTAL_SIZE(message);
+
+	message_prepare_for_network((struct vl_message *) message);
+	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
+
+	if ((ret = rrr_socket_sendto(data->output_fd, message, msg_size, NULL, 0)) != 0) {
+		VL_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
+	struct vl_message *message = message_new_reading(reading->value, time_get_64());
+	if (message == NULL) {
+		VL_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
+		ret = 1;
+		goto out;
+	}
+
+	ret = __rrr_post_send_message(data, message);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
+static int __rrr_post_send_readings(struct rrr_post_data *data) {
+	int ret = 0;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(&data->readings, struct rrr_post_reading);
+		if ((ret = __rrr_post_send_reading(data, node)) != 0) {
+			goto out;
+		}
+	RRR_LINKED_LIST_ITERATE_END(&data->readings);
+
+	out:
 	return ret;
 }
 
@@ -284,11 +336,11 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_post_parse_config(&data, &cmd)) != 0) {
+	if (rrr_print_help_and_version(&cmd) != 0) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd) != 0) {
+	if ((ret = __rrr_post_parse_config(&data, &cmd)) != 0) {
 		goto out;
 	}
 
@@ -300,11 +352,9 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&data.readings, struct rrr_post_reading);
-		if ((ret = __rrr_post_send_reading(&data, node)) != 0) {
-			goto out;
-		}
-	RRR_LINKED_LIST_ITERATE_END(&data->readings);
+	if ((ret = __rrr_post_send_readings(&data)) != 0) {
+		goto out;
+	}
 
 	out:
 	rrr_set_debuglevel_on_exit();

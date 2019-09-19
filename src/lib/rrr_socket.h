@@ -119,6 +119,13 @@ int rrr_socket_unix_create_and_connect (
 		const char *filename,
 		int nonblock
 );
+int rrr_socket_sendto (
+		int fd,
+		void *data,
+		ssize_t size,
+		struct sockaddr *addr,
+		socklen_t addr_len
+);
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 );

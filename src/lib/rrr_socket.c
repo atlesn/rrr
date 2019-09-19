@@ -598,6 +598,72 @@ int rrr_socket_unix_create_and_connect (
 	return ret;
 }
 
+int rrr_socket_sendto (
+		int fd,
+		void *data,
+		ssize_t size,
+		struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	struct rrr_socket_options options;
+
+	int ret = 0;
+
+	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
+		VL_MSG_ERR("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
+		ret = 1;
+		goto out;
+	}
+
+	int flags = 0;
+	if ((options.type & SOCK_SEQPACKET) != 0) {
+		flags |= MSG_EOR;
+	}
+	if ((options.type & O_NONBLOCK) != 0) {
+		flags |= MSG_DONTWAIT;
+	}
+
+	int max_retries = 10000;
+
+	retry:
+	ret = sendto(fd, data, size, flags, addr, addr_len);
+	if (ret != size) {
+		if (ret == -1) {
+			if (--max_retries == 0) {
+				VL_MSG_ERR("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+				ret = 1;
+				goto out;
+			}
+			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				usleep(10);
+				goto retry;
+			}
+			else if (errno == EINTR) {
+				usleep(10);
+				goto retry;
+			}
+			else {
+				VL_MSG_ERR("Error from send function in rrr_socket_sendto fd %i: %s\n",
+						fd, strerror(errno));
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			VL_MSG_ERR("Error while sending message in rrr_socket_sendto, sent %i of %li bytes\n",
+					ret, size);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		ret = 0;
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client
 ) {

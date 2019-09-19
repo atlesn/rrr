@@ -250,6 +250,7 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 		if (i == sub_index) {
 			return node->value;
 		}
+		i++;
 	RRR_LINKED_LIST_ITERATE_END(pair);
 
 	return NULL;
@@ -323,6 +324,8 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	if (value != NULL) {
 		__cmd_arg_value_destroy(value);
 	}
+
+	return 0;
 }
 
 void cmd_get_argv_copy (struct cmd_argv_copy **target, struct cmd_data *data) {

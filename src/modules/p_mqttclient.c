@@ -373,9 +373,10 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		goto out_free;
 	}
 
-	RRR_FREE_IF_NOT_NULL(publish->topic);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->payload);
+	publish->payload = NULL;
 
+	RRR_FREE_IF_NOT_NULL(publish->topic);
 	publish->topic = strdup(private_data->publish_topic);
 	if (publish->topic == NULL) {
 		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
@@ -410,10 +411,10 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		payload_size = network_size;
 		data = NULL;
 	}
-	else {
+	else if (MSG_DATA_LENGTH(reading) > 0) {
 		payload = malloc(MSG_DATA_LENGTH(reading));
 		if (payload == NULL) {
-			VL_MSG_ERR("could not allocate memory for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
+			VL_MSG_ERR("could not allocate memory for PUBLISH payload A in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -421,14 +422,24 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		payload_size = MSG_DATA_LENGTH(reading);
 		memcpy(payload, MSG_DATA_PTR(reading), MSG_DATA_LENGTH(reading));
 	}
-
-	if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
-		VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+	else {
+		if ((ret = message_to_string(&payload, reading)) != 0) {
+			VL_MSG_ERR("could not convert message to string for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out_free;
+			goto out_free;
+		}
+		payload_size = strlen(payload) + 1;
 	}
-	payload = NULL;
+
+	if (payload != NULL) {
+		if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
+			VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+		payload = NULL;
+	}
 
 	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
 		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",

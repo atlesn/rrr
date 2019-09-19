@@ -202,8 +202,20 @@ int rrr_array_parse_single_definition (
 	return ret;
 }
 
+int rrr_array_parse_single_definition_callback (
+		const char *value,
+		void *arg
+) {
+	struct rrr_array_parse_single_definition_callback_data *data = arg;
+	if (rrr_array_parse_single_definition(data->target, value, value + strlen(value)) != 0) {
+		data->parse_ret = 1;
+		return 1;
+	}
+	return 0;
+}
+
 int rrr_array_validate_definition (
-		struct rrr_array *target
+		const struct rrr_array *target
 ) {
 	int ret = 0;
 
@@ -487,7 +499,7 @@ int rrr_array_new_message (
 	RRR_LINKED_LIST_ITERATE_END(definition);
 
 	if (written_bytes_total != total_data_length) {
-		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%" PRIu32 "\n",
+		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
 				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
 

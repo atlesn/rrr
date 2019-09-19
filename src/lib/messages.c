@@ -154,6 +154,78 @@ int message_new_with_data (
 	return 0;
 }
 
+int message_to_string (
+	char **final_target,
+	struct vl_message *message
+) {
+	int ret = 0;
+
+	char *target = malloc(128);
+	if (target == NULL) {
+		VL_MSG_ERR("Could not allocate memory in message_to_string\n");
+		ret = 1;
+		goto out;
+	}
+
+	const char *type;
+	switch (message->type) {
+	case MSG_TYPE_MSG:
+		type = MSG_TYPE_MSG_STRING;
+		break;
+	case MSG_TYPE_ACK:
+		type = MSG_TYPE_ACK_STRING;
+		break;
+	case MSG_TYPE_TAG:
+		type = MSG_TYPE_TAG_STRING;
+		break;
+	default:
+		VL_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
+		ret = 1;
+		goto out;
+	}
+
+	const char *class;
+	switch (message->class) {
+	case MSG_CLASS_POINT:
+		class = MSG_CLASS_POINT_STRING;
+		break;
+	case MSG_CLASS_AVG:
+		class = MSG_CLASS_AVG_STRING;
+		break;
+	case MSG_CLASS_MAX:
+		class = MSG_CLASS_MAX_STRING;
+		break;
+	case MSG_CLASS_MIN:
+		class = MSG_CLASS_MIN_STRING;
+		break;
+	case MSG_CLASS_INFO:
+		class = MSG_CLASS_INFO_STRING;
+		break;
+	case MSG_CLASS_ARRAY:
+		class = MSG_CLASS_ARRAY_STRING;
+		break;
+	default:
+		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
+		ret = 1;
+		goto out;
+	}
+
+	sprintf(target, "%s:%s:%" PRIu64 ":%" PRIu64 ":%" PRIu64,
+			type,
+			class,
+			message->timestamp_from,
+			message->timestamp_to,
+			message->data_numeric
+	);
+
+	*final_target = target;
+	target = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(target);
+	return ret;
+}
+
 void flip_endianess_64(vl_u64 *value) {
 	vl_u64 result = 0;
 
