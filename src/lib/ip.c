@@ -210,7 +210,7 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 	return ret;
 }
 
-struct receive_packets_callback_data {
+struct ip_receive_callback_data {
 	int (*callback)(struct ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
 	struct ip_stats *stats;
@@ -220,7 +220,7 @@ static int __ip_receive_callback (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 ) {
-	struct receive_packets_callback_data *callback_data = arg;
+	struct ip_receive_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -278,40 +278,17 @@ int ip_receive_array (
 		void *arg,
 		struct ip_stats *stats
 ) {
-	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
-			definition
+	struct ip_receive_callback_data callback_data = {
+		callback, arg, stats
 	};
 
-	struct receive_packets_callback_data callback_data_ip = {
-			callback, arg, stats
-	};
-
-	int ret = rrr_socket_read_message (
+	return rrr_socket_common_receive_array (
 			read_session_collection,
 			fd,
-			sizeof(struct rrr_socket_msg),
-			4096,
-			rrr_socket_common_get_session_target_length_from_array,
-			&callback_data_array,
+			definition,
 			__ip_receive_callback,
-			&callback_data_ip
+			&callback_data
 	);
-
-	if (ret != RRR_SOCKET_OK) {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			return 0;
-		}
-		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Warning: Soft error while reading data in ip_receive_raw\n");
-			return 0;
-		}
-		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			VL_MSG_ERR("Hard error while reading data in ip_receive_raw\n");
-			return 1;
-		}
-	}
-
-	return 0;
 }
 
 int ip_receive_socket_msg (
@@ -321,40 +298,18 @@ int ip_receive_socket_msg (
 		void *arg,
 		struct ip_stats *stats
 ) {
-	int ret = 0;
 
-	struct receive_packets_callback_data callback_data = {
-			callback,
-			arg,
-			stats
+	struct ip_receive_callback_data callback_data = {
+		callback, arg, stats
 	};
 
-	ret = rrr_socket_read_message (
+	return rrr_socket_common_receive_socket_msg (
 			read_session_collection,
 			fd,
-			sizeof(struct rrr_socket_msg),
-			4096,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
-			NULL,
 			__ip_receive_callback,
 			&callback_data
 	);
 
-	if (ret != RRR_SOCKET_OK) {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			return 0;
-		}
-		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Warning: Soft error while reading data in ip_receive_packets\n");
-			return 0;
-		}
-		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			VL_MSG_ERR("Hard error while reading data in ip_receive_packets\n");
-			return 1;
-		}
-	}
-
-	return 0;
 }
 
 struct ip_receive_messages_callback_data {

@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct vl_message;
 struct rrr_array;
 struct rrr_socket_read_session_collection;
+struct rrr_socket_read_session;
 
 struct ip_stats {
 	pthread_mutex_t lock;
@@ -125,17 +126,17 @@ int ip_stats_update (
 int ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
-int ip_receive_array (
+int ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
-		const struct rrr_array *definition,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_receive_socket_msg (
+int ip_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		const struct rrr_array *definition,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats

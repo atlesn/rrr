@@ -47,5 +47,17 @@ int rrr_socket_common_get_session_target_length_from_array (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 );
-
+int rrr_socket_common_receive_array (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		const struct rrr_array *definition,
+		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		void *arg
+);
+int rrr_socket_common_receive_socket_msg (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		void *arg
+);
 #endif /* RRR_SOCKET_COMMON_H */

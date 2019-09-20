@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/array.h"
 #include "lib/linked_list.h"
 #include "lib/rrr_socket.h"
+#include "lib/rrr_socket_read.h"
+#include "lib/rrr_socket_common.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
 
@@ -318,6 +320,59 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 	return ret;
 }
 
+static int __rrr_post_read_message_callback (struct vl_message *message, void *arg) {
+	struct rrr_post_data *data = arg;
+	int ret = 0;
+
+	ret = __rrr_post_send_message(data, message);
+
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
+static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session, void *arg) {
+	struct rrr_post_data *data = arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_array_new_message_from_buffer (
+			read_session->rx_buf_ptr,
+			read_session->rx_buf_wpos,
+			&data->definition,
+			__rrr_post_read_message_callback,
+			data
+	)) != 0) {
+		VL_MSG_ERR("Could not create or send message in __rrr_post_read_callback\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_post_read(struct rrr_post_data *data) {
+	int ret = 0;
+
+	struct rrr_socket_read_session_collection read_sessions;
+	rrr_socket_read_session_collection_init(&read_sessions);
+
+	if (data->filename == NULL) {
+		goto out;
+	}
+
+	rrr_socket_common_receive_array (
+			&read_sessions,
+			data->input_fd,
+			&data->definition,
+			__rrr_post_read_callback,
+			data
+	);
+
+	out:
+	rrr_socket_read_session_collection_destroy(&read_sessions);
+	return ret;
+}
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
@@ -356,6 +411,9 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
+	if ((ret = __rrr_post_read(&data)) != 0) {
+		goto out;
+	}
 	out:
 	rrr_set_debuglevel_on_exit();
 	__rrr_post_close(&data);

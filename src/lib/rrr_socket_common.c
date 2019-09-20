@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "rrr_socket_common.h"
+#include "rrr_socket_read.h"
 #include "messages.h"
 #include "array.h"
 
@@ -61,7 +62,6 @@ int rrr_socket_common_receive_message_callback (
 	out_free:
 	return ret;
 }
-
 
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_socket_read_session *read_session,
@@ -115,4 +115,101 @@ int rrr_socket_common_get_session_target_length_from_array (
 	read_session->target_size = import_length;
 
 	return RRR_SOCKET_OK;
+}
+
+struct receive_callback_data {
+	int (*callback)(struct rrr_socket_read_session *read_session, void *arg);
+	void *arg;
+};
+
+static int __rrr_socket_common_receive_callback (
+		struct rrr_socket_read_session *read_session,
+		void *arg
+) {
+	struct receive_callback_data *data = arg;
+
+	return data->callback(read_session, data->arg);
+}
+
+int rrr_socket_common_receive_array (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		const struct rrr_array *definition,
+		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		void *arg
+) {
+	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
+			definition
+	};
+
+	struct receive_callback_data callback_data = {
+			callback, arg
+	};
+
+	int ret = rrr_socket_read_message (
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			rrr_socket_common_get_session_target_length_from_array,
+			&callback_data_array,
+			__rrr_socket_common_receive_callback,
+			&callback_data
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_array\n");
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			VL_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_array\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int rrr_socket_common_receive_socket_msg (
+		struct rrr_socket_read_session_collection *read_session_collection,
+		int fd,
+		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		void *arg
+) {
+	int ret = 0;
+
+	struct receive_callback_data callback_data = {
+			callback, arg
+	};
+
+	ret = rrr_socket_read_message (
+			read_session_collection,
+			fd,
+			sizeof(struct rrr_socket_msg),
+			4096,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_socket_common_receive_callback,
+			&callback_data
+	);
+
+	if (ret != RRR_SOCKET_OK) {
+		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_socket_msg\n");
+			return 0;
+		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			VL_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_socket_msg\n");
+			return 1;
+		}
+	}
+
+	return 0;
 }
