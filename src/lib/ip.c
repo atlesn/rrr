@@ -285,6 +285,7 @@ int ip_receive_array (
 	return rrr_socket_common_receive_array (
 			read_session_collection,
 			fd,
+			RRR_SOCKET_READ_METHOD_RECV,
 			definition,
 			__ip_receive_callback,
 			&callback_data
@@ -306,6 +307,7 @@ int ip_receive_socket_msg (
 	return rrr_socket_common_receive_socket_msg (
 			read_session_collection,
 			fd,
+			RRR_SOCKET_READ_METHOD_RECV,
 			__ip_receive_callback,
 			&callback_data
 	);

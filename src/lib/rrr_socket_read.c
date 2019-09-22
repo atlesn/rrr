@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "../global.h"
 #include "linked_list.h"
@@ -73,6 +74,18 @@ void rrr_socket_read_session_collection_destroy (
 	RRR_LINKED_LIST_DESTROY(collection,struct rrr_socket_read_session,__rrr_socket_read_session_destroy(node));
 }
 
+static struct rrr_socket_read_session *__rrr_socket_read_session_collection_get_session_with_overshoot (
+		struct rrr_socket_read_session_collection *collection
+) {
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
+		if (node->rx_overshoot != NULL) {
+			return node;
+		}
+	RRR_LINKED_LIST_ITERATE_END(collection);
+	return NULL;
+}
+
 static struct rrr_socket_read_session *__rrr_socket_read_session_collection_maintain_and_find_or_create (
 		struct rrr_socket_read_session_collection *collection,
 		struct sockaddr *src_addr,
@@ -81,7 +94,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 	struct rrr_socket_read_session *res = NULL;
 
 	uint64_t time_now = time_get_64();
-	uint64_t time_limit = time_now - RRR_SOCKET_READ_TIMEOUT * 1000 * 1000;
+	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->last_read_time < time_limit) {
@@ -114,6 +127,7 @@ int rrr_socket_read_message (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		int read_flags,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
@@ -128,6 +142,16 @@ int rrr_socket_read_message (
 	ssize_t bytes = 0;
 	ssize_t items = 0;
 	int bytes_int = 0;
+	int timeout = ((read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0 ? 10 : 0);
+
+	struct sockaddr src_addr;
+	socklen_t src_addr_len = sizeof(src_addr);
+	memset(&src_addr, '\0', src_addr_len);
+
+	read_session = __rrr_socket_read_session_collection_get_session_with_overshoot(read_session_collection);
+	if (read_session != NULL) {
+		goto process_overshoot;
+	}
 
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
@@ -149,6 +173,7 @@ int rrr_socket_read_message (
 		goto out;
 	}
 	else if (items == 0) {
+		usleep(10 * 1000);
 		ret = RRR_SOCKET_READ_INCOMPLETE;
 		goto out;
 	}
@@ -162,23 +187,37 @@ int rrr_socket_read_message (
 	bytes = bytes_int;
 
 	if (bytes == 0) {
+		if ((read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
+			usleep(10 * 1000);
+		}
+		if ((read_flags & RRR_SOCKET_READ_CHECK_EOF) != 0) {
+			ret = RRR_SOCKET_READ_EOF;
+		}
 		goto out;
 	}
 
-	struct sockaddr src_addr;
-	socklen_t src_addr_len = sizeof(src_addr);
-	memset(&src_addr, '\0', src_addr_len);
-
 	/* Read */
 	read_retry:
-	bytes = recvfrom (
-			fd,
-			buf,
-			read_step_max_size,
-			0,
-			&src_addr,
-			&src_addr_len
-	);
+	if ((read_flags & RRR_SOCKET_READ_METHOD_RECV) != 0) {
+		bytes = recvfrom (
+				fd,
+				buf,
+				read_step_max_size,
+				0,
+				&src_addr,
+				&src_addr_len
+		);
+	}
+	else if ((read_flags & RRR_SOCKET_READ_METHOD_READ) != 0) {
+		bytes = read (
+				fd,
+				buf,
+				read_step_max_size
+		);
+	}
+	else {
+		VL_BUG("Unknown read method %i in rrr_socket_read_message\n", read_flags);
+	}
 
 	if (bytes == -1) {
 		if (errno == EINTR) {
@@ -193,8 +232,23 @@ int rrr_socket_read_message (
 	}
 
 	if (bytes == 0) {
-		VL_MSG_ERR("Bytes was 0 after read in rrr_socket_read_message, despite polling first\n");
+		VL_MSG_ERR("Warning: Bytes was 0 after read in rrr_socket_read_message, despite polling first.\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
+
+		off_t offset = lseek (fd, 0, SEEK_SET);
+		if (offset == -1) {
+			if (errno == ESPIPE) {
+				// Not a file
+			}
+			else {
+				VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", strerror(errno));
+			}
+		}
+		else {
+			VL_DEBUG_MSG_1("Possible input file truncation, seek to the beginning\n");
+			ret = RRR_SOCKET_READ_INCOMPLETE;
+		}
+
 		goto out;
 	}
 
@@ -210,6 +264,7 @@ int rrr_socket_read_message (
 	}
 
 	/* Check for new read session */
+	process_overshoot:
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
 			read_session->rx_buf_ptr = read_session->rx_overshoot;
@@ -240,21 +295,23 @@ int rrr_socket_read_message (
 	}
 
 	/* Check for expansion of buffer */
-	if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
-		ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
-		char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
-		if (new_buf == NULL) {
-			VL_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
+	if (bytes > 0) {
+		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
+			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
+			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
+			if (new_buf == NULL) {
+				VL_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
+				ret = RRR_SOCKET_HARD_ERROR;
+				goto out;
+			}
+			read_session->rx_buf_ptr = new_buf;
+			read_session->rx_buf_size = new_size;
 		}
-		read_session->rx_buf_ptr = new_buf;
-		read_session->rx_buf_size = new_size;
-	}
 
-	memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
-	read_session->rx_buf_wpos += bytes;
-	read_session->last_read_time = time_get_64();
+		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
+		read_session->rx_buf_wpos += bytes;
+		read_session->last_read_time = time_get_64();
+	}
 
 	if (get_target_size == NULL) {
 		read_session->target_size = read_step_initial;

@@ -696,6 +696,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
+			RRR_SOCKET_READ_METHOD_RECV,
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,

@@ -72,6 +72,7 @@ struct rrr_post_data {
 	char *topic;
 	struct rrr_post_reading_collection readings;
 	uint64_t max_elements;
+	uint64_t elements_count;
 	struct rrr_array definition;
 
 	int input_fd;
@@ -326,6 +327,8 @@ static int __rrr_post_read_message_callback (struct vl_message *message, void *a
 
 	ret = __rrr_post_send_message(data, message);
 
+	data->elements_count++;
+
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -360,13 +363,21 @@ static int __rrr_post_read(struct rrr_post_data *data) {
 		goto out;
 	}
 
-	rrr_socket_common_receive_array (
-			&read_sessions,
-			data->input_fd,
-			&data->definition,
-			__rrr_post_read_callback,
-			data
-	);
+	int read_flags = RRR_SOCKET_READ_METHOD_READ | RRR_SOCKET_READ_USE_TIMEOUT;
+	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
+		read_flags |= RRR_SOCKET_READ_CHECK_EOF;
+	}
+
+	while (ret == 0 && (data->max_elements == 0 || data->elements_count < data->max_elements)) {
+		ret = rrr_socket_common_receive_array (
+				&read_sessions,
+				data->input_fd,
+				read_flags,
+				&data->definition,
+				__rrr_post_read_callback,
+				data
+		);
+	}
 
 	out:
 	rrr_socket_read_session_collection_destroy(&read_sessions);

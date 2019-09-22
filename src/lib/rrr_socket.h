@@ -35,8 +35,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_HARD_ERROR		1
 #define RRR_SOCKET_SOFT_ERROR		2
 #define RRR_SOCKET_READ_INCOMPLETE	3
+#define RRR_SOCKET_READ_EOF			4
 
-#define RRR_SOCKET_CLIENT_TIMEOUT 30
+#define RRR_SOCKET_CLIENT_TIMEOUT	30
+
+#define RRR_SOCKET_READ_METHOD_READ	(1<<0)
+#define RRR_SOCKET_READ_METHOD_RECV	(1<<1)
+#define RRR_SOCKET_READ_CHECK_EOF	(1<<2)
+#define RRR_SOCKET_READ_USE_TIMEOUT	(1<<3)
 
 struct rrr_socket_options {
 	int fd;
@@ -141,6 +147,7 @@ int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		int read_flags,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),

@@ -134,6 +134,7 @@ static int __rrr_socket_common_receive_callback (
 int rrr_socket_common_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int read_flags,
 		const struct rrr_array *definition,
 		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *arg
@@ -151,6 +152,7 @@ int rrr_socket_common_receive_array (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
+			read_flags,
 			rrr_socket_common_get_session_target_length_from_array,
 			&callback_data_array,
 			__rrr_socket_common_receive_callback,
@@ -160,6 +162,9 @@ int rrr_socket_common_receive_array (
 	if (ret != RRR_SOCKET_OK) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 			return 0;
+		}
+		else if (ret == RRR_SOCKET_READ_EOF) {
+			return ret;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
 			VL_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_array\n");
@@ -177,6 +182,7 @@ int rrr_socket_common_receive_array (
 int rrr_socket_common_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int read_flags,
 		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *arg
 ) {
@@ -191,6 +197,7 @@ int rrr_socket_common_receive_socket_msg (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
+			read_flags,
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_common_receive_callback,

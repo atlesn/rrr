@@ -28,8 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 
-#define RRR_SOCKET_READ_TIMEOUT 30
-
 struct rrr_socket_read_session {
 	/* A packet read action might be temporarily paused if the payload
 	 * is large (exceeds step_size_limit is < 0). It will resume in the next process tick.
@@ -70,6 +68,7 @@ int rrr_socket_read_message (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		int read_flags,
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
