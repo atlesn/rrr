@@ -1,3 +1,5 @@
+SUBDIRS = cmime
+
 if VL_WITH_OPENSSL
 encryption = crypt.c module_crypt.c
 endif
@@ -36,5 +38,5 @@ librrrperl5_la_CFLAGS = ${PERL5_CFLAGS}
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 endif
 
-librrr_la_LIBADD   = ${libadd_python3} ${libadd_perl5}
+librrr_la_LIBADD   = ${libadd_python3} ${libadd_perl5} cmime/librrrcmime.la
 noinst_LTLIBRARIES = ${noinst_python3} ${noinst_perl5}

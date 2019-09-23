@@ -410,25 +410,31 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
+	// Connect to RRR socket
 	if ((ret = __rrr_post_connect(&data)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_post_open(&data)) != 0) {
-		goto out;
-	}
-
+	// Send readings defined in command arguments
 	if ((ret = __rrr_post_send_readings(&data)) != 0) {
 		goto out;
 	}
 
+	// Open input file if defined
+	if ((ret = __rrr_post_open(&data)) != 0) {
+		goto out;
+	}
+
+	// Send readings from input file or stdin
 	if ((ret = __rrr_post_read(&data)) != 0) {
 		goto out;
 	}
+
 	out:
 	rrr_set_debuglevel_on_exit();
 	__rrr_post_close(&data);
 	__rrr_post_destroy_data(&data);
 	cmd_destroy(&cmd);
+	rrr_socket_close_all();
 	return ret;
 }

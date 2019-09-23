@@ -18,6 +18,8 @@ LT_INIT
 AC_PROG_CC
 AC_PROG_CC_STDC
 AC_PROG_INSTALL
+AC_PROG_YACC
+AM_PROG_LEX
 #AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
@@ -281,7 +283,9 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile src/tests/Makefile src/tests/modules/Makefile
-		src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile
+				src/lib/Makefile src/lib/cmime/Makefile
+				src/tests/Makefile src/tests/modules/Makefile
+				src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
 )
 AC_OUTPUT
