@@ -18,8 +18,8 @@ LT_INIT
 AC_PROG_CC
 AC_PROG_CC_STDC
 AC_PROG_INSTALL
-AC_PROG_YACC
-AM_PROG_LEX
+#AC_PROG_YACC
+#AM_PROG_LEX
 #AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
@@ -29,6 +29,7 @@ AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp
 AC_SUBST(AM_CFLAGS)
 
 AC_CHECK_HEADERS([pthread.h])
+AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
@@ -37,7 +38,16 @@ AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB binding
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
+AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
+
+AC_MSG_CHECKING([for RRR GNU Debug])
+AS_IF([test "x$enable_gnu_debug" = xno], [
+	AC_MSG_RESULT([RRR GNU Debug disabled])
+], [
+	AC_DEFINE([RRR_WITH_GNU_DEBUG], [1], [Enable RRR GNU Debug (compat functions always enabled)])
+	AC_MSG_RESULT([yes])
+])
 
 AM_CONDITIONAL([VL_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
@@ -283,8 +293,7 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
-AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile
-				src/lib/Makefile src/lib/cmime/Makefile
+AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
 				src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
 )

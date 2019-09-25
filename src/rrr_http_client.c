@@ -35,10 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/rrr_socket.h"
 #include "lib/rrr_socket_read.h"
+#include "lib/http_session.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
 
-#define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION;
+#define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
@@ -57,6 +58,7 @@ struct rrr_http_client_data {
 	char *query;
 	uint16_t http_port;
 	int fd;
+	struct rrr_http_session *session;
 };
 
 static void __rrr_http_client_data_init (struct rrr_http_client_data *data) {
@@ -67,6 +69,9 @@ static void __rrr_http_client_destroy_data (struct rrr_http_client_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->query);
+	if (data->session != NULL) {
+		rrr_http_session_destroy(data->session);
+	}
 }
 
 static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, struct cmd_data *cmd) {
@@ -163,6 +168,8 @@ static int __rrr_http_client_connect (struct rrr_http_client_data *data) {
 		goto out;
 	}
 
+	data->fd = accept_data->ip_data.fd;
+
 	out:
 	RRR_FREE_IF_NOT_NULL(accept_data);
 	return ret;
@@ -174,8 +181,37 @@ static void __rrr_http_client_close (struct rrr_http_client_data *data) {
 	}
 }
 
-int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
+static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
+	int ret = 0;
 
+	if (data->session != NULL) {
+		rrr_http_session_destroy(data->session);
+		data->session = NULL;
+	}
+
+	if ((ret = rrr_http_session_new (
+			&data->session,
+			data->fd,
+			RRR_HTTP_METHOD_GET,
+			data->server,
+			"/?e=f",
+			RRR_HTTP_CLIENT_USER_AGENT
+	)) != 0) {
+		VL_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	rrr_http_session_add_query_field(data->session, "a", "1");
+	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
+	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
+
+	if ((ret = rrr_http_session_send_request(data->session)) != 0) {
+		VL_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int main (int argc, const char *argv[]) {

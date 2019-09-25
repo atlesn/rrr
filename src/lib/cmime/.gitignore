@@ -1,5 +1,0 @@
-cmime_scanner.c
-cmime_parser.c
-cmime_parser.h
-cmime_parser.tab.c
-cmime_parser.tab.h
