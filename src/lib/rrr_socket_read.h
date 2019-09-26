@@ -41,6 +41,9 @@ struct rrr_socket_read_session {
 	socklen_t src_addr_len;
 	uint64_t last_read_time;
 
+	/* Read untill target size is reached (default) or set to read until
+	 * connection is closed. */
+	int read_complete_method;
 	ssize_t target_size;
 
 	char *rx_buf_ptr;
@@ -60,7 +63,7 @@ struct rrr_socket_read_session_collection {
 void rrr_socket_read_session_collection_init (
 		struct rrr_socket_read_session_collection *collection
 );
-void rrr_socket_read_session_collection_destroy (
+void rrr_socket_read_session_collection_clear (
 		struct rrr_socket_read_session_collection *collection
 );
 int rrr_socket_read_message (

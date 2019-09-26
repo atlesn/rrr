@@ -88,7 +88,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->ip_server);
 	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->local_output_buffer);
-	rrr_socket_read_session_collection_destroy(&data->read_sessions);
+	rrr_socket_read_session_collection_clear(&data->read_sessions);
 }
 
 int data_init(struct ipclient_data *data) {

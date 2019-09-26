@@ -670,7 +670,7 @@ static int __rrr_socket_client_destroy (
 	if (client->connected_fd > 0) {
 		rrr_socket_close(client->connected_fd);
 	}
-	rrr_socket_read_session_collection_destroy(&client->read_sessions);
+	rrr_socket_read_session_collection_clear(&client->read_sessions);
 	free(client);
 	return 0;
 }

@@ -222,7 +222,7 @@ void data_cleanup(void *arg) {
 #ifdef VL_WITH_OPENSSL
 	RRR_FREE_IF_NOT_NULL(data->crypt_file);
 #endif
-	rrr_socket_read_session_collection_destroy(&data->read_sessions);
+	rrr_socket_read_session_collection_clear(&data->read_sessions);
 }
 
 int data_init(struct ipserver_data *data) {

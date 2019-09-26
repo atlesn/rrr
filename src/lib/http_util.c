@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "../global.h"
 #include "http_util.h"
@@ -299,4 +300,148 @@ char *rrr_http_util_quote_header_value (
 	}
 
 	return result;
+}
+
+const char *rrr_http_util_find_crlf (
+		const char *start,
+		const char *end
+) {
+	// Remember end minus 1
+	for (const char *pos = start; pos < end - 1; pos++) {
+		if (*pos == '\r' && *(pos + 1) == '\n') {
+			return pos;
+		}
+	}
+	return NULL;
+}
+
+int rrr_http_util_strtoull (
+		unsigned long long int *result,
+		ssize_t *result_len,
+		const char *start,
+		const char *end
+) {
+	char buf[64];
+	const char *numbers_end = NULL;
+
+	*result = 0;
+	*result_len = 0;
+
+	const char *pos = NULL;
+	for (pos = start; pos < end; pos++) {
+		if (*pos < '0' || *pos > '9') {
+			numbers_end = pos;
+			break;
+		}
+	}
+
+	if (pos == end) {
+		numbers_end = end;
+	}
+
+	if (numbers_end == start) {
+		return 1;
+	}
+
+	if (numbers_end - start > 63) {
+		VL_MSG_ERR("Number was too long in __rrr_http_part_strtoull\n");
+		return 1;
+	}
+
+	memcpy(buf, start, numbers_end - start);
+	buf[numbers_end - start] = '\0';
+
+	char *endptr;
+	unsigned long long int number = strtoull(buf, &endptr, 10);
+
+	if (endptr == NULL) {
+		VL_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
+	}
+
+	*result = number;
+	*result_len = endptr - buf;
+
+	return 0;
+}
+
+int rrr_http_util_strcasestr (
+		const char **result_start,
+		ssize_t *result_len,
+		const char *start,
+		const char *end,
+		const char *needle
+) {
+	ssize_t needle_len = strlen(needle);
+	const char *needle_end = needle + needle_len;
+
+	*result_start = NULL;
+	*result_len = 0;
+
+	const char *result = NULL;
+	ssize_t len = 0;
+
+	if (end - start < needle_len) {
+		return 1;
+	}
+
+	const char *needle_pos = needle;
+	for (const char *pos = start; pos < end; pos++) {
+		char a = tolower(*pos);
+		char b = tolower(*needle_pos);
+
+		if (a == b) {
+			needle_pos++;
+			len++;
+			if (result == NULL) {
+				result = pos;
+			}
+			if (needle_pos == needle_end) {
+				break;
+			}
+		}
+		else {
+			needle_pos = needle;
+			result = NULL;
+			len = 0;
+		}
+	}
+
+	*result_start = result;
+	*result_len = len;
+
+	return (result == NULL);
+}
+
+const char *rrr_http_util_strchr (
+		const char *start,
+		const char *end,
+		char chr
+) {
+	for (const char *pos = start; pos < end; pos++) {
+		if (*pos == chr) {
+			return pos;
+		}
+	}
+
+	return NULL;
+}
+
+ssize_t rrr_http_util_count_whsp (const char *start, const char *end) {
+	ssize_t ret = 0;
+
+	for (const char *pos = start; pos < end; pos++) {
+		if (*pos != ' ' && *pos != '\t') {
+			break;
+		}
+		ret++;
+	}
+
+	return ret;
+}
+
+void rrr_http_util_strtolower (char *str) {
+	ssize_t len = strlen(str);
+	for (int i = 0; i < len; i++) {
+		str[i] = tolower(str[i]);
+	}
 }

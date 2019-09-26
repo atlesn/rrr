@@ -380,7 +380,7 @@ static int __rrr_post_read(struct rrr_post_data *data) {
 	}
 
 	out:
-	rrr_socket_read_session_collection_destroy(&read_sessions);
+	rrr_socket_read_session_collection_clear(&read_sessions);
 	return ret;
 }
 

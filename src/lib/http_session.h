@@ -23,11 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_H
 
 #include "http_fields.h"
+#include "rrr_socket_read.h"
 
 enum rrr_http_method {
 	RRR_HTTP_METHOD_GET,
 	RRR_HTTP_METHOD_POST
 };
+
+struct rrr_http_part;
 
 struct rrr_http_session {
 	int fd;
@@ -36,6 +39,8 @@ struct rrr_http_session {
 	char *endpoint;
 	struct rrr_http_field_collection fields;
 	char *user_agent;
+	struct rrr_http_part *data;
+	struct rrr_socket_read_session_collection read_sessions;
 };
 
 void rrr_http_session_destroy (struct rrr_http_session *session);
@@ -52,6 +57,13 @@ int rrr_http_session_add_query_field (
 		const char *name,
 		const char *value
 );
-int rrr_http_session_send_request (struct rrr_http_session *session);
+int rrr_http_session_send_request (
+		struct rrr_http_session *session
+);
+int rrr_http_session_receive (
+		struct rrr_http_session *session,
+		int (*callback)(struct rrr_http_session *session, void *arg),
+		void *callback_arg
+);
 
 #endif /* RRR_HTTP_SESSION_H */

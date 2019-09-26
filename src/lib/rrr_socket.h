@@ -37,6 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_READ_INCOMPLETE	3
 #define RRR_SOCKET_READ_EOF			4
 
+#define RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH	0
+#define RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE		1
+
 #define RRR_SOCKET_CLIENT_TIMEOUT	30
 
 #define RRR_SOCKET_READ_METHOD_READ	(1<<0)

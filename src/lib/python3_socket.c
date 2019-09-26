@@ -77,7 +77,7 @@ static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 		socket_data->filename = NULL;
 	}
 
-	rrr_socket_read_session_collection_destroy(&socket_data->read_sessions);
+	rrr_socket_read_session_collection_clear(&socket_data->read_sessions);
 }
 
 static void rrr_python3_socket_f_dealloc (PyObject *self) {

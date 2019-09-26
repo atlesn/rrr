@@ -68,7 +68,7 @@ void rrr_socket_read_session_collection_init (
 	memset(collection, '\0', sizeof(*collection));
 }
 
-void rrr_socket_read_session_collection_destroy (
+void rrr_socket_read_session_collection_clear (
 		struct rrr_socket_read_session_collection *collection
 ) {
 	RRR_LINKED_LIST_DESTROY(collection,struct rrr_socket_read_session,__rrr_socket_read_session_destroy(node));
@@ -178,15 +178,19 @@ int rrr_socket_read_message (
 		goto out;
 	}
 
+	if ((pollfd.revents & POLLHUP) != 0) {
+		VL_DEBUG_MSG_3("Socket POLLHUP in rrr_socket_read_message, read EOF imminent\n");
+	}
+
+	/*
 	if (ioctl (fd, FIONREAD, &bytes_int) != 0) {
 		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
+	bytes_fionread = bytes_int;
 
-	bytes = bytes_int;
-
-	if (bytes == 0) {
+	if (bytes_fionread == 0) {
 		if ((read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
 			usleep(10 * 1000);
 		}
@@ -195,7 +199,7 @@ int rrr_socket_read_message (
 		}
 		goto out;
 	}
-
+*/
 	/* Read */
 	read_retry:
 	if ((read_flags & RRR_SOCKET_READ_METHOD_RECV) != 0) {
@@ -224,6 +228,9 @@ int rrr_socket_read_message (
 			goto read_retry;
 		}
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if ((read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
+				usleep(10 * 1000);
+			}
 			goto out;
 		}
 		VL_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
@@ -231,27 +238,7 @@ int rrr_socket_read_message (
 		goto out;
 	}
 
-	if (bytes == 0) {
-		VL_MSG_ERR("Warning: Bytes was 0 after read in rrr_socket_read_message, despite polling first.\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
-
-		off_t offset = lseek (fd, 0, SEEK_SET);
-		if (offset == -1) {
-			if (errno == ESPIPE) {
-				// Not a file
-			}
-			else {
-				VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", strerror(errno));
-			}
-		}
-		else {
-			VL_DEBUG_MSG_1("Possible input file truncation, seek to the beginning\n");
-			ret = RRR_SOCKET_READ_INCOMPLETE;
-		}
-
-		goto out;
-	}
-
+	/* Check for new read session */
 	read_session = __rrr_socket_read_session_collection_maintain_and_find_or_create (
 			read_session_collection,
 			&src_addr,
@@ -263,7 +250,45 @@ int rrr_socket_read_message (
 		goto out;
 	}
 
-	/* Check for new read session */
+	/* Check for EOF / connection close */
+	if (bytes == 0) {
+		// Possible connection close or file truncation
+		if ((read_flags & RRR_SOCKET_READ_METHOD_READ) != 0) {
+			ret = RRR_SOCKET_SOFT_ERROR;
+
+			off_t offset = lseek (fd, 0, SEEK_SET);
+			if (offset == -1) {
+				if (errno == ESPIPE) {
+					// Not a file
+				}
+				else {
+					VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", strerror(errno));
+				}
+			}
+			else {
+				VL_DEBUG_MSG_1("Possible input file truncation, seek to the beginning\n");
+				ret = RRR_SOCKET_READ_INCOMPLETE;
+			}
+
+			goto out;
+		}
+		else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE) {
+			if (read_session->target_size > 0) {
+				VL_BUG("Target size was set in rrr_socket_read_message while complete method was connection closed\n");
+			}
+			read_session->target_size = read_session->rx_buf_wpos;
+		}
+		else if ((read_flags & RRR_SOCKET_READ_CHECK_EOF) != 0) {
+			ret = RRR_SOCKET_READ_EOF;
+			goto out;
+		}
+		else {
+			VL_MSG_ERR("Read returned 0 in rrr_socket_read_message, possible close of connection\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+	}
+
 	process_overshoot:
 	if (read_session->rx_buf_ptr == NULL) {
 		if (read_session->rx_overshoot != NULL) {
@@ -316,20 +341,20 @@ int rrr_socket_read_message (
 	if (get_target_size == NULL) {
 		read_session->target_size = read_step_initial;
 	}
-	else if (read_session->target_size == 0) {
+	else if (read_session->target_size == 0 &&
+			read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH
+	) {
 		// In the first read, we take a sneak peak at the first bytes to find a length field
 		// if it is present. If there is not target size function, the target size becomes
-		// the initial bytes parameter (set at the top of the function).
-		if (read_session->rx_buf_wpos < read_session->target_size) {
-			ret = RRR_SOCKET_READ_INCOMPLETE;
-			goto out;
-		}
-
+		// the initial bytes parameter (set at the top of the function). The target size function
+		// may change the read complete method. It may also return read incomplete.
 		if ((ret = get_target_size(read_session, get_target_size_arg)) != RRR_SOCKET_OK) {
 			goto out;
 		}
 
-		if (read_session->target_size == 0) {
+		if (read_session->target_size == 0 &&
+				read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH
+		) {
 			VL_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
 		}
 	}

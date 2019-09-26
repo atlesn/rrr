@@ -1,4 +1,5 @@
 /*
+#include <http_part.h>
 
 Read Route Record
 
@@ -29,13 +30,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_session.h"
 #include "http_util.h"
+#include "http_part.h"
 #include "rrr_socket.h"
+#include "rrr_socket_read.h"
 
 void rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->host);
 	RRR_FREE_IF_NOT_NULL(session->endpoint);
 	RRR_FREE_IF_NOT_NULL(session->user_agent);
 	rrr_http_fields_collection_clear(&session->fields);
+	if (session->data != NULL) {
+		rrr_http_part_destroy(session->data);
+	}
+	rrr_socket_read_session_collection_clear(&session->read_sessions);
 	free(session);
 }
 
@@ -91,6 +98,8 @@ int rrr_http_session_new (
 			goto out;
 		}
 	}
+
+	rrr_socket_read_session_collection_init(&session->read_sessions);
 
 	*target = session;
 	session = NULL;
@@ -227,7 +236,9 @@ static int __rrr_http_session_send_get_body (struct rrr_http_session *session) {
 	return ret;
 }
 
-int rrr_http_session_send_request (struct rrr_http_session *session) {
+int rrr_http_session_send_request (
+		struct rrr_http_session *session
+) {
 	int ret = 0;
 
 	char *request_buf = NULL;
@@ -292,5 +303,116 @@ int rrr_http_session_send_request (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(user_agent_buf);
 	RRR_FREE_IF_NOT_NULL(host_buf);
 	RRR_FREE_IF_NOT_NULL(request_buf);
+	return ret;
+}
+
+struct rrr_http_session_receive_data {
+	struct rrr_http_session *session;
+	ssize_t parse_complete_pos;
+	int (*callback)(struct rrr_http_session *session, void *arg);
+	void *callback_arg;
+};
+
+static int __rrr_http_session_receive_callback (
+		struct rrr_socket_read_session *read_session, void *arg
+) {
+	struct rrr_http_session_receive_data *receive_data = arg;
+
+	const char *data_start = read_session->rx_buf_ptr + receive_data->parse_complete_pos;
+	const char *data_end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
+
+	if (data_end > data_start) {
+		receive_data->session->data->data_ptr = data_start;
+		receive_data->session->data->data_length = data_end - data_start;
+	}
+
+	return receive_data->callback(receive_data->session, receive_data->callback_arg);
+}
+
+static int __rrr_http_session_receive_get_total_size (
+		struct rrr_socket_read_session *read_session, void *arg
+) {
+	struct rrr_http_session_receive_data *receive_data = arg;
+
+	int ret = 0;
+
+	const char *start = read_session->rx_buf_ptr + receive_data->parse_complete_pos;
+
+	ssize_t parsed_bytes = 0;
+	ret = rrr_http_part_parse (
+			receive_data->session->data,
+			&parsed_bytes,
+			start,
+			read_session->rx_buf_ptr + read_session->rx_buf_wpos
+	);
+
+	receive_data->parse_complete_pos += parsed_bytes;
+
+	if (ret == RRR_HTTP_PARSE_OK) {
+		read_session->target_size = receive_data->parse_complete_pos + receive_data->session->data->data_length;
+	}
+	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
+		ret = RRR_SOCKET_READ_INCOMPLETE;
+	}
+	else if (ret == RRR_HTTP_PARSE_UNTIL_CLOSE) {
+		read_session->read_complete_method = RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE;
+		ret = RRR_SOCKET_OK;
+	}
+	else {
+		ret = RRR_SOCKET_SOFT_ERROR;
+	}
+
+	return ret;
+}
+
+int rrr_http_session_receive (
+		struct rrr_http_session *session,
+		int (*callback)(struct rrr_http_session *session, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	if (session->data != NULL) {
+		rrr_http_part_destroy(session->data);
+	}
+
+	if ((ret = rrr_http_part_new(&session->data)) != 0) {
+		VL_MSG_ERR("Could not create HTTP part in rrr_http_session_receive\n");
+		goto out;
+	}
+
+	struct rrr_http_session_receive_data callback_data = {
+			session,
+			0,
+			callback,
+			callback_arg
+	};
+
+	for (int i = 1000; i >= 0; i--) {
+		ret = rrr_socket_read_message (
+				&session->read_sessions,
+				session->fd,
+				4096,
+				65535,
+				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				__rrr_http_session_receive_get_total_size,
+				&callback_data,
+				__rrr_http_session_receive_callback,
+				&callback_data
+		);
+
+		if (ret == RRR_SOCKET_OK) {
+			// TODO : Check for persistent connection/more results which might be
+			//		  stored in read session overshoot buffer
+			goto out;
+		}
+		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
+			VL_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
 	return ret;
 }

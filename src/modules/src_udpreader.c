@@ -56,7 +56,7 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->buffer);
 	fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
-	rrr_socket_read_session_collection_destroy(&data->read_sessions);
+	rrr_socket_read_session_collection_clear(&data->read_sessions);
 }
 
 int data_init(struct udpreader_data *data, struct instance_thread_data *thread_data) {

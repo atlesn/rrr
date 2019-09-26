@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket.h"
 #include "lib/rrr_socket_read.h"
 #include "lib/http_session.h"
+#include "lib/http_part.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
 
@@ -214,6 +215,53 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	return ret;
 }
 
+static int __rrr_http_client_receive_callback (struct rrr_http_session *session, void *arg) {
+	struct rrr_http_client_data *data = arg;
+
+	(void)(data);
+
+	struct rrr_http_part *part = session->data;
+
+	int ret = 0;
+
+	if (part->response_code < 200 || part->response_code > 299) {
+		VL_MSG_ERR("Error while fetching HTTP: %i %s\n",
+				part->response_code, part->response_str);
+		ret = 1;
+		goto out;
+	}
+
+	if (part->data_ptr != 0 && part->data_length > 0) {
+		int bytes = write (STDOUT_FILENO, part->data_ptr, part->data_length);
+		if (bytes != part->data_length) {
+			VL_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+		printf ("\n");
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_receive (struct rrr_http_client_data *data) {
+	int ret = 0;
+
+	if ((ret = rrr_http_session_receive(
+			data->session,
+			__rrr_http_client_receive_callback,
+			data
+	)) != 0) {
+		VL_MSG_ERR("Error while receiving HTTP data in __rrr_http_client_receive\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
@@ -245,6 +293,10 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if ((ret = __rrr_http_client_send_request(&data)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_client_receive(&data)) != 0) {
 		goto out;
 	}
 

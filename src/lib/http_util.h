@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_UTIL_H
 #define RRR_HTTP_UTIL_H
 
+#include <stdio.h>
+
 char *rrr_http_util_encode_uri (
 		const char *input
 );
@@ -30,5 +32,32 @@ char *rrr_http_util_quote_header_value (
 		char delimeter_start,
 		char delimeter_end
 );
+const char *rrr_http_util_find_crlf (
+		const char *start,
+		const char *end
+);
+int rrr_http_util_strtoull (
+		unsigned long long int *result,
+		ssize_t *result_len,
+		const char *start,
+		const char *end
+);
+int rrr_http_util_strcasestr (
+		const char **result_start,
+		ssize_t *result_len,
+		const char *start,
+		const char *end,
+		const char *needle
+);
+const char *rrr_http_util_strchr (
+		const char *start,
+		const char *end,
+		char chr
+);
+ssize_t rrr_http_util_count_whsp (
+		const char *start,
+		const char *end
+);
+void rrr_http_util_strtolower (char *str);
 
 #endif /* RRR_HTTP_UTIL_H */
