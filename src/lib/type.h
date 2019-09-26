@@ -125,10 +125,12 @@ struct rrr_type_definition {
 struct rrr_type_value {
 	RRR_LINKED_LIST_NODE(struct rrr_type_value);
 	const struct rrr_type_definition *definition;
+	rrr_type_length tag_length;
 	rrr_type_length import_length;
 	rrr_type_length import_elements;
 	rrr_type_length total_stored_length;
 	rrr_type_array_size element_count; // 1 = no array, 0 = auto
+	char *tag;
 	char *data;
 };
 
@@ -146,6 +148,8 @@ void rrr_type_value_destroy (
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
+		rrr_type_length tag_length,
+		const char *tag,
 		rrr_type_length import_length,
 		rrr_type_array_size element_count,
 		rrr_type_length stored_length

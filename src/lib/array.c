@@ -129,6 +129,8 @@ int rrr_array_parse_single_definition (
 	rrr_type_array_size array_size = 1;
 	const struct rrr_type_definition *type = NULL;
 	unsigned int length = 0;
+	const char *tag_start = NULL;
+	unsigned int tag_length = 0;
 
 	if ((ret = __rrr_array_parse_identifier_and_size (
 			&type,
@@ -175,6 +177,22 @@ int rrr_array_parse_single_definition (
 		start += parsed_bytes;
 	}
 
+	if (*start == '#') {
+		start++;
+		tag_start = start;
+
+		while (*start != '\0') {
+			tag_length++;
+			start++;
+		}
+
+		if (tag_length == 0) {
+			VL_MSG_ERR("Missing tag name after #\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
 	if (*start != '\0') {
 		VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
 		ret = 1;
@@ -190,7 +208,15 @@ int rrr_array_parse_single_definition (
 
 	struct rrr_type_value *template = NULL;
 
-	if (rrr_type_value_new(&template, type, length, array_size, 0) != 0) {
+	if (rrr_type_value_new (
+			&template,
+			type,
+			tag_length,
+			tag_start,
+			length,
+			array_size,
+			0
+	) != 0) {
 		VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
 		ret = 1;
 		goto out;
@@ -311,6 +337,18 @@ int rrr_array_definition_collection_clone (
 
 		template->data = NULL;
 
+		if (template->tag_length > 0) {
+			template->tag = malloc(template->tag_length);
+			if (template->tag == NULL) {
+				VL_MSG_ERR("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
+				goto out_err;
+			}
+			memcpy(template->tag, node->tag, template->tag_length);
+		}
+		else if (template->tag != NULL) {
+			VL_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
+		}
+
 		RRR_LINKED_LIST_APPEND(target,template);
 	RRR_LINKED_LIST_ITERATE_END(source);
 
@@ -386,6 +424,7 @@ static ssize_t __rrr_array_get_packed_length (
 	ssize_t result = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
+		result += node->tag_length;
 	RRR_LINKED_LIST_ITERATE_END(definition);
 	return result;
 }
@@ -471,11 +510,18 @@ int rrr_array_new_message (
 		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
 
 		head->type = type;
+		head->tag_length = htobe32(node->tag_length);
 		head->elements = htobe32(node->element_count);
 		head->total_length = htobe32(node->total_stored_length);
 
 		pos += sizeof(*head) - 1;
 		written_bytes_total += sizeof(*head) - 1;
+
+		if (node->tag_length > 0) {
+			memcpy(pos, node->tag, node->tag_length);
+			pos += node->tag_length;
+			written_bytes_total += node->tag_length;
+		}
 
 		uint8_t new_type = 0;
 		ssize_t written_bytes = 0;
@@ -569,10 +615,11 @@ int rrr_array_message_to_collection (
 		}
 
 		rrr_type type = data_packed->type;
+		rrr_type_length tag_length = be32toh(data_packed->tag_length);
 		rrr_type_length total_length = be32toh(data_packed->total_length);
 		rrr_type_length elements = be32toh(data_packed->elements);
 
-		if (pos + total_length > end) {
+		if (pos + tag_length + total_length > end) {
 			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
 					type, i, total_length, end - pos);
 			goto out_free_data;
@@ -591,11 +638,21 @@ int rrr_array_message_to_collection (
 		}
 
 		struct rrr_type_value *template = NULL;
-		if (rrr_type_value_new(&template, def, total_length, elements, total_length) != 0) {
+		if (rrr_type_value_new (
+				&template,
+				def,
+				tag_length,
+				pos,
+				total_length,
+				elements,
+				total_length
+		) != 0) {
 			VL_MSG_ERR("Could not allocate value in rrr_array_message_to_collection\n");
 			goto out_free_data;
 		}
 		RRR_LINKED_LIST_APPEND(target,template);
+
+		pos += tag_length;
 
 		memcpy (template->data, pos, total_length);
 

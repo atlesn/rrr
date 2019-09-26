@@ -32,6 +32,7 @@ endif
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
 	ipclient.la ipserver.la controller.la udpreader.la \
 	duplicator.la mqttbroker.la mqttclient.la socket.la \
+	influxdb.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
@@ -71,5 +72,8 @@ udpreader_la_SOURCES = src_udpreader.c
 
 socket_la_LDFLAGS = ${module_ldflags}
 socket_la_SOURCES = src_socket.c
+
+influxdb_la_LDFLAGS = ${module_ldflags}
+influxdb_la_SOURCES = p_influxdb.c
 
 libdir=${exec_prefix}/lib/rrr

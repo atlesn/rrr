@@ -766,6 +766,7 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
 ) {
+	RRR_FREE_IF_NOT_NULL(template->tag);
 	RRR_FREE_IF_NOT_NULL(template->data);
 	free(template);
 }
@@ -773,6 +774,8 @@ void rrr_type_value_destroy (
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
+		rrr_type_length tag_length,
+		const char *tag,
 		rrr_type_length import_length,
 		rrr_type_array_size element_count,
 		rrr_type_length stored_length
@@ -788,6 +791,7 @@ int rrr_type_value_new (
 
 	memset(value, '\0', sizeof(*value));
 
+	value->tag_length = tag_length;
 	value->element_count = element_count;
 	value->import_length = import_length;
 	value->import_elements = element_count;
@@ -801,6 +805,17 @@ int rrr_type_value_new (
 			ret = 1;
 			goto out;
 		}
+	}
+
+	if (tag_length > 0) {
+		value->tag = malloc(tag_length + 1);
+		if (value->tag == NULL) {
+			VL_MSG_ERR("Could not allocate tag for template in rrr_type_value_new\n");
+			ret = 1;
+			goto out;
+		}
+		memcpy(value->tag, tag, tag_length);
+		value->tag[tag_length] = '\0';
 	}
 
 	*result = value;

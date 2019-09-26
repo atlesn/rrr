@@ -29,12 +29,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "type.h"
 
-#define RRR_ARRAY_VERSION 4
+#define RRR_ARRAY_VERSION 5
 
 struct vl_message;
 
 struct rrr_array_value_packed {
 	rrr_type type;
+	rrr_type_length tag_length;
 	rrr_type_length total_length;
 	rrr_type_length elements;
 	char data[1];
