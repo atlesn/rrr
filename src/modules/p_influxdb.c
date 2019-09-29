@@ -26,72 +26,281 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/http_session.h"
+#include "../lib/array.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/linked_list.h"
 #include "../global.h"
 
-struct influxdb_data {
-	int message_count;
-	int print_data;
+#define INFLUXDB_DEFAULT_PORT 8086
+#define INFLUXDB_USER_AGENT "RRR/" PACKAGE_VERSION
+
+struct influxdb_column {
+	RRR_LINKED_LIST_NODE(struct influxdb_column);
+	char *input_tag;
+	char *output_column;
 };
+
+struct influxdb_column_collection {
+	RRR_LINKED_LIST_HEAD(struct influxdb_column);
+};
+
+static void __influxdb_column_destroy (struct influxdb_column *column) {
+	RRR_FREE_IF_NOT_NULL(column->input_tag);
+	RRR_FREE_IF_NOT_NULL(column->output_column);
+	free(column);
+}
+
+static int __influxdb_column_new (struct influxdb_column **target, ssize_t field_size) {
+	int ret = 0;
+
+	struct influxdb_column *column = malloc(sizeof(*column));
+	if (column == NULL) {
+		VL_MSG_ERR("Could not allocate memory in influxdb __influxdb_column_new\n");
+		ret = 1;
+		goto out;
+	}
+	memset (column, '\0', sizeof(*column));
+
+	column->input_tag = malloc(field_size);
+	column->output_column = malloc(field_size);
+
+	if (column->input_tag == NULL || column->output_column == NULL) {
+		VL_MSG_ERR("Could not allocate memory in influxdb __influxdb_column_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(column->input_tag, '\0', field_size);
+	memset(column->output_column, '\0', field_size);
+
+	*target = column;
+	column = NULL;
+
+	out:
+	if (column != NULL) {
+		__influxdb_column_destroy(column);
+	}
+	return ret;
+}
+
+struct influxdb_data {
+	struct instance_thread_data *thread_data;
+	char *server;
+	uint16_t server_port;
+	char *table;
+	int message_count;
+	struct influxdb_column_collection columns;
+};
+
+void data_init(struct influxdb_data *data, struct instance_thread_data *thread_data) {
+	memset (data, '\0', sizeof(*data));
+	data->thread_data = thread_data;
+}
+
+void data_destroy (void *arg) {
+	struct influxdb_data *data = arg;
+	RRR_FREE_IF_NOT_NULL(data->server);
+	RRR_FREE_IF_NOT_NULL(data->table);
+	RRR_LINKED_LIST_DESTROY(&data->columns, struct influxdb_column, __influxdb_column_destroy(node));
+}
+
+int send_data (struct influxdb_data *data, struct rrr_array *array) {
+	struct rrr_http_session *session = NULL;
+
+	int ret = 0;
+
+	if ((ret = rrr_http_session_new (
+			&session,
+			RRR_HTTP_METHOD_POST,
+			data->server,
+			data->server_port,
+			"/write",
+			INFLUXDB_USER_AGENT
+	)) != 0) {
+		VL_MSG_ERR("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(&data->columns, struct influxdb_column);
+		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->input_tag);
+		if (value == NULL) {
+			VL_MSG_ERR("Warning: Could not find value with tag %s in incoming message in influxdb instance %s, discarding message\n",
+					node->input_tag, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+
+		if (value->definition->type == RRR_TYPE_DEC) {
+			ret = rrr_http_session_add_query_field (session, node->output_column, value->data);
+		}
+		else if (value->element_count > 1 || RRR_TYPE_IS_BLOB(value->definition->type)) {
+			ret = rrr_http_session_add_query_field_binary (session, node->output_column, value->data, value->total_stored_length);
+		}
+		else if (RRR_TYPE_IS_64(value->definition->type)) {
+			// TODO : Support signed
+			char buf[64];
+			sprintf(buf, "%" PRIu64, *((uint64_t*) value->data));
+			ret = rrr_http_session_add_query_field (session, node->output_column, buf);
+		}
+		else {
+			VL_MSG_ERR("Unknown value type %ul with tag %s when sending from influxdb instance %s, discarding message\n",
+					value->definition->type, node->input_tag, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+
+		if (ret != 0) {
+			VL_MSG_ERR("Could not add query field in influxdb instance %s send data\n", INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+	RRR_LINKED_LIST_ITERATE_END(&data->columns);
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(array, struct rrr_type_value);
+	RRR_LINKED_LIST_ITERATE_END(array);
+
+	if ((ret = rrr_http_session_connect(session)) != 0) {
+		VL_MSG_ERR("Could not connect to influxdb server in instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	out:
+	if (session != NULL) {
+		rrr_http_session_destroy(session);
+	}
+	return ret;
+}
 
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data;
 	struct vl_message *reading = (struct vl_message *) data;
 
+	struct rrr_array array = {0};
+
 	VL_DEBUG_MSG_2 ("InfluxDB %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
 
-	if (influxdb_data->print_data != 0) {
-		ssize_t print_length = MSG_DATA_LENGTH(reading);
-		if (print_length > 100) {
-			print_length = 100;
-		}
-		char buf[print_length + 1];
-		memcpy(buf, MSG_DATA_PTR(reading), print_length);
-		buf[print_length] = '\0';
-
-		VL_MSG("InfluxDB %s: Received data with timestamp %" PRIu64 ": %s\n",
-				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);
+	if (!MSG_IS_ARRAY(reading)) {
+		VL_MSG_ERR("Warning: Non-array message received in influxdb instance %s, discarding\n",
+				INSTANCE_D_NAME(thread_data));
+		goto discard;
 	}
 
-	influxdb_data->message_count++;
+	if (rrr_array_message_to_collection(&array, reading) != 0) {
+		VL_MSG_ERR("Error while parsing incoming array in influxdb instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto discard;
+	}
 
+
+
+	discard:
+	rrr_array_clear(&array);
 	free(data);
 	return 0;
 }
 
-void data_init(struct influxdb_data *data) {
-	memset (data, '\0', sizeof(*data));
+static int __parse_single_tag (const char *input, void *arg) {
+	struct influxdb_data *data = arg;
+
+	int ret = 0;
+	struct influxdb_column *column = NULL;
+
+	ssize_t input_length = strlen(input);
+
+	if ((ret = __influxdb_column_new (&column, input_length + 1)) != 0) {
+		goto out;
+	}
+
+	char *arrow = strstr(input, "->");
+	if (arrow != NULL) {
+		strncpy(column->input_tag, input, arrow - input);
+
+		const char *pos = arrow + 2;
+		if (*pos == '\0' || pos > (input + input_length)) {
+			VL_MSG_ERR("Missing column name after -> in column definition\n");
+			ret = 1;
+			goto out;
+		}
+
+		strcpy(column->output_column, pos);
+	}
+	else {
+		strcpy(column->input_tag, input);
+		strcpy(column->output_column, input);
+	}
+
+	RRR_LINKED_LIST_APPEND(&data->columns, column);
+	column = NULL;
+
+	out:
+	if (column != NULL) {
+		__influxdb_column_destroy(column);
+	}
+
+	return ret;
+}
+
+int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	if (rrr_settings_traverse_split_commas(config->settings, "influxdb_tags", __parse_single_tag, data) != 0) {
+		VL_MSG_ERR("Error while parsing influxdb_tags of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_LINKED_LIST_COUNT(&data->columns) == 0) {
+		VL_MSG_ERR("No columns specified in influxdb_tags for instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int parse_config (struct influxdb_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-	int yesno = 0;
+	int ret_final = 0;
+//	int yesno = 0;
 
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "influxdb_print_data")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 0; // Default to no
-			ret = 0;
-		}
-		else {
-			VL_MSG_ERR("Error while parsing influxdb_print_data setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
+	rrr_setting_uint port = 0;
+
+	rrr_instance_config_get_string_noconvert_silent (&data->server, config, "influxdb_server");
+	rrr_instance_config_get_string_noconvert_silent (&data->table, config, "influxdb_table");
+
+	if (data->server == NULL) {
+		VL_MSG_ERR("No influxdb_server specified for instance %s\n", config->name);
+		ret_final = 1;
 	}
 
-	data->print_data = yesno;
+	if (data->table == NULL) {
+		VL_MSG_ERR("No influxdb_table specified for instance %s\n", config->name);
+		ret_final = 1;
+	}
+
+	if ((ret = rrr_instance_config_read_port_number (&port, config, "influxdb_port")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing server port in influxdb instance %s\n", config->name);
+			ret_final = 1;
+		}
+	}
+	if (port == 0) {
+		port = INFLUXDB_DEFAULT_PORT;
+	}
+
+	if ((ret = parse_tags (data, config)) != 0) {
+		ret_final = 1;
+	}
 
 	/* On error, memory is freed by data_cleanup */
 
-	out:
-	return ret;
+	return ret_final;
 }
 
 static void *thread_entry_influxdb (struct vl_thread *thread) {
@@ -99,13 +308,14 @@ static void *thread_entry_influxdb (struct vl_thread *thread) {
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 
-	data_init(influxdb_data);
+	data_init(influxdb_data, thread_data);
 
 	VL_DEBUG_MSG_1 ("InfluxDB thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(data_destroy, influxdb_data);
 
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
@@ -149,6 +359,7 @@ static void *thread_entry_influxdb (struct vl_thread *thread) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 

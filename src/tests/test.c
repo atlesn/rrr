@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
+#include "../lib/fixed_point.h"
 
 const char *library_paths[] = {
 		VL_MODULE_PATH,
@@ -83,6 +84,73 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0, '\0',	NULL, ""}
 };
 
+static int test_fixp(void) {
+	int ret = 0;
+
+	rrr_fixp fixp_a = 0;
+	rrr_fixp fixp_b = 0;
+
+	ret |= rrr_str_to_fixp(&fixp_a, "+1.5");
+	ret |= rrr_str_to_fixp(&fixp_b, "-1.5");
+
+	if (ret != 0) {
+		TEST_MSG("Conversion from string to fixed point failed\n");
+		goto out;
+	}
+
+	if (fixp_a == 0) {
+		TEST_MSG("Zero returned while converting string to fixed point\n");
+		ret = 1;
+		goto out;
+	}
+
+	ret = fixp_a + fixp_b;
+	if (ret != 0) {
+		TEST_MSG("Expected 0 while adding 1.5 and -1.5, got %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	char buf[512];
+	if ((ret = rrr_fixp_to_str(buf, 511, fixp_a)) != 0) {
+		TEST_MSG("Conversion from fixed point to string failed\n");
+		goto out;
+	}
+
+	if (strncmp(buf, "1.5", 3) != 0) {
+		TEST_MSG("Wrong output while converting fixed point to string, expected '1.5' but got '%s'\n", buf);
+		ret = 1;
+		goto out;
+	}
+
+	long double dbl = 0;
+	if ((ret = rrr_fixp_to_ldouble(&dbl, fixp_a)) != 0) {
+		TEST_MSG("Conversion from fixed point to ldouble failed\n");
+		goto out;
+	}
+
+	if (dbl != 1.5) {
+		TEST_MSG("Wrong output while converting fixed point to double, expected 1.5 but got %Lf\n", dbl);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_ldouble_to_fixp(&fixp_a, dbl)) != 0) {
+		TEST_MSG("Conversion from double to fixed point failed\n");
+		goto out;
+	}
+
+	ret = fixp_a + fixp_b;
+	if (ret != 0) {
+		TEST_MSG("Expected 0 while adding 1.5 and -1.5 after conversion from double, got %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return (ret != 0);
+}
+
 int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
@@ -127,17 +195,29 @@ int main (int argc, const char **argv) {
 
 	struct rrr_config *config;
 
+	TEST_BEGIN("fixed point type") {
+		ret = test_fixp();
+	} TEST_RESULT(ret == 0);
+
+	if (ret != 0) {
+		goto out;
+	}
+
 	TEST_BEGIN("non-existent config file") {
 		config = rrr_config_parse_file("nonexistent_file");
 	} TEST_RESULT(config == NULL);
 
 	if (config != NULL) {
-		free(config);
+		goto out_cleanup_config;
 	}
 
 	TEST_BEGIN("true configuration loading") {
 		config = rrr_config_parse_file("test.conf");
 	} TEST_RESULT(config != NULL);
+
+	if (config == NULL) {
+		goto out;
+	}
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {

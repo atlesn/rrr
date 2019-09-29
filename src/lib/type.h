@@ -48,8 +48,9 @@ static const union type_system_endian {
 #define RRR_TYPE_ISTR		6 // Signed int given as a string
 #define RRR_TYPE_SEP		7 // Separator character ;,.-_*+\/=$@%#!|§ etc. No brackets.
 #define RRR_TYPE_MSG		8 // Type which holds an RRR message
-#define RRR_TYPE_ARRAY		9 // Type which holds many instances of another type
-#define RRR_TYPE_MAX		9
+#define RRR_TYPE_DEC		9 // Decimal number e.g. -222.22
+#define RRR_TYPE_ARRAY		10 // Type which holds many instances of another type
+#define RRR_TYPE_MAX		10
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -59,6 +60,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_ISTR	"istr"
 #define RRR_TYPE_NAME_SEP	"sep"
 #define RRR_TYPE_NAME_MSG	"msg"
+#define RRR_TYPE_NAME_DEC	"dec"
 #define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
@@ -69,13 +71,14 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_ISTR	0
 #define RRR_TYPE_MAX_SEP	64
 #define RRR_TYPE_MAX_MSG	0
+#define RRR_TYPE_MAX_DEC	0
 #define RRR_TYPE_MAX_ARRAY	65535
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG)
+#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_DEC)
 #define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\

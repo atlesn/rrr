@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
+#include "ip.h"
 
 void rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->host);
@@ -43,14 +44,18 @@ void rrr_http_session_destroy (struct rrr_http_session *session) {
 		rrr_http_part_destroy(session->data);
 	}
 	rrr_socket_read_session_collection_clear(&session->read_sessions);
+	if (session->fd != 0) {
+		rrr_socket_close(session->fd);
+		session->fd = 0;
+	}
 	free(session);
 }
 
 int rrr_http_session_new (
 		struct rrr_http_session **target,
-		int fd,
 		enum rrr_http_method method,
 		const char *host,
+		uint16_t port,
 		const char *endpoint,
 		const char *user_agent
 ) {
@@ -68,7 +73,7 @@ int rrr_http_session_new (
 	memset(session, '\0', sizeof(*session));
 
 	session->method = method;
-	session->fd = fd;
+	session->port = port;
 
 	session->host = strdup(host);
 	if (session->host == NULL) {
@@ -117,6 +122,15 @@ int rrr_http_session_add_query_field (
 		const char *value
 ) {
 	return rrr_http_fields_collection_add_field(&session->fields, name, value);
+}
+
+int rrr_http_session_add_query_field_binary (
+		struct rrr_http_session *session,
+		const char *name,
+		void *value,
+		ssize_t size
+) {
+	return rrr_http_fields_collection_add_field_binary(&session->fields, name, value, size);
 }
 
 static int __rrr_http_session_send_post_body (struct rrr_http_session *session) {
@@ -200,7 +214,6 @@ static int __rrr_http_session_send_post_body (struct rrr_http_session *session) 
 
 	return ret;
 }
-
 
 static int __rrr_http_session_send_get_body (struct rrr_http_session *session) {
 	int ret = 0;
@@ -415,4 +428,29 @@ int rrr_http_session_receive (
 
 	out:
 	return ret;
+}
+
+int rrr_http_session_connect (struct rrr_http_session *session) {
+	int ret = 0;
+
+	struct ip_accept_data *accept_data = NULL;
+
+	if (ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, session->port, session->host) != 0) {
+		VL_MSG_ERR("Could not connect to HTTP server '%s'\n", session->host);
+		ret = 1;
+		goto out;
+	}
+
+	session->fd = accept_data->ip_data.fd;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(accept_data);
+	return ret;
+}
+
+void rrr_http_session_close (struct rrr_http_session *session) {
+	if (session->fd > 0) {
+		rrr_socket_close(session->fd);
+		session->fd = 0;
+	}
 }

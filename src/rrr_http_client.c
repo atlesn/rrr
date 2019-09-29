@@ -39,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http_part.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
-
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -53,15 +52,14 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
 };
+
 struct rrr_http_client_data {
 	char *server;
 	char *endpoint;
 	char *query;
 	uint16_t http_port;
-	int fd;
 	struct rrr_http_session *session;
 };
-
 static void __rrr_http_client_data_init (struct rrr_http_client_data *data) {
 	memset (data, '\0', sizeof(*data));
 }
@@ -158,63 +156,6 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	return ret;
 }
 
-static int __rrr_http_client_connect (struct rrr_http_client_data *data) {
-	int ret = 0;
-
-	struct ip_accept_data *accept_data = NULL;
-
-	if (ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, data->http_port, data->server) != 0) {
-		VL_MSG_ERR("Could not connect to HTTP server '%s'\n", data->server);
-		ret = 1;
-		goto out;
-	}
-
-	data->fd = accept_data->ip_data.fd;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(accept_data);
-	return ret;
-}
-
-static void __rrr_http_client_close (struct rrr_http_client_data *data) {
-	if (data->fd > 0) {
-		rrr_socket_close(data->fd);
-	}
-}
-
-static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
-	int ret = 0;
-
-	if (data->session != NULL) {
-		rrr_http_session_destroy(data->session);
-		data->session = NULL;
-	}
-
-	if ((ret = rrr_http_session_new (
-			&data->session,
-			data->fd,
-			RRR_HTTP_METHOD_GET,
-			data->server,
-			"/?e=f",
-			RRR_HTTP_CLIENT_USER_AGENT
-	)) != 0) {
-		VL_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
-		goto out;
-	}
-
-	rrr_http_session_add_query_field(data->session, "a", "1");
-	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
-	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
-
-	if ((ret = rrr_http_session_send_request(data->session)) != 0) {
-		VL_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_http_client_receive_callback (struct rrr_http_session *session, void *arg) {
 	struct rrr_http_client_data *data = arg;
 
@@ -245,16 +186,38 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 	return ret;
 }
 
-static int __rrr_http_client_receive (struct rrr_http_client_data *data) {
+
+static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	int ret = 0;
 
-	if ((ret = rrr_http_session_receive(
-			data->session,
-			__rrr_http_client_receive_callback,
-			data
+	if (data->session != NULL) {
+		rrr_http_session_destroy(data->session);
+		data->session = NULL;
+	}
+
+	if ((ret = rrr_http_session_new (
+			&data->session,
+			RRR_HTTP_METHOD_GET,
+			data->server,
+			data->http_port,
+			"/?e=f",
+			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
-		VL_MSG_ERR("Error while receiving HTTP data in __rrr_http_client_receive\n");
-		ret = 1;
+		VL_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	if ((ret = rrr_http_session_connect(data->session)) != 0) {
+		VL_MSG_ERR("Could not connect to server in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	rrr_http_session_add_query_field(data->session, "a", "1");
+	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
+	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
+
+	if ((ret = rrr_http_session_send_request(data->session)) != 0) {
+		VL_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -288,21 +251,16 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_client_connect(&data)) != 0) {
-		goto out;
-	}
-
 	if ((ret = __rrr_http_client_send_request(&data)) != 0) {
 		goto out;
 	}
 
-	if ((ret = __rrr_http_client_receive(&data)) != 0) {
+	if ((ret = rrr_http_session_receive(data.session, __rrr_http_client_receive_callback, &data)) != 0) {
 		goto out;
 	}
 
 	out:
 	rrr_set_debuglevel_on_exit();
-	__rrr_http_client_close(&data);
 	__rrr_http_client_destroy_data(&data);
 	cmd_destroy(&cmd);
 	rrr_socket_close_all();

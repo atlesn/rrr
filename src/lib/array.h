@@ -79,6 +79,10 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 		struct rrr_array *definition,
 		int idx
 );
+struct rrr_type_value *rrr_array_value_get_by_tag (
+		struct rrr_array *definition,
+		const char *tag
+);
 int rrr_array_get_packed_length_from_buffer (
 		ssize_t *import_length,
 		const struct rrr_array *definition,

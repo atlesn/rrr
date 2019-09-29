@@ -28,6 +28,7 @@ struct rrr_http_field {
 	RRR_LINKED_LIST_NODE(struct rrr_http_field);
 	char *name;
 	char *value;
+	int is_binary;
 };
 
 struct rrr_http_field_collection {
@@ -39,6 +40,12 @@ int rrr_http_fields_collection_add_field (
 		struct rrr_http_field_collection *fields,
 		const char *name,
 		const char *value
+);
+int rrr_http_fields_collection_add_field_binary (
+		struct rrr_http_field_collection *fields,
+		const char *name,
+		void *value,
+		ssize_t size
 );
 char *rrr_http_fields_to_urlencoded_form_data (
 		struct rrr_http_field_collection *fields

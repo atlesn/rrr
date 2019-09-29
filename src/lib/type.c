@@ -709,6 +709,88 @@ static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	return RRR_TYPE_PARSE_OK;
 }
 
+
+static int __get_import_length_dec (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	const char *start = buf;
+	const char *end = buf + buf_size;
+
+	int ret = RRR_TYPE_PARSE_OK;
+
+	ssize_t sign_length = 0;
+	ssize_t length = 0;
+
+	CHECK_END_AND_RETURN(1);
+
+	if (*start == '-' || *start == '+') {
+		start++;
+		sign_length = 1;
+	}
+
+	int dot_found = 0;
+	for (; start < end; start++) {
+		if (*start == '.') {
+			if (dot_found != 0) {
+				break;
+			}
+			dot_found = 1;
+		}
+		else if (*start < '0' || *start > '9') {
+			break;
+		}
+		length++;
+	}
+
+	if (length == 0) {
+		ret = RRR_TYPE_PARSE_INCOMPLETE;
+		goto out;
+	}
+
+	*import_length = sign_length + length;
+
+	out:
+	return ret;
+}
+
+static int __rrr_type_import_dec (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in __rrr_type_import_dec\n");
+	}
+	if (node->element_count != 1) {
+		VL_BUG("array size was not 1 in __rrr_type_import_dec\n");
+	}
+	if (node->import_length != 0) {
+		VL_BUG("length was not 0 in __rrr_type_import_dec\n");
+	}
+
+	ssize_t import_length = 0;
+
+	// This will validate the input
+	if ((ret = __get_import_length_dec(&import_length, node, start, end - start)) != 0) {
+		return ret;
+	}
+
+	if (start + import_length > end) {
+		VL_BUG("Import length too long in __rrr_type_import_dec\n");
+	}
+
+	node->data = malloc(import_length);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_type_import_dec\n");
+		ret = RRR_TYPE_PARSE_ERR;
+		goto out;
+	}
+
+	memcpy(node->data, start, import_length);
+	node->total_stored_length = import_length;
+
+	*parsed_bytes = import_length;
+
+	out:
+	return ret;
+}
+
 // If there are types which begin with the same letters, the longest names must be first in the array
 static const struct rrr_type_definition type_templates[] = {
 		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	__rrr_type_be_unpack,		NULL,					RRR_TYPE_NAME_BE},
@@ -719,6 +801,7 @@ static const struct rrr_type_definition type_templates[] = {
 		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,						NULL,					RRR_TYPE_NAME_ISTR},
 		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_SEP},
 		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
+		{RRR_TYPE_DEC,		RRR_TYPE_MAX_DEC,	__get_import_length_dec,		__rrr_type_import_dec,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_DEC},
 		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,							NULL,					NULL,						NULL,					RRR_TYPE_NAME_ARRAY},
 		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
 };

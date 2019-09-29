@@ -380,6 +380,22 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 	return NULL;
 }
 
+
+struct rrr_type_value *rrr_array_value_get_by_tag (
+		struct rrr_array *definition,
+		const char *tag
+) {
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, struct rrr_type_value);
+		if (node->tag != NULL) {
+			if (strcmp(node->tag, tag) == 0) {
+				return node;
+			}
+		}
+	RRR_LINKED_LIST_ITERATE_END(definition);
+
+	return NULL;
+}
+
 int rrr_array_get_packed_length_from_buffer (
 		ssize_t *import_length,
 		const struct rrr_array *definition,

@@ -41,14 +41,15 @@ struct rrr_http_session {
 	char *user_agent;
 	struct rrr_http_part *data;
 	struct rrr_socket_read_session_collection read_sessions;
+	uint16_t port;
 };
 
 void rrr_http_session_destroy (struct rrr_http_session *session);
 int rrr_http_session_new (
 		struct rrr_http_session **target,
-		int fd,
 		enum rrr_http_method method,
 		const char *host,
+		uint16_t port,
 		const char *endpoint,
 		const char *user_agent
 );
@@ -56,6 +57,12 @@ int rrr_http_session_add_query_field (
 		struct rrr_http_session *session,
 		const char *name,
 		const char *value
+);
+int rrr_http_session_add_query_field_binary (
+		struct rrr_http_session *session,
+		const char *name,
+		void *value,
+		ssize_t size
 );
 int rrr_http_session_send_request (
 		struct rrr_http_session *session
@@ -65,5 +72,7 @@ int rrr_http_session_receive (
 		int (*callback)(struct rrr_http_session *session, void *arg),
 		void *callback_arg
 );
+int rrr_http_session_connect (struct rrr_http_session *session);
+void rrr_http_session_close (struct rrr_http_session *session);
 
 #endif /* RRR_HTTP_SESSION_H */

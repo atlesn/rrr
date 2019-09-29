@@ -37,29 +37,35 @@ void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields)
 	RRR_LINKED_LIST_DESTROY(fields, struct rrr_http_field, __rrr_http_field_destroy(node));
 }
 
-int rrr_http_fields_collection_add_field (
+static int __rrr_http_fields_collection_add_field_raw (
 		struct rrr_http_field_collection *fields,
 		const char *name,
-		const char *value
+		void *value,
+		ssize_t size,
+		int is_binary
 ) {
 	int ret = 0;
 
 	struct rrr_http_field *field = malloc(sizeof(*field));
 	if (field == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_fields_add A\n");
+		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;
 		goto out;
 	}
 	memset (field, '\0', sizeof(*field));
 
 	field->name = strdup(name);
-	field->value = strdup(value);
+	field->value = malloc(size);
 
 	if (field->name == NULL || field->value == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_fields_add B\n");
+		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw B\n");
 		ret = 1;
 		goto out;
 	}
+
+	memcpy(field->value, value, size);
+
+	field->is_binary = (is_binary != 0 ? 1 : 0);
 
 	RRR_LINKED_LIST_APPEND(fields, field);
 	field = NULL;
@@ -70,6 +76,23 @@ int rrr_http_fields_collection_add_field (
 	}
 
 	return ret;
+}
+
+int rrr_http_fields_collection_add_field (
+		struct rrr_http_field_collection *fields,
+		const char *name,
+		const char *value
+) {
+	return __rrr_http_fields_collection_add_field_raw(fields, name, value, strlen(value) + 1, 0);
+}
+
+int rrr_http_fields_collection_add_field_binary (
+		struct rrr_http_field_collection *fields,
+		const char *name,
+		void *value,
+		ssize_t size
+) {
+	return __rrr_http_fields_collection_add_field_raw(fields, name, value, size, 1);
 }
 
 static int __rrr_http_fields_get_total_length (
