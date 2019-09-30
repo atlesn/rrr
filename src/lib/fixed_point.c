@@ -24,9 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <math.h>
 
+#include "../global.h"
 #include "fixed_point.h"
 
-static const double decimal_fractions[24] = {
+static const double decimal_fractions_base2[24] = {
 		1.0/2.0,
 		1.0/4.0,
 		1.0/8.0,
@@ -57,6 +58,10 @@ int rrr_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	long double integer = 0;
 	long double fraction = modfl(source, &integer);
 
+	if (!isfinite(fraction)) {
+		return 1;
+	}
+
 	int sign = 0;
 	if (integer < 0.0) {
 		integer *= -1;
@@ -67,19 +72,17 @@ int rrr_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	uint64_t result = 0;
 	double running_sum = 0.0;
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
-		double test_sum = running_sum + decimal_fractions[i];
+		long double test_sum = running_sum + decimal_fractions_base2[i];
 		if (test_sum == fraction) {
-			result |= 1 >> i;
+			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
 			running_sum = test_sum;
 			break;
 		}
 		else if (test_sum < fraction) {
-			result |= 1 >> i;
+			result |= (1 << (RRR_FIXED_POINT_BASE2_EXPONENT - 1)) >> i;
 			running_sum = test_sum;
 		}
 	}
-
-	result >>= 64 - RRR_FIXED_POINT_BASE2_EXPONENT;
 
 	uint64_t integer_u = integer;
 	result |= integer_u << RRR_FIXED_POINT_BASE2_EXPONENT;
@@ -106,7 +109,7 @@ int rrr_fixp_to_ldouble (long double *target, rrr_fixp source) {
 	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
 		unsigned int bit = (((uint64_t) 1) << (23 - i)) & decimals;
 		if (bit != 0) {
-			result += decimal_fractions[i];
+			result += decimal_fractions_base2[i];
 		}
 	}
 
@@ -138,129 +141,165 @@ int rrr_fixp_to_str (char *target, ssize_t target_size, rrr_fixp source) {
 	return 0;
 }
 
-int rrr_str_to_fixp (rrr_fixp *target, const char *str) {
-	ssize_t input_length = strlen(str);
+static long double __rrr_fixp_convert_char (char c) {
+	if (c >= '0' && c <= '9') {
+		c -= '0';
+	}
+	else if (c >= 'a' && c <= 'f') {
+		c -= 'a';
+		c += 10;
+	}
+	else if (c >= 'A' && c <= 'F') {
+		c -= 'A';
+		c += 10;
+	}
+	else {
+		VL_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
+	}
 
-	char buf[input_length + 1];
-	memcpy(buf, str, input_length + 1);
+	return c;
+}
 
-	uint64_t result = 0;
+int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr) {
+	*target = 0;
 
-	if (input_length == 0) {
+	if (str_length == 0) {
 		return 1;
 	}
 
-	char *start = buf;
-	char *end = buf + input_length;
-	char *dot = NULL;
-	char *endptr = NULL;
+	uint64_t result = 0;
+	uint64_t result_integer = 0;
+	uint64_t result_fraction = 0;
+
+	const char *integer_pos = NULL;
+	const char *start = str;
+	const char *end = str + str_length;
+	const char *dot = NULL;
+
+	ssize_t prefix_length = 0;
+	ssize_t number_length = 0;
 
 	int is_negative = 0;
+	int base = 10;
+
+	long double factor = 1.0;
+	long double fraction = 0.0;
+	long double running_sum = 0.0;
+
+	// PREFIX PARSING
+	if (str_length > 3) {
+		if (strncmp(start, "16#", 3) == 0) {
+			base = 16;
+			start += 3;
+			prefix_length += 3;
+		}
+		else if (strncmp(start, "10#", 3) == 0) {
+			base = 10;
+			start += 3;
+			prefix_length += 3;
+		}
+	}
+
+	if (start >= end) {
+		return 1;
+	}
+
 	if (*start == '-') {
 		is_negative = 1;
 		start++;
-		input_length--;
+		prefix_length++;
 	}
 	else if (*start == '+') {
 		start++;
-		input_length--;
+		prefix_length++;
 	}
 
-	int decimal_start_zeros = 0;
+	if (start >= end) {
+		return 1;
+	}
+
+	integer_pos = start;
+
+	// PRELIMINARY INPUT CHECK AND SEPARATOR SEARCH
 	int dot_count = 0;
-	for (int i = 0; i < input_length; i++) {
-		char c = *(start + i);
+	for (const char *pos = start; pos < end; pos++) {
+		char c = *pos;
 		if (c >= '0' && c <= '9') {
 			// OK
 		}
+		else if (base == 16 && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+			// OK
+		}
 		else if (c == '.') {
-			if (i == 0) {
+			if (pos == start) {
 				return 1;
 			}
 			if (++dot_count > 1) {
 				return 1;
 			}
-			dot = start + i;
-
-			for (i = i + 1; i < input_length; i++) {
-				char c = *(start + i);
-				if (c == '0') {
-					decimal_start_zeros++;
-				}
-				else {
-					i--;
-					break;
-				}
-			}
+			dot = pos;
 		}
 		else {
-			return 1;
+			break;
 		}
+		number_length++;
 	}
 
-	result = strtoull(start, &endptr, 10);
-
-//	printf ("%" PRIu64 " < %" PRIu64 "\n", result, RRR_FIXED_POINT_NUMBER_MAX);
-
-	if (result > RRR_FIXED_POINT_NUMBER_MAX) {
+	if (number_length == 0) {
 		return 1;
 	}
 
-	result <<= RRR_FIXED_POINT_BASE2_EXPONENT;
+	end = str + prefix_length + number_length;
+	*endptr = end;
 
 	if (dot == NULL) {
-		if (endptr != end) {
-			return 1;
-		}
-	}
-	else {
-		if (endptr != dot) {
-			return 1;
-		}
-
-		// Any better precision will be lost as we can't store it
-		if (decimal_start_zeros < 9) {
-			char *before_dot_digit = dot - 1;
-			*before_dot_digit = '0';
-
-			double decimals = strtod(before_dot_digit, &endptr);
-			if (endptr != end) {
-				return 1;
-			}
-
-//			printf ("Input decimals: %s / %f\n", before_dot_digit, decimals);
-
-			uint64_t decimals_out = 0;
-			double running_sum = 0.0;
-			for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
-				double position_value = decimal_fractions[i];
-				double test_sum = running_sum + position_value;
-
-//				printf ("test sum %lf fraction %lf ", test_sum, position_value);
-
-				if (test_sum < decimals) {
-//					printf ("lt\n");
-					decimals_out |= 1 << (23 - i);
-					running_sum += position_value;
-				}
-				else if (test_sum == decimals) {
-//					printf ("eq\n");
-					decimals_out |= 1 << (23 - i);
-					running_sum += position_value;
-					break;
-				}
-				else {
-//					printf ("gt\n");
-				}
-			}
-//			printf ("decimals out: %" PRIu64 "\n", decimals_out);
-//			printf ("result out: %" PRIu64 "\n", result);
-			result |= decimals_out;
-//			printf ("result out: %" PRIu64 "\n", result);
-
-		}
+		dot = end;
+		goto no_decimals;
 	}
 
+	// FRACTION CONVERSION
+	fraction = 0.0;
+	factor = 1.0;
+	for (const char *pos = dot + 1; pos < end; pos++) {
+		char c = *pos;
+		fraction += (__rrr_fixp_convert_char(c) / base) / factor;
+		factor *= base;
+	}
+
+	if (!isfinite(fraction)) {
+		goto no_decimals;
+	}
+
+	for (int i = 0; i < RRR_FIXED_POINT_BASE2_EXPONENT; i++) {
+		long double position_value = decimal_fractions_base2[i];
+		long double test_sum = running_sum + position_value;
+
+		if (test_sum < fraction) {
+			result_fraction |= 1 << (23 - i);
+			running_sum += position_value;
+		}
+		else if (test_sum == fraction) {
+			result_fraction |= 1 << (23 - i);
+			running_sum += position_value;
+			break;
+		}
+	}
+	result |= result_fraction;
+
+	// INTEGER CONVERSION
+	no_decimals:
+	start = integer_pos;
+	factor = 1.0;
+	for (const char *pos = dot - 1; pos >= start; pos--) {
+		char c = *pos;
+		result_integer += __rrr_fixp_convert_char(c) * factor;
+		factor *= base;
+	}
+
+	result |= (result_integer << RRR_FIXED_POINT_BASE2_EXPONENT);
+	result &= ~((uint64_t) 1 << 63);
+
+	// NEGATION
 	if (is_negative) {
 		result = 0 - result;
 	}

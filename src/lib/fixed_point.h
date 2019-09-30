@@ -32,6 +32,6 @@ typedef int64_t rrr_fixp;
 int rrr_ldouble_to_fixp (rrr_fixp *target, long double source);
 int rrr_fixp_to_ldouble (long double *target, rrr_fixp source);
 int rrr_fixp_to_str (char *target, ssize_t target_size, rrr_fixp source);
-int rrr_str_to_fixp (rrr_fixp *target, const char *str);
+int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr);
 
 #endif /* RRR_FIXED_POINT_H */

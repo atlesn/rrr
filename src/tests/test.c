@@ -90,8 +90,23 @@ static int test_fixp(void) {
 	rrr_fixp fixp_a = 0;
 	rrr_fixp fixp_b = 0;
 
-	ret |= rrr_str_to_fixp(&fixp_a, "+1.5");
-	ret |= rrr_str_to_fixp(&fixp_b, "-1.5");
+	const char *endptr;
+
+	const char *a_str = "+1.5yuiyuiyuiyu";
+	const char *b_str = "-1.5##%%¤#";
+
+	ret |= rrr_str_to_fixp(&fixp_a, a_str, strlen(a_str), &endptr);
+	if (endptr - a_str != 4) {
+		TEST_MSG("End pointer position was incorrect for A\n");
+		ret = 1;
+		goto out;
+	}
+	ret |= rrr_str_to_fixp(&fixp_b, b_str, strlen(b_str), &endptr);
+	if (endptr - b_str != 4) {
+		TEST_MSG("End pointer position was incorrect for B\n");
+		ret = 1;
+		goto out;
+	}
 
 	if (ret != 0) {
 		TEST_MSG("Conversion from string to fixed point failed\n");
@@ -143,6 +158,31 @@ static int test_fixp(void) {
 	ret = fixp_a + fixp_b;
 	if (ret != 0) {
 		TEST_MSG("Expected 0 while adding 1.5 and -1.5 after conversion from double, got %i\n", ret);
+		ret = 1;
+		goto out;
+	}
+
+	const char *a_hex = "16#+1.8/¤#";
+	if (rrr_str_to_fixp(&fixp_a, a_hex, strlen(a_hex), &endptr) != 0) {
+		TEST_MSG("Hexadecimal conversion failed\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (endptr - a_hex != 7) {
+		TEST_MSG("End pointer position was incorrect for hex\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_fixp_to_ldouble(&dbl, fixp_a) != 0) {
+		TEST_MSG("Conversion from fixed point to ldouble failed (hex)\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (dbl != 1.5) {
+		TEST_MSG("Wrong output while converting fixed point to double (hex test), expected 1.5 but got %Lf\n", dbl);
 		ret = 1;
 		goto out;
 	}
