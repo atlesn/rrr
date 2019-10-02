@@ -63,6 +63,7 @@ struct mqtt_client_data {
 	struct rrr_mqtt_property_collection connect_properties;
 	char *server;
 	char *publish_topic;
+	int force_publish_topic;
 	char *version_str;
 	char *client_identifier;
 	uint8_t qos;
@@ -221,8 +222,21 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			goto out;
 		}
 	}
-	else if (yesno != 0) {
+	else if (yesno > 0) {
 		data->publish_vl_message = 1;
+	}
+
+
+	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_publish_topic_force")
+	)) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Could not interpret mqtt_publish_topic_force setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (yesno > 0) {
+		data->force_publish_topic = 1;
 	}
 
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
@@ -233,7 +247,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			goto out;
 		}
 	}
-	else if (yesno != 0) {
+	else if (yesno > 0) {
 		data->receive_vl_message = 1;
 	}
 
@@ -248,6 +262,11 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			ret = 1;
 			goto out;
 		}
+	}
+	else if (ret == RRR_SETTING_NOT_FOUND && data->force_publish_topic != 0) {
+		VL_MSG_ERR("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
 	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", parse_sub_topic, data)) != 0) {
@@ -377,7 +396,9 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 
-	if (MSG_TOPIC_LENGTH(reading) > 0) {
+	printf ("Force publish topic: %i\n", private_data->force_publish_topic);
+
+	if (MSG_TOPIC_LENGTH(reading) > 0 && private_data->force_publish_topic == 0) {
 		publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
 		if (publish->topic != NULL) {
 			memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
@@ -388,6 +409,9 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		publish->topic = strdup(private_data->publish_topic);
 	}
 	else {
+		if (private_data->force_publish_topic != 0) {
+			VL_BUG("force_publish_topic was 1 but topic was not set in poll_callback of mqttclient\n");
+		}
 		VL_MSG_ERR("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 0;

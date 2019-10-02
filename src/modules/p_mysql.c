@@ -86,6 +86,9 @@ struct mysql_data {
 	char *mysql_special_columns[RRR_MYSQL_BIND_MAX];
 	char *mysql_special_values[RRR_MYSQL_BIND_MAX];
 	char *mysql_columns_blob_writes[RRR_MYSQL_BIND_MAX]; // Force blob write method
+
+	/* Used by test module only */
+	int generate_tag_messages;
 };
 
 struct process_entries_data {
@@ -787,8 +790,17 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 		ret = 1;
 	}
 
-	// DROP UNKNOWN MESSAGES
+	// GENERATE TAG MESSAGES (UNDOCUMENTED, FOR TESTING)
 	int yesno = 0;
+	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_generate_tag_messages") == RRR_SETTING_PARSE_ERROR) {
+		VL_MSG_ERR ("mysql: Could not understand argument mysql_generate_tag_messages of instance '%s', please specify 'yes' or 'no'\n",
+				config->name
+		);
+		ret = 1;
+	}
+	data->generate_tag_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
+
+	// DROP UNKNOWN MESSAGES
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_drop_unknown_messages") == RRR_SETTING_PARSE_ERROR) {
 		VL_MSG_ERR ("mysql: Could not understand argument mysql_drop_unknown_messages of instance '%s', please specify 'yes' or 'no'\n",
 				config->name
@@ -936,6 +948,24 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 			fifo_buffer_write(&mysql_data->input_buffer, data, size);
 			err = 1;
 		}
+	}
+	else if (mysql_data->generate_tag_messages != 0) {
+		// Tag message as saved to sender
+		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
+		message->type = MSG_TYPE_TAG;
+		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
+		message->network_size = message->msg_size;
+		entry->data_length = MSG_TOTAL_SIZE(message);
+		if (entry->addr_len == 0) {
+			// Message does not contain IP information which means it originated locally
+			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
+		}
+		else {
+			fifo_buffer_write(&mysql_data->output_buffer_ip, data, size);
+		}
+	}
+	else {
+		free(entry);
 	}
 
 	return err;

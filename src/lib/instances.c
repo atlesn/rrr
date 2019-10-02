@@ -217,12 +217,12 @@ int instance_load_and_save (
 		return 1;
 	}
 
-	if (module->dynamic_data->type == VL_MODULE_TYPE_DEADEND && (
+	if ((module->dynamic_data->type == VL_MODULE_TYPE_DEADEND  || module->dynamic_data->type == VL_MODULE_TYPE_NETWORK) && (
 			module->dynamic_data->operations.poll != NULL ||
 			module->dynamic_data->operations.poll_delete != NULL ||
 			module->dynamic_data->operations.poll_delete_ip != NULL
 	)) {
-		VL_BUG("Poll functions specified for module %s which is of dead end type\n",
+		VL_BUG("Poll functions specified for module %s which is of deadend or network type\n",
 				module->dynamic_data->instance_name);
 	}
 
@@ -314,7 +314,9 @@ int instance_add_senders (
 			}
 		}
 	}
-	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE) {
+	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE ||
+			instance->dynamic_data->type == VL_MODULE_TYPE_NETWORK
+	) {
 		if (!senders_check_empty(&instance->senders)) {
 			VL_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
 					instance->dynamic_data->instance_name, instance->dynamic_data->module_name);

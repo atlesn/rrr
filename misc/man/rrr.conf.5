@@ -97,6 +97,10 @@ Source module, cannot have senders
 Processor modules, can have senders specified to read from (set with
 .B senders=
 )
+.It D
+Dead-end module, cannot be used as sender
+.It N
+Network-oriented module, cannot be used as sender nor have senders specified itself.
 .It A
 Module supports data arrays (see above)
 .It I
@@ -217,7 +221,7 @@ An optional keyfile which we use to generate a key used to encrypt messages we s
 The port used for sending and receiving packtes, defaults to 5555.
 .El
 .PP
-.SS mysql (PAIV)
+.SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
 database. Tag messages are
 generated for each saved message. Tag messages for messages originating locally (from non-IP modules) can only be picked
@@ -283,6 +287,8 @@ Used to force to send data as blob (raw data) to the database for the specified 
 Used to write fixed values to the database.
 .It mysql_add_timestamp_col={yes|no}
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
+.It mysql_strip_array_separators={yes|no}
+Disregard any separator items in received array messages. Defaults to yes.
 .El
 .SS python3 (P)
 This module can send messages to a custom python program and read them back.
@@ -464,7 +470,7 @@ Format of data received on the socket, see
 .Xr rrr_post(1)
 for syntax.
 .El
-.SS influxdb(PA)
+.SS influxdb(DA)
 This module receives array messages from other modules and sends their data to an Influx database using HTTP.
  
 .Bl -tag -width -indent
@@ -498,7 +504,7 @@ It is required to have at least one tag specified in either
 or
 .B influxdb_fixed_fields
 .
-.SS mqttbroker (P)
+.SS mqttbroker (N)
 An MQTT broker supporting V3.1(.1) and V5 (lacking some functionallity).
 .PP
 .Bl -tag -width -indent
@@ -538,6 +544,10 @@ Default Quality of Service to use, defaults to 1.
 Default MQTT protocol version to use, defaults to 3.1.1.
 .It mqtt_publish_topic=TOPIC
 Topic to use when publishing RRR messages without topic set in them. If left unspecified, RRR messages without a topic will be dropped.
+.It mqtt_publish_topic_force={yes|no}
+Force use of the topic specified in
+.B mqtt_publish_topic
+and disregard any topic in RRR messages.
 .It mqtt_publish_rrr_message={yes|no}
 If set to yes, the client will send full RRR messages. If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]

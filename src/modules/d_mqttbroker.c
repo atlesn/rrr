@@ -58,20 +58,6 @@ struct mqtt_broker_data {
 	rrr_setting_uint close_wait_time;
 };
 
-static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
-//	struct mqtt_data *private_data = thread_data->private_data;
-	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("mqtt: Result from buffer: measurement %" PRIu64 " size %lu, discarding data\n",
-			reading->data_numeric, size);
-
-	free(data);
-
-	// fifo_buffer_write(&private_data->local_buffer, data, size);
-
-	return 0;
-}
-
 static void data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
 	fifo_buffer_invalidate(&data->local_buffer);
@@ -202,7 +188,6 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 static void *thread_entry_mqtt (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_broker_data* data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
@@ -213,8 +198,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("mqtt broker thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
 
@@ -249,8 +232,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 	pthread_cleanup_push(rrr_mqtt_broker_destroy_void, data->mqtt_broker_data);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
-
 	VL_DEBUG_MSG_1 ("mqtt broker started thread %p\n", thread_data);
 
 	if (rrr_mqtt_broker_listen_ipv4_and_ipv6(data->mqtt_broker_data, data->server_port) != 0) {
@@ -261,12 +242,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
-
-		// TODO : Figure out what to do with data from local senders
-
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-			break;
-		}
 
 		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
 			VL_MSG_ERR("Error from MQTT broker while running tasks\n");
@@ -285,7 +260,6 @@ static void *thread_entry_mqtt (struct vl_thread *thread) {
 
 	out_message:
 		VL_DEBUG_MSG_1 ("Thread mqtt broker %p exiting\n", thread_data->thread);
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -312,7 +286,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_FLEXIBLE;
+	data->type = VL_MODULE_TYPE_NETWORK;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 	data->start_priority = VL_THREAD_START_PRIORITY_NETWORK;

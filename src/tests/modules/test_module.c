@@ -98,8 +98,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 		goto configtest_done;
 	}
 
-	/* Test which sets up the MySQL database and then listens on a
-	 * buffer for ACK message */
+	/* Test which sets up the MySQL database */
 	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
 			"instance_dummy_input",
 			"instance_buffer_msg",
