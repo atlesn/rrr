@@ -159,6 +159,7 @@ static void __rrr_header_field_collection_add (
 void rrr_http_part_destroy (struct rrr_http_part *part) {
 	RRR_LINKED_LIST_DESTROY(part, struct rrr_http_part, rrr_http_part_destroy(node));
 	RRR_LINKED_LIST_DESTROY(&part->headers, struct rrr_http_header_field, __rrr_http_header_field_destroy(node));
+	rrr_http_fields_collection_clear(&part->fields);
 	RRR_FREE_IF_NOT_NULL(part->response_str);
 	free (part);
 }
@@ -367,7 +368,14 @@ int rrr_http_part_parse (
 			goto out;
 		}
 		else {
-			ret = RRR_HTTP_PARSE_UNTIL_CLOSE;
+			if (result->response_code == 204) {
+				// No content
+				result->data_length = 0;
+				ret = RRR_HTTP_PARSE_OK;
+			}
+			else {
+				ret = RRR_HTTP_PARSE_UNTIL_CLOSE;
+			}
 			goto out;
 		}
 	}

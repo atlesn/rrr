@@ -161,7 +161,7 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 
 	(void)(data);
 
-	struct rrr_http_part *part = session->data;
+	struct rrr_http_part *part = session->response_part;
 
 	int ret = 0;
 
@@ -197,7 +197,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 	if ((ret = rrr_http_session_new (
 			&data->session,
-			RRR_HTTP_METHOD_GET,
+			RRR_HTTP_METHOD_POST_URLENCODED,
 			data->server,
 			data->http_port,
 			"/?e=f",

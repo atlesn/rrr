@@ -61,6 +61,7 @@ struct rrr_http_part {
 	RRR_LINKED_LIST_NODE(struct rrr_http_part);
 	RRR_LINKED_LIST_HEAD(struct rrr_http_part);
 	struct rrr_http_header_field_collection headers;
+	struct rrr_http_field_collection fields;
 	int response_code;
 	char *response_str;
 	int parse_complete;

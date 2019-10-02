@@ -40,7 +40,7 @@ void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields)
 static int __rrr_http_fields_collection_add_field_raw (
 		struct rrr_http_field_collection *fields,
 		const char *name,
-		void *value,
+		const void *value,
 		ssize_t size,
 		int is_binary
 ) {
@@ -54,16 +54,24 @@ static int __rrr_http_fields_collection_add_field_raw (
 	}
 	memset (field, '\0', sizeof(*field));
 
-	field->name = strdup(name);
-	field->value = malloc(size);
-
-	if (field->name == NULL || field->value == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw B\n");
-		ret = 1;
-		goto out;
+	if (name != NULL && strlen(name) > 0) {
+		field->name = strdup(name);
+		if (field->name == NULL) {
+			VL_MSG_ERR("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
-	memcpy(field->value, value, size);
+	if (value != NULL && size > 0) {
+		field->value = malloc(size);
+		if (field->value == NULL) {
+			VL_MSG_ERR("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
+			ret = 1;
+			goto out;
+		}
+		memcpy(field->value, value, size);
+	}
 
 	field->is_binary = (is_binary != 0 ? 1 : 0);
 
@@ -95,21 +103,22 @@ int rrr_http_fields_collection_add_field_binary (
 	return __rrr_http_fields_collection_add_field_raw(fields, name, value, size, 1);
 }
 
-static int __rrr_http_fields_get_total_length (
+int rrr_http_fields_get_total_length (
 		struct rrr_http_field_collection *fields
 ) {
 	int ret = 0;
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(fields, struct rrr_http_field);
-		ret += strlen(node->name);
-		ret += strlen(node->value);
+		ret += (node->name != NULL ? strlen(node->name) : 0);
+		ret += (node->value != NULL ? strlen(node->value) : 0);
 	RRR_LINKED_LIST_ITERATE_END(fields);
 
 	return ret;
 }
 
-char *rrr_http_fields_to_urlencoded_form_data (
-		struct rrr_http_field_collection *fields
+static char *__rrr_http_fields_to_form_data (
+		struct rrr_http_field_collection *fields,
+		int no_urlencoding
 ) {
 	char *result = NULL;
 	char *name = NULL;
@@ -117,13 +126,13 @@ char *rrr_http_fields_to_urlencoded_form_data (
 	int err = 0;
 
 	ssize_t result_max_length =
-			__rrr_http_fields_get_total_length(fields) * 3 +
+			rrr_http_fields_get_total_length(fields) * 3 +
 			RRR_LINKED_LIST_COUNT(fields) * 2 +
 			1
 	;
 
 	if ((result = malloc(result_max_length)) == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_fields_to_urlencoded_form_data\n");
+		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_to_form_data\n");
 		err = 1;
 		goto out;
 	}
@@ -141,30 +150,52 @@ char *rrr_http_fields_to_urlencoded_form_data (
 		}
 
 		RRR_FREE_IF_NOT_NULL(name);
-		RRR_FREE_IF_NOT_NULL(value);
+		if (node->name != NULL) {
+			if (no_urlencoding == 0) {
+				name = rrr_http_util_encode_uri(node->name);
 
-		name = rrr_http_util_encode_uri(node->name);
-		value = rrr_http_util_encode_uri(node->value);
+				if (name == NULL) {
+					VL_MSG_ERR("Could not encode parameter '%s' name '%s' in __rrr_http_fields_to_form_data\n",
+							node->name, node->value);
+					err = 1;
+					goto out;
+				}
 
-		if (name == NULL || value == NULL) {
-			VL_MSG_ERR("Could not encode parameter '%s' value '%s' in rrr_http_fields_to_urlencoded_form_data\n",
-					node->name, node->value);
-			err = 1;
-			goto out;
+				strcpy(wpos, name);
+				wpos += strlen(name);
+			}
+			else {
+				strcpy(wpos, node->name);
+				wpos += strlen(node->name);
+			}
 		}
 
-		strcpy(wpos, name);
-		wpos += strlen(name);
+		if (node->value != NULL) {
+			if (no_urlencoding == 0) {
+				RRR_FREE_IF_NOT_NULL(value);
+				value = rrr_http_util_encode_uri(node->value);
 
-		*wpos = '=';
-		wpos++;
+				if (value == NULL) {
+					VL_MSG_ERR("Could not encode parameter '%s' value '%s' in __rrr_http_fields_to_form_data\n",
+							node->name, node->value);
+					err = 1;
+					goto out;
+				}
+				*wpos = '=';
+				wpos++;
 
-		strcpy (wpos, value);
-		wpos += strlen(value);
+				strcpy (wpos, value);
+				wpos += strlen(value);
+			}
+			else {
+				strcpy (wpos, node->value);
+				wpos += strlen(node->value);
+			}
+		}
 	RRR_LINKED_LIST_ITERATE_END(fields);
 
 	if (wpos > wpos_max) {
-		VL_BUG("Result buffer write out of bounds in rrr_http_fields_to_urlencoded_form_data\n");
+		VL_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");
 	}
 
 	out:
@@ -175,4 +206,16 @@ char *rrr_http_fields_to_urlencoded_form_data (
 	RRR_FREE_IF_NOT_NULL(name);
 	RRR_FREE_IF_NOT_NULL(value);
 	return result;
+}
+
+char *rrr_http_fields_to_urlencoded_form_data (
+		struct rrr_http_field_collection *fields
+) {
+	return __rrr_http_fields_to_form_data(fields, 0);
+}
+
+char *rrr_http_fields_to_raw_form_data (
+		struct rrr_http_field_collection *fields
+) {
+	return __rrr_http_fields_to_form_data(fields, 1);
 }

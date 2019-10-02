@@ -47,9 +47,14 @@ int rrr_http_fields_collection_add_field_binary (
 		void *value,
 		ssize_t size
 );
+int rrr_http_fields_get_total_length (
+		struct rrr_http_field_collection *fields
+);
 char *rrr_http_fields_to_urlencoded_form_data (
 		struct rrr_http_field_collection *fields
 );
-
+char *rrr_http_fields_to_raw_form_data (
+		struct rrr_http_field_collection *fields
+);
 
 #endif /* RRR_HTTP_FIELDS_H */

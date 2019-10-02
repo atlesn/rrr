@@ -101,7 +101,7 @@ static int __rrr_array_parse_identifier_and_size (
 		}
 	}
 	else {
-		if (*start != '\0') {
+		if (*start != '\0' && *start != '#') {
 			VL_MSG_ERR("Extra data or size argument after type definition '%s' which has automatic size\n",
 					type->identifier);
 			ret = 1;

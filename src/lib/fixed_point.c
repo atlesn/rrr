@@ -54,7 +54,7 @@ static const double decimal_fractions_base2[24] = {
 		1.0/16777216.0
 };
 
-int rrr_ldouble_to_fixp (rrr_fixp *target, long double source) {
+int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source) {
 	long double integer = 0;
 	long double fraction = modfl(source, &integer);
 
@@ -136,6 +136,8 @@ int rrr_fixp_to_str (char *target, ssize_t target_size, rrr_fixp source) {
 		return 1;
 	}
 
+	buf[bytes] = '\0';
+
 	memcpy(target, buf, strlen(buf));
 
 	return 0;
@@ -160,12 +162,126 @@ static long double __rrr_fixp_convert_char (char c) {
 	return c;
 }
 
-int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr) {
-	*target = 0;
-
+static int __rrr_fixp_str_preliminary_parse (
+		const char *str,
+		ssize_t str_length,
+		const char **integer_pos,
+		const char **dot,
+		const char **endptr,
+		int *base,
+		int *is_negative
+) {
 	if (str_length == 0) {
 		return 1;
 	}
+
+	const char *start = str;
+	const char *end = start + str_length;
+
+	ssize_t prefix_length = 0;
+	ssize_t number_length = 0;
+
+	*integer_pos = NULL;
+	*dot = NULL;
+	*endptr = NULL;
+	*base = 10;
+	*is_negative = 0;
+
+	// PREFIX PARSING
+	if (str_length > 3) {
+		if (strncmp(start, "16#", 3) == 0) {
+			*base = 16;
+			start += 3;
+			prefix_length += 3;
+		}
+		else if (strncmp(start, "10#", 3) == 0) {
+			*base = 10;
+			start += 3;
+			prefix_length += 3;
+		}
+	}
+
+	if (start >= end) {
+		return RRR_FIXED_POINT_PARSE_INCOMPLETE;
+	}
+
+	if (*start == '-') {
+		*is_negative = 1;
+		start++;
+		prefix_length++;
+	}
+	else if (*start == '+') {
+		start++;
+		prefix_length++;
+	}
+
+	if (start >= end) {
+		return RRR_FIXED_POINT_PARSE_INCOMPLETE;
+	}
+
+	*integer_pos = start;
+
+	// PRELIMINARY INPUT CHECK AND SEPARATOR SEARCH
+	int dot_count = 0;
+	for (const char *pos = start; pos < end; pos++) {
+		char c = *pos;
+		if (c >= '0' && c <= '9') {
+			// OK
+		}
+		else if (*base == 16 && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+			// OK
+		}
+		else if (c == '.') {
+			if (pos == start) {
+				return RRR_FIXED_POINT_PARSE_ERR;
+			}
+			if (++dot_count > 1) {
+				return RRR_FIXED_POINT_PARSE_ERR;
+			}
+			*dot = pos;
+		}
+		else {
+			break;
+		}
+		number_length++;
+	}
+
+	if (number_length == 0) {
+		return RRR_FIXED_POINT_PARSE_ERR;
+	}
+
+	end = str + prefix_length + number_length;
+	*endptr = end;
+
+	if (dot == NULL) {
+		*dot = end;
+	}
+
+	return 0;
+}
+
+int rrr_fixp_str_get_length (ssize_t *result, const char *str, ssize_t str_length) {
+	*result = 0;
+
+	const char *endptr = NULL;
+	const char *dummy_c = NULL;
+	int dummy_i = 0;
+
+	int ret = 0;
+
+	if ((ret = __rrr_fixp_str_preliminary_parse(str, str_length, &dummy_c, &dummy_c, &endptr, &dummy_i, &dummy_i)) != 0) {
+		return ret;
+	}
+
+	*result = endptr - str;
+
+	return ret;
+}
+
+int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr) {
+	*target = 0;
+
+	int ret = 0;
 
 	uint64_t result = 0;
 	uint64_t result_integer = 0;
@@ -176,9 +292,6 @@ int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, cons
 	const char *end = str + str_length;
 	const char *dot = NULL;
 
-	ssize_t prefix_length = 0;
-	ssize_t number_length = 0;
-
 	int is_negative = 0;
 	int base = 10;
 
@@ -186,74 +299,14 @@ int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, cons
 	long double fraction = 0.0;
 	long double running_sum = 0.0;
 
-	// PREFIX PARSING
-	if (str_length > 3) {
-		if (strncmp(start, "16#", 3) == 0) {
-			base = 16;
-			start += 3;
-			prefix_length += 3;
-		}
-		else if (strncmp(start, "10#", 3) == 0) {
-			base = 10;
-			start += 3;
-			prefix_length += 3;
-		}
-	}
-
-	if (start >= end) {
-		return 1;
-	}
-
-	if (*start == '-') {
-		is_negative = 1;
-		start++;
-		prefix_length++;
-	}
-	else if (*start == '+') {
-		start++;
-		prefix_length++;
-	}
-
-	if (start >= end) {
-		return 1;
-	}
-
-	integer_pos = start;
-
 	// PRELIMINARY INPUT CHECK AND SEPARATOR SEARCH
-	int dot_count = 0;
-	for (const char *pos = start; pos < end; pos++) {
-		char c = *pos;
-		if (c >= '0' && c <= '9') {
-			// OK
-		}
-		else if (base == 16 && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-			// OK
-		}
-		else if (c == '.') {
-			if (pos == start) {
-				return 1;
-			}
-			if (++dot_count > 1) {
-				return 1;
-			}
-			dot = pos;
-		}
-		else {
-			break;
-		}
-		number_length++;
+	if ((ret = __rrr_fixp_str_preliminary_parse(str, str_length, &integer_pos, &dot, &end, &base, &is_negative)) != 0) {
+		return ret;
 	}
 
-	if (number_length == 0) {
-		return 1;
-	}
-
-	end = str + prefix_length + number_length;
 	*endptr = end;
 
 	if (dot == NULL) {
-		dot = end;
 		goto no_decimals;
 	}
 
@@ -306,6 +359,6 @@ int rrr_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, cons
 
 	memcpy (target, &result, sizeof(*target));
 
-	return 0;
+	return ret;
 }
 

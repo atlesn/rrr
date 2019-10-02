@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "type.h"
+#include "fixed_point.h"
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "messages.h"
@@ -533,35 +534,37 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-static int __rrr_type_be_unpack (RRR_TYPE_UNPACK_ARGS) {
+
+static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
 	if (node->total_stored_length % sizeof(rrr_type_be) != 0) {
-		VL_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_array_convert_be_64_to_host\n");
+		VL_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_type_64_unpack\n");
 		return 1;
 	}
 
 	ssize_t array_size = node->total_stored_length / sizeof(rrr_type_be);
 	const char *pos = node->data;
 	for (unsigned int i = 0; i < array_size; i++) {
-		*((rrr_type_be *) pos) = be64toh(*((rrr_type_be *) pos));
+		rrr_type_be tmp = *((rrr_type_be *) pos);
+		*((rrr_type_be *) pos) = be64toh(tmp);
 		pos += sizeof(rrr_type_be);
 	}
 
-	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
+	node->definition = rrr_type_get_from_id(target_type);
 
 	return 0;
 }
 
-static int __rrr_type_blob_unpack (RRR_TYPE_UNPACK_ARGS) {
-	if (node->total_stored_length == 0) {
-		VL_MSG_ERR("Length of blob type was 0 in __rrr_array_convert_blob_to_host\n");
-		return 1;
-	}
-	return 0;
+static int __rrr_type_be_unpack (RRR_TYPE_UNPACK_ARGS) {
+	return __rrr_type_64_unpack (node, RRR_TYPE_H);
 }
 
-static int __rrr_type_host_pack (RRR_TYPE_PACK_ARGS) {
+static int __rrr_type_fixp_unpack (RRR_TYPE_UNPACK_ARGS) {
+	return __rrr_type_64_unpack (node, RRR_TYPE_FIXP);
+}
+
+static int __rrr_type_64_pack (RRR_TYPE_PACK_ARGS, uint8_t target_type) {
 	if (node->total_stored_length % sizeof(rrr_type_be) != 0) {
-		VL_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_array_convert_be_64_to_host\n");
+		VL_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_type_64_pack\n");
 		return 1;
 	}
 
@@ -570,14 +573,30 @@ static int __rrr_type_host_pack (RRR_TYPE_PACK_ARGS) {
 	for (unsigned int i = 0; i < array_size; i++) {
 		const char *rpos = node->data + pos;
 		char *wpos = target + pos;
-
 		*((rrr_type_be *) wpos) = htobe64(*((rrr_type_be *) rpos));
+
 		pos += sizeof(rrr_type_be);
 	}
 
-	*new_type_id = RRR_TYPE_BE;
+	*new_type_id = target_type;
 	*written_bytes = node->total_stored_length;
 
+	return 0;
+}
+
+static int __rrr_type_host_pack (RRR_TYPE_PACK_ARGS) {
+	return __rrr_type_64_pack (target, written_bytes, new_type_id, node, RRR_TYPE_BE);
+}
+
+static int __rrr_type_fixp_pack (RRR_TYPE_PACK_ARGS) {
+	return __rrr_type_64_pack (target, written_bytes, new_type_id, node, RRR_TYPE_FIXP);
+}
+
+static int __rrr_type_blob_unpack (RRR_TYPE_UNPACK_ARGS) {
+	if (node->total_stored_length == 0) {
+		VL_MSG_ERR("Length of blob type was 0 in __rrr_array_convert_blob_to_host\n");
+		return 1;
+	}
 	return 0;
 }
 
@@ -710,48 +729,119 @@ static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 }
 
 
-static int __get_import_length_dec (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
-	const char *start = buf;
-	const char *end = buf + buf_size;
+static int __get_import_length_fixp (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	(void)(node);
 
 	int ret = RRR_TYPE_PARSE_OK;
 
-	ssize_t sign_length = 0;
+	if (buf_size < 1) {
+		return RRR_TYPE_PARSE_INCOMPLETE;
+	}
+
 	ssize_t length = 0;
-
-	CHECK_END_AND_RETURN(1);
-
-	if (*start == '-' || *start == '+') {
-		start++;
-		sign_length = 1;
+	if ((ret = rrr_fixp_str_get_length (&length, buf, buf_size)) != 0) {
+		if (ret == RRR_FIXED_POINT_PARSE_INCOMPLETE) {
+			return RRR_TYPE_PARSE_INCOMPLETE;
+		}
+		return RRR_TYPE_PARSE_ERR;
 	}
 
-	int dot_found = 0;
-	for (; start < end; start++) {
-		if (*start == '.') {
-			if (dot_found != 0) {
-				break;
-			}
-			dot_found = 1;
-		}
-		else if (*start < '0' || *start > '9') {
-			break;
-		}
-		length++;
-	}
-
-	if (length == 0) {
+	if (length == buf_size) {
 		ret = RRR_TYPE_PARSE_INCOMPLETE;
 		goto out;
 	}
 
-	*import_length = sign_length + length;
+	*import_length = length;
 
 	out:
 	return ret;
 }
 
-static int __rrr_type_import_dec (RRR_TYPE_IMPORT_ARGS) {
+static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+
+	if (node->data != NULL) {
+		VL_BUG("data was not NULL in __rrr_type_import_dec\n");
+	}
+	if (node->element_count != 1) {
+		VL_BUG("array size was not 1 in __rrr_type_import_dec\n");
+	}
+	if (node->import_length != 0) {
+		VL_BUG("length was not 0 in __rrr_type_import_dec\n");
+	}
+
+	int64_t fixp = 0;
+	const char *endptr = NULL;
+
+	if ((ret = rrr_fixp_str_to_fixp(&fixp, start, end - start, &endptr)) != 0) {
+		return ret;
+	}
+
+	// Fixed point needs another field after it to know where the number ends
+	if (endptr == end) {
+		return RRR_TYPE_PARSE_INCOMPLETE;
+	}
+
+	node->data = malloc(sizeof(fixp));
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_type_import_fixp\n");
+		ret = RRR_TYPE_PARSE_ERR;
+		goto out;
+	}
+
+	memcpy(node->data, &fixp, sizeof(fixp));
+	node->total_stored_length = sizeof(fixp);
+
+	*parsed_bytes = endptr - start;
+
+	out:
+	return ret;
+}
+
+static int __get_import_length_str (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	const char *start = buf;
+	const char *end = buf + buf_size;
+
+	(void)(node);
+
+	int ret = RRR_TYPE_PARSE_INCOMPLETE;
+
+	ssize_t length = 0;
+
+	CHECK_END_AND_RETURN(1);
+
+	if (*start != '"') {
+		VL_MSG_ERR("String did not begin with \" in __get_import_length_str\n");
+		ret = RRR_TYPE_PARSE_ERR;
+		goto out;
+	}
+
+	length++;
+	start++;
+
+	int ignore_next_quote = 0;
+	for (const char *pos = start; pos < end; pos++) {
+		length++;
+
+		if (*pos == '"' && ignore_next_quote != 1) {
+			ret = RRR_TYPE_PARSE_OK;
+			break;
+		}
+		else if (*pos == '\\') {
+			ignore_next_quote = 1;
+		}
+		else {
+			ignore_next_quote = 0;
+		}
+	}
+
+	*import_length = length;
+
+	out:
+	return ret;
+}
+
+static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 
 	if (node->data != NULL) {
@@ -766,26 +856,23 @@ static int __rrr_type_import_dec (RRR_TYPE_IMPORT_ARGS) {
 
 	ssize_t import_length = 0;
 
-	// This will validate the input
-	if ((ret = __get_import_length_dec(&import_length, node, start, end - start)) != 0) {
-		return ret;
-	}
-
-	if (start + import_length > end) {
-		VL_BUG("Import length too long in __rrr_type_import_dec\n");
-	}
-
-	node->data = malloc(import_length);
-	if (node->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_type_import_dec\n");
-		ret = RRR_TYPE_PARSE_ERR;
+	if ((ret = __get_import_length_str(&import_length, node, start, end - start)) != 0) {
 		goto out;
 	}
 
-	memcpy(node->data, start, import_length);
-	node->total_stored_length = import_length;
+	// Fake lengths to strip out the quotes
+	node->import_length = import_length - 2;
+	ssize_t parsed_bytes_tmp = 0;
+	if ((ret = __rrr_type_import_blob(node, &parsed_bytes_tmp, start + 1, end)) != 0) {
+		return ret;
+	}
 
-	*parsed_bytes = import_length;
+	if (parsed_bytes_tmp + 2 != import_length) {
+		VL_BUG("Parsed bytes vs import length mismatch in __rrr_type_import_str\n");
+	}
+
+	node->import_length = import_length;
+	*parsed_bytes = parsed_bytes_tmp + 2;
 
 	out:
 	return ret;
@@ -801,7 +888,8 @@ static const struct rrr_type_definition type_templates[] = {
 		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,						NULL,					RRR_TYPE_NAME_ISTR},
 		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_SEP},
 		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
-		{RRR_TYPE_DEC,		RRR_TYPE_MAX_DEC,	__get_import_length_dec,		__rrr_type_import_dec,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_DEC},
+		{RRR_TYPE_FIXP,		RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	RRR_TYPE_NAME_FIXP},
+		{RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_STR},
 		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,							NULL,					NULL,						NULL,					RRR_TYPE_NAME_ARRAY},
 		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
 };

@@ -39,9 +39,12 @@ void rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->host);
 	RRR_FREE_IF_NOT_NULL(session->endpoint);
 	RRR_FREE_IF_NOT_NULL(session->user_agent);
-	rrr_http_fields_collection_clear(&session->fields);
-	if (session->data != NULL) {
-		rrr_http_part_destroy(session->data);
+//	rrr_http_fields_collection_clear(&session->fields);
+	if (session->request_part != NULL) {
+		rrr_http_part_destroy(session->request_part);
+	}
+	if (session->response_part != NULL) {
+		rrr_http_part_destroy(session->response_part);
 	}
 	rrr_socket_read_session_collection_clear(&session->read_sessions);
 	if (session->fd != 0) {
@@ -106,6 +109,11 @@ int rrr_http_session_new (
 
 	rrr_socket_read_session_collection_init(&session->read_sessions);
 
+	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
+		VL_MSG_ERR("Could not create request part in rrr_http_session_new\n");
+		goto out;
+	}
+
 	*target = session;
 	session = NULL;
 
@@ -121,7 +129,7 @@ int rrr_http_session_add_query_field (
 		const char *name,
 		const char *value
 ) {
-	return rrr_http_fields_collection_add_field(&session->fields, name, value);
+	return rrr_http_fields_collection_add_field(&session->request_part->fields, name, value);
 }
 
 int rrr_http_session_add_query_field_binary (
@@ -130,13 +138,14 @@ int rrr_http_session_add_query_field_binary (
 		void *value,
 		ssize_t size
 ) {
-	return rrr_http_fields_collection_add_field_binary(&session->fields, name, value, size);
+	return rrr_http_fields_collection_add_field_binary(&session->request_part->fields, name, value, size);
 }
 
-static int __rrr_http_session_send_post_body (struct rrr_http_session *session) {
+static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_session *session) {
 	int ret = 0;
 	char *boundary_buf = NULL;
 	char *name_buf = NULL;
+	char *name_buf_full = NULL;
 	char *body_buf = NULL;
 
 	// RFC7578
@@ -161,12 +170,25 @@ static int __rrr_http_session_send_post_body (struct rrr_http_session *session) 
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&session->fields, struct rrr_http_field);
+	RRR_LINKED_LIST_ITERATE_BEGIN(&session->request_part->fields, struct rrr_http_field);
 		RRR_FREE_IF_NOT_NULL(name_buf);
-		if ((name_buf = rrr_http_util_quote_header_value(node->name, '"', '"')) == NULL) {
-			VL_MSG_ERR("Could not quote field name_buf in __rrr_http_session_send_post_body\n");
-			ret = 1;
-			goto out;
+		RRR_FREE_IF_NOT_NULL(name_buf_full);
+
+		name_buf = NULL;
+		name_buf_full = NULL;
+
+		if (node->name != NULL) {
+			if ((name_buf = rrr_http_util_quote_header_value(node->name, '"', '"')) == NULL) {
+				VL_MSG_ERR("Could not quote field name_buf in __rrr_http_session_send_multipart_form_data_body\n");
+				ret = 1;
+				goto out;
+			}
+
+			if ((ret = rrr_asprintf (&name_buf_full, "; name=%s", name_buf)) != 0) {
+				VL_MSG_ERR("Could not create name_buf_full in __rrr_http_session_send_multipart_form_data_body\n");
+				ret = 1;
+				goto out;
+			}
 		}
 
 		// TODO : Support binary stuff
@@ -175,18 +197,18 @@ static int __rrr_http_session_send_post_body (struct rrr_http_session *session) 
 		if ((ret = rrr_asprintf (
 				&body_buf,
 				"\r\n--%s\r\n"  // <-- ONE CRLF
-				"Content-Disposition: form-data; name=%s\r\n\r\n%s",
+				"Content-Disposition: form-data%s\r\n\r\n%s",
 				boundary_buf,
-				name_buf,
+				(name_buf_full != NULL ? name_buf_full : ""),
 				node->value
 		)) < 0) {
-			VL_MSG_ERR("Could not create content type string and body  in __rrr_http_session_send_post_body\n");
+			VL_MSG_ERR("Could not create content type string and body  in __rrr_http_session_send_multipart_form_data_body\n");
 			ret = 1;
 			goto out;
 		}
 
 		if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
-			VL_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_post_body\n");
+			VL_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 			goto out;
 		}
 	RRR_LINKED_LIST_ITERATE_END();
@@ -197,31 +219,39 @@ static int __rrr_http_session_send_post_body (struct rrr_http_session *session) 
 			"\r\n--%s--",  // <-- ONE CRLF AFTER BODY
 			boundary_buf
 	)) < 0) {
-		VL_MSG_ERR("Could not create last boundary in __rrr_http_session_send_post_body\n");
+		VL_MSG_ERR("Could not create last boundary in __rrr_http_session_send_multipart_form_data_body\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_post_body\n");
+		VL_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 		goto out;
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_buf);
+	RRR_FREE_IF_NOT_NULL(name_buf_full);
 	RRR_FREE_IF_NOT_NULL(boundary_buf);
 	RRR_FREE_IF_NOT_NULL(body_buf);
 
 	return ret;
 }
 
-static int __rrr_http_session_send_get_body (struct rrr_http_session *session) {
+static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session *session, int no_urlencoding) {
 	int ret = 0;
 	char *body_buf = NULL;
 	char *final_buf = NULL;
 
-	if ((body_buf = rrr_http_fields_to_urlencoded_form_data(&session->fields)) == NULL) {
-		VL_MSG_ERR("Could not create GET body in __rrr_http_session_send_get_body\n");
+	if (no_urlencoding == 0) {
+		body_buf = rrr_http_fields_to_urlencoded_form_data(&session->request_part->fields);
+	}
+	else {
+		body_buf = rrr_http_fields_to_raw_form_data(&session->request_part->fields);
+	}
+
+	if (body_buf == NULL) {
+		VL_MSG_ERR("Could not create body in __rrr_http_session_send_post_urlencoded_body\n");
 		ret = 1;
 		goto out;
 	}
@@ -278,7 +308,7 @@ int rrr_http_session_send_request (
 			"Host: %s\r\n"
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
-			(session->method == RRR_HTTP_METHOD_POST ? "POST" : "GET"),
+			(session->method == RRR_HTTP_METHOD_GET ? "GET" : "POST"),
 			session->endpoint,
 			host_buf,
 			user_agent_buf
@@ -293,23 +323,34 @@ int rrr_http_session_send_request (
 		goto out;
 	}
 
-	if (RRR_LINKED_LIST_COUNT(&session->fields) == 0) {
-		if ((ret = rrr_socket_sendto(session->fd, "\r\n", strlen("\r\n"), NULL, 0)) != 0) {
-			VL_MSG_ERR("Could not send last \r\n rrr_http_session_send_request\n");
+	if (RRR_LINKED_LIST_COUNT(&session->request_part->fields) > 0) {
+		if (session->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
+			if ((ret = __rrr_http_session_send_multipart_form_data_body (session)) != 0) {
+				VL_MSG_ERR("Could not send POST multipart body in rrr_http_session_send_request\n");
+				goto out;
+			}
+		}
+		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED) {
+			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 0)) != 0) {
+				VL_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				goto out;
+			}
+		}
+		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
+			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 1)) != 0) {
+				VL_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				goto out;
+			}
+		}
+		else {
+			VL_MSG_ERR("Unknown request method for request with fields set (GET request cannot have body)\n");
+			ret = 1;
 			goto out;
 		}
 	}
-	else if (session->method == RRR_HTTP_METHOD_POST) {
-		if ((ret = __rrr_http_session_send_post_body (session)) != 0) {
-			VL_MSG_ERR("Could not send POST body in rrr_http_session_send_request\n");
-			goto out;
-		}
-	}
-	else {
-		if ((ret = __rrr_http_session_send_get_body (session)) != 0) {
-			VL_MSG_ERR("Could not send GET body in rrr_http_session_send_request\n");
-			goto out;
-		}
+	else if ((ret = rrr_socket_sendto(session->fd, "\r\n", strlen("\r\n"), NULL, 0)) != 0) {
+		VL_MSG_ERR("Could not send last \r\n rrr_http_session_send_request\n");
+		goto out;
 	}
 
 	out:
@@ -335,8 +376,8 @@ static int __rrr_http_session_receive_callback (
 	const char *data_end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
 	if (data_end > data_start) {
-		receive_data->session->data->data_ptr = data_start;
-		receive_data->session->data->data_length = data_end - data_start;
+		receive_data->session->response_part->data_ptr = data_start;
+		receive_data->session->response_part->data_length = data_end - data_start;
 	}
 
 	return receive_data->callback(receive_data->session, receive_data->callback_arg);
@@ -353,7 +394,7 @@ static int __rrr_http_session_receive_get_total_size (
 
 	ssize_t parsed_bytes = 0;
 	ret = rrr_http_part_parse (
-			receive_data->session->data,
+			receive_data->session->response_part,
 			&parsed_bytes,
 			start,
 			read_session->rx_buf_ptr + read_session->rx_buf_wpos
@@ -362,7 +403,7 @@ static int __rrr_http_session_receive_get_total_size (
 	receive_data->parse_complete_pos += parsed_bytes;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
-		read_session->target_size = receive_data->parse_complete_pos + receive_data->session->data->data_length;
+		read_session->target_size = receive_data->parse_complete_pos + receive_data->session->response_part->data_length;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
 		ret = RRR_SOCKET_READ_INCOMPLETE;
@@ -385,11 +426,11 @@ int rrr_http_session_receive (
 ) {
 	int ret = 0;
 
-	if (session->data != NULL) {
-		rrr_http_part_destroy(session->data);
+	if (session->response_part != NULL) {
+		rrr_http_part_destroy(session->response_part);
 	}
 
-	if ((ret = rrr_http_part_new(&session->data)) != 0) {
+	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
 		VL_MSG_ERR("Could not create HTTP part in rrr_http_session_receive\n");
 		goto out;
 	}

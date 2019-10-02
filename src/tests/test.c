@@ -89,24 +89,29 @@ static int test_fixp(void) {
 
 	rrr_fixp fixp_a = 0;
 	rrr_fixp fixp_b = 0;
+	rrr_fixp fixp_c = 0;
 
 	const char *endptr;
 
 	const char *a_str = "+1.5yuiyuiyuiyu";
 	const char *b_str = "-1.5##%%¤#";
+	const char *c_str = "15.671875";
 
-	ret |= rrr_str_to_fixp(&fixp_a, a_str, strlen(a_str), &endptr);
+	ret |= rrr_fixp_str_to_fixp(&fixp_a, a_str, strlen(a_str), &endptr);
 	if (endptr - a_str != 4) {
 		TEST_MSG("End pointer position was incorrect for A\n");
 		ret = 1;
 		goto out;
 	}
-	ret |= rrr_str_to_fixp(&fixp_b, b_str, strlen(b_str), &endptr);
+
+	ret |= rrr_fixp_str_to_fixp(&fixp_b, b_str, strlen(b_str), &endptr);
 	if (endptr - b_str != 4) {
 		TEST_MSG("End pointer position was incorrect for B\n");
 		ret = 1;
 		goto out;
 	}
+
+	ret |= rrr_fixp_str_to_fixp(&fixp_c, c_str, strlen(c_str), &endptr);
 
 	if (ret != 0) {
 		TEST_MSG("Conversion from string to fixed point failed\n");
@@ -131,9 +136,18 @@ static int test_fixp(void) {
 		TEST_MSG("Conversion from fixed point to string failed\n");
 		goto out;
 	}
-
 	if (strncmp(buf, "1.5", 3) != 0) {
 		TEST_MSG("Wrong output while converting fixed point to string, expected '1.5' but got '%s'\n", buf);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_fixp_to_str(buf, 511, fixp_c)) != 0) {
+		TEST_MSG("Conversion from fixed point to string failed\n");
+		goto out;
+	}
+	if (strncmp(buf, "15.671875", 8) != 0) {
+		TEST_MSG("Wrong output while converting fixed point to string, expected '5.671875' but got '%s'\n", buf);
 		ret = 1;
 		goto out;
 	}
@@ -150,7 +164,7 @@ static int test_fixp(void) {
 		goto out;
 	}
 
-	if ((ret = rrr_ldouble_to_fixp(&fixp_a, dbl)) != 0) {
+	if ((ret = rrr_fixp_ldouble_to_fixp(&fixp_a, dbl)) != 0) {
 		TEST_MSG("Conversion from double to fixed point failed\n");
 		goto out;
 	}
@@ -163,7 +177,7 @@ static int test_fixp(void) {
 	}
 
 	const char *a_hex = "16#+1.8/¤#";
-	if (rrr_str_to_fixp(&fixp_a, a_hex, strlen(a_hex), &endptr) != 0) {
+	if (rrr_fixp_str_to_fixp(&fixp_a, a_hex, strlen(a_hex), &endptr) != 0) {
 		TEST_MSG("Hexadecimal conversion failed\n");
 		ret = 1;
 		goto out;

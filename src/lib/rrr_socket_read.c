@@ -141,8 +141,6 @@ int rrr_socket_read_message (
 	struct pollfd pollfd = { fd, POLLIN, 0 };
 	ssize_t bytes = 0;
 	ssize_t items = 0;
-	int bytes_int = 0;
-	int timeout = ((read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0 ? 10 : 0);
 
 	struct sockaddr src_addr;
 	socklen_t src_addr_len = sizeof(src_addr);
@@ -359,7 +357,9 @@ int rrr_socket_read_message (
 		}
 	}
 
-	if (read_session->rx_buf_wpos > read_session->target_size) {
+	if (read_session->rx_buf_wpos > read_session->target_size &&
+			read_session->read_complete_method != RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
+	) {
 		if (read_session->rx_overshoot != NULL) {
 			VL_BUG("overshoot was not NULL in rrr_socket_read_message\n");
 		}
@@ -388,6 +388,10 @@ int rrr_socket_read_message (
 			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 		}
+	}
+	else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE) {
+		ret = RRR_SOCKET_READ_INCOMPLETE;
+		goto out;
 	}
 
 	out:
