@@ -237,7 +237,6 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		data->receive_vl_message = 1;
 	}
 
-
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_topic, config, "mqtt_publish_topic")) == 0) {
 		if (strlen(data->publish_topic) == 0) {
 			VL_MSG_ERR("Topic name in mqtt_publish_topic was empty for instance %s\n", config->name);
@@ -377,7 +376,24 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	publish->payload = NULL;
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
-	publish->topic = strdup(private_data->publish_topic);
+
+	if (MSG_TOPIC_LENGTH(reading) > 0) {
+		publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
+		if (publish->topic != NULL) {
+			memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
+			*(publish->topic + MSG_TOPIC_LENGTH(reading)) = '\0';
+		}
+	}
+	else if (private_data->publish_topic != NULL) {
+		publish->topic = strdup(private_data->publish_topic);
+	}
+	else {
+		VL_MSG_ERR("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 0;
+		goto out_free;
+	}
+
 	if (publish->topic == NULL) {
 		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
@@ -726,18 +742,10 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
-	if (poll_collection_count(&poll) > 0) {
-		if (data->publish_topic == NULL || *(data->publish_topic) == '\0') {
-			VL_MSG_ERR("mqtt client instance %s has senders specified but no publish topic (mqtt_publish_topic) is set in configuration\n",
-					INSTANCE_D_NAME(thread_data));
-			goto out_destroy_client;
-		}
-	}
-	else {
+	if (poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {
-			VL_MSG_ERR("mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
+			VL_MSG_ERR("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
-			goto out_destroy_client;
 		}
 	}
 

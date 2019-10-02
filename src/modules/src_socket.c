@@ -108,7 +108,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	}
 
 	// Message default topic
-	if ((ret = rrr_settings_get_string_noconvert(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
+	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
 			ret = 1;

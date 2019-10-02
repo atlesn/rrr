@@ -76,7 +76,6 @@ struct mysql_data {
 	unsigned int mysql_port;
 
 	int drop_unknown_messages;
-	int no_tagging;
 	int colplan;
 	int add_timestamp_col;
 	int strip_array_separators;
@@ -798,16 +797,6 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 	}
 	data->drop_unknown_messages = (yesno == 0 || yesno == 1 ? yesno : 0);
 
-	// NO TAGGING
-	yesno = 0;
-	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_no_tagging") == RRR_SETTING_PARSE_ERROR) {
-		VL_MSG_ERR ("mysql: Could not understand argument mysql_no_tagging of instance '%s', please specify 'yes' or 'no'\n",
-				config->name
-		);
-		ret = 1;
-	}
-	data->no_tagging = (yesno == 0 || yesno == 1 ? yesno : 0);
-
 	// ADD TIMESTAMP COL
 	if (rrr_instance_config_check_yesno (&yesno, config, "mysql_add_timestamp_col") == RRR_SETTING_PARSE_ERROR) {
 		VL_MSG_ERR ("mysql: Could not understand argument mysql_add_timestamp_col of instance '%s', please specify 'yes' or 'no'\n",
@@ -946,21 +935,6 @@ int process_callback (struct fifo_callback_args *callback_data, char *data, unsi
 			VL_DEBUG_MSG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp_from);
 			fifo_buffer_write(&mysql_data->input_buffer, data, size);
 			err = 1;
-		}
-	}
-	else {
-		// Tag message as saved to sender
-		VL_DEBUG_MSG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
-		message->type = MSG_TYPE_TAG;
-		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
-		message->network_size = message->msg_size;
-		entry->data_length = MSG_TOTAL_SIZE(message);
-		if (entry->addr_len == 0) {
-			// Message does not contain IP information which means it originated locally
-			fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
-		}
-		else {
-			fifo_buffer_write(&mysql_data->output_buffer_ip, data, size);
 		}
 	}
 

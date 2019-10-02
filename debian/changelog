@@ -1,3 +1,17 @@
+rrr (0.14) unstable; urgency=medium
+
+  * New fixed pointer and string types for use in arrays
+  * Socket module to read data from UNIX socket
+  * New rrr_post binary used for posting to RRR UNIX socket
+  * Remove controller module
+  * Remove TAG messages
+  * New InfluxDB client which can write data + HTTP functionallity in library
+  * Fields in data arrays may have tags
+  * MQTT topics may be set in RRR messages
+  * Better syntax for command line arguments
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 02 Oct 2019 23:06:34 +0200
+
 rrr (0.13) unstable; urgency=medium
 
   * New MQTT modules, client and server V3.1(.1) and V5

@@ -61,11 +61,6 @@ about messages from it. Instances may not use themselves as senders.
 .SH MESSAGES
 A message consists of at least a timestamp (in milliseconds) which is used to identify the message. 
 It may also contain one of the following types of data:
-.SS TAG MESSAGES
-Some modules may generate a tag message after they have processed a message, for instance
-when it has been successfully saved somewhere. The tag messages can be sent back
-to prior modules in the chain which might cache messages untill they have been safely stored.
-The tag message contains the whole original message with the tag flag set.
 .SS VOLTAGE MESSAGES
 The voltage message are an implementation used to get voltage readings (or other readings) with
 max, min and average values and save them to a database. In the future, this
@@ -106,8 +101,6 @@ Processor modules, can have senders specified to read from (set with
 Module supports data arrays (see above)
 .It I
 Module supports IP messages
-.It T
-Module supports tag (confirmation) messages
 .It V
 Module supports voltage reading messages
 .El
@@ -161,79 +154,6 @@ Preserve individual measurements and put them in output buffer. Defaults to no.
 .It avg_discard_unknowns={yes|no}
 Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
 .El
-.SS controller (P)
-This module can route messages between a source and blockdev and ipclient to safely cache messages locally before sending them 
-over the network. An ipclient and a blockdev instance is set with a controller as sender, and the controller is set with
-those two same instances as senders in addition to a third source instance. More than one source may be used, but using more
-than one blockdev or ipclient might produce unwanted results.
-.PP
-The controller has two separate outbut buffers, one for ipclient and one for blockdev. If any other module tries to use
-controller as a sender, it will produce an error. 
-.PP
-Note ! blockdev module is removed temporarily.
-.PP
-.Bl -bullet -offset indent -compact
-.It
-Messages from blockdev is sent to ipclient
-.It
-Messages from ipclient is sent to blockdev
-.It
-Messages from the source is sent to both ipclient and blockdev
-.El
-.PP
-The controller can use the following modules as sources:
-.PP
-.Bl -bullet -offset indent -compact
-.It
-udpreader
-.It
-averager
-.It
-voltmonitor
-.It
-dummy
-.El
-.PP
-Here is an example where we make measurements with voltmonitor and averager, and then send them over
-the network with ipclient while caching them locally using blockdev.
-.PP
-.nf
-                               Local host                             |           Remote host
-----------------------------------------------------------------------|-----------------------------------
-                                                                      |
-                                   +------------+     +----------+    | (see ipserver/mysql paragraphs)
-                                   |            | <=> | blockdev |    |
-+-------------+    +----------+    |            |     +----------+    |
-| voltmonitor | => | averager | => | controller |                     |
-+-------------+    +----------+    |            |     +----------+    |    +----------+     +-------+
-                                   |            | <=> | ipclient | <=====> | ipserver | <=> | mysql |
-                                   +------------+     +----------+    |    +----------+     +-------+
-----------------------------------------------------------------------|-----------------------------------
-.PP
-And the configuration file (for local host only):
-.PP
-[usb_voltmeter]
-module=voltmonitor
-vm_channel=1
-
-[averager]
-module=averager
-senders=usb_voltmeter
-
-[controller]
-module=controller
-senders=averager,blockdev,ipclient
-
-[blockdev]
-module=blockdev
-blockdev_file=/tmp/rrr.bdl
-senders=controller
-
-[ipclient]
-ipclient_server=10.0.0.2
-senders=controller
-
-.fi
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by another instance.
 .SS duplicator (P)
@@ -241,7 +161,7 @@ The duplicator works like buffer only that it creates one output buffer for ever
 data it reads from other modules for each reader. The readers of duplicator are detected automatically.
 .SS ipclient (PT)
 The ipclient module collects any message from senders and sends them over the network to another 
-.B rrr
+.B RRR
 environment with the an instance of the ipserver module using UDP. The ipclient caches messages locally in RAM
 untill an ACK message is received from the ipserver. It will try to resend unacknowlegded messages on a regular
 basis as they might have been lost. Messages are checksummed with a CRC32 algorithm.
@@ -263,22 +183,33 @@ An optional keyfile which we use to generate a key used to encrypt messages we s
 .It ipclient_no_ack={yes|no}
 Do not store messages locally in RAM awaiting ACK messages, defaults to no. Any received ACK messages are ignored.
 .El
-.SS ipserver (PTI)
+.SS ipserver (PI)
 This module will listen on the specified UDP port waiting for messages from ipclient. When a message is received,
-and ACK message is generated and sent back.
+an ACK message is generated and sent back.
+.B ipserver
+may also send other messages back from its senders.
 .PP
-It is also possible to send other messages back, for instance tag messages from a module which saves messages permanently.
-Modules which produce tag messages should then be specified as senders for ipserver.
+Sender modules specified for
+.B ipserver
+must be IP capable and specify the correct target for each message. There are no checks
+regarding the target of the message apart from that the target must be a valid host.
 .PP
-Sender modules specified for ipserver must be IP capable and specify the correct target for each message. There are no checks
-regarding the target of the message apart from that the target must be a valid IP-address.
+.B ipserver
+does cache messages temporarily and check wether they arrive or not. If a sender misses out on an ACK message
+from
+.B ipserver
+, it must simply re-send the original message in which ipserver will generate a new ACK upon receival.
 .PP
-The ipserver module does cache messages temporarily and check wether they arrive or not. If a sender misses out on an ACK message
-from ipserver, it must simply re-send the original message in which ipserver will generate a new ACK upon receival.
-.PP
-It is possible for two ipserver instances to communicate over network (as opposed to one ipclient and one ipserver). They will
-generate ACK messages and send back to each other, but these will simply be forwarded for other modules to pick up. Sender modules
-of ipserver must then specifiy the correct target addresses in the IP message.
+It is possible for two
+.B ipserver
+instances to communicate over network (as opposed to one
+.B ipclient
+and one
+.B ipserver
+). They will generate ACK messages and send back to each other, but these will simply be forwarded for other modules to pick up. Sender modules
+of
+.B ipserver
+must in this configuration specifiy the correct target addresses in the IP message.
 .Bl -tag -width -indent
 .It ipserver_keyfile=KEY FILE
 An optional keyfile which we use to generate a key used to encrypt messages we send. The clients must use the same file.
@@ -286,7 +217,7 @@ An optional keyfile which we use to generate a key used to encrypt messages we s
 The port used for sending and receiving packtes, defaults to 5555.
 .El
 .PP
-.SS mysql (PTAIV)
+.SS mysql (PAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
 database. Tag messages are
 generated for each saved message. Tag messages for messages originating locally (from non-IP modules) can only be picked
@@ -311,10 +242,10 @@ The name of the database to use
 The table name to use for storing data
 .It mysql_drop_unknown_messages={yes|no}
 If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
-.It mysql_no_tagging={yes|no}
-Do not generate tag messages for other modules to pick up. Defaults to no.
 .It mysql_colplan={array|voltage}
 Specifiy wether a table with arbitary columns should be used, or a fixed voltage-style table.
+.B timestamp
+.  
 .El
 .PP
 If the
@@ -505,7 +436,120 @@ sub process {
 .SS raw (P)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.
+.PP
+
+.Bl -tag -width -indent
+.It raw_print_data={yes|no}
+Print the timestamp of each received message.
 .El
+.SS socket (SA)
+The socket module listens on a UNIX socket for RRR messages or custom data records.
+.PP
+.Bl -tag -width -indent
+.It socket_path=FILENAME
+Path and file name to use for the socket. The file cannot exist when the program starts. 
+.It socket_default_topic=MQTT-TOPIC
+An optional MQTT topic to set on the generated messages.
+.It socket_receive_rrr_message={yes|no}
+If set to 
+.B yes
+, complete RRR messages are expected to be received on the socket. No array definition is to be specified. 
+.Xr rrr_post(1)
+may generate such messages. If set to 
+.B no
+, an array definition must be specified, and RRR array messages will be produced from the received data.
+may gene
+.It socket_input_types=ARRAY DEFINITION
+Format of data received on the socket, see
+.Xr rrr_post(1)
+for syntax.
+.El
+.SS influxdb(PA)
+This module receives array messages from other modules and sends their data to an Influx database using HTTP.
+ 
+.Bl -tag -width -indent
+.It influxdb_server=HOSTNAME
+The IP address or hostname of the host running an Influxdb database.
+.It influxdb_database=DATABASE
+The database name to use on the server.
+.It influxdb_table=TABLE
+The table in the database in which to store the data.
+.It influxdb_port=PORT
+An optional port to connect to on the server, defaults to 8086.
+.It influxdb_tags=ARRAY TAG[->INFLUXDB TAG][,...]
+A comma separated list of items to retrieve from the received array messages and which should be used as
+.B tags
+in InfluxDB. If the tag of an
+item in an array is not equal to the tag in InfluxDB, the tag may be followed by
+.B ->INFLUXDB TAG
+to translate the tag name. 
+Items in an array message which are not tagged cannot be used.
+.It influxdb_fields=ARRAY TAG[->INFLUXDB FIELD][,...]
+A comma separated list of items to retrieve from the array and which are to be used as
+.B fields
+in InfluxDB. Otherwise same rules as for tags.
+.It influxdb_fixed_tags=TAG[=VALUE][,...]
+Optional comma separated list of fixed tags (and optionally with values) to save to InfluxDB.
+.It influxdb_fixed_fields=FIELD[=VALUE][,...]
+Optional comma separated list of fixed fields (and optionally with values) to save to InfluxDB.
+.El
+It is required to have at least one tag specified in either
+.B influxdb_fields
+or
+.B influxdb_fixed_fields
+.
+.SS mqttbroker (P)
+An MQTT broker supporting V3.1(.1) and V5 (lacking some functionallity).
+.PP
+.Bl -tag -width -indent
+.It mqtt_server_port=PORT
+TCP port to listen on (listens on all interfaces). Defaults to 1883.
+.It mqtt_server_max_keep_alive=SECONDS
+Maximum keep-alive value for clients, defaults to 30.
+.It mqtt_server_retry_interval=SECONDS
+Retry interval for QoS1 and QoS2 messages.
+.It mqtt_server_close_wait_time=SECONDS
+After disconnect, wait this many seconds before closing the socket (make client close first to avoid TIME_WAIT). Defaults to 1 second.
+.El
+.PP
+The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
+.PP
+.Bl -tag -width -indent
+.It UNSUBSCRIBE messages
+.It Retained topics
+.It Will topics
+.It Encryption
+.It Authorization
+.El
+.SS mqttclient (P)
+An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and
+other modules can read messages the client receives on subscribed topics.
+.PP
+.Bl -tag -width -indent
+.It mqtt_server=HOST
+Host name or IP of the broker to connect to.
+.It mqtt_server_port=PORT
+TCP port on the server, defaults to 1883.
+.It mqtt_client_identifier=IDENTIFIER
+Client identifier to use. If left unspecified, broker pics one.
+.It mqtt_qos={0|1|2}
+Default Quality of Service to use, defaults to 1.
+.It mqtt_version={3.1.1|5}
+Default MQTT protocol version to use, defaults to 3.1.1.
+.It mqtt_publish_topic=TOPIC
+Topic to use when publishing RRR messages without topic set in them. If left unspecified, RRR messages without a topic will be dropped.
+.It mqtt_publish_rrr_message={yes|no}
+If set to yes, the client will send full RRR messages. If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
+.It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
+MQTT topic patterns to subscribe to (if any).
+.It mqtt_receive_rrr_message={yes|no}
+Expect to receive RRR messages from the broker.
+If set to yes, any messages received which are not RRR messages are dropped.
+If set to no and protocol version is V3.1.1, any data in messages received are put into a new RRR message.
+If set to no and protocol version is V5, type of the received message is auto-deteceted.
+Defaults to yes. 
+.El
+
 .SH SEE ALSO
 .Xr rrr(1),
 .Xr bdl(1)
