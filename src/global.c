@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <pthread.h>
+#include <string.h>
 
 #include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
@@ -66,7 +67,7 @@ int rrr_print_help_and_version (
 		help_or_version_printed = 1;
 	}
 
-	if (cmd_exists(cmd, "help", 0)) {
+	if ((cmd->argc == 1 || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
 		cmd_print_usage(cmd);
 		help_or_version_printed = 1;
 	}

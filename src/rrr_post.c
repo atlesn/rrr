@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages.h"
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"socket",				"{-s|--socket[=]RRR SOCKET}"},
+		{0,							'\0',	"",						"{RRR SOCKET}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
@@ -398,7 +398,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_post_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_NOCOMMAND)) != 0) {
 		goto out;
 	}
 

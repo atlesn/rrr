@@ -236,7 +236,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd) != 0) {
+		if (main_parse_cmd_arguments(&cmd, CMD_CONFIG_NOCOMMAND) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);

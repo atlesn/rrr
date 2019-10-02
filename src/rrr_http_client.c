@@ -239,7 +239,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_client_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_NOCOMMAND)) != 0) {
 		goto out;
 	}
 

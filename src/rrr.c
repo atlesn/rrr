@@ -93,7 +93,7 @@ int main_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"config",				"{-c|--config[=]CONFIGURATION FILE}"},
+		{0,							'\0',	"",						"{CONFIGURATION FILE}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
@@ -133,7 +133,7 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
-	if ((ret = main_parse_cmd_arguments(&cmd)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out_destroy_metadata_collection;
 	}
 
@@ -143,8 +143,8 @@ int main (int argc, const char *argv[]) {
 
 	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
 
-	config_string = cmd_get_value(&cmd, "config", 0);
-	if (config_string != NULL) {
+	config_string = cmd.command;
+	if (config_string != NULL && *config_string != '\0') {
 		config = rrr_config_parse_file(config_string);
 
 		if (config == NULL) {

@@ -5,8 +5,14 @@ Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .SH SYNOPSIS
 .B rrr
-.OP config={file}
-.OP debuglevel=num
+.B {CONFIGURATION FILE}
+.OP -d|--debuglevel[=]FLAGS
+.OP -D|--debuglevel_on_exit[=]FLAGS
+.OP -T|--no_thread_restart
+.OP -W|--no_watchdog_timers
+.OP -h|--help
+.OP -v|--version
+
 .SH DESCRIPTION
 The
 .B rrr
@@ -33,7 +39,7 @@ quit, all instances are simply restarted.
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.
-.SH DEBUG
+.SH DEBUG FLAGS
 A debuglevel may be specified at command line making
 .B rrr
 print different debug information.
@@ -52,6 +58,8 @@ Debug locking, thread states and buffers (very high rate)
 Alive-messages from some threads to see if they freeze (very high rate)
 .It 32
 Debug hex prints (large outputs)
+.It 64
+Debug socket closing and opening (high rate at initialization)
 .El
 .SH SEE ALSO
 .Xr rrr.conf(5)

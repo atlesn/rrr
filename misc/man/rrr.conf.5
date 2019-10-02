@@ -72,41 +72,24 @@ max, min and average values and save them to a database. In the future, this
 should be generalized.
 .SS DATA ARRAY MESSAGES
 Some modules support parsing data arrays from externally or from other modules. They might require a
-list of expected data types to be specified in their configuration. If the total size og the input
-does not match the received input, the parsing of the message will fail.
+list of expected data types to be specified in their configuration. If the total size of the input
+does not match the received input, parsing of the message will fail.
 .PP
-The general syntax is a comma separated list of data type and size pairs:
+The general syntax is a comma separated list of types with length and item count specifications. 
 .PP
-.Dl {DATA TYPE A},{DATA SIZE A},{DATA TYPE B},{DATA SIZE B},...
+.Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
 .PP
-When reading many data entries of the same type, and array specification may preceed the type/data-pair.
-The following will duplicate TYPE A four times:
-.PP
-.Dl array,4,{DATA TYPE A},{DATA SIZE A}
-.PP
-.B DATA TYPE
-may be one of the following:
-.PP
-.Bl -tag -width -indent
-.It be
-A big endian number, converted to host endianess automatically. Size range 1 to 8.
-.It le
-A little endian number, converted to host endianess automatically. Size range 1 to 8.
-.It h
-A number expected to already be in host endianess, no conversion is performed. Size range 1 to 8.
-.It blob
-Some amount of binary data or text, not processed at all. Size must be > 0.
-.El
-.PP
-For instance, this specifies four big-endian integers of 2 bytes and one blob of 10 bytes, a total size of 18 bytes.
-.PP
-.Dl array,4,be,2,blob,10
+Refer to the
+.B ARRAY DEFINITION
+section of
+.Xr rrr_post(1)
+for the complete specification of all the types.
 .SS IP MESSAGES
 Some modules support parsing of IP messages. These are simply normal messages apart from that they also contain information
 about the originating IP addresses. They are used for instance when sending replies back to a sender over network to know
 where to send them. Some modules require that readers are IP capable when reading from them and vice versa.
 .SS ACK MESSAGES
-An ACK message is sent over network to inform senders that a packet was successfully retrieved.
+An ACK message is sent over network to inform senders that a packet was successfully received.
 .SH MODULES
 .PP
 Modules have different special capabilites, denoted by the following letters. The actual implementation may
@@ -147,8 +130,10 @@ and adds a timestamp. If the received data does not match the specified data arr
 .Bl -tag -width -indent
 .It udpr_port=LISTEN PORT
 Port to listen on, range is 1-65535
-.It udpr_input_types=DATA ARRAY
-Specification of expected data to receive in a network packet. See DATA ARRAYS for syntax.
+.It udpr_input_types=ARRAY DEFINITION
+Specification of expected data to receive in a network packet. See
+.Xr rrr_post(1)
+for the syntax.
 .El
 .PP
 .SS voltmonitor (SV)
