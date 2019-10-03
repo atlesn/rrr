@@ -35,11 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "vl_time.h"
 
-static int __rrr_array_convert_unsigned_integer_10(char **end, unsigned long long int *result, const char *value) {
+static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
 		return 1;
 	}
-	*result = strtoull(value, end, 10);
+	*result = strtoull(value, (char **) end, 10);
 	if (*end == value) {
 		return 1;
 	}
@@ -49,73 +49,139 @@ static int __rrr_array_convert_unsigned_integer_10(char **end, unsigned long lon
 static int __rrr_array_parse_identifier_and_size (
 		const struct rrr_type_definition **type_return,
 		unsigned int *length_return,
+		unsigned int *item_count_return,
+		rrr_type_flags *flags_return,
 		ssize_t *bytes_parsed_return,
 		const char *start,
 		const char *end
 ) {
-	int ret = 0;
-	ssize_t parsed_bytes;
+	ssize_t parsed_bytes = 0;
+	rrr_type_flags flags = 0;
+	const struct rrr_type_definition *type = NULL;
+	unsigned long long int length = 0;
+	unsigned long long int item_count = 1;
+
+	const char *integer_end = NULL;
 
 	*type_return = NULL;
 	*length_return = 0;
+	*item_count_return = 0;
 	*bytes_parsed_return = 0;
+	*flags_return = 0;
 
-	const struct rrr_type_definition *type = rrr_type_parse_from_string(&parsed_bytes, start, end);
+	type = rrr_type_parse_from_string(&parsed_bytes, start, end);
 	if (type == NULL) {
 		VL_MSG_ERR("Unknown type identifier in type definition here --> '%s'\n", start);
-		ret = 1;
-		goto out;
+		goto out_err;
 	}
 	start += parsed_bytes;
 
-	unsigned long long int length = 0;
 	if (type->max_length > 0) {
-		if (*start == '\0' || start >= end) {
+		if (start >= end || *start == '\0') {
 			VL_MSG_ERR("Missing size for type '%s' in type definition\n", type->identifier);
-			ret = 1;
-			goto out;
+			goto out_err;
 		}
 
-		char *integer_end = NULL;
 		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &length, start) != 0) {
 			VL_MSG_ERR("Size argument '%s' in type definition '%s' was not a valid number\n",
 					start, type->identifier);
-			ret = 1;
-			goto out;
+			goto out_err;
 		}
 
 		if (length > 0xffffffff) {
 			VL_MSG_ERR("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
 					start, type->identifier);
-			ret = 1;
-			goto out;
+			goto out_err;
 		}
 
 		parsed_bytes += integer_end - start;
+		start = integer_end;
 
 		if (length <= 0) {
 			VL_MSG_ERR("Size argument '%lli' in type definition '%s' must be >0\n",
 					length, type->identifier);
-			ret = 1;
-			goto out;
+			goto out_err;
+		}
+
+		if (start >= end || *start == '\0') {
+			goto out_ok;
+		}
+
+		if (*start == 's' || *start == 'S' || *start == 'u' || *start == 'U') {
+			if (!RRR_TYPE_ALLOWS_SIGN(type->type)) {
+				VL_MSG_ERR("Sign indicator '%c' found in type definition for type '%s' which does not support being signed\n",
+						*start, type->identifier);
+				goto out_err;
+			}
+
+			if (*start == 's' || *start == 'S') {
+				RRR_TYPE_FLAG_SET_SIGNED(flags);
+			}
+
+			start++;
+			parsed_bytes++;
+		}
+		else if (RRR_TYPE_ALLOWS_SIGN(type->type)) {
+			RRR_TYPE_FLAG_SET_UNSIGNED(flags);
 		}
 	}
 	else {
-		if (*start != '\0' && *start != '#') {
+		if (*start != '\0' && *start != '#' && *start != '@') {
 			VL_MSG_ERR("Extra data or size argument after type definition '%s' which has automatic size\n",
 					type->identifier);
-			ret = 1;
-			goto out;
+			goto out_err;
 		}
 	}
 
-	*type_return = type;
-	*length_return = length;
-	*bytes_parsed_return = parsed_bytes;
+	if (start >= end || *start == '\0') {
+		goto out_ok;
+	}
 
-	out:
-	return ret;
+	if (*start == '@') {
+		start++;
+		parsed_bytes++;
 
+		if (start >= end || *start == '\0') {
+			VL_MSG_ERR("Item count missing after item count definition @ in type %s\n", type->identifier);
+			goto out_err;
+		}
+
+		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &item_count, start) != 0) {
+			VL_MSG_ERR("Item count argument '%s' in type definition '%s' was not a valid number\n",
+					start, type->identifier);
+			goto out_err;
+		}
+
+		parsed_bytes += integer_end - start;
+		start = integer_end;
+
+		if (item_count == 0) {
+			VL_MSG_ERR("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
+					type->identifier);
+			goto out_err;
+		}
+		if (item_count > 0xffffffff) {
+			VL_MSG_ERR("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
+					type->identifier);
+			goto out_err;
+		}
+		if (item_count > 1 && type->max_length == 0 && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG) {
+			VL_MSG_ERR("Item count definition @ found after type '%s' which cannot have multiple values\n",
+					type->identifier);
+			goto out_err;
+		}
+	}
+
+	out_ok:
+		*type_return = type;
+		*length_return = length;
+		*item_count_return = item_count;
+		*flags_return = flags;
+		*bytes_parsed_return = parsed_bytes;
+		return 0;
+
+	out_err:
+		return 1;
 }
 
 int rrr_array_parse_single_definition (
@@ -126,15 +192,18 @@ int rrr_array_parse_single_definition (
 	int ret = 0;
 
 	ssize_t parsed_bytes = 0;
-	rrr_type_array_size array_size = 1;
 	const struct rrr_type_definition *type = NULL;
 	unsigned int length = 0;
+	unsigned int item_count = 0;
+	rrr_type_flags flags = 0;
 	const char *tag_start = NULL;
 	unsigned int tag_length = 0;
 
 	if ((ret = __rrr_array_parse_identifier_and_size (
 			&type,
 			&length,
+			&item_count,
+			&flags,
 			&parsed_bytes,
 			start,
 			end
@@ -144,38 +213,6 @@ int rrr_array_parse_single_definition (
 	}
 
 	start += parsed_bytes;
-
-	if (type->type == RRR_TYPE_ARRAY) {
-		if (*start == '\0') {
-			VL_MSG_ERR("Missing type definition after array\n");
-
-		}
-		if (*start != '@') {
-			VL_MSG_ERR("Expected @ followed by type after array definition\n");
-
-		}
-
-		start++;
-
-		array_size = length;
-		if (array_size > RRR_TYPE_MAX_ARRAY) {
-			VL_MSG_ERR("Array size in type definition exceeded maximum of %i (%i given)\n",
-					RRR_TYPE_MAX_ARRAY, array_size);
-		}
-
-		if ((ret = __rrr_array_parse_identifier_and_size (
-				&type,
-				&length,
-				&parsed_bytes,
-				start,
-				end
-		)) != 0) {
-			VL_MSG_ERR("Error while parsing type identifier and size after array\n");
-			goto out;
-		}
-
-		start += parsed_bytes;
-	}
 
 	if (*start == '#') {
 		start++;
@@ -211,10 +248,11 @@ int rrr_array_parse_single_definition (
 	if (rrr_type_value_new (
 			&template,
 			type,
+			flags,
 			tag_length,
 			tag_start,
 			length,
-			array_size,
+			item_count,
 			0
 	) != 0) {
 		VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
@@ -237,6 +275,7 @@ int rrr_array_parse_single_definition_callback (
 		data->parse_ret = 1;
 		return 1;
 	}
+
 	return 0;
 }
 
@@ -273,7 +312,7 @@ int rrr_array_validate_definition (
 	RRR_LINKED_LIST_ITERATE_END(target);
 
 	out:
-		return ret;
+	return ret;
 }
 
 int rrr_array_parse_data_from_definition (
@@ -375,6 +414,8 @@ int rrr_array_definition_collection_clone (
 
 		RRR_LINKED_LIST_APPEND(target,template);
 	RRR_LINKED_LIST_ITERATE_END(source);
+
+	target->version = source->version;
 
 	return 0;
 
@@ -503,7 +544,7 @@ int rrr_array_new_message_from_buffer (
 		goto out_destroy;
 	}
 
-	if ((ret = rrr_array_new_message(&message, &definitions, time_get_64())) != 0) {
+	if ((ret = rrr_array_new_message_from_collection(&message, &definitions, time_get_64())) != 0) {
 		VL_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
 		return RRR_ARRAY_PARSE_HARD_ERR;
 		goto out_destroy;
@@ -537,7 +578,7 @@ int rrr_array_new_message_from_buffer_with_callback (
 	return callback(message, callback_arg);
 }
 
-int rrr_array_new_message (
+int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,
 		uint64_t time
@@ -574,6 +615,7 @@ int rrr_array_new_message (
 		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
 
 		head->type = type;
+		head->flags = node->flags;
 		head->tag_length = htobe32(node->tag_length);
 		head->elements = htobe32(node->element_count);
 		head->total_length = htobe32(node->total_stored_length);
@@ -645,13 +687,14 @@ int rrr_array_message_to_collection (
 
 	const struct vl_message *array = (struct vl_message *) message_orig;
 
+	// Modules should also check for array version to make sure they support any recent changes.
 	uint16_t version = array->version;
-
 	if (version != RRR_ARRAY_VERSION) {
 		VL_MSG_ERR("Array message version mismatch in rrr_array_message_to_collection. Need V%i but got V%u.\n",
 				RRR_ARRAY_VERSION, array->version);
 		goto out_free_data;
 	}
+	target->version = version;
 
 	const char *pos = MSG_DATA_PTR(array);
 	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
@@ -679,6 +722,7 @@ int rrr_array_message_to_collection (
 		}
 
 		rrr_type type = data_packed->type;
+		rrr_type_flags flags = data_packed->flags;
 		rrr_type_length tag_length = be32toh(data_packed->tag_length);
 		rrr_type_length total_length = be32toh(data_packed->total_length);
 		rrr_type_length elements = be32toh(data_packed->elements);
@@ -705,6 +749,7 @@ int rrr_array_message_to_collection (
 		if (rrr_type_value_new (
 				&template,
 				def,
+				flags,
 				tag_length,
 				pos,
 				total_length,

@@ -48,14 +48,14 @@ struct test_result {
 struct test_data {
 	char be4[4];
 	char be3[3];
-	uint16_t be2;
+	int16_t be2;
 	char be1;
 
 	char sep1;
 
 	char le4[4];
 	char le3[3];
-	uint16_t le2;
+	int16_t le2;
 	char le1;
 
 	char sep2[2];
@@ -69,14 +69,14 @@ struct test_data {
 struct test_final_data {
 	uint64_t be4;
 	uint64_t be3;
-	uint64_t be2;
+	int64_t be2;
 	uint64_t be1;
 
 	char sep1;
 
 	uint64_t le4;
 	uint64_t le3;
-	uint64_t le2;
+	int64_t le2;
 	uint64_t le1;
 
 	char sep2[2];
@@ -189,12 +189,12 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	final_data_raw->be4 = *((uint64_t*) (types[0]->data));
 	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
-	final_data_raw->be2 = *((uint64_t*) (types[2]->data));
+	final_data_raw->be2 = *((int64_t*) (types[2]->data));
 	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
 
 	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
 	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
-	final_data_raw->le2 = *((uint64_t*) (types[7]->data));
+	final_data_raw->le2 = *((int64_t*) (types[7]->data));
 	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
 
 	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
@@ -264,10 +264,11 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
-	if (final_data_raw->be2 != 33 ||
-		final_data_raw->le2 != 33
+	if (final_data_raw->be2 != -33 ||
+		final_data_raw->le2 != -33
 	) {
-		TEST_MSG("Received wrong data from collection in test_type_array_callback\n");
+		TEST_MSG("Received wrong data from collection in test_type_array_callback, expects -33 but got 0x%" PRIx64 " and 0x%" PRIx64 "\n",
+				final_data_raw->be2, final_data_raw->le2);
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -421,7 +422,7 @@ int test_type_array (
 	data->be3[0] = 1;
 	data->be3[1] = 2;
 
-	data->be2 = htobe16(33);
+	data->be2 = htobe16(-33);
 
 	data->be1 = 1;
 
@@ -433,7 +434,7 @@ int test_type_array (
 	data->le3[1] = 2;
 	data->le3[2] = 1;
 
-	data->le2 = htole16(33);
+	data->le2 = htole16(-33);
 
 	data->le1 = 1;
 

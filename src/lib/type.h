@@ -41,7 +41,6 @@ static const union type_system_endian {
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
-#define RRR_TYPE_ARRAY		1 // Type which holds many instances of another type
 #define RRR_TYPE_LE			2 // Little endian number
 #define RRR_TYPE_BE			3 // Big endian number
 #define RRR_TYPE_H			4 // Host endian number (can be both)
@@ -54,7 +53,6 @@ static const union type_system_endian {
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
 #define RRR_TYPE_MAX		11
 
-#define RRR_TYPE_NAME_ARRAY	"array" // Not an actual type, used to make other types arrays
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
 #define RRR_TYPE_NAME_H		"h"
@@ -76,15 +74,23 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_MSG	0
 #define RRR_TYPE_MAX_FIXP	0
 #define RRR_TYPE_MAX_STR	0
-#define RRR_TYPE_MAX_ARRAY	65535
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)	((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR)
-#define RRR_TYPE_IS_FIXP(type)	(type == RRR_TYPE_FIXP)
-#define RRR_TYPE_OK(type)		((type) > 0 && (type) <= RRR_TYPE_MAX)
+#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR)
+#define RRR_TYPE_IS_FIXP(type)		(type == RRR_TYPE_FIXP)
+#define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
+#define RRR_TYPE_OK(type)			((type) > 0 && (type) <= RRR_TYPE_MAX)
+
+#define RRR_TYPE_FLAG_SIGNED 1<<0
+
+#define RRR_TYPE_FLAG_IS_SIGNED(flags)		(((flags) & RRR_TYPE_FLAG_SIGNED) == 1)
+#define RRR_TYPE_FLAG_IS_UNSIGNED(flags)	(((flags) & RRR_TYPE_FLAG_SIGNED) == 0)
+
+#define RRR_TYPE_FLAG_SET_SIGNED(flags)		(flags) |= (RRR_TYPE_FLAG_SIGNED)
+#define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= ~(RRR_TYPE_FLAG_SIGNED)
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
 		ssize_t *import_length,				\
@@ -108,6 +114,7 @@ static const union type_system_endian {
 		const struct rrr_type_value *node
 
 typedef uint8_t rrr_type;
+typedef uint8_t rrr_type_flags;
 typedef uint32_t rrr_type_length;
 typedef uint32_t rrr_def_count;
 typedef uint32_t rrr_type_array_size;
@@ -133,6 +140,7 @@ struct rrr_type_definition {
 struct rrr_type_value {
 	RRR_LINKED_LIST_NODE(struct rrr_type_value);
 	const struct rrr_type_definition *definition;
+	rrr_type_flags flags;
 	rrr_type_length tag_length;
 	rrr_type_length import_length;
 	rrr_type_length import_elements;
@@ -156,6 +164,7 @@ void rrr_type_value_destroy (
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
+		rrr_type_flags flags,
 		rrr_type_length tag_length,
 		const char *tag,
 		rrr_type_length import_length,

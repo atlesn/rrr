@@ -72,7 +72,7 @@ by a separator type.
 Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
 ease the extraction of data in later processing.
 .SS SYNTAX
-type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
+type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 .PP
 .Bl -tag -width -indent
 .It type
@@ -102,6 +102,16 @@ Arbitary binary data. Lengt must be in the range 1-1024.
 One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
 must be in the range 1-64.
 .El
+.PP
+Types
+.B be, le
+and
+.B h
+may be followed by an
+.B s
+after the length specifier to indicate that the input number is signed. If instead
+.B u
+or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
 .SS WEAK DYNAMIC LENGTH TYPES
 The length of these types are identified automatically and must not have length set. They cannot be at the end of a definition.
 .PP
@@ -111,9 +121,9 @@ An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
 .It istr
 A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
 .It fixp
-The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May be preceeded with 10# or 16# to indicate use of base 10 or base 16
-conversion, default is base 10. May include a single dot . to separate integer from fraction. Stored with 64-bits where 1 bit is the
-sign, 39 bits is the integer and 24 bits are the fraction.
+The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
+and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and
+24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10. 
 .El
 .SS STRONG DYNAMIC LENGTH TYPES
 The length of these types are identified automatically and must not have length set. They may be at the end of a defintion.

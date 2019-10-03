@@ -66,16 +66,25 @@ static int __rrr_type_convert_unsigned_integer_10(char **end, unsigned long long
 
 static uint64_t __rrr_type_expand_be (
 		rrr_type_length import_length,
-		const char *src
+		const char *src,
+		rrr_type_flags flags
 ) {
 	union beunion {
 		rrr_type_be temp_f;
-		char temp_b[sizeof(rrr_type_be)];
+		unsigned char temp_b[sizeof(rrr_type_be)];
 	};
+
 
 	union beunion temp;
 
+
 	temp.temp_f = 0;
+	if (RRR_TYPE_FLAG_IS_SIGNED(flags)) {
+		unsigned char sign = (*src) & 0x80;
+		if (sign > 0) {
+			temp.temp_f = 0xffffffffffffffff;
+		}
+	}
 
 	rrr_type_length wpos = sizeof(temp.temp_f) - 1;
 	rrr_type_length rpos = import_length - 1;
@@ -84,9 +93,11 @@ static uint64_t __rrr_type_expand_be (
 
 	/* Big endian:
 	 * (0x00 0x00 0x01)be = 1
-	 * (0x00 0x00 0x00 0x00 0x00 0x01)be = 1
+	 * (0x00 0x00 0x00 0x00 0x01)be = 1
+	 * (0xff 0xff 0xff 0xff 0xff)be = huge number or -1 (if signed flag set)
 	 */
 
+	unsigned char sign = 0;
 	while (1) {
 		temp.temp_b[wpos] = src[rpos];
 
@@ -98,22 +109,30 @@ static uint64_t __rrr_type_expand_be (
 		rpos--;
 	}
 
+	temp.temp_b[0] |= sign;
 	temp.temp_f = be64toh(temp.temp_f);
 	return temp.temp_f;
 }
 
 static uint64_t __rrr_type_expand_le (
 		rrr_type_length import_length,
-		const char *src
+		const char *src,
+		rrr_type_flags flags
 ) {
 	union leunion {
 		rrr_type_le temp_f;
-		char temp_b[sizeof(rrr_type_le)];
+		unsigned char temp_b[sizeof(rrr_type_le)];
 	};
 
 	union leunion temp;
 
 	temp.temp_f = 0;
+	if (RRR_TYPE_FLAG_IS_SIGNED(flags)) {
+		unsigned char sign = (*src + import_length - 1) & 0x80;
+		if (sign > 0) {
+			temp.temp_f = 0xffffffffffffffff;
+		}
+	}
 
 	/* Little endian:
 	 * (0x01 0x00 0x00)le = 1
@@ -131,9 +150,9 @@ static uint64_t __rrr_type_expand_le (
 	return temp.temp_f;
 }
 
-static int __rrr_type_import_u (
+static int __rrr_type_import_int (
 		RRR_TYPE_IMPORT_ARGS,
-		uint64_t (*expander)(rrr_type_length import_length, const char *src)
+		uint64_t (*expander)(rrr_type_length import_length, const char *src, rrr_type_flags flags)
 ) {
 	if (node->import_length > (rrr_type_length) sizeof(uint64_t)) {
 		VL_BUG("BUG: __rrr_type_import_u received length > %lu", sizeof(uint64_t));
@@ -158,11 +177,11 @@ static int __rrr_type_import_u (
 	const char *data_rpos = start;
 
 	while (array_size-- > 0) {
-		uint64_t result = expander(node->import_length, data_rpos);
+		uint64_t result = expander(node->import_length, data_rpos, node->flags);
 
 		memcpy(target_wpos, &result, sizeof(result));
 
-		VL_DEBUG_MSG_3("Imported a 64: 0x%" PRIx64 "\n", result);
+		VL_DEBUG_MSG_3("Imported a %s64: 0x%" PRIx64 "\n", (RRR_TYPE_FLAG_IS_SIGNED(node->flags) ? "s" : "u"), result);
 
 		data_rpos += node->import_length;
 		target_wpos += sizeof(result);
@@ -177,11 +196,11 @@ static int __rrr_type_import_u (
 }
 
 static int __rrr_type_import_le (RRR_TYPE_IMPORT_ARGS) {
-	return __rrr_type_import_u(node, parsed_bytes, start, end, __rrr_type_expand_le);
+	return __rrr_type_import_int(node, parsed_bytes, start, end, __rrr_type_expand_le);
 }
 
 static int __rrr_type_import_be (RRR_TYPE_IMPORT_ARGS) {
-	return __rrr_type_import_u(node, parsed_bytes, start, end, __rrr_type_expand_be);
+	return __rrr_type_import_int(node, parsed_bytes, start, end, __rrr_type_expand_be);
 }
 
 static int __rrr_type_import_host (RRR_TYPE_IMPORT_ARGS) {
@@ -269,6 +288,7 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 
 	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
 	node->total_stored_length = sizeof(rrr_type_h);
+	RRR_TYPE_FLAG_SET_UNSIGNED(node->flags);
 
 	*parsed_bytes = convert_end - tmp;
 
@@ -329,6 +349,7 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 
 	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
 	node->total_stored_length = sizeof(rrr_type_h);
+	RRR_TYPE_FLAG_SET_SIGNED(node->flags);
 
 	*parsed_bytes = convert_end - tmp;
 
@@ -890,7 +911,6 @@ static const struct rrr_type_definition type_templates[] = {
 		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
 		{RRR_TYPE_FIXP,		RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	RRR_TYPE_NAME_FIXP},
 		{RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_STR},
-		{RRR_TYPE_ARRAY,	RRR_TYPE_MAX_ARRAY,	NULL,							NULL,					NULL,						NULL,					RRR_TYPE_NAME_ARRAY},
 		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
 };
 
@@ -945,6 +965,7 @@ void rrr_type_value_destroy (
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
+		rrr_type_flags flags,
 		rrr_type_length tag_length,
 		const char *tag,
 		rrr_type_length import_length,
@@ -962,6 +983,7 @@ int rrr_type_value_new (
 
 	memset(value, '\0', sizeof(*value));
 
+	value->flags = flags;
 	value->tag_length = tag_length;
 	value->element_count = element_count;
 	value->import_length = import_length;

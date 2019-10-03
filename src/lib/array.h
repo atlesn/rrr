@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "type.h"
 
-#define RRR_ARRAY_VERSION 5
+#define RRR_ARRAY_VERSION 6
 
 #define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
 #define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
@@ -40,6 +40,7 @@ struct vl_message;
 
 struct rrr_array_value_packed {
 	rrr_type type;
+	rrr_type_flags flags;
 	rrr_type_length tag_length;
 	rrr_type_length total_length;
 	rrr_type_length elements;
@@ -48,6 +49,7 @@ struct rrr_array_value_packed {
 
 struct rrr_array {
 		RRR_LINKED_LIST_HEAD(struct rrr_type_value);
+		uint16_t version;
 };
 
 static inline int rrr_array_count(struct rrr_array *array) {
@@ -113,7 +115,7 @@ int rrr_array_new_message_from_buffer_with_callback (
 		int (*callback)(struct vl_message *message, void *arg),
 		void *callback_arg
 );
-int rrr_array_new_message (
+int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,
 		uint64_t time

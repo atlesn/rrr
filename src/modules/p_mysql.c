@@ -327,6 +327,12 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 		goto out_cleanup;
 	}
 
+
+	if (collection.version != 6) {
+		VL_BUG("Array version mismatch in MySQL colplan_array_bind_execute (%u vs %i), module must be updated\n",
+				collection.version, 6);
+	}
+
 	MYSQL_BIND *bind = data->data->bind;
 
 	if (collection.node_count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
@@ -359,10 +365,9 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 		}
 		else if (RRR_TYPE_IS_64(definition->definition->type)) {
-			// TODO : Support signed
-			bind[bind_pos].buffer = definition->data;
 			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
-			bind[bind_pos].is_unsigned = 1;
+			bind[bind_pos].buffer = definition->data;
+			bind[bind_pos].is_unsigned = RRR_TYPE_FLAG_IS_UNSIGNED(definition->flags);
 		}
 		else {
 			VL_MSG_ERR("Unknown type %ul when binding with mysql\n", definition->definition->type);

@@ -218,6 +218,11 @@ static int __query_append_values_from_array (
 	char buf[512];
 	memset(buf, '\0', 511); // Valgrind moans about conditional jumps on uninitialized bytes
 
+	if (array->version != 6) {
+		VL_BUG("Array version mismatch in InfluxDB __query_append_values_from_array (%u vs %i), module must be updated\n",
+				array->version, 6);
+	}
+
 	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct influxdb_column);
 		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->input_tag);
 		if (value == NULL) {
@@ -268,7 +273,12 @@ static int __query_append_values_from_array (
 		else if (RRR_TYPE_IS_64(value->definition->type)) {
 			// TODO : Support signed
 			char buf[64];
-			sprintf(buf, "%" PRIu64, *((uint64_t*) value->data));
+			if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
+				sprintf(buf, "%" PRIi64, *((int64_t*) value->data));
+			}
+			else {
+				sprintf(buf, "%" PRIu64, *((uint64_t*) value->data));
+			}
 			APPEND_AND_CHECK(query_builder, buf, "Could not append 64 type to query buffer in influxdb __query_append_values_from_array\n");
 		}
 		else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
