@@ -7,6 +7,9 @@ routed between custom modules by having "senders" specified for some of them, in
 them who to read from. Source modules should have a buffer which they write to
 independently from their readers.
 
+RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
+piping or files. MQTT is also supported, both subscribing and publishing.
+
 ## USAGE
 
 To start the program with module, a config file must first be made. Write this into a file
@@ -22,7 +25,7 @@ called `rrr.conf`.
 
 Then, run this:
 
-`rrr debuglevel=2 config=rrr.conf`
+`rrr rrr.conf --debuglevel 2`
 
 You can see that `my_source` generates messages which `my_target` then reads. Use Ctrl+C to exit.
 

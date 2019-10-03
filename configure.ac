@@ -20,7 +20,7 @@ AC_PROG_CC_STDC
 AC_PROG_INSTALL
 #AC_PROG_YACC
 #AM_PROG_LEX
-#AM_SILENT_RULES([yes])
+AM_SILENT_RULES([yes])
 
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h

@@ -82,8 +82,8 @@ int rrr_asprintf (char **resultp, const char *format, ...) {
 char *rrr_strcasestr (const char *haystack, const char *needle) {
 	char *ret = NULL;
 
-#if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
-	ret = rrr_strcasestr(haystack, needle);
+#if defined HAVE_STRCASESTR && !defined RRR_WITH_GNU_DEBUG
+	ret = strcasestr(haystack, needle);
 #else
 	const char *haystack_pos = haystack;
 	while (1) {

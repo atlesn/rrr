@@ -35,7 +35,8 @@ static const union type_system_endian {
 #define RRR_TYPE_SYSTEM_ENDIAN_IS_BE (type_system_endian.one == 0)
 
 #define RRR_TYPE_PARSE_OK			0
-#define RRR_TYPE_PARSE_ERR			1
+#define RRR_TYPE_PARSE_HARD_ERR		1
+#define RRR_TYPE_PARSE_SOFT_ERR		2
 #define RRR_TYPE_PARSE_INCOMPLETE	3
 
 // Remember to update convert function pointers in types.c

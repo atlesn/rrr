@@ -149,7 +149,7 @@ int read_raw_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	struct udpreader_data *data = arg;
 	int ret = 0;
 
-	if ((ret = rrr_array_new_message_from_buffer (
+	if ((ret = rrr_array_new_message_from_buffer_with_callback (
 			entry->message,
 			entry->data_length,
 			&data->definitions,

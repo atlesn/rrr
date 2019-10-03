@@ -257,6 +257,21 @@ int rrr_array_validate_definition (
 		return 1;
 	}
 
+	RRR_LINKED_LIST_ITERATE_BEGIN(target, const struct rrr_type_value);
+		if (prev != NULL) {
+			if (prev->definition->max_length == 0 &&
+				prev->definition->type != RRR_TYPE_STR &&
+				node->definition->max_length == 0 &&
+				node->definition->type != RRR_TYPE_STR
+			) {
+				VL_MSG_ERR("Type %s cannot be followed type %s in array definition as we cannot know where the first ends, use a separator in between\n",
+						prev->definition->identifier, node->definition->identifier);
+				ret = 1;
+			}
+		}
+		prev = node;
+	RRR_LINKED_LIST_ITERATE_END(target);
+
 	out:
 		return ret;
 }
@@ -305,7 +320,13 @@ int rrr_array_parse_data_from_definition (
 			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
 				goto out;
 			}
-			VL_MSG_ERR("Invalid data in type conversion\n");
+			else if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
+				VL_MSG_ERR("Invalid data in type conversion\n");
+			}
+			else {
+				VL_MSG_ERR("Hard error while importing data in rrr_array_parse_data_from_definition, return was %i\n", ret);
+				ret = RRR_TYPE_PARSE_HARD_ERR;
+			}
 			goto out;
 		}
 
@@ -446,47 +467,69 @@ static ssize_t __rrr_array_get_packed_length (
 }
 
 int rrr_array_new_message_from_buffer (
+		struct vl_message **target,
 		const char *buf,
 		ssize_t buf_len,
-		const struct rrr_array *definition,
-		int (*callback)(struct vl_message *message, void *arg),
-		void *callback_arg
+		const struct rrr_array *definition
 ) {
 	struct vl_message *message = NULL;
+	struct rrr_array definitions;
 	int ret = 0;
 
 	if (rrr_array_validate_definition(definition) != 0) {
 		VL_BUG("Definition was not valid in rrr_array_definition_collection_clone\n");
 	}
 
-	struct rrr_array definitions;
-
 	if (rrr_array_definition_collection_clone(&definitions, definition) != 0) {
 		VL_MSG_ERR("Could not clone definitions in rrr_array_new_message_from_buffer\n");
-		return 1;
+		return RRR_ARRAY_PARSE_HARD_ERR;
 	}
 
-	if (rrr_array_parse_data_from_definition(&definitions, buf, buf_len) != 0) {
-		VL_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
-		ret = 0;
+	if ((ret = rrr_array_parse_data_from_definition(&definitions, buf, buf_len)) != 0) {
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			VL_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
+			ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		}
+		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
+			// OK
+		}
+		else {
+			ret = RRR_ARRAY_PARSE_HARD_ERR;
+		}
 		goto out_destroy;
 	}
 
 	if ((ret = rrr_array_new_message(&message, &definitions, time_get_64())) != 0) {
 		VL_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
+		return RRR_ARRAY_PARSE_HARD_ERR;
 		goto out_destroy;
 	}
 
-	if (message != NULL) {
-		ret = callback(message, callback_arg);
-		message = NULL;
-	}
+	*target = message;
+	message = NULL;
 
 	out_destroy:
 	rrr_array_clear(&definitions);
 	RRR_FREE_IF_NOT_NULL(message);
 
 	return ret;
+}
+
+int rrr_array_new_message_from_buffer_with_callback (
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition,
+		int (*callback)(struct vl_message *message, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct vl_message *message = NULL;
+	if ((ret = rrr_array_new_message_from_buffer(&message, buf, buf_len, definition)) != 0) {
+		return ret;
+	}
+
+	return callback(message, callback_arg);
 }
 
 int rrr_array_new_message (

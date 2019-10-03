@@ -447,6 +447,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
  }
 
 int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	(void)(packet);
 	VL_MSG_ERR("Assemble function not implemented\n");
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
@@ -457,11 +458,13 @@ int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_pingreq (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	(void)(packet);
 	BUF_INIT();
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_pingresp (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	(void)(packet);
 	BUF_INIT();
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }

@@ -27,12 +27,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 
-static int __rrr_http_header_parse_semicolon_separated (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
-	int ret = RRR_HTTP_PARSE_INCOMPLETE;
-
-	return ret;
-}
-
 static int __rrr_http_header_parse_unsigned_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
 	int ret = RRR_HTTP_PARSE_OK;
 

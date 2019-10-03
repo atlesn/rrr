@@ -259,34 +259,34 @@ static PyObject *rrr_python3_vl_message_f_get_topic(PyObject *self, PyObject *ar
 
 static PyMethodDef vl_message_methods[] = {
 		{
-				ml_name:	"set",
-				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_set,
-				ml_flags:	METH_FASTCALL,
-				ml_doc:		"Set all parameters"
+				.ml_name	= "set",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_set,
+				.ml_flags	= METH_FASTCALL,
+				.ml_doc		= "Set all parameters"
 		},
 		{
-				ml_name:	"set_data",
-				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_set_data,
-				ml_flags:	METH_O,
-				ml_doc:		"Set data parameter"
+				.ml_name	= "set_data",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_set_data,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Set data parameter"
 		},
 		{
-				ml_name:	"get_data",
-				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_get_data,
-				ml_flags:	METH_NOARGS,
-				ml_doc:		"Get data parameter from message as byte array"
+				.ml_name	= "get_data",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_get_data,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get data parameter from message as byte array"
 		},
 		{
-				ml_name:	"set_topic",
-				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_set_topic,
-				ml_flags:	METH_O,
-				ml_doc:		"Set topic parameter"
+				.ml_name	= "set_topic",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_set_topic,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Set topic parameter"
 		},
 		{
-				ml_name:	"get_topic",
-				ml_meth:	(PyCFunction) rrr_python3_vl_message_f_get_topic,
-				ml_flags:	METH_NOARGS,
-				ml_doc:		"Get topic parameter from message as a string"
+				.ml_name	= "get_topic",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_get_topic,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get topic parameter from message as a string"
 		},
 		{ NULL, NULL, 0, NULL }
 };
@@ -305,54 +305,54 @@ static PyMemberDef vl_message_members[] = {
 };
 
 PyTypeObject rrr_python3_vl_message_type = {
-		ob_base:			PyVarObject_HEAD_INIT(NULL, 0) // Comma is inside macro
-	    tp_name:			RRR_PYTHON3_MODULE_NAME	"." RRR_PYTHON3_VL_MESSAGE_TYPE_NAME,
-	    tp_basicsize:		sizeof(struct rrr_python3_vl_message_data),
-		tp_itemsize:		0,
-	    tp_dealloc:			(destructor) rrr_python3_vl_message_f_dealloc,
-	    tp_print:			NULL,
-	    tp_getattr:			NULL,
-	    tp_setattr:			NULL,
-	    tp_as_async:		NULL,
-	    tp_repr:			NULL,
-	    tp_as_number:		NULL,
-	    tp_as_sequence:		NULL,
-	    tp_as_mapping:		NULL,
-	    tp_hash:			NULL,
-	    tp_call:			NULL,
-	    tp_str:				NULL,
-	    tp_getattro:		NULL,
-	    tp_setattro:		NULL,
-	    tp_as_buffer:		NULL,
-	    tp_flags:			Py_TPFLAGS_DEFAULT,
-	    tp_doc:				"ReadRouteRecord type for VL Message structure",
-	    tp_traverse:		NULL,
-	    tp_clear:			NULL,
-	    tp_richcompare:		NULL,
-	    tp_weaklistoffset:	0,
-	    tp_iter:			NULL,
-	    tp_iternext:		NULL,
-	    tp_methods:			vl_message_methods,
-	    tp_members:			vl_message_members,
-	    tp_getset:			NULL,
-	    tp_base:			NULL,
-	    tp_dict:			NULL,
-	    tp_descr_get:		NULL,
-	    tp_descr_set:		NULL,
-	    tp_dictoffset:		0,
-	    tp_init:			rrr_python3_vl_message_f_init,
-	    tp_alloc:			PyType_GenericAlloc,
-	    tp_new:				rrr_python3_vl_message_f_new,
-	    tp_free:			NULL,
-	    tp_is_gc:			NULL,
-	    tp_bases:			NULL,
-	    tp_mro:				NULL,
-	    tp_cache:			NULL,
-	    tp_subclasses:		NULL,
-	    tp_weaklist:		NULL,
-	    tp_del:				NULL,
-	    tp_version_tag:		0,
-	    tp_finalize:		NULL
+		.ob_base		= PyVarObject_HEAD_INIT(NULL, 0) // Comma is inside macro
+	    .tp_name		= RRR_PYTHON3_MODULE_NAME	"." RRR_PYTHON3_VL_MESSAGE_TYPE_NAME,
+	    .tp_basicsize	= sizeof(struct rrr_python3_vl_message_data),
+		.tp_itemsize	= 0,
+	    .tp_dealloc		= (destructor) rrr_python3_vl_message_f_dealloc,
+	    .tp_print		= NULL,
+	    .tp_getattr		= NULL,
+	    .tp_setattr		= NULL,
+	    .tp_as_async	= NULL,
+	    .tp_repr		= NULL,
+	    .tp_as_number	= NULL,
+	    .tp_as_sequence	= NULL,
+	    .tp_as_mapping	= NULL,
+	    .tp_hash		= NULL,
+	    .tp_call		= NULL,
+	    .tp_str			= NULL,
+	    .tp_getattro	= NULL,
+	    .tp_setattro	= NULL,
+	    .tp_as_buffer	= NULL,
+	    .tp_flags		= Py_TPFLAGS_DEFAULT,
+	    .tp_doc			= "ReadRouteRecord type for VL Message structure",
+	    .tp_traverse	= NULL,
+	    .tp_clear		= NULL,
+	    .tp_richcompare	= NULL,
+	    .tp_weaklistoffset = 0,
+	    .tp_iter		= NULL,
+	    .tp_iternext	= NULL,
+	    .tp_methods		= vl_message_methods,
+	    .tp_members		= vl_message_members,
+	    .tp_getset		= NULL,
+	    .tp_base		= NULL,
+	    .tp_dict		= NULL,
+	    .tp_descr_get	= NULL,
+	    .tp_descr_set	= NULL,
+	    .tp_dictoffset	= 0,
+	    .tp_init		= rrr_python3_vl_message_f_init,
+	    .tp_alloc		= PyType_GenericAlloc,
+	    .tp_new			= rrr_python3_vl_message_f_new,
+	    .tp_free		= NULL,
+	    .tp_is_gc		= NULL,
+	    .tp_bases		= NULL,
+	    .tp_mro			= NULL,
+	    .tp_cache		= NULL,
+	    .tp_subclasses	= NULL,
+	    .tp_weaklist	= NULL,
+	    .tp_del			= NULL,
+	    .tp_version_tag	= 0,
+	    .tp_finalize	= NULL
 };
 
 struct vl_message *rrr_python3_vl_message_get_message (PyObject *self) {

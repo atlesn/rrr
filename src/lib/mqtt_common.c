@@ -29,27 +29,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
-		session_expiry:						0,
-		receive_maximum:					0,
-		maximum_qos:						0,
-		retain_available:					1,
-		maximum_packet_size:				0,
-		assigned_client_identifier:			NULL,
-		reason_string:						NULL,
-		wildcard_subscriptions_available:	1,
-		subscription_identifiers_availbable:1,
-		shared_subscriptions_available:		1,
-		server_keep_alive:					30,
-		response_information:				NULL,
-		server_reference:					NULL,
+		.session_expiry							= 0,
+		.receive_maximum						= 0,
+		.maximum_qos							= 0,
+		.retain_available						= 1,
+		.maximum_packet_size					= 0,
+		.assigned_client_identifier				= NULL,
+		.reason_string							= NULL,
+		.wildcard_subscriptions_available		= 1,
+		.subscription_identifiers_availbable	= 1,
+		.shared_subscriptions_available			= 1,
+		.server_keep_alive						= 30,
+		.response_information					= NULL,
+		.server_reference						= NULL,
 
-		topic_alias_maximum:				0,
-		request_response_information:		0,
-		request_problem_information:		0,
-		user_properties:					{0},
+		.topic_alias_maximum					= 0,
+		.request_response_information			= 0,
+		.request_problem_information			= 0,
+		.user_properties						= {0},
 
-		auth_method:						NULL,
-		auth_data:							NULL
+		.auth_method							= NULL,
+		.auth_data								= NULL
 };
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {

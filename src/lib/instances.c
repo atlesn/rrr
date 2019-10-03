@@ -147,6 +147,7 @@ struct instance_metadata *__instance_load_module_and_save (
 		const char **library_paths
 ) {
 	struct instance_metadata *ret = NULL;
+	char *module_name = NULL;
 
 	RRR_INSTANCE_LOOP(instance, instances) {
 		struct instance_dynamic_data *module = instance->dynamic_data;
@@ -157,7 +158,6 @@ struct instance_metadata *__instance_load_module_and_save (
 		}
 	}
 
-	char *module_name = NULL;
 	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
 		VL_MSG_ERR("Could not find module= setting for instance %s\n", instance_config->name);
 		ret = NULL;

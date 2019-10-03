@@ -338,7 +338,7 @@ static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session
 
 	int ret = 0;
 
-	if ((ret = rrr_array_new_message_from_buffer (
+	if ((ret = rrr_array_new_message_from_buffer_with_callback (
 			read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos,
 			&data->definition,

@@ -31,6 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_ARRAY_VERSION 5
 
+#define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
+#define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
+#define RRR_ARRAY_PARSE_SOFT_ERR	RRR_TYPE_PARSE_SOFT_ERR
+#define RRR_ARRAY_PARSE_INCOMPLETE	RRR_TYPE_PARSE_INCOMPLETE
+
 struct vl_message;
 
 struct rrr_array_value_packed {
@@ -44,6 +49,10 @@ struct rrr_array_value_packed {
 struct rrr_array {
 		RRR_LINKED_LIST_HEAD(struct rrr_type_value);
 };
+
+static inline int rrr_array_count(struct rrr_array *array) {
+	return RRR_LINKED_LIST_COUNT(array);
+}
 
 int rrr_array_parse_single_definition (
 		struct rrr_array *target,
@@ -90,6 +99,12 @@ int rrr_array_get_packed_length_from_buffer (
 		ssize_t buf_length
 );
 int rrr_array_new_message_from_buffer (
+		struct vl_message **target,
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition
+);
+int rrr_array_new_message_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition,

@@ -543,20 +543,29 @@ Default Quality of Service to use, defaults to 1.
 .It mqtt_version={3.1.1|5}
 Default MQTT protocol version to use, defaults to 3.1.1.
 .It mqtt_publish_topic=TOPIC
-Topic to use when publishing RRR messages without topic set in them. If left unspecified, RRR messages without a topic will be dropped.
+Topic to use when publishing RRR messages without topic set in them.
+If left unspecified, RRR messages without a topic will be dropped.
 .It mqtt_publish_topic_force={yes|no}
 Force use of the topic specified in
 .B mqtt_publish_topic
 and disregard any topic in RRR messages.
 .It mqtt_publish_rrr_message={yes|no}
-If set to yes, the client will send full RRR messages. If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
+If set to yes, the client will send full RRR messages.
+If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
 MQTT topic patterns to subscribe to (if any).
 .It mqtt_receive_rrr_message={yes|no}
 Expect to receive RRR messages from the broker.
 If set to yes, any messages received which are not RRR messages are dropped.
 If set to no and protocol version is V3.1.1, any data in messages received are put into a new RRR message.
-If set to no and protocol version is V5, type of the received message is auto-deteceted.
+If set to no and protocol version is V5, type of the received message is auto-detected.
+.It mqtt_receive_array=ARRAY DEFINITION
+If set, expect to receive data arrays of specific formats in publish messages.
+This option cannot be used with mqtt_receive_rrr_message=yes, however if protocol version is V5,
+received RRR messages will still be auto-detected, and array parsing will not occur for these.
+Refer to
+.Xr rrr_post(1)
+for syntax of array definitions.
 Defaults to yes. 
 .El
 

@@ -151,7 +151,7 @@ static int __rrr_type_import_u (
 	node->data = malloc(node->total_stored_length);
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in import_le\n");
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 
 	char *target_wpos = node->data;
@@ -204,7 +204,7 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 	node->data = malloc(total_size);
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in import_blob\n");
-		return 1;
+		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 	memcpy(node->data, start, total_size);
 
@@ -256,13 +256,13 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 
 	if (__rrr_type_convert_unsigned_integer_10(&convert_end, &result, tmp)) {
 		VL_MSG_ERR("Error while converting unsigned integer in import_ustr\n");
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	node->data = malloc(sizeof(rrr_type_ustr));
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in import_ustr\n");
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 
 	memcpy(node->data, &result, sizeof(rrr_type_ustr));
@@ -316,13 +316,13 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 
 	if (__rrr_type_convert_integer_10(&convert_end, &result, tmp)) {
 		VL_MSG_ERR("Error while converting unsigned integer in import_istr\n");
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	node->data = malloc(sizeof(rrr_type_istr));
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in import_istr\n");
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 
 	memcpy(node->data, &result, sizeof(rrr_type_istr));
@@ -364,20 +364,20 @@ static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 		}
 		else {
 			VL_MSG_ERR("Invalid separator character %c\n", c);
-			return 1;
+			return RRR_TYPE_PARSE_SOFT_ERR;
 		}
 		found++;
 	}
 
 	if (found != total_size) {
 		VL_MSG_ERR("Not enough separator characters found\n");
-		return 1;
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	node->data = malloc(found);
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in import_sep\n");
-		return 1;
+		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 	memcpy (node->data, start, found);
 
@@ -403,31 +403,31 @@ static int __rrr_type_msg_to_host_single (
 			max_size
 	) != 0) {
 		VL_MSG_ERR("Invalid header for message in __rrr_type_convert_msg_to_host_single\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = 1;
 		goto out;
 	}
 
 	if (max_size < target_size) {
 		VL_MSG_ERR("Invalid size for message in __rrr_type_convert_msg_to_host_single\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = 1;
 		goto out;
 	}
 
 	if (rrr_socket_msg_head_to_host_and_verify(socket_msg, target_size) != 0) {
 		VL_MSG_ERR("Error while verifying message in  __rrr_type_convert_msg_to_host_single\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = 1;
 		goto out;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length(socket_msg, target_size) != 0) {
 		VL_MSG_ERR("Invalid checksum for message data in __rrr_type_convert_msg_to_host_single\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = 1;
 		goto out;
 	}
 
 	if (message_to_host_and_verify(msg, target_size) != 0) {
 		VL_MSG_ERR("Message was invalid in __rrr_type_convert_msg_to_host_single\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = 1;
 		goto out;
 	}
 
@@ -486,7 +486,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 				max_size
 		) != 0) {
 			VL_MSG_ERR("Invalid header for message in __rrr_type_import_msg\n");
-			ret = RRR_TYPE_PARSE_ERR;
+			ret = RRR_TYPE_PARSE_SOFT_ERR;
 			goto out;
 		}
 
@@ -515,7 +515,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	node->data = malloc(target_size_total);
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_type_import_msg\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
 
@@ -722,7 +722,7 @@ static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 		}
 
 		VL_MSG_ERR("Error while getting message length in __get_import_length_msg, return was %i\n", ret);
-		return RRR_TYPE_PARSE_ERR;
+		return (ret == RRR_SOCKET_SOFT_ERROR ? RRR_TYPE_PARSE_SOFT_ERR : RRR_TYPE_PARSE_HARD_ERR);
 	}
 
 	return RRR_TYPE_PARSE_OK;
@@ -743,7 +743,7 @@ static int __get_import_length_fixp (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 		if (ret == RRR_FIXED_POINT_PARSE_INCOMPLETE) {
 			return RRR_TYPE_PARSE_INCOMPLETE;
 		}
-		return RRR_TYPE_PARSE_ERR;
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	if (length == buf_size) {
@@ -774,7 +774,7 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	const char *endptr = NULL;
 
 	if ((ret = rrr_fixp_str_to_fixp(&fixp, start, end - start, &endptr)) != 0) {
-		return ret;
+		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	// Fixed point needs another field after it to know where the number ends
@@ -785,7 +785,7 @@ static int __rrr_type_import_fixp (RRR_TYPE_IMPORT_ARGS) {
 	node->data = malloc(sizeof(fixp));
 	if (node->data == NULL) {
 		VL_MSG_ERR("Could not allocate memory in __rrr_type_import_fixp\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
 
@@ -812,7 +812,7 @@ static int __get_import_length_str (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	if (*start != '"') {
 		VL_MSG_ERR("String did not begin with \" in __get_import_length_str\n");
-		ret = RRR_TYPE_PARSE_ERR;
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 

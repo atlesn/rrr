@@ -182,7 +182,7 @@ int read_data_receive_message_callback (struct vl_message *message, void *arg) {
 int read_raw_data_callback(struct rrr_socket_read_session *read_session, void *arg) {
 	struct socket_data *data = arg;
 
-	return rrr_array_new_message_from_buffer (
+	return rrr_array_new_message_from_buffer_with_callback (
 			read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos,
 			&data->definitions,

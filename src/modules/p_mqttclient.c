@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
+#include "../lib/array.h"
 #include "../global.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
@@ -66,6 +67,7 @@ struct mqtt_client_data {
 	int force_publish_topic;
 	char *version_str;
 	char *client_identifier;
+	struct rrr_array array_definition;
 	uint8_t qos;
 	uint8_t version;
 	int publish_vl_message;
@@ -82,6 +84,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
+	rrr_array_clear(&data->array_definition);
 }
 
 static int data_init (
@@ -239,6 +242,23 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		data->force_publish_topic = 1;
 	}
 
+	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
+			&data->array_definition,
+			config,
+			"mqtt_receive_array"
+	)) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (rrr_array_count(&data->array_definition) == 0) {
+			VL_MSG_ERR("No items specified in array definition in mqtt_receive_array of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -248,6 +268,11 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 	else if (yesno > 0) {
+		if (rrr_array_count(&data->array_definition) > 0) {
+			VL_MSG_ERR("mqtt_receive_rrr_message was set to one but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
+			ret = 1;
+			goto out;
+		}
 		data->receive_vl_message = 1;
 	}
 
@@ -616,6 +641,51 @@ static int __try_get_vl_message_from_publish (
 	return ret;
 }
 
+static int __try_create_array_message_from_publish (
+		struct vl_message **result,
+		struct rrr_mqtt_p_publish *publish,
+		struct mqtt_client_data *data
+) {
+	int ret = 0;
+
+	RRR_MQTT_P_LOCK(publish->payload);
+
+	if (publish->payload->length == 0) {
+		VL_MSG_ERR("Received PUBLISH message had zero length in MQTT client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_array_new_message_from_buffer (
+			result,
+			publish->payload->payload_start,
+			publish->payload->length,
+			&data->array_definition
+	)) != 0) {
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+		}
+		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
+			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, message was too short\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, hard error\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+		}
+		goto out;
+	}
+
+	out:
+	RRR_MQTT_P_UNLOCK(publish->payload);
+	return ret;
+}
+
 static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
 
@@ -670,7 +740,27 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		}
 	}
 
-	// Try to create a message with the data being the data of the publish
+	// Try to create an array message with the data from the publish (if specified in configuration)
+	if (rrr_array_count(&data->array_definition) > 0) {
+		if ((ret = __try_create_array_message_from_publish (
+				&message_final,
+				publish,
+				data
+		)) != 0) {
+			VL_MSG_ERR("Error while parsing data array in mqtt client instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		if (message_final == NULL) {
+			VL_MSG_ERR("Parsing of supposed received data array failed, dropping the data in mqtt client instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		goto out_write_to_buffer;
+	}
+
+	// Try to create a message with the data being the data of the publish. This will return
+	// NULL in message_final if there is no data in the publish message.
 	if ((ret = __try_create_vl_message_with_publish_data (
 			&message_final,
 			publish,

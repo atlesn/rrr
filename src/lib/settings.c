@@ -369,6 +369,7 @@ int rrr_settings_split_commas_to_array (
 		const char *name
 ) {
 	int ret = 0;
+	char *value = NULL;
 
 	*target_ptr = NULL;
 
@@ -381,7 +382,6 @@ int rrr_settings_split_commas_to_array (
 
 	memset(target, '\0', sizeof(*target));
 
-	char *value = NULL;
 	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
 		VL_MSG_ERR("Could not get setting %s for comma splitting and array building\n", name);
 		ret = 1;

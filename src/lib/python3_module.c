@@ -31,15 +31,15 @@ static PyMethodDef module_methods[] = {
 };
 
 static PyModuleDef module_definition = {
-		m_base:		PyModuleDef_HEAD_INIT,
-		m_name:		"rrr_helper",
-		m_doc:		"ReadRouteRecord helper module for C<->Python integration",
-		m_size:		0,
-		m_methods:	module_methods,
-		m_slots:	NULL,
-		m_traverse:	NULL,
-		m_clear:	NULL,
-		m_free:		NULL
+		.m_base		= PyModuleDef_HEAD_INIT,
+		.m_name		= "rrr_helper",
+		.m_doc		= "ReadRouteRecord helper module for C<->Python integration",
+		.m_size		= 0,
+		.m_methods	= module_methods,
+		.m_slots	= NULL,
+		.m_traverse	= NULL,
+		.m_clear	= NULL,
+		.m_free		= NULL
 };
 
 /*
