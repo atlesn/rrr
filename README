@@ -29,12 +29,12 @@ See `./configure --help` for flags to use for disabling modules with dependencie
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
 on detailed information about this and on which packages you need to build `.deb` packages.
 
-	dpkg-buildpackage
-	dpkg -i ../rrr*.deb
+	$ dpkg-buildpackage
+	$ sudo dpkg -i ../rrr*.deb
 
 ### RUN
 
-To start the program with module, a config file must first be made. Write this into a file
+To start the program with modules, a config file must first be made. Write this into a file
 called `rrr.conf`.
 
 	[my_source]
@@ -47,20 +47,20 @@ called `rrr.conf`.
 
 Then, run this:
 
-`rrr rrr.conf --debuglevel 2`
+	$ rrr rrr.conf --debuglevel 2
 
 You can see that `my_source` generates messages which `my_target` then reads. Since RRR is designed to run forever,
-use Ctrl+C to exit.
+use `Ctrl+C` to exit. RRR might produce some error messages when the different modules shut down, this is normal.
 
 Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and `man rrr.conf` for more detailed information on how to configure `rrr`.
 
-### RUN WITHOUT INSTALLATION AND READ MANUALS
+### RUN AND READ MANUALS WITHOUT INSTALLATION
 
-	cd /directory/to/rrr/source/which/you/have/already/compiled
-	man ./src/misc/man/rrr.conf.5
-	man ./src/misc/man/rrr.1
-	man ./src/misc/man/rrr_post.1
-	./src/rrr my_rrr_test_configuration.conf
+	$ cd /directory/to/rrr/source/which/you/have/already/compiled
+	$ man ./src/misc/man/rrr.conf.5
+	$ man ./src/misc/man/rrr.1
+	$ man ./src/misc/man/rrr_post.1
+	$ ./src/rrr my_rrr_test_configuration.conf
 
 ## MODULES
 
@@ -113,7 +113,7 @@ an InfluxDB database:
 	influxdb_tags=hostname
 	influxdb_fields=uptime,loadavg->load
 
-Use an MQTT client to post messages to the RRR broker which the RRR MQTT client then receives and parses.
+Use an MQTT client to publish a message with a data record to the RRR broker which the RRR MQTT client then receives and parses.
 
 	mosquitto_pub -t "a/b/c" -m "3.141592,12345678\"myserver.local\""
 
@@ -296,71 +296,40 @@ The specification of an array definition is like this, and below follows more de
 
 	type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 	
-.PP
-.Bl -tag -width -indent
-.It type
-Identifier name of the type
-.It length
-Length in bytes of the type (if required)
-.It count
-Item count of the sepcific type, defaults to 1 if not specified
-.It tag
-Optional custom identifier tag of the type
-.El
-.SS FIXED LENGTH TYPES
-These types require the
-.I length
-field to be specified.
-.PP
-.Bl -tag -width -indent
-.It be
-Unsigned number in big endian binary format. Length must be in the range 1-8.
-.It le
-Unsigned number in little endian binary format. Length must be in the range 1-8.
-.It h
-Unsigned number in the endianess of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
-.It blob
-Arbitary binary data. Lengt must be in the range 1-1024.
-.It sep
-One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
+- `type` - Identifier name of the type
+- `length` - Length in bytes of the type (if required)
+- `count` - Item count of the sepcific type, defaults to 1 if not specified
+- `tag` - Optional custom identifier tag of the type
+
+#### FIXED LENGTH TYPES
+These types require the `length` field to be specified.
+
+- `be` - Unsigned number in big endian binary format. Length must be in the range 1-8.
+- `le` - Unsigned number in little endian binary format. Length must be in the range 1-8.
+- `h` - Unsigned number in the endianess of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
+- `blob` - Arbitary binary data. Lengt must be in the range 1-1024.
+- `sep` - One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
 must be in the range 1-64.
-.El
-.PP
-Types
-.B be, le
-and
-.B h
-may be followed by an
-.B s
-after the length specifier to indicate that the input number is signed. If instead
-.B u
-or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
-.SS WEAK DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have length set. They cannot be at the end of a definition.
-.PP
-.Bl -tag -width -indent
-.It ustr
-An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
-.It istr
-A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
-.It fixp
-The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
+
+Types `be`, `le` and `h` may be followed by an `s` after the length specifier to indicate that the input number is signed. If instead
+`u` or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
+
+#### WEAK DYNAMIC LENGTH TYPES
+The length of these types are identified automatically and must not have length set. They
+cannot be at the end of a definition, nor follow after each other.
+
+- `ustr` - An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
+- `istr` - A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
+- `fixp` - The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
 and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and
 24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10. 
-.El
-.SS STRONG DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have length set. They may be at the end of a defintion.
-.PP
-.Bl -tag -width -indent
-.It msg
-A full RRR message complete with headers and checksums.
-.It str
-An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
+
+#### STRONG DYNAMIC LENGTH TYPES
+The length of these types are identified automatically and must not have a length set. They may be at the end of a defintion.
+
+- `msg` - A full RRR message complete with headers and checksums.
+- `str` - An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
 surrounding quotes are not included in the final string.
-.El
-
-
-
 
 ## MESSAGES
 
