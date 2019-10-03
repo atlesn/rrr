@@ -127,13 +127,8 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	int ret = 0;
 
 	// Socket
-	const char *socket = cmd_get_value(cmd, "socket", 0);
-	if (cmd_get_value (cmd, "file", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one filename argument may be specified\n");
-		ret = 1;
-		goto out;
-	}
-	if (socket == NULL) {
+	const char *socket = cmd->command;
+	if (socket == NULL || *socket == '\0') {
 		VL_MSG_ERR("No socket path specified\n");
 		ret = 1;
 		goto out;
@@ -398,7 +393,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_post_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_NOCOMMAND)) != 0) {
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
 	}
 

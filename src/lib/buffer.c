@@ -672,7 +672,7 @@ int fifo_read (
 
 			ret_tmp &= ~(FIFO_SEARCH_GIVE|FIFO_SEARCH_FREE|FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR|FIFO_GLOBAL_ERR);
 			if (ret_tmp != 0) {
-				VL_BUG("Unknown flags %i returned to fifo_read_clear_forward\n", ret_tmp);
+				VL_BUG("Unknown flags %i returned to fifo_read\n", ret_tmp);
 			}
 		}
 		first = first->next;

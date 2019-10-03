@@ -10,7 +10,29 @@ independently from their readers.
 RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
 piping or files. MQTT is also supported, both subscribing and publishing.
 
-## USAGE
+## QUICK START
+
+### DOWNLOAD
+
+	$ git clone https://github.com/atlesn/rrr.git
+
+### COMPILE
+
+See `./configure --help` for flags to use for disabling modules with dependencies (perl, mysql etc.).
+
+	$ autoreconf -i
+	$ ./configure
+	$ make
+	$ make check
+	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
+
+It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
+on detailed information about this and on which packages you need to build `.deb` packages.
+
+	dpkg-buildpackage
+	dpkg -i ../rrr*.deb
+
+### RUN
 
 To start the program with module, a config file must first be made. Write this into a file
 called `rrr.conf`.
@@ -27,20 +49,127 @@ Then, run this:
 
 `rrr rrr.conf --debuglevel 2`
 
-You can see that `my_source` generates messages which `my_target` then reads. Use Ctrl+C to exit.
+You can see that `my_source` generates messages which `my_target` then reads. Since RRR is designed to run forever,
+use Ctrl+C to exit.
 
-Please refer to `man rrr` and `man rrr.conf` for more information on how to configure `rrr`.
+Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and `man rrr.conf` for more detailed information on how to configure `rrr`.
+
+### RUN WITHOUT INSTALLATION AND READ MANUALS
+
+	cd /directory/to/rrr/source/which/you/have/already/compiled
+	man ./src/misc/man/rrr.conf.5
+	man ./src/misc/man/rrr.1
+	man ./src/misc/man/rrr_post.1
+	./src/rrr my_rrr_test_configuration.conf
 
 ## MODULES
 
 ### raw (drain output from other modules)
-Read output from any module and delete it. If debuglevel 2 is set, we print some info for each message.
+Read output from any module and delete it. Can also print out some information for each message it receives.
 
 ### dummy (generate dummy measurements)
 Create dummy messages with current timestamp as value at some interval. 
 
-### voltmonitor (USB voltmeter driver)
-Read voltage measurements from an USB device.
+### mysql (store messages to database)
+Reads messages from other modules and stores them in a MySQL database.
+
+### influxdb (store messages to database)
+Reads messages from other modules and stores them in a an InfluxDB database.
+
+### mqttbroker (run an MQTT broker)
+Starts an MQTT broker which any MQTT client can use to exchange messages.
+
+### mqttclient (run an MQTT client)
+Starts an MQTT client which can connect to any MQTT server. Messages can be read from other modules and published
+to a MQTT broker, and it is possible to subscribe to topics to receive messages other modules can receive. Two RRR MQTT
+clients can exchange RRR messages through any MQTT broker, and an arbitary number of clients can run in each RRR program.
+
+Below follows an example configuration which uses RRR to receive data records from an external MQTT client and save it to
+an InfluxDB database:
+
+	[my_mqtt_broker]
+	module=mqttbroker
+	
+	[my_mqtt_client]
+	module=mqttclient
+	mqtt_server=localhost
+	mqtt_subscribe_topics=a/+/#
+
+	# Array definition of the data received from the MQTT broker
+	mqtt_receive_array=fixp#loadavg,sep1,ustr#uptime,str#hostname
+	
+	[my_influxdb]
+	module=influxdb
+
+	# Read messages from the MQTT client
+	senders=my_mqtt_client
+
+	# Parameters used when writing to the InfluxDB server
+	influxdb_server=localhost
+	influxdb_database=mydb
+	influxdb_table=stats
+
+	# Tags and fields to retrieve from the received RRR messages and write to InfluxDB
+	influxdb_tags=hostname
+	influxdb_fields=uptime,loadavg->load
+
+Use an MQTT client to post messages to the RRR broker which the RRR MQTT client then receives and parses.
+
+	mosquitto_pub -t "a/b/c" -m "3.141592,12345678\"myserver.local\""
+
+### udpreader (read data records from UDP and create messages from them)
+Listens on a port and parses data records it receives before forwarding them
+as RRR messages to other modules. Expects to receive records with data types defined in an array definition.
+
+### socket (read data records from a UNIX socket)
+Listens on a socket and parses data records it receives before forwarding them
+as RRR messages to other modules. Expects to receive records with data types defined in an array definition.
+
+The `socket` module can also be set up to read in complete RRR messages sent to it by the `rrr_post` program. 
+
+Below follows an example configuration where a data record is created locally and then sent to RRR using `rrr_post`
+to be saved in an InfluxDB database.
+
+	[my_socket]
+	module=socket
+	socket_path=/tmp/my_rrr_socket.sock
+	socket_receive_rrr_message=yes
+
+	[my_influxdb]
+	module=influxdb
+
+	# Read messages from the socket module
+	senders=my_socket
+
+	# Parameters used when writing to the InfluxDB server
+	influxdb_server=localhost
+	influxdb_database=mydb
+	influxdb_table=stats
+
+	# Tags and fields to retrieve from the received RRR messages and write to InfluxDB
+	influxdb_tags=hostname
+	influxdb_fields=uptime,loadavg->load
+
+Use `rrr_post` to parse the input data record, which in this case is provided on standard input.
+
+	echo "3.141592,12345678\"myserver.local\"" | rrr_post /tmp/my_rrr_socket.sock -a fixp#loadavg,sep1,ustr#uptime,str#hostname -f - -c 1
+
+### buffer (buffer messages)
+The buffer simply collects data from it's senders and puts them in a buffer to be read from others.
+
+### duplicator (buffer and duplicate messages)
+The duplicator automatically creates one buffer for each of it's readers, and all data it reads from
+other modules are duplicated for each of its readers.
+	
+### ipclient (Send UDP packets to server and wait for ACK)
+Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
+is received, we continue try sending the messages. The server is expected to also run Read Route Record, but with
+the ipserver module listening for packets.
+
+### ipserver (receive messages from ipclient)
+`ipserver` listens for messages from `ipclient` on a port and passes them on to the next module (only mysql
+is compatible). We send ACK messages back for every message received. Downstream modules (usually mysql)
+can generate messages which we also send back.
 
 ### python3 (generate and/or modify messages by a custom python program)
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
@@ -147,77 +276,91 @@ Below follows an example perl script.
 		return 1;
 	}
 
-### udpreader (read arbitary UDP packets and create messages from them)
-The udpreader listens on a port and processes integers and blob data it receives, forwarding them
-as messages to other modules. It expects a fixed packet length.
-
-### buffer (buffer messages)
-The buffer simply collects data from it's senders and puts them in a buffer to be read from others.
-
-### duplicator (buffer and duplicate messages)
-The duplicator automatically creates one buffer for each of it's readers, and all data it reads from
-other modules are duplicated for each of its readers.
-
 ### averager (create averages from voltmonitor)
-Create MAX/MIN/AVG measurements at intervals with input from voltmonitor.
+Create MAX/MIN/AVG measurements at intervals with input from other modules.
+
+### voltmonitor (USB voltmeter driver)
+Read voltage measurements from an USB device.
+
+## ARRAY DEFINITIONS
+Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
+
+A definition is a comma separated list of different types. Some types need to have a specified length, and other types
+figure out the length automatically. RRR will always make sure that it is possible to determin the length
+of each record, this is necessary to be able to separate the records from each other upon receival.
+
+Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
+ease the extraction of data in later processing.
+
+The specification of an array definition is like this, and below follows more detailed explanations.
+
+	type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 	
-### ipclient (Send UDP packets to server and wait for ACK)
-Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
-is received, we continue try sending the messages. The server is expected to also run Read Route Record, but with
-the ipserver module listening for packets.
+.PP
+.Bl -tag -width -indent
+.It type
+Identifier name of the type
+.It length
+Length in bytes of the type (if required)
+.It count
+Item count of the sepcific type, defaults to 1 if not specified
+.It tag
+Optional custom identifier tag of the type
+.El
+.SS FIXED LENGTH TYPES
+These types require the
+.I length
+field to be specified.
+.PP
+.Bl -tag -width -indent
+.It be
+Unsigned number in big endian binary format. Length must be in the range 1-8.
+.It le
+Unsigned number in little endian binary format. Length must be in the range 1-8.
+.It h
+Unsigned number in the endianess of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
+.It blob
+Arbitary binary data. Lengt must be in the range 1-1024.
+.It sep
+One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
+must be in the range 1-64.
+.El
+.PP
+Types
+.B be, le
+and
+.B h
+may be followed by an
+.B s
+after the length specifier to indicate that the input number is signed. If instead
+.B u
+or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
+.SS WEAK DYNAMIC LENGTH TYPES
+The length of these types are identified automatically and must not have length set. They cannot be at the end of a definition.
+.PP
+.Bl -tag -width -indent
+.It ustr
+An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
+.It istr
+A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
+.It fixp
+The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
+and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and
+24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10. 
+.El
+.SS STRONG DYNAMIC LENGTH TYPES
+The length of these types are identified automatically and must not have length set. They may be at the end of a defintion.
+.PP
+.Bl -tag -width -indent
+.It msg
+A full RRR message complete with headers and checksums.
+.It str
+An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
+surrounding quotes are not included in the final string.
+.El
 
-### mysql (store messages to database)
-Mysql reads data from for other modules and stores the to a database. It also generates tag messages
-upon successful saves.
 
-### ipserver (receive messages from ipclient)
-`ipserver` listens for messages from `ipclient` on a port and passes them on to the next module (only mysql
-is compatible). We send ACK messages back for every message received. Downstream modules (usually mysql)
-can generate messages which we also send back.
 
-### controller (coordinate messages between averager, blockdev and ipclient)
-
-The intention of this module is to store messages locally untill they are recevied and stored by a remote
-server, even in case of a power failure.
-
-NOTE ! blockdev module is removed temporarily
-
-A network like this might be used:
-
-	                               Local host                             |           Remote host 
-	----------------------------------------------------------------------|-----------------------------------
-	                                                                      |
-	                                   +------------+     +----------+    | (see ipserver/mysql paragraphs)
-	                                   |            | <=> | blockdev |    |
-	+-------------+    +----------+    |            |     +----------+    |
-	| voltmonitor | => | averager | => | controller |                     |
-	+-------------+    +----------+    |            |     +----------+    |    +----------+     +-------+
-	                                   |            | <=> | ipclient | <=====> | ipserver | <=> | mysql |
-	                                   +------------+     +----------+    |    +----------+     +-------+
-	----------------------------------------------------------------------|-----------------------------------
-
-- All messages from `averager` are sent both to `blockdev` and `ipclient`
-- All messages from `blockdev` are sent to `ipclient`
-- `TAG` messages from `ipclient` are sent to `blockdev`
-
-This setup will save messages to `blockdev` and keep on sending them through `ipclient` untill a final
-`TAG` message is received.
-
-## DEBUG LEVELS
-
-The current debug level is common for all modules and specified like this:
-
-`rrr debuglevel=3`
-
-`debuglevel` is a sum of one or more of these values, or zero. It is also possible to specify `all`:
-* `0` - Only errors are printed
-* `1` - Information about starting/stopping of modules (low rate)
-* `2` - Running information from modules, they tell what they do on different steps (rate depends on traffic)
-* `4` - Hex printing of messages and other data debugging (high rate)
-* `8` - Debug locking and thread states (very high rate)
-* `16` - Alive messages from some modules also when they are idle (very high rate)
-
-For instance `debuglevel=3` means that debug level `1` and `2` is activated.
 
 ## MESSAGES
 
@@ -235,19 +378,17 @@ information and/or value it stores.
       `Timestamp to`. `Timestamp from` contains the end time of the measurement timestamp, and
       the start time can be found by checking the from-timestamp of the previous measurement.
     * `INFO`: Usally information in text, for instance to log error conditions.
-    * `ARRAY`: An array of data, for instance created by udpreader
+    * `ARRAY`: An array of data, for instance created by udpreader or socket
+  * `Topic`
+  	A topic to be used by MQTT modules
   * `Data`
-    Textual representation of the data in the message (optional)
+    Data of the message (for ARRAY)
   * `Numeric value`
-    Messages containing measurements store these both in text format and binary format to make
-    them easier to process. When sent over network, this numeric representation may be lost, but
-    it can be restored from the text field.
+    A simple numeric value used by `POINT`, `AVG`, `MIN`, `MAX` and which can be worked with
+    in the perl- and python modules.
 * Types of messages
   * `MSG`: An actual message with a measurement or information
   * `ACK`: Acknowledgement of packet recieval when it is sent over network.
-  * `TAG`: These messages usually inform that a message has been safely stored remotely.
-`ACK` and `TAG` messages contain the full original message (maybe except for the numeric value)
-making modules able to match them with the original message.
 
 ## CUSTOM MODULES
 
@@ -261,7 +402,6 @@ same directory using the same naming convention as the other modules.
 * To write a source module which only generates messages, copy the `dummy` module.
 * To write a module which only processes data from other modules, copy the `raw` module.
 * To write a module which both reads from other modules, processes it and lets other modules read from it, copy the `averager` module.
-* The `controller` module gives an example on how to use multiple buffers and route different messages between modules.
 
 After a module is copied, replace all instances of the old name inside the file with your new name to avoid confusion.
 
@@ -277,7 +417,6 @@ about which types the return:
 	struct module_operations {
         	void *(*thread_entry)(...) // Main function for starting the thread
         	int (*poll)(...)           // Return messages without deleting them from the buffer
-        	int (*print)(...)          // Currently not used in any modules (but may be used)
         	int (*poll_delete)(...)    // Return vl_message structs 
         	int (*poll_delete_ip)(...) // Return ip_buffer_entry structs (same as vl_message but with IP information at the end)
 	};
@@ -304,17 +443,21 @@ may read from each other.
 The threads should follow a strict pattern on how to initialize and close correctly. This has to be done to prevent readers to use
 functions in other modules which are not ready when we start the program.
 
+Threads which create forks should be started prior to network modules. Module priorities are:
+
+0. `VL_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
+1. `VL_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
+2. `VL_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
+
 The basic state flow of a module/thread is like this (see `threads.h` for internal names):
 
-0. `FREE` - Thread slot is currently free
+0. `FREE` - Thread is new
 1. `STOPPED` - Thread has stopped
 2. `INIT` - Thread is currently initializing its data and we have to wait for it to finish before we proceed
 3. `INITIALIZED` - Thread has initialized its data and is waiting for start signal. When all threads reach
    this state, we tell them to start.
 4. `RUNNING` - Thread sets this state after receiving start signal.
-5. `ENCOURAGE STOP` - Set by the thread watchdog if it wants a thread to stop, for instance if the program is to
-   exit. The thread should check for this at least a couple of times a second and exit if the state is set. If
-   a thread doesn't respond to this, it will be cancelled.
+5. `RUNNING FORKED` - Thread sets this state after being started and any process forks are done (used by python).
 6. `STOPPING` - A thread should set this state if it detected `ENCOURAGE STOP` and is about to exit.
 
 It is very important that a thread does not read from other threads before it has received the start signal.
@@ -327,7 +470,7 @@ If one or more threads exit, all threads are stopped and restarted automatically
 
 When a thread/instance starts with the specified entry function, it receives a `vl_thread_start_data` struct. It contains a pointer to the
 command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 
-thread to `module_thread_data` struct. 
+thread to `instance_thread_data` struct. 
 
 There is a slot of 8kB freely available in `instance_thread_data` for a thread to use which does not have to be de-allocated on exit,
 it is called `char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
@@ -376,6 +519,9 @@ The `size` arguments may be used to check if a type is correct or not.
 
 See `buffer.h` for function syntax, and look in existing modules for examples on usage. The locking functions should not be called.
 
+#### `fifo_buffer_init_custom_free`
+Initialize the buffer and set it up to use a custom function for destroying the data elements. The default function is `free()`. 
+
 #### `fifo_read_clear_forward`
 This function clears at most the whole buffer and passes each entry one by one to a callback function.
 All entries are read from and removed from the buffer untill the entry pointed to by `last_element` is reached. If this is NULL, all entries are
@@ -385,22 +531,42 @@ efficient as it only locks the buffer for a minimal amount of time, to set the  
 
 `FIFO_SEARCH_FREE` can always be specified as return value in conjunction with other return values, in which the buffer will free the actual data.
 
-If the callback returns `FIFO_SEARCH_ERR`, we will eventually return error to the caller of the buffer but we do not stop.
+If the callback returns `FIFO_CALLBACK_ERR`, we will eventually return error to the caller of the buffer but we do not stop.
 
 The callback function may return `FIFO_SEARCH_STOP` in which the remaining fetched messages are put back into the buffer (at the beginning).
 
 The callback function may put data back into the same buffer using a write function, since no lock is held. This can be done for
 instance on error conditions.
 
+#### `fifo_buffer_clear_with_callback`
+Works like `fifo_read_clear_forward`, but a write lock is while the buffer is iterated, blocking other readers and writers. Also, it is not legal
+from the callback function to return any command, only 0 may be returned. Data is freed by this function and not by the callback.
+
+#### `fifo_buffer_clear`
+Clear the buffer, delete all entries. 
+
+#### `fifo_buffer_invalidate_with_callback`
+Same as `fifo_buffer_clear_with_callback`, but the buffer is also invalidated preventing any more reading and writing.
+
 #### `fifo_search`
-This function passes all elements from a buffer to a callback function untill it returns `FIFO_SEARCH_STOP` or `FIFO_SEARCH_ERR`. If it receives
-`FIFO_SEARCH_GIVE`, it removes the entry from the buffer and the reader must take care of the data.
+This function passes all elements from a buffer to a callback function untill it returns `FIFO_SEARCH_STOP` or `FIFO_CALLBACK_ERR`. If it receives
+`FIFO_SEARCH_GIVE`, it removes the entry from the buffer and the reader must take care of the data. This function blocks other readers and writers.
+
+#### `fifo_read`
+This functions passes all elements from a buffer to a callback function, but it is not possible for the callback function to return `FIFO_SEARCH_GIVE`
+or `FIFO_SEARCH_FREE`. Other readers might use the buffer simultaneously. 
+
+#### `fifo_read_minimum`
+This function passes all elements with order higher than a specified number to the callback function. Otherwise same functionallity as `fifo_read`.
 
 #### `fifo_write`
 Puts new data to the end of the buffer.
 
 #### `fifo_buffer_write_ordered`
 Puts data in the buffer ordered by the `order` argument.
+
+#### `fifo_buffer_delayed_write`
+Write to a buffer even if the buffer is locked by another user. The next time the buffer is being read from, this data will be added to the buffer. 
 
 #### `fifo_clear_order_lt`
 Clears the beginning of a buffer up to the first entry which has an order value equal to or greater than the `order_min` argument. It is most
