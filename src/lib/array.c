@@ -278,6 +278,7 @@ int rrr_array_validate_definition (
 
 int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
+		ssize_t *parsed_bytes_final,
 		const char *data,
 		const rrr_type_length length
 ) {
@@ -337,6 +338,8 @@ int rrr_array_parse_data_from_definition (
 		pos += parsed_bytes;
 		i++;
 	RRR_LINKED_LIST_ITERATE_END(definitions);
+
+	*parsed_bytes_final = pos - data;
 
 	out:
 	return ret;
@@ -468,6 +471,7 @@ static ssize_t __rrr_array_get_packed_length (
 
 int rrr_array_new_message_from_buffer (
 		struct vl_message **target,
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition
@@ -485,7 +489,7 @@ int rrr_array_new_message_from_buffer (
 		return RRR_ARRAY_PARSE_HARD_ERR;
 	}
 
-	if ((ret = rrr_array_parse_data_from_definition(&definitions, buf, buf_len)) != 0) {
+	if ((ret = rrr_array_parse_data_from_definition(&definitions, parsed_bytes, buf, buf_len)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
 			VL_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
 			ret = RRR_ARRAY_PARSE_SOFT_ERR;
@@ -524,8 +528,9 @@ int rrr_array_new_message_from_buffer_with_callback (
 ) {
 	int ret = 0;
 
+	ssize_t parsed_bytes = 0;
 	struct vl_message *message = NULL;
-	if ((ret = rrr_array_new_message_from_buffer(&message, buf, buf_len, definition)) != 0) {
+	if ((ret = rrr_array_new_message_from_buffer(&message, &parsed_bytes, buf, buf_len, definition)) != 0) {
 		return ret;
 	}
 

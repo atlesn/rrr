@@ -74,6 +74,7 @@ int rrr_array_validate_definition (
 );
 int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
+		ssize_t *parsed_bytes,
 		const char *data,
 		const rrr_type_length length
 );
@@ -100,6 +101,7 @@ int rrr_array_get_packed_length_from_buffer (
 );
 int rrr_array_new_message_from_buffer (
 		struct vl_message **target,
+		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition

@@ -563,6 +563,7 @@ If set to no and protocol version is V5, type of the received message is auto-de
 If set, expect to receive data arrays of specific formats in publish messages.
 This option cannot be used with mqtt_receive_rrr_message=yes, however if protocol version is V5,
 received RRR messages will still be auto-detected, and array parsing will not occur for these.
+Multiple data array records may reside in a single PUBLISH message, one RRR message will be generated for each record. 
 Refer to
 .Xr rrr_post(1)
 for syntax of array definitions.

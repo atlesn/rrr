@@ -643,10 +643,15 @@ static int __try_get_vl_message_from_publish (
 
 static int __try_create_array_message_from_publish (
 		struct vl_message **result,
+		ssize_t *parsed_bytes,
 		struct rrr_mqtt_p_publish *publish,
+		ssize_t read_pos,
 		struct mqtt_client_data *data
 ) {
 	int ret = 0;
+
+	*result = NULL;
+	*parsed_bytes = 0;
 
 	RRR_MQTT_P_LOCK(publish->payload);
 
@@ -657,10 +662,16 @@ static int __try_create_array_message_from_publish (
 		goto out;
 	}
 
+	if (read_pos >= publish->payload->length) {
+		ret = 0;
+		goto out;
+	}
+
 	if ((ret = rrr_array_new_message_from_buffer (
 			result,
-			publish->payload->payload_start,
-			publish->payload->length,
+			parsed_bytes,
+			publish->payload->payload_start + read_pos,
+			publish->payload->length - read_pos,
 			&data->array_definition
 	)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
@@ -685,6 +696,11 @@ static int __try_create_array_message_from_publish (
 	RRR_MQTT_P_UNLOCK(publish->payload);
 	return ret;
 }
+
+
+#define WRITE_MESSAGE_TO_BUFFER()																\
+	fifo_buffer_write(&data->output_buffer, (char*) message_final, sizeof(*message_final));		\
+	message_final = NULL																		\
 
 static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
@@ -736,27 +752,43 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			goto out;
 		}
 		else if (message_final != NULL) {
-			goto out_write_to_buffer;
+			WRITE_MESSAGE_TO_BUFFER();
+			goto out;
 		}
 	}
 
 	// Try to create an array message with the data from the publish (if specified in configuration)
 	if (rrr_array_count(&data->array_definition) > 0) {
-		if ((ret = __try_create_array_message_from_publish (
-				&message_final,
-				publish,
-				data
-		)) != 0) {
-			VL_MSG_ERR("Error while parsing data array in mqtt client instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-		if (message_final == NULL) {
-			VL_MSG_ERR("Parsing of supposed received data array failed, dropping the data in mqtt client instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-		goto out_write_to_buffer;
+		int count = 0;
+		ssize_t read_pos = 0;
+		do {
+			ssize_t parsed_bytes = 0;
+			if ((ret = __try_create_array_message_from_publish (
+					&message_final,
+					&parsed_bytes,
+					publish,
+					read_pos,
+					data
+			)) != 0) {
+				VL_MSG_ERR("Error while parsing data array in mqtt client instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				break;
+			}
+			if (message_final == NULL) {
+				if (count == 0) {
+					VL_MSG_ERR("Parsing of supposed received data array failed, dropping the data in mqtt client instance %s\n",
+							INSTANCE_D_NAME(data->thread_data));
+				}
+				break;
+			}
+			read_pos += parsed_bytes;
+			count++;
+			WRITE_MESSAGE_TO_BUFFER();
+		} while (1);
+
+		VL_DEBUG_MSG_3("MQTT client instance %s parsed %i array records from PUBLISH message\n",
+				INSTANCE_D_NAME(data->thread_data), count);
+		goto out;
 	}
 
 	// Try to create a message with the data being the data of the publish. This will return
@@ -771,7 +803,8 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		goto out;
 	}
 	else if (message_final != NULL) {
-		goto out_write_to_buffer;
+		WRITE_MESSAGE_TO_BUFFER();
+		goto out;
 	}
 
 	// Try to create a message with the data being the topic of the publish
@@ -793,10 +826,6 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		ret = 1;
 		goto out;
 	}
-
- 	out_write_to_buffer:
- 	fifo_buffer_write(&data->output_buffer, (char*) message_final, sizeof(*message_final));
- 	message_final = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_final);
