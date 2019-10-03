@@ -23,7 +23,6 @@ See `./configure --help` for flags to use for disabling modules with dependencie
 	$ autoreconf -i
 	$ ./configure
 	$ make
-	$ make check
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
 
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online

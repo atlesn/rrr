@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define VL_THREAD_NO_WATCHDOGS
 
 // Set this higher (like 1000) when debugging
-// #define VL_THREAD_FREEZE_LIMIT_FACTOR 1000
+#define VL_THREAD_FREEZE_LIMIT_FACTOR 1
 
 struct vl_thread_ghost {
 	struct vl_thread_ghost *next;
