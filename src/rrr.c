@@ -93,11 +93,11 @@ int main_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{0,							'\0',	"",						"{CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",				"{CONFIGURATION FILE}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
-		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
+		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -143,7 +143,7 @@ int main (int argc, const char *argv[]) {
 
 	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
 
-	config_string = cmd.command;
+	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL && *config_string != '\0') {
 		config = rrr_config_parse_file(config_string);
 

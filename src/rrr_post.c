@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages.h"
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{0,							'\0',	"",						"{RRR SOCKET}"},
+		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"socket",				"{RRR SOCKET}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
@@ -127,7 +127,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	int ret = 0;
 
 	// Socket
-	const char *socket = cmd->command;
+	const char *socket = cmd_get_value(cmd, "socket", 0);
 	if (socket == NULL || *socket == '\0') {
 		VL_MSG_ERR("No socket path specified\n");
 		ret = 1;

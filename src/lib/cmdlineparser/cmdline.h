@@ -32,10 +32,11 @@ typedef unsigned long int cmd_arg_size;
 typedef unsigned long int cmd_conf;
 
 #define CMD_CONFIG_DEFAULTS			0
-#define CMD_CONFIG_NOCOMMAND		(1<<0)
+#define CMD_CONFIG_COMMAND			(1<<0)
 
-#define CMD_ARG_FLAG_HAS_ARGUMENT	 (1<<0)
-#define CMD_ARG_FLAG_SPLIT_COMMA	 (1<<1)
+#define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
+#define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
+#define CMD_ARG_FLAG_NO_FLAG		(1<<2)
 
 struct cmd_arg_value {
 	RRR_LINKED_LIST_NODE(struct cmd_arg_value);

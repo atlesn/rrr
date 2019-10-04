@@ -46,7 +46,7 @@ called `rrr.conf`.
 
 Then, run this:
 
-	$ rrr rrr.conf --debuglevel 2
+	$ rrr --debuglevel 2 rrr.conf
 
 You can see that `my_source` generates messages which `my_target` then reads. Since RRR is designed to run forever,
 use `Ctrl+C` to exit. RRR might produce some error messages when the different modules shut down, this is normal.

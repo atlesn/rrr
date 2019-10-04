@@ -358,11 +358,27 @@ void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
 	free(target);
 }
 
+
+static const struct cmd_arg_rule *__cmd_get_rule_noflag (const struct cmd_arg_rule *rules, cmd_arg_count pos) {
+	cmd_arg_count i = 0;
+	const struct cmd_arg_rule *rule = &rules[i++];
+	while (rule->longname != NULL) {
+		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) > 0) {
+			if (pos == 0) {
+				return rule;
+			}
+			pos--;
+		}
+		rule = &rules[i++];
+	}
+	return NULL;
+}
+
 static const struct cmd_arg_rule *__cmd_get_rule_by_longname (const struct cmd_arg_rule *rules, const char *longname) {
 	int i = 0;
 	const struct cmd_arg_rule *rule = NULL;
 	rule = &rules[i];
-	while (rule->longname != NULL) {
+	while (((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) && rule->longname != NULL) {
 		if (strcmp(rule->longname, longname) == 0) {
 			return rule;
 		}
@@ -377,7 +393,7 @@ static const struct cmd_arg_rule *__cmd_get_rule_by_shortname (const struct cmd_
 	const struct cmd_arg_rule *rule = NULL;
 	rule = &rules[i];
 	while (rule->longname != NULL) {
-		if (rule->shortname == shortname) {
+		if (((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) && rule->shortname == shortname) {
 			return rule;
 		}
 		i++;
@@ -387,6 +403,9 @@ static const struct cmd_arg_rule *__cmd_get_rule_by_shortname (const struct cmd_
 }
 
 int cmd_parse (struct cmd_data *data, cmd_conf config) {
+	cmd_arg_count argc_begin = 1;
+	cmd_arg_count noflag_count = 0;
+
 	data->program = data->argv[0];
 	data->command = cmd_help;
 
@@ -394,16 +413,14 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		return 0;
 	}
 
-	cmd_arg_count argc_begin = 2;
+	data->command = cmd_blank_argument;
 
-	if ((config & CMD_CONFIG_NOCOMMAND) > 0) {
-		data->command = cmd_blank_argument;
-		argc_begin = 1;
-	}
-	else if (data->argc > 1) {
+	if ((config & CMD_CONFIG_COMMAND) > 0) {
 		data->command = data->argv[1];
+		argc_begin = 2;
 	}
 
+	int end_of_options_found = 0; // Two dashes -- is end of arguments
 	for (int i = argc_begin; i < data->argc; i++) {
 		const char *pos = data->argv[i];
 		ssize_t key_length = 0;
@@ -411,33 +428,50 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		const struct cmd_arg_rule *rule = NULL;
 		int dash_count = 0;
 
-		if (strncmp(pos, "--", 2) == 0) {
-			dash_count = 2;
-			pos += 2;
-		}
-		else if (strncmp(pos, "-", 1) == 0) {
-			dash_count = 1;
-			pos += 1;
+		if (end_of_options_found != 1) {
+			if (strncmp(pos, "--", 2) == 0) {
+				dash_count = 2;
+				pos += 2;
+			}
+			else if (strncmp(pos, "-", 1) == 0) {
+				dash_count = 1;
+				pos += 1;
+			}
+
+			if (dash_count > 0 && (pos_equal = strstr(pos, "=")) != NULL) {
+				key_length = pos_equal - pos;
+				if (key_length == 0) {
+					fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n",
+							i, data->argv[i]);
+					return 1;
+				}
+			}
+			else {
+				key_length = strlen(pos);
+				if (key_length == 0) {
+					if (dash_count == 2) {
+						end_of_options_found = 1;
+						continue;
+					}
+
+					fprintf (stderr, "Error: Argument index %i was empty\n", i);
+					return 1;
+				}
+			}
 		}
 
-		if ((pos_equal = strstr(pos, "=")) != NULL) {
-			key_length = pos_equal - pos;
-		}
-		else {
-			key_length = strlen(pos);
-		}
+		if (dash_count == 2) {
+			char key[key_length + 1];
+			strncpy(key, pos, key_length);
+			key[key_length] = '\0';
 
-		if (key_length == 0) {
-			fprintf (stderr, "Error: Argument index %i was empty\n", i);
-			return 1;
+			rule = __cmd_get_rule_by_longname(data->rules, key);
+			if (rule == NULL) {
+				fprintf (stderr, "Error: Argument '%s' is unknown\n", key);
+				return 1;
+			}
 		}
-		if (key_length == 0) {
-			fprintf (stderr, "Error: Syntax error with = syntax in argument %i ('%s'), use key=value\n",
-					i, data->argv[i]);
-			return 1;
-		}
-
-		if (dash_count == 1) {
+		else if (dash_count == 1) {
 			for (int j = 0; j < key_length; j++) {
 				rule = __cmd_get_rule_by_shortname(data->rules, *(pos+j));
 				if (rule == NULL) {
@@ -459,13 +493,9 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			}
 		}
 		else {
-			char key[key_length + 1];
-			strncpy(key, pos, key_length);
-			key[key_length] = '\0';
-
-			rule = __cmd_get_rule_by_longname(data->rules, key);
+			rule = __cmd_get_rule_noflag(data->rules, noflag_count++);
 			if (rule == NULL) {
-				fprintf (stderr, "Error: Argument '%s' is unknown\n", key);
+				fprintf (stderr, "Error: too many arguments at '%s'\n", pos);
 				return 1;
 			}
 		}
@@ -475,12 +505,14 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		}
 
 		const char *value = NULL;
-		if ((rule->flags & CMD_ARG_FLAG_HAS_ARGUMENT) != 0) {
+		if ((rule->flags & (CMD_ARG_FLAG_HAS_ARGUMENT|CMD_ARG_FLAG_NO_FLAG)) != 0) {
 			if (pos_equal == NULL) {
-				i++;
-				if (i == data->argc) {
-					fprintf (stderr, "Error: Required argument missing for '%s'\n", rule->longname);
-					return 1;
+				if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) {
+					i++;
+					if (i == data->argc) {
+						fprintf (stderr, "Error: Required argument missing for '%s'\n", rule->longname);
+						return 1;
+					}
 				}
 				value = data->argv[i];
 			}
