@@ -41,7 +41,7 @@ void rrr_mysql_library_end(void) {
 	pthread_mutex_lock(&mysql_global_lock);
 	mysql_users--;
 	if (mysql_users == 0) {
-		rrr_mysql_library_end();
+		mysql_library_end();
 	}
 	pthread_mutex_unlock(&mysql_global_lock);
 }
