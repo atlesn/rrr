@@ -108,6 +108,12 @@ Module supports IP messages
 .It V
 Module supports voltage reading messages
 .El
+If neither
+.B A
+nor
+.B V
+.PP
+is specified for a module, it doesn't care about the contents of messages but simply forwards them. 
 .PP
 The following modules and module-specific arguments are available and can be used
 .PP
@@ -163,7 +169,7 @@ The buffer collects all messages from all senders and wait for them to be collec
 .SS duplicator (P)
 The duplicator works like buffer only that it creates one output buffer for every reader and duplicates the
 data it reads from other modules for each reader. The readers of duplicator are detected automatically.
-.SS ipclient (PT)
+.SS ipclient (PI)
 The ipclient module collects any message from senders and sends them over the network to another 
 .B RRR
 environment with the an instance of the ipserver module using UDP. The ipclient caches messages locally in RAM
@@ -572,4 +578,4 @@ Defaults to yes.
 
 .SH SEE ALSO
 .Xr rrr(1),
-.Xr bdl(1)
+.Xr rrr_post(1)

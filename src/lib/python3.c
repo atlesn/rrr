@@ -395,7 +395,7 @@ static void __rrr_py_fork_signal_handler (int s) {
 		rrr_py_fork_running = 0;
 	}
 	if (s == SIGPIPE) {
-        VL_MSG_ERR("Received SIGPIPE in fork, ignoring\n");
+	        VL_MSG_ERR("Received SIGPIPE in fork, ignoring\n");
 	}
 }
 

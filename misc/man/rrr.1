@@ -76,11 +76,16 @@ Do not monitor threads for becoming unresponsive. If not set and a thread is fou
 When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
 .B rrr
 restarts them.
-
+.SH SIGNALS
+.IP SIGINT|Ctrl+C
+Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.
+.IP SIGUSR1
+Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
+.IP SIGTERM
+Exit immediately.
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.
-.SH DEBUG FLAGS
-
 .SH SEE ALSO
+.Xr rrr_post(1),
 .Xr rrr.conf(5)

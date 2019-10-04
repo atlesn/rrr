@@ -63,6 +63,8 @@ Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and
 
 ## MODULES
 
+Here's a short list of modules to start with, more are listed in the `rrr.conf` man page.
+
 ### raw (drain output from other modules)
 Read output from any module and delete it. Can also print out some information for each message it receives.
 
@@ -112,17 +114,21 @@ an InfluxDB database:
 	influxdb_tags=hostname
 	influxdb_fields=uptime,loadavg->load
 
-Use an MQTT client to publish a message with a data record to the RRR broker which the RRR MQTT client then receives and parses.
+Use your faviourite MQTT client to publish a message with a data record to the RRR broker
+which the RRR MQTT client then receives and parses. Refer to the `ARRAY DEFINITION` section
+below on how to specifiy different data types.
 
 	mosquitto_pub -t "a/b/c" -m "3.141592,12345678\"myserver.local\""
+	
+Please note that RRR does not provide a stand-alone MQTT client.
 
-### udpreader (read data records from UDP and create messages from them)
+### udpreader (read data records from UDP)
 Listens on a port and parses data records it receives before forwarding them
-as RRR messages to other modules. Expects to receive records with data types defined in an array definition.
+as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`.
 
 ### socket (read data records from a UNIX socket)
 Listens on a socket and parses data records it receives before forwarding them
-as RRR messages to other modules. Expects to receive records with data types defined in an array definition.
+as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`.
 
 The `socket` module can also be set up to read in complete RRR messages sent to it by the `rrr_post` program. 
 
@@ -152,23 +158,6 @@ to be saved in an InfluxDB database.
 Use `rrr_post` to parse the input data record, which in this case is provided on standard input.
 
 	echo "3.141592,12345678\"myserver.local\"" | rrr_post /tmp/my_rrr_socket.sock -a fixp#loadavg,sep1,ustr#uptime,str#hostname -f - -c 1
-
-### buffer (buffer messages)
-The buffer simply collects data from it's senders and puts them in a buffer to be read from others.
-
-### duplicator (buffer and duplicate messages)
-The duplicator automatically creates one buffer for each of it's readers, and all data it reads from
-other modules are duplicated for each of its readers.
-	
-### ipclient (Send UDP packets to server and wait for ACK)
-Ipclient sends messages read from other modules and waits for `ACK` message from the specified server. Until this
-is received, we continue try sending the messages. The server is expected to also run Read Route Record, but with
-the ipserver module listening for packets.
-
-### ipserver (receive messages from ipclient)
-`ipserver` listens for messages from `ipclient` on a port and passes them on to the next module (only mysql
-is compatible). We send ACK messages back for every message received. Downstream modules (usually mysql)
-can generate messages which we also send back.
 
 ### python3 (generate and/or modify messages by a custom python program)
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
@@ -275,18 +264,13 @@ Below follows an example perl script.
 		return 1;
 	}
 
-### averager (create averages from voltmonitor)
-Create MAX/MIN/AVG measurements at intervals with input from other modules.
-
-### voltmonitor (USB voltmeter driver)
-Read voltage measurements from an USB device.
-
-## ARRAY DEFINITIONS
+## ARRAY DEFINITION
 Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
 
 A definition is a comma separated list of different types. Some types need to have a specified length, and other types
 figure out the length automatically. RRR will always make sure that it is possible to determin the length
-of each record, this is necessary to be able to separate the records from each other upon receival.
+of each record, this is necessary to be able to separate the records from each other upon receival. If you are unsure about
+whether a definition is valid, just try to use it and RRR will give you an error message if it isn't.
 
 Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
 ease the extraction of data in later processing.
