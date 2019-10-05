@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/vl_time.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
+#include "../lib/utf8.h"
 #include "../global.h"
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
@@ -49,6 +50,8 @@ struct udpreader_data {
 	struct ip_data ip;
 	struct rrr_array definitions;
 	struct rrr_socket_read_session_collection read_sessions;
+	char *default_topic;
+	ssize_t default_topic_length;
 };
 
 void data_cleanup(void *arg) {
@@ -57,6 +60,7 @@ void data_cleanup(void *arg) {
 	fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_socket_read_session_collection_clear(&data->read_sessions);
+	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
 
 int data_init(struct udpreader_data *data, struct instance_thread_data *thread_data) {
@@ -131,6 +135,24 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 		return 1;
 	}
 
+	// Message default topic
+	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "udpr_default_topic")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing configuration parameter socket_default_path in udpreader instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
+			VL_MSG_ERR("udpr_default_topic for instance %s was not valid UTF-8\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->default_topic_length = strlen(data->default_topic);
+	}
+
 	out:
 	return ret;
 }
@@ -152,6 +174,8 @@ int read_raw_data_callback (struct ip_buffer_entry *entry, void *arg) {
 	if ((ret = rrr_array_new_message_from_buffer_with_callback (
 			entry->message,
 			entry->data_length,
+			data->default_topic,
+			data->default_topic_length,
 			&data->definitions,
 			read_data_receive_message_callback,
 			data

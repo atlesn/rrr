@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "rrr_endian.h"
 #include <inttypes.h>
 
 #include "../global.h"
@@ -31,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "messages.h"
+#include "rrr_endian.h"
 
 #define PASTER(x,y) x ## _ ## y
 

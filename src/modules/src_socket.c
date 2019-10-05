@@ -48,6 +48,7 @@ struct socket_data {
 	struct fifo_buffer inject_buffer;
 	char *socket_path;
 	char *default_topic;
+	ssize_t default_topic_length;
 	int receive_rrr_message;
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
@@ -122,6 +123,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 			ret = 1;
 			goto out;
 		}
+		data->default_topic_length = strlen(data->default_topic);
 	}
 
 	// Receive full rrr message
@@ -185,6 +187,8 @@ int read_raw_data_callback(struct rrr_socket_read_session *read_session, void *a
 	return rrr_array_new_message_from_buffer_with_callback (
 			read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos,
+			data->default_topic,
+			data->default_topic_length,
 			&data->definitions,
 			read_data_receive_message_callback,
 			data

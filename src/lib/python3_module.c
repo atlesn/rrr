@@ -43,7 +43,7 @@ static PyModuleDef module_definition = {
 };
 
 /*
- * We need a lock because these methods are called beofre Py_Initialzie(), hence
+ * We need a lock because these methods are called before Py_Initialzie(), hence
  * there are no python locking.
  */
 static pthread_mutex_t rrr_python3_module_create_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -62,6 +62,12 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 		}
 		if (PyType_Ready(&rrr_python3_vl_message_type) < 0) {
 			VL_MSG_ERR("PyType_Ready for python3 vl_message type failed:\n");
+			PyErr_Print();
+			err = 1;
+			goto out;
+		}
+		if (PyType_Ready(&rrr_python3_array_type) < 0) {
+			VL_MSG_ERR("PyType_Ready for python3 array type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
@@ -92,6 +98,13 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 		Py_INCREF((PyObject *) &rrr_python3_vl_message_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_VL_MESSAGE_TYPE_NAME, (PyObject *) &rrr_python3_vl_message_type) != 0) {
 			VL_MSG_ERR("Could not add python3 vl_message type to module:\n");
+			PyErr_Print();
+			err = 1;
+			goto out;
+		}
+		Py_INCREF((PyObject *) &rrr_python3_array_type);
+		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_ARRAY_TYPE_NAME, (PyObject *) &rrr_python3_array_type) != 0) {
+			VL_MSG_ERR("Could not add python3 array type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
