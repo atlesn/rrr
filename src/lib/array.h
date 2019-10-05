@@ -106,11 +106,15 @@ int rrr_array_new_message_from_buffer (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
 		const struct rrr_array *definition
 );
 int rrr_array_new_message_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
 		const struct rrr_array *definition,
 		int (*callback)(struct vl_message *message, void *arg),
 		void *callback_arg
@@ -118,7 +122,9 @@ int rrr_array_new_message_from_buffer_with_callback (
 int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,
-		uint64_t time
+		uint64_t time,
+		const char *topic,
+		ssize_t topic_length
 );
 int rrr_array_message_to_collection (
 		struct rrr_array *target,

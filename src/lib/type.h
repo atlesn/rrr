@@ -41,6 +41,7 @@ static const union type_system_endian {
 
 // Remember to update convert function pointers in types.c
 // Highest possible ID is 255 (uint8_t)
+#define RRR_TYPE_MIN		2
 #define RRR_TYPE_LE			2 // Little endian number
 #define RRR_TYPE_BE			3 // Big endian number
 #define RRR_TYPE_H			4 // Host endian number (can be both)
@@ -80,9 +81,12 @@ static const union type_system_endian {
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
 #define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR)
-#define RRR_TYPE_IS_FIXP(type)		(type == RRR_TYPE_FIXP)
+#define RRR_TYPE_IS_FIXP(type)		((type) == RRR_TYPE_FIXP)
+#define RRR_TYPE_IS_MSG(type)		((type) == RRR_TYPE_MSG)
+#define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_SEP(type)		((type) == RRR_TYPE_SEP)
 #define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
-#define RRR_TYPE_OK(type)			((type) > 0 && (type) <= RRR_TYPE_MAX)
+#define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
 #define RRR_TYPE_FLAG_SIGNED 1<<0
 

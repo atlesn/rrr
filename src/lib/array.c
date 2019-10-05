@@ -290,10 +290,13 @@ int rrr_array_validate_definition (
 		goto out;
 	}
 
-	if (node->definition->max_length == 0 && node->definition->type != RRR_TYPE_MSG && node->definition->type != RRR_TYPE_STR) {
+	if (node->definition->max_length == 0 &&
+		node->definition->type != RRR_TYPE_MSG &&
+		node->definition->type != RRR_TYPE_STR
+	) {
 		VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
 				node->definition->identifier);
-		return 1;
+		ret = 1;
 	}
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(target, const struct rrr_type_value);
@@ -515,6 +518,8 @@ int rrr_array_new_message_from_buffer (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
 		const struct rrr_array *definition
 ) {
 	struct vl_message *message = NULL;
@@ -544,7 +549,13 @@ int rrr_array_new_message_from_buffer (
 		goto out_destroy;
 	}
 
-	if ((ret = rrr_array_new_message_from_collection(&message, &definitions, time_get_64())) != 0) {
+	if ((ret = rrr_array_new_message_from_collection(
+			&message,
+			&definitions,
+			time_get_64(),
+			topic,
+			topic_length
+	)) != 0) {
 		VL_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
 		return RRR_ARRAY_PARSE_HARD_ERR;
 		goto out_destroy;
@@ -563,6 +574,8 @@ int rrr_array_new_message_from_buffer (
 int rrr_array_new_message_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
 		const struct rrr_array *definition,
 		int (*callback)(struct vl_message *message, void *arg),
 		void *callback_arg
@@ -571,7 +584,15 @@ int rrr_array_new_message_from_buffer_with_callback (
 
 	ssize_t parsed_bytes = 0;
 	struct vl_message *message = NULL;
-	if ((ret = rrr_array_new_message_from_buffer(&message, &parsed_bytes, buf, buf_len, definition)) != 0) {
+	if ((ret = rrr_array_new_message_from_buffer(
+			&message,
+			&parsed_bytes,
+			buf,
+			buf_len,
+			topic,
+			topic_length,
+			definition
+	)) != 0) {
 		return ret;
 	}
 
@@ -581,7 +602,9 @@ int rrr_array_new_message_from_buffer_with_callback (
 int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,
-		uint64_t time
+		uint64_t time,
+		const char *topic,
+		ssize_t topic_length
 ) {
 	int ret = 0;
 
@@ -589,7 +612,7 @@ int rrr_array_new_message_from_collection (
 
 	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	struct vl_message *message = message_new_array(time, 0, total_data_length);
+	struct vl_message *message = message_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
 		VL_MSG_ERR("Could not create message for data collection\n");
 		ret = 1;
@@ -597,6 +620,11 @@ int rrr_array_new_message_from_collection (
 	}
 
 	message->version = RRR_ARRAY_VERSION;
+
+	if (topic_length > 0) {
+		char *topic_pos = MSG_TOPIC_PTR(message);
+		memcpy(topic_pos, topic, topic_length);
+	}
 
 	char *pos = MSG_DATA_PTR(message);
 	ssize_t written_bytes_total = 0;
