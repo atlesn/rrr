@@ -378,8 +378,8 @@ static const struct cmd_arg_rule *__cmd_get_rule_by_longname (const struct cmd_a
 	int i = 0;
 	const struct cmd_arg_rule *rule = NULL;
 	rule = &rules[i];
-	while (((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) && rule->longname != NULL) {
-		if (strcmp(rule->longname, longname) == 0) {
+	while (rule->longname != NULL) {
+		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0 && strcmp(rule->longname, longname) == 0) {
 			return rule;
 		}
 		i++;
@@ -393,7 +393,7 @@ static const struct cmd_arg_rule *__cmd_get_rule_by_shortname (const struct cmd_
 	const struct cmd_arg_rule *rule = NULL;
 	rule = &rules[i];
 	while (rule->longname != NULL) {
-		if (((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) && rule->shortname == shortname) {
+		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0 && rule->shortname == shortname) {
 			return rule;
 		}
 		i++;
