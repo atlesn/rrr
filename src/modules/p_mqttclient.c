@@ -672,6 +672,8 @@ static int __try_create_array_message_from_publish (
 			parsed_bytes,
 			publish->payload->payload_start + read_pos,
 			publish->payload->length - read_pos,
+			publish->topic,
+			strlen(publish->topic),
 			&data->array_definition
 	)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
@@ -698,9 +700,9 @@ static int __try_create_array_message_from_publish (
 }
 
 
-#define WRITE_MESSAGE_TO_BUFFER()																\
-	fifo_buffer_write(&data->output_buffer, (char*) message_final, sizeof(*message_final));		\
-	message_final = NULL																		\
+#define WRITE_TO_BUFFER_AND_SET_TO_NULL(msg)								\
+	fifo_buffer_write(&data->output_buffer, (char*) msg, sizeof(*msg));		\
+	msg = NULL
 
 static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
@@ -752,8 +754,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			goto out;
 		}
 		else if (message_final != NULL) {
-			WRITE_MESSAGE_TO_BUFFER();
-			goto out;
+			goto out_write_to_buffer;
 		}
 	}
 
@@ -783,7 +784,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			}
 			read_pos += parsed_bytes;
 			count++;
-			WRITE_MESSAGE_TO_BUFFER();
+			WRITE_TO_BUFFER_AND_SET_TO_NULL(message_final);
 		} while (1);
 
 		VL_DEBUG_MSG_3("MQTT client instance %s parsed %i array records from PUBLISH message\n",
@@ -803,8 +804,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		goto out;
 	}
 	else if (message_final != NULL) {
-		WRITE_MESSAGE_TO_BUFFER();
-		goto out;
+		goto out_write_to_buffer;
 	}
 
 	// Try to create a message with the data being the topic of the publish
@@ -826,6 +826,9 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		ret = 1;
 		goto out;
 	}
+
+	out_write_to_buffer:
+	WRITE_TO_BUFFER_AND_SET_TO_NULL(message_final);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_final);
