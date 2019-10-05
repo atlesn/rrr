@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>
-#include <linux/un.h>
+#include <sys/un.h>
 
 #include "linked_list.h"
 #include "rrr_endian.h"
