@@ -337,7 +337,7 @@ static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session
 			read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos,
 			data->topic,
-			strlen(data->topic),
+			(data->topic != NULL ? strlen(data->topic) : 0),
 			&data->definition,
 			__rrr_post_read_message_callback,
 			data
