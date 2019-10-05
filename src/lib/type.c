@@ -368,25 +368,11 @@ static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 		CHECK_END_AND_RETURN(1);
 
 		unsigned char c = *start_tmp;
-
-		if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
-		}
-		else if (c >= 33 && c <= 47) {
-			// ! " # $ % & ' ( ) * + , - . /
-		}
-		else if (c >= 58 && c <= 64) {
-			// : ; < = > ? @
-		}
-		else if (c >= 91 && c <= 96) {
-			// [ \ ] ^ _ `
-		}
-		else if (c >= 123 && c <= 126) {
-			// { | } ~
-		}
-		else {
+		if (!RRR_TYPE_CHAR_IS_SEP(c)) {
 			VL_MSG_ERR("Invalid separator character %c\n", c);
 			return RRR_TYPE_PARSE_SOFT_ERR;
 		}
+
 		found++;
 	}
 
@@ -715,8 +701,10 @@ static int __get_import_length_istr (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 		sign_length = 1;
 	}
 
+	CHECK_END_AND_RETURN(1);
+
 	ssize_t length = 0;
-	if (__get_import_length_ustr(&length, node, start, start - end) == 0) {
+	if (__get_import_length_ustr(&length, node, start, buf_size - sign_length) == 0) {
 		*import_length = sign_length + length;
 		return RRR_TYPE_PARSE_OK;
 	}

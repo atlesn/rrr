@@ -96,6 +96,25 @@ static const union type_system_endian {
 #define RRR_TYPE_FLAG_SET_SIGNED(flags)		(flags) |= (RRR_TYPE_FLAG_SIGNED)
 #define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= ~(RRR_TYPE_FLAG_SIGNED)
 
+#define RRR_TYPE_CHAR_IS_SEP_A(c) \
+	(c == '\n' || c == '\r' || c == '\t' || c == ' ')
+#define RRR_TYPE_CHAR_IS_SEP_B(c) \
+	(c >= 33 && c <= 47)   // ! " # $ % & ' ( ) * + , - . /
+#define RRR_TYPE_CHAR_IS_SEP_C(c) \
+	(c >= 58 && c <= 64)   // : ; < = > ? @
+#define RRR_TYPE_CHAR_IS_SEP_D(c) \
+	(c >= 91 && c <= 96)   // [ \ ] ^ _ `
+#define RRR_TYPE_CHAR_IS_SEP_E(c) \
+	(c >= 123 && c <= 126) // { | } ~
+
+#define RRR_TYPE_CHAR_IS_SEP(c) (		\
+		RRR_TYPE_CHAR_IS_SEP_A(c)|		\
+		RRR_TYPE_CHAR_IS_SEP_B(c)|		\
+		RRR_TYPE_CHAR_IS_SEP_C(c)|		\
+		RRR_TYPE_CHAR_IS_SEP_D(c)|		\
+		RRR_TYPE_CHAR_IS_SEP_E(c)		\
+	)
+
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
 		ssize_t *import_length,				\
 		const struct rrr_type_value *node,	\
