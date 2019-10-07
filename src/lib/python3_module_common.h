@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"
 #define RRR_PYTHON3_VL_MESSAGE_TYPE_NAME "vl_message"
 #define RRR_PYTHON3_ARRAY_TYPE_NAME "rrr_array"
+#define RRR_PYTHON3_ARRAY_VALUE_TYPE_NAME "rrr_array_value"
 #define RRR_PYTHON3_SETTING_TYPE_NAME "rrr_setting"
 
 #define RRR_PY_8 T_UBYTE

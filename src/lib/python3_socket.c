@@ -238,10 +238,20 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 
 	struct rrr_socket_msg *message = NULL;
 	if (rrr_python3_vl_message_check(arg)) {
-		message = rrr_vl_message_safe_cast(rrr_python3_vl_message_get_message (arg));
+		struct vl_message *vl_message = rrr_python3_vl_message_get_message (arg);
+		if (vl_message == NULL) {
+			ret = 1;
+			goto out;
+		}
+		message = rrr_vl_message_safe_cast(vl_message);
 	}
 	else if (rrr_python3_setting_check(arg)) {
-		message = rrr_setting_safe_cast(rrr_python3_setting_get_setting (arg));
+		struct rrr_setting_packed *setting = rrr_python3_setting_get_setting (arg);
+		if (setting == NULL) {
+			ret = 1;
+			goto out;
+		}
+		message = rrr_setting_safe_cast(setting);
 	}
 	else {
 		VL_MSG_ERR("Received unknown object type in python3 socket send\n");
@@ -378,6 +388,7 @@ PyObject *rrr_python3_socket_new (const char *filename) {
 	new_socket->socket_fd = 0;
 	new_socket->connected_fd = 0;
 	new_socket->send_stats = 0;
+	memset (&new_socket->read_sessions, '\0', sizeof(new_socket->read_sessions));
 	pthread_mutex_init(&new_socket->stats_lock, 0);
 	pthread_mutex_init(&new_socket->send_lock, 0);
 

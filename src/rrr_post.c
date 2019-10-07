@@ -360,7 +360,7 @@ static int __rrr_post_read(struct rrr_post_data *data) {
 		goto out;
 	}
 
-	int read_flags = RRR_SOCKET_READ_METHOD_READ | RRR_SOCKET_READ_USE_TIMEOUT;
+	int read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_USE_TIMEOUT;
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
 		read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}

@@ -102,7 +102,7 @@ int rrr_socket_common_get_session_target_length_from_array (
 			&import_length,
 			data->definition,
 			read_session->rx_buf_ptr,
-			read_session->rx_buf_size
+			read_session->rx_buf_wpos
 	);
 
 	if (ret != 0) {

@@ -22,12 +22,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_ARRAY_H
 #define RRR_PYTHON3_ARRAY_H
 
+#include <Python.h>
+#include <structmember.h>
+#include <stdio.h>
+
+struct rrr_python3_array_data;
+struct rrr_python3_array_value_data;
+
+int rrr_python3_array_value_count (struct rrr_python3_array_value_data *data);
+int rrr_python3_array_count (struct rrr_python3_array_data *data);
+int rrr_python3_array_check (PyObject *object);
+
 PyObject *rrr_python3_array_new (void);
 int rrr_python3_array_iterate (
 		PyObject *self,
 		int (*callback)(PyObject *tag, PyObject *value, uint8_t type_orig, void *arg),
 		void *callback_arg
 );
-int rrr_python3_array_append (PyObject *self, PyObject *tag, PyObject *value, uint8_t type);
+int rrr_python3_array_append (
+		PyObject *self,
+		PyObject *tag,
+		PyObject *value,
+		uint8_t type_orig
+);
 
 #endif /* RRR_PYTHON3_ARRAY_H */

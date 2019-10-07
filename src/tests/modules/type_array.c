@@ -165,6 +165,21 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	types[11] = rrr_array_value_get_by_index(&collection, 11);
 
+	for (int i = 0; i < 4; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	TEST_MSG("Type 4: %u\n", types[4]->definition->type);
+	for (int i = 5; i < 9; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	TEST_MSG("Type 9: %u\n", types[4]->definition->type);
+	for (int i = 10; i < 11; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_BLOB(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	for (int i = 11; i < 12; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_MSG ? "OK" : "NOT OK"));
+	}
+
 	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
 		!RRR_TYPE_IS_64(types[1]->definition->type) ||
 		!RRR_TYPE_IS_64(types[2]->definition->type) ||

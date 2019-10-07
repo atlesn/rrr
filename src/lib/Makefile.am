@@ -22,7 +22,8 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 if VL_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
 noinst_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c python3_array.c
+librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c \
+							python3_array.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
 endif

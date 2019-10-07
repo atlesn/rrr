@@ -210,7 +210,7 @@ int rrr_socket_read_message (
 				&src_addr_len
 		);
 	}
-	else if ((read_flags & RRR_SOCKET_READ_METHOD_READ) != 0) {
+	else if ((read_flags & RRR_SOCKET_READ_METHOD_READ_FILE) != 0) {
 		bytes = read (
 				fd,
 				buf,
@@ -251,10 +251,12 @@ int rrr_socket_read_message (
 	/* Check for EOF / connection close */
 	if (bytes == 0) {
 		// Possible connection close or file truncation
-		if ((read_flags & RRR_SOCKET_READ_METHOD_READ) != 0) {
-			ret = RRR_SOCKET_SOFT_ERROR;
+		if ((read_flags & RRR_SOCKET_READ_METHOD_READ_FILE) != 0) {
+			ret = RRR_SOCKET_READ_EOF;
+			goto out;
+//			ret = RRR_SOCKET_SOFT_ERROR;
 
-			off_t offset = lseek (fd, 0, SEEK_SET);
+/*			off_t offset = lseek (fd, 0, SEEK_SET);
 			if (offset == -1) {
 				if (errno == ESPIPE) {
 					// Not a file
@@ -266,9 +268,9 @@ int rrr_socket_read_message (
 			else {
 				VL_DEBUG_MSG_1("Possible input file truncation, seek to the beginning\n");
 				ret = RRR_SOCKET_READ_INCOMPLETE;
-			}
+			}*/
 
-			goto out;
+//			goto out;
 		}
 		else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE) {
 			if (read_session->target_size > 0) {
