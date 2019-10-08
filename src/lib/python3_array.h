@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_python3_array_data;
 struct rrr_python3_array_value_data;
 
-int rrr_python3_array_value_count (struct rrr_python3_array_value_data *data);
+//int rrr_python3_array_value_count (struct rrr_python3_array_value_data *data);
 int rrr_python3_array_count (struct rrr_python3_array_data *data);
 int rrr_python3_array_check (PyObject *object);
 int rrr_python3_array_value_check (PyObject *object);

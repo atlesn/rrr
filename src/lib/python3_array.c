@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "python3_module_common.h"
 #include "python3_array.h"
+#include "type.h"
 
 struct rrr_python3_array_value_data;
 struct rrr_python3_array_data;
@@ -33,11 +34,32 @@ struct rrr_python3_array_data;
  * ARRAY VALUE
  ********************************************************************************/
 
+struct rrr_python3_array_value_constants {
+		unsigned int TYPE_AUTO;
+		unsigned int TYPE_H;
+		unsigned int TYPE_BLOB;
+		unsigned int TYPE_SEP;
+		unsigned int TYPE_MSG;
+		unsigned int TYPE_FIXP;
+		unsigned int TYPE_STR;
+};
+
+static const struct rrr_python3_array_value_constants array_value_constants = {
+		0,
+		RRR_TYPE_H,
+		RRR_TYPE_BLOB,
+		RRR_TYPE_SEP,
+		RRR_TYPE_MSG,
+		RRR_TYPE_FIXP,
+		RRR_TYPE_STR
+};
+
 struct rrr_python3_array_value_data {
 	PyObject_HEAD
 	PyObject *tag;
 	PyObject *list;
 	uint8_t type_orig;
+	struct rrr_python3_array_value_constants constants;
 };
 
 void rrr_python3_array_value_set_tag (struct rrr_python3_array_value_data *node, PyObject *tag) {
@@ -54,6 +76,34 @@ void rrr_python3_array_value_set_list (struct rrr_python3_array_value_data *node
 		Py_INCREF(list);
 	}
 	node->list = list;
+}
+
+static int __rrr_python3_array_value_set_type (struct rrr_python3_array_value_data *data, long int id) {
+	if (id < 0) {
+		VL_MSG_ERR("Negative integer provided to rrr_array_value.set_type()\n");
+		return 1;
+	}
+
+	if (id > 0) {
+		// Note : It is possible to set other types than those provided in the constants
+		const struct rrr_type_definition *type_def = rrr_type_get_from_id (id);
+		if (type_def == NULL) {
+			VL_MSG_ERR("Invalid type ID provided to rrr_array_value.set_type(), please utilize the constants provided in the object\n");
+			return 1;
+		}
+	}
+
+	data->type_orig = id;
+
+	return 0;
+}
+
+static int __rrr_python3_array_value_append (struct rrr_python3_array_value_data *data, PyObject *value) {
+	// PyList_Append will INCREF as of 3.6
+	if (PyList_Append(data->list,  value) != 0) {
+		return 1;
+	}
+	return 0;
 }
 
 static void rrr_python3_array_value_f_dealloc (PyObject *self) {
@@ -85,6 +135,7 @@ static PyObject *rrr_python3_array_value_f_new (PyTypeObject *type, PyObject *ar
 	}
 
 	value->type_orig = 0;
+	value->constants = array_value_constants;
 
 	return self;
 
@@ -225,7 +276,7 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 		PyList_SET_ITEM(data->list, idx, value);
 	}
 	else {
-		if (PyList_Append(data->list, value) != 0) {
+		if (__rrr_python3_array_value_append(data, value) != 0) {
 			VL_MSG_ERR("Could not append value in rrr_python3_array_value_f_set\n");
 			Py_RETURN_FALSE;
 		}
@@ -236,7 +287,7 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 
 static PyObject *rrr_python3_array_value_f_append (PyObject *self, PyObject *arg) {
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
-	if (PyList_Append(data->list, arg) != 0) {
+	if (__rrr_python3_array_value_append (data, arg) != 0) {
 		VL_MSG_ERR("Could not append item to value list in rrr_python3_array_value_f_append\n");
 		Py_RETURN_FALSE;
 	}
@@ -252,6 +303,68 @@ static PyObject *rrr_python3_array_value_f_count (PyObject *self) {
 		Py_RETURN_NONE;
 	}
 	return result;
+}
+
+static PyObject *rrr_python3_array_value_f_get_type (PyObject *self) {
+	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
+	return PyLong_FromLong(data->type_orig);
+}
+
+static PyObject *rrr_python3_array_value_f_get_type_str (PyObject *self) {
+	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
+
+	if (data->type_orig == 0) {
+		return PyUnicode_FromString("auto");
+	}
+
+	const struct rrr_type_definition *type_def = rrr_type_get_from_id (data->type_orig);
+	if (type_def == NULL) {
+		VL_BUG("Type was not known in rrr_python3_array_value_f_get_type_str\n");
+	}
+	return PyUnicode_FromString(type_def->identifier);
+}
+
+static PyObject *rrr_python3_array_value_f_set_type (PyObject *self, PyObject *type_arg) {
+	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
+
+	if (!PyLong_Check(type_arg)) {
+		VL_MSG_ERR("Non-integer provided to rrr_array_value.set_type()\n");
+		Py_RETURN_FALSE;
+	}
+
+	long id = PyLong_AsLong(type_arg);
+
+	if (__rrr_python3_array_value_set_type(data, id) != 0) {
+		Py_RETURN_FALSE;
+	}
+
+	Py_RETURN_TRUE;
+}
+
+static int rrr_python3_array_value_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
+	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
+
+	(void)(kwds);
+
+	Py_ssize_t argc = PyTuple_Size(args);
+
+	if (argc > 0) {
+		if (!PyLong_Check(PyTuple_GET_ITEM(args, 0))) {
+			VL_MSG_ERR("First argument (type) to rrr_array_value() was not an integer\n");
+			return 1;
+		}
+		if (__rrr_python3_array_value_set_type(data, PyLong_AsLong(PyTuple_GET_ITEM(args, 0))) != 0) {
+			return 1;
+		}
+	}
+
+	for (int i = 1; i < argc; i++) {
+		if (__rrr_python3_array_value_append(data, PyTuple_GET_ITEM(args, i)) != 0) {
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 static PyMethodDef array_value_methods[] = {
@@ -297,7 +410,41 @@ static PyMethodDef array_value_methods[] = {
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the number of items in the array"
 		},
+		{
+				.ml_name	= "get_type",
+				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_get_type,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get the target type of the value"
+		},
+		{
+				.ml_name	= "get_type_str",
+				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_get_type_str,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Get the target type of the value as a string"
+		},
+		{
+				.ml_name	= "set_type",
+				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_set_type,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Set the target type of the value"
+		},
 		{ NULL, NULL, 0, NULL }
+};
+
+struct rrr_python3_array_value_data dummy;
+
+#define RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(member) \
+	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
+
+static PyMemberDef array_value_members[] = {
+		{"TYPE_AUTO",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_AUTO),	READONLY,	"Type is automatic"},
+		{"TYPE_H",			RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_H),		READONLY,	"Type is numeric signed or unsigned"},
+		{"TYPE_BLOB",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_BLOB),	READONLY,	"Type is blob"},
+		{"TYPE_SEP",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_SEP),	READONLY,	"Type is separator"},
+		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_MSG),	READONLY,	"Type is RRR message"},
+		{"TYPE_FIXP",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_FIXP),	READONLY,	"Type is fixed point number"},
+		{"TYPE_STR",		RRR_PY_32,	RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(TYPE_STR),	READONLY,	"Type is string"},
+		{ NULL, 0, 0, 0, NULL}
 };
 
 PyTypeObject rrr_python3_array_value_type = {
@@ -329,14 +476,14 @@ PyTypeObject rrr_python3_array_value_type = {
 	    .tp_iter		= rrr_python3_array_value_f_iter,
 	    .tp_iternext	= NULL,
 	    .tp_methods		= array_value_methods,
-	    .tp_members		= NULL,
+	    .tp_members		= array_value_members,
 	    .tp_getset		= NULL,
 	    .tp_base		= NULL,
 	    .tp_dict		= NULL,
 	    .tp_descr_get	= NULL,
 	    .tp_descr_set	= NULL,
 	    .tp_dictoffset	= 0,
-	    .tp_init		= NULL,
+	    .tp_init		= rrr_python3_array_value_f_init,
 	    .tp_alloc		= NULL,
 	    .tp_new			= rrr_python3_array_value_f_new,
 	    .tp_free		= NULL,
@@ -499,6 +646,7 @@ static int __rrr_python3_array_append_raw (
 		struct rrr_python3_array_data *data,
 		PyObject *value
 ) {
+	// PyList_Append will INCREF as of 3.6
 	if (PyList_Append(data->list, value) != 0) {
 		VL_MSG_ERR("Could not append new value to list in __rrr_python3_array_append_raw\n");
 		return 1;

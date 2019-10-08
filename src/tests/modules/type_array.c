@@ -132,8 +132,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (collection.node_count != TEST_DATA_ELEMENTS) {
-		TEST_MSG("Wrong number of elements in result from output in test_type_array_callback\n");
+	if (collection.node_count < TEST_DATA_ELEMENTS) {
+		TEST_MSG("Not enough elements in result from output in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_collection;
 	}
