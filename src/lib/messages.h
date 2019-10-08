@@ -52,13 +52,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_INFO_STRING "INFO"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_IS_MSG(message)			(message->type == MSG_TYPE_MSG)
-#define MSG_IS_ACK(message)			(message->type == MSG_TYPE_ACK)
-#define MSG_IS_TAG(message)			(message->type == MSG_TYPE_TAG)
+#define MSG_IS_MSG(message)			((message)->type == MSG_TYPE_MSG)
+#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
+#define MSG_IS_TAG(message)			((message)->type == MSG_TYPE_TAG)
 
-#define MSG_IS_POINT(message)		(message->class == MSG_CLASS_POINT)
-#define MSG_IS_INFO(message)		(message->class == MSG_CLASS_INFO)
-#define MSG_IS_ARRAY(message)		(message->class == MSG_CLASS_ARRAY)
+#define MSG_IS_POINT(message)		((message)->class == MSG_CLASS_POINT)
+#define MSG_IS_INFO(message)		((message)->class == MSG_CLASS_INFO)
+#define MSG_IS_ARRAY(message)		((message)->class == MSG_CLASS_ARRAY)
 
 #define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
 #define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))

@@ -36,11 +36,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static const unsigned long int max_32 = 0xffffffff;
 static const unsigned long int max_64 = 0xffffffffffffffff;
 
+struct rrr_python3_vl_message_constants {
+		unsigned int TYPE_MSG;
+		unsigned int TYPE_ACK;
+		unsigned int TYPE_TAG;
+		unsigned int CLASS_POINT;
+		unsigned int CLASS_AVG;
+		unsigned int CLASS_MAX;
+		unsigned int CLASS_MIN;
+		unsigned int CLASS_INFO;
+		unsigned int CLASS_ARRAY;
+};
+
+static const struct rrr_python3_vl_message_constants message_constants = {
+		MSG_TYPE_MSG,
+		MSG_TYPE_ACK,
+		MSG_TYPE_TAG,
+		MSG_CLASS_POINT,
+		MSG_CLASS_AVG,
+		MSG_CLASS_MAX,
+		MSG_CLASS_MIN,
+		MSG_CLASS_INFO,
+		MSG_CLASS_ARRAY
+};
+
 struct rrr_python3_vl_message_data {
 	PyObject_HEAD
 	struct vl_message message_static;
 	struct vl_message *message_dynamic;
 	PyObject *rrr_array;
+	struct rrr_python3_vl_message_constants constants;
 };
 
 static int __rrr_python3_vl_message_set_topic_and_data (
@@ -179,6 +204,8 @@ static PyObject *rrr_python3_vl_message_f_new (PyTypeObject *type, PyObject *arg
 	memset (data->message_dynamic, '\0', sizeof(*(data->message_dynamic)) - 1);
 	memset (&data->message_static, '\0', sizeof(data->message_static));
 
+	data->constants = message_constants;
+
 	return self;
 }
 
@@ -270,6 +297,31 @@ static PyObject *rrr_python3_vl_message_f_has_array(PyObject *self, PyObject *ar
 	Py_RETURN_FALSE;
 }
 
+static PyObject *rrr_python3_vl_message_f_discard_array(PyObject *self, PyObject *args) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+	(void)(args);
+
+	Py_XDECREF(data->rrr_array);
+	data->rrr_array = NULL;
+
+	Py_RETURN_TRUE;
+}
+
+static PyObject *rrr_python3_vl_message_f_set_array (PyObject *self, PyObject *arg) {
+	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
+
+	if (!rrr_python3_array_check(arg)) {
+		VL_MSG_ERR("Argument to rrr_vl_message.set_array() must be an rrr_array\n");
+		Py_RETURN_FALSE;
+	}
+
+	Py_XDECREF(data->rrr_array);
+	Py_INCREF(arg);
+	data->rrr_array = arg;
+
+	Py_RETURN_TRUE;
+}
+
 static PyObject *rrr_python3_vl_message_f_get_topic(PyObject *self, PyObject *args) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 	(void)(args);
@@ -322,6 +374,18 @@ static PyMethodDef vl_message_methods[] = {
 				.ml_doc		= "Check if the message has an array"
 		},
 		{
+				.ml_name	= "discard_array",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_discard_array,
+				.ml_flags	= METH_NOARGS,
+				.ml_doc		= "Discard array of message (if any present)"
+		},
+		{
+				.ml_name	= "set_array",
+				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_set_array,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Set the array of a message, discarding any existing array."
+		},
+		{
 				.ml_name	= "set_topic",
 				.ml_meth	= (PyCFunction) rrr_python3_vl_message_f_set_topic,
 				.ml_flags	= METH_O,
@@ -339,6 +403,8 @@ static PyMethodDef vl_message_methods[] = {
 struct rrr_python3_vl_message_data dummy;
 #define RRR_PY_VL_MESSAGE_OFFSET(member) \
 	(((void*) &(dummy.message_static.member)) - ((void*) &(dummy)))
+#define RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(member) \
+	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
 
 static PyMemberDef vl_message_members[] = {
 		{"type",			RRR_PY_32,	RRR_PY_VL_MESSAGE_OFFSET(type),				0, "Type"},
@@ -346,6 +412,16 @@ static PyMemberDef vl_message_members[] = {
 		{"timestamp_from",	RRR_PY_64,	RRR_PY_VL_MESSAGE_OFFSET(timestamp_from),	0, "From timestamp"},
 		{"timestamp_to",	RRR_PY_64,	RRR_PY_VL_MESSAGE_OFFSET(timestamp_to),		0, "To timestamp"},
 		{"data_numeric",	RRR_PY_64, 	RRR_PY_VL_MESSAGE_OFFSET(data_numeric),		0, "Numeric data"},
+
+		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),	READONLY,	"Type is MSG (default)"},
+		{"TYPE_ACK",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_ACK),	READONLY,	"Type is ACK"},
+		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),	READONLY,	"Type is TAG"},
+		{"CLASS_POINT",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_POINT),	READONLY,	"Class is POINT (default)"},
+		{"CLASS_AVG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_AVG),	READONLY,	"Class is AVG"},
+		{"CLASS_MAX",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_MAX),	READONLY,	"Class is MAX"},
+		{"CLASS_MIN",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_MIN),	READONLY,	"Class is MIN"},
+		{"CLASS_INFO",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_INFO),	READONLY,	"Class is INFO"},
+		{"CLASS_ARRAY",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_ARRAY),	READONLY,	"Class is ARRAY"},
 		{ NULL, 0, 0, 0, NULL}
 };
 
@@ -1032,6 +1108,10 @@ struct vl_message *rrr_python3_vl_message_get_message (PyObject *self) {
 	struct vl_message *ret = data->message_dynamic;
 	struct vl_message *new_msg = NULL;
 
+	if (data->rrr_array != NULL && MSG_IS_ARRAY(&data->message_static)) {
+		data->message_static.type = MSG_CLASS_POINT;
+	}
+
 	// Overwrite header fields
 	memcpy (ret, &data->message_static, sizeof(data->message_static) - 1);
 
@@ -1076,9 +1156,9 @@ struct vl_message *rrr_python3_vl_message_get_message (PyObject *self) {
 PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 	struct rrr_python3_vl_message_data *ret = NULL;
 	struct rrr_array array_tmp = {0};
-	PyObject *node_value_tmp = NULL;
-	PyObject *node_element_value_tmp = NULL;
-	PyObject *node_tag_tmp = NULL;
+	PyObject *node_list = NULL;
+	PyObject *node_element_value = NULL;
+	PyObject *node_tag = NULL;
 
 	struct vl_message *vl_message = (struct vl_message *) msg;
 
@@ -1090,10 +1170,12 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 		VL_BUG("Received object of wrong size in rrr_python3_vl_message_new_from_message\n");
 	}
 
-	ret = PyObject_New(struct rrr_python3_vl_message_data, &rrr_python3_vl_message_type);
+	ret = (struct rrr_python3_vl_message_data *) rrr_python3_vl_message_f_new(&rrr_python3_vl_message_type, NULL, NULL);
 	if (ret == NULL) {
 		goto out_err;
 	}
+
+	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 
 	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
@@ -1123,22 +1205,20 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 
 	RRR_LINKED_LIST_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
 		if (node->tag == NULL) {
-			node_tag_tmp = PyUnicode_FromString("");
+			node_tag = PyUnicode_FromString("");
 		}
 		else {
-			node_tag_tmp = PyUnicode_FromString(node->tag);
-			if (node_tag_tmp == NULL) {
+			node_tag = PyUnicode_FromString(node->tag);
+			if (node_tag == NULL) {
 				VL_MSG_ERR("Could not create node for tag in rrr_python3_vl_message_new_from_message\n");
 				goto out_err;
 			}
 		}
 
-		if (node->element_count > 1) {
-			node_value_tmp = PyList_New(node->element_count);
-			if (node_value_tmp == NULL) {
-				VL_MSG_ERR("Could not create list for node in rrr_python3_vl_message_new_from_message\n");
-				goto out_err;
-			}
+		node_list = PyList_New(node->element_count);
+		if (node_list == NULL) {
+			VL_MSG_ERR("Could not create list for node in rrr_python3_vl_message_new_from_message\n");
+			goto out_err;
 		}
 
 		ssize_t element_size = node->total_stored_length / node->element_count;
@@ -1147,20 +1227,20 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 
 			if (RRR_TYPE_IS_64(node->definition->type)) {
 				if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
-					node_element_value_tmp = PyLong_FromLongLong(*((long long *) data_pos));
+					node_element_value = PyLong_FromLongLong(*((long long *) data_pos));
 				}
 				else {
-					node_element_value_tmp = PyLong_FromUnsignedLongLong(*((unsigned long long *) data_pos));
+					node_element_value = PyLong_FromUnsignedLongLong(*((unsigned long long *) data_pos));
 				}
 			}
 			else if (RRR_TYPE_IS_FIXP(node->definition->type)) {
-				node_element_value_tmp = PyLong_FromLongLong(*((long long *) data_pos));
+				node_element_value = PyLong_FromLongLong(*((long long *) data_pos));
 			}
 			else if (RRR_TYPE_IS_STR(node->definition->type)) {
-				node_element_value_tmp = PyUnicode_FromStringAndSize(data_pos, element_size);
+				node_element_value = PyUnicode_FromStringAndSize(data_pos, element_size);
 			}
 			else if (RRR_TYPE_IS_BLOB(node->definition->type)) {
-				node_element_value_tmp = PyByteArray_FromStringAndSize(data_pos, element_size);
+				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
 			}
 			else {
 				VL_MSG_ERR("Unsupported data type %u in array in rrr_python3_vl_message_new_from_message\n",
@@ -1168,33 +1248,25 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 				goto out_err;
 			}
 
-			if (node_element_value_tmp == NULL) {
+			if (node_element_value == NULL) {
 				VL_MSG_ERR("Could not create array node data in rrr_python3_vl_message_new_from_message\n");
 				goto out_err;
 			}
 
-			if (node_value_tmp == NULL) {
-				// Single element only
-				node_value_tmp = node_element_value_tmp;
-				node_element_value_tmp = NULL;
-				break;
-			}
-			else {
-				PyList_SET_ITEM(node_value_tmp, i, node_element_value_tmp);
-				node_element_value_tmp = NULL;
-			}
+			PyList_SET_ITEM(node_list, i, node_element_value);
+			node_element_value = NULL;
 		}
 
-		if (rrr_python3_array_append(ret->rrr_array, node_tag_tmp, node_value_tmp, node->definition->type) != 0) {
+		if (rrr_python3_array_append_value_with_list(ret->rrr_array, node_tag, node_list, node->definition->type) != 0) {
 			VL_MSG_ERR("Could not append node value to array in rrr_python3_vl_message_new_from_message\n");
 			goto out_err;
 		}
 
-		Py_XDECREF(node_tag_tmp);
-		Py_XDECREF(node_value_tmp);
+		Py_XDECREF(node_tag);
+		Py_XDECREF(node_list);
 
-		node_tag_tmp = NULL;
-		node_value_tmp = NULL;
+		node_tag = NULL;
+		node_list = NULL;
 	RRR_LINKED_LIST_ITERATE_END(&array_tmp);
 
 	no_array:
@@ -1205,9 +1277,9 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 		ret = NULL;
 
 	out:
-		Py_XDECREF(node_element_value_tmp);
-		Py_XDECREF(node_value_tmp);
-		Py_XDECREF(node_tag_tmp);
+		Py_XDECREF(node_element_value);
+		Py_XDECREF(node_list);
+		Py_XDECREF(node_tag);
 		rrr_array_clear(&array_tmp);
 		return (PyObject *) ret;
 }

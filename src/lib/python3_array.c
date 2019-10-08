@@ -48,6 +48,14 @@ void rrr_python3_array_value_set_tag (struct rrr_python3_array_value_data *node,
 	node->tag = tag;
 }
 
+void rrr_python3_array_value_set_list (struct rrr_python3_array_value_data *node, PyObject *list) {
+	Py_XDECREF(node->list);
+	if (list != NULL) {
+		Py_INCREF(list);
+	}
+	node->list = list;
+}
+
 static void rrr_python3_array_value_f_dealloc (PyObject *self) {
 	struct rrr_python3_array_value_data *value = (struct rrr_python3_array_value_data *) self;
 	Py_XDECREF(value->tag);
@@ -342,11 +350,11 @@ PyTypeObject rrr_python3_array_value_type = {
 	    .tp_version_tag	= 0,
 	    .tp_finalize	= NULL
 };
-/*
-static int __rrr_python3_array_value_check (PyObject *self) {
+
+int rrr_python3_array_value_check (PyObject *self) {
 	return(self->ob_type == &rrr_python3_array_value_type);
 }
-*/
+
 /********************************************************************************
  * ARRAY
  ********************************************************************************/
@@ -487,11 +495,22 @@ static int __rrr_python3_array_get_index_from_args (long *index_final, PyObject 
 }
 */
 
+static int __rrr_python3_array_append_raw (
+		struct rrr_python3_array_data *data,
+		PyObject *value
+) {
+	if (PyList_Append(data->list, value) != 0) {
+		VL_MSG_ERR("Could not append new value to list in __rrr_python3_array_append_raw\n");
+		return 1;
+	}
+	return 0;
+}
+
 // Append a single value or value being an iterable (converted to PyList)
-int rrr_python3_array_append (
+int rrr_python3_array_append_value_with_list (
 		PyObject *self,
 		PyObject *tag,
-		PyObject *value,
+		PyObject *list,
 		uint8_t type_orig
 ) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
@@ -505,43 +524,24 @@ int rrr_python3_array_append (
 		goto out_err;
 	}
 
+	if (!PyList_Check(list)) {
+		VL_BUG("Argument to rrr_python3_array_append_list was not a list\n");
+	}
+
 	result->type_orig = type_orig;
 	rrr_python3_array_value_set_tag(result, tag);
+	rrr_python3_array_value_set_list(result, list);
 
-	// Make sure we do not accidently iterate strings etc. and put one byte at a time into the tuple
-	if (!PyUnicode_Check(value) && !PyByteArray_Check(value) && (iterator = PyObject_GetIter(value)) != NULL) {
-		while ((item = PyIter_Next(iterator)) != NULL) {
-			// append will incref
-			if (PyList_Append(result->list, item) != 0) {
-				VL_MSG_ERR("Could not append item to list in rrr_python3_array_append\n");
-				goto out_err;
-			}
-			Py_DECREF(item);
-			item = NULL;
-		}
-		Py_XDECREF(iterator);
-		iterator = NULL;
-	}
-	else {
-		PyErr_Clear();
-		if (PyList_Append(result->list, value) != 0) {
-			VL_MSG_ERR("Could not append item to list in rrr_python3_array_append\n");
-			goto out_err;
-		}
-	}
-
-	if (PyList_Append(data->list, (PyObject *) result) != 0) {
-		VL_MSG_ERR("Could not append new value to list in rrr_python3_array_append\n");
+	if (__rrr_python3_array_append_raw(data, result) != 0) {
 		goto out_err;
 	}
-
 	result = NULL;
 
 	return 0;
 
 	out_err:
 		Py_XDECREF(iterator);
-		Py_XDECREF(value);
+		Py_XDECREF(item);
 		Py_XDECREF(result);
 		return 1;
 }
@@ -549,22 +549,45 @@ int rrr_python3_array_append (
 static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *args[], ssize_t count) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
 
-	if (count != 2) {
-		VL_MSG_ERR("Wrong number of arguments to rrr_array.append(), only tag and value may be given\n");
-		Py_RETURN_FALSE;
+	PyObject *result = NULL;
+
+	if (count == 2) {
+		PyObject *tag = args[0];
+		PyObject *value = args[1];
+
+		if (rrr_python3_array_append_value_with_list(self, tag, value, 0) != 0) {
+			VL_MSG_ERR("Could not append tag and value in rrr_array.append()\n");
+			Py_RETURN_NONE;
+		}
+
+		result = PyList_GET_ITEM(data->list, PyList_GET_SIZE(data->list) - 1);
+
 	}
+	else if (count == 1) {
+		PyObject *value = args[0];
+		if (!rrr_python3_array_value_check(value)) {
+			VL_MSG_ERR("Single argument to rrr_array.append() was not an rrr_array_value object\n");
+			Py_RETURN_NONE;
+		}
 
-	PyObject *tag = args[0];
-	PyObject *value = args[1];
+		if (__rrr_python3_array_append_raw(data, value) != 0) {
+			Py_RETURN_NONE;
+		}
+		Py_INCREF(value);
 
-	if (rrr_python3_array_append(self, tag, value, 0) != 0) {
-		VL_MSG_ERR("Could not append tag and value in rrr_array.append()\n");
+		result = value;
+	}
+	else {
+		VL_MSG_ERR("Wrong number of arguments to rrr_array.append(), only rrr_array_value or tag+value may be given\n");
 		Py_RETURN_NONE;
 	}
 
-	PyObject *result = PyList_GET_ITEM(data->list, PyList_GET_SIZE(data->list) - 1);
-	Py_INCREF(result);
-	return result;
+	if (result != NULL) {
+		Py_INCREF(result);
+		return result;
+	}
+
+	Py_RETURN_NONE;
 }
 
 static PyObject *rrr_python3_array_f_get_by_tag_or_index (PyObject *self, PyObject *tag) {
@@ -599,6 +622,40 @@ static PyObject *rrr_python3_array_f_get_by_tag_or_index (PyObject *self, PyObje
 	return value;
 }
 
+
+static PyObject *rrr_python3_array_f_remove (PyObject *self, PyObject *tag) {
+	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
+
+	PyObject *value = rrr_python3_array_f_get_by_tag_or_index(self, tag);
+	if (value == NULL) {
+		Py_RETURN_NONE;
+	}
+	if (!rrr_python3_array_value_check(value)) {
+		return value;
+	}
+	Py_XDECREF(value);
+
+	ssize_t old_size = PyList_GET_SIZE(data->list);
+	PyObject *new_list = PyList_New(old_size - 1);
+	if (new_list == NULL) {
+		VL_MSG_ERR("Could not create new list in rrr_python3_array_f_remove\n");
+		Py_RETURN_FALSE;
+	}
+
+	ssize_t wpos = 0;
+	for (int i = 0; i < old_size; i++) {
+		PyObject *node = PyList_GET_ITEM(data->list, i);
+		if (node != value) {
+			Py_INCREF(node);
+			PyList_SET_ITEM(new_list, wpos++, node);
+		}
+		Py_DECREF(node);
+		PyList_SET_ITEM(data->list, i, NULL);
+	}
+
+	Py_RETURN_TRUE;
+}
+
 static PyObject *rrr_python3_array_f_iter (PyObject *self) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
 	return PyObject_GetIter(data->list);
@@ -631,6 +688,12 @@ static PyMethodDef array_methods[] = {
 				.ml_doc		= "Append a tag x and value y"
 		},
 		{
+				.ml_name	= "remove",
+				.ml_meth	= (PyCFunction) rrr_python3_array_f_remove,
+				.ml_flags	= METH_O,
+				.ml_doc		= "Remove a value of parameter with tag or index x"
+		},
+		{
 				.ml_name	= "count",
 				.ml_meth	= (PyCFunction) rrr_python3_array_f_count,
 				.ml_flags	= METH_NOARGS,
@@ -645,7 +708,7 @@ static PyMemberDef array_members[] = {
 
 PyTypeObject rrr_python3_array_type = {
 		.ob_base		= PyVarObject_HEAD_INIT(NULL, 0) // Comma is inside macro
-	    .tp_name		= RRR_PYTHON3_MODULE_NAME	"." RRR_PYTHON3_ARRAY_TYPE_NAME,
+	    .tp_name		= RRR_PYTHON3_MODULE_NAME "." RRR_PYTHON3_ARRAY_TYPE_NAME,
 	    .tp_basicsize	= sizeof(struct rrr_python3_array_data),
 		.tp_itemsize	= 0,
 	    .tp_dealloc		= (destructor) rrr_python3_array_f_dealloc,

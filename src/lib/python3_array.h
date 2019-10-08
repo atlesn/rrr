@@ -32,6 +32,7 @@ struct rrr_python3_array_value_data;
 int rrr_python3_array_value_count (struct rrr_python3_array_value_data *data);
 int rrr_python3_array_count (struct rrr_python3_array_data *data);
 int rrr_python3_array_check (PyObject *object);
+int rrr_python3_array_value_check (PyObject *object);
 
 PyObject *rrr_python3_array_new (void);
 int rrr_python3_array_iterate (
@@ -39,7 +40,7 @@ int rrr_python3_array_iterate (
 		int (*callback)(PyObject *tag, PyObject *value, uint8_t type_orig, void *arg),
 		void *callback_arg
 );
-int rrr_python3_array_append (
+int rrr_python3_array_append_value_with_list (
 		PyObject *self,
 		PyObject *tag,
 		PyObject *value,
