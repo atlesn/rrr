@@ -532,7 +532,7 @@ int rrr_python3_array_append_value_with_list (
 	rrr_python3_array_value_set_tag(result, tag);
 	rrr_python3_array_value_set_list(result, list);
 
-	if (__rrr_python3_array_append_raw(data, result) != 0) {
+	if (__rrr_python3_array_append_raw(data, (PyObject *) result) != 0) {
 		goto out_err;
 	}
 	result = NULL;
@@ -756,6 +756,11 @@ PyTypeObject rrr_python3_array_type = {
 	    .tp_version_tag	= 0,
 	    .tp_finalize	= NULL
 };
+
+
+int rrr_python3_array_count (struct rrr_python3_array_data *data) {
+	return PyList_GET_SIZE(data->list);
+}
 
 int rrr_python3_array_check (PyObject *object) {
 	return (object->ob_type == &rrr_python3_array_type);
