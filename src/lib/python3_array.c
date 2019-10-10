@@ -694,48 +694,20 @@ int rrr_python3_array_append_value_with_list (
 		return 1;
 }
 
-static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *args[], ssize_t count) {
+static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *value) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
 
-	PyObject *result = NULL;
-
-	if (count == 2) {
-		PyObject *tag = args[0];
-		PyObject *value = args[1];
-
-		if (rrr_python3_array_append_value_with_list(self, tag, value, 0) != 0) {
-			VL_MSG_ERR("Could not append tag and value in rrr_array.append()\n");
-			Py_RETURN_NONE;
-		}
-
-		result = PyList_GET_ITEM(data->list, PyList_GET_SIZE(data->list) - 1);
-
-	}
-	else if (count == 1) {
-		PyObject *value = args[0];
-		if (!rrr_python3_array_value_check(value)) {
-			VL_MSG_ERR("Single argument to rrr_array.append() was not an rrr_array_value object\n");
-			Py_RETURN_NONE;
-		}
-
-		if (__rrr_python3_array_append_raw(data, value) != 0) {
-			Py_RETURN_NONE;
-		}
-		Py_INCREF(value);
-
-		result = value;
-	}
-	else {
-		VL_MSG_ERR("Wrong number of arguments to rrr_array.append(), only rrr_array_value or tag+value may be given\n");
-		Py_RETURN_NONE;
+	if (!rrr_python3_array_value_check(value)) {
+		VL_MSG_ERR("Single argument to rrr_array.append() was not an rrr_array_value object\n");
+		Py_RETURN_FALSE;
 	}
 
-	if (result != NULL) {
-		Py_INCREF(result);
-		return result;
+	if (__rrr_python3_array_append_raw(data, value) != 0) {
+		Py_RETURN_FALSE;
 	}
+	Py_INCREF(value);
 
-	Py_RETURN_NONE;
+	Py_RETURN_TRUE;
 }
 
 static PyObject *rrr_python3_array_f_get_by_tag_or_index (PyObject *self, PyObject *tag) {
@@ -832,7 +804,7 @@ static PyMethodDef array_methods[] = {
 		{
 				.ml_name	= "append",
 				.ml_meth	= (PyCFunction) rrr_python3_array_f_append,
-				.ml_flags	= METH_FASTCALL,
+				.ml_flags	= METH_O,
 				.ml_doc		= "Append a tag x and value y"
 		},
 		{

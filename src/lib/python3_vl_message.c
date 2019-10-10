@@ -99,6 +99,11 @@ static int __rrr_python3_vl_message_set_topic_and_data (
 static PyObject *rrr_python3_vl_message_f_set_data (PyObject *self, PyObject *args) {
 	struct rrr_python3_vl_message_data *data = (struct rrr_python3_vl_message_data *) self;
 
+	if (data->rrr_array != NULL) {
+		VL_MSG_ERR("vl_message.set_data() called while the message contained an array. discard_array() must be called first.\n");
+		Py_RETURN_FALSE;
+	}
+
 	const char *str;
 	Py_ssize_t len;
 	if (PyByteArray_Check(args)) {
