@@ -119,6 +119,12 @@ int rrr_array_new_message_from_buffer_with_callback (
 		int (*callback)(struct vl_message *message, void *arg),
 		void *callback_arg
 );
+int rrr_array_selected_tags_to_raw (
+		char **target,
+		ssize_t *target_size,
+		const struct rrr_array *definition,
+		const struct rrr_linked_list *tags
+);
 int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,

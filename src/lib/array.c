@@ -599,6 +599,144 @@ int rrr_array_new_message_from_buffer_with_callback (
 	return callback(message, callback_arg);
 }
 
+static int __rrr_array_collection_to_raw (
+		char *target,
+		ssize_t target_size,
+		ssize_t *written_bytes_final,
+		const struct rrr_array *definition,
+		const struct rrr_linked_list *tags,
+		int data_only
+) {
+	ssize_t written_bytes_total = 0;
+
+	int ret = 0;
+
+	char *max = target + target_size;
+	char *pos = target;
+	*written_bytes_final = 0;
+
+	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		if (node->data == NULL) {
+			VL_BUG("Data not set for node in rrr_array_new_message\n");
+		}
+		if (pos > max) {
+			VL_BUG("pos was > max in __rrr_array_collection_to_raw\n");
+		}
+
+		if (tags != NULL) {
+			int found = 0;
+			if (node->tag != NULL) {
+				const char *tag = node->tag;
+				RRR_LINKED_LIST_ITERATE_BEGIN(tags, const struct rrr_linked_list_node);
+					printf ("Match tag %s vs %s\n", tag, (char *) node->data);
+					if (strcmp (tag, node->data) == 0) {
+						found = 1;
+						RRR_LINKED_LIST_SET_STOP();
+					}
+				RRR_LINKED_LIST_ITERATE_END(tags);
+			}
+			if (found == 0) {
+				goto next;
+			}
+		}
+
+		uint8_t type = node->definition->type;
+
+		if (node->definition->pack == NULL) {
+			VL_BUG("No pack function defined for type %u\n", type);
+		}
+
+		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
+
+		if (data_only == 0) {
+			head->type = type;
+			head->flags = node->flags;
+			head->tag_length = htobe32(node->tag_length);
+			head->elements = htobe32(node->element_count);
+			head->total_length = htobe32(node->total_stored_length);
+
+			pos += sizeof(*head) - 1;
+			written_bytes_total += sizeof(*head) - 1;
+
+			if (node->tag_length > 0) {
+				memcpy(pos, node->tag, node->tag_length);
+				pos += node->tag_length;
+				written_bytes_total += node->tag_length;
+			}
+		}
+
+		uint8_t new_type = 0;
+		ssize_t written_bytes = 0;
+
+		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
+			VL_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
+			ret = 1;
+			goto out;
+		}
+
+		if (data_only == 0) {
+			if (new_type != head->type) {
+				head->type = new_type;
+			}
+		}
+
+		if (written_bytes != node->total_stored_length) {
+			VL_BUG("Size mismatch in rrr_array_new_message\n");
+		}
+
+		pos += written_bytes;
+		written_bytes_total += written_bytes;
+
+		next:
+	RRR_LINKED_LIST_ITERATE_END(definition);
+
+	*written_bytes_final = written_bytes_total;
+
+	out:
+	return ret;
+}
+
+int rrr_array_selected_tags_to_raw (
+		char **target,
+		ssize_t *target_size,
+		const struct rrr_array *definition,
+		const struct rrr_linked_list *tags
+) {
+	int ret = 0;
+
+	// We over-allocate here if not all tags are used
+	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+
+	*target = NULL;
+	*target_size = 0;
+
+	char *result = malloc(total_data_length);
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = __rrr_array_collection_to_raw (
+			result,
+			total_data_length,
+			target_size,
+			definition,
+			tags,
+			1
+	)) != 0) {
+		VL_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw\n");
+		goto out;
+	}
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+	return ret;
+}
+
 int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,
 		const struct rrr_array *definition,
@@ -626,57 +764,19 @@ int rrr_array_new_message_from_collection (
 		memcpy(topic_pos, topic, topic_length);
 	}
 
-	char *pos = MSG_DATA_PTR(message);
 	ssize_t written_bytes_total = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->data == NULL) {
-			VL_BUG("Data not set for node in rrr_array_new_message\n");
-		}
-
-		uint8_t type = node->definition->type;
-
-		if (node->definition->pack == NULL) {
-			VL_BUG("No pack function defined for type %u\n", type);
-		}
-
-		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
-
-		head->type = type;
-		head->flags = node->flags;
-		head->tag_length = htobe32(node->tag_length);
-		head->elements = htobe32(node->element_count);
-		head->total_length = htobe32(node->total_stored_length);
-
-		pos += sizeof(*head) - 1;
-		written_bytes_total += sizeof(*head) - 1;
-
-		if (node->tag_length > 0) {
-			memcpy(pos, node->tag, node->tag_length);
-			pos += node->tag_length;
-			written_bytes_total += node->tag_length;
-		}
-
-		uint8_t new_type = 0;
-		ssize_t written_bytes = 0;
-
-		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
-			VL_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
-			ret = 1;
-			goto out;
-		}
-
-		if (new_type != head->type) {
-			head->type = new_type;
-		}
-
-		if (written_bytes != node->total_stored_length) {
-			VL_BUG("Size mismatch in rrr_array_new_message\n");
-		}
-
-		pos += written_bytes;
-		written_bytes_total += written_bytes;
-	RRR_LINKED_LIST_ITERATE_END(definition);
+	if ((ret = __rrr_array_collection_to_raw (
+			MSG_DATA_PTR(message),
+			MSG_DATA_LENGTH(message),
+			&written_bytes_total,
+			definition,
+			NULL,
+			0
+	)) != 0) {
+		VL_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection\n");
+		goto out;
+	}
 
 	if (written_bytes_total != total_data_length) {
 		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",

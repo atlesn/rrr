@@ -558,6 +558,10 @@ and disregard any topic in RRR messages.
 .It mqtt_publish_rrr_message={yes|no}
 If set to yes, the client will send full RRR messages.
 If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
+.It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
+Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
+messages which does not contain an array are dropped. Any integer types will have big endianess. Cannot be used with
+.B mqtt_publish_rrr_message=yes.
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
 MQTT topic patterns to subscribe to (if any).
 .It mqtt_receive_rrr_message={yes|no}
