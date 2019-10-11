@@ -67,10 +67,12 @@ struct mqtt_client_data {
 	int force_publish_topic;
 	char *version_str;
 	char *client_identifier;
+	char *publish_values_from_array;
+	struct rrr_linked_list publish_values_from_array_list;
 	struct rrr_array array_definition;
 	uint8_t qos;
 	uint8_t version;
-	int publish_vl_message;
+	int publish_rrr_message;
 	int receive_vl_message;
 	struct rrr_mqtt_conn *connection;
 };
@@ -82,6 +84,8 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
+	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
+	rrr_linked_list_destroy(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
@@ -136,6 +140,36 @@ static int parse_sub_topic (const char *topic_str, void *arg) {
 	}
 
 	return 0;
+}
+
+static int parse_publish_value_tag (const char *value, void *arg) {
+	struct mqtt_client_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_linked_list_node *node = malloc(sizeof(*node));
+	if (node == NULL) {
+		VL_MSG_ERR("Could not allocate memory in parse_publish_value_tag\n");
+		ret = 1;
+		goto out;
+	}
+	memset(node, '\0', sizeof(*node));
+
+	node->data = strdup(value);
+	if (node->data == NULL) {
+		VL_MSG_ERR("Could not allocate memory for data in parse_publish_value_tag\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_LINKED_LIST_APPEND(&data->publish_values_from_array_list, node);
+	node = NULL;
+
+	out:
+	if (node != NULL) {
+		rrr_linked_list_destroy_node(node);
+	}
+	return ret;
 }
 
 // TODO : Provide more configuration arguments
@@ -217,6 +251,8 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
+	int publish_rrr_message_was_present = 0;
+	data->publish_rrr_message = 1;
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_publish_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -225,8 +261,11 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			goto out;
 		}
 	}
-	else if (yesno > 0) {
-		data->publish_vl_message = 1;
+	else {
+		if (yesno == 0) {
+			data->publish_rrr_message = 0;
+		}
+		publish_rrr_message_was_present = 1;
 	}
 
 
@@ -298,6 +337,39 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		VL_MSG_ERR("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
+	}
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_values_from_array, config, "mqtt_publish_array_values")) == 0) {
+		if (strlen(data->publish_values_from_array) == 0) {
+			VL_MSG_ERR("Parameter in mqtt_publish_values_from_array was empty for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		if (publish_rrr_message_was_present != 0 && data->publish_rrr_message == 1) {
+			VL_MSG_ERR("Cannot have mqtt_publish_values_from_array set while mqtt_publish_rrr_message is 'yes'\n");
+			ret = 1;
+			goto out;
+		}
+
+		data->publish_rrr_message = 0;
+
+		if (*data->publish_values_from_array == '*') {
+			// OK, publish full raw array
+		}
+		else if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_publish_array_values", parse_publish_value_tag, data)) != 0) {
+			VL_MSG_ERR("Error while parsing mqtt_publish_values_from_array setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing mqtt_publish_values_from_array\n");
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -386,6 +458,24 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 	return 0;
 }
 
+static int message_data_to_payload (
+		char **payload,
+		ssize_t *payload_size,
+		struct vl_message *reading
+) {
+	char *result = malloc(MSG_DATA_LENGTH(reading));
+
+	if (result == NULL) {
+		VL_MSG_ERR ("could not allocate memory for PUBLISH payload in message_data_to_payload \n");
+		return 1;
+	}
+
+	memcpy(payload, MSG_DATA_PTR(reading), MSG_DATA_LENGTH(reading));
+	*payload_size = MSG_DATA_LENGTH(reading);
+
+	return 0;
+}
+
 static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct mqtt_client_data *private_data = thread_data->private_data;
@@ -397,6 +487,8 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	char *payload = NULL;
 	ssize_t payload_size = 0;
 	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
 
 	VL_DEBUG_MSG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
 			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
@@ -420,8 +512,6 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	publish->payload = NULL;
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
-
-	printf ("Force publish topic: %i\n", private_data->force_publish_topic);
 
 	if (MSG_TOPIC_LENGTH(reading) > 0 && private_data->force_publish_topic == 0) {
 		publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
@@ -452,7 +542,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	publish->qos = private_data->qos;
 
-	if (private_data->publish_vl_message != 0) {
+	if (private_data->publish_rrr_message != 0) {
 		ssize_t network_size = MSG_TOTAL_SIZE(reading);
 
 		reading->network_size = network_size;
@@ -476,16 +566,48 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		payload_size = network_size;
 		data = NULL;
 	}
-	else if (MSG_DATA_LENGTH(reading) > 0) {
-		payload = malloc(MSG_DATA_LENGTH(reading));
-		if (payload == NULL) {
-			VL_MSG_ERR("could not allocate memory for PUBLISH payload A in mqtt client poll_callback of mqtt client instance %s\n",
+	else if (private_data->publish_values_from_array != NULL) {
+		if (!MSG_IS_ARRAY(reading)) {
+			VL_MSG_ERR("Received message was not an array while mqtt_publish_values_from_array was set in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
 		}
-		payload_size = MSG_DATA_LENGTH(reading);
-		memcpy(payload, MSG_DATA_PTR(reading), MSG_DATA_LENGTH(reading));
+
+		if (*private_data->publish_values_from_array == '*') {
+			if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
+				VL_MSG_ERR("Error while creating payload from message array data in mqtt client poll_callback of mqtt client instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				goto out_free;
+			}
+		}
+		else {
+			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
+				VL_MSG_ERR("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out_free;
+			}
+
+			if ((ret = rrr_array_selected_tags_to_raw (
+					&payload,
+					&payload_size,
+					&array_tmp,
+					&private_data->publish_values_from_array_list)
+			) != 0) {
+				VL_MSG_ERR("Could not create payload data from selected array tags in mqtt client instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out_free;
+			}
+		}
+	}
+	else if (MSG_DATA_LENGTH(reading) > 0) {
+		if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
+			VL_MSG_ERR("Error while creating payload from message data in mqtt client poll_callback of mqtt client instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out_free;
+		}
 	}
 	else {
 		if ((ret = message_to_string(&payload, reading)) != 0) {
@@ -506,6 +628,9 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		payload = NULL;
 	}
 
+	VL_DEBUG_MSG_2 ("mqtt client %s: PUBLISH with topic %s\n",
+			INSTANCE_D_NAME(thread_data), publish->topic);
+
 	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
 		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
@@ -514,6 +639,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	}
 
 	out_free:
+	rrr_array_clear (&array_tmp);
 	RRR_FREE_IF_NOT_NULL(data);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
@@ -653,6 +779,10 @@ static int __try_create_array_message_from_publish (
 	*result = NULL;
 	*parsed_bytes = 0;
 
+	if (publish->payload == NULL) {
+		goto out_nolock;
+	}
+
 	RRR_MQTT_P_LOCK(publish->payload);
 
 	if (publish->payload->length == 0) {
@@ -696,6 +826,8 @@ static int __try_create_array_message_from_publish (
 
 	out:
 	RRR_MQTT_P_UNLOCK(publish->payload);
+
+	out_nolock:
 	return ret;
 }
 
@@ -714,7 +846,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	const char *content_type = NULL;
 
 	VL_DEBUG_MSG_2 ("mqtt client %s: Receive PUBLISH payload length %li\n",
-			INSTANCE_D_NAME(data->thread_data), publish->payload->length);
+			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0));
 
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
 		ssize_t length = 0;
@@ -936,8 +1068,6 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	int subscriptions_sent = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
-
-		// TODO : Figure out what to do with data from local senders
 
 		int alive = 0;
 		int send_allowed = 0;
