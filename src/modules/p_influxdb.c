@@ -38,59 +38,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/linked_list.h"
 #include "../lib/http_session.h"
 #include "../lib/gnu.h"
+#include "../lib/map.h"
 #include "../global.h"
 
 #define INFLUXDB_DEFAULT_PORT 8086
 #define INFLUXDB_USER_AGENT "RRR/" PACKAGE_VERSION
-
-struct influxdb_column {
-	RRR_LINKED_LIST_NODE(struct influxdb_column);
-	char *input_tag;
-	char *output_tag;
-};
-
-struct influxdb_column_collection {
-	RRR_LINKED_LIST_HEAD(struct influxdb_column);
-};
-
-static void __influxdb_column_destroy (struct influxdb_column *column) {
-	RRR_FREE_IF_NOT_NULL(column->input_tag);
-	RRR_FREE_IF_NOT_NULL(column->output_tag);
-	free(column);
-}
-
-static int __influxdb_column_new (struct influxdb_column **target, ssize_t field_size) {
-	int ret = 0;
-
-	struct influxdb_column *column = malloc(sizeof(*column));
-	if (column == NULL) {
-		VL_MSG_ERR("Could not allocate memory in influxdb __influxdb_column_new\n");
-		ret = 1;
-		goto out;
-	}
-	memset (column, '\0', sizeof(*column));
-
-	column->input_tag = malloc(field_size);
-	column->output_tag = malloc(field_size);
-
-	if (column->input_tag == NULL || column->output_tag == NULL) {
-		VL_MSG_ERR("Could not allocate memory in influxdb __influxdb_column_new\n");
-		ret = 1;
-		goto out;
-	}
-
-	memset(column->input_tag, '\0', field_size);
-	memset(column->output_tag, '\0', field_size);
-
-	*target = column;
-	column = NULL;
-
-	out:
-	if (column != NULL) {
-		__influxdb_column_destroy(column);
-	}
-	return ret;
-}
 
 struct influxdb_data {
 	struct instance_thread_data *thread_data;
@@ -99,10 +51,10 @@ struct influxdb_data {
 	char *database;
 	char *table;
 	int message_count;
-	struct influxdb_column_collection tags;
-	struct influxdb_column_collection fields;
-	struct influxdb_column_collection fixed_tags;
-	struct influxdb_column_collection fixed_fields;
+	struct rrr_map tags;
+	struct rrr_map fields;
+	struct rrr_map fixed_tags;
+	struct rrr_map fixed_fields;
 	struct fifo_buffer error_buf;
 };
 
@@ -121,10 +73,10 @@ void data_destroy (void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->database);
 	RRR_FREE_IF_NOT_NULL(data->table);
-	RRR_LINKED_LIST_DESTROY(&data->tags, struct influxdb_column, __influxdb_column_destroy(node));
-	RRR_LINKED_LIST_DESTROY(&data->fields, struct influxdb_column, __influxdb_column_destroy(node));
-	RRR_LINKED_LIST_DESTROY(&data->fixed_tags, struct influxdb_column, __influxdb_column_destroy(node));
-	RRR_LINKED_LIST_DESTROY(&data->fixed_fields, struct influxdb_column, __influxdb_column_destroy(node));
+	rrr_map_clear(&data->tags);
+	rrr_map_clear(&data->fields);
+	rrr_map_clear(&data->fixed_tags);
+	rrr_map_clear(&data->fixed_fields);
 	fifo_buffer_clear(&data->error_buf);
 	// TODO : Destroy buffer locks
 }
@@ -204,7 +156,7 @@ static int __query_builder_append (struct query_builder *query_builder, const ch
 
 static int __query_append_values_from_array (
 		struct query_builder *query_builder,
-		struct influxdb_column_collection *columns,
+		struct rrr_map *columns,
 		struct rrr_array *array,
 		int no_comma_on_first
 ) {
@@ -223,18 +175,18 @@ static int __query_append_values_from_array (
 				array->version, 6);
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct influxdb_column);
-		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->input_tag);
+	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct rrr_map_item);
+		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->tag);
 		if (value == NULL) {
 			VL_MSG_ERR("Warning: Could not find value with tag %s in incoming message, discarding message\n",
-					node->input_tag);
+					node->tag);
 			ret = INFLUXDB_SOFT_ERR;
 			goto out;
 		}
 
 		if (value->element_count > 1) {
 			VL_MSG_ERR("Warning: Received message with array of value with tag %s in, discarding message\n",
-					node->input_tag);
+					node->tag);
 			ret = INFLUXDB_SOFT_ERR;
 			goto out;
 		}
@@ -242,11 +194,11 @@ static int __query_append_values_from_array (
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (*(node->output_tag) != '\0') {
-			ret = __escape_field(&name_tmp, node->output_tag, strlen(node->output_tag), 0);
+		if (*(node->value) != '\0') {
+			ret = __escape_field(&name_tmp, node->value, strlen(node->value), 0);
 		}
 		else {
-			ret = __escape_field(&name_tmp, node->input_tag, strlen(node->input_tag), 0);
+			ret = __escape_field(&name_tmp, node->tag, strlen(node->tag), 0);
 		}
 		if (ret != 0) {
 			VL_MSG_ERR("Could not escape field in influxdb __query_append_values_from_array\n");
@@ -263,7 +215,7 @@ static int __query_append_values_from_array (
 		if (RRR_TYPE_IS_FIXP(value->definition->type)) {
 			if ((ret = rrr_fixp_to_str(buf, 511, *((rrr_fixp*) value->data))) != 0) {
 				VL_MSG_ERR("Could not convert fixed point to string for value with tag %s in influxdb __query_append_values_from_array\n",
-						node->input_tag);
+						node->tag);
 				ret = INFLUXDB_SOFT_ERR;
 				goto out;
 			}
@@ -291,7 +243,7 @@ static int __query_append_values_from_array (
 		}
 		else {
 			VL_MSG_ERR("Unknown value type %ul with tag %s when sending from influxdb, discarding message\n",
-					value->definition->type, node->input_tag);
+					value->definition->type, node->tag);
 			ret = INFLUXDB_SOFT_ERR;
 			goto out;
 		}
@@ -307,7 +259,7 @@ static int __query_append_values_from_array (
 
 static int __query_append_values (
 		struct query_builder *query_builder,
-		struct influxdb_column_collection *columns,
+		struct rrr_map *columns,
 		int no_comma_on_first
 ) {
 	int ret = INFLUXDB_OK;
@@ -317,11 +269,11 @@ static int __query_append_values (
 
 	int first = 1;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct influxdb_column);
+	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct rrr_map_item);
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (__escape_field(&name_tmp, node->input_tag, strlen(node->input_tag), 0) != 0) {
+		if (__escape_field(&name_tmp, node->tag, strlen(node->tag), 0) != 0) {
 			VL_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 			ret = INFLUXDB_HARD_ERR;
 			goto out;
@@ -332,10 +284,10 @@ static int __query_append_values (
 		}
 		APPEND_AND_CHECK(query_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values\n");
 
-		if (*(node->output_tag) != '\0') {
+		if (*(node->value) != '\0') {
 			APPEND_AND_CHECK(query_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
 
-			if (__escape_field(&value_tmp, node->output_tag, strlen(node->output_tag), 0) != 0) {
+			if (__escape_field(&value_tmp, node->value, strlen(node->value), 0) != 0) {
 				VL_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
@@ -548,58 +500,10 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	return common_callback(influxdb_data, data, size);
 }
 
-static int __parse_single_tag (const char *input, void *arg, const char *delimeter) {
-	struct influxdb_column_collection *target = arg;
-
-	int ret = 0;
-	struct influxdb_column *column = NULL;
-
-	ssize_t input_length = strlen(input);
-
-	if ((ret = __influxdb_column_new (&column, input_length + 1)) != 0) {
-		goto out;
-	}
-
-	char *delimeter_pos = strstr(input, delimeter);
-	if (delimeter_pos != NULL) {
-		strncpy(column->input_tag, input, delimeter_pos - input);
-
-		const char *pos = delimeter_pos + 2;
-		if (*pos == '\0' || pos > (input + input_length)) {
-			VL_MSG_ERR("Missing column name after -> in column definition\n");
-			ret = 1;
-			goto out;
-		}
-
-		strcpy(column->output_tag, pos);
-	}
-	else {
-		strcpy(column->input_tag, input);
-	}
-
-	RRR_LINKED_LIST_APPEND(target, column);
-	column = NULL;
-
-	out:
-	if (column != NULL) {
-		__influxdb_column_destroy(column);
-	}
-
-	return ret;
-}
-
-static int __parse_single_tag_arrow (const char *input, void *arg) {
-	return __parse_single_tag (input, arg, "->");
-}
-
-static int __parse_single_tag_equal (const char *input, void *arg) {
-	return __parse_single_tag (input, arg, "=");
-}
-
 int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_tags", __parse_single_tag_arrow, &data->tags)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_tags", rrr_map_parse_pair_arrow, &data->tags)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Error while parsing influxdb_tags of instance %s\n", config->name);
 			ret = 1;
@@ -607,7 +511,7 @@ int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fields", __parse_single_tag_arrow, &data->fields)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fields", rrr_map_parse_pair_arrow, &data->fields)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Error while parsing influxdb_fields of instance %s\n", config->name);
 			ret = 1;
@@ -615,7 +519,7 @@ int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fixed_tags", __parse_single_tag_equal, &data->fixed_tags)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fixed_tags", rrr_map_parse_pair_equal, &data->fixed_tags)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Error while parsing influxdb_fixed_tags of instance %s\n", config->name);
 			ret = 1;
@@ -624,7 +528,7 @@ int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) 
 		ret = 0;
 	}
 
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fixed_fields", __parse_single_tag_equal, &data->fixed_fields)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_fixed_fields", rrr_map_parse_pair_equal, &data->fixed_fields)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Error while parsing influxdb_fixed_fields of instance %s\n", config->name);
 			ret = 1;
