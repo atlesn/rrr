@@ -14,7 +14,8 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
 					mqtt_topic.c mqtt_id_pool.c mqtt_client.c rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c \
-					instances.c senders.c poll_helper.c modules.c rrr_socket.c utf8.c gnu.c base64.c \
+					instances.c senders.c poll_helper.c modules.c rrr_socket.c \
+					utf8.c gnu.c base64.c map.c string_builder.c \
 					http_session.c http_util.c http_fields.c http_part.c \
 					fixed_point.c \
 					${mysql}

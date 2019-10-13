@@ -39,10 +39,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http_session.h"
 #include "../lib/gnu.h"
 #include "../lib/map.h"
+#include "../lib/string_builder.h"
 #include "../global.h"
 
 #define INFLUXDB_DEFAULT_PORT 8086
 #define INFLUXDB_USER_AGENT "RRR/" PACKAGE_VERSION
+
+#define INFLUXDB_OK		  0
+#define INFLUXDB_HARD_ERR 1
+#define INFLUXDB_SOFT_ERR 2
 
 struct influxdb_data {
 	struct instance_thread_data *thread_data;
@@ -65,6 +70,10 @@ int data_init(struct influxdb_data *data, struct instance_thread_data *thread_da
 		VL_MSG_ERR("Could not initialize buffer in influxdb data_init\n");
 		return 1;
 	}
+	rrr_map_init(&data->tags);
+	rrr_map_init(&data->fields);
+	rrr_map_init(&data->fixed_tags);
+	rrr_map_init(&data->fixed_fields);
 	return 0;
 }
 
@@ -117,45 +126,8 @@ static int __escape_field (char **target, const char *source, ssize_t length, in
 	return 0;
 }
 
-struct query_builder {
-	ssize_t size;
-	ssize_t wpos;
-	char *buf;
-};
-
-static int __query_builder_append (struct query_builder *query_builder, const char *str) {
-	ssize_t length = strlen(str);
-
-	if (query_builder->wpos + length + 1 > query_builder->size) {
-		ssize_t new_size = length + 1 + query_builder->size + 1024;
-		char *new_buf = realloc(query_builder->buf, new_size);
-		if (new_buf == NULL) {
-			VL_MSG_ERR("Could not allocate memory in influxdb query_builder_append\n");
-			return 1;
-		}
-		query_builder->size = new_size;
-		query_builder->buf = new_buf;
-	}
-
-	memcpy(query_builder->buf + query_builder->wpos, str, length + 1);
-	query_builder->wpos += length;
-
-	return 0;
-}
-
-#define INFLUXDB_OK		  0
-#define INFLUXDB_HARD_ERR 1
-#define INFLUXDB_SOFT_ERR 2
-
-#define APPEND_AND_CHECK(query_builder,str,err_str)						\
-		do {if (__query_builder_append((query_builder), str) != 0) {	\
-			VL_MSG_ERR(err_str);										\
-			ret = INFLUXDB_HARD_ERR;									\
-			goto out;													\
-		}} while(0)
-
 static int __query_append_values_from_array (
-		struct query_builder *query_builder,
+		struct rrr_string_builder *string_builder,
 		struct rrr_map *columns,
 		struct rrr_array *array,
 		int no_comma_on_first
@@ -207,10 +179,10 @@ static int __query_append_values_from_array (
 		}
 
 		if (no_comma_on_first == 0 || first == 0) {
-			APPEND_AND_CHECK(query_builder, ",", "Could not append comma to query buffer in influxdb __query_append_values_from_array\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, ",", "Could not append comma to query buffer in influxdb __query_append_values_from_array\n");
 		}
-		APPEND_AND_CHECK(query_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values_from_array\n");
-		APPEND_AND_CHECK(query_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values_from_array\n");
+		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values_from_array\n");
+		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values_from_array\n");
 
 		if (RRR_TYPE_IS_FIXP(value->definition->type)) {
 			if ((ret = rrr_fixp_to_str(buf, 511, *((rrr_fixp*) value->data))) != 0) {
@@ -220,7 +192,7 @@ static int __query_append_values_from_array (
 				goto out;
 			}
 
-			APPEND_AND_CHECK(query_builder, buf, "Could not append fixed point to query buffer in influxdb __query_append_values_from_array\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append fixed point to query buffer in influxdb __query_append_values_from_array\n");
 		}
 		else if (RRR_TYPE_IS_64(value->definition->type)) {
 			// TODO : Support signed
@@ -231,7 +203,7 @@ static int __query_append_values_from_array (
 			else {
 				sprintf(buf, "%" PRIu64, *((uint64_t*) value->data));
 			}
-			APPEND_AND_CHECK(query_builder, buf, "Could not append 64 type to query buffer in influxdb __query_append_values_from_array\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append 64 type to query buffer in influxdb __query_append_values_from_array\n");
 		}
 		else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
 			if (__escape_field(&value_tmp, value->data, value->total_stored_length, 1) != 0) {
@@ -239,7 +211,7 @@ static int __query_append_values_from_array (
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
 			}
-			APPEND_AND_CHECK(query_builder, value_tmp, "Could not append blob type to query buffer in influxdb __query_append_values_from_array\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, value_tmp, "Could not append blob type to query buffer in influxdb __query_append_values_from_array\n");
 		}
 		else {
 			VL_MSG_ERR("Unknown value type %ul with tag %s when sending from influxdb, discarding message\n",
@@ -258,7 +230,7 @@ static int __query_append_values_from_array (
 }
 
 static int __query_append_values (
-		struct query_builder *query_builder,
+		struct rrr_string_builder *string_builder,
 		struct rrr_map *columns,
 		int no_comma_on_first
 ) {
@@ -280,12 +252,12 @@ static int __query_append_values (
 		}
 
 		if (no_comma_on_first == 0 || first == 0) {
-			APPEND_AND_CHECK(query_builder, ",", "Could not append comma to query buffer in influxdb __query_append_values\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, ",", "Could not append comma to query buffer in influxdb __query_append_values\n");
 		}
-		APPEND_AND_CHECK(query_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values\n");
+		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values\n");
 
 		if (*(node->value) != '\0') {
-			APPEND_AND_CHECK(query_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
 
 			if (__escape_field(&value_tmp, node->value, strlen(node->value), 0) != 0) {
 				VL_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
@@ -293,7 +265,7 @@ static int __query_append_values (
 				goto out;
 			}
 
-			APPEND_AND_CHECK(query_builder, value_tmp, "Could not append blob type to query buffer in influxdb __query_append_values\n");
+			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, value_tmp, "Could not append blob type to query buffer in influxdb __query_append_values\n");
 		}
 
 		first = 0;
@@ -354,7 +326,7 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 
 	int ret = INFLUXDB_OK;
 
-	struct query_builder query_builder = {0};
+	struct rrr_string_builder string_builder = {0};
 
 	char *uri = NULL;
 	if ((ret = rrr_asprintf(&uri, "/write?db=%s", data->database)) <= 0) {
@@ -377,25 +349,25 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	}
 
 	// Append table name
-	APPEND_AND_CHECK(&query_builder, data->table, "Could not append table name in influxdb send_data\n");
+	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder, data->table, "Could not append table name in influxdb send_data\n");
 
 	// Append tags from array
-	ret = __query_append_values_from_array(&query_builder, &data->tags, array, 0);
+	ret = __query_append_values_from_array(&string_builder, &data->tags, array, 0);
 	CHECK_RET();
 
 	// Append fixed tags from config
-	ret = __query_append_values(&query_builder, &data->fixed_tags, 0);
+	ret = __query_append_values(&string_builder, &data->fixed_tags, 0);
 	CHECK_RET();
 
 	// Append separator
-	APPEND_AND_CHECK(&query_builder, " ", "Could not append space in influxdb send_data\n");
+	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder, " ", "Could not append space in influxdb send_data\n");
 
 	// Append fields from array
-	ret = __query_append_values_from_array(&query_builder, &data->fields, array, 1);
+	ret = __query_append_values_from_array(&string_builder, &data->fields, array, 1);
 	CHECK_RET();
 
 	// Append fixed fields from config
-	ret = __query_append_values(&query_builder, &data->fixed_fields,  RRR_LINKED_LIST_COUNT(&data->fields) == 0);
+	ret = __query_append_values(&string_builder, &data->fixed_fields,  RRR_LINKED_LIST_COUNT(&data->fields) == 0);
 	CHECK_RET();
 
 	// TODO : Better distingushing of soft/hard errors from HTTP layer
@@ -406,7 +378,7 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_add_query_field(session, NULL, query_builder.buf)) != 0) {
+	if ((ret = rrr_http_session_add_query_field(session, NULL, string_builder.buf)) != 0) {
 		VL_MSG_ERR("Could not add data to HTTP query in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -438,7 +410,8 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	if (session != NULL) {
 		rrr_http_session_destroy(session);
 	}
-	RRR_FREE_IF_NOT_NULL(query_builder.buf);
+
+	rrr_string_builder_clear(&string_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
 	return ret;
 }
