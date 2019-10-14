@@ -71,18 +71,18 @@ void rrr_socket_read_session_collection_init (
 void rrr_socket_read_session_collection_clear (
 		struct rrr_socket_read_session_collection *collection
 ) {
-	RRR_LINKED_LIST_DESTROY(collection,struct rrr_socket_read_session,__rrr_socket_read_session_destroy(node));
+	RRR_LL_DESTROY(collection,struct rrr_socket_read_session,__rrr_socket_read_session_destroy(node));
 }
 
 static struct rrr_socket_read_session *__rrr_socket_read_session_collection_get_session_with_overshoot (
 		struct rrr_socket_read_session_collection *collection
 ) {
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
+	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->rx_overshoot != NULL) {
 			return node;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 	return NULL;
 }
 
@@ -96,9 +96,9 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 	uint64_t time_now = time_get_64();
 	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
+	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->last_read_time < time_limit) {
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else if (memcmp(src_addr, &node->src_addr, sizeof(*src_addr)) == 0) {
 			if (res != NULL) {
@@ -106,7 +106,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 			}
 			res = node;
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_read_session_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_read_session_destroy(node));
 
 	if (res == NULL) {
 		res = __rrr_socket_read_session_new(src_addr, src_addr_len);
@@ -115,7 +115,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 			goto out;
 		}
 
-		RRR_LINKED_LIST_PUSH(collection,res);
+		RRR_LL_PUSH(collection,res);
 	}
 
 	out:
@@ -398,7 +398,7 @@ int rrr_socket_read_message (
 
 	out:
 	if (ret != RRR_SOCKET_OK && ret != RRR_SOCKET_READ_INCOMPLETE && read_session != NULL) {
-		RRR_LINKED_LIST_REMOVE_NODE(
+		RRR_LL_REMOVE_NODE(
 				read_session_collection,
 				struct rrr_socket_read_session,
 				read_session,

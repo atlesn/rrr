@@ -55,7 +55,7 @@ struct rrr_socket_options {
 };
 
 struct rrr_socket_client {
-	RRR_LINKED_LIST_NODE(struct rrr_socket_client);
+	RRR_LL_NODE(struct rrr_socket_client);
 	struct rrr_socket_read_session_collection read_sessions;
 	int connected_fd;
 	struct sockaddr addr;
@@ -64,7 +64,7 @@ struct rrr_socket_client {
 };
 
 struct rrr_socket_client_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_socket_client);
+	RRR_LL_HEAD(struct rrr_socket_client);
 	int listen_fd;
 	char *creator;
 };

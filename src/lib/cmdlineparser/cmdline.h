@@ -39,19 +39,19 @@ typedef unsigned long int cmd_conf;
 #define CMD_ARG_FLAG_NO_FLAG		(1<<2)
 
 struct cmd_arg_value {
-	RRR_LINKED_LIST_NODE(struct cmd_arg_value);
+	RRR_LL_NODE(struct cmd_arg_value);
 	char *value;
 };
 
 struct cmd_arg_pair {
-	RRR_LINKED_LIST_NODE(struct cmd_arg_pair);
-	RRR_LINKED_LIST_HEAD(struct cmd_arg_value);
+	RRR_LL_NODE(struct cmd_arg_pair);
+	RRR_LL_HEAD(struct cmd_arg_value);
 	int was_used;
 	const struct cmd_arg_rule *rule;
 };
 
 struct cmd_data {
-	RRR_LINKED_LIST_HEAD(struct cmd_arg_pair);
+	RRR_LL_HEAD(struct cmd_arg_pair);
 	const char *program;
 	const char *command;
 

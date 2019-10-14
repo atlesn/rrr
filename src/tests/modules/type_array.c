@@ -139,9 +139,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	rrr_type_length final_length = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		final_length += node->total_stored_length;
-	RRR_LINKED_LIST_ITERATE_END(&collection);
+	RRR_LL_ITERATE_END(&collection);
 
 	struct rrr_type_value *types[12];
 

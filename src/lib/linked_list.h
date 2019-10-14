@@ -24,20 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 
-#define RRR_LINKED_LIST_DID_DESTROY		0
-#define RRR_LINKED_LIST_DESTROY_ERR		1
-#define RRR_LINKED_LIST_DIDNT_DESTROY	2
+#define RRR_LL_DID_DESTROY		0
+#define RRR_LL_DESTROY_ERR		1
+#define RRR_LL_DIDNT_DESTROY	2
 
-#define RRR_LINKED_LIST_HEAD(type)						\
-	type *ptr_first;									\
-	type *ptr_last;										\
+#define RRR_LL_HEAD(type)						\
+	type *ptr_first;							\
+	type *ptr_last;								\
 	int node_count
 
-#define RRR_LINKED_LIST_NODE(type)						\
-	type *ptr_prev;										\
+#define RRR_LL_NODE(type)						\
+	type *ptr_prev;								\
 	type *ptr_next
 
-#define RRR_LINKED_LIST_VERIFY_HEAD(head) 							\
+#define RRR_LL_VERIFY_HEAD(head) 									\
 	do {if (														\
 		(head->ptr_first != NULL && head->ptr_last == NULL) ||		\
 		(head->ptr_last != NULL && head->ptr_first == NULL) ||		\
@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		VL_BUG("Bug: Linked list head integrity error");			\
 	}} while(0)
 
-#define RRR_LINKED_LIST_VERIFY_NODE(head)								\
+#define RRR_LL_VERIFY_NODE(head)										\
 	do {if (	(node->ptr_prev == NULL && head->ptr_first != node) ||	\
 				(node->ptr_next == NULL && head->ptr_last != node) ||	\
 				(node->ptr_prev != NULL && head->ptr_first == node) ||	\
@@ -60,18 +60,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		}																\
 	} while(0)
 
-#define RRR_LINKED_LIST_IS_EMPTY(head)					\
+#define RRR_LL_IS_EMPTY(head)							\
 	((head)->ptr_first == NULL)
 
-#define RRR_LINKED_LIST_COUNT(head)						\
+#define RRR_LL_COUNT(head)								\
 	((head)->node_count)
 
-#define RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(head)		\
+#define RRR_LL_DANGEROUS_CLEAR_HEAD(head)				\
 	(head)->ptr_first = NULL;							\
 	(head)->ptr_last = NULL;							\
 	(head)->node_count = 0
 
-#define RRR_LINKED_LIST_REPLACE_NODE(target, source, type, replace_func)	\
+#define RRR_LL_REPLACE_NODE(target, source, type, replace_func)	\
 	do {																	\
 	if (source->ptr_next != NULL)											\
 		VL_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
@@ -82,7 +82,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	target->ptr_prev = prev_preserve;										\
 	} while (0)
 
-#define RRR_LINKED_LIST_PUSH(head,node) do {			\
+#define RRR_LL_PUSH(head,node) do {						\
 	(node)->ptr_next = NULL;							\
 	(node)->ptr_prev = NULL;							\
 	if ((head)->ptr_first == NULL) {					\
@@ -96,7 +96,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}													\
 	(head)->node_count++; } while (0)
 
-#define RRR_LINKED_LIST_APPEND(head,node) do {			\
+#define RRR_LL_APPEND(head,node) do {					\
 	(node)->ptr_next = NULL;							\
 	(node)->ptr_prev = NULL;							\
 	if ((head)->ptr_first == NULL) {					\
@@ -110,13 +110,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}													\
 	(head)->node_count++; } while (0)
 
-#define RRR_LINKED_LIST_FIRST(head)						\
+#define RRR_LL_FIRST(head)								\
 	((head)->ptr_first)
 
-#define RRR_LINKED_LIST_LAST(head)						\
+#define RRR_LL_LAST(head)								\
 	((head)->ptr_last)
 
-#define RRR_LINKED_LIST_DESTROY(head, type, destroy_func) do {	\
+#define RRR_LL_DESTROY(head, type, destroy_func) do {			\
 	type *node = (head)->ptr_first;								\
 	type *next = NULL;											\
 	while (node != NULL) {										\
@@ -128,7 +128,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	(head)->ptr_first = (head)->ptr_last = NULL;				\
 	} while (0)
 
-#define __RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head)	\
+#define __RRR_LL_ITERATE_REMOVE_NODE(head)			\
 		if ((head)->ptr_first == node) {			\
 			(head)->ptr_first = next;				\
 		}											\
@@ -143,7 +143,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		}											\
 		(head)->node_count--
 
-#define RRR_LINKED_LIST_REMOVE_NODE(head, type, find, destroy_func) do {	\
+#define RRR_LL_REMOVE_NODE(head, type, find, destroy_func) do {				\
 	type *node = (head)->ptr_first;											\
 	type *next = NULL;														\
 	type *prev = NULL;														\
@@ -151,7 +151,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		next = node->ptr_next;												\
 		if (node == find) {													\
 			destroy_func;													\
-			__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);					\
+			__RRR_LL_ITERATE_REMOVE_NODE(head);								\
 			find = NULL;													\
 			break;															\
 		}																	\
@@ -159,38 +159,58 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;														\
 	}} while (0)
 
-#define RRR_LINKED_LIST_ITERATE_BEGIN(head, type) do {			\
+#define RRR_LL_ITERATE_BEGIN(head, type) do {					\
 	type *node = (head)->ptr_first;								\
 	type *prev = NULL; (void)(prev);							\
 	type *next = NULL;											\
 	int linked_list_iterate_stop = 0;							\
+	int linked_list_immediate_break = 0;						\
 	int linked_list_ret_tmp = 0; (void)(linked_list_ret_tmp);	\
 	while (node != NULL && linked_list_iterate_stop != 1) {		\
 		int linked_list_iterate_destroy = 0;					\
+		do {													\
 		next = node->ptr_next
 
-#define RRR_LINKED_LIST_SET_DESTROY()						\
+#define RRR_LL_ITERATE_IS_FIRST()					\
+		(prev == NULL)
+
+#define RRR_LL_ITERATE_SET_DESTROY()				\
 		linked_list_iterate_destroy = 1
 
-#define RRR_LINKED_LIST_SET_STOP()							\
+#define RRR_LL_ITERATE_LAST()						\
 		linked_list_iterate_stop = 1
 
-#define RRR_LINKED_LIST_ITERATE_END(head)														\
+#define RRR_LL_ITERATE_NEXT()						\
+		break
+
+#define RRR_LL_ITERATE_BREAK()						\
+		linked_list_immediate_break = 1; break
+
+
+#define RRR_LL_ITERATE_END(head)																\
+		} while (0);																			\
+		if (linked_list_immediate_break != 0) {													\
+			break;																				\
+		}																						\
 		if (linked_list_iterate_destroy != 0) {													\
-			VL_BUG("RRR_LINKED_LIST_SET_DESTROY was used without destroy "						\
-					"function, must use RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY instead\n");	\
+			VL_BUG("RRR_LL_SET_DESTROY was used without destroy "								\
+					"function, must use RRR_LL_ITERATE_END_CHECK_DESTROY instead\n");			\
 		}																						\
 		prev = node;																			\
 		node = next;																			\
 	}} while(0)
 
-#define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, destroy_err, lock, unlock, lock_err) \
+#define RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, destroy_err, lock, unlock, lock_err) \
+		} while (0);																			\
+		if (linked_list_immediate_break != 0) {													\
+			break;																				\
+		}																						\
 		if (linked_list_iterate_destroy) {														\
 			linked_list_ret_tmp = destroy_func;													\
-			if (linked_list_ret_tmp == RRR_LINKED_LIST_DESTROY_ERR) { destroy_err; }			\
-			if (linked_list_ret_tmp == RRR_LINKED_LIST_DID_DESTROY) {							\
+			if (linked_list_ret_tmp == RRR_LL_DESTROY_ERR) { destroy_err; }						\
+			if (linked_list_ret_tmp == RRR_LL_DID_DESTROY) {									\
 				if ((lock) != 0) { lock_err; }													\
-				__RRR_LINKED_LIST_ITERATE_REMOVE_NODE(head);									\
+				__RRR_LL_ITERATE_REMOVE_NODE(head);												\
 				if ((unlock) != 0) { lock_err; }												\
 			}																					\
 			else {																				\
@@ -204,18 +224,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;																			\
 	}} while(0)
 
-#define RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
+#define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
+	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
+
+#define RRR_LL_ITERATOR_INIT(list) \
+	{ 0, list, NULL }
+
+#define RRR_LL_ITERATOR_CREATE(name,list) \
+	struct rrr_linked_list_iterator name = RRR_LL_ITERATOR_INIT((struct rrr_linked_list *) list)
+
+#define RRR_LL_ITERATOR_NEXT(iterator) \
+	rrr_linked_list_iterator_next(iterator)
 
 struct rrr_linked_list_node {
-	RRR_LINKED_LIST_NODE(struct rrr_linked_list_node);
+	RRR_LL_NODE(struct rrr_linked_list_node);
 	void *data;
 	ssize_t size;
 };
 
 struct rrr_linked_list {
-	RRR_LINKED_LIST_HEAD(struct rrr_linked_list_node);
+	RRR_LL_HEAD(struct rrr_linked_list_node);
 };
+
+struct rrr_linked_list_iterator {
+	ssize_t rpos;
+	struct rrr_linked_list *source;
+	struct rrr_linked_list_node *cur;
+};
+
+static inline struct rrr_linked_list_node *rrr_linked_list_iterator_next (struct rrr_linked_list_iterator *iterator) {
+	if (iterator->cur == NULL) {
+		if (iterator->rpos == 0) {
+			iterator->cur = iterator->source->ptr_first;
+		}
+	}
+	else {
+		iterator->cur = iterator->cur->ptr_next;
+		iterator->rpos++;
+	}
+
+	return iterator->cur;
+}
 
 static inline void rrr_linked_list_destroy_node (struct rrr_linked_list_node *node) {
 	if (node->data != NULL) {
@@ -224,8 +273,8 @@ static inline void rrr_linked_list_destroy_node (struct rrr_linked_list_node *no
 	free(node);
 }
 
-static inline void rrr_linked_list_destroy (struct rrr_linked_list *list) {
-	RRR_LINKED_LIST_DESTROY(list, struct rrr_linked_list_node, rrr_linked_list_destroy_node(node));
+static inline void rrr_linked_list_clear (struct rrr_linked_list *list) {
+	RRR_LL_DESTROY(list, struct rrr_linked_list_node, rrr_linked_list_destroy_node(node));
 }
 
 #endif /* RRR_LINKED_LIST_H */

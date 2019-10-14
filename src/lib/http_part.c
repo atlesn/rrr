@@ -135,11 +135,11 @@ static struct rrr_http_header_field *__rrr_header_field_collection_get_field (
 		struct rrr_http_header_field_collection *collection,
 		const char *name_lowercase
 ) {
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_http_header_field);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_http_header_field);
 		if (strcmp(name_lowercase, node->name) == 0) {
 			return node;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 	return NULL;
 }
 
@@ -147,12 +147,12 @@ static void __rrr_header_field_collection_add (
 		struct rrr_http_header_field_collection *collection,
 		struct rrr_http_header_field *field
 ) {
-	RRR_LINKED_LIST_APPEND(collection, field);
+	RRR_LL_APPEND(collection, field);
 }
 
 void rrr_http_part_destroy (struct rrr_http_part *part) {
-	RRR_LINKED_LIST_DESTROY(part, struct rrr_http_part, rrr_http_part_destroy(node));
-	RRR_LINKED_LIST_DESTROY(&part->headers, struct rrr_http_header_field, __rrr_http_header_field_destroy(node));
+	RRR_LL_DESTROY(part, struct rrr_http_part, rrr_http_part_destroy(node));
+	RRR_LL_DESTROY(&part->headers, struct rrr_http_header_field, __rrr_http_header_field_destroy(node));
 	rrr_http_fields_collection_clear(&part->fields);
 	RRR_FREE_IF_NOT_NULL(part->response_str);
 	free (part);

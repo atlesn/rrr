@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_NOT_FOUND 2
 
 struct poll_collection_entry {
-	RRR_LINKED_LIST_NODE(struct poll_collection_entry);
+	RRR_LL_NODE(struct poll_collection_entry);
 	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
 	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
@@ -44,7 +44,7 @@ struct poll_collection_entry {
 };
 
 struct poll_collection {
-	RRR_LINKED_LIST_HEAD(struct poll_collection_entry);
+	RRR_LL_HEAD(struct poll_collection_entry);
 };
 
 void poll_collection_clear(struct poll_collection *collection);

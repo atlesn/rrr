@@ -34,7 +34,7 @@ static void __rrr_http_field_destroy(struct rrr_http_field *field) {
 }
 
 void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields) {
-	RRR_LINKED_LIST_DESTROY(fields, struct rrr_http_field, __rrr_http_field_destroy(node));
+	RRR_LL_DESTROY(fields, struct rrr_http_field, __rrr_http_field_destroy(node));
 }
 
 static int __rrr_http_fields_collection_add_field_raw (
@@ -75,7 +75,7 @@ static int __rrr_http_fields_collection_add_field_raw (
 
 	field->is_binary = (is_binary != 0 ? 1 : 0);
 
-	RRR_LINKED_LIST_APPEND(fields, field);
+	RRR_LL_APPEND(fields, field);
 	field = NULL;
 
 	out:
@@ -108,10 +108,10 @@ int rrr_http_fields_get_total_length (
 ) {
 	int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(fields, struct rrr_http_field);
+	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
 		ret += (node->name != NULL ? strlen(node->name) : 0);
 		ret += (node->value != NULL ? strlen(node->value) : 0);
-	RRR_LINKED_LIST_ITERATE_END(fields);
+	RRR_LL_ITERATE_END(fields);
 
 	return ret;
 }
@@ -127,7 +127,7 @@ static char *__rrr_http_fields_to_form_data (
 
 	ssize_t result_max_length =
 			rrr_http_fields_get_total_length(fields) * 3 +
-			RRR_LINKED_LIST_COUNT(fields) * 2 +
+			RRR_LL_COUNT(fields) * 2 +
 			1
 	;
 
@@ -143,7 +143,7 @@ static char *__rrr_http_fields_to_form_data (
 	char *wpos_max = result + result_max_length;
 
 	int count = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(fields, struct rrr_http_field);
+	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
 		if (++count > 1) {
 			*wpos = '&';
 			wpos++;
@@ -192,7 +192,7 @@ static char *__rrr_http_fields_to_form_data (
 				wpos += strlen(node->value);
 			}
 		}
-	RRR_LINKED_LIST_ITERATE_END(fields);
+	RRR_LL_ITERATE_END(fields);
 
 	if (wpos > wpos_max) {
 		VL_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");

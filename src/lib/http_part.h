@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
-	RRR_LINKED_LIST_NODE(struct rrr_http_header_field);
+	RRR_LL_NODE(struct rrr_http_header_field);
 	struct rrr_http_field_collection fields;
 	const struct rrr_http_header_field_definition *definition;
 	long long int value_signed;
@@ -46,7 +46,7 @@ struct rrr_http_header_field {
 };
 
 struct rrr_http_header_field_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_http_header_field);
+	RRR_LL_HEAD(struct rrr_http_header_field);
 };
 
 #define RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION \
@@ -58,8 +58,8 @@ struct rrr_http_header_field_definition {
 };
 
 struct rrr_http_part {
-	RRR_LINKED_LIST_NODE(struct rrr_http_part);
-	RRR_LINKED_LIST_HEAD(struct rrr_http_part);
+	RRR_LL_NODE(struct rrr_http_part);
+	RRR_LL_HEAD(struct rrr_http_part);
 	struct rrr_http_header_field_collection headers;
 	struct rrr_http_field_collection fields;
 	int response_code;

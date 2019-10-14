@@ -284,8 +284,16 @@ column plan is used, the following options can be used to describe the target ta
 Specify the columns in the table to write data to. The column count must match the number of values received in array
 messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
 types received. Integers are sent to the database as integers and blobs are sent as blobs.
-If a message contains an array of values, one column sould be specified for the whole array. Arrays are sent to mysql
-as blobs.
+If an array contains items with more than one value, one column should be specified for the whole item. These items are always sent
+to mysql as blobs.
+This option cannot be used with
+.B mysql_column_tags.
+.It mysql_column_tags=ARRAY TAG[->MYSQL COLUMN][,...]
+A comma separated list of items to retrieve from the received array messages and to use as
+columns in MySQL. If a tag name is specified on is own, the tag and the corresponding column in MySQL has the same name.
+If the MySQL column name is different from the tag, an arrow followed by the MySQL column name is put after the tag name.
+This option cannot be used with
+.B mysql_colums.
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
 .It mysql_special_columns={column name 1,column name 2,...}

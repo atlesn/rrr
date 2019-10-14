@@ -144,12 +144,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if (data->receive_rrr_message != 0 && RRR_LINKED_LIST_COUNT(&data->definitions) > 0) {
+	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 		VL_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
-	else if (data->receive_rrr_message == 0 && RRR_LINKED_LIST_COUNT(&data->definitions) == 0) {
+	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		VL_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
 				config->name);
 		return 1;

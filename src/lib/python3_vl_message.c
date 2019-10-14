@@ -1095,7 +1095,7 @@ static int __rrr_python3_array_vl_message_get_message_store_array_node_callback 
 		}
 	}
 
-	RRR_LINKED_LIST_APPEND(target, new_value);
+	RRR_LL_APPEND(target, new_value);
 	new_value = NULL;
 
 	out:
@@ -1208,7 +1208,7 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 		goto out_err;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
 		if (node->tag == NULL) {
 			node_tag = PyUnicode_FromString("");
 		}
@@ -1272,7 +1272,7 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 
 		node_tag = NULL;
 		node_list = NULL;
-	RRR_LINKED_LIST_ITERATE_END(&array_tmp);
+	RRR_LL_ITERATE_END(&array_tmp);
 
 	no_array:
 

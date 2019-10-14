@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_STRING_BUILDER_H
 #define RRR_STRING_BUILDER_H
 
+#include <stdio.h>
+
 struct rrr_string_builder {
 	ssize_t size;
 	ssize_t wpos;
@@ -30,12 +32,33 @@ struct rrr_string_builder {
 
 #define RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder,str,err_str)		\
 		do {if (rrr_string_builder_append((string_builder), str) != 0) {	\
-			VL_MSG_ERR(err_str);											\
+			VL_MSG_ERR("%s", err_str);										\
 			ret = 1;														\
 			goto out;														\
 		}} while(0)
 
+#define RRR_STRING_BUILDER_RESERVE_AND_CHECK(string_builder,bytes,err_str)	\
+		do {if (rrr_string_builder_reserve((string_builder), bytes) != 0) {	\
+			VL_MSG_ERR("%s", err_str);										\
+			ret = 1;														\
+			goto out;														\
+		}} while(0)
+
+#define RRR_STRING_BUILDER_UNCHECKED_APPEND(string_builder,str)				\
+	rrr_string_builder_unchecked_append(string_builder,str)
+
+static inline void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
+	ssize_t length = strlen(str);
+	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
+	string_builder->wpos += length;
+	if (string_builder->wpos + 1 > string_builder->size) {
+		VL_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
+	}
+}
+
+char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder);
 void rrr_string_builder_clear (struct rrr_string_builder *string_builder);
+int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes);
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str);
 
 #endif /* RRR_STRING_BUILDER_H */

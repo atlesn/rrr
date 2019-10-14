@@ -25,14 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 
 struct rrr_http_field {
-	RRR_LINKED_LIST_NODE(struct rrr_http_field);
+	RRR_LL_NODE(struct rrr_http_field);
 	char *name;
 	char *value;
 	int is_binary;
 };
 
 struct rrr_http_field_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_http_field);
+	RRR_LL_HEAD(struct rrr_http_field);
 };
 
 void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields);

@@ -3,7 +3,7 @@ AC_DEFINE([VL_CONFIG_VERSION], "0.14", [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
 AC_DEFINE([VL_CONFIG_VERSION_MINOR], 14, [Minor version])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
-AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
+#AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
 AC_DEFINE([RRR_MESSAGE_MIME_TYPE], "application/rrr-message", [MIME type of RRR message])
 

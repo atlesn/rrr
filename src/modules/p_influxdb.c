@@ -147,7 +147,7 @@ static int __query_append_values_from_array (
 				array->version, 6);
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct rrr_map_item);
+	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
 		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->tag);
 		if (value == NULL) {
 			VL_MSG_ERR("Warning: Could not find value with tag %s in incoming message, discarding message\n",
@@ -221,7 +221,7 @@ static int __query_append_values_from_array (
 		}
 
 		first = 0;
-	RRR_LINKED_LIST_ITERATE_END(columns);
+	RRR_LL_ITERATE_END(columns);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);
@@ -241,7 +241,7 @@ static int __query_append_values (
 
 	int first = 1;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(columns, struct rrr_map_item);
+	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
@@ -269,7 +269,7 @@ static int __query_append_values (
 		}
 
 		first = 0;
-	RRR_LINKED_LIST_ITERATE_END(columns);
+	RRR_LL_ITERATE_END(columns);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);
@@ -367,7 +367,7 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	CHECK_RET();
 
 	// Append fixed fields from config
-	ret = __query_append_values(&string_builder, &data->fixed_fields,  RRR_LINKED_LIST_COUNT(&data->fields) == 0);
+	ret = __query_append_values(&string_builder, &data->fixed_fields,  RRR_LL_COUNT(&data->fields) == 0);
 	CHECK_RET();
 
 	// TODO : Better distingushing of soft/hard errors from HTTP layer
@@ -509,7 +509,7 @@ int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if (RRR_LINKED_LIST_COUNT(&data->fields) == 0 && RRR_LINKED_LIST_COUNT(&data->fixed_fields) == 0) {
+	if (RRR_LL_COUNT(&data->fields) == 0 && RRR_LL_COUNT(&data->fixed_fields) == 0) {
 		VL_MSG_ERR("No fields specified in config for influxdb instance %s\n", config->name);
 		ret = 1;
 		goto out;

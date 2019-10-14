@@ -33,7 +33,7 @@ void rrr_map_item_destroy (struct rrr_map_item *item) {
 }
 
 void rrr_map_clear (struct rrr_map *map) {
-	RRR_LINKED_LIST_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
+	RRR_LL_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
 }
 
 int rrr_map_init (struct rrr_map *map) {
@@ -75,13 +75,11 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 }
 
 int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item) {
-	RRR_LINKED_LIST_APPEND(map, item);
+	RRR_LL_APPEND(map, item);
 	return 0;
 }
 
-int rrr_map_parse_pair (const char *input, void *arg, const char *delimeter) {
-	struct rrr_map *target = arg;
-
+int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter) {
 	int ret = 0;
 	struct rrr_map_item *column = NULL;
 
@@ -91,21 +89,26 @@ int rrr_map_parse_pair (const char *input, void *arg, const char *delimeter) {
 		goto out;
 	}
 
-	char *delimeter_pos = strstr(input, delimeter);
-	if (delimeter_pos != NULL) {
-		strncpy(column->tag, input, delimeter_pos - input);
-
-		const char *pos = delimeter_pos + 2;
-		if (*pos == '\0' || pos > (input + input_length)) {
-			VL_MSG_ERR("Missing column name after -> in column definition\n");
-			ret = 1;
-			goto out;
-		}
-
-		strcpy(column->value, pos);
+	if (delimeter == NULL || *delimeter == '\0') {
+		strcpy(column->tag, input);
 	}
 	else {
-		strcpy(column->tag, input);
+		char *delimeter_pos = strstr(input, delimeter);
+		if (delimeter_pos != NULL) {
+			strncpy(column->tag, input, delimeter_pos - input);
+
+			const char *pos = delimeter_pos + 2;
+			if (*pos == '\0' || pos > (input + input_length)) {
+				VL_MSG_ERR("Missing column name after -> in column definition\n");
+				ret = 1;
+				goto out;
+			}
+
+			strcpy(column->value, pos);
+		}
+		else {
+			strcpy(column->tag, input);
+		}
 	}
 
 	rrr_map_item_add(target, column);
@@ -125,4 +128,18 @@ int rrr_map_parse_pair_arrow (const char *input, void *arg) {
 
 int rrr_map_parse_pair_equal (const char *input, void *arg) {
 	return rrr_map_parse_pair (input, arg, "=");
+}
+
+int rrr_map_parse_tag_only (const char *input, void *arg) {
+	return rrr_map_parse_pair (input, arg, NULL);
+}
+
+const char *rrr_map_get_value (const struct rrr_map *map, const char *tag) {
+	RRR_LL_ITERATE_BEGIN(map, const struct rrr_map_item);
+		if (strcmp (node->tag, tag) == 0) {
+			return node->value;
+		}
+	RRR_LL_ITERATE_END(map);
+
+	return NULL;
 }
