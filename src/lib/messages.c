@@ -172,9 +172,6 @@ int message_to_string (
 	case MSG_TYPE_MSG:
 		type = MSG_TYPE_MSG_STRING;
 		break;
-	case MSG_TYPE_ACK:
-		type = MSG_TYPE_ACK_STRING;
-		break;
 	case MSG_TYPE_TAG:
 		type = MSG_TYPE_TAG_STRING;
 		break;

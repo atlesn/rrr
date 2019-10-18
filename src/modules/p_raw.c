@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -42,9 +43,19 @@ struct raw_data {
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->private_data;
 	struct raw_data *raw_data = thread_data->private_data;
-	struct vl_message *reading = (struct vl_message *) data;
+	struct vl_message *reading = NULL;
 
-	VL_DEBUG_MSG_2 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
+	if (poll_data->flags & RRR_POLL_POLL_DELETE_IP) {
+		struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+		reading = entry->message;
+		entry->message = NULL;
+		ip_buffer_entry_destroy(entry);
+	}
+	else {
+		reading = (struct vl_message *) data;
+	}
+
+	VL_DEBUG_MSG_3 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
 
 	if (raw_data->print_data != 0) {
@@ -62,7 +73,7 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 	raw_data->message_count++;
 
-	free(data);
+	free(reading);
 	return 0;
 }
 

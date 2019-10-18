@@ -155,7 +155,7 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 
 			struct vl_message *reading = message_new_reading(time, time);
 
-			VL_DEBUG_MSG_2("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
+			VL_DEBUG_MSG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 		}

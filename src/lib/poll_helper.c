@@ -248,6 +248,7 @@ int poll_do_poll_delete (
 
 		struct fifo_callback_args callback_args = *poll_data;
 		if (control_flags & entry->flags) {
+			callback_args.flags |= (control_flags & entry->flags);
 			ret_tmp = entry->poll_delete(entry->thread_data, callback, &callback_args, wait_milliseconds);
 		}
 		else {

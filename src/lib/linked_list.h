@@ -171,6 +171,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		do {													\
 		next = node->ptr_next
 
+#define RRR_LL_ITERATE_INSERT(head, new_node) do {	\
+	(new_node)->ptr_prev = node->ptr_prev;			\
+	node->ptr_prev = (new_node);					\
+	(new_node)->ptr_next = node;					\
+	if (prev == NULL) {								\
+		(head)->ptr_first = node;					\
+	}												\
+	else {											\
+		prev->ptr_next = node;						\
+	}} while (0)
+
 #define RRR_LL_ITERATE_IS_FIRST()					\
 		(prev == NULL)
 

@@ -171,7 +171,9 @@ int rrr_socket_read_message (
 		goto out;
 	}
 	else if (items == 0) {
-		usleep(10 * 1000);
+		if ((read_flags & RRR_SOCKET_READ_NO_SLEEPING) == 0) {
+			usleep(10 * 1000);
+		}
 		ret = RRR_SOCKET_READ_INCOMPLETE;
 		goto out;
 	}
@@ -200,7 +202,8 @@ int rrr_socket_read_message (
 */
 	/* Read */
 	read_retry:
-	if ((read_flags & RRR_SOCKET_READ_METHOD_RECV) != 0) {
+	if ((read_flags & RRR_SOCKET_READ_METHOD_RECVFROM) != 0) {
+		/* Read and distinguish between senders based on source addresses */
 		bytes = recvfrom (
 				fd,
 				buf,
@@ -210,7 +213,17 @@ int rrr_socket_read_message (
 				&src_addr_len
 		);
 	}
+	else if ((read_flags & RRR_SOCKET_READ_METHOD_RECV) != 0) {
+		/* Read and don't distinguish between senders */
+		bytes = recv (
+				fd,
+				buf,
+				read_step_max_size,
+				0
+		);
+	}
 	else if ((read_flags & RRR_SOCKET_READ_METHOD_READ_FILE) != 0) {
+		/* Read from file */
 		bytes = read (
 				fd,
 				buf,
@@ -398,6 +411,7 @@ int rrr_socket_read_message (
 
 	out:
 	if (ret != RRR_SOCKET_OK && ret != RRR_SOCKET_READ_INCOMPLETE && read_session != NULL) {
+		printf ("Removing read session following error\n");
 		RRR_LL_REMOVE_NODE(
 				read_session_collection,
 				struct rrr_socket_read_session,

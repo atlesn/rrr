@@ -30,11 +30,21 @@ struct rrr_socket_common_receive_message_callback_data {
 	int (*callback)(struct vl_message *message, void *arg);
 	void *callback_arg;
 };
+int rrr_socket_common_receive_message_raw_callback (
+		void *data,
+		ssize_t data_size,
+		void *arg
+);
 int rrr_socket_common_receive_message_callback (
 		struct rrr_socket_read_session *read_session,
 		void *arg
 );
-
+int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
+		ssize_t *result,
+		void *data,
+		ssize_t data_size,
+		void *arg
+);
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 		struct rrr_socket_read_session *read_session,
 		void *arg

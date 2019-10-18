@@ -448,7 +448,7 @@ int rrr_http_session_receive (
 				session->fd,
 				4096,
 				65535,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_http_session_receive_get_total_size,
 				&callback_data,
 				__rrr_http_session_receive_callback,

@@ -611,8 +611,6 @@ int fifo_read_clear_forward (
 		current = next;
 	}
 
-	FIFO_BUFFER_CONSISTENCY_CHECK();
-
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= processed_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
