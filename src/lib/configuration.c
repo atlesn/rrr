@@ -232,7 +232,7 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 		goto out;
 	}
 
-	if (pos->data[pos->pos] == '#') {
+	while (pos->data[pos->pos] == '#') {
 		__rrr_config_parse_comment(pos);
 	}
 
