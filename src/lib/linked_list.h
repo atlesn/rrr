@@ -159,8 +159,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;														\
 	}} while (0)
 
-#define RRR_LL_ITERATE_BEGIN(head, type) do {					\
-	type *node = (head)->ptr_first;								\
+#define RRR_LL_ITERATE_BEGIN_AT(head, type, at)	do {			\
+	type *node = (at);											\
 	type *prev = NULL; (void)(prev);							\
 	type *next = NULL;											\
 	int linked_list_iterate_stop = 0;							\
@@ -169,17 +169,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	while (node != NULL && linked_list_iterate_stop != 1) {		\
 		int linked_list_iterate_destroy = 0;					\
 		do {													\
-		next = node->ptr_next
+			next = node->ptr_next
+
+#define RRR_LL_ITERATE_BEGIN(head, type) 					\
+	RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_first)
 
 #define RRR_LL_ITERATE_INSERT(head, new_node) do {	\
 	(new_node)->ptr_prev = node->ptr_prev;			\
-	node->ptr_prev = (new_node);					\
 	(new_node)->ptr_next = node;					\
+	node->ptr_prev = (new_node);					\
 	if (prev == NULL) {								\
-		(head)->ptr_first = node;					\
+		(head)->ptr_first = new_node;				\
 	}												\
 	else {											\
-		prev->ptr_next = node;						\
+		prev->ptr_next = new_node;					\
 	}} while (0)
 
 #define RRR_LL_ITERATE_IS_FIRST()					\
