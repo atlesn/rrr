@@ -1,0 +1,241 @@
+.Dd 2019-10-04
+.TH RRR 1
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.PP
+.B rrr_helper
+is a
+.Xr python(1)
+module which is available in python scripts run by RRR, see
+.Xr rrr.conf(5)
+and
+.Xr rrr(1)
+for information on how to run such a script. The module cannot be used outside
+of RRR as this would make no sense.
+.SH SYNOPSIS
+These classes are available in python script when run by RRR.
+.Dl from rrr_helper import rrr_socket
+.Dl from rrr_helper import rrr_vl_message
+.Dl from rrr_helper import rrr_array
+.Dl from rrr_helper import rrr_array_value
+.Dl from rrr_helper import rrr_setting
+.PP
+These 
+.B handler functions
+should be specified in a python script which is to be used by RRR.
+.Dl def [NAME OF SOURCE FUNCTION](socket : rrr_socket):
+.Dl def [NAME OF PROCESS FUNCTION](socket : rrr_socket, message : vl_message):
+.Dl def [NAME OF CONFIG FUNCTION](socket : rrr_socket, setting : rrr_setting)
+.SH OBJECTS AND FUNCTIONS
+Below follows detailed description of methods and members of the RRR objects.
+.SS rrr_vl_message
+Structure which contain a single RRR messsage which it is possible to mangle. A message may or may not contain a data
+array.
+.TP
+.B rrr_vl_message.set(type,class,timestamp_from,timestamp_to,data_numeric)
+Set metadata of the message. The timestamps are times in epoch microseconds. The
+.B data_numeric
+parameter is an unsigned value
+of the actual measurement. To validation is performed on the values other than them being positive integers.
+.PP
+Possible values for
+.B type
+are:
+.Bl -ohang
+.It Sy rrr_vl message.TYPE_MSG
+.It Sy rrr_vl_message.TYPE_ACK
+.It Sy rrr_vl_message.TYPE_TAG
+.El
+.PP
+Possible values for
+.B class
+are:
+.PP
+
+.TP
+.B rrr_vl_message.CLASS_POINT
+Point measurement, timestamp_from and timestamp_to are normally equal
+.TP
+.B rrr_vl_message.CLASS_AVG
+Average measurement, starts at timestamp_from and ends at timestamp_to
+.TP
+.B rrr_vl_message.CLASS_MAX
+Maximum measurement betweeen timestamp_from and timestamp_to
+.TP
+.B rrr_vl_message.CLASS_MIN
+Minimum measurement betweeen timestamp_from and timestamp_to
+.TP
+.B rrr_vl_message.CLASS_INFO
+Informational message, text might be put in the message body.
+.TP
+.B rrr_vl_message.CLASS_ARRAY
+Message body contains a data array.
+.El
+.PP
+The type
+.B CLASS_ARRAY
+is automatically set if the message contains an array, and any other data set in the message apart from in the header
+is deleted.
+.TP
+.B rrr_vl_message.set_data(data : bytearray|str)
+Set the body of a message. If the message contains an array,
+.B discard_array()
+must be called first. Returns TRUE on success and FALSE on error.
+.TP
+.B rrr_vl_message.get_data()
+Return the raw body of a message as a bytearray. Might contain binary data.
+.TP
+.B rrr_vl_message.has_array()
+Check if the message has an array or not. Returns TRUE if the message has an array, otherwise false.
+.TP
+.B rrr_vl_message.get_array()
+Return the array of a message, or create one if not already existing. The returned object of type
+.B rrr_array
+may be modified, and the message is updated accordingly. Returns NULL if the message does not have an array.
+.TP
+.B rrr_vl_message.set_array(array : rrr_array)
+Discard an array from a message (if it has one) and set a new array in the message.
+.TP
+.B rrr_vl_message.discard_array()
+Discard an array from a message (if it has one).
+.TP
+.B rrr_vl_message.set_topic(topic : str)
+Set the MQTT topic of a message.
+.TP
+.B rrr_vl_message.get_topic()
+Return the MQTT topic of a message. If there is no topic, return an empty string.
+.SS rrr_array
+This class allows for modification of the array part of a message, or creation of a new one. An array consist
+of multiple members, optionally with a tag to identify them. Each member may itself have multiple values, but these
+values must then be of the same size.
+.PP
+The
+.B rrr_array
+object may be iterated.
+.TP
+.B rrr_array.count()
+Count the members in the array.
+.TP
+.B rrr_array.get(tag : str|int)
+Get a member by textual tag or numeric index. Returns an
+.B rrr_array_value
+object or NONE if the element is not found.
+.TP
+.B rrr_array.append(value : rrr_array_value)
+Append an rrr_array_value to the array.
+.TP
+.B rrr_array.remove(tag : str|int)
+Remove a value from the array.
+.SS rrr_array_value
+All items of an array is of this type, which itself contains one ore more items of a particular type.
+.PP
+Arrays received from RRR always has a particular type set, and the RRR python3 module will attempt to
+convert any items to this type. If the type is set to be automatically identified, an RRR type is
+chosen based on the first item in the array.
+.PP
+Some multibyte types require all items to be of equal length. If different lengths are needed, they
+must be put into different values.
+.PP
+The
+.B rrr_array_value
+object may be iterated.
+.PP
+.TP
+.B rrr_array_value.append(item)
+Append an item to the array value.
+.TP
+.B rrr_array_value.count()
+Count the number of elements in the array value.
+.TP
+.B rrr_array_value.get(index : int)
+Get an item from the array value or return NONE if not found. 
+.TP
+.B rrr_array_value.set(index : int, item)
+Set an item at a particular position to a new value. May return FALSE on error.
+.TP
+.B rrr_array_value.get_tag()
+Get the current tag of the array value, might return an empty string.
+.TP
+.B rrr_array_value.set_tag(tag : str)
+Set the tag of the array value. Set to empty string if no tag is to be used.
+.TP
+.B rrr_array_value.set_type(type : int)
+Force a particular RRR type to be used for the value.
+.TP
+.B rrr_array_value.get_type()
+Get the current type of the value.
+.TP
+.B rrr_array_value.get_type_str()
+Get a string representation of the current type.
+.PP
+Possible values for
+.B type
+are:
+.TP
+.B rrr_array_value.TYPE_AUTO
+Let RRR choose a type for the value based on the type of the values used in Python.
+.TP
+.B rrr_array_value.TYPE_H
+A signed or unsigned integer with host endianess. Unsigned values may be go up to 2^64,
+and signed values may be up to approximately positive or negative 2^63.
+.TP
+.B rrr_array_value.TYPE_BLOB
+Binary data, accessed as bytearrays.
+.TP
+.B rrr_array_value.TYPE_SEP
+One or more of the following characters: ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [  ] ^ _ ` { | } ~ LF CR TAB and SPACE
+.TP
+.B rrr_array_value.TYPE_MSG
+A binary RRR message.
+.TP
+.B rrr_array_value.TYPE_FIXP
+A signed 64 bit fixed point value with 24 bit decimal places. This means that the value '1' is stored as
+.B 1 * 2^24
+or
+.B 1 << 23
+.TP
+.B rrr_array_value.TYPE_STR
+A string of text.
+.PP
+Any multiple items of the types
+.B BLOB, SEP
+and
+.B STR
+must always be of identical length/size. The RRR python3-module will exit and restart if they are not.
+.
+.SS rrr_socket
+To communicate with RRR in its python module, a UNIX socket is used "behind the scenes" over which messages
+are sent in both directions.
+.PP
+When a
+.B handler function
+is called by RRR, it receives an
+.B rrr_socket
+object which is already connect to RRR, and it's possible to send messages immediately. It is also possible to set
+up sockets manually to send data somewhere (
+.Xr rrr_post(1)
+would be able to read such messages). It is not possible to read messages from the socket.
+.TP
+.B rrr_socket()
+The initializer takes no arguments.
+.TP
+.B rrr_socket.start([filename])
+Create a new socket. If a filename is provided, connect to an existing socket. If not, create a new socket and listen for
+incoming connections. The filename of the socket is generated automatically.
+.TP
+.B rrr_socket.get_filename()
+Get the filename of the socket.
+.TP
+.B rrr_socket.send(object : rrr_vl_message|rrr_socket)
+Send a
+.B rrr_vl_message
+or
+.B rrr_setting
+object on the socket.
+.TP
+.B rrr_socket.accept()
+Accept a connection (for listening socket only).
+.SH SEE ALSO
+.Xr rrr(1),
+.Xr rrr.conf(5)

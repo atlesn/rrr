@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "../global.h"
+#include "common.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
@@ -31,7 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int instance_check_threads_stopped(struct instance_metadata_collection *instances) {
 	int ret = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
-		if (thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED || instance->thread_data->thread->is_ghost == 1) {
+		if (
+				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED ||
+				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPING ||
+				thread_is_ghost(instance->thread_data->thread)
+		) {
 			VL_DEBUG_MSG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
 			ret = 1;
 		}
@@ -69,14 +74,26 @@ void instance_unload_all(struct instance_metadata_collection *instances) {
 	}
 }
 
-void __instance_metadata_destroy (struct instance_metadata *target) {
+void __instance_metadata_destroy (
+		struct instance_metadata_collection *instances,
+		struct instance_metadata *target
+) {
 	instance_free_thread(target->thread_data);
 	senders_clear(&target->senders);
+
+	if (instances->signal_functions != NULL && target->signal_handler != NULL) {
+		instances->signal_functions->remove_handler(target->signal_handler);
+	}
+
 	free(target->dynamic_data);
 	free(target);
 }
 
-int __instance_metadata_new (struct instance_metadata **target, struct instance_dynamic_data *data) {
+int __instance_metadata_new (
+		struct instance_metadata_collection *instances,
+		struct instance_metadata **target,
+		struct instance_dynamic_data *data
+) {
 	int ret = 0;
 
 	struct instance_metadata *meta = malloc(sizeof(*meta));
@@ -92,6 +109,10 @@ int __instance_metadata_new (struct instance_metadata **target, struct instance_
 	meta->dynamic_data = data;
 	senders_init(&meta->senders);
 
+	if (instances->signal_functions != NULL && data->signal_handler != NULL) {
+		meta->signal_handler = instances->signal_functions->push_handler(data->signal_handler, meta);
+	}
+
 	*target = meta;
 
 	out:
@@ -106,7 +127,7 @@ struct instance_metadata *__instance_save (
 	VL_DEBUG_MSG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct instance_metadata *target;
-	if (__instance_metadata_new (&target, module) != 0) {
+	if (__instance_metadata_new (instances, &target, module) != 0) {
 		VL_MSG_ERR("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
@@ -126,6 +147,7 @@ struct instance_metadata *__instance_load_module_and_save (
 		const char **library_paths
 ) {
 	struct instance_metadata *ret = NULL;
+	char *module_name = NULL;
 
 	RRR_INSTANCE_LOOP(instance, instances) {
 		struct instance_dynamic_data *module = instance->dynamic_data;
@@ -136,7 +158,6 @@ struct instance_metadata *__instance_load_module_and_save (
 		}
 	}
 
-	char *module_name = NULL;
 	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
 		VL_MSG_ERR("Could not find module= setting for instance %s\n", instance_config->name);
 		ret = NULL;
@@ -196,6 +217,15 @@ int instance_load_and_save (
 		return 1;
 	}
 
+	if ((module->dynamic_data->type == VL_MODULE_TYPE_DEADEND  || module->dynamic_data->type == VL_MODULE_TYPE_NETWORK) && (
+			module->dynamic_data->operations.poll != NULL ||
+			module->dynamic_data->operations.poll_delete != NULL ||
+			module->dynamic_data->operations.poll_delete_ip != NULL
+	)) {
+		VL_BUG("Poll functions specified for module %s which is of deadend or network type\n",
+				module->dynamic_data->instance_name);
+	}
+
 	return 0;
 }
 
@@ -245,8 +275,16 @@ int instance_add_senders (
 			&__add_sender_callback, &sender_data
 	);
 
-	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR) {
+	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR ||
+		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE ||
+		instance->dynamic_data->type == VL_MODULE_TYPE_DEADEND
+	) {
 		if (senders_check_empty(&instance->senders)) {
+			if (instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE) {
+				VL_DEBUG_MSG_1("Module is flexible without senders specified\n");
+				ret = 0;
+				goto out;
+			}
 			VL_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
 					instance->dynamic_data->module_name, instance->dynamic_data->instance_name);
 			ret = 1;
@@ -261,6 +299,13 @@ int instance_add_senders (
 					sender->dynamic_data->module_name
 			);
 
+			if (sender->dynamic_data->type == VL_MODULE_TYPE_DEADEND) {
+				VL_MSG_ERR("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
+						instance->dynamic_data->instance_name, sender->dynamic_data->instance_name);
+				ret = 1;
+				goto out;
+			}
+
 			if (sender == instance) {
 				VL_MSG_ERR("Instance %s set with itself as sender\n",
 						instance->dynamic_data->instance_name);
@@ -269,7 +314,9 @@ int instance_add_senders (
 			}
 		}
 	}
-	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE) {
+	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE ||
+			instance->dynamic_data->type == VL_MODULE_TYPE_NETWORK
+	) {
 		if (!senders_check_empty(&instance->senders)) {
 			VL_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
 					instance->dynamic_data->instance_name, instance->dynamic_data->module_name);
@@ -297,7 +344,7 @@ void instance_metadata_collection_destroy (struct instance_metadata_collection *
 	while (meta != NULL) {
 		struct instance_metadata *next = meta->next;
 
-		__instance_metadata_destroy(meta);
+		__instance_metadata_destroy(target, meta);
 
 		meta = next;
 	}
@@ -305,7 +352,7 @@ void instance_metadata_collection_destroy (struct instance_metadata_collection *
 	free(target);
 }
 
-int instance_metadata_collection_new (struct instance_metadata_collection **target) {
+int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions) {
 	int ret = 0;
 
 	*target = malloc(sizeof(**target));
@@ -317,12 +364,18 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 		goto out;
 	}
 
+	(*target)->signal_functions = signal_functions;
+
 	out:
 	return ret;
 }
 
 void instance_free_thread(struct instance_thread_data *data) {
 	if (data == NULL) {
+		return;
+	}
+
+	if (data->used_by_ghost) {
 		return;
 	}
 
@@ -344,19 +397,39 @@ struct instance_thread_data *instance_init_thread(struct instance_thread_init_da
 	return data;
 }
 
-int instance_start_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
+int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
 	struct instance_dynamic_data *module = data->init_data.module;
 
-	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	VL_DEBUG_MSG_1 ("Preloading thread %s\n", module->instance_name);
 	if (data->thread != NULL) {
 		VL_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
 		exit(EXIT_FAILURE);
 	}
-	data->thread = thread_preload_and_register (collection, module->operations.thread_entry, data, module->instance_name);
+	data->thread = thread_preload_and_register (
+			collection,
+			module->operations.thread_entry,
+			module->operations.preload,
+			module->operations.poststop,
+			module->operations.cancel_function,
+			module->start_priority,
+			data, module->instance_name
+	);
 
 	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
+		VL_MSG_ERR ("Error while preloading thread for instance %s\n", module->instance_name);
 		free(data);
+		return 1;
+	}
+
+	return 0;
+}
+
+int instance_start_thread (struct instance_thread_data *data) {
+	struct instance_dynamic_data *module = data->init_data.module;
+
+	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
+	if (thread_start(data->thread) != 0) {
+		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
 		return 1;
 	}
 
@@ -368,19 +441,25 @@ int instance_process_from_config(struct instance_metadata_collection *instances,
 	for (int i = 0; i < config->module_count; i++) {
 		ret = instance_load_and_save(instances, config->configs[i], library_paths);
 		if (ret != 0) {
-			VL_MSG_ERR("Loading of instance failed for %s\n",
+			VL_MSG_ERR("Loading of instance failed for %s. Library paths used:\n",
 					config->configs[i]->name);
-			break;
+			for (int j = 0; *library_paths[j] != '\0'; j++) {
+				VL_MSG_ERR("-> %s\n", library_paths[j]);
+			}
+			goto out;
 		}
 	}
+
 	RRR_INSTANCE_LOOP(instance, instances)
 	{
 		ret = instance_add_senders(instances, instance);
 		if (ret != 0) {
 			VL_MSG_ERR("Adding senders failed for %s\n",
 					instance->dynamic_data->instance_name);
-			break;
+			goto out;
 		}
 	}
+
+	out:
 	return ret;
 }

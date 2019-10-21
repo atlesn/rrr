@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
@@ -19,10 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_MAIN_H
+#define RRR_MAIN_H
+
+#include "lib/cmdlineparser/cmdline.h"
+
 struct vl_thread_collection;
 struct instance_metadata_collection;
 struct rrr_config;
-struct cmd_data;
 
 int main_start_threads (
 		struct vl_thread_collection **thread_collection,
@@ -30,5 +34,8 @@ int main_start_threads (
 		struct rrr_config *global_config,
 		struct cmd_data *cmd
 );
+
 void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances);
-int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[]);
+int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
+
+#endif /* RRR_MAIN_H */

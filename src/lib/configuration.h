@@ -1,5 +1,4 @@
 /*
-#include "instance_config.h"
 
 Read Route Record
 

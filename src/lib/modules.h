@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
@@ -23,9 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_MODULES_H
 
 #define VL_MODULE_PRIVATE_MEMORY_SIZE 8196
+#define VL_MODULE_PRELOAD_MEMORY_SIZE 64
 
 #define VL_MODULE_TYPE_SOURCE 1
 #define VL_MODULE_TYPE_PROCESSOR 3
+#define VL_MODULE_TYPE_FLEXIBLE 4
+#define VL_MODULE_TYPE_DEADEND 5
+#define VL_MODULE_TYPE_NETWORK 6
 
 /*#define VL_POLL_RESULT_ERR -1
 #define VL_POLL_RESULT_OK 1
@@ -42,6 +46,7 @@ struct vl_thread_start_data;
 struct rrr_instance_config;
 struct vl_message;
 struct ip_buffer_entry;
+struct vl_thread;
 
 struct module_load_data {
 	void *dl_ptr;
@@ -67,7 +72,14 @@ struct module_load_data {
 
 // Try not to put functions with equal arguments next to each other
 struct module_operations {
-	void *(*thread_entry)(struct vl_thread_start_data *);
+	// Preload function - Run before thread is started in main thread context
+	int (*preload)(struct vl_thread *);
+
+	// Main function with a loop to run the thread
+	void *(*thread_entry)(struct vl_thread *);
+
+	// Post stop function - Run after thread has finished from main thread context
+	void (*poststop)(const struct vl_thread *);
 
 	// For modules which returns vl_message struct from buffer
 	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
@@ -82,6 +94,9 @@ struct module_operations {
 
 	// Inject any packet into buffer manually (usually for testing)
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+
+	// Custom cancellation method (if we are hung and main wants to cancel us)
+	int (*cancel_function)(struct vl_thread *);
 };
 
 void module_unload (void *dl_ptr, void (*unload)(void));

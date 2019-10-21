@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
 
@@ -33,7 +33,9 @@ int module_crypt_data_init(struct module_crypt_data *crypt_data, const char *fil
 void module_crypt_data_cleanup(void *arg);
 int module_encrypt_message (
 		struct module_crypt_data *crypt_data,
-		char *buf, unsigned int buf_length, unsigned int buf_size
+		char *buf,
+		unsigned int *buf_length,
+		unsigned int buf_size
 );
 int module_decrypt_message (
 		struct module_crypt_data *crypt_data,

@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
 
@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "crypt.h"
 #include "../global.h"
+#include "rrr_endian.h"
 
 static int is_locked = 0;
 static pthread_mutex_t openssl_lock = PTHREAD_MUTEX_INITIALIZER;

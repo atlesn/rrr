@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../test.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
+#include "../../lib/messages.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;
@@ -52,25 +53,27 @@ void data_cleanup(void *_data) {
 	data->dummy = 0;
 }
 
-static void *thread_entry_test_module (struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_test_module (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
-	struct vl_message *array_message = NULL;
-
-	thread_data->thread = start_data->thread;
+	struct vl_message *array_message_perl5 = NULL;
+	struct vl_message *array_message_python3 = NULL;
+	struct vl_message *array_message_mqtt_raw = NULL;
 
 	data_init(data);
 
 	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 /*	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -81,10 +84,17 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
-			&array_message,
+			&array_message_perl5,
+			&array_message_python3,
+			&array_message_mqtt_raw,
 			thread_data->init_data.module->all_instances,
-			"instance_udpreader","instance_buffer");
-	TEST_MSG("Result from array test: %i %p\n", ret, array_message);
+			"instance_udpreader",
+			"instance_socket",
+			"instance_buffer_from_perl5",
+			"instance_buffer_from_python3",
+			"instance_buffer_from_mqtt_raw"
+	);
+	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
 
 	update_watchdog_time(thread_data->thread);
 
@@ -92,11 +102,12 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 		goto configtest_done;
 	}
 
-	/* Test which sets up the MySQL database and then listens on a
-	 * buffer for ACK message */
+	/* Test which sets up the MySQL database */
 	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
-			"instance_dummy_input", "instance_buffer_msg", "instance_mysql",
-			array_message
+			"instance_dummy_input",
+			"instance_buffer_msg",
+			"instance_mysql",
+			array_message_perl5
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);
 
@@ -110,11 +121,16 @@ static void *thread_entry_test_module (struct vl_thread_start_data *start_data) 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
+	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_test_module,
+		NULL,
+		NULL,
 		NULL,
 		NULL,
 		NULL,

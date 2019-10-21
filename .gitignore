@@ -1,10 +1,14 @@
 /src/tests/main
+/src/tests/isolated_python
 /src/modules/.libs
 /src/.libs
 /src/lib/.libs
 /src/modules/common/.dirstamp
 /src/rrr
+/src/rrr_post
+/src/rrr_http_client
 /build_timestamp.h
+/build_directory.h
 
 # debian
 /debian/rrr/
@@ -41,6 +45,20 @@ Makefile
 src/vlogger
 *.lai
 .dirstamp
+
+# perl
+blib
+Makefile.PL
+MYMETA.json
+MYMETA.yml
+pm_to_blib
+src/lib/perl5_xsi.c
+
+# python
+/src/python/__pycache__/
+/src/tests/__pycache__/
+/src/__pycache__/
+/__pycache__/
 
 # eclipse
 /Debug

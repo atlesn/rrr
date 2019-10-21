@@ -26,14 +26,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "settings.h"
 #include "instance_config.h"
+#include "linked_list.h"
+#include "map.h"
+#include "array.h"
 
-void rrr_config_destroy_instance_config(struct rrr_instance_config *config) {
+void rrr_instance_config_destroy(struct rrr_instance_config *config) {
 	rrr_settings_destroy(config->settings);
 	free(config->name);
 	free(config);
 }
 
-struct rrr_instance_config *rrr_config_new_instance_config (const char *name_begin, const int name_length, const int max_settings) {
+struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, const int name_length, const int max_settings) {
 	struct rrr_instance_config *ret = NULL;
 
 	char *name = malloc(name_length + 1);
@@ -112,4 +115,104 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 
 	out:
 	return ret;
+}
+
+int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *config) {
+	int ret = rrr_settings_check_all_used (config->settings);
+
+	if (ret != 0) {
+		VL_MSG_ERR("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
+				config->name);
+	}
+
+	return ret;
+}
+
+int rrr_instance_config_parse_array_definition_from_config_silent_fail (
+		struct rrr_array *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+	struct rrr_array_parse_single_definition_callback_data callback_data = {
+			target, 0
+	};
+
+	memset (target, '\0', sizeof(*target));
+
+	if (rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			cmd_key,
+			rrr_array_parse_single_definition_callback,
+			&callback_data
+	) != 0) {
+		ret = 1;
+		// Don't goto, we might want to print the error message below
+	}
+
+	if (callback_data.parse_ret != 0 || rrr_array_validate_definition(target) != 0) {
+		VL_MSG_ERR("Array definition in setting '%s' of '%s' was invalid\n",
+				cmd_key, config->name);
+		ret = 1;
+		goto out_destroy;
+	}
+
+	goto out;
+	out_destroy:
+		rrr_array_clear(target);
+	out:
+		return ret;
+}
+
+struct parse_associative_list_to_map_callback_data {
+	struct rrr_map *target;
+	const char *delimeter;
+};
+
+static int __parse_associative_list_to_map_callback (
+		const char *value,
+		void *arg
+) {
+	struct parse_associative_list_to_map_callback_data *data = arg;
+	return rrr_map_parse_pair(value, data->target, data->delimeter);
+}
+
+int rrr_instance_config_parse_comma_separated_associative_to_map (
+		struct rrr_map *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key,
+		const char *delimeter
+) {
+	int ret = 0;
+
+	struct parse_associative_list_to_map_callback_data callback_data = {
+			target, delimeter
+	};
+
+	return rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			cmd_key,
+			__parse_associative_list_to_map_callback,
+			&callback_data
+	);
+}
+
+int rrr_instance_config_parse_comma_separated_to_map (
+		struct rrr_map *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+	struct parse_associative_list_to_map_callback_data callback_data = {
+			target, NULL
+	};
+
+	return rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			cmd_key,
+			__parse_associative_list_to_map_callback,
+			&callback_data
+	);
 }

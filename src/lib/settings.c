@@ -19,12 +19,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "settings.h"
-#include "../global.h"
-
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "rrr_endian.h"
+#include "rrr_socket.h"
+#include "settings.h"
+#include "../global.h"
+
+struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
+	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
+	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
+	ret->msg_size = sizeof(*setting);
+	ret->msg_value = 0;
+	return ret;
+}
 
 void rrr_settings_list_destroy (struct rrr_settings_list *list) {
 	if (list->data != NULL) {
@@ -119,6 +129,7 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_sett
 		struct rrr_setting *test = &source->settings[i];
 
 		if (strcmp(test->name, name) == 0) {
+			test->was_used = 1;
 			return test;
 		}
 	}
@@ -126,8 +137,17 @@ struct rrr_setting *__rrr_settings_find_setting_nolock (struct rrr_instance_sett
 	return NULL;
 }
 
-struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name) {
+struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings *target, const char *name, int return_existing) {
 	struct rrr_setting *ret = NULL;
+
+	if ((ret = __rrr_settings_find_setting_nolock(target, name)) != NULL) {
+		if (return_existing) {
+			return ret;
+		}
+
+		VL_MSG_ERR("Settings name %s defined twice\n", name);
+		return NULL;
+	}
 
 	if (target->settings_count > target->settings_max) {
 		VL_MSG_ERR("BUG: setting_count was > settings_max");
@@ -137,11 +157,6 @@ struct rrr_setting *__rrr_settings_reserve_nolock (struct rrr_instance_settings 
 	if (target->settings_count == target->settings_max) {
 		VL_MSG_ERR("Could not reserve setting because the maximum number of settings (%d) was reached",
 				target->settings_max);
-		return NULL;
-	}
-
-	if (__rrr_settings_find_setting_nolock(target, name) != NULL) {
-		VL_MSG_ERR("Settings name %s defined twice\n", name);
 		return NULL;
 	}
 
@@ -164,7 +179,14 @@ int __rrr_settings_set_setting_name(struct rrr_setting *setting, const char *nam
 	return 0;
 }
 
-int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *name, const void *old_data, const int size, rrr_setting_type type) {
+int __rrr_settings_add_raw (
+		struct rrr_instance_settings *target,
+		const char *name,
+		const void *old_data,
+		const int size,
+		rrr_setting_type type,
+		int replace_existing
+) {
 	int ret = 0;
 
 	void *new_data = malloc(size);
@@ -179,12 +201,14 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 
 	__rrr_settings_lock(target);
 
-	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target, name);
+	struct rrr_setting *setting = __rrr_settings_reserve_nolock(target, name, replace_existing);
 	if (setting == NULL) {
 		VL_MSG_ERR("Could not create setting struct for %s\n", name);
 		ret = 1;
 		goto out_unlock;
 	}
+
+	memset (setting, '\0', sizeof(*setting));
 
 	if (__rrr_settings_set_setting_name(setting, name) != 0) {
 		goto out_unlock;
@@ -193,6 +217,7 @@ int __rrr_settings_add_raw (struct rrr_instance_settings *target, const char *na
 	setting->data = new_data;
 	setting->data_size = size;
 	setting->type = type;
+	setting->was_used = 0;
 
 	out_unlock:
 	if (ret != 0) {
@@ -257,6 +282,21 @@ int __rrr_settings_get_string_noconvert (char **target, struct rrr_instance_sett
 	return ret;
 }
 
+int rrr_settings_exists (struct rrr_instance_settings *source, const char *name) {
+	int ret = 0;
+
+	__rrr_settings_lock(source);
+
+	if (__rrr_settings_find_setting_nolock(source, name) != NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	__rrr_settings_unlock(source);
+	return ret;
+}
+
 int rrr_settings_get_string_noconvert (char **target, struct rrr_instance_settings *source, const char *name) {
 	return __rrr_settings_get_string_noconvert(target, source, name, 0);
 }
@@ -296,6 +336,7 @@ int __rrr_settings_traverse_split_commas (
 		if (ret != 0) {
 			break;
 		}
+		*comma_pos = ',';
 
 		current_pos = comma_pos + 1;
 	}
@@ -322,8 +363,13 @@ int rrr_settings_traverse_split_commas_silent_fail (
 	return __rrr_settings_traverse_split_commas(source, name, callback, arg, 1);
 }
 
-int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, struct rrr_instance_settings *source, const char *name) {
+int rrr_settings_split_commas_to_array (
+		struct rrr_settings_list **target_ptr,
+		struct rrr_instance_settings *source,
+		const char *name
+) {
 	int ret = 0;
+	char *value = NULL;
 
 	*target_ptr = NULL;
 
@@ -336,7 +382,6 @@ int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, s
 
 	memset(target, '\0', sizeof(*target));
 
-	char *value = NULL;
 	if (rrr_settings_get_string_noconvert (&value, source, name) != 0) {
 		VL_MSG_ERR("Could not get setting %s for comma splitting and array building\n", name);
 		ret = 1;
@@ -403,21 +448,35 @@ int rrr_settings_split_commas_to_array (struct rrr_settings_list **target_ptr, s
 	return ret;
 }
 
+int rrr_settings_replace_string (struct rrr_instance_settings *target, const char *name, const char *value) {
+	const void *data = value;
+	int size = strlen(value) + 1;
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 1);
+}
+
 int rrr_settings_add_string (struct rrr_instance_settings *target, const char *name, const char *value) {
 	const void *data = value;
 	int size = strlen(value) + 1;
 
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING);
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_STRING, 0);
+}
+
+int rrr_settings_replace_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
+	const void *data = &value;
+	int size = sizeof(rrr_setting_uint);
+
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 1);
 }
 
 int rrr_settings_add_unsigned_integer (struct rrr_instance_settings *target, const char *name, rrr_setting_uint value) {
 	const void *data = &value;
 	int size = sizeof(rrr_setting_uint);
 
-	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT);
+	return __rrr_settings_add_raw(target, name, data, size, RRR_SETTINGS_TYPE_UINT, 0);
 }
 
-int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_string_nolock (char **target, struct rrr_setting *setting) {
 	int ret = 0;
 	*target = NULL;
 
@@ -448,7 +507,7 @@ int __rrr_settings_setting_to_string (char **target, struct rrr_setting *setting
 	return RRR_SETTING_ERROR;
 }
 
-int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting *setting) {
+int rrr_settings_setting_to_uint_nolock (rrr_setting_uint *target, struct rrr_setting *setting) {
 	int ret = 0;
 	char *tmp_string = NULL;
 	*target = 0;
@@ -461,7 +520,7 @@ int __rrr_settings_setting_to_uint (rrr_setting_uint *target, struct rrr_setting
 		target = setting->data;
 	}
 	else if (setting->type == RRR_SETTINGS_TYPE_STRING) {
-		ret = __rrr_settings_setting_to_string(&tmp_string, setting);
+		ret = rrr_settings_setting_to_string_nolock(&tmp_string, setting);
 
 		if (ret != 0) {
 			VL_MSG_ERR("Could not get string of '%s' while converting to unsigned integer\n", setting->name);
@@ -504,7 +563,7 @@ int rrr_settings_read_string (char **target, struct rrr_instance_settings *setti
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_setting_to_string (target, setting);
+	ret = rrr_settings_setting_to_string_nolock (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
@@ -524,7 +583,7 @@ int rrr_settings_read_unsigned_integer (rrr_setting_uint *target, struct rrr_ins
 		goto out_unlock;
 	}
 
-	ret = __rrr_settings_setting_to_uint (target, setting);
+	ret = rrr_settings_setting_to_uint_nolock (target, setting);
 
 	out_unlock:
 	__rrr_settings_unlock(settings);
@@ -561,25 +620,236 @@ int rrr_settings_check_yesno (int *result, struct rrr_instance_settings *setting
 	return ret;
 }
 
+int rrr_settings_check_all_used (struct rrr_instance_settings *settings) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		if (setting->was_used == 0) {
+			VL_MSG_ERR("Warning: Setting %s has not been used\n", setting->name);
+			ret = 1;
+		}
+	}
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
 int rrr_settings_dump (struct rrr_instance_settings *settings) {
 	int ret = 0;
+
+	__rrr_settings_lock(settings);
 
 	for (unsigned int i = 0; i < settings->settings_count; i++) {
 		struct rrr_setting *setting = &settings->settings[i];
 
 		const char *name = setting->name;
 		char *value;
-		ret = __rrr_settings_setting_to_string(&value, setting);
+		ret = rrr_settings_setting_to_string_nolock(&value, setting);
 
 		if (ret != 0) {
 			VL_MSG_ERR("Warning: Error in settings dump function\n");
 			goto next;
 		}
 
-		printf("%s=%s\n", name, value);
+		VL_DEBUG_MSG("%s=%s\n", name, value);
 
 		next:
 		RRR_FREE_IF_NOT_NULL(value);
+	}
+
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+int rrr_settings_iterate_nolock (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+) {
+	int ret = 0;
+
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+
+		ret = callback(setting, callback_args);
+
+		if (ret != 0) {
+			break;
+		}
+	}
+
+	return ret;
+}
+
+int rrr_settings_iterate (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting *settings, void *callback_args),
+		void *callback_args
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+	ret = rrr_settings_iterate_nolock(settings, callback, callback_args);
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+struct rrr_settings_update_used_callback_data {
+	const char *name;
+	int was_used;
+	int did_update;
+};
+
+int __rrr_settings_update_used_callback (struct rrr_setting *settings, void *callback_args) {
+	struct rrr_settings_update_used_callback_data *data = callback_args;
+
+	if (strcmp (settings->name, data->name) == 0) {
+		if (settings->was_used == 1 && data->was_used == 0) {
+			VL_MSG_ERR("Warning: Setting %s was marked as used, but python3 config function changed it to not used\n", settings->name);
+		}
+		settings->was_used = data->was_used;
+		data->did_update = 1;
+	}
+
+	return 0;
+}
+
+// TODO : Support updating the actual value
+void rrr_settings_update_used (
+		struct rrr_instance_settings *settings,
+		const char *name,
+		int was_used,
+		int (*iterator)(
+				struct rrr_instance_settings *settings,
+				int (*callback)(struct rrr_setting *settings, void *callback_args),
+				void *callback_args
+		)
+) {
+	struct rrr_settings_update_used_callback_data callback_data = {
+			name, was_used, 0
+	};
+
+	iterator(settings, __rrr_settings_update_used_callback, &callback_data);
+
+	if (callback_data.did_update != 1) {
+		VL_MSG_ERR("Warning: Setting %s received from python3 config function was not originally set in configuration, discarding it.\n", name);
+	}
+}
+
+int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *source) {
+	int ret = 0;
+	struct rrr_setting_packed *result = NULL;
+
+	*target = NULL;
+
+	if (source->data_size > RRR_SETTINGS_MAX_DATA_SIZE) {
+		VL_MSG_ERR("Cannot pack setting %s with data size %u, size exceeds limit\n", source->name, source->data_size);
+		ret = 1;
+		goto out;
+	}
+
+	result = malloc(sizeof(*result));
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in  __rrr_setting_pack\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(result, '\0', sizeof(*result));
+
+	result->type = source->type;
+	result->was_used = source->was_used;
+	result->data_size = source->data_size;
+	memcpy(result->name, source->name, sizeof(result->name));
+	memcpy(result->data, source->data, source->data_size);
+
+	*target = result;
+	result = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(result);
+
+	return ret;
+}
+
+int rrr_settings_iterate_packed (
+		struct rrr_instance_settings *settings,
+		int (*callback)(struct rrr_setting_packed *setting_packed, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	__rrr_settings_lock(settings);
+
+	for (unsigned int i = 0; i < settings->settings_count; i++) {
+		struct rrr_setting *setting = &settings->settings[i];
+		struct rrr_setting_packed *setting_packed = NULL;
+
+		if (__rrr_setting_pack(&setting_packed, setting) != 0) {
+			VL_MSG_ERR("Could not pack setting in rrr_settings_iterate_packed\n");
+			ret = 1;
+			goto out;
+		}
+
+		ret = callback(setting_packed, callback_arg);
+
+		free(setting_packed);
+
+		if (ret != 0) {
+			break;
+		}
+	}
+
+	out:
+	__rrr_settings_unlock(settings);
+
+	return ret;
+}
+
+void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed) {
+	setting_packed->type = be32toh(setting_packed->type);
+	setting_packed->was_used = be32toh(setting_packed->was_used);
+	setting_packed->data_size = be32toh(setting_packed->data_size);
+}
+
+void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message) {
+	message->type = htobe32(message->type);
+	message->was_used = htobe32(message->was_used);
+	message->data_size = htobe32(message->data_size);
+}
+
+
+int rrr_settings_packed_validate (const struct rrr_setting_packed *setting) {
+	int ret = 0;
+
+	const char *end = setting->name + sizeof(setting->name) - 1;
+	int null_ok = 0;
+	for (const char *pos = setting->name; pos != end; pos++) {
+		if (*pos == '\0') {
+			null_ok = 1;
+		}
+	}
+
+	if (setting->msg_size != sizeof(*setting)) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid header size field (%u)\n", setting->msg_size);
+		ret = 1;
+	}
+	if (null_ok != 1) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate without terminating null-character in its name\n");
+		ret = 1;
+	}
+	if (setting->data_size > sizeof(setting->data)) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid data size field (%u)\n", setting->data_size);
+		ret = 1;
+	}
+	if (setting->type > RRR_SETTINGS_TYPE_MAX) {
+		VL_MSG_ERR("Received a setting in rrr_settings_packed_validate with invalid type field (%u)\n", setting->type);
+		ret = 1;
 	}
 
 	return ret;

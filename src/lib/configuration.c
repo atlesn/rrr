@@ -29,8 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "instance_config.h"
 
-#define RRR_CONFIGFILE_DEBUG
-
 struct parse_pos {
 	const char *data;
 	int pos;
@@ -375,7 +373,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 		goto out;
 	}
 
-	struct rrr_instance_config *instance_config = rrr_config_new_instance_config(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
+	struct rrr_instance_config *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
 	if (instance_config == NULL) {
 		VL_MSG_ERR("Instance config creation result was NULL\n");
 		ret = 1;
@@ -397,10 +395,10 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 		*did_parse = 0;
 	}
 
-#ifdef RRR_CONFIGFILE_DEBUG
-	printf("\nDumping settings for instance %s:\n", instance_config->name);
-	rrr_settings_dump(instance_config->settings);
-#endif
+	if (VL_DEBUGLEVEL_1) {
+		VL_DEBUG_MSG("\nDumping settings for instance %s:\n", instance_config->name);
+		rrr_settings_dump(instance_config->settings);
+	}
 
 	if (ret == 0) {
 		*did_parse = 1;
@@ -414,7 +412,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 	}
 
 	if (ret != 0) {
-		rrr_config_destroy_instance_config(instance_config);
+		rrr_instance_config_destroy(instance_config);
 	}
 
 	out:
@@ -497,7 +495,7 @@ struct rrr_instance_config *rrr_config_find_instance (struct rrr_config *source,
 
 void rrr_config_destroy (struct rrr_config *target) {
 	for (int i = 0; i < target->module_count; i++) {
-		rrr_config_destroy_instance_config(target->configs[i]);
+		rrr_instance_config_destroy(target->configs[i]);
 	}
 	free(target->configs);
 	free(target);

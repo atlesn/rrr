@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
 
@@ -308,7 +308,7 @@ int convert_float(const char *value, float *result) {
 	return 0;
 }
 
-int convert_integer_10(const char *value, int *result) {
+int averager_convert_integer_10(const char *value, int *result) {
 	char *err;
 	*result = strtol(value, &err, 10);
 
@@ -339,13 +339,13 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 		}
 	}
 	if (vm_channel != NULL) {
-		if (convert_integer_10(vm_channel, &channel) != 0) {
+		if (averager_convert_integer_10(vm_channel, &channel) != 0) {
 			VL_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
 			ret = 1;
 			goto out;
 		}
 		if (channel != 1 && channel != 2) {
-			VL_MSG_ERR ("vm_channel must be 1 or 2");
+			VL_MSG_ERR ("vm_channel must be 1 or 2\n");
 			ret = 1;
 			goto out;
 		}
@@ -366,11 +366,11 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	return ret;
 }
 
-static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_voltmonitor (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
-	thread_data->thread = start_data->thread;
+	thread_data->thread = thread;
 
 	if (data_init(data) != 0) {
 		VL_MSG_ERR("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -381,15 +381,17 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("voltmonitor thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		pthread_exit(0);
 	}
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	usb_init();
 
@@ -402,9 +404,6 @@ static void *thread_entry_voltmonitor(struct vl_thread_start_data *start_data) {
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
 			VL_MSG_ERR ("voltmonitor: Voltage reading failed\n");
-			struct vl_message *reading = message_new_info(time, "Voltmonitor: problems with USB-device");
-			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
-
 			usleep (1000000); // 1000 ms
 			continue;
 		}
@@ -440,12 +439,15 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_voltmonitor,
+		NULL,
 		poll,
 		NULL,
 		poll_delete,
 		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

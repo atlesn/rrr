@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -34,30 +35,99 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../global.h"
 
-int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("Raw: Result from buffer: poll flags %u %s measurement %" PRIu64 " size %lu\n",
-			poll_data->flags, reading->data, reading->data_numeric, size);
+struct raw_data {
+	int message_count;
+	int print_data;
+};
 
-	free(data);
+int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = poll_data->private_data;
+	struct raw_data *raw_data = thread_data->private_data;
+	struct vl_message *reading = NULL;
+
+	if (poll_data->flags & RRR_POLL_POLL_DELETE_IP) {
+		struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+		reading = entry->message;
+		entry->message = NULL;
+		ip_buffer_entry_destroy(entry);
+	}
+	else {
+		reading = (struct vl_message *) data;
+	}
+
+	VL_DEBUG_MSG_3 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
+
+	if (raw_data->print_data != 0) {
+		ssize_t print_length = MSG_DATA_LENGTH(reading);
+		if (print_length > 100) {
+			print_length = 100;
+		}
+		char buf[print_length + 1];
+		memcpy(buf, MSG_DATA_PTR(reading), print_length);
+		buf[print_length] = '\0';
+
+		VL_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
+				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);
+	}
+
+	raw_data->message_count++;
+
+	free(reading);
 	return 0;
 }
 
-static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+void data_init(struct raw_data *data) {
+	memset (data, '\0', sizeof(*data));
+}
+
+int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+	int yesno = 0;
+
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "raw_print_data")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0; // Default to no
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing raw_print_data setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->print_data = yesno;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
+}
+
+static void *thread_entry_raw (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
+	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 
-	thread_data->thread = start_data->thread;
+	data_init(raw_data);
 
 	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+
+	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Error while parsing configuration for raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+	}
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	if (poll_add_from_thread_senders_and_count(
 			&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_POLL_DELETE_IP
@@ -68,10 +138,22 @@ static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
 
 	VL_DEBUG_MSG_1 ("Raw started thread %p\n", thread_data);
 
+	uint64_t timer_start = time_get_64();
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
+
 		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
+		}
+
+		uint64_t timer_now = time_get_64();
+		if (timer_now - timer_start > 1000000) {
+			timer_start = timer_now;
+
+			VL_DEBUG_MSG_1("Raw instance %s messages per second: %i\n",
+					INSTANCE_D_NAME(thread_data), raw_data->message_count);
+
+			raw_data->message_count = 0;
 		}
 	}
 
@@ -92,12 +174,15 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_raw,
 		NULL,
 		NULL,
 		NULL,
 		NULL,
+		NULL,
 		test_config,
+		NULL,
 		NULL
 };
 

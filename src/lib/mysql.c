@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <mysql/mysql.h>
 
+#include "../global.h"
 #include "rrr_mysql.h"
 
 static pthread_mutex_t mysql_global_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -40,7 +41,7 @@ void rrr_mysql_library_end(void) {
 	pthread_mutex_lock(&mysql_global_lock);
 	mysql_users--;
 	if (mysql_users == 0) {
-		rrr_mysql_library_end();
+		mysql_library_end();
 	}
 	pthread_mutex_unlock(&mysql_global_lock);
 }

@@ -1,0 +1,92 @@
+.Dd 2019-10-04
+.TH RRR 1
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.SH SYNOPSIS
+.B rrr {CONFIGURATION FILE}
+.Dl [-d|--debuglevel[=]FLAGS]
+.Dl [-D|--debuglevel_on_exit[=]FLAGS]
+.Dl [-W|--no_watchdog_timers]
+.Dl [-T|--no_thread_restart]
+.Dl [-h|--help]
+.Dl [-v|--version]
+
+.SH DESCRIPTION
+The
+.B rrr
+environment is set up with a configuration file. The file specifies any number
+of
+.B instances
+of different
+.B modules.
+The different instances either get messages from each othr or read them externally.
+Some also save messages externally or send them over the network. One instance will
+run in its own thread, and threads are restarted if they for some reson exit or become hung. 
+.PP
+A variety of network protocols are available to communicate with other software, as well
+as database modules to save data.
+.PP
+.B rrr
+may be extended with custom modules. Custom functionality may also be achieved by
+using a module which can send data to and from a python or perl program.
+.PP
+.B rrr
+will run untill terminated, and
+automatically restarts all running instances in case one instance for any
+reason stops or hangs, like due to network problems. A failing instance
+usually does not make
+.B rrr
+quit, all instances are simply restarted.
+.PP
+.SH OPTIONS
+.IP -d|--debuglevel[=]FLAGS
+.IP -D|--debuglevel_on_exit[=]FLAGS
+A debuglevel may be specified at command line making
+.B rrr
+print different debug information.
+By default, only errors are printed.
+The
+.B -D
+option makes
+.B rrr
+set a new debuglevel when the main loop exits. If none is set,
+.B -d
+is used.
+The debuglevel is calculated by adding any of the following numbers together:
+.Bl -tag -width -indent
+.It 1
+Info about loading and closing of modules and threads (low rate)
+.It 2
+Runtime information in modules, they tell what they do at (high rate)
+.It 4
+Some data debugging is printed (high rate)
+.It 8
+Debug locking, thread states and buffers (very high rate)
+.It 16
+Alive-messages from some threads to see if they freeze (very high rate)
+.It 32
+Debug hex prints (large outputs)
+.It 64
+Debug socket closing and opening (high rate at initialization)
+.El
+.IP -W|--no_watchdog_timers
+Do not monitor threads for becoming unresponsive. If not set and a thread is found to be hung, all threads are terminated and
+.IP -T|--no_thread_restart
+When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
+.B rrr
+restarts them.
+.SH SIGNALS
+.IP SIGINT|Ctrl+C
+Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.
+.IP SIGUSR1
+Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
+.IP SIGTERM
+Exit immediately.
+.SH RETURN VALUE
+.B rrr
+returns 0 on success and 1 on failure.
+.SH SEE ALSO
+.Xr rrr_post(1),
+.Xr rrr.conf(5),
+.Xr rrr_python3(5)

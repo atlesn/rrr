@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 
 #include "main.h"
+#include "lib/common.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -45,7 +46,7 @@ int main_start_threads (
 
 	int ret = 0;
 
-	// Initialzie dynamic_data thread data
+	// Initialize dynamic_data thread data
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {
 			break;
@@ -65,30 +66,41 @@ int main_start_threads (
 		}
 	}
 
-	// Start threads
+	// Create thread collection
 	if (thread_new_collection (thread_collection) != 0) {
 		VL_MSG_ERR("Could not create thread collection\n");
 		ret = 1;
 		goto out;
 	}
 
-	int threads_total = 0;
+	// Preload threads. Signals must be disabled as the modules might write to
+	// the signal handler linked list
+
+	instances->signal_functions->set_active(RRR_SIGNALS_NOT_ACTIVE);
 	RRR_INSTANCE_LOOP(instance,instances) {
 		if (instance->dynamic_data == NULL) {
 			break;
 		}
 
-		if (instance_start_thread(*thread_collection, instance->thread_data) != 0) {
-			VL_MSG_ERR("Error when starting thread for instance%s\n",
+		if (instance_preload_thread(*thread_collection, instance->thread_data) != 0) {
+			VL_BUG("Error while preloading thread for instance %s, can't proceed\n",
 					instance->dynamic_data->instance_name);
-			return EXIT_FAILURE;
+		}
+	}
+	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
+
+	int threads_total = 0;
+	RRR_INSTANCE_LOOP(instance,instances) {
+		if (instance_start_thread (instance->thread_data) != 0) {
+			VL_BUG("Error while starting thread for instance %s, can't proceed\n",
+					instance->dynamic_data->instance_name);
 		}
 
 		threads_total++;
 	}
 
 	if (threads_total == 0) {
-		VL_DEBUG_MSG_1("No instances started, exiting\n");
+		VL_MSG_ERR("No instances started, exiting\n");
 		return EXIT_FAILURE;
 	}
 
@@ -101,8 +113,16 @@ int main_start_threads (
 	return ret;
 }
 
+// The thread framework calls us back to here if a thread is marked as ghost.
+// Make sure we do not free the memory the thread uses.
+void main_ghost_handler (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
+	thread_data->used_by_ghost = 1;
+	thread->free_private_data_by_ghost = 1;
+}
+
 void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances) {
-	threads_stop_and_join(collection);
+	threads_stop_and_join(collection, main_ghost_handler);
 	instance_free_all_thread_data(instances);
 
 #ifdef VL_WITH_OPENSSL
@@ -110,13 +130,14 @@ void main_threads_stop (struct vl_thread_collection *collection, struct instance
 #endif
 }
 
-int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[]) {
-	if (cmd_parse(cmd, argc, argv, CMD_CONFIG_NOCOMMAND | CMD_CONFIG_SPLIT_COMMA) != 0) {
+int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
+	if (cmd_parse(cmd, config) != 0) {
 		VL_MSG_ERR("Error while parsing command line\n");
 		return EXIT_FAILURE;
 	}
 
 	unsigned int debuglevel = 0;
+	unsigned int debuglevel_on_exit = 0;
 	int no_watchdog_timers = 0;
 	int no_thread_restart = 0;
 
@@ -124,7 +145,7 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 	if (debuglevel_string != NULL) {
 		int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
-			debuglevel = __VL_DEBUGLEVEL_ALL;
+			debuglevel_tmp = __VL_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
 			VL_MSG_ERR(
@@ -141,25 +162,36 @@ int main_parse_cmd_arguments(struct cmd_data* cmd, int argc, const char* argv[])
 		debuglevel = debuglevel_tmp;
 	}
 
-	const char *no_watchdog_timers_string = cmd_get_value(cmd, "no_watchdog_timers", 0);
-	if (no_watchdog_timers_string != NULL) {
-		if (cmdline_check_yesno(no_watchdog_timers_string, &no_watchdog_timers) != 0) {
-			VL_MSG_ERR("Could not understand argument no_watchdog_timer=%s, please specify 'yes' or 'no'\n",
-					no_watchdog_timers_string);
+	const char *debuglevel_on_exit_string = cmd_get_value(cmd, "debuglevel_on_exit", 0);
+	if (debuglevel_on_exit_string != NULL) {
+		int debuglevel_on_exit_tmp;
+		if (strcmp(debuglevel_on_exit_string, "all") == 0) {
+			debuglevel_on_exit_tmp = __VL_DEBUGLEVEL_ALL;
+		}
+		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
+			VL_MSG_ERR(
+					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
+					debuglevel_on_exit_string);
 			return EXIT_FAILURE;
 		}
-	}
-
-	const char *no_thread_restart_string = cmd_get_value(cmd, "no_thread_restart", 0);
-	if (no_thread_restart_string != NULL) {
-		if (cmdline_check_yesno(no_thread_restart_string, &no_thread_restart) != 0) {
-			VL_MSG_ERR("Could not understand argument no_thread_restart=%s, please specify 'yes' or 'no'\n",
-					no_thread_restart_string);
+		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __VL_DEBUGLEVEL_ALL) {
+			VL_MSG_ERR(
+					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
+					__VL_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
 			return EXIT_FAILURE;
 		}
+		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
 
-	rrr_init_global_config(debuglevel, no_watchdog_timers, no_thread_restart);
+	if (cmd_exists(cmd, "no_watchdog_timers", 0)) {
+		no_watchdog_timers = 1;
+	}
+
+	if (cmd_exists(cmd, "no_thread_restart", 0)) {
+		no_thread_restart = 1;
+	}
+
+	rrr_init_global_config(debuglevel, debuglevel_on_exit, no_watchdog_timers, no_thread_restart);
 
 	return 0;
 }

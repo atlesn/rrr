@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
 
@@ -58,8 +58,8 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct buffer_data *buffer_data = thread_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("buffer: Result from buffer: %s measurement %" PRIu64 " size %lu\n",
-			message->data, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("buffer instance %s: Result from buffer: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(buffer_data->data), message->data_numeric, size);
 
 	fifo_buffer_write(&buffer_data->storage, data, size);
 
@@ -88,12 +88,10 @@ int data_init(struct buffer_data *data, struct instance_thread_data *thread_data
 	return ret;
 }
 
-static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
-	struct instance_thread_data *thread_data = start_data->private_arg;
+static void *thread_entry_buffer (struct vl_thread *thread) {
+	struct instance_thread_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
-
-	thread_data->thread = start_data->thread;
 
 	if (data_init(data, thread_data) != 0) {
 		VL_MSG_ERR("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -105,11 +103,13 @@ static void *thread_entry_buffer(struct vl_thread_start_data *start_data) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	pthread_cleanup_push(thread_set_stopping, thread);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
+	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
 	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
 		VL_MSG_ERR("buffer instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
@@ -141,13 +141,16 @@ static int test_config (struct rrr_instance_config *config) {
 }
 
 static struct module_operations module_operations = {
+		NULL,
 		thread_entry_buffer,
+		NULL,
 		NULL,
 		NULL,
 		poll_delete,
 		NULL,
 		test_config,
-		inject
+		inject,
+		NULL
 };
 
 static const char *module_name = "buffer";

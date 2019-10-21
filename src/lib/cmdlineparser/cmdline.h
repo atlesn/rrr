@@ -2,7 +2,7 @@
 
 Command Line Parser
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,57 +25,130 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "../../../config.h"
-
-#ifdef CMD_MAXIMUM_CMDLINE_ARGS
-#define CMD_ARGUMENT_MAXIMUM CMD_MAXIMUM_CMDLINE_ARGS
-#else
-#define CMD_ARGUMENT_MAXIMUM 8
-#endif
-
-#ifdef CMD_MAXIMUM_CMDLINE_ARG_SIZE
-#define CMD_ARGUMENT_SIZE CMD_MAXIMUM_CMDLINE_ARG_SIZE
-#else
-#define CMD_ARGUMENT_SIZE 256
-#endif 
+#include "../linked_list.h"
 
 typedef unsigned long int cmd_arg_count;
 typedef unsigned long int cmd_arg_size;
 typedef unsigned long int cmd_conf;
 
 #define CMD_CONFIG_DEFAULTS			0
-#define CMD_CONFIG_NOCOMMAND		(1<<0)
-#define CMD_CONFIG_SPLIT_COMMA	 	(1<<1)
+#define CMD_CONFIG_COMMAND			(1<<0)
+
+#define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
+#define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
+#define CMD_ARG_FLAG_NO_FLAG		(1<<2)
+
+struct cmd_arg_value {
+	RRR_LL_NODE(struct cmd_arg_value);
+	char *value;
+};
 
 struct cmd_arg_pair {
-	char key[CMD_ARGUMENT_SIZE];
-	char value[CMD_ARGUMENT_SIZE];
-	char sub_values[CMD_ARGUMENT_MAXIMUM][CMD_ARGUMENT_SIZE];
+	RRR_LL_NODE(struct cmd_arg_pair);
+	RRR_LL_HEAD(struct cmd_arg_value);
+	int was_used;
+	const struct cmd_arg_rule *rule;
 };
 
 struct cmd_data {
+	RRR_LL_HEAD(struct cmd_arg_pair);
 	const char *program;
 	const char *command;
-	const char *args[CMD_ARGUMENT_MAXIMUM];
-	int args_used[CMD_ARGUMENT_MAXIMUM];
-	struct cmd_arg_pair arg_pairs[CMD_ARGUMENT_MAXIMUM];
+
+	const struct cmd_arg_rule *rules;
+
+	int argc;
+	const char **argv;
 };
 
-int cmd_parse					(struct cmd_data *data, int argc, const char *argv[], cmd_conf config);
-int cmd_match					(struct cmd_data *data, const char *test);
+struct cmd_argv_copy {
+	int argc;
+	char **argv;
+};
 
-int cmd_convert_hex_byte		(const char *value, char *result);
-int cmd_convert_hex_64			(const char *value, uint64_t *result);
-int cmd_convert_uint64_10		(const char *value, uint64_t *result);
-int cmd_convert_integer_10		(const char *value, int *result);
-int cmd_convert_float			(const char *value, float *result);
+struct cmd_arg_rule {
+	int flags;
+	const char shortname;
+	const char *longname;
+	const char *legend;
+};
 
-const char *cmd_get_argument		(struct cmd_data *data, cmd_arg_count index);
-const char *cmd_get_last_argument	(struct cmd_data *data);
-const char *cmd_get_value			(struct cmd_data *data, const char *key, cmd_arg_count index);
-const char *cmd_get_subvalue		(struct cmd_data *data, const char *key, cmd_arg_count index, cmd_arg_count subindex);
-
-int cmdline_check_yesno				(const char *string, int *result);
-
-int cmd_check_all_args_used			(struct cmd_data *data);
+void cmd_destroy (
+		struct cmd_data *data
+);
+void cmd_init (
+		struct cmd_data *data,
+		const struct cmd_arg_rule *rules,
+		int argc,
+		const char *argv[]
+);
+void cmd_get_argv_copy (
+		struct cmd_argv_copy **target,
+		struct cmd_data *data
+);
+void cmd_destroy_argv_copy (
+		struct cmd_argv_copy *target
+);
+int cmd_parse (
+		struct cmd_data *data,
+		cmd_conf config
+);
+int cmd_match (
+		struct cmd_data *data,
+		const char *test
+);
+int cmd_convert_hex_byte (
+		const char *value,
+		char *result
+);
+int cmd_convert_hex_64 (
+		const char *value,
+		uint64_t *result
+);
+int cmd_convert_uint64_10 (
+		const char *value,
+		uint64_t *result
+);
+int cmd_convert_integer_10 (
+		const char *value,
+		int *result
+);
+int cmd_convert_float (
+		const char *value,
+		float *result
+);
+void cmd_print_usage (
+		struct cmd_data *data
+);
+int cmd_exists (
+		struct cmd_data *data,
+		const char *key,
+		cmd_arg_count index
+);
+int cmd_iterate_subvalues (
+		struct cmd_data *data,
+		const char *key,
+		cmd_arg_count req_index,
+		int (*callback)(const char *value, void *arg),
+		void *callback_arg
+);
+const char *cmd_get_value (
+		struct cmd_data *data,
+		const char *key,
+		cmd_arg_count index
+);
+const char *cmd_get_subvalue (
+		struct cmd_data *data,
+		const char *key,
+		cmd_arg_count index,
+		cmd_arg_count subindex
+);
+int cmdline_check_yesno	(
+		const char *string,
+		int *result
+);
+int cmd_check_all_args_used (
+		struct cmd_data *data
+);
 
 #endif

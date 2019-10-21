@@ -1,6 +1,6 @@
 /*
 
-Voltage Logger
+Read Route Record
 
 Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
@@ -22,18 +22,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "senders.h"
 #include "modules.h"
+#include "linked_list.h"
 
 #define RRR_POLL_POLL			(1<<0)
 #define RRR_POLL_POLL_DELETE	(1<<1)
 #define RRR_POLL_POLL_DELETE_IP	(1<<2)
 #define RRR_POLL_PRINT			(1<<3)
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
+#define RRR_POLL_NO_SENDERS_OK	(1<<11)
 
 #define RRR_POLL_ERR 1
 #define RRR_POLL_NOT_FOUND 2
 
 struct poll_collection_entry {
-	struct poll_collection_entry *next;
+	RRR_LL_NODE(struct poll_collection_entry);
 	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
 	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
@@ -42,11 +44,8 @@ struct poll_collection_entry {
 };
 
 struct poll_collection {
-	struct poll_collection_entry *first;
+	RRR_LL_HEAD(struct poll_collection_entry);
 };
-
-#define POLL_COLLECTION_LOOP(entry,collection) \
-		for (struct poll_collection_entry *entry = collection->first; entry != NULL; entry = entry->next)
 
 void poll_collection_clear(struct poll_collection *collection);
 void poll_collection_clear_void(void *data);

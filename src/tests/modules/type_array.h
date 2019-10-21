@@ -25,10 +25,15 @@ struct vl_message;
 struct instance_metadata_collection;
 
 int test_type_array (
-		struct vl_message **result_message,
+		struct vl_message **result_message_1,
+		struct vl_message **result_message_2,
+		struct vl_message **result_message_3,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
-		const char *output_name
+		const char *input_socket_name,
+		const char *output_name_1,
+		const char *output_name_2,
+		const char *output_name_3
 );
 
 int test_type_array_mysql_and_network (

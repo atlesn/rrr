@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -18,3 +18,13 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
+
+
+#ifndef RRR_MQTT_SESSION_RAM_H
+#define RRR_MQTT_SESSION_RAM_H
+
+struct rrr_mqtt_session_collection;
+
+int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **sessions, void *arg);
+
+#endif /* RRR_MQTT_SESSION_RAM_H */

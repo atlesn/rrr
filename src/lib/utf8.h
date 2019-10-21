@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,7 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef MODULE_THREAD_H
-#define MODULE_THREAD_H
+#ifndef RRR_UTF8_H
+#define RRR_UTF8_H
 
-#endif /* MODULE_THREAD_H */
+#include <inttypes.h>
+
+int rrr_utf8_get_character (uint32_t *result, const char **pos, const char *end);
+int rrr_utf8_validate (const char *buf, int len);
+int rrr_utf8_validate_and_iterate (
+		const char *buf,
+		int len,
+		int (*callback)(uint32_t character, void *arg),
+		void *callback_arg
+);
+
+#endif /* RRR_UTF8_H */

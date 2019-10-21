@@ -1,3 +1,73 @@
+rrr (0.14) unstable; urgency=medium
+
+  * New fixed pointer and string types for use in arrays
+  * Socket module to read data from UNIX socket
+  * New rrr_post binary used for posting to RRR UNIX socket
+  * Remove controller module
+  * Remove TAG messages
+  * New InfluxDB client which can write data + HTTP functionallity in library
+  * Fields in data arrays may have tags
+  * MQTT topics may be set in RRR messages
+  * Better syntax for command line arguments
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 02 Oct 2019 23:06:34 +0200
+
+rrr (0.13) unstable; urgency=medium
+
+  * New MQTT modules, client and server V3.1(.1) and V5
+  * Arbitary length of the main vl_message struct as opposed to fixed
+  * New socket message reading fitted to dynamic message sizes on
+    UDP from multiple clients simultaneously
+  * Removed blockdev module, does not work with arbitary length messages
+  * Internal changes to data structures in ip_buffer messages
+  * Changes in CRC32 checksumming, separate checksum for header and data
+  * Array types:
+    * Arbitary number of data types in array
+    * Changes in configuration file syntax
+    * Support for new ISTR and USTR types (numbers as text) as well
+      as separator characters
+    * Internal changes to array type with fixed endianess. Internal
+    messages between modules are always BE32
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 08 Sep 2019 00:58:56 +0200
+
+rrr (0.12) unstable; urgency=medium
+
+  * New perl5 module with source, process and config functions
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 02 Aug 2019 09:22:01 +0200
+
+rrr (0.11) unstable; urgency=medium
+
+  * Performance improvements in python and misc fixes
+    * Improved signal handling with modules being able to register signal handlers
+    * Create native C python3 module with all-internal data types, replaces python scripts
+    * Include block device logger in package
+    * Misc. smaller fixes* 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 28 Jul 2019 13:11:05 +0200
+
+rrr (0.10) unstable; urgency=medium
+
+  * Include block device logger in package
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jul 2019 12:49:40 +0200
+
+rrr (0.9) unstable; urgency=medium
+
+  * Improve python module, is now fairly usable. Must fix import paths.
+  * Threads start in a staggered matter with network processes last
+    to avoid forked processes inheriting open filehandles
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 18 Jul 2019 02:47:46 +0200
+
+rrr (0.8) unstable; urgency=medium
+
+  * Improve buffer performance
+  * Add duplicator module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 13 Jul 2019 01:24:22 +0200
+
 rrr (0.7) unstable; urgency=medium
 
   * Remove textual representation of messages sent over network
