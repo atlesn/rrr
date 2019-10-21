@@ -62,18 +62,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_SEND_BUFFER_MAX 100000 // Max unsent messages to store from senders
 #define VL_IPCLIENT_SEND_BUFFER_MIN 20000 // Max unsent messages to store from senders
 #define VL_IPCLIENT_CONNECT_TIMEOUT_MS 5000
-
+#define VL_IPCLIENT_CONCURRENT_CONNECTIONS 10
 
 struct ipclient_destination {
 	RRR_LL_NODE(struct ipclient_destination);
 	struct sockaddr *addr;
 	socklen_t addrlen;
-	uint16_t connect_handle;
+	uint32_t connect_handle;
 	uint64_t connect_time;
 };
 
 struct ipclient_destination_collection {
 	RRR_LL_HEAD(struct ipclient_destination);
+};
+
+struct connect_handle {
+	uint32_t connect_handle;
+	uint64_t start_time;
+	int is_established;
 };
 
 struct ipclient_data {
@@ -95,7 +101,8 @@ struct ipclient_data {
 #endif
 */
 	struct rrr_udpstream udpstream;
-	uint16_t connect_handle;
+	uint32_t active_connect_handle;
+	struct connect_handle connect_handles[VL_IPCLIENT_CONCURRENT_CONNECTIONS];
 
 	struct ipclient_destination_collection destinations;
 };
@@ -313,6 +320,86 @@ int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned lo
 	return ret;
 }
 
+static int connect_with_udpstream(struct ipclient_data *data) {
+	int ret = 0;
+
+	if (data->ip_default_remote == NULL) {
+		goto out;
+	}
+
+	uint64_t time_now = time_get_64();
+	int connect_max = 2;
+
+	for (int i = 0; i < VL_IPCLIENT_CONCURRENT_CONNECTIONS; i++) {
+		struct connect_handle *connect_handle = &data->connect_handles[i];
+
+		// Check for connect timeout and check if alive
+		if (connect_handle->connect_handle != 0) {
+			if ((ret = rrr_udpstream_connection_check(&data->udpstream, connect_handle->connect_handle)) != 0) {
+				if (ret == RRR_UDPSTREAM_NOT_READY) {
+					if (time_now - connect_handle->start_time > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
+						VL_MSG_ERR("CONNECT timed out for ipclient instance %s connect handle %u\n",
+								INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
+						connect_handle->connect_handle = 0;
+					}
+				}
+				else if (ret == RRR_UDPSTREAM_RESET) {
+					VL_DEBUG_MSG_2("CONNECT reset for ipclient %s connect handle %u\n",
+							INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
+					connect_handle->connect_handle = 0;
+				}
+				else {
+					VL_MSG_ERR("CONNECT error %i while checking connection for ipclient instance %s connect handle %u\n",
+							ret, INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
+					connect_handle->connect_handle = 0;
+				}
+				ret = 0;
+			}
+			else {
+				connect_handle->is_established = 1;
+			}
+
+			if (connect_handle->is_established == 0 && time_now - connect_handle->start_time > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
+				connect_handle->connect_handle = 0;
+			}
+		}
+
+		// Check for sending new CONNECT
+		if (connect_handle->connect_handle == 0 && connect_max-- > 0) {
+			connect_handle->is_established = 0;
+			connect_handle->start_time = time_now;
+			if (rrr_udpstream_connect(&connect_handle->connect_handle, &data->udpstream, data->ip_default_remote, data->ip_default_remote_port) != 0) {
+				VL_MSG_ERR("UDP-stream could not connect in ipclient instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				ret = 1;
+				goto out;
+			}
+		}
+
+		// Check for setting active connect handle
+		if (data->active_connect_handle == 0 && connect_handle->is_established != 0) {
+			data->active_connect_handle = connect_handle->connect_handle;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static void invalidate_connect_handle (struct ipclient_data *data, uint16_t connect_handle) {
+	for (int i = 0; i < VL_IPCLIENT_CONCURRENT_CONNECTIONS; i++) {
+		struct connect_handle *cur = &data->connect_handles[i];
+
+		if (cur->connect_handle == connect_handle) {
+			cur->connect_handle = 0;
+		}
+	}
+
+	if (data->active_connect_handle == connect_handle) {
+		data->active_connect_handle = 0;
+	}
+}
+
 struct receive_packets_callback_data {
 	struct ipclient_data *data;
 	int count;
@@ -356,8 +443,10 @@ int receive_packets_callback(struct rrr_udpstream_receive_data *receive_data, vo
 	return 0;
 }
 
-int receive_packets(struct ipclient_data *data, int *count) {
+int receive_packets(int *receive_count, struct ipclient_data *data) {
 	int ret = 0;
+
+	*receive_count = 0;
 
 	if ((ret = rrr_udpstream_do_read_tasks(&data->udpstream)) != 0) {
 		if (ret != RRR_SOCKET_SOFT_ERROR) {
@@ -386,7 +475,7 @@ int receive_packets(struct ipclient_data *data, int *count) {
 		goto out;
 	}
 
-	*count = callback_data.count;
+	*receive_count = callback_data.count;
 
 	out:
 	return ret;
@@ -412,7 +501,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	update_watchdog_time(thread_data->thread);
 
 	struct ipclient_destination *destination = NULL;
-	uint16_t connect_handle = 0;
+	uint32_t connect_handle = 0;
 
 	if (entry->addr_len != 0) {
 		struct ipclient_destination *destination = __ipclient_destination_find_or_create (
@@ -446,7 +535,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		}
 	}
 	else if (ipclient_data->ip_default_remote != NULL) {
-		connect_handle = ipclient_data->connect_handle;
+		connect_handle = ipclient_data->active_connect_handle;
 		if (connect_handle == 0) {
 			// Connection not ready
 			ret = FIFO_SEARCH_KEEP;
@@ -476,13 +565,13 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 			ret = FIFO_SEARCH_KEEP | FIFO_SEARCH_STOP;
 			goto out;
 		}
-		else if (ret == RRR_UDPSTREAM_FRAME_ID_MAX || ret == RRR_UDPSTREAM_UNKNOWN_CONNECT_ID) {
+		else if (ret == RRR_UDPSTREAM_IDS_EXHAUSTED || ret == RRR_UDPSTREAM_UNKNOWN_CONNECT_ID) {
 			// Stop using this stream, a new one must be created
 			if (destination != NULL) {
 				destination->connect_handle = 0;
 			}
 			else {
-				ipclient_data->connect_handle = 0;
+				invalidate_connect_handle(ipclient_data, connect_handle);
 			}
 			ret = FIFO_SEARCH_KEEP;
 			goto out;
@@ -504,22 +593,27 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	return ret;
 }
 
-int send_packets(struct ipclient_data *data) {
+int send_packets(int *send_count, struct ipclient_data *data) {
 	int ret = 0;
 
-	struct send_packet_callback_data callback_data = {
-			0
-	};
-	struct fifo_callback_args poll_data = {
-			data->thread_data, &callback_data, 0
-	};
-	ret = fifo_search(&data->send_buffer, send_packet_callback, &poll_data, 50);
+	*send_count = 0;
 
-	if (callback_data.packet_counter > 0) {
-		VL_DEBUG_MSG_2 ("ipclient queued %i packets for transmission\n", callback_data.packet_counter);
+	if (fifo_buffer_get_entry_count(&data->send_buffer) > 0) {
+		struct send_packet_callback_data callback_data = {
+				0
+		};
+		struct fifo_callback_args poll_data = {
+				data->thread_data, &callback_data, 0
+		};
+		ret = fifo_search(&data->send_buffer, send_packet_callback, &poll_data, 0);
+
+		if (callback_data.packet_counter > 0) {
+			VL_DEBUG_MSG_3 ("ipclient instance %s queued %i packets for transmission\n",
+					INSTANCE_D_NAME(data->thread_data), callback_data.packet_counter);
+		}
 	}
 
-	if ((ret = rrr_udpstream_do_send_tasks(&data->udpstream)) != 0) {
+	if ((ret = rrr_udpstream_do_send_tasks(send_count, &data->udpstream)) != 0) {
 		VL_MSG_ERR("UDP-stream send tasks failed in send_packets of ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -528,53 +622,21 @@ int send_packets(struct ipclient_data *data) {
 	return ret;
 }
 
-static int receive_data(struct ipclient_data *data) {
+static int receive_data(int *receive_count, struct ipclient_data *data) {
 	int ret = 0;
 
 //	update_watchdog_time(data->thread_data->thread);
 
 	// TODO : Handle bad errors->exit and nice errors->continue
-	int count = 0;
-	if (receive_packets(data, &count) != 0) {
+	if (receive_packets(receive_count, data) != 0) {
 		VL_MSG_ERR ("Error while receiving packets in ipclient receive_data thread\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (count > 0) {
+	if (*receive_count > 0) {
 		VL_DEBUG_MSG_2("ipclient instance %s: received %i messages\n",
-				INSTANCE_D_NAME(data->thread_data), count);
-	}
-
-	out:
-	return ret;
-}
-
-static int connect_with_udpstream(struct ipclient_data *data) {
-	int ret = 0;
-
-	rrr_udpstream_close(&data->udpstream);
-
-	rrr_udpstream_set_flags(&data->udpstream, data->listen != 0 ? RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS : 0);
-
-	if (rrr_udpstream_bind(&data->udpstream, data->src_port) != 0) {
-		VL_MSG_ERR("UDP-stream could not bind in ipclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	uint16_t connect_handle = 0;
-
-	if (data->ip_default_remote != NULL) {
-		if (rrr_udpstream_connect(&connect_handle, &data->udpstream, data->ip_default_remote, data->ip_default_remote_port) != 0) {
-			VL_MSG_ERR("UDP-stream could not connect in ipclient instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto out;
-		}
-
-		data->connect_handle = connect_handle;
+				INSTANCE_D_NAME(data->thread_data), *receive_count);
 	}
 
 	out:
@@ -629,24 +691,28 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 */
 
 	network_restart:
-	data->connect_handle = 0;
 	VL_DEBUG_MSG_2 ("ipclient restarting network\n");
 
 	// Only close here and not when shutting down the thread (might cause
 	// deadlock in rrr_socket). rrr_socket cleanup will close the socket if we exit.
 	rrr_udpstream_close(&data->udpstream);
-	if (connect_with_udpstream(data) != 0) {
-		update_watchdog_time(thread_data->thread);
-		usleep (1000000); // 1000 ms
-		goto network_restart;
+	rrr_udpstream_set_flags(&data->udpstream, data->listen != 0 ? RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS : 0);
+	if (rrr_udpstream_bind(&data->udpstream, data->src_port) != 0) {
+		VL_MSG_ERR("UDP-stream could not bind in ipclient instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out_message;
 	}
 
-	uint64_t connect_timer_start = time_get_64();
+	int consecutive_zero_recv_and_send = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
 		int err = 0;
 
+		if (connect_with_udpstream(data) != 0) {
+			usleep (1000000); // 1000 ms
+			goto network_restart;
+		}
 
 		int send_buffer_size_before = fifo_buffer_get_entry_count(&data->send_buffer);
 		if (no_polling == 0 && send_buffer_size_before < VL_IPCLIENT_SEND_BUFFER_MIN) {
@@ -661,40 +727,42 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 
 				send_buffer_size_after = fifo_buffer_get_entry_count(&data->send_buffer);
 			} while (send_buffer_size_after - send_buffer_size_before >= FIFO_MAX_READS && send_buffer_size_after < VL_IPCLIENT_SEND_BUFFER_MAX);
-			VL_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
-					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
+//			VL_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
+//					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
+		}
+
+//		VL_DEBUG_MSG_2("ipclient instance %s receive\n",
+//				INSTANCE_D_NAME(thread_data));
+		int receive_count = 0;
+		if (receive_data(&receive_count, data) != 0) {
+			usleep (10000); // 10 ms
+			goto network_restart;
+		}
+
+		int send_count = 0;
+		update_watchdog_time(thread_data->thread);
+		if (send_packets(&send_count, data) != 0) {
+			usleep (10000); // 10 ms
+			goto network_restart;
+		}
+
+		if (receive_count == 0 && send_count == 0) {
+			if (consecutive_zero_recv_and_send > 1000) {
+				VL_DEBUG_MSG_2("ipclient instance %s long sleep send buffer size %i\n",
+						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_buffer));
+				usleep (100000); // 100 ms
+			}
+			else {
+				sched_yield();
+				usleep(1000);
+				consecutive_zero_recv_and_send++;
+//				printf("ipclient instance %s yield\n", INSTANCE_D_NAME(thread_data));
+			}
 		}
 		else {
-			usleep (5000);
-		}
-
-		update_watchdog_time(thread_data->thread);
-		if (send_packets(data) != 0) {
-			usleep (10000); // 10 ms
-			goto network_restart;
-		}
-
-		if (data->ip_default_remote != NULL) {
-			if (data->connect_handle == 0) {
-				goto network_restart;
-			}
-			else if ((err = rrr_udpstream_connection_check(&data->udpstream, data->connect_handle)) != 0) {
-				if (err == RRR_UDPSTREAM_NOT_READY) {
-					if (time_get_64() - connect_timer_start > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
-						VL_MSG_ERR("CONNECT timed out for ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
-						goto network_restart;
-					}
-					err = 0;
-				}
-				else {
-					goto network_restart;
-				}
-			}
-		}
-
-		if (receive_data(data) != 0) {
-			usleep (10000); // 10 ms
-			goto network_restart;
+			consecutive_zero_recv_and_send = 0;
+			VL_DEBUG_MSG_3("ipclient instance %s receive count %i send count %i\n",
+					INSTANCE_D_NAME(thread_data), receive_count, send_count);
 		}
 
 		if (err != 0) {
