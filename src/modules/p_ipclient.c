@@ -58,11 +58,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define VL_IPCLIENT_LOCAL_PORT 5555
 //#define VL_IPCLIENT_SEND_RATE 50 // Time between sending packets, milliseconds
 //#define VL_IPCLIENT_BURST_LIMIT 50 // Number of packets to send before we switch to reading
-//#define VL_IPCLIENT_SEND_INTERVAL 1000 // Milliseconds before resending a packet
-#define VL_IPCLIENT_SEND_BUFFER_MAX 100000 // Max unsent messages to store from senders
-#define VL_IPCLIENT_SEND_BUFFER_MIN 20000 // Max unsent messages to store from senders
+#define VL_IPCLIENT_RESEND_INTERVAL_MS (RRR_UDPSTREAM_RESEND_INTERVAL_MS*2) // Milliseconds before resending a packet
+#define VL_IPCLIENT_RELEASE_QUEUE_MAX 10000 // Max unreleased messages awaiting release ACK
+#define VL_IPCLIENT_RELEASE_QUEUE_URGE_TIMEOUT_MS 50 // Time before urging for release ACK
+
+#define VL_IPCLIENT_SEND_BUFFER_ASSURED_MAX 2000 // Max unsent messages to store from senders
+#define VL_IPCLIENT_SEND_BUFFER_ASSURED_MIN 1000 // Min unsent messages to store from senders
+
+#define VL_IPCLIENT_SEND_BUFFER_UNASSURED_MAX 20000 // Max unsent messages to store from senders
+#define VL_IPCLIENT_SEND_BUFFER_UNASSURED MIN 10000 // Min unsent messages to store from senders
+
 #define VL_IPCLIENT_CONNECT_TIMEOUT_MS 5000
-#define VL_IPCLIENT_CONCURRENT_CONNECTIONS 10
+#define VL_IPCLIENT_CONCURRENT_CONNECTIONS 3
 
 struct ipclient_destination {
 	RRR_LL_NODE(struct ipclient_destination);
@@ -82,13 +89,32 @@ struct connect_handle {
 	int is_established;
 };
 
+struct ipclient_queue_entry {
+	RRR_LL_NODE(struct ipclient_queue_entry);
+	struct ip_buffer_entry *entry;
+	uint16_t stream_id;
+	uint64_t boundary_id;
+	uint64_t send_time;
+};
+
+struct ipclient_queue {
+	RRR_LL_HEAD(struct ipclient_queue_entry);
+};
+
 struct ipclient_data {
-	struct fifo_buffer send_buffer;
 	struct fifo_buffer local_output_buffer;
+	struct ipclient_queue release_queue;
+	struct ipclient_queue send_queue;
+	struct fifo_buffer send_queue_unassured;
 
 	struct instance_thread_data *thread_data;
 
 	int listen;
+	int no_assured_single_delivery;
+
+	// All messages get an ID used to assure exactly one delivery
+	uint64_t send_buffer_order;
+	uint64_t send_queue_read_position;
 
 	char *ip_default_remote;
 	char *ip_default_remote_port;
@@ -172,6 +198,133 @@ static struct ipclient_destination *__ipclient_destination_find_or_create (
 	return result;
 }
 
+static int __ipclient_queue_entry_destroy (
+		struct ipclient_queue_entry *entry
+) {
+	if (entry->entry != NULL) {
+		ip_buffer_entry_destroy(entry->entry);
+	}
+	free(entry);
+	return 0;
+}
+
+static void __ipclient_queue_remove_entry (
+		struct ipclient_queue *queue,
+		uint16_t stream_id,
+		uint64_t boundary_id
+) {
+	RRR_LL_ITERATE_BEGIN(queue, struct ipclient_queue_entry);
+		if (node->boundary_id == boundary_id && node->stream_id == stream_id) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __ipclient_queue_entry_destroy(node));
+}
+
+static struct ip_buffer_entry *__ipclient_queue_remove_entry_and_get_data (
+		struct ipclient_queue *queue,
+		uint16_t stream_id,
+		uint64_t boundary_id
+) {
+	struct ip_buffer_entry *ret = NULL;
+
+	RRR_LL_ITERATE_BEGIN(queue, struct ipclient_queue_entry);
+		if (node->boundary_id == boundary_id && node->stream_id == stream_id) {
+			ret = node->entry;
+			node->entry = NULL;
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(queue, __ipclient_queue_entry_destroy(node));
+
+	return ret;
+}
+
+static struct ipclient_queue_entry *__ipclient_queue_find_entry (
+		struct ipclient_queue *queue,
+		uint64_t boundary_id
+) {
+	if (RRR_LL_FIRST(queue) != NULL && boundary_id > RRR_LL_FIRST(queue)->boundary_id) {
+		return NULL;
+	}
+
+	RRR_LL_ITERATE_BEGIN(queue, struct ipclient_queue_entry);
+		if (node->boundary_id == boundary_id) {
+			return node;
+		}
+	RRR_LL_ITERATE_END(queue);
+
+	return NULL;
+}
+
+static void __ipclient_queue_insert_ordered (
+		struct ipclient_queue *queue,
+		struct ipclient_queue_entry *entry
+) {
+	if (RRR_LL_LAST(queue) == NULL || (RRR_LL_LAST(queue)->boundary_id < entry->boundary_id && RRR_LL_LAST(queue)->stream_id) <= entry->stream_id) {
+//		VL_DEBUG_MSG("queue append entry with ip buf entry %p boundary %" PRIu64 "\n",
+//				entry->entry, entry->boundary_id);
+		RRR_LL_APPEND(queue, entry);
+		return;
+	}
+
+	RRR_LL_ITERATE_BEGIN(queue, struct ipclient_queue_entry);
+		if (entry->boundary_id < node->boundary_id && entry->stream_id <= node->stream_id) {
+			RRR_LL_ITERATE_INSERT(queue, entry);
+//			VL_DEBUG_MSG("queue insert entry with ip buf entry %p boundary %" PRIu64 " before %" PRIu64 "\n",
+//					entry->entry, entry->boundary_id, node->boundary_id);
+			entry = NULL;
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	if (entry != NULL) {
+		RRR_LL_ITERATE_BEGIN(queue, struct ipclient_queue_entry);
+			VL_MSG_ERR("dump queue boundaries: %u - %" PRIu64 "\n", node->stream_id, node->boundary_id);
+		RRR_LL_ITERATE_END();
+		VL_BUG("Entry with boundary %" PRIu64 " was not inserted in __ipclient_queue_insert_ordered\n", entry->boundary_id);
+	}
+}
+
+static int __ipclient_queue_insert_entry_or_destroy (
+		struct ipclient_queue *queue,
+		struct ip_buffer_entry *entry,
+		uint16_t stream_id,
+		uint64_t boundary_id
+) {
+	int ret = 0;
+	struct ipclient_queue_entry *new_entry = NULL;
+
+	if (__ipclient_queue_find_entry(queue, boundary_id) != NULL) {
+		goto out;
+	}
+
+	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __ipclient_queue_insert_entry_or_free\n");
+		ret = 1;
+		goto out;
+	}
+	memset(new_entry, '\0', sizeof(*new_entry));
+
+	new_entry->stream_id = stream_id;
+	new_entry->boundary_id = boundary_id;
+	new_entry->entry = entry;
+	entry = NULL;
+
+	__ipclient_queue_insert_ordered(queue, new_entry);
+	new_entry = NULL;
+
+	out:
+	if (entry != NULL) {
+		ip_buffer_entry_destroy(entry);
+	}
+	if (new_entry != NULL) {
+		__ipclient_queue_entry_destroy(new_entry);
+	}
+
+	return ret;
+}
+
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
 	/*
@@ -179,19 +332,21 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->crypt_file);
 #endif
 */
+	RRR_LL_DESTROY(&data->release_queue, struct ipclient_queue_entry, __ipclient_queue_entry_destroy(node));
+	RRR_LL_DESTROY(&data->send_queue, struct ipclient_queue_entry, __ipclient_queue_entry_destroy(node));
 	RRR_LL_DESTROY(&data->destinations, struct ipclient_destination, __ipclient_destination_destroy(node));
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote_port);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote);
-	fifo_buffer_invalidate(&data->send_buffer);
 	fifo_buffer_invalidate(&data->local_output_buffer);
+	fifo_buffer_invalidate(&data->send_queue_unassured);
 	rrr_udpstream_clear(&data->udpstream);
 }
 
 int data_init(struct ipclient_data *data, struct instance_thread_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 	int ret = 0;
-	ret |= fifo_buffer_init_custom_free(&data->send_buffer, ip_buffer_entry_destroy_void);
 	ret |= fifo_buffer_init(&data->local_output_buffer);
+	ret |= fifo_buffer_init_custom_free(&data->send_queue_unassured, ip_buffer_entry_destroy_void);
 	if (ret != 0) {
 		data_cleanup(data);
 		goto err;
@@ -274,6 +429,16 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		ret = 0;
 	}
 
+	if ((ret = rrr_instance_config_check_yesno(&data->no_assured_single_delivery, config, "ipclient_no_assured_single_delivery")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Syntax error in ipclient_no_assured_single_delivery for instance %s, specify yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		data->no_assured_single_delivery = 0;
+		ret = 0;
+	}
+
 	rrr_setting_uint src_port;
 	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
 		data->src_port = src_port;
@@ -298,25 +463,114 @@ int ipclient_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return fifo_read_clear_forward(&ipclient_data->local_output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
-int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+static int poll_callback_final (struct ipclient_data *data, struct ip_buffer_entry *entry) {
+	if (data->no_assured_single_delivery != 0) {
+		fifo_buffer_write(&data->send_queue_unassured, (char *) entry, sizeof(*entry));
+	}
+	else {
+		if (__ipclient_queue_insert_entry_or_destroy(&data->send_queue, entry, 0, ++(data->send_buffer_order)) != 0) {
+			VL_MSG_ERR("Could not add ip buffer entry to queue in ipclient poll_callback_final\n");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int poll_callback (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct instance_thread_data *thread_data = poll_data->source;
 	struct ipclient_data *private_data = thread_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 	struct ip_buffer_entry *entry = NULL;
 
-	int ret = 0;
-
-	VL_DEBUG_MSG_3 ("ipclient: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n", message->timestamp_from, message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("ipclient instance %s: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp_from, message->data_numeric, size);
 
 	if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
 		VL_MSG_ERR("Could not create ip buffer entry in ipclient poll_callback\n");
-		ret = 1;
 		free(data);
-	}
-	else {
-		fifo_buffer_write(&private_data->send_buffer, (char*)entry, sizeof(*entry));
+		return 1;
 	}
 
+	return poll_callback_final(private_data, entry);
+}
+
+static int poll_callback_ip (struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct instance_thread_data *thread_data = poll_data->source;
+	struct ipclient_data *private_data = thread_data->private_data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+
+	VL_DEBUG_MSG_3 ("ipclient instance %s: Result from buffer ip: size %lu\n",
+			INSTANCE_D_NAME(thread_data), size);
+
+	return poll_callback_final(private_data, entry);
+}
+
+void release_queue_cleanup (struct ipclient_data *data) {
+	int lost_entries = 0;
+	uint16_t prev_ok_stream_id = 0;
+	RRR_LL_ITERATE_BEGIN(&data->release_queue, struct ipclient_queue_entry);
+		if (node->stream_id == prev_ok_stream_id) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		if (rrr_udpstream_stream_exists(&data->udpstream, node->stream_id)) {
+			prev_ok_stream_id = node->stream_id;
+			RRR_LL_ITERATE_NEXT();
+		}
+		RRR_LL_ITERATE_SET_DESTROY();
+		lost_entries++;
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->release_queue, __ipclient_queue_entry_destroy(node));
+
+	if (lost_entries > 0) {
+		VL_MSG_ERR("ipclient instance %s lost %i messages which was missing release ACK in release queue\n",
+			INSTANCE_D_NAME(data->thread_data), lost_entries);
+	}
+}
+
+int release_queue_send_urges (struct ipclient_data *data) {
+	int ret = 0;
+
+	if (RRR_LL_COUNT(&data->release_queue) > 0) {
+		uint64_t time_now = time_get_64();
+		int send_count = 0;
+		RRR_LL_ITERATE_BEGIN(&data->release_queue, struct ipclient_queue_entry);
+			int do_send = 0;
+			if (node->send_time == 0) {
+				do_send = 1;
+			}
+			else if (time_now - node->send_time > VL_IPCLIENT_RELEASE_QUEUE_URGE_TIMEOUT_MS * 1000) {
+				do_send = 1;
+			}
+			if (do_send != 0) {
+				VL_DEBUG_MSG_3("ipclient instance %s: send release ACK urge for boundary %" PRIu64 "\n",
+						INSTANCE_D_NAME(data->thread_data), node->boundary_id);
+
+				node->send_time = time_now;
+				if (rrr_udpstream_release_ack_urge (
+						&data->udpstream,
+						node->stream_id,
+						node->boundary_id,
+						&node->entry->addr,
+						node->entry->addr_len
+				) != 0) {
+					VL_MSG_ERR("Could not send release ACK urge in ipclient receive_messages\n");
+					ret = 1;
+					goto out;
+				}
+				send_count++;
+			}
+
+			if (send_count > 5) {
+				RRR_LL_ITERATE_LAST();
+			}
+		RRR_LL_ITERATE_END(&data->release_queue);
+		if (send_count > 0) {
+			VL_DEBUG_MSG_2("ipclient instance %s: sent %i release ACK urges\n",
+					INSTANCE_D_NAME(data->thread_data), send_count);
+		}
+	}
+
+	out:
 	return ret;
 }
 
@@ -329,12 +583,17 @@ static int connect_with_udpstream(struct ipclient_data *data) {
 
 	uint64_t time_now = time_get_64();
 	int connect_max = 2;
+	int active_was_found = 0;
 
 	for (int i = 0; i < VL_IPCLIENT_CONCURRENT_CONNECTIONS; i++) {
 		struct connect_handle *connect_handle = &data->connect_handles[i];
 
 		// Check for connect timeout and check if alive
 		if (connect_handle->connect_handle != 0) {
+			if (data->active_connect_handle == connect_handle->connect_handle) {
+				active_was_found = 1;
+			}
+
 			if ((ret = rrr_udpstream_connection_check(&data->udpstream, connect_handle->connect_handle)) != 0) {
 				if (ret == RRR_UDPSTREAM_NOT_READY) {
 					if (time_now - connect_handle->start_time > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
@@ -379,7 +638,12 @@ static int connect_with_udpstream(struct ipclient_data *data) {
 		// Check for setting active connect handle
 		if (data->active_connect_handle == 0 && connect_handle->is_established != 0) {
 			data->active_connect_handle = connect_handle->connect_handle;
+			active_was_found = 1;
 		}
+	}
+
+	if (active_was_found == 0) {
+		data->active_connect_handle = 0;
 	}
 
 	out:
@@ -400,55 +664,122 @@ static void invalidate_connect_handle (struct ipclient_data *data, uint16_t conn
 	}
 }
 
-struct receive_packets_callback_data {
+static int delivery_listener (uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg) {
+	struct ipclient_data *data = arg;
+
+	if ((frame_flags & RRR_UDPSTREAM_FRAME_FLAGS_DELIVERY_ACK) != 0) {
+		__ipclient_queue_remove_entry(&data->send_queue, 0, boundary_id);
+	}
+	else if ((frame_flags & RRR_UDPSTREAM_FRAME_FLAGS_RELEASE_ACK) != 0) {
+		VL_DEBUG_MSG_3("ipclient instance %s received release ACK for boundary %" PRIu64 "\n",
+				INSTANCE_D_NAME(data->thread_data), boundary_id);
+
+		struct ip_buffer_entry *entry = __ipclient_queue_remove_entry_and_get_data(&data->release_queue, stream_id, boundary_id);
+		if (entry == NULL) {
+			VL_DEBUG_MSG_2("Note: Received release ACK for unknown boundary %" PRIu64 " in ipclient instance %s\n",
+					boundary_id, INSTANCE_D_NAME(data->thread_data));
+			goto out;
+		}
+		struct vl_message *message = (struct vl_message *) entry->message;
+		fifo_buffer_write(&data->local_output_buffer, (char*) message, sizeof(*message));
+		entry->message = NULL;
+		ip_buffer_entry_destroy(entry);
+	}
+
+	out:
+	return 0;
+}
+
+struct receive_messages_callback_data {
 	struct ipclient_data *data;
 	int count;
 	struct rrr_udpstream_receive_data *receive_data;
 };
 
-int receive_messages_callback(struct vl_message *message, void *arg) {
-	struct receive_packets_callback_data *receive_packets_callback_data = arg;
-	struct ipclient_data *data = receive_packets_callback_data->data;
+static int receive_messages_callback_final(struct vl_message *message, void *arg) {
+	struct receive_messages_callback_data *callback_data = arg;
+	struct ipclient_data *data = callback_data->data;
 
-	VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " to receive buffer\n",
-			message->timestamp_from);
+	int ret = VL_IP_RECEIVE_OK;
 
-	fifo_buffer_write(&data->local_output_buffer, (char*) message, sizeof(*message));
+	if (callback_data->receive_data->boundary_id != 0) {
+		VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " boundary id %" PRIu64 " to release queue\n",
+				message->timestamp_from, callback_data->receive_data->boundary_id);
 
-	receive_packets_callback_data->count++;
+		struct ip_buffer_entry *entry = NULL;
+		if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
+			VL_MSG_ERR("Could not create ip buffer entry in ipclient receive_messages_callback_final\n");
+			ret = VL_IP_RECEIVE_ERR;
+			goto out;
+		}
+		message = NULL;
 
-	return VL_IP_RECEIVE_OK;
-}
-
-int receive_packets_callback(struct rrr_udpstream_receive_data *receive_data, void *arg) {
-	struct receive_packets_callback_data *receive_packets_callback_data = arg;
-
-	receive_packets_callback_data->receive_data = receive_data;
-
-	struct rrr_socket_common_receive_message_callback_data callback_data = {
-			receive_messages_callback, receive_packets_callback_data
-	};
-
-	if (rrr_socket_common_receive_message_raw_callback (
-			receive_data->data,
-			receive_data->data_size,
-			&callback_data
-	) != 0) {
-		VL_MSG_ERR("Error while processign message in receive_packets_callback of ipclient instance %s\n",
-				INSTANCE_D_NAME(receive_packets_callback_data->data->thread_data));
+		if (__ipclient_queue_insert_entry_or_destroy (
+				&data->release_queue,
+				entry,
+				callback_data->receive_data->stream_id,
+				callback_data->receive_data->boundary_id
+		) != 0) {
+			VL_MSG_ERR("Could not add ip buffer entry to release queue in receive_messages_callback_final\n");
+			ret = VL_IP_RECEIVE_ERR;
+			goto out;
+		}
+	}
+	else {
+		VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " to local output buffer\n",
+				message->timestamp_from);
+		fifo_buffer_write(&data->local_output_buffer, (char*) message, sizeof(*message));
+		message = NULL;
 	}
 
-	receive_packets_callback_data->receive_data = NULL;
+	callback_data->count++;
 
-	return 0;
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
 }
 
-int receive_packets(int *receive_count, struct ipclient_data *data) {
+static int receive_messages_callback(struct rrr_udpstream_receive_data *receive_data, void *arg) {
+	struct receive_messages_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	callback_data->receive_data = receive_data;
+
+	struct rrr_socket_common_receive_message_callback_data socket_callback_data = {
+			receive_messages_callback_final, callback_data
+	};
+
+	// This function will always free the data, also upon errors
+	if ((ret = rrr_socket_common_receive_message_raw_callback (
+			receive_data->data,
+			receive_data->data_size,
+			&socket_callback_data
+	)) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Invalid message received in ipclient instance %s boundary id %" PRIu64 "\n",
+					INSTANCE_D_NAME(callback_data->data->thread_data), receive_data->boundary_id);
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while processing message in receive_packets_callback of ipclient instance %s return was %i\n",
+					INSTANCE_D_NAME(callback_data->data->thread_data), ret);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	callback_data->receive_data = NULL;
+	return ret;
+}
+
+static int receive_messages(int *receive_count, struct ipclient_data *data) {
 	int ret = 0;
 
 	*receive_count = 0;
 
-	if ((ret = rrr_udpstream_do_read_tasks(&data->udpstream)) != 0) {
+	if ((ret = rrr_udpstream_do_read_tasks(&data->udpstream, delivery_listener, data)) != 0) {
 		if (ret != RRR_SOCKET_SOFT_ERROR) {
 			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of ipclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
@@ -458,24 +789,35 @@ int receive_packets(int *receive_count, struct ipclient_data *data) {
 		ret = 0;
 	}
 
-	struct receive_packets_callback_data callback_data = {
+	struct receive_messages_callback_data callback_data = {
 			data, 0, NULL
 	};
 
-	if ((ret = rrr_udpstream_do_process_receive_buffers (
-			&data->udpstream,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum_raw,
-			NULL,
-			receive_packets_callback,
-			&callback_data
-	)) != 0) {
-		VL_MSG_ERR("Error from UDP-stream while processing buffers in receive_packets of ipclient instance %s\n",
+	if (RRR_LL_COUNT(&data->release_queue) < VL_IPCLIENT_RELEASE_QUEUE_MAX) {
+		if ((ret = rrr_udpstream_do_process_receive_buffers (
+				&data->udpstream,
+				rrr_socket_common_get_session_target_length_from_message_and_checksum_raw,
+				NULL,
+				receive_messages_callback,
+				&callback_data
+		)) != 0) {
+			VL_MSG_ERR("Error from UDP-stream while processing buffers in receive_packets of ipclient instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		VL_MSG_ERR("icplient instance %s release queue is full, possible hang-up with following data loss imminent\n",
 				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
 	}
 
 	*receive_count = callback_data.count;
+
+	if (*receive_count > 0) {
+		VL_DEBUG_MSG_3("ipclient instance %s: received %i messages\n",
+				INSTANCE_D_NAME(data->thread_data), *receive_count);
+	}
 
 	out:
 	return ret;
@@ -485,18 +827,25 @@ struct send_packet_callback_data {
 	int packet_counter;
 };
 
-int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct send_packet_callback_data *info = poll_data->private_data;
-	struct instance_thread_data *thread_data = poll_data->source;
-	struct ipclient_data *ipclient_data = thread_data->private_data;
-	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+#define IPCLIENT_QUEUE_RESULT_OK 0
+#define IPCLIENT_QUEUE_RESULT_ERR 1
+#define IPCLIENT_QUEUE_RESULT_DATA_ERR 2
+#define IPCLIENT_QUEUE_RESULT_STOP 3
+
+static int queue_message (
+		int *packet_counter,
+		struct ipclient_data *ipclient_data,
+		const struct ip_buffer_entry *entry,
+		uint64_t boundary_id
+) {
+	struct instance_thread_data *thread_data = ipclient_data->thread_data;
 	const struct vl_message *message = entry->message;
 
 	struct vl_message *message_network = NULL;
 
 	int ret = 0;
 
-	VL_DEBUG_MSG_3 ("ipclient queing packet for sending timestamp %" PRIu64 " size %lu\n", message->timestamp_from, size);
+	VL_DEBUG_MSG_3 ("ipclient queing packet for sending timestamp %" PRIu64 "\n", message->timestamp_from);
 
 	update_watchdog_time(thread_data->thread);
 
@@ -520,7 +869,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 				) != 0) {
 					VL_MSG_ERR("Could not send connect packet with address information from message in ipclient instance %s, packet must be dropped\n",
 							INSTANCE_D_NAME(thread_data));
-					ret = FIFO_SEARCH_GIVE | FIFO_SEARCH_FREE;
+					ret = IPCLIENT_QUEUE_RESULT_DATA_ERR;
 					goto out;
 				}
 
@@ -528,7 +877,7 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 				clean_destinations(ipclient_data);
 
 				// Don't try to send the message immediately, will most likely block
-				ret = FIFO_SEARCH_KEEP;
+				ret = IPCLIENT_QUEUE_RESULT_OK;
 				goto out;
 			}
 			connect_handle = destination->connect_handle;
@@ -538,14 +887,14 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		connect_handle = ipclient_data->active_connect_handle;
 		if (connect_handle == 0) {
 			// Connection not ready
-			ret = FIFO_SEARCH_KEEP;
+			ret = IPCLIENT_QUEUE_RESULT_OK;
 			goto out;
 		}
 	}
 	else {
 		VL_MSG_ERR("ipclient instance %s dropping message from sender without address information\n",
 				INSTANCE_D_NAME(thread_data));
-		ret = FIFO_SEARCH_GIVE | FIFO_SEARCH_FREE;
+		ret = IPCLIENT_QUEUE_RESULT_DATA_ERR;
 		goto out;
 	}
 
@@ -559,10 +908,11 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 			&ipclient_data->udpstream,
 			connect_handle,
 			message_network,
-			message_network_size
+			message_network_size,
+			boundary_id
 	)) != 0) {
 		if (ret == RRR_UDPSTREAM_BUFFER_FULL || ret == RRR_UDPSTREAM_NOT_READY) {
-			ret = FIFO_SEARCH_KEEP | FIFO_SEARCH_STOP;
+			ret = IPCLIENT_QUEUE_RESULT_OK | IPCLIENT_QUEUE_RESULT_STOP;
 			goto out;
 		}
 		else if (ret == RRR_UDPSTREAM_IDS_EXHAUSTED || ret == RRR_UDPSTREAM_UNKNOWN_CONNECT_ID) {
@@ -573,23 +923,61 @@ int send_packet_callback(struct fifo_callback_args *poll_data, char *data, unsig
 			else {
 				invalidate_connect_handle(ipclient_data, connect_handle);
 			}
-			ret = FIFO_SEARCH_KEEP;
+			ret = IPCLIENT_QUEUE_RESULT_OK;
 			goto out;
 		}
 		else {
 			VL_MSG_ERR("Error while queuing message for sending in ipclient instance %s\n",
 					INSTANCE_D_NAME(thread_data));
-			ret = FIFO_SEARCH_KEEP | FIFO_CALLBACK_ERR;
+			ret = IPCLIENT_QUEUE_RESULT_OK | IPCLIENT_QUEUE_RESULT_ERR;
 			goto out;
 		}
 	}
 
-	info->packet_counter++;
-
-	ret = FIFO_SEARCH_GIVE | FIFO_SEARCH_FREE;
+	(*packet_counter)++;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_network);
+	return ret;
+}
+
+int send_packet_unassured_callback(struct fifo_callback_args *args, char *data, unsigned long int size) {
+	struct ipclient_data *ipclient_data = args->private_data;
+	struct ip_buffer_entry *entry = (struct ip_buffer_entry *) data;
+
+	int ret = 0;
+
+	(void)(size);
+
+	VL_DEBUG_MSG_3("Send non-assured delivery message in ipclient instance %s\n",
+			INSTANCE_D_NAME(ipclient_data->thread_data));
+
+	int send_count = 0;
+
+	if ((ret = queue_message(&send_count, ipclient_data, entry, 0)) != IPCLIENT_QUEUE_RESULT_OK) {
+		int final_ret = 0;
+		if ((ret & IPCLIENT_QUEUE_RESULT_DATA_ERR) != 0) {
+			// Just delete the data
+		}
+		if ((ret & IPCLIENT_QUEUE_RESULT_STOP) != 0) {
+			final_ret |= FIFO_SEARCH_STOP;
+		}
+		ret &= ~(IPCLIENT_QUEUE_RESULT_DATA_ERR|IPCLIENT_QUEUE_RESULT_STOP);
+		if (ret != 0) {
+			// Upon other errors than data errors, message is not destroyed
+			ret = FIFO_GLOBAL_ERR;
+			goto out;
+		}
+		ret = final_ret;
+	}
+
+	if (send_count > 0) {
+		VL_DEBUG_MSG_3 ("ipclient instance %s udpstream sent %i unasssured packets\n",
+				INSTANCE_D_NAME(ipclient_data->thread_data), send_count);
+	}
+
+	out:
+	free(entry);
 	return ret;
 }
 
@@ -598,45 +986,66 @@ int send_packets(int *send_count, struct ipclient_data *data) {
 
 	*send_count = 0;
 
-	if (fifo_buffer_get_entry_count(&data->send_buffer) > 0) {
-		struct send_packet_callback_data callback_data = {
-				0
-		};
-		struct fifo_callback_args poll_data = {
-				data->thread_data, &callback_data, 0
-		};
-		ret = fifo_search(&data->send_buffer, send_packet_callback, &poll_data, 0);
+	struct fifo_callback_args fifo_callback_args = {
+		data->thread_data, data, 0
+	};
 
-		if (callback_data.packet_counter > 0) {
-			VL_DEBUG_MSG_3 ("ipclient instance %s queued %i packets for transmission\n",
-					INSTANCE_D_NAME(data->thread_data), callback_data.packet_counter);
+	if (fifo_read_clear_forward(&data->send_queue_unassured, NULL, send_packet_unassured_callback, &fifo_callback_args, 0)) {
+		VL_MSG_ERR("Error from buffer in ipclient send_packets\n");
+		ret = 1;
+		goto out;
+	}
+
+	uint64_t time_now = time_get_64();
+
+	// Send assured data, wait for acknowledgment before deleting
+	RRR_LL_ITERATE_BEGIN(&data->send_queue, struct ipclient_queue_entry);
+		int do_send = 0;
+		if (node->send_time == 0) {
+			VL_DEBUG_MSG_3("Send assured delivery message with boundary %" PRIu64 " in ipclient instance %s\n",
+					node->boundary_id, INSTANCE_D_NAME(data->thread_data));
+			do_send = 1;
 		}
+		else if (time_now - node->send_time > VL_IPCLIENT_RESEND_INTERVAL_MS * 1000) {
+			VL_DEBUG_MSG_2("Timeout for assured delivery message with boundary %" PRIu64 " in ipclient instance %s, re-send\n",
+					node->boundary_id, INSTANCE_D_NAME(data->thread_data));
+			do_send = 1;
+		}
+
+		if (do_send != 0) {
+			node->send_time = time_now;
+
+			if ((ret = queue_message(send_count, data, node->entry, node->boundary_id)) != IPCLIENT_QUEUE_RESULT_OK) {
+				if ((ret & IPCLIENT_QUEUE_RESULT_DATA_ERR) != 0) {
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				if ((ret & IPCLIENT_QUEUE_RESULT_STOP) != 0) {
+					RRR_LL_ITERATE_LAST();
+				}
+				ret &= ~(IPCLIENT_QUEUE_RESULT_DATA_ERR|IPCLIENT_QUEUE_RESULT_STOP);
+				if (ret != 0) {
+					ret = 1;
+					goto out;
+				}
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_queue, __ipclient_queue_entry_destroy(node));
+
+	if ((*send_count) > 0) {
+		VL_DEBUG_MSG_3 ("ipclient instance %s queued %i packets for transmission\n",
+				INSTANCE_D_NAME(data->thread_data), (*send_count));
 	}
 
 	if ((ret = rrr_udpstream_do_send_tasks(send_count, &data->udpstream)) != 0) {
 		VL_MSG_ERR("UDP-stream send tasks failed in send_packets of ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
-	}
-
-	return ret;
-}
-
-static int receive_data(int *receive_count, struct ipclient_data *data) {
-	int ret = 0;
-
-//	update_watchdog_time(data->thread_data->thread);
-
-	// TODO : Handle bad errors->exit and nice errors->continue
-	if (receive_packets(receive_count, data) != 0) {
-		VL_MSG_ERR ("Error while receiving packets in ipclient receive_data thread\n");
-		ret = 1;
 		goto out;
 	}
 
-	if (*receive_count > 0) {
-		VL_DEBUG_MSG_2("ipclient instance %s: received %i messages\n",
-				INSTANCE_D_NAME(data->thread_data), *receive_count);
+	if ((*send_count) > 0) {
+		VL_DEBUG_MSG_3 ("ipclient instance %s udpstream sent %i packets\n",
+				INSTANCE_D_NAME(data->thread_data), (*send_count));
 	}
 
 	out:
@@ -647,6 +1056,7 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
+	struct poll_collection poll_ip;
 
 	if (data_init(data, thread_data) != 0) {
 		VL_MSG_ERR("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -655,7 +1065,9 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("ipclient thread data is %p\n", thread_data);
 
+	poll_collection_init(&poll_ip);
 	poll_collection_init(&poll);
+	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(thread_set_stopping, thread);
@@ -671,12 +1083,12 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK) != 0) {
-		VL_MSG_ERR("Ipclient requires poll_delete from senders\n");
-		goto out_message;
-	}
+	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
 
-	int no_polling = poll_collection_count(&poll) > 0 ? 0 : 1;
+	poll_remove_senders_also_in(&poll, &poll_ip);
+
+	int no_polling = poll_collection_count(&poll) + poll_collection_count(&poll_ip) > 0 ? 0 : 1;
 
 	VL_DEBUG_MSG_1 ("ipclient started thread %p\n", thread_data);
 /*
@@ -703,38 +1115,57 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 		goto out_message;
 	}
 
+	uint64_t time_now = time_get_64();
+	uint64_t prev_stats_time = time_now;
+	uint64_t prev_urge_time = time_now;
 	int consecutive_zero_recv_and_send = 0;
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 
 		int err = 0;
 
+		time_now = time_get_64();
+
 		if (connect_with_udpstream(data) != 0) {
 			usleep (1000000); // 1000 ms
 			goto network_restart;
 		}
 
-		int send_buffer_size_before = fifo_buffer_get_entry_count(&data->send_buffer);
-		if (no_polling == 0 && send_buffer_size_before < VL_IPCLIENT_SEND_BUFFER_MIN) {
-			int send_buffer_size_before = 0;
-			int send_buffer_size_after = 0;
-			do {
-				send_buffer_size_before = fifo_buffer_get_entry_count(&data->send_buffer);
-
-				if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-					break;
+		if (no_polling == 0 &&
+				fifo_buffer_get_entry_count(&data->send_queue_unassured) < VL_IPCLIENT_SEND_BUFFER_UNASSURED_MAX &&
+				RRR_LL_COUNT(&data->send_queue) < VL_IPCLIENT_SEND_BUFFER_ASSURED_MAX
+		) {
+			uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
+			if (data->send_buffer_order >= 0xffffffff00000000) {
+				// Counter must be wrapped, and all outstanding messages must
+				// be delivered before we poll for more. The last bits of the
+				// order number is flags where non zero means data is sent
+				if (RRR_LL_COUNT(&data->send_queue) == 0) {
+					// Reset ID counter when all outstanding messages are assured delivered
+					data->send_buffer_order = 0;
 				}
-
-				send_buffer_size_after = fifo_buffer_get_entry_count(&data->send_buffer);
-			} while (send_buffer_size_after - send_buffer_size_before >= FIFO_MAX_READS && send_buffer_size_after < VL_IPCLIENT_SEND_BUFFER_MAX);
-//			VL_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
-//					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
+			}
+			else {
+				do {
+					if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 25) != 0) {
+						break;
+					}
+					if (poll_do_poll_delete_simple (&poll_ip, thread_data, poll_callback_ip, 25) != 0) {
+						break;
+					}
+				} while (fifo_buffer_get_entry_count(&data->send_queue_unassured) < VL_IPCLIENT_SEND_BUFFER_UNASSURED_MAX &&
+						RRR_LL_COUNT(&data->send_queue) < VL_IPCLIENT_SEND_BUFFER_ASSURED_MAX &&
+						time_get_64() > poll_timeout
+				);
+	//			VL_DEBUG_MSG_2("ipclient instance %s receive buffer size %i\n",
+	//					INSTANCE_D_NAME(thread_data), send_buffer_size_after);
+			}
 		}
 
 //		VL_DEBUG_MSG_2("ipclient instance %s receive\n",
 //				INSTANCE_D_NAME(thread_data));
 		int receive_count = 0;
-		if (receive_data(&receive_count, data) != 0) {
+		if (receive_messages(&receive_count, data) != 0) {
 			usleep (10000); // 10 ms
 			goto network_restart;
 		}
@@ -748,13 +1179,13 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 
 		if (receive_count == 0 && send_count == 0) {
 			if (consecutive_zero_recv_and_send > 1000) {
-				VL_DEBUG_MSG_2("ipclient instance %s long sleep send buffer size %i\n",
-						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_buffer));
+				VL_DEBUG_MSG_2("ipclient instance %s long sleep send buffer assured %i unassured %i\n",
+						INSTANCE_D_NAME(thread_data), RRR_LL_COUNT(&data->send_queue), fifo_buffer_get_entry_count(&data->send_queue_unassured));
 				usleep (100000); // 100 ms
 			}
 			else {
 				sched_yield();
-				usleep(1000);
+				usleep(100);
 				consecutive_zero_recv_and_send++;
 //				printf("ipclient instance %s yield\n", INSTANCE_D_NAME(thread_data));
 			}
@@ -765,6 +1196,25 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 					INSTANCE_D_NAME(thread_data), receive_count, send_count);
 		}
 
+		if (time_now - prev_stats_time > 1000000) {
+			if (VL_DEBUGLEVEL_1) {
+				VL_DEBUG_MSG("-- ipclient instance %s release queue %i send queue assured %i unassured %i stats for udpstream:\n",
+						INSTANCE_D_NAME(thread_data), RRR_LL_COUNT(&data->release_queue), RRR_LL_COUNT(&data->send_queue), fifo_buffer_get_entry_count(&data->send_queue_unassured));
+				rrr_udpstream_dump_stats(&data->udpstream);
+				VL_DEBUG_MSG("--------------\n");
+			}
+			prev_stats_time = time_now;
+
+		}
+
+		if (time_now - prev_urge_time > VL_IPCLIENT_RELEASE_QUEUE_URGE_TIMEOUT_MS * 1000) {
+			release_queue_cleanup(data);
+			if (release_queue_send_urges(data) != 0) {
+				break;
+			}
+			prev_urge_time = time_now;
+		}
+
 		if (err != 0) {
 			break;
 		}
@@ -773,6 +1223,7 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 	out_message:
 	VL_DEBUG_MSG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

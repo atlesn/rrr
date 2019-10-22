@@ -129,3 +129,8 @@ void poll_add_from_thread_senders_ignore_error (
 		struct instance_thread_data *thread_data,
 		unsigned int flags
 );
+
+void poll_remove_senders_also_in (
+		struct poll_collection *target,
+		const struct poll_collection *source
+);

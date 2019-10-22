@@ -337,3 +337,17 @@ void poll_add_from_thread_senders_ignore_error (
 	struct instance_metadata *faulty_sender;
 	poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders, flags);
 }
+
+void poll_remove_senders_also_in (
+		struct poll_collection *target,
+		const struct poll_collection *source
+) {
+	RRR_LL_ITERATE_BEGIN(source, const struct poll_collection_entry);
+		const struct instance_thread_data *to_find = node->thread_data;
+		RRR_LL_ITERATE_BEGIN(target, struct poll_collection_entry);
+			if (node->thread_data == to_find) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY(target, __poll_collection_entry_destroy(node));
+	RRR_LL_ITERATE_END(source);
+}
