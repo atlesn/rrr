@@ -125,6 +125,8 @@ Constantly generates empty messages only with a timestamp set.
 No messages are generated, defaults to yes. 
 .It dummy_no_sleeping={yes|no}
 Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
+.It dummy_max_generated={unsigned number}
+Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
 .El
 .SS udpreader (SA)
 Listen to an UDP port and read messages of number arrays. The udpreader creates a message for each received packet
@@ -180,6 +182,10 @@ If messages read from other modules contain address information, ipclient will a
 to connect to this host (if not already connected) and send the messages to it. Messages without address use the default
 server or are dropped if none is specified.
 .PP
+Per default, ipclient will make sure that messages are delivered exactly once to the remote host. Some extra acknowledgment
+packets are sent to take care of this. This functionality may be disabled if higher throughput is desired and some packet
+loss or duplicates is not an issue.
+.PP
 ipclient will not accept incoming connections from other clients unless specified in the configuration file.
 .PP
 A keyfile of an arbitary length may be specified from which an AES256 key is generated. It should contain good
@@ -196,6 +202,13 @@ Source port used for sending and receiving packtes, defaults to 5555.
 An optional keyfile which we use to generate a key used to encrypt messages we send. The server must use the same file.
 .It ipclient_list={yes|no}
 Accept incoming connections if set to yes.
+.It ipclient_no_assured_single_delivery={yes|no}
+Do not make sure messages are delivered exactly ones. Allows for some loss and messages might be delivered more
+than once, but throughput it somewhat increased and traffic is reduced.
+.It ipclient_boundary_id={unsigned number}
+Set a boundary ID, which uniquely identifies messages from a particular client, manually. If not specified, a random number
+will be used. Two clients with the same ID may not connect to another client simultaneously. Collisions are however unlikely,
+random numbers should work fine in most configurations. Boundary IDs are not used unless assured delivery is active.
 .El
 .SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
