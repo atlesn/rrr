@@ -114,6 +114,10 @@ int ip_buffer_entry_new_with_empty_message (
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
+int ip_buffer_entry_clone (
+		struct ip_buffer_entry **result,
+		const struct ip_buffer_entry *source
+);
 int ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );

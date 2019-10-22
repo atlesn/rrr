@@ -306,7 +306,18 @@ static void *thread_entry_socket (struct vl_thread *thread) {
 			break;
 		}
 
-		if (read_data(data) != 0) {
+		int err = 0;
+		if ((err = read_data(data)) != 0) {
+			if (err == RRR_SOCKET_SOFT_ERROR) {
+				// Upon receival of invalid data, we must close the socket as sizes of
+				// the messages and boundaries might be out of sync
+				VL_MSG_ERR("Invalid data received in socket instance %s, socket must be closed\n",
+						INSTANCE_D_NAME(thread_data));
+			}
+			else {
+				VL_MSG_ERR("Error while reading data in socket instance %s, return was %i\n",
+						INSTANCE_D_NAME(thread_data), err);
+			}
 			break;
 		}
 	}

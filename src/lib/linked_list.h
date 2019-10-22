@@ -175,6 +175,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_first)
 
 #define RRR_LL_ITERATE_INSERT(head, new_node) do {	\
+	(head)->node_count++; 							\
 	(new_node)->ptr_prev = node->ptr_prev;			\
 	(new_node)->ptr_next = node;					\
 	node->ptr_prev = (new_node);					\

@@ -154,6 +154,25 @@ int ip_buffer_entry_new_with_empty_message (
 	return ret;
 }
 
+int ip_buffer_entry_clone (
+		struct ip_buffer_entry **result,
+		const struct ip_buffer_entry *source
+) {
+	int ret = ip_buffer_entry_new_with_empty_message (
+			result,
+			source->data_length,
+			&source->addr,
+			source->addr_len
+	);
+
+	if (ret == 0) {
+		(*result)->send_time = source->send_time;
+		memcpy((*result)->message, source->message, source->data_length);
+	}
+
+	return ret;
+}
+
 int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
 	stats->name = name;

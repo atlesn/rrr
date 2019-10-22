@@ -234,6 +234,9 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 
 	while (pos->data[pos->pos] == '#') {
 		__rrr_config_parse_comment(pos);
+		if (__rrr_config_check_eof(pos)) {
+			goto out;
+		}
 	}
 
 	if (pos->pos >= pos->size) {

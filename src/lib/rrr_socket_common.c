@@ -42,18 +42,20 @@ int rrr_socket_common_receive_message_raw_callback (
 	// Header CRC32 is checked when reading the data from remote and getting size
 	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, data_size) != 0) {
 		VL_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, data_size) != 0) {
 		VL_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
 	}
 
 	if (message_to_host_and_verify(message, data_size) != 0) {
 		VL_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
 				MSG_TOTAL_SIZE(message), message->msg_size);
-		ret = 1;
+		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
 	}
 
@@ -74,6 +76,8 @@ int rrr_socket_common_receive_message_callback (
 
 	// Memory is always taken care of or freed by this function
 	if ((ret = rrr_socket_common_receive_message_raw_callback(read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
+		// Returns soft error if message is invalid, might also return
+		// other errors from final callback function
 		goto out;
 	}
 
