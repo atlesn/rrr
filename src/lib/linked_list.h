@@ -159,20 +159,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;														\
 	}} while (0)
 
-#define RRR_LL_ITERATE_BEGIN_AT(head, type, at)	do {			\
+#define RRR_LL_ITERATE_BEGIN_AT(head, type, at, reverse) do {	\
 	type *node = (at);											\
 	type *prev = NULL; (void)(prev);							\
 	type *next = NULL;											\
 	int linked_list_iterate_stop = 0;							\
 	int linked_list_immediate_break = 0;						\
 	int linked_list_ret_tmp = 0; (void)(linked_list_ret_tmp);	\
+	int linked_list_reverse = reverse;							\
 	while (node != NULL && linked_list_iterate_stop != 1) {		\
 		int linked_list_iterate_destroy = 0;					\
 		do {													\
-			next = node->ptr_next
+			next = node->ptr_next;								\
+			prev = node->ptr_prev
 
-#define RRR_LL_ITERATE_BEGIN(head, type) 					\
-	RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_first)
+#define RRR_LL_ITERATE_BEGIN_EITHER(head, type, reverse)												\
+	RRR_LL_ITERATE_BEGIN_AT(head, type, (reverse != 0 ? (head)->ptr_last : (head)->ptr_first), reverse)
+
+#define RRR_LL_ITERATE_BEGIN(head, type) 						\
+	RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_first, 0)
+
+#define RRR_LL_ITERATE_BEGIN_REVERSE(head, type) 				\
+	RRR_LL_ITERATE_BEGIN_AT(head, type, (head)->ptr_last, 1)
 
 #define RRR_LL_ITERATE_INSERT(head, new_node) do {	\
 	(head)->node_count++; 							\
@@ -211,8 +219,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			VL_BUG("RRR_LL_SET_DESTROY was used without destroy "								\
 					"function, must use RRR_LL_ITERATE_END_CHECK_DESTROY instead\n");			\
 		}																						\
-		prev = node;																			\
-		node = next;																			\
+		if (linked_list_reverse) {																\
+			node = prev;																		\
+		}																						\
+		else {																					\
+			node = next;																		\
+		}																						\
 	}} while(0)
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, destroy_err, lock, unlock, lock_err) \
@@ -227,16 +239,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				if ((lock) != 0) { lock_err; }													\
 				__RRR_LL_ITERATE_REMOVE_NODE(head);												\
 				if ((unlock) != 0) { lock_err; }												\
-			}																					\
-			else {																				\
-				prev = node;																	\
-			}																					\
+			}																			\
 			linked_list_iterate_destroy = 0;													\
 		}																						\
-		else {																					\
-			prev = node;																		\
+		if (linked_list_reverse) {																\
+			node = prev;																		\
 		}																						\
-		node = next;																			\
+		else {																					\
+			node = next;																		\
+		}																						\
 	}} while(0)
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\

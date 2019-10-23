@@ -252,9 +252,7 @@ int poll_do_poll_delete (
 			ret_tmp = entry->poll_delete(entry->thread_data, callback, &callback_args, wait_milliseconds);
 		}
 		else {
-			VL_MSG_ERR("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll_delete\n");
-			ret = 1;
-			RRR_LL_ITERATE_BREAK();
+			VL_BUG("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll_delete\n");
 		}
 		if (	(ret_tmp & FIFO_CALLBACK_ERR) ==  FIFO_CALLBACK_ERR ||
 				(ret_tmp & FIFO_GLOBAL_ERR) == FIFO_GLOBAL_ERR

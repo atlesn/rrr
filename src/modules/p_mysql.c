@@ -1090,25 +1090,7 @@ static void *thread_entry_mysql (struct vl_thread *thread) {
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
 
-	int err = 0;
-	RRR_SENDER_LOOP(sender,thread_data->init_data.senders) {
-		int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
-		int delete_ip_has = poll_collection_has(&poll_ip, sender->sender->thread_data);
-
-		if (delete_has + delete_ip_has == 2) {
-			VL_DEBUG_MSG_1("Sender %s for mysql instance %s has both delete and delete_ip poll functions, preferring IP\n",
-					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
-			poll_collection_remove(&poll, sender->sender->thread_data);
-		}
-		else if (delete_has + delete_ip_has == 0) {
-			VL_MSG_ERR("Sender %s for mysql instance %s did not have delete_ip or delete poll functions\n",
-					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
-			err = 1;
-		}
-	}
-	if (err) {
-		goto out_message;
-	}
+	poll_remove_senders_also_in(&poll, &poll_ip);
 
 	VL_DEBUG_MSG_1 ("mysql started thread %p\n", thread_data);
 

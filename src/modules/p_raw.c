@@ -138,6 +138,7 @@ static void *thread_entry_raw (struct vl_thread *thread) {
 
 	VL_DEBUG_MSG_1 ("Raw started thread %p\n", thread_data);
 
+	uint64_t total_counter = 0;
 	uint64_t timer_start = time_get_64();
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
@@ -150,8 +151,10 @@ static void *thread_entry_raw (struct vl_thread *thread) {
 		if (timer_now - timer_start > 1000000) {
 			timer_start = timer_now;
 
-			VL_DEBUG_MSG_1("Raw instance %s messages per second: %i\n",
-					INSTANCE_D_NAME(thread_data), raw_data->message_count);
+			total_counter += raw_data->message_count;
+
+			VL_DEBUG_MSG_1("Raw instance %s messages per second %i total %" PRIu64 "\n",
+					INSTANCE_D_NAME(thread_data), raw_data->message_count, total_counter);
 
 			raw_data->message_count = 0;
 		}
