@@ -170,7 +170,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&session->request_part->fields, struct rrr_http_field);
+	RRR_LL_ITERATE_BEGIN(&session->request_part->fields, struct rrr_http_field);
 		RRR_FREE_IF_NOT_NULL(name_buf);
 		RRR_FREE_IF_NOT_NULL(name_buf_full);
 
@@ -211,7 +211,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 			VL_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 			goto out;
 		}
-	RRR_LINKED_LIST_ITERATE_END();
+	RRR_LL_ITERATE_END();
 
 	RRR_FREE_IF_NOT_NULL(body_buf);
 	if ((ret = rrr_asprintf (
@@ -323,7 +323,7 @@ int rrr_http_session_send_request (
 		goto out;
 	}
 
-	if (RRR_LINKED_LIST_COUNT(&session->request_part->fields) > 0) {
+	if (RRR_LL_COUNT(&session->request_part->fields) > 0) {
 		if (session->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
 			if ((ret = __rrr_http_session_send_multipart_form_data_body (session)) != 0) {
 				VL_MSG_ERR("Could not send POST multipart body in rrr_http_session_send_request\n");
@@ -448,7 +448,7 @@ int rrr_http_session_receive (
 				session->fd,
 				4096,
 				65535,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_http_session_receive_get_total_size,
 				&callback_data,
 				__rrr_http_session_receive_callback,

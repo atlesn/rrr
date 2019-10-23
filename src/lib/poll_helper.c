@@ -33,7 +33,7 @@ static int __poll_collection_entry_destroy(struct poll_collection_entry *entry) 
 }
 
 void poll_collection_clear(struct poll_collection *collection) {
-	RRR_LINKED_LIST_DESTROY(collection,struct poll_collection_entry, __poll_collection_entry_destroy(node));
+	RRR_LL_DESTROY(collection,struct poll_collection_entry, __poll_collection_entry_destroy(node));
 }
 
 void poll_collection_clear_void(void *data) {
@@ -47,13 +47,13 @@ void poll_collection_init(struct poll_collection *collection) {
 
 void poll_collection_remove (struct poll_collection *collection, struct instance_thread_data *find) {
 	int found = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
 		if (node->thread_data == find) {
-			RRR_LINKED_LIST_SET_DESTROY();
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
 			found = 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection, __poll_collection_entry_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __poll_collection_entry_destroy(node));
 
 	if (found != 1) {
 		VL_BUG("BUG: Tried to remove non-existent entry from poll collection\n");
@@ -63,12 +63,12 @@ void poll_collection_remove (struct poll_collection *collection, struct instance
 int poll_collection_has (struct poll_collection *collection, struct instance_thread_data *find) {
 	int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
 		if (node->thread_data == find) {
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 			ret = 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 }
@@ -127,7 +127,7 @@ int poll_collection_add (
 	entry->thread_data = instance->thread_data;
 	entry->flags = *flags_result;
 
-	RRR_LINKED_LIST_APPEND(collection, entry);
+	RRR_LL_APPEND(collection, entry);
 	entry = NULL;
 
 	out:
@@ -204,7 +204,7 @@ int poll_do_poll (
 	int ret = 0;
 	*faulty_instance = NULL;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
 		int ret_tmp;
 
 		struct poll_collection_entry *entry = node;
@@ -216,16 +216,16 @@ int poll_do_poll (
 		else {
 			VL_MSG_ERR("Instance requesting poll function from sender which was not stored in poll_do_poll\n");
 			ret = 1;
-			break;
+			RRR_LL_ITERATE_BREAK();
 		}
 		if (ret_tmp != 1) {
 			*faulty_instance = entry->thread_data;
 			ret = 1;
 			if (flags & RRR_POLL_BREAK_ON_ERR) {
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 }
@@ -241,19 +241,18 @@ int poll_do_poll_delete (
 	int ret = 0;
 	*faulty_instance = NULL;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
 		int ret_tmp;
 
 		struct poll_collection_entry *entry = node;
 
 		struct fifo_callback_args callback_args = *poll_data;
 		if (control_flags & entry->flags) {
+			callback_args.flags |= (control_flags & entry->flags);
 			ret_tmp = entry->poll_delete(entry->thread_data, callback, &callback_args, wait_milliseconds);
 		}
 		else {
-			VL_MSG_ERR("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll_delete\n");
-			ret = 1;
-			break;
+			VL_BUG("BUG: Instance requesting poll function from sender which was not stored in poll_do_poll_delete\n");
 		}
 		if (	(ret_tmp & FIFO_CALLBACK_ERR) ==  FIFO_CALLBACK_ERR ||
 				(ret_tmp & FIFO_GLOBAL_ERR) == FIFO_GLOBAL_ERR
@@ -261,14 +260,14 @@ int poll_do_poll_delete (
 			*faulty_instance = entry->thread_data;
 			ret = 1;
 			if (control_flags & RRR_POLL_BREAK_ON_ERR) {
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 		}
 		else if (ret_tmp != 0) {
 			VL_BUG("BUG: Unknown return value %i when polling from module %s\n",
 					ret_tmp, INSTANCE_D_MODULE_NAME(entry->thread_data));
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 }
@@ -335,4 +334,18 @@ void poll_add_from_thread_senders_ignore_error (
 ) {
 	struct instance_metadata *faulty_sender;
 	poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders, flags);
+}
+
+void poll_remove_senders_also_in (
+		struct poll_collection *target,
+		const struct poll_collection *source
+) {
+	RRR_LL_ITERATE_BEGIN(source, const struct poll_collection_entry);
+		const struct instance_thread_data *to_find = node->thread_data;
+		RRR_LL_ITERATE_BEGIN(target, struct poll_collection_entry);
+			if (node->thread_data == to_find) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY(target, __poll_collection_entry_destroy(node));
+	RRR_LL_ITERATE_END(source);
 }

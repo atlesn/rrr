@@ -58,7 +58,7 @@ const char *module_library_paths[] = {
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
-//#define VL_NO_MODULE_UNLOAD
+#define VL_NO_MODULE_UNLOAD
 
 static volatile int main_running = 1;
 

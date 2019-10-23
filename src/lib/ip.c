@@ -154,6 +154,25 @@ int ip_buffer_entry_new_with_empty_message (
 	return ret;
 }
 
+int ip_buffer_entry_clone (
+		struct ip_buffer_entry **result,
+		const struct ip_buffer_entry *source
+) {
+	int ret = ip_buffer_entry_new_with_empty_message (
+			result,
+			source->data_length,
+			&source->addr,
+			source->addr_len
+	);
+
+	if (ret == 0) {
+		(*result)->send_time = source->send_time;
+		memcpy((*result)->message, source->message, source->data_length);
+	}
+
+	return ret;
+}
+
 int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
 	stats->name = name;
@@ -285,7 +304,7 @@ int ip_receive_array (
 	return rrr_socket_common_receive_array (
 			read_session_collection,
 			fd,
-			RRR_SOCKET_READ_METHOD_RECV,
+			RRR_SOCKET_READ_METHOD_RECVFROM,
 			definition,
 			__ip_receive_callback,
 			&callback_data
@@ -295,6 +314,7 @@ int ip_receive_array (
 int ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int no_sleeping,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -307,7 +327,7 @@ int ip_receive_socket_msg (
 	return rrr_socket_common_receive_socket_msg (
 			read_session_collection,
 			fd,
-			RRR_SOCKET_READ_METHOD_RECV,
+			RRR_SOCKET_READ_METHOD_RECVFROM|(no_sleeping != 0 ? RRR_SOCKET_READ_NO_SLEEPING : 0),
 			__ip_receive_callback,
 			&callback_data
 	);
@@ -398,6 +418,7 @@ static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void 
 int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int no_sleeping,
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif
@@ -416,10 +437,53 @@ int ip_receive_vl_message (
 	return ip_receive_socket_msg (
 		read_session_collection,
 		fd,
+		no_sleeping,
 		__ip_receive_vl_message_callback,
 		&data,
 		stats
 	);
+}
+
+int ip_send_raw (
+	int fd,
+	const struct sockaddr *sockaddr,
+	socklen_t addrlen,
+	void *data,
+	ssize_t data_size
+) {
+	int ret = 0;
+	ssize_t bytes = 0;
+
+	int max_retries = 100;
+
+	retry:
+	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
+		if (--max_retries == 100) {
+			VL_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
+					fd, getpid());
+			ret = 1;
+			goto out;
+		}
+		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			usleep(10);
+			goto retry;
+		}
+		else if (errno == EINTR) {
+			goto retry;
+		}
+		VL_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (bytes != data_size) {
+		VL_MSG_ERR("All bytes were not sent in sendto in ip_send_raw\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 int ip_send_message (
@@ -484,32 +548,8 @@ int ip_send_message (
 			(struct rrr_socket_msg *) final_message
 	);
 
-	ssize_t bytes;
-	int max_retries = 100;
-
-	retry:
-	if ((bytes = sendto(info->fd, final_message, final_size, 0, info->res->ai_addr,info->res->ai_addrlen)) == -1) {
-		if (--max_retries == 100) {
-			VL_MSG_ERR("Max retries for sendto reached in ip_send_message for socket %i pid %i\n",
-					info->fd, getpid());
-			ret = 1;
-			goto out;
-		}
-		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			usleep(10);
-			goto retry;
-		}
-		else if (errno == EINTR) {
-			goto retry;
-		}
-		VL_MSG_ERR ("Error from sendto in ip_send_message: %s\n", strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	if (bytes != final_size) {
-		VL_MSG_ERR("All bytes were not sent in sendto in ip_send_message\n");
-		ret = 1;
+	if ((ret = ip_send_raw(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
+		VL_MSG_ERR("Data could not be sent in ip_send_message\n");
 		goto out;
 	}
 

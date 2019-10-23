@@ -139,9 +139,9 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	rrr_type_length final_length = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		final_length += node->total_stored_length;
-	RRR_LINKED_LIST_ITERATE_END(&collection);
+	RRR_LL_ITERATE_END(&collection);
 
 	struct rrr_type_value *types[12];
 
@@ -323,8 +323,8 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	// Poll from output
-	for (int i = 1; i <= 20 && test_result->message == NULL; i++) {
-		TEST_MSG("Test result polling try: %i of 20\n", i);
+	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
+		TEST_MSG("Test result polling try: %i of 200\n", i);
 
 		struct fifo_callback_args poll_data = {NULL, test_result, 0};
 		ret = poll_delete(thread_data, callback, &poll_data, 150);

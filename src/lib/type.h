@@ -161,7 +161,7 @@ struct rrr_type_definition {
 };
 
 struct rrr_type_value {
-	RRR_LINKED_LIST_NODE(struct rrr_type_value);
+	RRR_LL_NODE(struct rrr_type_value);
 	const struct rrr_type_definition *definition;
 	rrr_type_flags flags;
 	rrr_type_length tag_length;

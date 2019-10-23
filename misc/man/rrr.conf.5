@@ -125,6 +125,8 @@ Constantly generates empty messages only with a timestamp set.
 No messages are generated, defaults to yes. 
 .It dummy_no_sleeping={yes|no}
 Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
+.It dummy_max_generated={unsigned number}
+Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
 .El
 .SS udpreader (SA)
 Listen to an UDP port and read messages of number arrays. The udpreader creates a message for each received packet
@@ -170,63 +172,44 @@ The buffer collects all messages from all senders and wait for them to be collec
 The duplicator works like buffer only that it creates one output buffer for every reader and duplicates the
 data it reads from other modules for each reader. The readers of duplicator are detected automatically.
 .SS ipclient (PI)
-The ipclient module collects any message from senders and sends them over the network to another 
+The ipclient module collects any messages from senders and sends them over the network to another 
 .B RRR
-environment with the an instance of the ipserver module using UDP. The ipclient caches messages locally in RAM
-untill an ACK message is received from the ipserver. It will try to resend unacknowlegded messages on a regular
-basis as they might have been lost. Messages are checksummed with a CRC32 algorithm.
+environment's ipclient module using UDP. It may also accept connections from other clients and receive data,
+or a combination of these. An underlying UDP stream protocol ensures delivery of
+all messages, and messages are checksummed with a CRC32 algorithm.
+.PP
+If messages read from other modules contain address information, ipclient will attempt
+to connect to this host (if not already connected) and send the messages to it. Messages without address use the default
+server or are dropped if none is specified.
+.PP
+Per default, ipclient will make sure that messages are delivered exactly once to the remote host. Some extra acknowledgment
+packets are sent to take care of this. This functionality may be disabled if higher throughput is desired and some packet
+loss or duplicates is not an issue.
+.PP
+ipclient will not accept incoming connections from other clients unless specified in the configuration file.
 .PP
 A keyfile of an arbitary length may be specified from which an AES256 key is generated. It should contain good
 random data. ipclient will then encrypt messages prior to sending (and use the same key to decrypt received messages).
 .PP
-The ipclient module, while creating IP messages, does not support reading IP messages from other modules. Messages
-are always sent to the same ipserver target. To send packets to arbitary receivers, ipserver must be used.
 .Bl -tag -width -indent
-.It ipclient_server=SERVER NAME OR ADDRESS
-The name or address of the server which we communucate with, defaults to localhost.
-.It ipclient_server_port=PORT NUMBER
-The port number the server listens to, defaults to 5555.
+.It ipclient_default_remote=REMOTENAME OR ADDRESS
+The name or address of the client which we send packets without address information to.
+.It ipclient_default_remote_port=PORT NUMBER
+The port number of the default remote, defaults to 5555.
 .It ipclient_src_port=PORT NUMBER
 Source port used for sending and receiving packtes, defaults to 5555.
 .It ipclient_keyfile=KEY FILE
 An optional keyfile which we use to generate a key used to encrypt messages we send. The server must use the same file.
-.It ipclient_no_ack={yes|no}
-Do not store messages locally in RAM awaiting ACK messages, defaults to no. Any received ACK messages are ignored.
+.It ipclient_list={yes|no}
+Accept incoming connections if set to yes.
+.It ipclient_no_assured_single_delivery={yes|no}
+Do not make sure messages are delivered exactly ones. Allows for some loss and messages might be delivered more
+than once, but throughput it somewhat increased and traffic is reduced.
+.It ipclient_boundary_id={unsigned number}
+Set a boundary ID, which uniquely identifies messages from a particular client, manually. If not specified, a random number
+will be used. Two clients with the same ID may not connect to another client simultaneously. Collisions are however unlikely,
+random numbers should work fine in most configurations. Boundary IDs are not used unless assured delivery is active.
 .El
-.SS ipserver (PI)
-This module will listen on the specified UDP port waiting for messages from ipclient. When a message is received,
-an ACK message is generated and sent back.
-.B ipserver
-may also send other messages back from its senders.
-.PP
-Sender modules specified for
-.B ipserver
-must be IP capable and specify the correct target for each message. There are no checks
-regarding the target of the message apart from that the target must be a valid host.
-.PP
-.B ipserver
-does cache messages temporarily and check wether they arrive or not. If a sender misses out on an ACK message
-from
-.B ipserver
-, it must simply re-send the original message in which ipserver will generate a new ACK upon receival.
-.PP
-It is possible for two
-.B ipserver
-instances to communicate over network (as opposed to one
-.B ipclient
-and one
-.B ipserver
-). They will generate ACK messages and send back to each other, but these will simply be forwarded for other modules to pick up. Sender modules
-of
-.B ipserver
-must in this configuration specifiy the correct target addresses in the IP message.
-.Bl -tag -width -indent
-.It ipserver_keyfile=KEY FILE
-An optional keyfile which we use to generate a key used to encrypt messages we send. The clients must use the same file.
-.It ipserver_server_port=PORT NUMBER
-The port used for sending and receiving packtes, defaults to 5555.
-.El
-.PP
 .SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
 database. Tag messages are
@@ -284,8 +267,16 @@ column plan is used, the following options can be used to describe the target ta
 Specify the columns in the table to write data to. The column count must match the number of values received in array
 messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
 types received. Integers are sent to the database as integers and blobs are sent as blobs.
-If a message contains an array of values, one column sould be specified for the whole array. Arrays are sent to mysql
-as blobs.
+If an array contains items with more than one value, one column should be specified for the whole item. These items are always sent
+to mysql as blobs.
+This option cannot be used with
+.B mysql_column_tags.
+.It mysql_column_tags=ARRAY TAG[->MYSQL COLUMN][,...]
+A comma separated list of items to retrieve from the received array messages and to use as
+columns in MySQL. If a tag name is specified on is own, the tag and the corresponding column in MySQL has the same name.
+If the MySQL column name is different from the tag, an arrow followed by the MySQL column name is put after the tag name.
+This option cannot be used with
+.B mysql_colums.
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
 .It mysql_special_columns={column name 1,column name 2,...}

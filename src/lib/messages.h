@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 
 #define MSG_TYPE_MSG 1
-#define MSG_TYPE_ACK 2
-#define MSG_TYPE_TAG 3
+//#define MSG_TYPE_ACK 2
+#define MSG_TYPE_TAG 2
 
 #define MSG_TYPE_OK(msg) \
 	((msg)->type >= MSG_TYPE_MSG && (msg)->type <= MSG_TYPE_TAG)
@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	(((msg)->class >= MSG_CLASS_POINT && (msg)->class <= MSG_CLASS_MIN) || ((msg)->class >= MSG_CLASS_INFO && (msg)->class <= MSG_CLASS_ARRAY))
 
 #define MSG_TYPE_MSG_STRING "MSG"
-#define MSG_TYPE_ACK_STRING "ACK"
+//#define MSG_TYPE_ACK_STRING "ACK"
 #define MSG_TYPE_TAG_STRING "TAG"
 
 #define MSG_CLASS_POINT_STRING "POINT"
@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
 #define MSG_IS_MSG(message)			((message)->type == MSG_TYPE_MSG)
-#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
+//#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
 #define MSG_IS_TAG(message)			((message)->type == MSG_TYPE_TAG)
 
 #define MSG_IS_POINT(message)		((message)->class == MSG_CLASS_POINT)

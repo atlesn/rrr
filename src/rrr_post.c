@@ -58,12 +58,12 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 struct rrr_post_reading {
-	RRR_LINKED_LIST_NODE(struct rrr_post_reading);
+	RRR_LL_NODE(struct rrr_post_reading);
 	uint64_t value;
 };
 
 struct rrr_post_reading_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_post_reading);
+	RRR_LL_HEAD(struct rrr_post_reading);
 };
 
 struct rrr_post_data {
@@ -87,7 +87,7 @@ static void __rrr_post_destroy_data (struct rrr_post_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->filename);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->topic);
-	RRR_LINKED_LIST_DESTROY(&data->readings, struct rrr_post_reading, free(node));
+	RRR_LL_DESTROY(&data->readings, struct rrr_post_reading, free(node));
 	rrr_array_clear(&data->definition);
 }
 
@@ -109,7 +109,7 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 						return 1;
 					}
 					reading_new->value = value;
-					RRR_LINKED_LIST_APPEND(&data->readings, reading_new);
+					RRR_LL_APPEND(&data->readings, reading_new);
 				}
 				else {
 					break;
@@ -306,11 +306,11 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 static int __rrr_post_send_readings(struct rrr_post_data *data) {
 	int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&data->readings, struct rrr_post_reading);
+	RRR_LL_ITERATE_BEGIN(&data->readings, struct rrr_post_reading);
 		if ((ret = __rrr_post_send_reading(data, node)) != 0) {
 			goto out;
 		}
-	RRR_LINKED_LIST_ITERATE_END(&data->readings);
+	RRR_LL_ITERATE_END(&data->readings);
 
 	out:
 	return ret;

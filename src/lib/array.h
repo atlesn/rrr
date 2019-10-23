@@ -48,12 +48,12 @@ struct rrr_array_value_packed {
 } __attribute((packed));
 
 struct rrr_array {
-		RRR_LINKED_LIST_HEAD(struct rrr_type_value);
+		RRR_LL_HEAD(struct rrr_type_value);
 		uint16_t version;
 };
 
 static inline int rrr_array_count(struct rrr_array *array) {
-	return RRR_LINKED_LIST_COUNT(array);
+	return RRR_LL_COUNT(array);
 }
 
 int rrr_array_parse_single_definition (

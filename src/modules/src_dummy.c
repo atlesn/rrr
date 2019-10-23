@@ -38,6 +38,7 @@ struct dummy_data {
 	struct fifo_buffer buffer;
 	int no_generation;
 	int no_sleeping;
+	rrr_setting_uint max_generated;
 };
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
@@ -106,6 +107,18 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 		}
 	}
 
+	if ((ret = rrr_instance_config_read_unsigned_integer(&data->max_generated, config, "dummy_max_generated")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			data->max_generated = 0;
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
 	data->no_sleeping = yesno;
 
 	/* On error, memory is freed by data_cleanup */
@@ -147,28 +160,31 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 
 	uint64_t time_start = time_get_64();
 	int generated_count = 0;
+	rrr_setting_uint generated_count_total = 0;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
-		if (data->no_generation == 0) {
+		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			uint64_t time = time_get_64();
 
 			struct vl_message *reading = message_new_reading(time, time);
 
-			VL_DEBUG_MSG_2("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
+//			VL_DEBUG_MSG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
+			generated_count_total++;
 		}
 
 		uint64_t time_now = time_get_64();
 
 		if (time_now - time_start > 1000000) {
-			VL_DEBUG_MSG_1("dummy instance %s messages per second %i\n",
-					INSTANCE_D_NAME(thread_data), generated_count);
+			VL_DEBUG_MSG_1("dummy instance %s messages per second %i total %llu of %llu\n",
+					INSTANCE_D_NAME(thread_data), generated_count, generated_count_total, data->max_generated);
 			generated_count = 0;
 			time_start = time_now;
 		}
-		if (data->no_sleeping == 0) {
+
+		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
 			usleep (50000); // 50 ms
 		}
 

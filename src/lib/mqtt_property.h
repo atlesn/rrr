@@ -85,7 +85,7 @@ struct rrr_mqtt_property_definition {
 };
 
 struct rrr_mqtt_property {
-	RRR_LINKED_LIST_NODE(struct rrr_mqtt_property);
+	RRR_LL_NODE(struct rrr_mqtt_property);
 
 	int order;
 
@@ -109,7 +109,7 @@ struct rrr_mqtt_property {
 
 /* Properties are stored in the order of which they appear in the packets */
 struct rrr_mqtt_property_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_property);
+	RRR_LL_HEAD(struct rrr_mqtt_property);
 	int order_count;
 };
 

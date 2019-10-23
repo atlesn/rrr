@@ -43,9 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_CLIENT_TIMEOUT	30
 
 #define RRR_SOCKET_READ_METHOD_READ_FILE	(1<<0)
-#define RRR_SOCKET_READ_METHOD_RECV	(1<<1)
-#define RRR_SOCKET_READ_CHECK_EOF	(1<<2)
-#define RRR_SOCKET_READ_USE_TIMEOUT	(1<<3)
+#define RRR_SOCKET_READ_METHOD_RECVFROM		(1<<1)
+#define RRR_SOCKET_READ_CHECK_EOF			(1<<2)
+#define RRR_SOCKET_READ_USE_TIMEOUT			(1<<3)
+#define RRR_SOCKET_READ_NO_SLEEPING			(1<<4)
+#define RRR_SOCKET_READ_METHOD_RECV			(1<<5)
 
 struct rrr_socket_options {
 	int fd;
@@ -55,7 +57,7 @@ struct rrr_socket_options {
 };
 
 struct rrr_socket_client {
-	RRR_LINKED_LIST_NODE(struct rrr_socket_client);
+	RRR_LL_NODE(struct rrr_socket_client);
 	struct rrr_socket_read_session_collection read_sessions;
 	int connected_fd;
 	struct sockaddr addr;
@@ -64,7 +66,7 @@ struct rrr_socket_client {
 };
 
 struct rrr_socket_client_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_socket_client);
+	RRR_LL_HEAD(struct rrr_socket_client);
 	int listen_fd;
 	char *creator;
 };

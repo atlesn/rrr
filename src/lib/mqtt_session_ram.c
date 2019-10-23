@@ -40,7 +40,7 @@ struct rrr_mqtt_session_ram {
 	// MUST be first
 	struct rrr_mqtt_session session;
 
-	RRR_LINKED_LIST_NODE(struct rrr_mqtt_session_ram);
+	RRR_LL_NODE(struct rrr_mqtt_session_ram);
 
 	struct rrr_mqtt_session_collection_ram_data *ram_data;
 
@@ -73,7 +73,7 @@ struct rrr_mqtt_session_ram {
 struct rrr_mqtt_session_collection_ram_data {
 	RRR_MQTT_SESSION_COLLECTION_HEAD;
 	pthread_mutex_t lock;
-	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_session_ram);
+	RRR_LL_HEAD(struct rrr_mqtt_session_ram);
 	struct rrr_mqtt_p_queue retain_queue;
 
 	// Packets in this queue are forwarded to sessions with matching subscriptions. If no
@@ -201,7 +201,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 	result->users = 1;
 	result->ram_data = data;
 
-	RRR_LINKED_LIST_PUSH(data,result);
+	RRR_LL_PUSH(data,result);
 
 	*target = result;
 
@@ -291,7 +291,7 @@ static void __rrr_mqtt_session_collection_remove (
 ) {
 	SESSION_COLLECTION_RAM_LOCK(data);
 
-	RRR_LINKED_LIST_REMOVE_NODE (
+	RRR_LL_REMOVE_NODE (
 			data,
 			struct rrr_mqtt_session_ram,
 			session,
@@ -311,7 +311,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 ) {
 	struct rrr_mqtt_session_ram *result = NULL;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		SESSION_RAM_LOCK(node);
 		if (strcmp(node->client_id, client_id) == 0) {
 			if (result != NULL) {
@@ -320,7 +320,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 			result = node;
 		}
 		SESSION_RAM_UNLOCK(node);
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 
 
 	return result;
@@ -391,13 +391,13 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 
 	SESSION_COLLECTION_RAM_LOCK(data);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		if ((void*) node == (void*) session) {
 			__rrr_mqtt_session_ram_incref_unlocked(node);
 			found = node;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 
 	SESSION_COLLECTION_RAM_UNLOCK(data);
 
@@ -516,18 +516,18 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (FIFO_CA
 
 	SESSION_COLLECTION_RAM_LOCK(ram_data);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
+	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
 		RRR_MQTT_P_INCREF(publish);
 		RRR_MQTT_P_LOCK(publish);
 		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish);
 		if (ret_tmp != RRR_MQTT_SESSION_OK) {
 			VL_MSG_ERR("Error while receiving forwarded publish message, return was %i\n", ret);
 			ret |= FIFO_GLOBAL_ERR;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
 		RRR_MQTT_P_UNLOCK(publish);
 		RRR_MQTT_P_DECREF(publish);
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(
+	RRR_LL_ITERATE_END_CHECK_DESTROY(
 			ram_data,
 			__rrr_mqtt_session_ram_decref_unlocked(node)
 	);
@@ -750,7 +750,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	SESSION_COLLECTION_RAM_LOCK(data);
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
+	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		uint64_t time_diff = 0;
 		uint32_t session_expiry = 0;
 
@@ -767,9 +767,9 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 			VL_DEBUG_MSG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
 					node->client_id);
 			SESSION_RAM_UNLOCK(node);
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY (
+	RRR_LL_ITERATE_END_CHECK_DESTROY (
 			data,
 			__rrr_mqtt_session_ram_decref_unlocked(node)
 	);
@@ -790,7 +790,7 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 
 	// TODO : implement destroy
 	// fifo_buffer_destroy(&data->retain_queue);
-	RRR_LINKED_LIST_DESTROY (
+	RRR_LL_DESTROY (
 			data,
 			struct rrr_mqtt_session_ram,
 			__rrr_mqtt_session_ram_decref_unlocked(node)

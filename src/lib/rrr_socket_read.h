@@ -35,7 +35,7 @@ struct rrr_socket_read_session {
 	 * When rx_buf_wpos reaches target_size, the retrieval is complete and the processing
 	 * of the packet may begin. */
 
-	RRR_LINKED_LIST_NODE(struct rrr_socket_read_session);
+	RRR_LL_NODE(struct rrr_socket_read_session);
 
 	struct sockaddr src_addr;
 	socklen_t src_addr_len;
@@ -57,7 +57,7 @@ struct rrr_socket_read_session {
 };
 
 struct rrr_socket_read_session_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_socket_read_session);
+	RRR_LL_HEAD(struct rrr_socket_read_session);
 };
 
 void rrr_socket_read_session_collection_init (

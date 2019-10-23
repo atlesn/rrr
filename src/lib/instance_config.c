@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "instance_config.h"
 #include "linked_list.h"
+#include "map.h"
 #include "array.h"
 
 void rrr_instance_config_destroy(struct rrr_instance_config *config) {
@@ -162,4 +163,56 @@ int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		rrr_array_clear(target);
 	out:
 		return ret;
+}
+
+struct parse_associative_list_to_map_callback_data {
+	struct rrr_map *target;
+	const char *delimeter;
+};
+
+static int __parse_associative_list_to_map_callback (
+		const char *value,
+		void *arg
+) {
+	struct parse_associative_list_to_map_callback_data *data = arg;
+	return rrr_map_parse_pair(value, data->target, data->delimeter);
+}
+
+int rrr_instance_config_parse_comma_separated_associative_to_map (
+		struct rrr_map *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key,
+		const char *delimeter
+) {
+	int ret = 0;
+
+	struct parse_associative_list_to_map_callback_data callback_data = {
+			target, delimeter
+	};
+
+	return rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			cmd_key,
+			__parse_associative_list_to_map_callback,
+			&callback_data
+	);
+}
+
+int rrr_instance_config_parse_comma_separated_to_map (
+		struct rrr_map *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key
+) {
+	int ret = 0;
+
+	struct parse_associative_list_to_map_callback_data callback_data = {
+			target, NULL
+	};
+
+	return rrr_instance_config_traverse_split_commas_silent_fail (
+			config,
+			cmd_key,
+			__parse_associative_list_to_map_callback,
+			&callback_data
+	);
 }

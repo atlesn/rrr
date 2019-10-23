@@ -144,12 +144,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if (data->receive_rrr_message != 0 && RRR_LINKED_LIST_COUNT(&data->definitions) > 0) {
+	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 		VL_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
-	else if (data->receive_rrr_message == 0 && RRR_LINKED_LIST_COUNT(&data->definitions) == 0) {
+	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		VL_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
 				config->name);
 		return 1;
@@ -204,7 +204,7 @@ int read_data(struct socket_data *data) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				rrr_socket_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_socket_common_receive_message_callback,
@@ -219,7 +219,7 @@ int read_data(struct socket_data *data) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				RRR_SOCKET_READ_METHOD_RECV,
+				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_socket_common_get_session_target_length_from_array,
 				&callback_data,
 				read_raw_data_callback,
@@ -306,7 +306,18 @@ static void *thread_entry_socket (struct vl_thread *thread) {
 			break;
 		}
 
-		if (read_data(data) != 0) {
+		int err = 0;
+		if ((err = read_data(data)) != 0) {
+			if (err == RRR_SOCKET_SOFT_ERROR) {
+				// Upon receival of invalid data, we must close the socket as sizes of
+				// the messages and boundaries might be out of sync
+				VL_MSG_ERR("Invalid data received in socket instance %s, socket must be closed\n",
+						INSTANCE_D_NAME(thread_data));
+			}
+			else {
+				VL_MSG_ERR("Error while reading data in socket instance %s, return was %i\n",
+						INSTANCE_D_NAME(thread_data), err);
+			}
 			break;
 		}
 	}

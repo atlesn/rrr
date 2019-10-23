@@ -85,7 +85,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
-	rrr_linked_list_destroy(&data->publish_values_from_array_list);
+	rrr_linked_list_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
@@ -162,7 +162,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 		goto out;
 	}
 
-	RRR_LINKED_LIST_APPEND(&data->publish_values_from_array_list, node);
+	RRR_LL_APPEND(&data->publish_values_from_array_list, node);
 	node = NULL;
 
 	out:
