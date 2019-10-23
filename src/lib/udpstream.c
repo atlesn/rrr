@@ -1257,7 +1257,6 @@ static int __rrr_udpstream_process_receive_buffer (
 					VL_MSG_ERR("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n", stream->stream_id);
 				}
 				else {
-					// This function must always take care of or free memory
 					struct rrr_udpstream_receive_data callback_data = {
 							joined_data,
 							accumulated_data_size,
@@ -1267,6 +1266,9 @@ static int __rrr_udpstream_process_receive_buffer (
 							node->source_addr,
 							node->source_addr_len
 					};
+					joined_data = NULL;
+
+					// This function must always take care of or free memory in callback_data->data
 					if (callback (&callback_data, callback_arg) != 0) {
 						VL_MSG_ERR("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
 						ret = 1;
@@ -1286,8 +1288,6 @@ static int __rrr_udpstream_process_receive_buffer (
 						ret = 1;
 						goto out;
 					}
-
-					joined_data = NULL;
 				}
 			}
 
