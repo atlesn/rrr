@@ -237,6 +237,12 @@ int rrr_udpstream_stream_exists (
 		struct rrr_udpstream *data,
 		uint16_t stream_id
 );
+int rrr_udpstream_connection_check_address_equal (
+		struct rrr_udpstream *data,
+		uint32_t connect_handle,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+);
 int rrr_udpstream_connection_check (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle

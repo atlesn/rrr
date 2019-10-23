@@ -323,8 +323,8 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	// Poll from output
-	for (int i = 1; i <= 20 && test_result->message == NULL; i++) {
-		TEST_MSG("Test result polling try: %i of 20\n", i);
+	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
+		TEST_MSG("Test result polling try: %i of 200\n", i);
 
 		struct fifo_callback_args poll_data = {NULL, test_result, 0};
 		ret = poll_delete(thread_data, callback, &poll_data, 150);

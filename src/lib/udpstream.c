@@ -1529,6 +1529,31 @@ int rrr_udpstream_stream_exists (
 	return 1;
 }
 
+int rrr_udpstream_connection_check_address_equal (
+		struct rrr_udpstream *data,
+		uint32_t connect_handle,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&data->lock);
+
+	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(data, connect_handle);
+	if (stream == NULL) {
+		ret = 0;
+		goto out;
+	}
+
+	if (stream->remote_addr_len == addr_len && memcmp(stream->remote_addr, addr, addr_len) == 0) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	pthread_mutex_unlock(&data->lock);
+	return ret;
+}
 int rrr_udpstream_connection_check (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
