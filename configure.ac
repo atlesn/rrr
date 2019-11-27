@@ -50,7 +50,6 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 ])
 
 AM_CONDITIONAL([VL_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
-AM_CONDITIONAL([VL_WITH_PERL5_XSI], [test "x$enable_perl5_xsi" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -85,7 +84,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	PERL5_LDFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
 	AC_MSG_CHECKING([perl5 compilation and linking])
@@ -117,18 +117,16 @@ AS_IF([test "x$enable_perl5" = xno], [
 		AC_MSG_ERROR([Test of perl5 compilation failed, make sure libperl-dev is installed.])
 	fi
 
-	AC_MSG_CHECKING([Perl5 XSI source])
+	AC_MSG_CHECKING([Generating Perl5 XSI source])
 	perl5_xsi_source="$srcdir/src/lib/perl5_xsi.c"
 	${PERL5_INTERPRETER} -MExtUtils::Embed -e xsinit -- -o ${perl5_xsi_source}
 	perl5_result=$?
 
 	if test x"${perl5_result}" = x"0"; then
-		AC_MSG_RESULT([$perl5_xsi_file])
+		AC_MSG_RESULT([$perl5_xsi_source])
 	else
 		AC_MSG_ERROR([Error while generating Perl5 XSI source file, result was "$perl5_result"])
 	fi
-
-	enable_perl5_xsi=yes
 
 	AC_SUBST([PERL5_CFLAGS])
 	AC_SUBST([PERL5_LDFLAGS])

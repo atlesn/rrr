@@ -6,6 +6,21 @@ if VL_WITH_MYSQL
 mysql = mysql.c
 endif
 
+if VL_WITH_PYTHON3
+libadd_python3 = librrrpython3.la
+librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c \
+							python3_array.c
+librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
+librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
+endif
+
+if VL_WITH_PERL5
+libadd_perl5 = librrrperl5.la
+librrrperl5_la_SOURCES = perl5.c perl5_xsi.c
+librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
+librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
+endif
+
 lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LDFLAGS} ${PERL5_LDFLAGS}
@@ -19,26 +34,5 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					fixed_point.c \
 					${mysql}
 
-if VL_WITH_PYTHON3
-libadd_python3 = librrrpython3.la
-noinst_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c \
-							python3_array.c
-librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
-librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
-endif
-
-if VL_WITH_PERL5_XSI
-perl5_extrasources = perl5_xsi.c
-endif
-
-if VL_WITH_PERL5
-libadd_perl5 = librrrperl5.la
-noinst_perl5 = librrrperl5.la
-librrrperl5_la_SOURCES = perl5.c ${perl5_extrasources}
-librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
-librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
-endif
-
-librrr_la_LIBADD   = ${libadd_python3} ${libadd_perl5}
-noinst_LTLIBRARIES = ${noinst_python3} ${noinst_perl5}
+noinst_LTLIBRARIES = ${libadd_perl5} ${libadd_python3}
+librrr_la_LIBADD =  ${libadd_perl5} ${libadd_python3}

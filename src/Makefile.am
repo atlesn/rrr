@@ -15,10 +15,6 @@ rrr_http_client_SOURCES = rrr_http_client.c global.c main.c
 rrr_http_client_CFLAGS = ${AM_CFLAGS}
 
 if VL_WITH_PERL5
-	perl5_cmd = cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL
-else
-	perl5_cmd = true
-endif
-
 all-local:
-	$(perl5_cmd)
+	cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL
+endif
