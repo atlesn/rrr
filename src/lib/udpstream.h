@@ -111,12 +111,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Current frame is a message boundary (end of a message). Preceding frames
 // after previous boundary (if any) including boundary message are to be merged.
-// If a boundary message also contains a non-zero boundary id, assured delivery
-// should be initiated.
 #define RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY			(1<<0)
 
 // Regulate window size. Receiver sends this to tell a sender to slow down or
-// speed up. Any ACK packets may contain window size regulation.
+// speed up. Any ACK packet may contain window size regulation.
 #define RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE		(1<<1)
 
 // Used to initiate connection stop. If the reset packet contains a frame id,
@@ -135,26 +133,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Used to acknowledge frames and to regulate window size
 #define RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK			04
 
-// The following three packets resembles functionality of MQTT QoS2, for this
-// purpose called "assured single delivery". This type of management of whole
-// messages is not performed by the udpstream API and must be implemented by API user.
-
-// Used for assured single delivery messages (with non-zero boundary id) to notify
-// about delivery to application. After delivery ACK is received by the sender,
-// it must not re-send the message.
-#define RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK		05
-
-// After sending delivery ACK, a client must not release the message before
-// release ACK is received. The sender sends release ACK once it receives
-// the delivery ACK. Upon receival of release ACK, the client may release
-// the message, but it must not yet be deleted as it must reserve the boundary
-// ID to ensure there are no duplicates.
-#define RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK		06
-
-// After receiving release ACK, a client must delete the message and send
-// complete ACK. After the sender receives this, it may also delete the
-// message.
-#define RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK		07
+// Used for control packets with no data. The application_data field may be used
+// by the application to exchange control data. Delivery is not guaranteed like
+// with data packets, control packets are just sent immediately.
+#define RRR_UDPSTREAM_FRAME_TYPE_CONTROL			05
 
 #define RRR_UDPSTREAM_FRAME_TYPE(frame) \
 	((frame)->flags_and_type & 0x0f)
@@ -217,10 +199,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_FRAME_PACKED_ACK_LAST(frame) \
 	(be32toh((frame)->ack_data.ack_id_last))
 
-// A boundary ID for a message consists of 4 bytes which identifies the originating
-// client and four bytes which counts the messages.
-#define RRR_UDPSTREAM_FRAME_PACKED_BOUNDARY_ID(frame) \
-	(be64toh((frame)->boundary_id_combined))
+#define RRR_UDPSTREAM_FRAME_PACKED_APPLICATION_DATA(frame) \
+	(be64toh((frame)->application_data))
 
 // After a full frame with data is received, this checksum is verified
 #define RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame) \
@@ -237,19 +217,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK) != 0)
 #define RRR_UDPSTREAM_FRAME_IS_DATA(frame) \
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_DATA) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_DELIVERY_ACK(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_RELEASE_ACK(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) & RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK) != 0)
-#define RRR_UDPSTREAM_FRAME_IS_COMPLETE_ACK(frame) \
-	((RRR_UDPSTREAM_FRAME_TYPE(frame) & RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK) != 0)
+#define RRR_UDPSTREAM_FRAME_IS_CONTROL(frame) \
+	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_CONTROL) != 0)
 #define RRR_UDPSTREAM_FRAME_IS_RESET(frame) \
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
-
-#define RRR_UDPSTREAM_FRAME_IS_ASD_ACK(frame)		\
-	RRR_UDPSTREAM_FRAME_IS_DELIVERY_ACK(frame) ||	\
-	RRR_UDPSTREAM_FRAME_IS_RELEASE_ACK(frame) ||	\
-	RRR_UDPSTREAM_FRAME_IS_COMPLETE_ACK(frame)
 
 #define RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS (1<<0)
 
@@ -264,14 +235,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	};															\
 	union {														\
 		struct rrr_udpstream_ack_data ack_data; 				\
-		uint64_t boundary_id_combined;							\
+		uint64_t application_data;								\
 	};															\
 	uint16_t data_size
-
-struct rrr_udpstream_boundary_id {
-	uint32_t boundary_high;
-	uint32_t boundary_low;
-};
 
 struct rrr_udpstream_ack_data {
 	uint32_t ack_id_first;
@@ -309,28 +275,12 @@ struct rrr_udpstream_frame_buffer {
 	uint32_t frame_id_prev_boundary_pos;
 };
 
-struct rrr_udpstream_boundary_state {
-	RRR_LL_NODE(struct rrr_udpstream_boundary_state);
-	uint32_t boundary_id_high;
-	uint32_t boundary_id_low;
-	uint64_t last_seen;
-
-	int frame_direction_was_inbound;
-	int frames_seen;
-};
-
-struct rrr_udpstream_boundary_state_collection {
-	RRR_LL_HEAD(struct rrr_udpstream_boundary_state);
-};
-
 struct rrr_udpstream_stream {
 	RRR_LL_NODE(struct rrr_udpstream_stream);
 	struct rrr_udpstream_frame_buffer receive_buffer;
 	struct rrr_udpstream_frame_buffer send_buffer;
-	struct rrr_udpstream_boundary_state_collection boundary_states;
 	uint16_t stream_id;
 	uint32_t connect_handle;
-	uint32_t boundary_id_high;
 	struct sockaddr *remote_addr;
 	socklen_t remote_addr_len;
 	uint64_t last_seen;
@@ -365,7 +315,7 @@ struct rrr_udpstream_receive_data {
 	ssize_t data_size;
 	uint32_t connect_handle;
 	uint16_t stream_id;
-	uint64_t boundary_id;
+	uint64_t application_data;
 	const struct sockaddr *addr;
 	socklen_t addr_len;
 };
@@ -375,7 +325,7 @@ struct rrr_udpstream_send_data {
 	ssize_t data_size;
 	uint32_t connect_handle;
 	uint16_t stream_id;
-	uint64_t boundary_id;
+	uint64_t application_data;
 	const struct sockaddr *addr;
 	socklen_t addr_len;
 };
@@ -384,7 +334,7 @@ struct rrr_udpstream_send_data {
 void rrr_udpstream_clear (
 		struct rrr_udpstream *stream
 );
-void rrr_udpstream_init (
+int rrr_udpstream_init (
 		struct rrr_udpstream *stream,
 		int flags
 );
@@ -415,18 +365,12 @@ int rrr_udpstream_do_process_receive_buffers (
 		void *receive_callback_arg
 );
 
-// This should be called on a regular basis to perform all reading from network. The delivery
-// listener is called whenever ASD frames occur, and the API user should update its buffers.
-// Appropriate ACK replies are sent automatically, API user need not worry about this. However,
-// if the API user finds that these ACKs are missing out, there are nagging-functions available
-// which sends new ACKs (further down). It is also possible to request reduced window size when
-// calling these.
-//
-// If ASD is not to be implemented, a dummy function must be provided which returns 0.
+// This should be called on a regular basis to perform all reading from network. If a control frame
+// is received, the callback is called.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*delivery_listener)(uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg),
-		void *delivery_listener_arg
+		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		void *control_frame_listener_arg
 );
 
 // This should be called on a regular bases to perform any sending of data
@@ -461,22 +405,25 @@ int rrr_udpstream_connection_check (
 // Nag about missing out release-ACK packet (sends new delivery ACK), possibly
 // with window size regulation. An API user calling this function must previously
 // have stored the original sender address and
-int rrr_udpstream_release_ack_urge (
+/*int rrr_udpstream_release_ack_urge (
 		struct rrr_udpstream *udpstream_data,
 		uint16_t stream_id,
 		uint64_t boundary_id,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		int window_size_change
+);*/
+int rrr_udpstream_send_control_frame (
+		struct rrr_udpstream *udpstream_data,
+		uint32_t connect_handle,
+		uint64_t application_data
 );
 int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
 		const void *data,
 		ssize_t data_size,
-		uint64_t boundary_id,
-		int (*send_callback)(const struct rrr_udpstream_send_data *send_data, void *arg),
-		void *send_callback_arg
+		uint64_t application_data
 );
 void rrr_udpstream_close (
 		struct rrr_udpstream *data
@@ -487,14 +434,12 @@ int rrr_udpstream_bind (
 );
 int rrr_udpstream_connect_raw (
 		uint32_t *connect_handle,
-		uint32_t boundary_id_low,
 		struct rrr_udpstream *data,
 		const struct sockaddr *addr,
 		socklen_t socklen
 );
 int rrr_udpstream_connect (
 		uint32_t *connect_handle,
-		uint32_t boundary_id_high,
 		struct rrr_udpstream *data,
 		const char *remote_host,
 		const char *remote_port

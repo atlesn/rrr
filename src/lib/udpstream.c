@@ -32,11 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "crc32.h"
 
-static int __rrr_udpstream_boundary_state_destroy (struct rrr_udpstream_boundary_state *state) {
-	free(state);
-	return 0;
-}
-
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
 	RRR_FREE_IF_NOT_NULL(frame->source_addr);
@@ -121,7 +116,7 @@ static int __rrr_udpstream_frame_new_from_packed (
 		result->ack_data.ack_id_last = RRR_UDPSTREAM_FRAME_PACKED_ACK_LAST(template);
 	}
 	else {
-		result->boundary_id_combined = RRR_UDPSTREAM_FRAME_PACKED_BOUNDARY_ID(template);
+		result->application_data = RRR_UDPSTREAM_FRAME_PACKED_APPLICATION_DATA(template);
 	}
 
 	*target = result;
@@ -146,7 +141,6 @@ static void __rrr_udpstream_frame_buffer_init(struct rrr_udpstream_frame_buffer 
 static int __rrr_udpstream_stream_destroy(struct rrr_udpstream_stream *stream) {
 	__rrr_udpstream_frame_buffer_clear(&stream->receive_buffer);
 	__rrr_udpstream_frame_buffer_clear(&stream->send_buffer);
-	RRR_LL_DESTROY(&stream->boundary_states, struct rrr_udpstream_boundary_state, __rrr_udpstream_boundary_state_destroy(node));
 	RRR_FREE_IF_NOT_NULL(stream->remote_addr);
 	free(stream);
 	return 0;
@@ -196,7 +190,7 @@ void rrr_udpstream_clear (
 	RRR_FREE_IF_NOT_NULL(data->send_buffer);
 }
 
-void rrr_udpstream_init (
+int rrr_udpstream_init (
 		struct rrr_udpstream *data,
 		int flags
 ) {
@@ -205,6 +199,7 @@ void rrr_udpstream_init (
 	__rrr_udpstream_stream_collection_init(&data->streams);
 	rrr_socket_read_session_collection_init(&data->read_sessions);
 	pthread_mutex_init(&data->lock, 0);
+	return 0;
 }
 
 void rrr_udpstream_set_flags (
@@ -227,6 +222,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 ) {
 	int ret = 0;
 
+	// TODO : Move allocation to init function
 	if (udpstream_data->send_buffer == NULL) {
 		udpstream_data->send_buffer = malloc(RRR_UDPSTREAM_MESSAGE_SIZE_MAX);
 		if (udpstream_data->send_buffer == NULL) {
@@ -300,28 +296,6 @@ static struct rrr_udpstream_stream *__rrr_udpstream_create_and_add_stream (
 	return new_stream;
 }
 
-static int __rrr_udpstream_check_ok_boundary_id_high (
-		struct rrr_udpstream *data,
-		uint32_t boundary_id_high,
-		const struct sockaddr *addr,
-		socklen_t addr_len
-) {
-	if (boundary_id_high == 0) {
-		return 0;
-	}
-
-	RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
-		if (node->boundary_id_high == boundary_id_high) {
-			if (node->remote_addr_len != addr_len || memcmp(node->remote_addr, addr, addr_len) != 0) {
-				// Collision, not OK
-				return 1;
-			}
-		}
-	RRR_LL_ITERATE_END(&data->streams);
-
-	return 0;
-}
-
 static uint16_t __rrr_udpstream_allocate_stream_id (
 		struct rrr_udpstream *data
 ) {
@@ -373,29 +347,6 @@ static int __rrr_udpstream_send_frame_ack (
 	}
 
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, copies);
-}
-
-static int __rrr_udpstream_send_asd_ack (
-		struct rrr_udpstream *data,
-		uint8_t ack_type,
-		const struct sockaddr *addr,
-		socklen_t socklen,
-		uint16_t stream_id,
-		uint64_t boundary_id,
-		uint32_t window_size
-) {
-	struct rrr_udpstream_frame_packed frame = {0};
-
-	frame.flags_and_type = ack_type;
-	frame.stream_id = htobe16(stream_id);
-	frame.boundary_id_combined = htobe64(boundary_id);
-
-	if (window_size != 0) {
-		frame.flags_and_type |= RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE;
-		frame.window_size = htobe32(window_size);
-	}
-
-	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, 1);
 }
 
 static int __rrr_udpstream_send_reset (
@@ -774,155 +725,27 @@ static int __rrr_udpstream_handle_received_frame_ack (
 	return ret;
 }
 
-static int __rrr_udpstream_boundary_state_update (
-		uint8_t *correct_ack_response,
-		int *was_new,
-		struct rrr_udpstream_boundary_state_collection *states,
-		uint64_t boundary_id,
-		uint8_t ack_type,
-		int current_direction_is_inbound
-) {
-	int ret = 0;
-
-	*correct_ack_response = 0;
-	*was_new = 0;
-
-	struct rrr_udpstream_boundary_state *use_state = NULL;
-
-	uint64_t time_now = time_get_64();
-
-	uint32_t boundary_id_high = boundary_id >> 32;
-	uint32_t boundary_id_low = boundary_id & 0xffffffff;
-
-	// TODO : Make list ordered?
-	RRR_LL_ITERATE_BEGIN(states, struct rrr_udpstream_boundary_state);
-		if (node->boundary_id_high == boundary_id_high && boundary_id_low == node->boundary_id_low) {
-			use_state = node;
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(states, __rrr_udpstream_boundary_state_destroy(node));
-
-	if (use_state == NULL) {
-		use_state = malloc(sizeof(*use_state));
-		if (use_state == NULL){
-			VL_MSG_ERR("Could not allocate memory in __ipclient_boundary_state_update\n");
-			ret = 1;
-			goto out;
-		}
-
-		memset(use_state, '\0', sizeof(*use_state));
-
-		use_state->boundary_id_high = boundary_id_high;
-		use_state->boundary_id_low = boundary_id_low;
-
-		if (current_direction_is_inbound && (ack_type == RRR_UDPSTREAM_FRAME_TYPE_DATA || ack_type == RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK)) {
-			use_state->frame_direction_was_inbound = 1;
-		}
-		else {
-			use_state->frame_direction_was_inbound = 0;
-		}
-
-		RRR_LL_PUSH(states, use_state);
-
-		*was_new = 1;
-	}
-
-	use_state->last_seen = time_now;
-
-	if (ack_type == RRR_UDPSTREAM_FRAME_TYPE_DATA) {
-		*correct_ack_response = RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK;
-		use_state->frames_seen &= (1 << RRR_UDPSTREAM_FRAME_TYPE_DATA);
-	}
-	else if (ack_type == RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK) {
-		*correct_ack_response = RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK;
-		use_state->frames_seen &= (1 << RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK);
-	}
-	else if (ack_type == RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK) {
-		*correct_ack_response = RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK;
-		use_state->frames_seen &= (1 << RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK);
-	}
-	else if (ack_type == RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK) {
-		*correct_ack_response = 0;
-		use_state->frames_seen &= (1 << RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK);
-	}
-	else {
-		VL_BUG("Unknown ACK type %u in __ipclient_boundary_state_update\n", ack_type);
-	}
-
-	out:
-	return ret;
-}
-
-static int __rrr_udpstream_handle_received_frame_asd (
+static int __rrr_udpstream_handle_received_frame_control (
 		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
 		struct rrr_udpstream_frame *new_frame,
-		const struct sockaddr *src_addr,
-		socklen_t src_addr_len,
-		int (*delivery_listener)(uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg),
-		void *delivery_listener_arg
+		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		void *control_frame_listener_arg
 ) {
 	int ret = 0;
 
-	if (new_frame->boundary_id_combined == 0) {
-		if (RRR_UDPSTREAM_FRAME_IS_ASD_ACK(new_frame)) {
-			VL_DEBUG_MSG_2("Received malformed ASD ACK packet of type %u with zero boundary id in __rrr_udpstream_handle_received_frame_asd\n",
-					RRR_UDPSTREAM_FRAME_TYPE(new_frame));
-		}
-		goto out;
-	}
-
-	VL_DEBUG_MSG_3("Received UDP-stream ASD ACK packet for stream ID %u boundary %" PRIu64 " type %u\n",
-			new_frame->stream_id, new_frame->boundary_id_combined, RRR_UDPSTREAM_FRAME_TYPE(new_frame));
+	VL_DEBUG_MSG_3("Received UDP-stream control packet for stream ID %u application data %" PRIu64 " type %u\n",
+			new_frame->stream_id, new_frame->application_data, RRR_UDPSTREAM_FRAME_TYPE(new_frame));
 
 	uint8_t next_ack_type = 0;
 	int was_new = 0;
 
-	if ((ret =__rrr_udpstream_boundary_state_update (
-			&next_ack_type,
-			&was_new,
-			&stream->boundary_states,
-			new_frame->boundary_id_combined,
-			RRR_UDPSTREAM_FRAME_TYPE(new_frame),
-			1
-	)) != 0) {
-		VL_MSG_ERR("Error while updating boundary states in __rrr_udpstream_handle_received_frame_asd\n");
-		goto out;
-	}
-
-	// If the delivery listener returns an error, we will not send an ACK packet. This is important
-	// as the API user might not have processed for instance a RELEASE ACK properly. The delivery
-	// listener should not return errors for something which is not critical for the program to
-	// run. ACK packets in wrong order etc. are not critical errors.
-	if ((ret = delivery_listener (
+	if ((ret = control_frame_listener (
 			stream->stream_id,
-			new_frame->boundary_id_combined,
-			RRR_UDPSTREAM_FRAME_TYPE(new_frame),
-			delivery_listener_arg
+			new_frame->application_data,
+			control_frame_listener_arg
 	)) != 0) {
-		VL_MSG_ERR("Error from delivery listener in __rrr_udpstream_handle_received_frame_asd\n");
-		goto out;
-	}
-
-	// Do not send delivery ACK until the data actually has been delivered to API, this
-	// will be done in the receive queue processing
-	if (next_ack_type > 0 && next_ack_type != RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK) {
-		if ((ret = __rrr_udpstream_send_asd_ack (
-				data,
-				next_ack_type,
-				src_addr,
-				src_addr_len,
-				stream->stream_id,
-				new_frame->boundary_id_combined,
-				0
-		)) != 0) {
-			VL_MSG_ERR("Error while sending ASD ACK in __rrr_udpstream_handle_received_frame_asd\n");
-			goto out;
-		}
-	}
-	else {
-		VL_DEBUG_MSG_2("Received out-of-order ASD packet of type %u for UDP-stream ID %u boundary %" PRIu64 "\n",
-				RRR_UDPSTREAM_FRAME_TYPE(new_frame), stream->stream_id, new_frame->boundary_id_combined);
+		VL_MSG_ERR("Error from control frame listener in __rrr_udpstream_handle_received_frame_control\n");
 		goto out;
 	}
 
@@ -976,8 +799,8 @@ static int __rrr_udpstream_handle_received_frame (
 		const struct rrr_udpstream_frame_packed *frame,
 		const struct sockaddr *src_addr,
 		socklen_t addr_len,
-		int (*delivery_listener)(uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg),
-		void *delivery_listener_arg
+		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		void *control_frame_listener_arg
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -1040,23 +863,19 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	if (RRR_UDPSTREAM_FRAME_IS_ASD_ACK(frame) || RRR_UDPSTREAM_FRAME_IS_DATA(frame)) {
-		ret = __rrr_udpstream_handle_received_frame_asd (
+	if (RRR_UDPSTREAM_FRAME_IS_CONTROL(frame)) {
+		ret = __rrr_udpstream_handle_received_frame_control (
 				data,
 				stream,
 				new_frame,
-				src_addr,
-				addr_len,
-				delivery_listener,
-				delivery_listener_arg
+				control_frame_listener,
+				control_frame_listener_arg
 		);
-		if (ret != 0 || RRR_UDPSTREAM_FRAME_IS_ASD_ACK(frame)) {
-			goto out;
-		}
+		goto out;
 	}
 
 	if (new_frame->frame_id == 0) {
-		VL_DEBUG_MSG_2("Received data frame with flags %u and zero frame id in __rrr_udpstream_handle_received_frame_asd\n",
+		VL_DEBUG_MSG_2("Received data frame with flags %u and zero frame id in __rrr_udpstream_handle_received_frame_control\n",
 				new_frame->flags_and_type);
 		goto out;
 	}
@@ -1130,8 +949,8 @@ static int __rrr_udpstream_handle_received_frame (
 struct rrr_udpstream_read_callback_data {
 	struct rrr_udpstream *data;
 	int receive_count;
-	int (*delivery_listener)(uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg);
-	void *delivery_listener_arg;
+	int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg);
+	void *control_frame_listener_arg;
 };
 
 static int __rrr_udpstream_read_callback (
@@ -1166,8 +985,8 @@ static int __rrr_udpstream_read_callback (
 			frame,
 			&read_session->src_addr,
 			read_session->src_addr_len,
-			callback_data->delivery_listener,
-			callback_data->delivery_listener_arg
+			callback_data->control_frame_listener,
+			callback_data->control_frame_listener_arg
 	)) != 0) {
 		VL_MSG_ERR("Error while pushing received frame to buffer in __rrr_udpstream_read_callback\n");
 		goto out;
@@ -1396,8 +1215,8 @@ static int __rrr_udpstream_process_receive_buffer (
 		if (node == last_deliver_node) {
 			RRR_LL_ITERATE_LAST();
 
-			VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u deliver at boundary with id %" PRIu64 "\n",
-					stream->stream_id, node->frame_id, node->boundary_id_combined);
+			VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u deliver at boundary with application data %" PRIu64 "\n",
+					stream->stream_id, node->frame_id, node->application_data);
 
 			if (write_pos - joined_data != accumulated_data_size) {
 				VL_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
@@ -1423,38 +1242,13 @@ static int __rrr_udpstream_process_receive_buffer (
 				}
 			}
 
-			int do_delivery = 1;
-			int do_delivery_ack = 0;
-
-			// Guaranteed single delivery is requested if boundary_id is set.
-			if (node->boundary_id_combined > 0) {
-				int was_new = 0;
-				uint8_t next_ack_type = 0;
-
-				if ((ret = __rrr_udpstream_boundary_state_update (
-						&next_ack_type,
-						&was_new,
-						&stream->boundary_states,
-						node->boundary_id_combined,
-						RRR_UDPSTREAM_FRAME_TYPE(node),
-						1
-				)) != 0) {
-					VL_MSG_ERR("Error while updating boundary state in __rrr_udpstream_process_receive_buffer\n");
-					goto out;
-				}
-
-				// Only deliver frame if it is new
-				do_delivery = (was_new ? 1 : 0);
-				do_delivery_ack = 1;
-			}
-
-			if (callback != NULL && do_delivery) {
+			if (callback != NULL) {
 				struct rrr_udpstream_receive_data callback_data = {
 						joined_data,
 						accumulated_data_size,
 						stream->connect_handle,
 						stream->stream_id,
-						node->boundary_id_combined,
+						node->application_data,
 						node->source_addr,
 						node->source_addr_len
 				};
@@ -1463,22 +1257,6 @@ static int __rrr_udpstream_process_receive_buffer (
 				// This function must always take care of or free memory in callback_data->data
 				if (callback (&callback_data, callback_arg) != 0) {
 					VL_MSG_ERR("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
-					ret = 1;
-					goto out;
-				}
-			}
-
-			if (do_delivery_ack) {
-				if (__rrr_udpstream_send_asd_ack (
-						data,
-						RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK,
-						node->source_addr,
-						node->source_addr_len,
-						stream->stream_id,
-						node->boundary_id_combined,
-						0
-				) != 0) {
-					VL_MSG_ERR("Could not send delivery ACK in __rrr_udpstream_process_receive_buffer\n");
 					ret = 1;
 					goto out;
 				}
@@ -1500,6 +1278,8 @@ static int __rrr_udpstream_process_receive_buffer (
 	return ret;
 }
 
+// The receive callback must always take care of memory in receive_data->data or
+// free it, also upon errors
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
 		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
@@ -1527,68 +1307,6 @@ int rrr_udpstream_do_process_receive_buffers (
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
 	pthread_mutex_unlock(&data->lock);
-	return ret;
-}
-
-static int __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders (
-		struct rrr_udpstream *data,
-		struct rrr_udpstream_stream *stream
-) {
-	int ret = 0;
-
-	uint64_t time_now = time_get_64();
-	uint64_t resend_limit = time_now - RRR_UDPSTREAM_RESEND_INTERVAL_ASD_ACK_MS;
-
-	RRR_LL_ITERATE_BEGIN(&stream->boundary_states, struct rrr_udpstream_boundary_state);
-		uint8_t send_ack = 0;
-
-		if ((node->frames_seen & (1 << RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK)) != 0) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		if (node->last_seen > resend_limit) {
-			RRR_LL_ITERATE_NEXT();
-		}
-
-		if (node->frame_direction_was_inbound) {
-			if ((node->frames_seen & (1 << RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK)) == 0) {
-				send_ack = RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK;
-			}
-			if ((node->frames_seen & (1 << RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK)) == 0) {
-				VL_BUG("Delivery ACK had not been sent for inbound data frame in __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders\n");
-			}
-		}
-		else {
-			if ((node->frames_seen & (1 << RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK)) == 0) {
-				send_ack = RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK;
-			}
-			if ((node->frames_seen & (1 << RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK)) == 0) {
-				VL_BUG("Release ACK had not been sent for inbound data frame in __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders\n");
-			}
-		}
-
-		if (send_ack == 0) {
-			VL_BUG("ACK to send was not resolved in __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders\n");
-		}
-
-		if ((ret = __rrr_udpstream_send_asd_ack (
-				data,
-				send_ack,
-				stream->remote_addr,
-				stream->remote_addr_len,
-				stream->stream_id,
-				((uint64_t) node->boundary_id_high << 32) | node->boundary_id_low,
-				RRR_UDPSTREAM_WINDOW_SIZE_PENALTY_RESEND_ASD_ACK
-		)) != 0) {
-			VL_MSG_ERR("Could not send reminder ACK in __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders\n");
-			goto out;
-		}
-
-		node->last_seen = time_now;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&stream->boundary_states, __rrr_udpstream_boundary_state_destroy(node));
-
-	out:
 	return ret;
 }
 
@@ -1623,8 +1341,8 @@ static int __rrr_udpstream_maintain (
 
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*delivery_listener)(uint16_t stream_id, uint64_t boundary_id, uint8_t frame_flags, void *arg),
-		void *delivery_listener_arg
+		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		void *control_frame_listener_arg
 ) {
 	int ret = 0;
 
@@ -1638,8 +1356,8 @@ int rrr_udpstream_do_read_tasks (
 	struct rrr_udpstream_read_callback_data callback_data = {
 			data,
 			0,
-			delivery_listener,
-			delivery_listener_arg
+			control_frame_listener,
+			control_frame_listener_arg
 	};
 
 	int errors = 0;
@@ -1693,7 +1411,7 @@ static int __rrr_udpstream_send_frame_to_remote (
 	frame_packed.frame_id = htobe32(frame->frame_id);
 	frame_packed.flags_and_type = frame->flags_and_type;
 	frame_packed.stream_id = htobe16(stream->stream_id);
-	frame_packed.boundary_id_combined = htobe64(frame->boundary_id_combined);
+	frame_packed.application_data = htobe64(frame->application_data);
 
 	return __rrr_udpstream_checksum_and_send_packed_frame (
 			data,
@@ -1705,60 +1423,6 @@ static int __rrr_udpstream_send_frame_to_remote (
 			1
 	);
 }
-
-/*
-
-int rrr_udpstream_release_ack_urge (
-		struct rrr_udpstream *udpstream_data,
-		uint16_t stream_id,
-		uint64_t boundary_id,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int window_size_change
-) {
-	int ret = 0;
-
-	pthread_mutex_lock(&udpstream_data->lock);
-
-	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_stream_id(udpstream_data, stream_id);
-	if (stream == NULL) {
-		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
-		goto out;
-	}
-
-	const struct sockaddr *use_addr = stream->remote_addr;
-	socklen_t use_addr_len = stream->remote_addr_len;
-
-	if (use_addr == NULL) {
-		use_addr = addr;
-		use_addr_len = addr_len;
-	}
-
-	if (use_addr == NULL) {
-		VL_BUG("No address in rrr_udpstream_release_ack_urge\n");
-	}
-
-	__rrr_udpstream_regulate_window_size(stream, window_size_change);
-
-	if (__rrr_udpstream_send_delivery_ack (
-			udpstream_data,
-			use_addr,
-			use_addr_len,
-			stream->stream_id,
-			boundary_id,
-			(window_size_change != 0 ? stream->window_size_to_remote : 0)
-	) != 0) {
-		VL_MSG_ERR("Could not send delivery ACK while urging in rrr_udpstream_release_ack_urge\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	pthread_mutex_unlock(&udpstream_data->lock);
-	return ret;
-}
-
-*/
 
 static int __rrr_udpstream_send_loop (
 		int *sent_count_return,
@@ -1881,6 +1545,7 @@ int rrr_udpstream_connection_check_address_equal (
 	pthread_mutex_unlock(&data->lock);
 	return ret;
 }
+
 int rrr_udpstream_connection_check (
 		struct rrr_udpstream *data,
 		uint32_t connect_handle
@@ -1910,14 +1575,49 @@ int rrr_udpstream_connection_check (
 	return ret;
 }
 
+int rrr_udpstream_send_control_frame (
+		struct rrr_udpstream *udpstream_data,
+		uint32_t connect_handle,
+		uint64_t application_data
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&udpstream_data->lock);
+
+	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
+	if (stream == NULL) {
+		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		goto out;
+	}
+
+	if (stream->stream_id == 0) {
+		ret = RRR_UDPSTREAM_NOT_READY;
+		goto out;
+	}
+
+	struct rrr_udpstream_frame frame = {0};
+
+	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONTROL;
+	frame.stream_id = stream->stream_id;
+	frame.application_data = application_data;
+
+	if ((ret = __rrr_udpstream_send_frame_to_remote (udpstream_data, stream, &frame)) != 0) {
+		VL_MSG_ERR("Could not send control frame in rrr_udpstream_send_control_frame for stream with connect handle %u\n",
+				connect_handle);
+		goto out;
+	}
+
+	out:
+	pthread_mutex_unlock(&udpstream_data->lock);
+	return ret;
+}
+
 int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
 		const void *data,
 		ssize_t data_size,
-		uint64_t boundary_id,
-		int (*send_callback)(const struct rrr_udpstream_send_data *send_data, void *arg),
-		void *send_callback_arg
+		uint64_t application_data
 ) {
 	int ret = 0;
 
@@ -1964,6 +1664,7 @@ int rrr_udpstream_queue_outbound_data (
 
 		new_frame->flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_DATA;
 		new_frame->frame_id = ++(stream->send_buffer.frame_id_counter);
+		new_frame->application_data = application_data;
 
 		RRR_LL_APPEND(&stream->send_buffer, new_frame);
 
@@ -1974,25 +1675,6 @@ int rrr_udpstream_queue_outbound_data (
 	// Set boundary flag on last frame
 	if (new_frame != NULL) {
 		new_frame->flags_and_type |= RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY;
-		new_frame->boundary_id_combined = boundary_id;
-	}
-
-	if (send_callback != NULL) {
-		struct rrr_udpstream_send_data send_data = {
-				data,
-				data_size,
-				connect_handle,
-				stream->stream_id,
-				boundary_id,
-				stream->remote_addr,
-				stream->remote_addr_len
-		};
-
-		if ((ret = send_callback (&send_data, send_callback_arg))) {
-			VL_MSG_ERR("Error from send callback in rrr_udpstream_queue_outbound_data\n");
-			ret = 1;
-			goto out;
-		}
 	}
 
 	out:
@@ -2023,7 +1705,7 @@ int rrr_udpstream_bind (
 	data->ip.port = local_port;
 
 	if (ip_network_start_udp_ipv4 (&data->ip) != 0) {
-		VL_MSG_ERR("Could not start IP in rrr_udpstream_connect\n");
+		VL_MSG_ERR("Could not start IP in rrr_udpstream_bind\n");
 		ret = 1;
 		goto out;
 	}
