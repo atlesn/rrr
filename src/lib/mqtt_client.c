@@ -92,7 +92,7 @@ int rrr_mqtt_client_subscribe (
 	int ret = 0;
 
 	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
 		goto out;
 	}
 	else if (ret < 0) {
@@ -187,6 +187,7 @@ int rrr_mqtt_client_connect (
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
 	RRR_MQTT_P_LOCK(connect);
 
+	// TODO : Support zero-byte client identifier
 	connect->client_identifier = malloc(strlen(data->mqtt_data.client_name) + 1);
 	if (connect->client_identifier == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_client_connect\n");

@@ -323,8 +323,8 @@ int test_do_poll_loop (
 	int ret = 0;
 
 	// Poll from output
-	for (int i = 1; i <= 10 && test_result->message == NULL; i++) {
-		TEST_MSG("Test result polling try: %i of 10\n", i);
+	for (int i = 1; i <= 20 && test_result->message == NULL; i++) {
+		TEST_MSG("Test result polling try: %i of 20\n", i);
 
 		struct fifo_callback_args poll_data = {NULL, test_result, 0};
 		ret = poll_delete(thread_data, callback, &poll_data, 150);
@@ -389,15 +389,18 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 int test_type_array (
 		struct vl_message **result_message_1,
 		struct vl_message **result_message_2,
+		struct vl_message **result_message_3,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
 		const char *input_socket_name,
 		const char *output_name_1,
-		const char *output_name_2
+		const char *output_name_2,
+		const char *output_name_3
 ) {
 	int ret = 0;
 	*result_message_1 = NULL;
 	*result_message_2 = NULL;
+	*result_message_3 = NULL;
 
 	struct ip_buffer_entry *entry = NULL;
 	struct test_data *data = NULL;
@@ -406,8 +409,9 @@ int test_type_array (
 	struct instance_metadata *input_buffer_socket = instance_find(instances, input_socket_name);
 	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
 	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
+	struct instance_metadata *output_3 = instance_find(instances, output_name_3);
 
-	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL) {
+	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL || output_3 == NULL) {
 		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
 				input_name, output_name_1);
 		return 1;
@@ -416,12 +420,14 @@ int test_type_array (
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
 	int (*poll_delete_1)(RRR_MODULE_POLL_SIGNATURE);
 	int (*poll_delete_2)(RRR_MODULE_POLL_SIGNATURE);
+	int (*poll_delete_3)(RRR_MODULE_POLL_SIGNATURE);
 
 	inject = input->dynamic_data->operations.inject;
 	poll_delete_1 = output_1->dynamic_data->operations.poll_delete;
 	poll_delete_2 = output_2->dynamic_data->operations.poll_delete;
+	poll_delete_3 = output_3->dynamic_data->operations.poll_delete;
 
-	if (inject == NULL || poll_delete_1 == NULL || poll_delete_2 == NULL) {
+	if (inject == NULL || poll_delete_1 == NULL || poll_delete_2 == NULL || poll_delete_3 == NULL) {
 		TEST_MSG("Could not find inject and/or poll_delete in modules in test_type_array\n");
 		return 1;
 	}
@@ -493,19 +499,28 @@ int test_type_array (
 	entry = NULL;
 
 	// Poll from first output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
 	struct test_result test_result_1 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, poll_delete_1, test_type_array_callback);
-	TEST_MSG("Result of test_type_array 1/2, should be 2: %i\n", test_result_1.result);
+	TEST_MSG("Result of test_type_array 1/3, should be 2: %i\n", test_result_1.result);
 	*result_message_1 = test_result_1.message;
 
 	// Poll from second output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_2->thread_data));
 	struct test_result test_result_2 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, poll_delete_2, test_type_array_callback);
-	TEST_MSG("Result of test_type_array 2/2, should be 2: %i\n", test_result_2.result);
+	TEST_MSG("Result of test_type_array 2/3, should be 2: %i\n", test_result_2.result);
 	*result_message_2 = test_result_2.message;
 
+	// Poll from third output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_3->thread_data));
+	struct test_result test_result_3 = {1, NULL};
+	ret |= test_do_poll_loop(&test_result_3, output_3->thread_data, poll_delete_3, test_type_array_callback);
+	TEST_MSG("Result of test_type_array 3/3, should be 2: %i\n", test_result_3.result);
+	*result_message_3 = test_result_3.message;
+
 	// Error if result is not two from both polls
-	ret |= (test_result_1.result != 2) | (test_result_2.result != 2);
+	ret |= (test_result_1.result != 2) | (test_result_2.result != 2) | (test_result_3.result != 2);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(data);
