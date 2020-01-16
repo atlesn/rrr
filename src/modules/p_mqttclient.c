@@ -227,6 +227,9 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
+	VL_DEBUG_MSG_2 ("MQTT instance %s using '%s' as client identifier\n",
+			config->name, data->client_identifier);
+
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
 		data->version = RRR_MQTT_DEFAULT_VERSION;
 	}
@@ -298,6 +301,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 
+	data->receive_vl_message = 0;
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -308,7 +312,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	}
 	else if (yesno > 0) {
 		if (rrr_array_count(&data->array_definition) > 0) {
-			VL_MSG_ERR("mqtt_receive_rrr_message was set to one but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
+			VL_MSG_ERR("mqtt_receive_rrr_message was set to yes but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -864,8 +868,13 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int is_vl_message = data->receive_vl_message;
 	int expecting_vl_message = data->receive_vl_message;
 
-	if (content_type != NULL && strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
-		is_vl_message = 1;
+	if (content_type != NULL) {
+		VL_DEBUG_MSG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), content_type);
+
+		if (strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
+			is_vl_message = 1;
+		}
 	}
 
 	// Try to extract a message from the data of the publish
@@ -903,7 +912,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 					read_pos,
 					data
 			)) != 0) {
-				VL_MSG_ERR("Error while parsing data array in mqtt client instance %s\n",
+				VL_MSG_ERR("Error while parsing data array from received PUBLISH in mqtt client instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				break;
 			}
@@ -919,7 +928,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			WRITE_TO_BUFFER_AND_SET_TO_NULL(message_final);
 		} while (1);
 
-		VL_DEBUG_MSG_3("MQTT client instance %s parsed %i array records from PUBLISH message\n",
+		VL_DEBUG_MSG_2("MQTT client instance %s parsed %i array records from PUBLISH message\n",
 				INSTANCE_D_NAME(data->thread_data), count);
 		goto out;
 	}
@@ -936,6 +945,8 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		goto out;
 	}
 	else if (message_final != NULL) {
+		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message payload\n",
+				INSTANCE_D_NAME(data->thread_data));
 		goto out_write_to_buffer;
 	}
 
@@ -957,6 +968,10 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
+	}
+	else {
+		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message topic, which was '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), publish->topic);
 	}
 
 	out_write_to_buffer:
@@ -1103,7 +1118,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		}
 
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
-			VL_MSG_ERR("Error int mqtt client instance %s while running tasks\n",
+			VL_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
