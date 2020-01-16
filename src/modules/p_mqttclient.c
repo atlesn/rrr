@@ -55,6 +55,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 
+#define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
+#define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
+
 struct mqtt_client_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer output_buffer;
@@ -74,6 +77,7 @@ struct mqtt_client_data {
 	uint8_t version;
 	int publish_rrr_message;
 	int receive_vl_message;
+	char *connect_error_action;
 	struct rrr_mqtt_conn *connection;
 };
 
@@ -85,6 +89,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
+	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	rrr_linked_list_destroy(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
@@ -374,6 +379,31 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			goto out;
 		}
 		ret = 0;
+	}
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->connect_error_action, config, "mqtt_connect_error_action")) == 0) {
+		if (strcmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RESTART) == 0) {
+		}
+		else if (strcmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
+		}
+		else {
+			VL_MSG_ERR("Unknown value for mqtt_connect_error_action (̈́'%s') in mqtt client instance %s, please refer to documentation\n",
+					data->connect_error_action, config->name);
+		}
+	}
+	else {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing mqtt_connect_error_action\n");
+			ret = 1;
+			goto out;
+		}
+
+		data->connect_error_action = strdup(RRR_MQTT_CONNECT_ERROR_DO_RESTART);
+		if (data->connect_error_action == NULL) {
+			VL_MSG_ERR("Could not allocate memory for connect_error_action in mqtt client\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -1056,8 +1086,11 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	reconnect:
 	for (int i = 20; i >= 0 && thread_check_encourage_stop(thread_data->thread) != 1; i--) {
-		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu'\n",
-				INSTANCE_D_NAME(thread_data), data->server, data->server_port);
+		update_watchdog_time(thread_data->thread);
+
+		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/20\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i);
+
 		if (rrr_mqtt_client_connect (
 				&data->connection,
 				data->mqtt_client_data,
@@ -1069,7 +1102,13 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
-				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
+				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
+					VL_MSG_ERR("MQTT client instance %s: 20 connection attempts failed, trying again.\n",
+							INSTANCE_D_NAME(thread_data));
+					goto reconnect;
+				}
+
+				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s, restarting.\n",
 						data->server, data->server_port, INSTANCE_D_NAME(thread_data));
 				goto out_destroy_client;
 			}
