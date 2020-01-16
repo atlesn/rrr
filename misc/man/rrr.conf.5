@@ -569,6 +569,7 @@ Expect to receive RRR messages from the broker.
 If set to yes, any messages received which are not RRR messages are dropped.
 If set to no and protocol version is V3.1.1, any data in messages received are put into a new RRR message.
 If set to no and protocol version is V5, type of the received message is auto-detected.
+Defaults to no.
 .It mqtt_receive_array=ARRAY DEFINITION
 If set, expect to receive data arrays of specific formats in publish messages.
 This option cannot be used with mqtt_receive_rrr_message=yes, however if protocol version is V5,
