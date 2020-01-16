@@ -92,7 +92,7 @@ int rrr_mqtt_client_subscribe (
 	int ret = 0;
 
 	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
-		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
 		goto out;
 	}
 	else if (ret < 0) {
