@@ -1043,7 +1043,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	struct rrr_mqtt_common_init_data init_data = {
-		INSTANCE_D_NAME(thread_data),
+		data->client_identifier,
 		RRR_MQTT_COMMON_RETRY_INTERVAL,
 		RRR_MQTT_COMMON_CLOSE_WAIT_TIME,
 		RRR_MQTT_COMMON_MAX_CONNECTIONS
