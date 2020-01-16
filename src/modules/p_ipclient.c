@@ -219,8 +219,6 @@ static struct ipclient_destination *__ipclient_destination_find_or_create (
 	return result;
 }
 
-
-
 static void clean_destinations(struct ipclient_data *data) {
 	uint64_t time_now = time_get_64();
 	RRR_LL_ITERATE_BEGIN(&data->destinations, struct ipclient_destination);
@@ -438,200 +436,6 @@ static int poll_callback_ip (struct fifo_callback_args *poll_data, char *data, u
 	return poll_callback_final(private_data, entry);
 }
 
-int release_queue_send_urges (int *send_count_result, struct ipclient_data *data) {
-	int ret = 0;
-
-	*send_count_result = 0;
-
-	// If our release queue is full, spam out A LOT of ACK messages to
-	// force remote to generate release ACKs aiding us in reducing the
-	// buffer size instead of it sending more data. This also has the effect
-	// of reduced window size on the remote.
-/*	int dupes = 1;
-	if (RRR_LL_COUNT(&data->release_queue) > VL_IPCLIENT_RELEASE_QUEUE_MAX) {
-		dupes = 2;
-	}*/
-
-	int send_count = 0;
-
-	if (RRR_LL_COUNT(&data->release_queue) > 0) {
-		uint64_t time_now = time_get_64();
-		RRR_LL_ITERATE_BEGIN(&data->release_queue, struct ipclient_queue_entry);
-			int do_send = 0;
-			if (node->send_time == 0) {
-				do_send = 1;
-			}
-			else if (time_now - node->send_time > VL_IPCLIENT_RELEASE_QUEUE_URGE_TIMEOUT_MS * 1000) {
-				do_send = 1;
-			}
-			if (do_send != 0) {
-				VL_DEBUG_MSG_3("ipclient instance %s: send release ACK urge for boundary %" PRIu64 "\n",
-						INSTANCE_D_NAME(data->thread_data), node->boundary_id_combined);
-
-				node->send_time = time_now;
-				if (rrr_udpstream_release_ack_urge (
-						&data->udpstream,
-						node->stream_id,
-						node->boundary_id_combined,
-						&node->entry->addr,
-						node->entry->addr_len,
-						-150
-				) != 0) {
-					VL_MSG_ERR("Could not send release ACK urge in ipclient receive_messages\n");
-					ret = 1;
-					goto out;
-				}
-				send_count++;
-			}
-
-			if (send_count > 5) {
-				RRR_LL_ITERATE_LAST();
-			}
-		RRR_LL_ITERATE_END(&data->release_queue);
-		if (send_count > 0) {
-			VL_DEBUG_MSG_2("ipclient instance %s: sent %i release ACK urges\n",
-					INSTANCE_D_NAME(data->thread_data), send_count);
-		}
-	}
-
-	*send_count_result = send_count;
-
-	out:
-	return ret;
-}
-
-static int connect_with_udpstream (struct ipclient_data *data) {
-	int ret = 0;
-
-	if (data->ip_default_remote == NULL) {
-		goto out;
-	}
-
-	uint64_t time_now = time_get_64();
-	int connect_max = 2;
-	int active_was_found = 0;
-
-	for (int i = 0; i < VL_IPCLIENT_CONCURRENT_CONNECTIONS; i++) {
-		struct connect_handle *connect_handle = &data->connect_handles[i];
-
-		// Check for connect timeout and check if alive
-		if (connect_handle->connect_handle != 0) {
-			if (data->active_connect_handle == connect_handle->connect_handle) {
-				active_was_found = 1;
-			}
-
-			if ((ret = rrr_udpstream_connection_check(&data->udpstream, connect_handle->connect_handle)) != 0) {
-				if (ret == RRR_UDPSTREAM_NOT_READY) {
-					if (time_now - connect_handle->start_time > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
-						VL_MSG_ERR("CONNECT timed out for ipclient instance %s connect handle %u\n",
-								INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
-						connect_handle->connect_handle = 0;
-					}
-				}
-				else if (ret == RRR_UDPSTREAM_RESET) {
-					VL_DEBUG_MSG_2("CONNECT reset for ipclient %s connect handle %u\n",
-							INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
-					connect_handle->connect_handle = 0;
-				}
-				else {
-					VL_MSG_ERR("CONNECT error %i while checking connection for ipclient instance %s connect handle %u\n",
-							ret, INSTANCE_D_NAME(data->thread_data), connect_handle->connect_handle);
-					connect_handle->connect_handle = 0;
-				}
-				ret = 0;
-			}
-			else {
-				connect_handle->is_established = 1;
-			}
-
-			if (connect_handle->is_established == 0 && time_now - connect_handle->start_time > VL_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
-				connect_handle->connect_handle = 0;
-			}
-		}
-
-		// Check for sending new CONNECT
-		if (connect_handle->connect_handle == 0 && connect_max-- > 0) {
-			connect_handle->is_established = 0;
-			connect_handle->start_time = time_now;
-
-			if (rrr_udpstream_connect (
-					&connect_handle->connect_handle,
-					data->send_boundary_high,
-					&data->udpstream,
-					data->ip_default_remote,
-					data->ip_default_remote_port
-			) != 0) {
-				VL_MSG_ERR("UDP-stream could not connect in ipclient instance %s\n",
-						INSTANCE_D_NAME(data->thread_data));
-				ret = 1;
-				goto out;
-			}
-		}
-
-		// Check for setting active connect handle
-		if (data->active_connect_handle == 0 && connect_handle->is_established != 0 && connect_handle->connect_handle != 0) {
-			data->active_connect_handle = connect_handle->connect_handle;
-			active_was_found = 1;
-		}
-	}
-
-	if (active_was_found == 0) {
-		data->active_connect_handle = 0;
-	}
-
-	out:
-	return ret;
-}
-
-static void invalidate_connect_handle (struct ipclient_data *data, uint32_t connect_handle) {
-	VL_DEBUG_MSG_2("ipclient instance %s invalidate connect handle %u active is %u\n",
-			INSTANCE_D_NAME(data->thread_data), connect_handle, data->active_connect_handle);
-
-	for (int i = 0; i < VL_IPCLIENT_CONCURRENT_CONNECTIONS; i++) {
-		struct connect_handle *cur = &data->connect_handles[i];
-
-		if (cur->connect_handle == connect_handle) {
-			cur->connect_handle = 0;
-		}
-	}
-
-	if (data->active_connect_handle == connect_handle) {
-		data->active_connect_handle = 0;
-	}
-}
-
-static int delivery_listener (uint16_t stream_id, uint64_t boundary_id, uint8_t frame_type, void *arg) {
-	struct ipclient_data *data = arg;
-
-	(void)(stream_id);
-
-	if (frame_type == RRR_UDPSTREAM_FRAME_TYPE_DELIVERY_ACK) {
-		VL_DEBUG_MSG_3("ipclient instance %s DELIVERY ACK for boundary %" PRIu64 "\n",
-				INSTANCE_D_NAME(data->thread_data), boundary_id);
-		__ipclient_queue_set_entry_no_more_sending(&data->send_queue, boundary_id);
-	}
-	else if (frame_type == RRR_UDPSTREAM_FRAME_TYPE_RELEASE_ACK) {
-		VL_DEBUG_MSG_3("ipclient instance %s received release ACK for boundary %" PRIu64 "\n",
-				INSTANCE_D_NAME(data->thread_data), boundary_id);
-
-		struct ip_buffer_entry *entry = __ipclient_queue_remove_entry_and_get_data(&data->release_queue, boundary_id);
-		if (entry == NULL) {
-			VL_DEBUG_MSG_2("Note: Received RELEASE ACK for unknown boundary %" PRIu64 " in ipclient instance %s\n",
-					boundary_id, INSTANCE_D_NAME(data->thread_data));
-			goto out;
-		}
-		fifo_buffer_write(&data->local_output_buffer, (char*) entry, sizeof(*entry));
-	}
-	else if (frame_type == RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK) {
-		VL_DEBUG_MSG_3("ipclient instance %s COMPLETE ACK for boundary %" PRIu64 "\n",
-				INSTANCE_D_NAME(data->thread_data), boundary_id);
-		__ipclient_queue_remove_entry(&data->send_queue, boundary_id);
-	}
-
-	out:
-	return 0;
-}
-
 struct receive_messages_callback_data {
 	struct ipclient_data *data;
 	int count;
@@ -644,145 +448,17 @@ static int receive_messages_callback_final(struct vl_message *message, void *arg
 
 	int ret = VL_IP_RECEIVE_OK;
 
-	if (callback_data->receive_data->boundary_id != 0) {
-		VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " boundary id %" PRIu64 " to release queue\n",
-				message->timestamp_from, callback_data->receive_data->boundary_id);
-
-		struct ip_buffer_entry *entry = NULL;
-		if (ip_buffer_entry_new (
-				&entry,
-				MSG_TOTAL_SIZE(message),
-				callback_data->receive_data->addr,
-				callback_data->receive_data->addr_len,
-				message
-		) != 0) {
-			VL_MSG_ERR("Could not create ip buffer entry in ipclient receive_messages_callback_final\n");
-			ret = VL_IP_RECEIVE_ERR;
-			goto out;
-		}
-		message = NULL;
-
-		if (__ipclient_queue_insert_entry_or_destroy (
-				&data->release_queue,
-				entry,
-				callback_data->receive_data->stream_id,
-				callback_data->receive_data->boundary_id
-		) != 0) {
-			VL_MSG_ERR("Could not add ip buffer entry to release queue in receive_messages_callback_final\n");
-			ret = VL_IP_RECEIVE_ERR;
-			goto out;
-		}
-	}
-	else {
-		struct ip_buffer_entry *entry = NULL;
-
-		if (ip_buffer_entry_new_with_empty_message (
-				&entry,
-				MSG_TOTAL_SIZE(message),
-				callback_data->receive_data->addr,
-				callback_data->receive_data->addr_len
-		) != 0) {
-			VL_MSG_ERR("Could not allocate IP buffer entry in ipclient receive_messages_callback_final\n");
-			ret = VL_IP_RECEIVE_ERR;
-			goto out;
-		}
-
-		memcpy(entry->message, message, MSG_TOTAL_SIZE(message));
-
-		VL_DEBUG_MSG_3 ("ipclient: Write message with timestamp %" PRIu64 " to local output buffer\n",
-				message->timestamp_from);
-
 		fifo_buffer_write(&data->local_output_buffer, (char*) entry, sizeof(*entry));
 
-		message = NULL;
-	}
-
-	callback_data->count++;
+		callback_data->count++;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
-static int receive_messages_callback(const struct rrr_udpstream_receive_data *receive_data, void *arg) {
-	struct receive_messages_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	callback_data->receive_data = receive_data;
-
-	struct rrr_socket_common_receive_message_callback_data socket_callback_data = {
-			receive_messages_callback_final, callback_data
-	};
-
-	// This function will always free the data, also upon errors
-	if ((ret = rrr_socket_common_receive_message_raw_callback (
-			receive_data->data,
-			receive_data->data_size,
-			&socket_callback_data
-	)) != 0) {
-		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Invalid message received in ipclient instance %s boundary id %" PRIu64 "\n",
-					INSTANCE_D_NAME(callback_data->data->thread_data), receive_data->boundary_id);
-			ret = 0;
-		}
-		else {
-			VL_MSG_ERR("Error while processing message in receive_packets_callback of ipclient instance %s return was %i\n",
-					INSTANCE_D_NAME(callback_data->data->thread_data), ret);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	out:
-	callback_data->receive_data = NULL;
-	return ret;
-}
-
 static int receive_messages(int *receive_count, struct ipclient_data *data) {
 	int ret = 0;
-
-	*receive_count = 0;
-
-	if ((ret = rrr_udpstream_do_read_tasks(&data->udpstream, delivery_listener, data)) != 0) {
-		if (ret != RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of ipclient instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-
-	struct receive_messages_callback_data callback_data = {
-			data, 0, NULL
-	};
-
-	if (RRR_LL_COUNT(&data->release_queue) < VL_IPCLIENT_RELEASE_QUEUE_MAX) {
-		if ((ret = rrr_udpstream_do_process_receive_buffers (
-				&data->udpstream,
-				rrr_socket_common_get_session_target_length_from_message_and_checksum_raw,
-				NULL,
-				receive_messages_callback,
-				&callback_data
-		)) != 0) {
-			VL_MSG_ERR("Error from UDP-stream while processing buffers in receive_packets of ipclient instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		VL_MSG_ERR("icplient instance %s release queue is full, possible hang-up with following data loss imminent\n",
-				INSTANCE_D_NAME(data->thread_data));
-	}
-
-	*receive_count = callback_data.count;
-
-	if (*receive_count > 0) {
-		VL_DEBUG_MSG_3("ipclient instance %s: received %i messages\n",
-				INSTANCE_D_NAME(data->thread_data), *receive_count);
-	}
 
 	out:
 	return ret;
@@ -1196,7 +872,7 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 			goto network_restart;
 		}
 
-		if (no_polling == 0 &&
+		if (	no_polling == 0 &&
 				fifo_buffer_get_entry_count(&data->send_queue_intermediate) < VL_IPCLIENT_SEND_BUFFER_UNASSURED_MAX &&
 				RRR_LL_COUNT(&data->send_queue) < VL_IPCLIENT_SEND_BUFFER_ASSURED_MAX
 		) {

@@ -32,10 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_socket_common_receive_message_raw_callback (
 		void *data,
 		ssize_t data_size,
-		void *arg
+		struct rrr_socket_common_receive_message_callback_data *callback_data
 ) {
 	struct vl_message *message = data;
-	struct rrr_socket_common_receive_message_callback_data *callback_data = arg;
 
 	int ret = 0;
 

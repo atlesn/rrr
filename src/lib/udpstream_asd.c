@@ -650,19 +650,19 @@ static rrr_udpstream_asd_receive_messages (
 		VL_MSG_ERR("UDP-stream ASD handle %u release queue is full, possible hang-up with following data loss imminent\n",
 				session->connect_handle);
 	}
-
+/*
 	*receive_count = callback_data.count;
 
 	if (*receive_count > 0) {
 		VL_DEBUG_MSG_3("UDP-stream ASD handle %u: received %i messages\n",
 				session->connect_handle, *receive_count);
 	}
-
+*/
 	out:
 	return ret;
 }
 
-static void rrr_udpstream_asd_release_queue_cleanup_and_deliver (struct rrr_udpstream_asd *session) {
+static void __rrr_udpstream_asd_release_queue_cleanup_and_deliver (struct rrr_udpstream_asd *session) {
 	int lost_entries = 0;
 	uint16_t prev_ok_stream_id = 0;
 	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct ipclient_queue_entry);

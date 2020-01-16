@@ -33,7 +33,7 @@ struct rrr_socket_common_receive_message_callback_data {
 int rrr_socket_common_receive_message_raw_callback (
 		void *data,
 		ssize_t data_size,
-		void *arg
+		struct rrr_socket_common_receive_message_callback_data *callback_data
 );
 int rrr_socket_common_receive_message_callback (
 		struct rrr_socket_read_session *read_session,
