@@ -253,10 +253,19 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 
-	if ((ret = rrr_instance_config_get_string_noconvert(&data->server, config, "mqtt_server")) != 0) {
-		VL_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
-		ret = 1;
-		goto out;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->server, config, "mqtt_server")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		data->server = strdup("localhost");
+		if (data->server == NULL) {
+			VL_MSG_ERR("Could not allocate memory for mqtt_server in mqtt client\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	int publish_rrr_message_was_present = 0;
@@ -405,6 +414,8 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			goto out;
 		}
 	}
+
+	ret = 0;
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -1042,6 +1053,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	// TODO : Support zero-byte client identifier
 	struct rrr_mqtt_common_init_data init_data = {
 		data->client_identifier,
 		RRR_MQTT_COMMON_RETRY_INTERVAL,
