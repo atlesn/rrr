@@ -252,7 +252,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	frame->header_crc32 = htobe32(crc32buf(crc32_start_pos, crc32_size));
 
-	VL_DEBUG_MSG_3("udpstream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle: %u\n",
+	VL_DEBUG_MSG_3("udpstream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u\n",
 			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle));
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
