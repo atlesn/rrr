@@ -33,6 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS (RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS * 4) // Milliseconds before resending a packet
 #define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX 500 // Max unreleased messages awaiting release ACK
 
+// This many messages must follow a message before it is deleted from release queue
+#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER 10
+
 #define RRR_UDPSTREAM_ASD_OK			0
 #define RRR_UDPSTREAM_ASD_ERR			RRR_UDPSTREAM_ERR
 #define RRR_UDPSTREAM_ASD_NOT_READY		RRR_UDPSTREAM_NOT_READY
@@ -43,8 +46,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK		(1<<2)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK		(1<<3)
 #define RRR_UDPSTREAM_ASD_ACK_FLAGS_DELIVERED	(1<<15)
-
-
 
 // The following three packets resembles functionality of MQTT QoS2, for this
 // purpose called "assured single delivery". This type of management of whole
@@ -69,9 +70,10 @@ struct ip_buffer_entry;
 
 struct rrr_udpstream_asd_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_queue_entry);
-	struct ip_buffer_entry *entry;
+	struct ip_buffer_entry *message;
 	uint32_t message_id;
 	uint64_t send_time;
+	int delivered_grace_counter;
 	int ack_status_flags;
 };
 
@@ -129,7 +131,17 @@ int rrr_udpstream_asd_new (
 );
 int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
-		struct ip_buffer_entry *message
+		struct ip_buffer_entry **message
+);
+int rrr_udpstream_asd_deliver_messages (
+		struct rrr_udpstream_asd *session,
+		int (*receive_callback)(struct ip_buffer_entry *message, void *arg),
+		void *receive_callback_arg
+);
+int rrr_udpstream_asd_buffer_tick (
+		int *receive_count,
+		int *send_count,
+		struct rrr_udpstream_asd *session
 );
 
 #endif /* RRR_UDPSTREAM_ASD_H */

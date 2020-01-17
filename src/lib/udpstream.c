@@ -252,7 +252,8 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	frame->header_crc32 = htobe32(crc32buf(crc32_start_pos, crc32_size));
 
-//	printf ("packed crc32: %" PRIu32 " size: %u\n", frame->header_crc32, be16toh(frame->data_size));
+	VL_DEBUG_MSG_3("udpstream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle: %u\n",
+			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle));
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
 	memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
@@ -342,7 +343,7 @@ static int __rrr_udpstream_send_frame_ack (
 	frame.ack_data.ack_id_last = htobe32(ack_id_last);
 
 	if (window_size != 0) {
-		frame.flags_and_type |= RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE;
+		frame.flags_and_type |= (RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE << 4);
 		frame.window_size = htobe32(window_size);
 	}
 
@@ -387,7 +388,8 @@ static int __rrr_udpstream_send_connect_response (
 static uint32_t __rrr_udpstream_allocate_connect_handle (
 		struct rrr_udpstream *data
 ) {
-	uint32_t ret = (uint32_t) rand();
+	srand((uint32_t) (time_get_64() & 0xffffffff));
+	uint32_t ret = rand();
 	for (int retries = 0xffff; retries > 0; retries--) {
 		int collission = 0;
 		RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
@@ -407,7 +409,6 @@ static uint32_t __rrr_udpstream_allocate_connect_handle (
 
 static int __rrr_udpstream_send_connect (
 		uint32_t *connect_handle_result,
-		uint32_t boundary_id_high,
 		struct rrr_udpstream *data,
 		const struct sockaddr *addr,
 		socklen_t addr_len
@@ -427,7 +428,6 @@ static int __rrr_udpstream_send_connect (
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
 	frame.connect_handle = htobe32(connect_handle);
-	frame.boundary_id_combined = htobe64((uint64_t) boundary_id_high << 32);
 
 	struct rrr_udpstream_stream *stream = NULL;
 	if ((stream = __rrr_udpstream_create_and_add_stream(data, addr, addr_len)) == NULL) {
@@ -463,7 +463,6 @@ static void __rrr_udpstream_frame_packed_dump (
 	VL_DEBUG_MSG ("Version      : %u\n", RRR_UDPSTREAM_FRAME_PACKED_VERSION(frame));
 	VL_DEBUG_MSG ("Stream-ID    : %u\n", RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame));
 	VL_DEBUG_MSG ("Frame-ID     : %u\n", RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame));
-	VL_DEBUG_MSG ("Boundary-ID  : %" PRIu64 "\n", RRR_UDPSTREAM_FRAME_PACKED_BOUNDARY_ID(frame));
 
 	VL_DEBUG_MSG("-- 0x");
 	for (size_t i = 0; i < RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame); i++) {
@@ -637,12 +636,6 @@ static int __rrr_udpstream_handle_received_connect (
 			goto out;
 		}
 
-		if (__rrr_udpstream_check_ok_boundary_id_high(data, new_frame->boundary_id_combined >> 32, src_addr, addr_len) != 0) {
-			VL_DEBUG_MSG_2("Incoming UDP-stream with connect handle %" PRIu32 " boundary id %" PRIu32 " from CONNECT rejected\n",
-					new_frame->connect_handle, (uint32_t) (new_frame->boundary_id_combined >> 32));
-			goto send_response;
-		}
-
 		// If stream id is zero, we cannot accept more connections and the connection is rejected
 		stream_id = __rrr_udpstream_allocate_stream_id(data);
 		if (stream_id > 0) {
@@ -656,7 +649,6 @@ static int __rrr_udpstream_handle_received_connect (
 			// receives the currently used sender address for every message.
 			stream->stream_id = stream_id;
 			stream->connect_handle = new_frame->connect_handle;
-			stream->boundary_id_high = (uint32_t) (new_frame->boundary_id_combined << 32);
 
 			VL_DEBUG_MSG_2("Incoming UDP-stream connection established with stream id %u connect handle %u\n",
 					stream_id, stream->connect_handle);
@@ -668,6 +660,8 @@ static int __rrr_udpstream_handle_received_connect (
 		}
 
 		send_response:
+		VL_DEBUG_MSG_2("Sending UDP-stream connect response stream id %u connect handle %u\n",
+				stream_id, stream->connect_handle);
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, new_frame->connect_handle) != 0) {
 			VL_MSG_ERR("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;
@@ -688,6 +682,7 @@ static int __rrr_udpstream_handle_received_reset (
 	VL_DEBUG_MSG_3("Received UDP-stream packet with RESET for stream ID %u\n", new_frame->stream_id);
 
 	if (new_frame->frame_id == 0) {
+		// TODO : Not working properly
 		VL_DEBUG_MSG_3("Performing hard reset for stream ID %u\n", new_frame->stream_id);
 
 		stream->receive_buffer.frame_id_max = stream->receive_buffer.frame_id_counter;
@@ -806,6 +801,9 @@ static int __rrr_udpstream_handle_received_frame (
 
 	struct rrr_udpstream_frame *new_frame = NULL;
 
+	VL_DEBUG_MSG_3("udpstream RX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle: %u\n",
+			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle));
+
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
 		VL_MSG_ERR("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
 		ret = RRR_SOCKET_HARD_ERROR;
@@ -880,8 +878,13 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	VL_DEBUG_MSG_3("Received UDP-stream packet with data for stream ID %u frame id %u boundary %i\n",
-			new_frame->stream_id, new_frame->frame_id, RRR_UDPSTREAM_FRAME_IS_BOUNDARY(new_frame));
+	VL_DEBUG_MSG_3("Received UDP-stream packet with data for stream ID %u frame id %u boundary %i flags %i type %i\n",
+			new_frame->stream_id,
+			new_frame->frame_id,
+			RRR_UDPSTREAM_FRAME_IS_BOUNDARY(new_frame),
+			RRR_UDPSTREAM_FRAME_FLAGS(new_frame),
+			RRR_UDPSTREAM_FRAME_TYPE(frame)
+	);
 
 	if (stream->receive_buffer.frame_id_counter == 0 && new_frame->frame_id != 1) {
 		// First frame must be ID 1, this to be able to filter out "old data" from lost streams
@@ -1328,11 +1331,6 @@ static int __rrr_udpstream_maintain (
 			VL_DEBUG_MSG_2("UDP-stream connection with id %u timed out after being invalid\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-		else {
-			if ((ret = __rrr_udpstream_boundary_states_maintain_and_send_ack_reminders(data, node)) != 0) {
-				goto out;
-			}
-		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
 	out:
@@ -1674,7 +1672,7 @@ int rrr_udpstream_queue_outbound_data (
 
 	// Set boundary flag on last frame
 	if (new_frame != NULL) {
-		new_frame->flags_and_type |= RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY;
+		new_frame->flags_and_type |= (RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY << 4);
 	}
 
 	out:
@@ -1717,7 +1715,6 @@ int rrr_udpstream_bind (
 
 int rrr_udpstream_connect_raw (
 		uint32_t *connect_handle,
-		uint32_t boundary_id_high,
 		struct rrr_udpstream *data,
 		const struct sockaddr *addr,
 		socklen_t socklen
@@ -1730,7 +1727,7 @@ int rrr_udpstream_connect_raw (
 		VL_BUG("FD was 0 in rrr_udpstream_connect_raw, must bind first\n");
 	}
 
-	if ((ret = __rrr_udpstream_send_connect(connect_handle, boundary_id_high, data, addr, socklen)) != 0) {
+	if ((ret = __rrr_udpstream_send_connect(connect_handle, data, addr, socklen)) != 0) {
 		VL_MSG_ERR("Could not send connect packet in rrr_udpstream_connect_raw\n");
 		goto out;
 	}
@@ -1742,7 +1739,6 @@ int rrr_udpstream_connect_raw (
 
 int rrr_udpstream_connect (
 		uint32_t *connect_handle,
-		uint32_t boundary_id_high,
 		struct rrr_udpstream *data,
 		const char *remote_host,
 		const char *remote_port
@@ -1769,7 +1765,7 @@ int rrr_udpstream_connect (
 		goto out;
 	}
 
-	if ((ret = rrr_udpstream_connect_raw(connect_handle, boundary_id_high, data, res->ai_addr, res->ai_addrlen)) != 0) {
+	if ((ret = rrr_udpstream_connect_raw(connect_handle, data, res->ai_addr, res->ai_addrlen)) != 0) {
 		VL_MSG_ERR("Could not send connect packet in rrr_udpstream_connect\n");
 		goto out;
 	}

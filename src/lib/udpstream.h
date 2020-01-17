@@ -84,7 +84,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
 
-#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 5000
+#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 500000
 #define RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS (RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS*2)
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
@@ -373,7 +373,7 @@ int rrr_udpstream_do_read_tasks (
 		void *control_frame_listener_arg
 );
 
-// This should be called on a regular bases to perform any sending of data
+// This should be called on a regular basis to perform any sending of data
 int rrr_udpstream_do_send_tasks (
 		int *send_count,
 		struct rrr_udpstream *data

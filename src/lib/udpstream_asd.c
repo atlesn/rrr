@@ -29,17 +29,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "vl_time.h"
 #include "rrr_socket_common.h"
+#include "messages.h"
+
+static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
+	struct rrr_udpstream_asd_control_msg result;
+
+	result.flags = application_data >> 32;
+	result.message_id = application_data & 0xffffffff;
+
+	return result;
+}
+
+static uint64_t __rrr_udpstream_asd_control_msg_join (struct rrr_udpstream_asd_control_msg msg) {
+	uint64_t result;
+
+	result = (((uint64_t) msg.flags) << 32) | ((uint64_t) msg.message_id);
+
+	return result;
+}
 
 static int __rrr_udpstream_asd_queue_entry_destroy (
 		struct rrr_udpstream_asd_queue_entry *entry
 ) {
-	if (entry->entry != NULL) {
-		ip_buffer_entry_destroy(entry->entry);
+	if (entry->message != NULL) {
+		ip_buffer_entry_destroy(entry->message);
 	}
 	free(entry);
 	return 0;
 }
-
+/*
 static void __rrr_udpstream_asd_queue_remove_entry (
 		struct rrr_udpstream_asd_queue *queue,
 		uint32_t message_id
@@ -80,8 +98,8 @@ static struct ip_buffer_entry *__rrr_udpstream_asd_queue_remove_entry_and_get_da
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
 //		VL_DEBUG_MSG("cmp boundary %" PRIu64 " vs %" PRIu64 "\n", boundary_id_combined, node->boundary_id_combined);
 		if (node->message_id == message_id) {
-			ret = node->entry;
-			node->entry = NULL;
+			ret = node->message;
+			node->message = NULL;
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
 		}
@@ -89,7 +107,7 @@ static struct ip_buffer_entry *__rrr_udpstream_asd_queue_remove_entry_and_get_da
 
 	return ret;
 }
-
+*/
 static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entry (
 		struct rrr_udpstream_asd_queue *queue,
 		uint32_t message_id
@@ -136,15 +154,16 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 
 	if (entry != NULL) {
 		RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-			VL_MSG_ERR("dump queue boundaries: %u - %" PRIu64 "\n", node->stream_id, node->message_id);
+			VL_MSG_ERR("dump queue boundaries: %" PRIu32 "\n", node->message_id);
 		RRR_LL_ITERATE_END();
-		VL_BUG("Entry with boundary %" PRIu64 " was not inserted in __rrr_udpstream_asd_queue_insert_ordered\n", entry->message_id);
+		VL_BUG("Entry with boundary %" PRIu32 " was not inserted in __rrr_udpstream_asd_queue_insert_ordered\n", entry->message_id);
 	}
 }
 
-static int __rrr_udpstream_asd_queue_insert_entry_or_destroy (
+// message pointer set to NULL if memory gets new owner
+static int __rrr_udpstream_asd_queue_insert_entry (
 		struct rrr_udpstream_asd_queue *queue,
-		struct ip_buffer_entry *entry,
+		struct ip_buffer_entry **message,
 		uint32_t message_id
 ) {
 	int ret = 0;
@@ -162,16 +181,13 @@ static int __rrr_udpstream_asd_queue_insert_entry_or_destroy (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	new_entry->message_id = message_id;
-	new_entry->entry = entry;
-	entry = NULL;
+	new_entry->message = *message;
+	*message = NULL;
 
 	__rrr_udpstream_asd_queue_insert_ordered(queue, new_entry);
 	new_entry = NULL;
 
 	out:
-	if (entry != NULL) {
-		ip_buffer_entry_destroy(entry);
-	}
 	if (new_entry != NULL) {
 		__rrr_udpstream_asd_queue_entry_destroy(new_entry);
 	}
@@ -226,7 +242,9 @@ int rrr_udpstream_asd_new (
 		goto out_free_remote_host;
 	}
 
-	if ((ret = rrr_udpstream_init (&session->udpstream, 0)) != 0) {
+
+	// TODO : Configurable non-accepting mode
+	if ((ret = rrr_udpstream_init (&session->udpstream, RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS)) != 0) {
 		VL_MSG_ERR("Could not initialize udpstream in rrr_udpstream_asd_new\n");
 		goto out_free_remote_port;
 	}
@@ -285,8 +303,20 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 
 	pthread_mutex_lock(&session->connect_lock);
 
-	if (session->is_connected != 0) {
-		goto out;
+	if (session->connect_handle != 0) {
+		int udpstream_ret = rrr_udpstream_connection_check(&session->udpstream, session->connect_handle);
+		if (udpstream_ret == 0) {
+			session->connection_attempt_time = 0;
+			session->is_connected = 1;
+			goto out;
+		}
+		else if (udpstream_ret == RRR_UDPSTREAM_NOT_READY) {
+			session->is_connected = 0;
+		}
+		else {
+			session->connect_handle = 0;
+			session->is_connected = 0;
+		}
 	}
 
 	if (session->connection_attempt_time > 0) {
@@ -302,7 +332,6 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 
 	if ((ret = rrr_udpstream_connect (
 			&session->connect_handle,
-			session->client_id,
 			&session->udpstream,
 			session->remote_host,
 			session->remote_port
@@ -316,7 +345,7 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	session->connection_attempt_time = time_get_64();
 
 	out:
-	pthread_mutex_lock(&session->connect_lock);
+	pthread_mutex_unlock(&session->connect_lock);
 	return ret;
 }
 
@@ -348,7 +377,7 @@ static int __rrr_udpstream_asd_control_frame_listener (uint16_t stream_id, uint6
 
 	pthread_mutex_lock(&session->queue_lock);
 
-	struct rrr_udpstream_asd_control_msg control_msg = *((struct rrr_udpstream_asd_control_msg *) &application_data);
+	struct rrr_udpstream_asd_control_msg control_msg = __rrr_udpstream_asd_control_msg_split(application_data);
 
 	struct rrr_udpstream_asd_queue_entry *node = NULL;
 
@@ -403,9 +432,10 @@ static int __rrr_udpstream_asd_control_frame_listener (uint16_t stream_id, uint6
 	return ret;
 }
 
+// ip_message set to NULL if memory is managed by new buffer
 int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
-		struct ip_buffer_entry *ip_message
+		struct ip_buffer_entry **ip_message
 ) {
 	int ret = RRR_UDPSTREAM_ASD_OK;
 	uint32_t id = 0;
@@ -420,11 +450,12 @@ int rrr_udpstream_asd_queue_message (
 
 	int64_t retry_max = 0xffffffff;
 
+	// TODO : Try 4 billion times? Really?
 	id_retry:
 	if (--retry_max < 0) {
-		VL_MSG_ERR("IDs was exhausted in rrr_udpstream_asd_queue_message for ASD handle %u\n",
+		VL_MSG_ERR("IDs were exhausted in rrr_udpstream_asd_queue_message for ASD handle %u\n",
 				session->connect_handle);
-		ret = RRR_UDPSTREAM_ASD_MESSAGE_ID_MAX;
+		ret = RRR_UDPSTREAM_ASD_ERR;
 		goto out;
 	}
 	id = ++(session->message_id_pos);
@@ -432,11 +463,15 @@ int rrr_udpstream_asd_queue_message (
 		id = ++(session->message_id_pos);
 	}
 
-	if (__rrr_udpstream_asd_queue_find_entry(&session->send_queue) != NULL) {
+	if (__rrr_udpstream_asd_queue_find_entry(&session->send_queue, id) != NULL) {
 		goto id_retry;
 	}
 
-	ret = __rrr_udpstream_asd_queue_insert_entry_or_destroy(&session->send_queue, ip_message, id);
+	if ((ret = __rrr_udpstream_asd_queue_insert_entry(&session->send_queue, ip_message, id)) != 0) {
+		VL_MSG_ERR("Could not insert ASD node into send queue in rrr_udpstream_asd_queue_message\n");
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	pthread_mutex_unlock(&session->message_id_lock);
@@ -450,7 +485,7 @@ int __rrr_udpstream_asd_send_message (
 ) {
 	int ret = 0;
 
-	struct vl_message *message = node->entry->message;
+	struct vl_message *message = node->message->message;
 	struct vl_message *message_network = NULL;
 	message_network = message_duplicate(message);
 	ssize_t message_network_size = MSG_TOTAL_SIZE(message_network);
@@ -498,12 +533,12 @@ int __rrr_udpstream_asd_send_control_message (
 			message_id
 	};
 
-	uint64_t application_data = *((uint64_t*) &control_msg);
+	uint64_t application_data = __rrr_udpstream_asd_control_msg_join(control_msg);
 
 	return rrr_udpstream_send_control_frame(&session->udpstream, session->connect_handle, application_data);
 }
 
-int rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
+static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
 	int ret = 0;
 
 	uint64_t time_now = time_get_64();
@@ -514,14 +549,14 @@ int rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
 	RRR_LL_ITERATE_BEGIN(&session->control_send_queue, struct rrr_udpstream_asd_control_queue_entry);
 		ret = __rrr_udpstream_asd_send_control_message(session, node->ack_flags, node->message_id);
 		if (ret != 0) {
-			VL_MSG_ERR("Could not send control message in rrr_udpstream_asd_do_send_tasks\n");
+			VL_DEBUG_MSG_1("Could not send control message in rrr_udpstream_asd_do_send_tasks return was %i\n", ret);
 			ret = 1;
 			goto out;
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->control_send_queue, 0; free(node));
 
-	// Send data messages and reminder ACKs
+	// Send data messages and reminder ACKs for outbound messages
 	RRR_LL_ITERATE_BEGIN(&session->send_queue, struct rrr_udpstream_asd_queue_entry);
 		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK) != 0) {
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -545,11 +580,33 @@ int rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
 			}
 
 			if (ret != 0) {
-				VL_MSG_ERR("Error while sending message in rrr_udpstream_asd_do_send_tasks\n");
+				VL_DEBUG_MSG_1("Error while sending message A in rrr_udpstream_asd_do_send_tasks return was %i\n", ret);
 				goto out;
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->send_queue, __rrr_udpstream_asd_queue_entry_destroy(node));
+
+	// Send data messages and reminder ACKs for inbound messages
+	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct rrr_udpstream_asd_queue_entry);
+		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_CACK) != 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->send_time == 0 || time_now - node->send_time > RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS * 1000) {
+			// Always update send time to prevent hardcore looping upon error conditions
+			node->send_time = time_now;
+
+			if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK) == 0 || (node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK) == 0) {
+				// We have not sent delivery ACK or need to re-send it
+				ret = __rrr_udpstream_asd_send_control_message(session, RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK, node->message_id);
+				node->ack_status_flags |= RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK;
+			}
+
+			if (ret != 0) {
+				VL_DEBUG_MSG_1("Error while sending message B in rrr_udpstream_asd_do_send_tasks return was %i\n", ret);
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->release_queue, __rrr_udpstream_asd_queue_entry_destroy(node));
 
 	out:
 	pthread_mutex_unlock(&session->queue_lock);
@@ -558,31 +615,65 @@ int rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session) {
 
 struct rrr_asd_receive_messages_callback_data {
 	struct rrr_udpstream_asd *session;
+	const struct rrr_udpstream_receive_data *udpstream_receive_data;
 	int count;
 };
 
-static int __rrr_udpstream_asd_receive_messages_callback_final (struct vl_message *message, void *arg) {
-	struct rrr_udpstream_receive_data *receive_data = arg;
 
+static int __rrr_udpstream_asd_receive_messages_callback_final (struct vl_message *message, void *arg) {
+	int ret = 0;
+
+	struct rrr_asd_receive_messages_callback_data *receive_data = arg;
+	struct rrr_udpstream_asd *session = receive_data->session;
 	struct ip_buffer_entry *new_entry = NULL;
 
-	if (ip_buffer_entry_new(&new_entry, MSG_TOTAL_SIZE(message), receive_data->addr, receive_data->addr_len, message) != 0) {
-		VL_MSG_ERR("Could not ");
+	if (ip_buffer_entry_new (
+			&new_entry,
+			MSG_TOTAL_SIZE(message),
+			receive_data->udpstream_receive_data->addr,
+			receive_data->udpstream_receive_data->addr_len,
+			message
+	) != 0) {
+		VL_MSG_ERR("Could not create ip buffer message in __rrr_udpstream_asd_receive_messages_callback_final\n");
+		ret = 1;
+		goto out;
 	}
 
-	static int __rrr_udpstream_asd_queue_insert_entry_or_destroy (
-			struct rrr_udpstream_asd_queue *queue,
-			struct ip_buffer_entry *entry,
-			uint32_t message_id
-	) {
-
+	// TODO : Make this a soft error?
+	if (receive_data->udpstream_receive_data->application_data > 0xffffffff) {
+		VL_MSG_ERR("Application data/message ID out of range (%" PRIu64 ") in __rrr_udpstream_asd_receive_messages_callback_final connect handle %" PRIu32 ", message dropped\n",
+				receive_data->udpstream_receive_data->application_data,
+				session->connect_handle
+		);
+		ret = 1;
+		goto out;
 	}
+
+	if ((ret = __rrr_udpstream_asd_queue_insert_entry (
+			&session->release_queue,
+			&new_entry,
+			receive_data->udpstream_receive_data->application_data
+	)) != 0) {
+		VL_MSG_ERR("Could not insert ASD message into release queue\n");
+		ret = 1;
+		goto out;
+	}
+
+	receive_data->count++;
+
+	out:
+	if (new_entry != NULL) {
+		ip_buffer_entry_destroy(new_entry);
+	}
+	return ret;
 }
 
 static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpstream_receive_data *receive_data, void *arg) {
 	struct rrr_asd_receive_messages_callback_data *callback_data = arg;
 
 	int ret = 0;
+
+	callback_data->udpstream_receive_data = receive_data;
 
 	struct rrr_socket_common_receive_message_callback_data socket_callback_data = {
 			__rrr_udpstream_asd_receive_messages_callback_final, callback_data
@@ -611,25 +702,11 @@ static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpst
 	return ret;
 }
 
-static rrr_udpstream_asd_receive_messages (
-		struct rrr_udpstream_asd *session,
-		int (*receive_callback)(const struct rrr_udpstream_receive_data *receive_data, void *arg),
-		void *receive_callback_arg
-) {
+static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_udpstream_asd *session) {
 	int ret = 0;
 
-	if ((ret = rrr_udpstream_do_read_tasks(&session->udpstream, __rrr_udpstream_asd_control_frame_listener, session)) != 0) {
-		if (ret != RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
-					session->connect_handle);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-
-	struct rrr_asd_receive_messages_callback_data callback_data = {
-			session, 0
+	struct rrr_asd_receive_messages_callback_data receive_callback_data = {
+			session, NULL, 0
 	};
 
 	if (RRR_LL_COUNT(&session->release_queue) < RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
@@ -638,7 +715,7 @@ static rrr_udpstream_asd_receive_messages (
 				rrr_socket_common_get_session_target_length_from_message_and_checksum_raw,
 				NULL,
 				__rrr_udpstream_asd_receive_messages_callback,
-				&callback_data
+				&receive_callback_data
 		)) != 0) {
 			VL_MSG_ERR("Error from UDP-stream while processing buffers in receive_packets of UDP-stream ASD handle %u\n",
 					session->connect_handle);
@@ -650,54 +727,124 @@ static rrr_udpstream_asd_receive_messages (
 		VL_MSG_ERR("UDP-stream ASD handle %u release queue is full, possible hang-up with following data loss imminent\n",
 				session->connect_handle);
 	}
-/*
-	*receive_count = callback_data.count;
+
+	*receive_count = receive_callback_data.count;
 
 	if (*receive_count > 0) {
 		VL_DEBUG_MSG_3("UDP-stream ASD handle %u: received %i messages\n",
 				session->connect_handle, *receive_count);
 	}
-*/
+
 	out:
 	return ret;
 }
 
-static void __rrr_udpstream_asd_release_queue_cleanup_and_deliver (struct rrr_udpstream_asd *session) {
-	int lost_entries = 0;
-	uint16_t prev_ok_stream_id = 0;
-	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct ipclient_queue_entry);
-		if (node->stream_id == prev_ok_stream_id) {
-			RRR_LL_ITERATE_NEXT();
-		}
-		if (rrr_udpstream_stream_exists(&session->udpstream, node->stream_id)) {
-			prev_ok_stream_id = node->stream_id;
-			RRR_LL_ITERATE_NEXT();
-		}
-		RRR_LL_ITERATE_SET_DESTROY();
-		lost_entries++;
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->release_queue, __ipclient_queue_entry_destroy(node));
-
-	if (lost_entries > 0) {
-		VL_MSG_ERR("UDP-stream ASD handle %u lost %i messages which was missing release ACK in release queue\n",
-			session->connect_handle, lost_entries);
-	}
-}
-
-int rrr_udpstream_asd_buffer_tick (struct rrr_udpstream_asd *session) {
+int rrr_udpstream_asd_deliver_messages (
+		struct rrr_udpstream_asd *session,
+		int (*receive_callback)(struct ip_buffer_entry *message, void *arg),
+		void *receive_callback_arg
+) {
 	int ret = 0;
 
+	int delivered_count = 0;
+
+	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct rrr_udpstream_asd_queue_entry);
+		if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_RACK) != 0 && node->delivered_grace_counter == 0) {
+			if ((node->ack_status_flags & RRR_UDPSTREAM_ASD_ACK_FLAGS_DACK) == 0) {
+				VL_BUG("RACK without DACK in rrr_udpstream_asd_deliver_messages\n");
+			}
+
+			struct ip_buffer_entry *message = node->message;
+			node->message = NULL;
+
+			// !!! Callback MUST take care of message memory also upon errors
+			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
+				VL_MSG_ERR("Error from callback in rrr_udpstream_asd_deliver_messages\n");
+				ret = 1;
+				goto out;
+			}
+
+			delivered_count++;
+
+			VL_DEBUG_MSG_3("UDP-stream ASD message %u delivered, grace time started (%i)\n",
+					node->message_id, RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER);
+
+			node->delivered_grace_counter = RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER;
+		}
+	RRR_LL_ITERATE_END();
+
+	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct rrr_udpstream_asd_queue_entry);
+		if (node->delivered_grace_counter > 0) {
+			node->delivered_grace_counter -= delivered_count;
+			if (node->delivered_grace_counter <= 0) {
+				RRR_LL_ITERATE_SET_DESTROY();
+				VL_DEBUG_MSG_3("UDP-stream ASD grace time ended for message %u\n",
+						node->message_id);
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->release_queue, __rrr_udpstream_asd_queue_entry_destroy(node));
+
+	out:
+	return ret;
+}
+
+int rrr_udpstream_asd_buffer_tick (
+		int *receive_count,
+		int *send_count,
+		struct rrr_udpstream_asd *session
+) {
+	int ret = 0;
 
 	// TODO : Detect exhausted ID etc. and reconnect
 
 	if ((ret = __rrr_udpstream_asd_buffer_connect_if_needed(session)) != 0) {
 		if (ret == RRR_UDPSTREAM_ASD_NOT_READY) {
 			// Connection not ready yet, this is normal
-			ret = 0;
+			goto out_not_ready;
+		}
+		VL_MSG_ERR("Error from connect_if_needed in ASD connect handle %" PRIu32 "\n", session->connect_handle);
+		goto out;
+	}
+
+	if ((ret = __rrr_udpstream_asd_do_send_tasks (session)) != 0) {
+		if (ret == RRR_UDPSTREAM_NOT_READY) {
+			goto out_not_ready;
+		}
+		else {
+			VL_MSG_ERR("Error from UDP-stream while queuing messages to send of UDP-stream ASD handle %u\n",
+					session->connect_handle);
+			ret = 1;
 		}
 		goto out;
 	}
 
+	if (rrr_udpstream_do_send_tasks(send_count, &session->udpstream) != 0) {
+		VL_MSG_ERR("UDP-stream send tasks failed in send_packets ASD\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_udpstream_do_read_tasks(&session->udpstream, __rrr_udpstream_asd_control_frame_listener, session)) != 0) {
+		if (ret != RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
+					session->connect_handle);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+
+	if ((ret = __rrr_udpstream_asd_do_receive_tasks(receive_count, session)) != 0) {
+		VL_MSG_ERR("Error from UDP-stream while receiving packets of UDP-stream ASD handle %u\n",
+				session->connect_handle);
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	return ret;
+
+	out_not_ready:
+	VL_DEBUG_MSG_1("UDP-stream not ready yet for connect handle %" PRIu32 "\n", session->connect_handle);
+	return 0;
 }
