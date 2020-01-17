@@ -31,10 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_BUFFER_MAX 500
 #define RRR_UDPSTREAM_ASD_MESSAGE_ID_MAX 0xffffffff
 #define RRR_UDPSTREAM_ASD_RESEND_INTERVAL_MS (RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS * 4) // Milliseconds before resending a packet
-#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX 500 // Max unreleased messages awaiting release ACK
+#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX 50 // Max unreleased messages awaiting release ACK
 
-// This many messages must follow a message before it is deleted from release queue
-#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER 10
+// This many delivered messages must follow a message before it is deleted from release queue
+#define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER (RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX/2)
 
 #define RRR_UDPSTREAM_ASD_OK			0
 #define RRR_UDPSTREAM_ASD_ERR			RRR_UDPSTREAM_ERR
