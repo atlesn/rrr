@@ -724,8 +724,7 @@ static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_
 		}
 	}
 	else {
-		VL_MSG_ERR("UDP-stream ASD handle %u release queue is full, possible hang-up with following data loss imminent\n",
-				session->connect_handle);
+		VL_DEBUG_MSG_1("UDP-stream ASD handle %u release queue is full\n", session->connect_handle);
 	}
 
 	*receive_count = receive_callback_data.count;
@@ -806,6 +805,16 @@ int rrr_udpstream_asd_buffer_tick (
 		goto out;
 	}
 
+	if ((ret = rrr_udpstream_do_read_tasks(&session->udpstream, __rrr_udpstream_asd_control_frame_listener, session)) != 0) {
+		if (ret != RRR_SOCKET_SOFT_ERROR) {
+			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
+					session->connect_handle);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+
 	if ((ret = __rrr_udpstream_asd_do_send_tasks (session)) != 0) {
 		if (ret == RRR_UDPSTREAM_NOT_READY) {
 			goto out_not_ready;
@@ -822,16 +831,6 @@ int rrr_udpstream_asd_buffer_tick (
 		VL_MSG_ERR("UDP-stream send tasks failed in send_packets ASD\n");
 		ret = 1;
 		goto out;
-	}
-
-	if ((ret = rrr_udpstream_do_read_tasks(&session->udpstream, __rrr_udpstream_asd_control_frame_listener, session)) != 0) {
-		if (ret != RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
-					session->connect_handle);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
 	}
 
 	if ((ret = __rrr_udpstream_asd_do_receive_tasks(receive_count, session)) != 0) {
