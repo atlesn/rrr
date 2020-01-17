@@ -55,6 +55,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 
+#define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
+#define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
+
 struct mqtt_client_data {
 	struct instance_thread_data *thread_data;
 	struct fifo_buffer output_buffer;
@@ -74,6 +77,7 @@ struct mqtt_client_data {
 	uint8_t version;
 	int publish_rrr_message;
 	int receive_vl_message;
+	char *connect_error_action;
 	struct rrr_mqtt_conn *connection;
 };
 
@@ -85,6 +89,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
+	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	rrr_linked_list_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
@@ -227,6 +232,9 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
+	VL_DEBUG_MSG_2 ("MQTT instance %s using '%s' as client identifier\n",
+			config->name, data->client_identifier);
+
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
 		data->version = RRR_MQTT_DEFAULT_VERSION;
 	}
@@ -245,10 +253,19 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 
-	if ((ret = rrr_instance_config_get_string_noconvert(&data->server, config, "mqtt_server")) != 0) {
-		VL_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
-		ret = 1;
-		goto out;
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->server, config, "mqtt_server")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		data->server = strdup("localhost");
+		if (data->server == NULL) {
+			VL_MSG_ERR("Could not allocate memory for mqtt_server in mqtt client\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	int publish_rrr_message_was_present = 0;
@@ -298,6 +315,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 
+	data->receive_vl_message = 0;
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
@@ -308,7 +326,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	}
 	else if (yesno > 0) {
 		if (rrr_array_count(&data->array_definition) > 0) {
-			VL_MSG_ERR("mqtt_receive_rrr_message was set to one but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
+			VL_MSG_ERR("mqtt_receive_rrr_message was set to yes but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -371,6 +389,33 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 		ret = 0;
 	}
+
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->connect_error_action, config, "mqtt_connect_error_action")) == 0) {
+		if (strcmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RESTART) == 0) {
+		}
+		else if (strcmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
+		}
+		else {
+			VL_MSG_ERR("Unknown value for mqtt_connect_error_action (̈́'%s') in mqtt client instance %s, please refer to documentation\n",
+					data->connect_error_action, config->name);
+		}
+	}
+	else {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing mqtt_connect_error_action\n");
+			ret = 1;
+			goto out;
+		}
+
+		data->connect_error_action = strdup(RRR_MQTT_CONNECT_ERROR_DO_RESTART);
+		if (data->connect_error_action == NULL) {
+			VL_MSG_ERR("Could not allocate memory for connect_error_action in mqtt client\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	ret = 0;
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -864,8 +909,13 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int is_vl_message = data->receive_vl_message;
 	int expecting_vl_message = data->receive_vl_message;
 
-	if (content_type != NULL && strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
-		is_vl_message = 1;
+	if (content_type != NULL) {
+		VL_DEBUG_MSG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), content_type);
+
+		if (strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
+			is_vl_message = 1;
+		}
 	}
 
 	// Try to extract a message from the data of the publish
@@ -903,7 +953,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 					read_pos,
 					data
 			)) != 0) {
-				VL_MSG_ERR("Error while parsing data array in mqtt client instance %s\n",
+				VL_MSG_ERR("Error while parsing data array from received PUBLISH in mqtt client instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				break;
 			}
@@ -919,7 +969,7 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			WRITE_TO_BUFFER_AND_SET_TO_NULL(message_final);
 		} while (1);
 
-		VL_DEBUG_MSG_3("MQTT client instance %s parsed %i array records from PUBLISH message\n",
+		VL_DEBUG_MSG_2("MQTT client instance %s parsed %i array records from PUBLISH message\n",
 				INSTANCE_D_NAME(data->thread_data), count);
 		goto out;
 	}
@@ -936,6 +986,8 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		goto out;
 	}
 	else if (message_final != NULL) {
+		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message payload\n",
+				INSTANCE_D_NAME(data->thread_data));
 		goto out_write_to_buffer;
 	}
 
@@ -957,6 +1009,10 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
+	}
+	else {
+		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message topic, which was '%s'\n",
+				INSTANCE_D_NAME(data->thread_data), publish->topic);
 	}
 
 	out_write_to_buffer:
@@ -997,8 +1053,9 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
+	// TODO : Support zero-byte client identifier
 	struct rrr_mqtt_common_init_data init_data = {
-		INSTANCE_D_NAME(thread_data),
+		data->client_identifier,
 		RRR_MQTT_COMMON_RETRY_INTERVAL,
 		RRR_MQTT_COMMON_CLOSE_WAIT_TIME,
 		RRR_MQTT_COMMON_MAX_CONNECTIONS
@@ -1041,8 +1098,11 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	reconnect:
 	for (int i = 20; i >= 0 && thread_check_encourage_stop(thread_data->thread) != 1; i--) {
-		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu'\n",
-				INSTANCE_D_NAME(thread_data), data->server, data->server_port);
+		update_watchdog_time(thread_data->thread);
+
+		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/20\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i);
+
 		if (rrr_mqtt_client_connect (
 				&data->connection,
 				data->mqtt_client_data,
@@ -1054,7 +1114,13 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
-				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s\n",
+				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
+					VL_MSG_ERR("MQTT client instance %s: 20 connection attempts failed, trying again.\n",
+							INSTANCE_D_NAME(thread_data));
+					goto reconnect;
+				}
+
+				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s, restarting.\n",
 						data->server, data->server_port, INSTANCE_D_NAME(thread_data));
 				goto out_destroy_client;
 			}
@@ -1103,7 +1169,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		}
 
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
-			VL_MSG_ERR("Error int mqtt client instance %s while running tasks\n",
+			VL_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}

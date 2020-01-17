@@ -14,5 +14,7 @@ rrr_http_client_LDFLAGS = -lrrr -L./lib
 rrr_http_client_SOURCES = rrr_http_client.c global.c main.c
 rrr_http_client_CFLAGS = ${AM_CFLAGS}
 
+if VL_WITH_PERL5
 all-local:
 	cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL
+endif

@@ -159,7 +159,25 @@ typedef unsigned long int vl_u64;
 #elif ULLONG_MAX == 0xffffffffffffffff
 typedef unsigned long long int vl_u64;
 #define RRR_SOCKET_64_IS_LONG_LONG
+
 #endif
+
+#ifdef RRR_SOCKET_32_IS_UINT
+    typedef unsigned int vl_u32;
+#elif defined (RRR_SOCKET_32_IS_LONG)
+    typedef unsigned long int vl_u32;
+#else
+#  error "Could not get size of 32 bit unsigned integer"
+#endif
+
+#ifdef RRR_SOCKET_64_IS_LONG
+    typedef unsigned long int vl_u64;
+#elif defined (RRR_SOCKET_64_IS_LONGLONG)
+    typedef unsigned long long int vl_u64;
+#else
+#  error "Could not get size of 64 bit unsigned integer"
+#endif
+
 
 struct cmd_data;
 
