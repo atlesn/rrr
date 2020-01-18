@@ -142,6 +142,7 @@ int ip_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
+		int do_sync_byte_by_byte,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats

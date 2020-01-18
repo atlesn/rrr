@@ -145,18 +145,38 @@ int rrr_socket_common_get_session_target_length_from_array (
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data *data = arg;
 
-	ssize_t import_length = 0;
-	int ret = rrr_array_get_packed_length_from_buffer (
-			&import_length,
-			data->definition,
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos
-	);
+	char *pos = read_session->rx_buf_ptr;
+	ssize_t wpos = read_session->rx_buf_wpos;
 
-	if (ret != 0) {
-		if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
-			return RRR_SOCKET_READ_INCOMPLETE;
+	ssize_t import_length = 0;
+
+	while (wpos > 0) {
+		int ret = rrr_array_get_packed_length_from_buffer (
+				&import_length,
+				data->definition,
+				pos,
+				wpos
+		);
+
+		if (ret == 0) {
+			break;
 		}
+		else {
+			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+				return RRR_SOCKET_READ_INCOMPLETE;
+			}
+
+			if (data->do_byte_by_byte_sync != 0) {
+				pos++;
+				wpos--;
+			}
+			else {
+				return RRR_SOCKET_SOFT_ERROR;
+			}
+		}
+	}
+
+	if (wpos <= 0) {
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
@@ -184,11 +204,12 @@ int rrr_socket_common_receive_array (
 		int fd,
 		int read_flags,
 		const struct rrr_array *definition,
+		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *arg
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
-			definition
+			definition, do_sync_byte_by_byte
 	};
 
 	struct receive_callback_data callback_data = {

@@ -50,6 +50,7 @@ struct udpreader_data {
 	struct ip_data ip;
 	struct rrr_array definitions;
 	struct rrr_socket_read_session_collection read_sessions;
+	int do_sync_byte_by_byte;
 	char *default_topic;
 	ssize_t default_topic_length;
 };
@@ -153,6 +154,18 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
+	// Sync byte by byte if parsing fails
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "udpr_sync_byte_by_byte")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	data->do_sync_byte_by_byte = yesno;
+
 	out:
 	return ret;
 }
@@ -203,6 +216,7 @@ int read_data(struct udpreader_data *data) {
 		&data->read_sessions,
 		data->ip.fd,
 		&data->definitions,
+		data->do_sync_byte_by_byte,
 		read_raw_data_callback,
 		data,
 		NULL

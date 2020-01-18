@@ -141,6 +141,9 @@ Specification of expected data to receive in a network packet. See
 for the syntax.
 .It udpr_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
+.It udpr_sync_byte_by_byte={yes|no}
+If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
+Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
 .PP
 .SS voltmonitor (SV)
@@ -462,12 +465,14 @@ If set to
 .Xr rrr_post(1)
 may generate such messages. If set to 
 .B no
-, an array definition must be specified, and RRR array messages will be produced from the received data.
-may gene
+, an array definition must be specified, and RRR array messages will be produced from the received data. Defaults to no.
 .It socket_input_types=ARRAY DEFINITION
 Format of data received on the socket, see
 .Xr rrr_post(1)
 for syntax.
+.It socket_sync_byte_by_byte={yes|no}
+If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
+Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
 .SS influxdb (DA)
 This module receives array messages from other modules and sends their data to an Influx database using HTTP.

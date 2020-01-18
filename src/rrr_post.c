@@ -371,6 +371,7 @@ static int __rrr_post_read(struct rrr_post_data *data) {
 				data->input_fd,
 				read_flags,
 				&data->definition,
+				0, // Sync byte by byte
 				__rrr_post_read_callback,
 				data
 		);
