@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "global.h"
 #include "main.h"
@@ -43,6 +44,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
+static volatile int rrr_post_abort = 0;
+static volatile int rrr_post_print_stats = 0;
+
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"socket",				"{RRR SOCKET}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
@@ -52,6 +56,8 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
+		{0,							's',	"sync",					"[-s|--sync]"},
+		{0,							'q',	"quiet",				"[-q|--quiet]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
@@ -77,12 +83,36 @@ struct rrr_post_data {
 	uint64_t elements_count;
 	struct rrr_array definition;
 
+	int sync_byte_by_byte;
+	int quiet;
+
 	int input_fd;
 	int output_fd;
+
+	uint64_t start_time;
 };
+
+static void __rrr_post_signal_handler (int s) {
+	if (s == SIGUSR1) {
+		rrr_post_print_stats = 1;
+	}
+	else if (s == SIGPIPE) {
+		VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+	}
+	else if (s == SIGTERM) {
+		VL_MSG_ERR("Received SIGTERM, exiting\n");
+		exit(EXIT_FAILURE);
+	}
+	else if (s == SIGINT) {
+		// Allow double ctrl+c to close program immediately
+		signal(SIGINT, SIG_DFL);
+		rrr_post_abort = 1;
+	}
+}
 
 static void __rrr_post_data_init (struct rrr_post_data *data) {
 	memset (data, '\0', sizeof(*data));
+	data->start_time = time_get_64();
 }
 
 static void __rrr_post_destroy_data (struct rrr_post_data *data) {
@@ -141,6 +171,22 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
+	}
+
+	// Sync byte by byte
+	if (cmd_exists(cmd, "sync", 0)) {
+		data->sync_byte_by_byte = 1;
+	}
+	else {
+		data->sync_byte_by_byte = 0;
+	}
+
+	// Quiet operation
+	if (cmd_exists(cmd, "quiet", 0)) {
+		data->quiet = 1;
+	}
+	else {
+		data->quiet = 0;
 	}
 
 	// Filename
@@ -358,7 +404,25 @@ static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session
 	return ret;
 }
 
-static int __rrr_post_read(struct rrr_post_data *data) {
+static void __rrr_post_print_statistics (struct rrr_post_data *data) {
+	uint64_t runtime = time_get_64() - data->start_time;
+	runtime = runtime / 1000 / 1000;
+
+	if (runtime == 0) {
+		runtime = 1;
+	}
+
+	uint64_t speed = data->elements_count / runtime;
+
+	VL_DEBUG_MSG("Processed messages: %" PRIu64 " (%" PRIu64 " m/s), limit: %" PRIu64 ", run time: %" PRIu64 "\n",
+			data->elements_count,
+			speed,
+			data->max_elements,
+			runtime
+	);
+}
+
+static int __rrr_post_read (struct rrr_post_data *data) {
 	int ret = 0;
 
 	struct rrr_socket_read_session_collection read_sessions;
@@ -373,16 +437,24 @@ static int __rrr_post_read(struct rrr_post_data *data) {
 		read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
 
-	while (ret == 0 && (data->max_elements == 0 || data->elements_count < data->max_elements)) {
+	while (	ret == 0 &&
+			(data->max_elements == 0 || data->elements_count < data->max_elements) &&
+			rrr_post_abort == 0
+	) {
 		ret = rrr_socket_common_receive_array (
 				&read_sessions,
 				data->input_fd,
 				read_flags,
 				&data->definition,
-				0, // Sync byte by byte
+				data->sync_byte_by_byte,
 				__rrr_post_read_callback,
 				data
 		);
+
+		if (rrr_post_print_stats != 0) {
+			__rrr_post_print_statistics(data);
+			rrr_post_print_stats = 0;
+		}
 	}
 
 	if (ret == RRR_SOCKET_READ_EOF) {
@@ -436,12 +508,31 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
+	struct sigaction action;
+	action.sa_handler = __rrr_post_signal_handler;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	// We generally ignore sigpipe and use NONBLOCK on all sockets
+	sigaction (SIGPIPE, &action, NULL);
+	// Used to set rrr_post_abort = 1. The signal is set to default afterwards
+	// so that a second SIGINT will terminate the process
+	sigaction (SIGINT, &action, NULL);
+	// Used to print statistics
+	sigaction (SIGUSR1, &action, NULL);
+	// Exit immediately with EXIT_FAILURE
+	sigaction (SIGTERM, &action, NULL);
+
 	// Send readings from input file or stdin
 	if ((ret = __rrr_post_read(&data)) != 0) {
 		goto out;
 	}
 
 	out:
+	if (data.quiet == 0) {
+		__rrr_post_print_statistics(&data);
+	}
+
 	rrr_set_debuglevel_on_exit();
 	__rrr_post_close(&data);
 	__rrr_post_destroy_data(&data);

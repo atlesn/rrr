@@ -149,6 +149,7 @@ int rrr_socket_common_get_session_target_length_from_array (
 	ssize_t wpos = read_session->rx_buf_wpos;
 
 	ssize_t import_length = 0;
+	ssize_t skipped_bytes = 0;
 
 	while (wpos > 0) {
 		int ret = rrr_array_get_packed_length_from_buffer (
@@ -167,6 +168,7 @@ int rrr_socket_common_get_session_target_length_from_array (
 			}
 
 			if (data->do_byte_by_byte_sync != 0) {
+				skipped_bytes++;
 				pos++;
 				wpos--;
 			}
@@ -180,7 +182,11 @@ int rrr_socket_common_get_session_target_length_from_array (
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
+	// Raw size to read for socket framework
 	read_session->target_size = import_length;
+
+	// Read position for array framework
+	read_session->rx_buf_skip = skipped_bytes;
 
 	return RRR_SOCKET_OK;
 }
