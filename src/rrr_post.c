@@ -41,6 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/vl_time.h"
 #include "lib/messages.h"
 
+#define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
+
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"socket",				"{RRR SOCKET}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
@@ -194,16 +196,15 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 
 	// Array definition
 	const char *array_definition = cmd_get_value(cmd, "array_definition", 0);
-	if (cmd_get_value (cmd, "array_definition", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one array_definition argument may be specified\n");
-		ret = 1;
-		goto out;
-	}
-	if (array_definition != NULL) {
-		struct rrr_array_parse_single_definition_callback_data callback_data = {
-				&data->definition, 0
-		};
 
+	struct rrr_array_parse_single_definition_callback_data callback_data = {
+			&data->definition, 0
+	};
+
+	if (array_definition == NULL) {
+		ret = rrr_array_parse_single_definition_callback(RRR_POST_DEFAULT_ARRAY_DEFINITION, &callback_data);
+	}
+	else {
 		if (cmd_iterate_subvalues (
 				cmd,
 				"array_definition",
@@ -213,11 +214,18 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		) != 0 ) {
 			ret = 1;
 		}
-		if (ret != 0 || callback_data.parse_ret != 0 || rrr_array_validate_definition(&data->definition) != 0) {
-			VL_MSG_ERR("Error while parsing array definition\n");
-			ret = 1;
-			goto out;
-		}
+	}
+
+	if (ret != 0 || callback_data.parse_ret != 0 || rrr_array_validate_definition(&data->definition) != 0) {
+		VL_MSG_ERR("Error while parsing array definition\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (cmd_get_value (cmd, "array_definition", 1) != NULL) {
+		VL_MSG_ERR("Error: Only one array_definition argument may be specified\n");
+		ret = 1;
+		goto out;
 	}
 
 	out:
