@@ -323,8 +323,6 @@ int rrr_socket_read_message (
 			read_session->rx_buf_wpos = 0;
 		}
 
-		/* This number will change after the fixed header is parsed. The first round we can
-		 * only read 2 bytes to make sure we don't read in many packets at a time. */
 		read_session->target_size = 0;
 	}
 
