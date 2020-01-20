@@ -84,7 +84,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_UDPSTREAM_BOUNDARY_POS_LOW_MAX 0xfffffff0
 
-#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 500000
+#define RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS 240000
 #define RRR_UDPSTREAM_CONNECTION_INVALID_TIMEOUT_MS (RRR_UDPSTREAM_CONNECTION_TIMEOUT_MS*2)
 
 #define RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS 1000
@@ -287,6 +287,7 @@ struct rrr_udpstream_stream {
 	uint32_t window_size_to_remote;
 	uint32_t window_size_from_remote;
 	int invalidated;
+	int hard_reset_received;
 };
 
 struct rrr_udpstream_stream_collection {

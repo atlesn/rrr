@@ -252,8 +252,8 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	frame->header_crc32 = htobe32(crc32buf(crc32_start_pos, crc32_size));
 
-	VL_DEBUG_MSG_3("udpstream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u\n",
-			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle));
+	VL_DEBUG_MSG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
+			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle), be16toh(frame->stream_id));
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
 	memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
@@ -334,7 +334,7 @@ static int __rrr_udpstream_send_frame_ack (
 ) {
 	struct rrr_udpstream_frame_packed frame = {0};
 
-	VL_DEBUG_MSG_3("udpstream stream-id %u ACK frame-id %u-%u DUP %i\n",
+	VL_DEBUG_MSG_3("UDP-stream RX ACK %u-%u-%u DUP %i\n",
 			stream_id, ack_id_first, ack_id_last, copies);
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK;
@@ -679,14 +679,15 @@ static int __rrr_udpstream_handle_received_reset (
 ) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_3("Received UDP-stream packet with RESET for stream ID %u\n", new_frame->stream_id);
+	VL_DEBUG_MSG_3("UDP-stream RX RST %u\n", new_frame->stream_id);
 
 	if (new_frame->frame_id == 0) {
-		// TODO : Not working properly
 		VL_DEBUG_MSG_3("Performing hard reset for stream ID %u\n", new_frame->stream_id);
 
 		stream->receive_buffer.frame_id_max = stream->receive_buffer.frame_id_counter;
 		stream->send_buffer.frame_id_max = stream->send_buffer.frame_id_counter;
+		stream->hard_reset_received = 1;
+
 		goto out;
 	}
 	else {
@@ -705,7 +706,7 @@ static int __rrr_udpstream_handle_received_frame_ack (
 ) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_3("Received UDP-stream packet with ACK for stream ID %u first %u last %u\n",
+	VL_DEBUG_MSG_3("UDP-stream RX ACK %u-%u-%u\n",
 			new_frame->stream_id, new_frame->ack_data.ack_id_first, new_frame->ack_data.ack_id_last);
 
 	RRR_LL_ITERATE_BEGIN(&stream->send_buffer, struct rrr_udpstream_frame);
@@ -729,8 +730,8 @@ static int __rrr_udpstream_handle_received_frame_control (
 ) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_3("Received UDP-stream control packet for stream ID %u application data %" PRIu64 " type %u\n",
-			new_frame->stream_id, new_frame->application_data, RRR_UDPSTREAM_FRAME_TYPE(new_frame));
+	VL_DEBUG_MSG_3("UDP-stream RX CTRL %u-%" PRIu64 "\n",
+			new_frame->stream_id, new_frame->application_data);
 
 	uint8_t next_ack_type = 0;
 	int was_new = 0;
@@ -801,8 +802,13 @@ static int __rrr_udpstream_handle_received_frame (
 
 	struct rrr_udpstream_frame *new_frame = NULL;
 
-	VL_DEBUG_MSG_3("udpstream RX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle: %u\n",
-			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle));
+	VL_DEBUG_MSG_3("UDP-stream RX %u-%u crc32: %" PRIu32 " S: %u F/T: %u CH: %u\n",
+			be16toh(frame->stream_id),
+			be32toh(frame->frame_id),
+			frame->header_crc32,
+			be16toh(frame->data_size),
+			frame->flags_and_type, be32toh(frame->connect_handle)
+	);
 
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
 		VL_MSG_ERR("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
@@ -816,7 +822,7 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 
 	if (new_frame->stream_id == 0) {
-		VL_DEBUG_MSG_3("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
+		VL_DEBUG_MSG_2("Unknown packet with type/flags %u and zero stream id in __rrr_udpstream_handle_received_frame\n",
 				new_frame->flags_and_type);
 		goto out;
 	}
@@ -825,7 +831,7 @@ static int __rrr_udpstream_handle_received_frame (
 	if ((stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id)) == NULL) {
 		// Check that unknown packet is not a reset, if not we would keep sending resets back and forward
 		if (!RRR_UDPSTREAM_FRAME_IS_RESET(frame)) {
-			VL_DEBUG_MSG_3("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
+			VL_DEBUG_MSG_2("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
 			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
 				VL_MSG_ERR("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 				ret = RRR_SOCKET_HARD_ERROR;
@@ -835,13 +841,13 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	if ((ret = __rrr_udpstream_update_stream_remote(stream, src_addr, addr_len)) != 0) {
-		VL_MSG_ERR("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
+	if (RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
+		ret = __rrr_udpstream_handle_received_reset(stream, new_frame);
 		goto out;
 	}
 
-	if (RRR_UDPSTREAM_FRAME_IS_RESET(frame)) {
-		ret = __rrr_udpstream_handle_received_reset(stream, new_frame);
+	if ((ret = __rrr_udpstream_update_stream_remote(stream, src_addr, addr_len)) != 0) {
+		VL_MSG_ERR("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
 		goto out;
 	}
 
@@ -852,7 +858,7 @@ static int __rrr_udpstream_handle_received_frame (
 
 		__rrr_udpstream_regulate_window_size(stream, 0); // Just to fix MIN/MAX
 
-		VL_DEBUG_MSG_3("Received UDP-stream packet for stream ID %u with window size regulation to %" PRIu32 "\n",
+		VL_DEBUG_MSG_3("UDP-stream RX WS %u-%" PRIu32 "\n",
 				new_frame->stream_id, stream->window_size_from_remote);
 	}
 
@@ -877,15 +883,15 @@ static int __rrr_udpstream_handle_received_frame (
 				new_frame->flags_and_type);
 		goto out;
 	}
-
-	VL_DEBUG_MSG_3("Received UDP-stream packet with data for stream ID %u frame id %u boundary %i flags %i type %i\n",
+/*
+	VL_DEBUG_MSG_3("UDP-stream packet with data for stream ID %u frame id %u boundary %i flags %i type %i\n",
 			new_frame->stream_id,
 			new_frame->frame_id,
 			RRR_UDPSTREAM_FRAME_IS_BOUNDARY(new_frame),
 			RRR_UDPSTREAM_FRAME_FLAGS(new_frame),
 			RRR_UDPSTREAM_FRAME_TYPE(frame)
 	);
-
+*/
 	if (stream->receive_buffer.frame_id_counter == 0 && new_frame->frame_id != 1) {
 		// First frame must be ID 1, this to be able to filter out "old data" from lost streams
 		// which might be retained if we are offline for a bit. If this happens, we must also
@@ -1056,7 +1062,7 @@ static int __rrr_udpstream_process_receive_buffer (
 				ack_id_from_tmp = stream->receive_buffer.frame_id_prev_boundary_pos;
 				ack_id_to_tmp = stream->receive_buffer.frame_id_prev_boundary_pos;
 
-				VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u to %u generate ACK as %u is first after hole A\n",
+				VL_DEBUG_MSG_3("UDP-stream TX ACK %u-%u-%u (%u is first after hole A)\n",
 						stream->stream_id, ack_id_from_tmp, ack_id_to_tmp, node->frame_id);
 
 				window_size_adjust -= 2;
@@ -1069,7 +1075,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			ack_id_from_tmp = first_ack_id;
 			ack_id_to_tmp = last_ack_id;
 
-			VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u to %u generate ACK as %u is first after hole B\n",
+			VL_DEBUG_MSG_3("UDP-stream TX ACK %u-%u-%u (%u is first after hole B)\n",
 					stream->stream_id, ack_id_from_tmp, ack_id_to_tmp, node->frame_id);
 
 			first_ack_id = node->frame_id;
@@ -1089,7 +1095,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			// Prevent unnecessary ACKs to be sent with a grace function.
 			if (--(node->ack_grace) <= 0) {
 				node->ack_grace = 50;
-				VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u to %u generate ACK as %u is last in buffer\n",
+				VL_DEBUG_MSG_3("UDP-stream TX ACK %u-%u-%u (%u is last in buffer)\n",
 						stream->stream_id, ack_id_from_tmp, ack_id_to_tmp, node->frame_id);
 				goto add_ack;
 			}
@@ -1156,7 +1162,7 @@ static int __rrr_udpstream_process_receive_buffer (
 	RRR_LL_ITERATE_BEGIN(&stream->receive_buffer, struct rrr_udpstream_frame);
 		if (node->frame_id > stream->receive_buffer.frame_id_prev_boundary_pos) {
 			if (node->frame_id - stream->receive_buffer.frame_id_prev_boundary_pos > 1 + accumulated_frame_count) {
-				VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u hole in the buffer detected, cannot deliver frames yet\n",
+				VL_DEBUG_MSG_2("UDP-stream stream-id %u frame-id %u hole in the buffer detected, cannot deliver frames yet\n",
 						stream->stream_id, node->frame_id);
 				// Hole in the buffer
 				RRR_LL_ITERATE_BREAK();
@@ -1166,7 +1172,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			if (accumulated_data_size != 0) {
 				VL_BUG("Data accumulation started with already delivered frames in __rrr_udpstream_process_receive_buffer\n");
 			}
-			VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u set destroy as already delivered\n",
+			VL_DEBUG_MSG_2("udpstream stream-id %u frame-id %u set destroy as already delivered\n",
 					stream->stream_id, node->frame_id);
 			// Already delivered
 			RRR_LL_ITERATE_SET_DESTROY();
@@ -1218,7 +1224,7 @@ static int __rrr_udpstream_process_receive_buffer (
 		if (node == last_deliver_node) {
 			RRR_LL_ITERATE_LAST();
 
-			VL_DEBUG_MSG_3("udpstream stream-id %u frame-id %u deliver at boundary with application data %" PRIu64 "\n",
+			VL_DEBUG_MSG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
 					stream->stream_id, node->frame_id, node->application_data);
 
 			if (write_pos - joined_data != accumulated_data_size) {
@@ -1331,6 +1337,10 @@ static int __rrr_udpstream_maintain (
 			VL_DEBUG_MSG_2("UDP-stream connection with id %u timed out after being invalid\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
+		else if (node->hard_reset_received != 0) {
+			VL_DEBUG_MSG_2("UDP-stream connection with id %u removing after hard reset\n", node->stream_id);
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
 	out:
@@ -1391,7 +1401,7 @@ int rrr_udpstream_do_read_tasks (
 			callback_data.receive_count + errors < RRR_UDPSTREAM_BURST_LIMIT_RECEIVE
 	);
 
-	VL_DEBUG_MSG_3 ("Receive count: %i, Error count: %i\n", callback_data.receive_count, errors);
+	VL_DEBUG_MSG_3 ("UDP-stream RECV cnt: %i, err cnt: %i\n", callback_data.receive_count, errors);
 
 	out:
 	pthread_mutex_unlock(&data->lock);
@@ -1446,12 +1456,14 @@ static int __rrr_udpstream_send_loop (
 		if (node->last_send_time == 0) {
 			if (++missing_ack_count < stream->window_size_from_remote) {
 				do_send = 1;
+				VL_DEBUG_MSG_3("UDP-stream TX %u-%u WS %" PRIu32 " UNACK %i\n",
+						stream->stream_id, node->frame_id, stream->window_size_from_remote, node->unacknowledged_count);
 			}
 		}
 		else if (time_now - node->last_send_time > RRR_UDPSTREAM_RESEND_INTERVAL_FRAME_MS * 1000 ||
 				node->unacknowledged_count >= RRR_UDPSTREAM_RESEND_UNACKNOWLEDGED_LIMIT
 		) {
-			VL_DEBUG_MSG_3("udpstream stream-id %u re-send of frame %u window size %" PRIu32 " unack %i\n",
+			VL_DEBUG_MSG_3("UDP-stream TX %u-%u DUP WS %" PRIu32 " UNACK %i\n",
 					stream->stream_id, node->frame_id, stream->window_size_from_remote, node->unacknowledged_count);
 			do_send = 1;
 			resend_count++;
@@ -1633,14 +1645,14 @@ int rrr_udpstream_queue_outbound_data (
 	}
 
 	if (RRR_LL_COUNT(&stream->send_buffer) >= RRR_UDPSTREAM_BUFFER_LIMIT) {
-		VL_DEBUG_MSG_3("Buffer is full with %i items for udpstream stream-id %u\n",
-				RRR_LL_COUNT(&stream->send_buffer), stream->stream_id);
+//		VL_DEBUG_MSG_3("Buffer is full with %i items for udpstream stream-id %u\n",
+//				RRR_LL_COUNT(&stream->send_buffer), stream->stream_id);
 		ret = RRR_UDPSTREAM_BUFFER_FULL;
 		goto out;
 	}
 
 	if (stream->send_buffer.frame_id_counter + ((data_size / RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) + 1) > stream->send_buffer.frame_id_max) {
-		VL_DEBUG_MSG_2("Frame IDs exhausted for udpstream stream-id %u\n", stream->stream_id);
+		VL_DEBUG_MSG_2("UDP-stream frame IDs exhausted for stream-id %u\n", stream->stream_id);
 		ret = RRR_UDPSTREAM_IDS_EXHAUSTED;
 		goto out;
 	}

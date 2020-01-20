@@ -622,14 +622,11 @@ int queue_message_callback (struct fifo_callback_args *args, char *data, unsigne
 
 	(void)(size);
 
-	VL_DEBUG_MSG_3("Send assured delivery message in ipclient instance %s\n",
-			INSTANCE_D_NAME(ipclient_data->thread_data));
-
 	// ASD sets entry pointer to NULL if it takes over memory
 	if ((ret = rrr_udpstream_asd_queue_message(ipclient_data->udpstream_asd, &entry)) != 0) {
 		if (ret == RRR_UDPSTREAM_ASD_BUFFER_FULL) {
-			VL_DEBUG_MSG_2("ASD-buffer full for ipclient instance %s\n",
-					INSTANCE_D_NAME(ipclient_data->thread_data));
+/*			VL_DEBUG_MSG_2("ASD-buffer full for ipclient instance %s\n",
+					INSTANCE_D_NAME(ipclient_data->thread_data));*/
 			ret = 0;
 			goto out;
 		}
