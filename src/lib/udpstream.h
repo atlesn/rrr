@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -97,6 +97,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_WINDOW_SIZE_MIN 10
 #define RRR_UDPSTREAM_WINDOW_SIZE_MAX RRR_UDPSTREAM_BUFFER_LIMIT*2
 #define RRR_UDPSTREAM_WINDOW_SIZE_INITIAL RRR_UDPSTREAM_WINDOW_SIZE_MAX/4
+
+// Forget to send a certain percentage of outbound packets (randomized). Comment out to disable.
+// #define RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT 10
 
 // Return values from API functions, not all of them use all values
 #define RRR_UDPSTREAM_OK 0
@@ -286,6 +289,7 @@ struct rrr_udpstream_stream {
 	uint64_t last_seen;
 	uint32_t window_size_to_remote;
 	uint32_t window_size_from_remote;
+	int window_size_regulation_from_application;
 	int invalidated;
 	int hard_reset_received;
 };
@@ -414,6 +418,12 @@ int rrr_udpstream_connection_check (
 		socklen_t addr_len,
 		int window_size_change
 );*/
+
+int rrr_udpstream_regulate_window_size (
+		struct rrr_udpstream *udpstream_data,
+		uint32_t connect_handle,
+		int window_size_change
+);
 int rrr_udpstream_send_control_frame (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,

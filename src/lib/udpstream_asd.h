@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,6 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX*2)
 // This many delivered messages must follow a message before it is deleted from release queue
 #define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER RRR_UDPSTREAM_WINDOW_SIZE_MAX
+
+#define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD 500
+#define RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT -20
 
 #define RRR_UDPSTREAM_ASD_OK			0
 #define RRR_UDPSTREAM_ASD_ERR			RRR_UDPSTREAM_ERR

@@ -781,8 +781,11 @@ int rrr_udpstream_asd_deliver_messages (
 		}
 	RRR_LL_ITERATE_END();
 
+	int grace_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(&session->release_queue, struct rrr_udpstream_asd_queue_entry);
 		if (node->delivered_grace_counter > 0) {
+			grace_count++;
 			node->delivered_grace_counter -= delivered_count;
 			if (node->delivered_grace_counter <= 0) {
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -791,6 +794,17 @@ int rrr_udpstream_asd_deliver_messages (
 			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&session->release_queue, __rrr_udpstream_asd_queue_entry_destroy(node));
+
+	// Reduce message traffic if we have many ACK handshakes to complete
+	if (RRR_LL_COUNT(&session->release_queue) - grace_count > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD) {
+		if ((ret = rrr_udpstream_regulate_window_size (
+				&session->udpstream, session->connect_handle,
+				RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT
+		)) != 0) {
+			VL_DEBUG_MSG_1("Error while regulating window size in ASD while delivering messages, return from UDP-stream was %i\n", ret);
+			ret = 0;
+		}
+	}
 
 	out:
 	return ret;

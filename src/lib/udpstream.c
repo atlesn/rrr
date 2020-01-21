@@ -259,6 +259,12 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 	memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
 
 	while (copies--) {
+#ifdef RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT
+		if (rand() % 100 <= RRR_UDPSTREAM_PACKET_LOSS_DEBUG_PERCENT) {
+			VL_DEBUG_MSG_3("UDP-stream TX forgot to send packet :-(\n");
+			continue;
+		}
+#endif
 		if ((ret = ip_send_raw(udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
 			VL_MSG_ERR("Could not send packed frame header in __rrr_udpstream_send_packed_frame\n");
 			ret = 1;
@@ -1042,6 +1048,9 @@ static int __rrr_udpstream_process_receive_buffer (
 
 	int window_size_adjust = 0;
 
+	window_size_adjust += stream->window_size_regulation_from_application;
+	stream->window_size_regulation_from_application = 0;
+
 	/*
 	 * Whenever this function is called, ACKs will be generated for frames currently in the buffer.
 	 * This will cause duplicate ACKs to be sent repeatedly if there are any holes which cause the
@@ -1586,6 +1595,38 @@ int rrr_udpstream_connection_check (
 
 	out:
 	pthread_mutex_unlock(&data->lock);
+	return ret;
+}
+
+// Application may decrease or increase window size to decrease or
+// increase throughput. The new window size is sent later when some ACK
+// packets are sent. Multiple calls to this function will cause window
+// the size changes to be summed together.
+int rrr_udpstream_regulate_window_size (
+		struct rrr_udpstream *udpstream_data,
+		uint32_t connect_handle,
+		int window_size_change
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&udpstream_data->lock);
+
+	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_connect_handle(udpstream_data, connect_handle);
+	if (stream == NULL) {
+		ret = RRR_UDPSTREAM_UNKNOWN_CONNECT_ID;
+		goto out;
+	}
+	if (stream->stream_id == 0) {
+		ret = RRR_UDPSTREAM_NOT_READY;
+		goto out;
+	}
+
+	stream->window_size_regulation_from_application += window_size_change;
+
+	VL_DEBUG_MSG_3("UDP-stream WS REQ %u change %i\n", stream->stream_id, window_size_change);
+
+	out:
+	pthread_mutex_unlock(&udpstream_data->lock);
 	return ret;
 }
 
