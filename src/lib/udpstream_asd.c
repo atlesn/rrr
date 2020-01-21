@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -435,7 +435,8 @@ static int __rrr_udpstream_asd_control_frame_listener (uint16_t stream_id, uint6
 	return ret;
 }
 
-// ip_message set to NULL if memory is managed by new buffer
+// Queue a message for transmission.
+// ip_message is set to NULL if memory is managed by new buffer
 int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
 		struct ip_buffer_entry **ip_message
@@ -745,6 +746,7 @@ static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_
 	return ret;
 }
 
+// Deliver messages to application through callback function
 int rrr_udpstream_asd_deliver_messages (
 		struct rrr_udpstream_asd *session,
 		int (*receive_callback)(struct ip_buffer_entry *message, void *arg),
@@ -794,6 +796,7 @@ int rrr_udpstream_asd_deliver_messages (
 	return ret;
 }
 
+// Do all reading, sending and maintenance
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,

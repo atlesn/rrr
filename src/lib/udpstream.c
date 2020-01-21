@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -1287,8 +1287,8 @@ static int __rrr_udpstream_process_receive_buffer (
 	return ret;
 }
 
-// The receive callback must always take care of memory in receive_data->data or
-// free it, also upon errors
+// Read messages from inbound buffer. The receive callback must always take care of
+// memory in receive_data->data or free it, also upon errors
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
 		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
@@ -1347,6 +1347,9 @@ static int __rrr_udpstream_maintain (
 	return ret;
 }
 
+// Do all reading and store messages into the buffer. Control messages are
+// not buffered, but delivered directly to the application layer through
+// the callback function.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
 		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
@@ -1496,6 +1499,7 @@ static int __rrr_udpstream_send_loop (
 	return ret;
 }
 
+// Send out buffered messages from outbound buffer
 int rrr_udpstream_do_send_tasks (
 		int *send_count,
 		struct rrr_udpstream *data
@@ -1585,6 +1589,7 @@ int rrr_udpstream_connection_check (
 	return ret;
 }
 
+// Send a control frame immediately, by-passing buffer
 int rrr_udpstream_send_control_frame (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
@@ -1622,6 +1627,7 @@ int rrr_udpstream_send_control_frame (
 	return ret;
 }
 
+// Put messages into outbound buffer
 int rrr_udpstream_queue_outbound_data (
 		struct rrr_udpstream *udpstream_data,
 		uint32_t connect_handle,
