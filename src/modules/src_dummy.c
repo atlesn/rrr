@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/stats_engine.h"
 #include "../global.h"
 
 struct dummy_data {
@@ -130,6 +131,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 static void *thread_entry_dummy (struct vl_thread *thread) {
 	struct instance_thread_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
+	struct rrr_stats_instance *stats = NULL;
 
 	if (data_init(data) != 0) {
 		VL_MSG_ERR("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -139,6 +141,13 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 	VL_DEBUG_MSG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
+
+	if (rrr_stats_instance_new(&stats, INSTANCE_D_STATS(thread_data), INSTANCE_D_NAME(thread_data)) != 0) {
+		VL_MSG_ERR("Could not initialize stats engine for dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		pthread_exit(0);
+	}
+
+	pthread_cleanup_push(rrr_stats_instance_destroy_void, stats);
 	pthread_cleanup_push(thread_set_stopping, thread);
 
 	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
@@ -192,6 +201,7 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 
 	out_cleanup:
 	VL_DEBUG_MSG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

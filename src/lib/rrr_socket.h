@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -110,6 +110,7 @@ int rrr_socket (
 		const char *filename
 );
 int rrr_socket_close (int fd);
+int rrr_socket_close_ignore_unregistered (int fd);
 int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_unix_create_bind_and_listen (

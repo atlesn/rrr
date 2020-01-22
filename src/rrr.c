@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_socket.h"
+#include "lib/stats_engine.h"
 
 const char *module_library_paths[] = {
 		VL_MODULE_PATH,
@@ -58,7 +59,7 @@ const char *module_library_paths[] = {
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
-#define VL_NO_MODULE_UNLOAD
+// #define VL_NO_MODULE_UNLOAD
 
 static volatile int main_running = 1;
 
@@ -98,6 +99,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
+		{0,							's',	"stats",				"[-s|--stats]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -116,6 +118,8 @@ int main (int argc, const char *argv[]) {
 	struct rrr_config *config = NULL;
 	int ret = EXIT_SUCCESS;
 	int count = 0;
+
+	struct rrr_stats_engine stats_engine;
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -143,6 +147,15 @@ int main (int argc, const char *argv[]) {
 
 	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
 
+	// Start statistics engine
+	if (cmd_exists(&cmd, "stats", 0)) {
+		if (rrr_stats_engine_init(&stats_engine) != 0) {
+			VL_MSG_ERR("Could not initialize statistics engine\n");
+			goto out_destroy_metadata_collection;
+		}
+	}
+
+	// Load configuration
 	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL && *config_string != '\0') {
 		config = rrr_config_parse_file(config_string);
@@ -168,7 +181,7 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
-	// Initialzie dynamic_data thread data
+	// Initialize signal handling
 	struct sigaction action;
 	action.sa_handler = rrr_signal;
 	sigemptyset (&action.sa_mask);
@@ -194,7 +207,7 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGTERM, &action, NULL);
 
 	rrr_set_debuglevel_orig();
-	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
+	if ((ret = main_start_threads(&collection, instances, config, &cmd, &stats_engine)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -243,6 +256,8 @@ int main (int argc, const char *argv[]) {
 		if (config != NULL) {
 			rrr_config_destroy(config);
 		}
+
+		rrr_stats_engine_cleanup(&stats_engine);
 
 	out_destroy_metadata_collection:
 		instance_metadata_collection_destroy(instances);

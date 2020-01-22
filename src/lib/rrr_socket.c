@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -334,7 +334,7 @@ int rrr_socket (
 	return fd;
 }
 
-int rrr_socket_close (int fd) {
+static int __rrr_socket_close (int fd, int ignore_unregistered) {
 	if (fd <= 0) {
 		VL_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
 	}
@@ -359,7 +359,7 @@ int rrr_socket_close (int fd) {
 
 	pthread_mutex_unlock(&socket_lock);
 
-	if (did_destroy != 1) {
+	if (did_destroy != 1 && ignore_unregistered == 0) {
 		VL_MSG_ERR("Warning: Socket close of fd %i called but it was not registered. Attempting to close anyway.\n", fd);
 		int ret = close(fd);
 		if (ret != 0) {
@@ -371,6 +371,14 @@ int rrr_socket_close (int fd) {
 	}
 
 	return 0;
+}
+
+int rrr_socket_close (int fd) {
+	return __rrr_socket_close (fd, 0);
+}
+
+int rrr_socket_close_ignore_unregistered (int fd) {
+	return __rrr_socket_close (fd, 1);
 }
 
 int rrr_socket_close_all_except (int fd) {

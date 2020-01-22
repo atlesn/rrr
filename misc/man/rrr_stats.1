@@ -1,0 +1,47 @@
+.Dd 2020-01-22
+.TH RRR_STATS 1
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.PP
+.B rrr_stats
+connects to RRR through a socket and displays information about the running modules.
+.B rrr
+program to post data to its modules.
+
+.SH SYNOPSIS
+.B rrr_stats [RRR SOCKET]
+.Dl [-d|--debuglevel[=]FLAGS]
+.Dl [-D|--debuglevel_on_exit[=]FLAGS]
+.Dl [-h|--help]
+.Dl [-v|--version]
+
+.SH DESCRIPTION
+This program requires
+.Xr rrr(1)
+to be running and listening on a UNIX socket by starting it with the
+.B -s
+argument. The socket name is usually in the format
+.B /tmp/rrr_stats.xxxxx,
+where xxxxx is the PID of the running RRR process, and
+.B rrr_stats
+will look for a socket named this unless another name is specified at command line.
+.PP
+.SH OPTIONS
+.IP -d|--debuglevel[=]FLAGS
+Debuglevel to use.
+.IP -D|--debuglevel_on_exit[=]FLAGS
+Debuglevel to use when program exits.
+.PP
+.SH RETURN VALUE
+.B rrr_post
+returns 0 on success and 1 on failure.
+
+.SH DEBUG FLAGS
+Refer to
+.Xr rrr(1)
+for possible debug flags.
+
+.SH SEE ALSO
+.Xr rrr(1),
+.Xr rrr.conf(5)
