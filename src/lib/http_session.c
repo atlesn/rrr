@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "ip.h"
+#include "random.h"
 
 void rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->host);
@@ -150,7 +151,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 
 	// RFC7578
 
-	if ((ret = rrr_asprintf (&boundary_buf, "rrr-boundary-%i", rand())) < 0) {
+	if ((ret = rrr_asprintf (&boundary_buf, "rrr-boundary-%i", rrr_rand())) < 0) {
 		VL_MSG_ERR("Could not create boundary_buf string in __rrr_http_session_send_post_body\n");
 		ret = 1;
 		goto out;
