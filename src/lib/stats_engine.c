@@ -31,6 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_engine.h"
 #include "rrr_socket.h"
 #include "linked_list.h"
+#include "vl_time.h"
+#include "random.h"
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	int ret = 0;
@@ -81,6 +83,7 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	// is not possible, of course, if some thread is hanged up in which we take a
 	// certain risk by destroying the mutex at program exit.
 	pthread_mutex_lock(&stats->main_lock);
+	RRR_LL_DESTROY(&stats->handle_list, struct rrr_stats_handle_list_entry, free(node));
 	stats->initialized = 0;
 	pthread_mutex_unlock(&stats->main_lock);
 
@@ -89,50 +92,68 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	pthread_mutex_destroy(&stats->main_lock);
 }
 
+static int __rrr_stats_engine_handle_exists_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {
+	RRR_LL_ITERATE_BEGIN(&stats->handle_list, struct rrr_stats_handle_list_entry);
+		if (node->stats_handle == stats_handle) {
+			return 1;
+		}
+	RRR_LL_ITERATE_END();
+	return 0;
+}
 
-int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats_engine *engine, const char *name) {
+static int __rrr_stats_engine_register_handle_nolock (struct rrr_stats_engine *stats, unsigned int stats_handle) {
 	int ret = 0;
-	*result = NULL;
 
-	struct rrr_stats_instance *instance = malloc(sizeof(*instance));
-	if (instance == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_stats_instance_new\n");
+	struct rrr_stats_handle_list_entry *entry = malloc(sizeof(*entry));
+	if (entry == NULL) {
+		VL_MSG_ERR("Could not allocate memory in _rrr_stats_engine_register_handle_nolock\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (pthread_mutex_init(&instance->lock, 0) != 0) {
-		VL_MSG_ERR("Could not initialize mutex in  rrr_stats_instance_new\n");
-		ret = 1;
-		goto out_free;
-	}
+	memset(entry, '\0', sizeof(*entry));
 
-	if ((instance->name = strdup(name)) == NULL) {
-		VL_MSG_ERR("Could not save instance name in rrr_stats_instance_new\n");
-		ret = 1;
-		goto out_destroy_mutex;
-	}
+	entry->stats_handle = stats_handle;
 
-	instance->engine = engine;
-
-	*result = instance;
-	goto out;
-
-	out_destroy_mutex:
-		pthread_mutex_destroy(&instance->lock);
-	out_free:
-		RRR_FREE_IF_NOT_NULL(instance);
+	RRR_LL_APPEND(&stats->handle_list, entry);
 
 	out:
 	return ret;
 }
 
-void rrr_stats_instance_destroy (struct rrr_stats_instance *instance) {
-	RRR_FREE_IF_NOT_NULL(instance->name);
-	pthread_mutex_destroy(&instance->lock);
-	free(instance);
-}
+int rrr_stats_engine_obtain_handle (unsigned int *handle, struct rrr_stats_engine *stats) {
+	int ret = 0;
 
-void rrr_stats_instance_destroy_void (void *instance) {
-	rrr_stats_instance_destroy(instance);
+	*handle = 0;
+
+	if (stats->initialized == 0) {
+		VL_MSG_ERR("Could not create handle in rrr_stats_engine_obtain_handle, not initialized\n");
+		ret = 1;
+		goto out;
+	}
+
+	pthread_mutex_lock(&stats->main_lock);
+
+	unsigned int new_handle = 0;
+	int iterations = 0;
+
+	do {
+		new_handle = rrr_rand();
+		if (++iterations % 100000 == 0) {
+			VL_DEBUG_MSG("Warning: Huge number of handles in statistics engine\n");
+		}
+	} while (__rrr_stats_engine_handle_exists_nolock(stats, new_handle));
+
+	if (__rrr_stats_engine_register_handle_nolock(stats, new_handle) != 0) {
+		VL_MSG_ERR("Could not register handle in rrr_stats_engine_obtain_handle\n");
+		ret = 1;
+		goto out_unlock;
+	}
+
+	*handle = new_handle;
+
+	out_unlock:
+		pthread_mutex_unlock(&stats->main_lock);
+	out:
+		return ret;
 }

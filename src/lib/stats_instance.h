@@ -19,31 +19,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_STATS_ENGINE_H
-#define RRR_STATS_ENGINE_H
+#ifndef RRR_STATS_INSTANCE_H
+#define RRR_STATS_INSTANCE_H
 
 #include <pthread.h>
 
-#include "linked_list.h"
+struct rrr_stats_engine;
 
-struct rrr_stats_handle_list_entry {
-	RRR_LL_NODE(struct rrr_stats_handle_list_entry);
-	unsigned int stats_handle;
+struct rrr_stats_instance {
+	char *name;
+	pthread_mutex_t lock;
+	int stats_handle;
+	struct rrr_stats_engine *engine;
 };
 
-struct rrr_stats_handle_list {
-	RRR_LL_HEAD(struct rrr_stats_handle_list_entry);
-};
+int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats_engine *engine, const char *name);
+void rrr_stats_instance_destroy (struct rrr_stats_instance *instance);
+void rrr_stats_instance_destroy_void (void *instance);
 
-struct rrr_stats_engine {
-	int initialized;
-	int socket;
-	pthread_mutex_t main_lock;
-	struct rrr_stats_handle_list handle_list;
-};
-
-int rrr_stats_engine_init (struct rrr_stats_engine *stats);
-void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats);
-
-
-#endif /* RRR_STATS_ENGINE_H */
+#endif /* RRR_STATS_INSTANCE_H */
