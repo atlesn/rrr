@@ -29,7 +29,7 @@ struct rrr_stats_engine;
 struct rrr_stats_instance {
 	char *name;
 	pthread_mutex_t lock;
-	int stats_handle;
+	unsigned int stats_handle;
 	struct rrr_stats_engine *engine;
 };
 

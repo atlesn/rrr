@@ -23,27 +23,47 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_ENGINE_H
 
 #include <pthread.h>
+#include <inttypes.h>
 
 #include "linked_list.h"
 
-struct rrr_stats_handle_list_entry {
-	RRR_LL_NODE(struct rrr_stats_handle_list_entry);
-	unsigned int stats_handle;
+#define RRR_STATS_ENGINE_INSTANCE_MESSAGE_PATH_PREFIX "rrr.instances"
+
+struct rrr_stats_message;
+
+struct rrr_stats_named_message_list {
+	RRR_LL_NODE(struct rrr_stats_named_message_list);
+	RRR_LL_HEAD(struct rrr_stats_message);
+	unsigned int owner_handle;
+	uint64_t last_seen;
 };
 
-struct rrr_stats_handle_list {
-	RRR_LL_HEAD(struct rrr_stats_handle_list_entry);
+struct rrr_stats_named_message_list_collection {
+	RRR_LL_HEAD(struct rrr_stats_named_message_list);
 };
 
 struct rrr_stats_engine {
 	int initialized;
 	int socket;
 	pthread_mutex_t main_lock;
-	struct rrr_stats_handle_list handle_list;
+	struct rrr_stats_named_message_list_collection named_message_list;
 };
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats);
 void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats);
 
+int rrr_stats_engine_handle_obtain (
+		unsigned int *handle,
+		struct rrr_stats_engine *stats
+);
+void rrr_stats_engine_handle_unregister (
+		struct rrr_stats_engine *stats,
+		unsigned int handle
+);
+int rrr_stats_engine_post_message (
+		struct rrr_stats_engine *stats,
+		unsigned int handle,
+		const struct rrr_stats_message *message
+);
 
 #endif /* RRR_STATS_ENGINE_H */
