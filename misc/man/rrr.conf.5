@@ -203,17 +203,6 @@ The name or address of the client which we send packets without address informat
 The port number of the default remote, defaults to 5555.
 .It ipclient_src_port=PORT NUMBER
 Source port used for sending and receiving packtes, defaults to 5555.
-.It ipclient_keyfile=KEY FILE
-An optional keyfile which we use to generate a key used to encrypt messages we send. The server must use the same file.
-.It ipclient_list={yes|no}
-Accept incoming connections if set to yes.
-.It ipclient_no_assured_single_delivery={yes|no}
-Do not make sure messages are delivered exactly ones. Allows for some loss and messages might be delivered more
-than once, but throughput it somewhat increased and traffic is reduced.
-.It ipclient_boundary_id={unsigned number}
-Set a boundary ID, which uniquely identifies messages from a particular client, manually. If not specified, a random number
-will be used. Two clients with the same ID may not connect to another client simultaneously. Collisions are however unlikely,
-random numbers should work fine in most configurations. Boundary IDs are not used unless assured delivery is active.
 .El
 .SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
