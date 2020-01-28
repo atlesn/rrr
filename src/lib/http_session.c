@@ -453,7 +453,8 @@ int rrr_http_session_receive (
 				__rrr_http_session_receive_get_total_size,
 				&callback_data,
 				__rrr_http_session_receive_callback,
-				&callback_data
+				&callback_data,
+				NULL
 		);
 
 		if (ret == RRR_SOCKET_OK) {

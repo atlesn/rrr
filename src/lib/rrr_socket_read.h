@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 
+struct rrr_socket_client;
+
 struct rrr_socket_read_session {
 	/* A packet read action might be temporarily paused if the payload
 	 * is large (exceeds step_size_limit is < 0). It will resume in the next process tick.
@@ -37,9 +39,15 @@ struct rrr_socket_read_session {
 
 	RRR_LL_NODE(struct rrr_socket_read_session);
 
+	// These are set on every read before calling complete callback. client will be NULL
+	// if client collection is not being used.
+	int fd;
+	struct rrr_socket_client *client;
+	uint64_t last_read_time;
+
+	// Used to distinguish clients from each other
 	struct sockaddr src_addr;
 	socklen_t src_addr_len;
-	uint64_t last_read_time;
 
 	/* Read untill target size is reached (default) or set to read until
 	 * connection is closed. */
@@ -79,7 +87,8 @@ int rrr_socket_read_message (
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
-		void *complete_callback_arg
+		void *complete_callback_arg,
+		struct rrr_socket_client *client
 );
 
 #endif /* RRR_SOCKET_READ_H */

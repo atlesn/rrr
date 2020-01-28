@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
-#include "../lib/stats_engine.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 struct dummy_data {

@@ -131,7 +131,8 @@ int rrr_socket_read_message (
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
-		void *complete_callback_arg
+		void *complete_callback_arg,
+		struct rrr_socket_client *client
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -417,11 +418,17 @@ int rrr_socket_read_message (
 	if (read_session->rx_buf_wpos == read_session->target_size && read_session->target_size > 0) {
 		read_session->read_complete = 1;
 		if (complete_callback != NULL) {
-			ret = complete_callback (read_session, complete_callback_arg);
-			if (ret != 0) {
+			// These two are usually the same every time (for data from the same client) but they are
+			// set here for readability reasons, they are only used by the callback function (if used at all).
+			// *client is NULL unless client collection is being used.
+			read_session->fd = fd;
+			read_session->client = client;
+
+			if ((ret = complete_callback (read_session, complete_callback_arg)) != 0) {
 				VL_MSG_ERR("Error from callback in rrr_socket_read_message\n");
 				goto out;
 			}
+
 			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 		}

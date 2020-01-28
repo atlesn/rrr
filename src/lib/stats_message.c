@@ -33,7 +33,7 @@ int rrr_stats_message_init (
 		uint32_t flags,
 		const char *path_postfix,
 		const void *data,
-		ssize_t data_size
+		uint32_t data_size
 ) {
 	memset(message, '\0', sizeof(*message));
 
@@ -49,6 +49,7 @@ int rrr_stats_message_init (
 
 	message->type = type;
 	message->flags = flags;
+	message->data_size = data_size;
 	memcpy(message->data, data, data_size);
 
 	return 0;
@@ -79,10 +80,12 @@ int rrr_stats_message_new (
 		uint32_t flags,
 		const char *path_postfix,
 		const void *data,
-		ssize_t data_size
+		uint32_t data_size
 ) {
 	int ret = 0;
 	*message = NULL;
+
+	// TODO : Support large messages?
 
 	struct rrr_stats_message *new_message;
 	if (rrr_stats_message_new_empty (&new_message) != 0) {

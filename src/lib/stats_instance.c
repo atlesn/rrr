@@ -59,10 +59,10 @@ int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats
 		goto out_destroy_mutex;
 	}
 
-	if (rrr_stats_engine_handle_obtain(&instance->stats_handle, engine) != 0) {
-		VL_MSG_ERR("Could not obtain stats handle in rrr_stats_instance_new\n");
-		ret = 1;
-		goto out_free_name;
+	// NOTE : We won't trap memory or other errors here very well as program continues to run upon any error
+	if ((ret = rrr_stats_engine_handle_obtain(&instance->stats_handle, engine)) != 0) {
+		VL_DEBUG_MSG_1("Could not obtain stats handle in rrr_stats_instance_new, statistics will be disabled. Return was %i.\n", ret);
+		ret = 0;
 	}
 
 	instance->engine = engine;
@@ -70,8 +70,8 @@ int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats
 	*result = instance;
 	goto out;
 
-	out_free_name:
-		RRR_FREE_IF_NOT_NULL(instance->name);
+//	out_free_name:
+//		RRR_FREE_IF_NOT_NULL(instance->name);
 	out_destroy_mutex:
 		pthread_mutex_destroy(&instance->lock);
 	out_free:
@@ -82,7 +82,9 @@ int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats
 }
 
 void rrr_stats_instance_destroy (struct rrr_stats_instance *instance) {
-	rrr_stats_engine_handle_unregister(instance->engine, instance->stats_handle);
+	if (instance->stats_handle != 0) {
+		rrr_stats_engine_handle_unregister(instance->engine, instance->stats_handle);
+	}
 	RRR_FREE_IF_NOT_NULL(instance->name);
 	pthread_mutex_destroy(&instance->lock);
 	free(instance);
@@ -98,6 +100,11 @@ int rrr_stats_instance_post_text (
 ) {
 	int ret = 0;
 	struct rrr_stats_message message;
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		goto out;
+	}
 
 	if (rrr_stats_message_init (
 			&message,

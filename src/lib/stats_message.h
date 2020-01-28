@@ -40,6 +40,7 @@ struct rrr_stats_message {
 	RRR_LL_NODE(struct rrr_stats_message);
 	uint8_t type;
 	uint32_t flags;
+	uint32_t data_size;
 	char path[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 	char data[RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 };
@@ -54,7 +55,7 @@ int rrr_stats_message_init (
 		uint32_t flags,
 		const char *path_postfix,
 		const void *data,
-		ssize_t data_size
+		uint32_t data_size
 );
 
 int rrr_stats_message_new_empty (
@@ -67,7 +68,7 @@ int rrr_stats_message_new (
 		uint32_t flags,
 		const char *path_postfix,
 		const void *data,
-		ssize_t data_size
+		uint32_t data_size
 );
 
 int rrr_stats_message_duplicate (

@@ -711,7 +711,8 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
-			&callback_data
+			&callback_data,
+			NULL
 	);
 
 	if (ret != RRR_SOCKET_OK) {

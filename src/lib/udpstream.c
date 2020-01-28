@@ -1352,7 +1352,6 @@ static int __rrr_udpstream_maintain (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
-	out:
 	return ret;
 }
 
@@ -1391,7 +1390,8 @@ int rrr_udpstream_do_read_tasks (
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,
-				&callback_data
+				&callback_data,
+				NULL
 		)) != 0) {
 			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 				ret = 0;

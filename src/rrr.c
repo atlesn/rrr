@@ -119,7 +119,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
-	struct rrr_stats_engine stats_engine;
+	struct rrr_stats_engine stats_engine = {0};
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -212,7 +212,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	while (main_running) {
-		usleep (100000);
+		usleep (50000);
 
 		if (instance_check_threads_stopped(instances) == 1) {
 			VL_DEBUG_MSG_1 ("One or more threads have finished or do hard restart. Restart.\n");
@@ -228,6 +228,10 @@ int main (int argc, const char *argv[]) {
 			else {
 				goto out_unload_modules;
 			}
+		}
+
+		if (stats_engine.initialized != 0) {
+				rrr_stats_engine_tick(&stats_engine);
 		}
 
 		thread_run_ghost_cleanup(&count);

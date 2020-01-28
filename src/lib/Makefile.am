@@ -13,7 +13,8 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					ip.c array.c type.c version.c configuration.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
-					mqtt_topic.c mqtt_id_pool.c mqtt_client.c rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c \
+					mqtt_topic.c mqtt_id_pool.c mqtt_client.c \
+					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c \
 					instances.c senders.c poll_helper.c modules.c rrr_socket.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
 					stats_engine.c stats_instance.c stats_message.c \

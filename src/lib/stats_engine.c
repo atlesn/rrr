@@ -25,15 +25,49 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <netdb.h>
 
 #include "../global.h"
 #include "gnu.h"
 #include "stats_engine.h"
 #include "stats_message.h"
 #include "rrr_socket.h"
+#include "rrr_socket_msg.h"
+#include "rrr_socket_client.h"
+#include "rrr_socket_common.h"
 #include "linked_list.h"
 #include "vl_time.h"
 #include "random.h"
+
+struct rrr_stats_client {
+	struct rrr_stats_engine *engine;
+};
+
+static int __rrr_stats_client_new (struct rrr_stats_client **target, struct rrr_stats_engine *engine) {
+	struct rrr_stats_client *client = malloc(sizeof(*client));
+	if (client == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_stats_client_new\n");
+		return 1;
+	}
+
+	client->engine = engine;
+
+	*target = client;
+
+	return 0;
+}
+
+static void __rrr_stats_client_destroy (struct rrr_stats_client *client) {
+	free(client);
+}
+
+static int __rrr_stats_client_new_void (void **target, void *private_data) {
+	return __rrr_stats_client_new ((struct rrr_stats_client **) target, private_data);
+}
+
+static void __rrr_stats_client_destroy_void (void *client) {
+	__rrr_stats_client_destroy (client);
+}
 
 static int __rrr_stats_named_message_list_destroy (struct rrr_stats_named_message_list *list) {
 	RRR_LL_DESTROY(list, struct rrr_stats_message, rrr_stats_message_destroy(node));
@@ -88,17 +122,26 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		goto out_destroy_mutex;
 	}
 
-	VL_DEBUG_MSG_1("Statistics engine started, listening at %s\n", filename);
+	if (rrr_socket_client_collection_init(&stats->client_collection, stats->socket, "rrr_stats_engine") != 0) {
+		VL_MSG_ERR("Could not initialize client collection in statistics engine\n");
+		ret = 1;
+		goto out_close_socket;
+	}
 
+	VL_DEBUG_MSG_1("Statistics engine started, listening at %s\n", filename);
 	stats->initialized = 1;
+
 	goto out;
 
+//	out_destroy_client_collection:
+//		rrr_socket_client_collection_clear(&stats->client_collection);
+	out_close_socket:
+		rrr_socket_close(stats->socket);
 	out_destroy_mutex:
-	pthread_mutex_destroy(&stats->main_lock);
-
+		pthread_mutex_destroy(&stats->main_lock);
 	out:
-	RRR_FREE_IF_NOT_NULL(filename);
-	return ret;
+		RRR_FREE_IF_NOT_NULL(filename);
+		return ret;
 }
 
 void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
@@ -111,7 +154,9 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	// certain risk by destroying the mutex at program exit.
 	pthread_mutex_lock(&stats->main_lock);
 
+	rrr_socket_client_collection_clear(&stats->client_collection);
 	__rrr_stats_named_message_list_collection_clear(&stats->named_message_list);
+
 	stats->initialized = 0;
 
 	pthread_mutex_unlock(&stats->main_lock);
@@ -121,7 +166,79 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	pthread_mutex_destroy(&stats->main_lock);
 }
 
-static int __rrr_stats_engine_register_message_nolock (
+struct rrr_stats_engine_read_callback_data {
+	struct rrr_stats_engine *engine;
+};
+
+static int __rrr_stats_engine_read_callback (struct rrr_socket_read_session *read_session, void *arg) {
+	struct rrr_stats_engine *stats = arg;
+
+	(void)(stats);
+
+	// TODO : Handle data from client
+	VL_DEBUG_MSG_3("STATS RX size %li, data ignored\n", read_session->target_size);
+
+	return 0;
+}
+
+int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
+	int ret = 0;
+
+	if (stats->initialized == 0) {
+		VL_DEBUG_MSG_1("Warning: Statistics engine was not initialized in main tick function\n");
+		ret = 1;
+		goto out;
+	}
+
+	pthread_mutex_lock(&stats->main_lock);
+
+	if (rrr_socket_client_collection_accept (
+			&stats->client_collection,
+			__rrr_stats_client_new_void,
+			stats,
+			__rrr_stats_client_destroy_void
+	) != 0) {
+		VL_MSG_ERR("Error while accepting connections in rrr_stats_engine_tick\n");
+		ret = 1;
+		goto out_unlock;
+	}
+
+	struct rrr_stats_engine_read_callback_data callback_data = { stats };
+
+	if ((ret = rrr_socket_client_collection_read (
+			&stats->client_collection,
+			sizeof(struct rrr_socket_msg),
+			1024,
+			RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH|RRR_SOCKET_READ_METHOD_RECVFROM,
+			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			NULL,
+			__rrr_stats_engine_read_callback,
+			&callback_data
+	)) != 0) {
+		VL_MSG_ERR("Error while reading from clients in stats engine\n");
+		ret = 1;
+		goto out_unlock;
+	}
+
+	out_unlock:
+		pthread_mutex_unlock(&stats->main_lock);
+	out:
+		return ret;
+}
+
+static void __rrr_stats_engine_message_sticky_remove (
+		struct rrr_stats_named_message_list *list,
+		const char *path
+) {
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_stats_message);
+		if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(node) && strcmp(path, node->path) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_stats_message_destroy(node));
+}
+
+static int __rrr_stats_engine_message_register_nolock (
 		struct rrr_stats_engine *stats,
 		unsigned int stats_handle,
 		const struct rrr_stats_message *message
@@ -131,7 +248,7 @@ static int __rrr_stats_engine_register_message_nolock (
 	struct rrr_stats_named_message_list *list = __rrr_stats_named_message_list_get(&stats->named_message_list, stats_handle);
 
 	if (list == NULL) {
-		VL_MSG_ERR("List with handle %u not found in __rrr_stats_engine_register_message_nolock\n", stats_handle);
+		VL_MSG_ERR("List with handle %u not found in __rrr_stats_engine_message_register_nolock\n", stats_handle);
 		ret = 1;
 		goto out;
 	}
@@ -139,9 +256,13 @@ static int __rrr_stats_engine_register_message_nolock (
 	struct rrr_stats_message *new_message;
 
 	if (rrr_stats_message_duplicate(&new_message, message) != 0) {
-		VL_MSG_ERR("Could not duplicate message in __rrr_stats_engine_register_message_nolock\n");
+		VL_MSG_ERR("Could not duplicate message in __rrr_stats_engine_message_register_nolock\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(new_message)) {
+		__rrr_stats_engine_message_sticky_remove(list, new_message->path);
 	}
 
 	RRR_LL_APPEND(list, new_message);
@@ -263,7 +384,7 @@ int rrr_stats_engine_post_message (
 	}
 
 	pthread_mutex_lock(&stats->main_lock);
-	if (__rrr_stats_engine_register_message_nolock(stats, handle, message) != 0) {
+	if (__rrr_stats_engine_message_register_nolock(stats, handle, message) != 0) {
 		VL_MSG_ERR("Could not register message in rrr_stats_engine_post_message\n");
 		ret = 1;
 		goto out_unlock;

@@ -56,21 +56,6 @@ struct rrr_socket_options {
 	int protocol;
 };
 
-struct rrr_socket_client {
-	RRR_LL_NODE(struct rrr_socket_client);
-	struct rrr_socket_read_session_collection read_sessions;
-	int connected_fd;
-	struct sockaddr addr;
-	socklen_t addr_len;
-	uint64_t last_seen;
-};
-
-struct rrr_socket_client_collection {
-	RRR_LL_HEAD(struct rrr_socket_client);
-	int listen_fd;
-	char *creator;
-};
-
 struct rrr_socket_read_session;
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
@@ -138,26 +123,6 @@ int rrr_socket_sendto (
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
-void rrr_socket_client_collection_destroy (
-		struct rrr_socket_client_collection *collection
-);
-int rrr_socket_client_collection_init (
-		struct rrr_socket_client_collection *collection,
-		int listen_fd,
-		const char *creator
-);
-int rrr_socket_client_collection_accept (
-		struct rrr_socket_client_collection *collection
-);
-int rrr_socket_client_collection_read (
-		struct rrr_socket_client_collection *collection,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
-		void *complete_callback_arg
-);
+
 
 #endif /* RRR_SOCKET_H */

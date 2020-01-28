@@ -24,8 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <inttypes.h>
+#include <sys/socket.h>
 
 #include "linked_list.h"
+#include "rrr_socket_client.h"
 
 #define RRR_STATS_ENGINE_INSTANCE_MESSAGE_PATH_PREFIX "rrr.instances"
 
@@ -47,10 +49,12 @@ struct rrr_stats_engine {
 	int socket;
 	pthread_mutex_t main_lock;
 	struct rrr_stats_named_message_list_collection named_message_list;
+	struct rrr_socket_client_collection client_collection;
 };
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats);
 void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats);
+int rrr_stats_engine_tick (struct rrr_stats_engine *stats);
 
 int rrr_stats_engine_handle_obtain (
 		unsigned int *handle,

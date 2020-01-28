@@ -184,8 +184,6 @@ int rrr_instance_config_parse_comma_separated_associative_to_map (
 		const char *cmd_key,
 		const char *delimeter
 ) {
-	int ret = 0;
-
 	struct parse_associative_list_to_map_callback_data callback_data = {
 			target, delimeter
 	};
@@ -203,8 +201,6 @@ int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_instance_config *config,
 		const char *cmd_key
 ) {
-	int ret = 0;
-
 	struct parse_associative_list_to_map_callback_data callback_data = {
 			target, NULL
 	};
