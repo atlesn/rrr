@@ -123,6 +123,13 @@ int rrr_socket_sendto (
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
+static inline int rrr_socket_send (
+		int fd,
+		void *data,
+		ssize_t size
+) {
+	return rrr_socket_sendto(fd, data, size, NULL, 0);
+}
 
 
 #endif /* RRR_SOCKET_H */

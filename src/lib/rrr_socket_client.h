@@ -46,6 +46,8 @@ struct rrr_socket_client_collection {
 	char *creator;
 };
 
+struct rrr_socket_msg;
+
 void rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection
 );
@@ -53,6 +55,9 @@ int rrr_socket_client_collection_init (
 		struct rrr_socket_client_collection *collection,
 		int listen_fd,
 		const char *creator
+);
+int rrr_socket_client_collection_count (
+		struct rrr_socket_client_collection *collection
 );
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
@@ -62,6 +67,11 @@ int rrr_socket_client_collection_accept (
 );
 int rrr_socket_client_collection_accept_simple (
 		struct rrr_socket_client_collection *collection
+);
+int rrr_socket_client_collection_multicast_send (
+		struct rrr_socket_client_collection *collection,
+		void *data,
+		size_t size
 );
 int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,

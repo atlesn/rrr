@@ -120,6 +120,12 @@ int rrr_socket_client_collection_init (
 	return 0;
 }
 
+int rrr_socket_client_collection_count (
+		struct rrr_socket_client_collection *collection
+) {
+	return RRR_LL_COUNT(collection);
+}
+
 int rrr_socket_client_collection_accept (
 		struct rrr_socket_client_collection *collection,
 		int (*private_data_new)(void **target, void *private_arg),
@@ -163,6 +169,24 @@ int rrr_socket_client_collection_accept_simple (
 		struct rrr_socket_client_collection *collection
 ) {
 	return rrr_socket_client_collection_accept (collection, NULL, NULL, NULL);
+}
+
+int rrr_socket_client_collection_multicast_send (
+		struct rrr_socket_client_collection *collection,
+		void *data,
+		size_t size
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		if ((ret = rrr_socket_send(node->connected_fd, data, size)) != 0) {
+			VL_DEBUG_MSG_1("Disconnecting client in client collection following send error\n");
+			RRR_LL_ITERATE_SET_DESTROY();
+			ret = 0;
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
+
+	return ret;
 }
 
 int rrr_socket_client_collection_read (

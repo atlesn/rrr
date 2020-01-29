@@ -167,6 +167,11 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 		fifo_buffer_set_do_ratelimit(&data->buffer, 1);
 	}
 
+	if (rrr_stats_instance_post_default_stickies(stats) != 0) {
+		VL_MSG_ERR("Error while posting default sticky statistics in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_cleanup;
+	}
+
 	uint64_t time_start = time_get_64();
 	int generated_count = 0;
 	rrr_setting_uint generated_count_total = 0;

@@ -189,7 +189,7 @@ int main (int argc, const char *argv[]) {
 
 	threads_restart:
 
-	rrr_socket_close_all();
+	rrr_socket_close_all_except(stats_engine.socket);
 
 	// During preload stage, signals are temporarily deactivated.
 	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);

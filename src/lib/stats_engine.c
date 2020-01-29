@@ -108,7 +108,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	}
 
 	pid_t pid = getpid();
-	if (rrr_asprintf(&filename, "/tmp/rrr_stats.%i\n", pid) <= 0) {
+	if (rrr_asprintf(&filename, "/tmp/rrr_stats.%i", pid) <= 0) {
 		VL_MSG_ERR("Could not generate filename for statistics socket\n");
 		ret = 1;
 		goto out_destroy_mutex;
@@ -181,6 +181,93 @@ static int __rrr_stats_engine_read_callback (struct rrr_socket_read_session *rea
 	return 0;
 }
 
+static int __rrr_stats_engine_send_message_to_clients (struct rrr_stats_engine *stats, struct rrr_stats_message *message) {
+	struct rrr_stats_message_packed message_packed;
+	size_t total_size;
+
+	rrr_stats_message_pack_and_flip (
+			&message_packed,
+			&total_size,
+			message
+	);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) &message_packed,
+			RRR_SOCKET_MSG_TYPE_TREE_DATA,
+			total_size,
+			message->timestamp
+	);
+
+	rrr_socket_msg_checksum_and_to_network_endian (
+			(struct rrr_socket_msg *) &message_packed
+	);
+
+	VL_DEBUG_MSG_3("STATS TX size %lu sticky %i path %s\n",
+			total_size,
+			RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message),
+			message->path
+	);
+
+	return rrr_socket_client_collection_multicast_send (
+			&stats->client_collection,
+			(struct rrr_socket_msg *) &message_packed,
+			total_size
+	);
+}
+
+static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *stats, struct rrr_stats_named_message_list *list) {
+	int ret = 0;
+
+	int has_clients = (rrr_socket_client_collection_count(&stats->client_collection) > 0 ? 1 : 0);
+
+	uint64_t time_now = time_get_64();
+	uint64_t sticky_send_limit = time_now - RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS * 1000;
+
+	// TODO : Consider having separate queue for sticky messages
+
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_stats_message);
+		if (RRR_STATS_MESSAGE_FLAGS_IS_STICKY(node)) {
+			if (node->timestamp == 0 || node->timestamp <= sticky_send_limit) {
+				node->timestamp = time_now;
+			}
+			else {
+				// Don't send this sticky message now, skip to next message
+				RRR_LL_ITERATE_NEXT();
+			}
+		}
+		else {
+			// Non-sticky messages are only sent once (if there's anybody out there)
+			node->timestamp = time_now;
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+
+		if (has_clients) {
+			if (__rrr_stats_engine_send_message_to_clients(stats, node) != 0) {
+				VL_MSG_ERR("Error while sending message in __rrr_stats_engine_send_messages_from_list\n");
+				ret = 1;
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, rrr_stats_message_destroy(node));
+
+	out:
+	return ret;
+}
+
+static int __rrr_stats_engine_send_messages (struct rrr_stats_engine *stats) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&stats->named_message_list, struct rrr_stats_named_message_list);
+		if (__rrr_stats_engine_send_messages_from_list(stats, node) != 0) {
+			ret = 1;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 	int ret = 0;
 
@@ -205,6 +292,7 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 
 	struct rrr_stats_engine_read_callback_data callback_data = { stats };
 
+	// Read from clients
 	if ((ret = rrr_socket_client_collection_read (
 			&stats->client_collection,
 			sizeof(struct rrr_socket_msg),
@@ -216,6 +304,13 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 			&callback_data
 	)) != 0) {
 		VL_MSG_ERR("Error while reading from clients in stats engine\n");
+		ret = 1;
+		goto out_unlock;
+	}
+
+	// Send data to clients
+	if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
+		VL_MSG_ERR("Error while sending messages in rrr_stats_engine_tick\n");
 		ret = 1;
 		goto out_unlock;
 	}
@@ -241,9 +336,11 @@ static void __rrr_stats_engine_message_sticky_remove (
 static int __rrr_stats_engine_message_register_nolock (
 		struct rrr_stats_engine *stats,
 		unsigned int stats_handle,
+		const char *path_prefix,
 		const struct rrr_stats_message *message
 ) {
 	int ret = 0;
+	char prefix_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 
 	struct rrr_stats_named_message_list *list = __rrr_stats_named_message_list_get(&stats->named_message_list, stats_handle);
 
@@ -265,9 +362,27 @@ static int __rrr_stats_engine_message_register_nolock (
 		__rrr_stats_engine_message_sticky_remove(list, new_message->path);
 	}
 
+	ret = snprintf(prefix_tmp, RRR_STATS_MESSAGE_PATH_MAX_LENGTH, "%s/%u/%s", path_prefix, stats_handle, message->path);
+	if (ret >= RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
+		VL_MSG_ERR("Path was too long in __rrr_stats_engine_message_register_nolock\n");
+		ret = 1;
+		goto out;
+	}
+	ret = 0;
+
+	if (rrr_stats_message_set_path(new_message, prefix_tmp) != 0) {
+		VL_MSG_ERR("Could not set path in new message in __rrr_stats_engine_message_register_nolock\n");
+		ret = 1;
+		goto out;
+	}
+
 	RRR_LL_APPEND(list, new_message);
+	new_message = NULL;
 
 	out:
+	if (new_message != NULL) {
+		rrr_stats_message_destroy(new_message);
+	}
 	return ret;
 }
 
@@ -373,6 +488,7 @@ void rrr_stats_engine_handle_unregister (
 int rrr_stats_engine_post_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,
+		const char *path_prefix,
 		const struct rrr_stats_message *message
 ) {
 	int ret = 0;
@@ -384,7 +500,7 @@ int rrr_stats_engine_post_message (
 	}
 
 	pthread_mutex_lock(&stats->main_lock);
-	if (__rrr_stats_engine_message_register_nolock(stats, handle, message) != 0) {
+	if (__rrr_stats_engine_message_register_nolock(stats, handle, path_prefix, message) != 0) {
 		VL_MSG_ERR("Could not register message in rrr_stats_engine_post_message\n");
 		ret = 1;
 		goto out_unlock;

@@ -23,9 +23,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <endian.h>
 
 #include "../global.h"
 #include "stats_message.h"
+
+void rrr_stats_message_pack_and_flip (
+		struct rrr_stats_message_packed *target,
+		size_t *total_size,
+		const struct rrr_stats_message *source
+) {
+	uint16_t path_size = strlen(source->path) + 1;
+	size_t path_and_data_size = path_size + source->data_size;
+
+	if (path_and_data_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE + RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1) {
+		VL_BUG("BUG: path + data too long in rrr_stats_message_pack_and_flip\n");
+	}
+
+	*total_size = sizeof(*target) - 1 + path_and_data_size;
+
+	target->type = source->type;
+	target->flags = htobe32(source->flags);
+	target->path_size = htobe16(path_size);
+
+	memcpy(target->path_and_data, source->path, path_size);
+	memcpy(target->path_and_data + path_size, source->data, source->data_size);
+}
 
 int rrr_stats_message_init (
 		struct rrr_stats_message *message,
@@ -61,7 +84,7 @@ int rrr_stats_message_new_empty (
 	int ret = 0;
 	*message = NULL;
 
-	struct rrr_stats_message *new_message = malloc(sizeof(*message));
+	struct rrr_stats_message *new_message = malloc(sizeof(*new_message));
 	if (new_message == NULL) {
 		VL_MSG_ERR("Could not allocate memory in rrr_stats_message_new_empty");
 		ret = 1;
@@ -107,6 +130,18 @@ int rrr_stats_message_new (
 		free(new_message);
 	out:
 		return ret;
+}
+
+int rrr_stats_message_set_path (
+		struct rrr_stats_message *message,
+		const char *path
+) {
+	if (strlen(path) > RRR_STATS_MESSAGE_PATH_MAX_LENGTH) {
+		VL_MSG_ERR("Path was too long in rrr_stats_message_set_path\n");
+		return 1;
+	}
+	strcpy(message->path, path);
+	return 0;
 }
 
 int rrr_stats_message_duplicate (

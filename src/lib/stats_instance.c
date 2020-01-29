@@ -29,12 +29,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_message.h"
 #include "../global.h"
 
-#define RRR_INSTANCE_POST_ARGUMENTS									\
-	struct rrr_stats_instance *instance,							\
-	const char *path_postfix,										\
-	int sticky
-
-int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats_engine *engine, const char *name) {
+int rrr_stats_instance_new (
+		struct rrr_stats_instance **result,
+		struct rrr_stats_engine *engine,
+		const char *name
+) {
 	int ret = 0;
 	*result = NULL;
 
@@ -81,7 +80,9 @@ int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats
 	return ret;
 }
 
-void rrr_stats_instance_destroy (struct rrr_stats_instance *instance) {
+void rrr_stats_instance_destroy (
+		struct rrr_stats_instance *instance
+) {
 	if (instance->stats_handle != 0) {
 		rrr_stats_engine_handle_unregister(instance->engine, instance->stats_handle);
 	}
@@ -90,7 +91,9 @@ void rrr_stats_instance_destroy (struct rrr_stats_instance *instance) {
 	free(instance);
 }
 
-void rrr_stats_instance_destroy_void (void *instance) {
+void rrr_stats_instance_destroy_void (
+		void *instance
+) {
 	rrr_stats_instance_destroy(instance);
 }
 
@@ -112,18 +115,57 @@ int rrr_stats_instance_post_text (
 			(sticky != 0 ? RRR_STATS_MESSAGE_FLAGS_STICKY : 0),
 			path_postfix,
 			text,
-			strlen(text) +1
+			strlen(text) + 1
 	) != 0) {
 		VL_MSG_ERR("Could not initialize statistics message in rrr_stats_message_post_text\n");
 		ret = 1;
 		goto out;
 	}
 
-	strcpy(message.data, text);
-
-	if ((ret = rrr_stats_engine_post_message(instance->engine, instance->stats_handle, &message)) != 0) {
+	if ((ret = rrr_stats_engine_post_message (
+			instance->engine,
+			instance->stats_handle,
+			RRR_STATS_INSTANCE_PATH_PREFIX,
+			&message
+	)) != 0) {
 		VL_MSG_ERR("Error returned from post function in rrr_stats_message_post_text\n");
 		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_stats_instance_post_base10_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		long long int value
+) {
+	char text[128];
+
+	VL_ASSERT(sizeof(long long int) <= 64, long_long_is_lteq_64);
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		return 0;
+	}
+
+	sprintf(text, "%lli", value);
+
+	return rrr_stats_instance_post_text(instance, path_postfix, sticky, text);
+}
+
+int rrr_stats_instance_post_default_stickies (
+		struct rrr_stats_instance *instance
+) {
+	int ret = 0;
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		goto out;
+	}
+
+	if ((ret = rrr_stats_instance_post_text(instance, RRR_STATS_MESSAGE_PATH_INSTANCE_NAME, 1, instance->name)) != 0) {
 		goto out;
 	}
 

@@ -24,6 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
+#define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
+
+#define RRR_INSTANCE_POST_ARGUMENTS									\
+	struct rrr_stats_instance *instance,							\
+	const char *path_postfix,										\
+	int sticky
+
 struct rrr_stats_engine;
 
 struct rrr_stats_instance {
@@ -33,8 +40,27 @@ struct rrr_stats_instance {
 	struct rrr_stats_engine *engine;
 };
 
-int rrr_stats_instance_new (struct rrr_stats_instance **result, struct rrr_stats_engine *engine, const char *name);
-void rrr_stats_instance_destroy (struct rrr_stats_instance *instance);
-void rrr_stats_instance_destroy_void (void *instance);
+int rrr_stats_instance_new (
+		struct rrr_stats_instance **result,
+		struct rrr_stats_engine *engine,
+		const char *name
+);
+void rrr_stats_instance_destroy (
+		struct rrr_stats_instance *instance
+);
+void rrr_stats_instance_destroy_void (
+		void *instance
+);
+int rrr_stats_instance_post_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		const char *text
+);
+int rrr_stats_instance_post_base10_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		long long int value
+);
+int rrr_stats_instance_post_default_stickies (
+		struct rrr_stats_instance *instance
+);
 
 #endif /* RRR_STATS_INSTANCE_H */

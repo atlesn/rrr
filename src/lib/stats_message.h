@@ -26,8 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "linked_list.h"
+#include "rrr_socket_msg.h"
 
-#define RRR_STATS_MESSAGE_TYPE_TEXT 1
+#define RRR_STATS_MESSAGE_TYPE_TEXT			1
+#define RRR_STATS_MESSAGE_TYPE_BASE10_TEXT	2
+
+#define RRR_STATS_MESSAGE_PATH_INSTANCE_NAME	"name"
 
 #define RRR_STATS_MESSAGE_FLAGS_STICKY (1<<0)
 
@@ -41,13 +45,32 @@ struct rrr_stats_message {
 	uint8_t type;
 	uint32_t flags;
 	uint32_t data_size;
+	uint64_t timestamp;
 	char path[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 	char data[RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 };
 
+// msg_value of rrr_socket_msg-struct is used for timestamp
+struct rrr_stats_message_packed {
+	RRR_SOCKET_MSG_HEAD;
+	uint8_t type;
+	uint32_t flags;
+
+	// Data begins after path_size and it's length is calculated
+	// from msg_size and path_size
+	uint16_t path_size;
+	char path_and_data[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 + RRR_STATS_MESSAGE_DATA_MAX_SIZE];
+} __attribute((packed));
+
 struct rrr_stats_message_collection {
 	RRR_LL_HEAD(struct rrr_stats_message);
 };
+
+void rrr_stats_message_pack_and_flip (
+		struct rrr_stats_message_packed *target,
+		size_t *total_size,
+		const struct rrr_stats_message *source
+);
 
 int rrr_stats_message_init (
 		struct rrr_stats_message *message,
@@ -69,6 +92,11 @@ int rrr_stats_message_new (
 		const char *path_postfix,
 		const void *data,
 		uint32_t data_size
+);
+
+int rrr_stats_message_set_path (
+		struct rrr_stats_message *message,
+		const char *path
 );
 
 int rrr_stats_message_duplicate (

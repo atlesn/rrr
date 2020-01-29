@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "rrr_socket_client.h"
 
-#define RRR_STATS_ENGINE_INSTANCE_MESSAGE_PATH_PREFIX "rrr.instances"
+#define RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS 1000
 
 struct rrr_stats_message;
 
@@ -67,6 +67,7 @@ void rrr_stats_engine_handle_unregister (
 int rrr_stats_engine_post_message (
 		struct rrr_stats_engine *stats,
 		unsigned int handle,
+		const char *path_prefix,
 		const struct rrr_stats_message *message
 );
 
