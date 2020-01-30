@@ -49,7 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static volatile int rrr_stats_abort = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"socket",				"[RRR SOCKET (PREFIX)]"},
+		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"socket",				"[RRR SOCKET (PREFIX)] ..."},
 		{0,							'e',	"exact_path",			"[-e|--exact_path]"},
 /*		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
@@ -343,13 +343,15 @@ static int __rrr_stats_attempt_connect (struct rrr_stats_data *data) {
 
 	RRR_LL_ITERATE_BEGIN(&data->socket_prefixes, struct rrr_linked_list_node);
 		if (data->socket_fd != 0) {
-			// We are connected
-			RRR_LL_ITERATE_BREAK();
+			VL_DEBUG_MSG_1("Not attempting to use prefix %s, already connected\n", (char *) node->data);
 		}
-		if (__rrr_stats_attempt_connect_prefix(data, node->data) != 0) {
-			VL_MSG_ERR("Error while attempting to connect to socket prefix %s\n", (char *) node->data);
-			ret = 1;
-			goto out;
+		else {
+			VL_DEBUG_MSG_1("Attempting to use prefix %s\n", (char *) node->data);
+			if (__rrr_stats_attempt_connect_prefix(data, node->data) != 0) {
+				VL_MSG_ERR("Error while attempting to connect to socket prefix %s\n", (char *) node->data);
+				ret = 1;
+				goto out;
+			}
 		}
 	RRR_LL_ITERATE_END();
 

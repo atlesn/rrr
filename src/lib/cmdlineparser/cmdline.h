@@ -37,6 +37,7 @@ typedef unsigned long int cmd_conf;
 #define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
 #define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
 #define CMD_ARG_FLAG_NO_FLAG		(1<<2)
+#define CMD_ARG_FLAG_NO_FLAG_MULTI	(1<<4)
 
 struct cmd_arg_value {
 	RRR_LL_NODE(struct cmd_arg_value);
