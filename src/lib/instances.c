@@ -370,6 +370,17 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 	return ret;
 }
 
+unsigned int instance_metadata_collection_count (struct instance_metadata_collection *collection) {
+	unsigned int result = 0;
+
+	RRR_INSTANCE_LOOP(instance, collection) {
+		(void)(instance);
+		result++;
+	}
+
+	return result;
+}
+
 void instance_free_thread(struct instance_thread_data *data) {
 	if (data == NULL) {
 		return;

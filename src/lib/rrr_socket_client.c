@@ -160,6 +160,8 @@ int rrr_socket_client_collection_accept (
 		return 1;
 	}
 
+	VL_DEBUG_MSG_1("Statistics client connected with fd %i\n", temp.connected_fd);
+
 	RRR_LL_PUSH(collection, client_new);
 
 	return 0;
@@ -179,6 +181,7 @@ int rrr_socket_client_collection_multicast_send (
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		VL_DEBUG_MSG_3("TX to fd %i\n", node->connected_fd);
 		if ((ret = rrr_socket_send(node->connected_fd, data, size)) != 0) {
 			VL_DEBUG_MSG_1("Disconnecting client in client collection following send error\n");
 			RRR_LL_ITERATE_SET_DESTROY();

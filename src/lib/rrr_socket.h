@@ -30,24 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 #include "rrr_socket_read.h"
-
-#define RRR_SOCKET_OK				0
-#define RRR_SOCKET_HARD_ERROR		1
-#define RRR_SOCKET_SOFT_ERROR		2
-#define RRR_SOCKET_READ_INCOMPLETE	3
-#define RRR_SOCKET_READ_EOF			4
-
-#define RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH	0
-#define RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE		1
-
-#define RRR_SOCKET_CLIENT_TIMEOUT	30
-
-#define RRR_SOCKET_READ_METHOD_READ_FILE	(1<<0)
-#define RRR_SOCKET_READ_METHOD_RECVFROM		(1<<1)
-#define RRR_SOCKET_READ_CHECK_EOF			(1<<2)
-#define RRR_SOCKET_READ_USE_TIMEOUT			(1<<3)
-#define RRR_SOCKET_READ_NO_SLEEPING			(1<<4)
-#define RRR_SOCKET_READ_METHOD_RECV			(1<<5)
+#include "rrr_socket_constants.h"
 
 struct rrr_socket_options {
 	int fd;

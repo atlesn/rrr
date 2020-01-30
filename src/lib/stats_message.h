@@ -35,10 +35,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_STATS_MESSAGE_FLAGS_STICKY (1<<0)
 
+#define RRR_STATS_MESSAGE_FLAGS_ALL (RRR_STATS_MESSAGE_FLAGS_STICKY)
+
 #define RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message) ((message->flags & RRR_STATS_MESSAGE_FLAGS_STICKY) != 0)
 
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
+
+struct rrr_socket_read_session;
 
 struct rrr_stats_message {
 	RRR_LL_NODE(struct rrr_stats_message);
@@ -65,6 +69,16 @@ struct rrr_stats_message_packed {
 struct rrr_stats_message_collection {
 	RRR_LL_HEAD(struct rrr_stats_message);
 };
+
+struct rrr_stats_message_unpack_callback_data {
+	int (*callback)(const struct rrr_stats_message *message, void *private_arg);
+	void *private_arg;
+};
+
+int rrr_stats_message_unpack_callback (
+		struct rrr_socket_read_session *read_session,
+		void *private_arg
+);
 
 void rrr_stats_message_pack_and_flip (
 		struct rrr_stats_message_packed *target,

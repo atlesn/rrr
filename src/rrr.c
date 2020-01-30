@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "lib/rrr_socket.h"
 #include "lib/stats_engine.h"
+#include "lib/stats_message.h"
 
 const char *module_library_paths[] = {
 		VL_MODULE_PATH,
@@ -119,6 +120,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 	int count = 0;
 
+	unsigned int stats_engine_handle = 0;
 	struct rrr_stats_engine stats_engine = {0};
 
 	struct cmd_data cmd;
@@ -211,6 +213,50 @@ int main (int argc, const char *argv[]) {
 		goto out_stop_threads;
 	}
 
+	// Post main sticky statistics messages
+	if (stats_engine_handle != 0) {
+		rrr_stats_engine_handle_unregister(&stats_engine, stats_engine_handle);
+		stats_engine_handle = 0;
+	}
+
+	if (stats_engine.initialized != 0) {
+		if (rrr_stats_engine_handle_obtain(&stats_engine_handle, &stats_engine) != 0) {
+			VL_MSG_ERR("Error while obtaining statistics handle in main\n");
+			ret = EXIT_FAILURE;
+			goto out_stop_threads;
+		}
+
+		char msg_text[RRR_STATS_MESSAGE_DATA_MAX_SIZE + 1];
+
+		if (snprintf (
+				msg_text,
+				RRR_STATS_MESSAGE_DATA_MAX_SIZE,
+				"RRR running with %u instances\n",
+				instance_metadata_collection_count(instances)
+		) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
+			VL_BUG("Statistics message too long in main\n");
+		}
+
+		struct rrr_stats_message message;
+		if (rrr_stats_message_init (
+				&message,
+				RRR_STATS_MESSAGE_TYPE_TEXT,
+				RRR_STATS_MESSAGE_FLAGS_STICKY,
+				"status",
+				msg_text,
+				strlen(msg_text+1)
+		) != 0) {
+			VL_BUG("Could not initialize main statistics message\n");
+		}
+
+		if (rrr_stats_engine_post_message(&stats_engine, stats_engine_handle, "main", &message) != 0) {
+			VL_MSG_ERR("Could not post main statistics message\n");
+			ret = EXIT_FAILURE;
+			goto out_stop_threads;
+		}
+	}
+
+	// Main loop
 	while (main_running) {
 		usleep (50000);
 
@@ -243,6 +289,9 @@ int main (int argc, const char *argv[]) {
 	VL_DEBUG_MSG_1 ("Main loop finished\n");
 
 	out_stop_threads:
+		if (stats_engine_handle != 0) {
+			rrr_stats_engine_handle_unregister(&stats_engine, stats_engine_handle);
+		}
 		rrr_set_debuglevel_on_exit();
 		VL_DEBUG_MSG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);

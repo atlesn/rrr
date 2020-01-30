@@ -116,6 +116,7 @@ struct instance_metadata *instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
 );
+unsigned int instance_metadata_collection_count (struct instance_metadata_collection *collection);
 void instance_free_thread(struct instance_thread_data *data);
 struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
 int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);

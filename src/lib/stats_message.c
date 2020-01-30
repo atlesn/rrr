@@ -27,6 +27,92 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "stats_message.h"
+#include "rrr_socket_read.h"
+
+int rrr_stats_message_unpack_callback (
+		struct rrr_socket_read_session *read_session,
+		void *private_arg
+) {
+	struct rrr_stats_message_unpack_callback_data *data = private_arg;
+
+	int ret = 0;
+
+	struct rrr_stats_message_packed *source = (struct rrr_stats_message_packed *) read_session->rx_buf_ptr;
+
+	if (read_session->rx_buf_wpos < 0) {
+		VL_BUG("negative wpos in rrr_stats_message_unpack_callback\n");
+	}
+
+	size_t received_size = read_session->rx_buf_wpos;
+
+	if (received_size < sizeof(*source) - sizeof(source->path_and_data)) {
+		VL_MSG_ERR("Received statistics message which was too short in rrr_stats_message_unpack_callback\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	if (received_size > sizeof(*source)) {
+		VL_MSG_ERR("Received statistics message which was too long in rrr_stats_message_unpack_callback\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	uint16_t path_size = be16toh(source->path_size);
+	uint32_t flags = be32toh(source->flags);
+	uint8_t type = source->type;
+
+	if ((flags & ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
+		VL_MSG_ERR("Unknown flags %u in received statistics packet\n", flags);
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	switch (type) {
+		case RRR_STATS_MESSAGE_TYPE_TEXT:			break;
+		case RRR_STATS_MESSAGE_TYPE_BASE10_TEXT:	break;
+		default:
+			VL_MSG_ERR("Unknown type %u in received statistics packet\n", type);
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+	};
+
+	size_t actual_path_and_data_size = received_size - (sizeof(*source) - sizeof(source->path_and_data));
+	if (path_size > actual_path_and_data_size) {
+		VL_MSG_ERR("Path size in received statistics packet exceeds packet size\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	struct rrr_stats_message target;
+	memset (&target, '\0', sizeof(target));
+
+	target.flags = flags;
+	target.type = type;
+	target.timestamp = source->msg_value; // Already byte-swapped by socket framework
+
+	size_t data_size = actual_path_and_data_size - path_size;
+	if (data_size > 0) {
+		memcpy(target.data, source->path_and_data + path_size, data_size);
+		target.data_size = data_size;
+	}
+
+	if (path_size > 0) {
+		if (source->path_and_data[path_size-1] != '\0') {
+			VL_MSG_ERR("Path was not zero-terminated in received statistics packet\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		memcpy(target.path, source->path_and_data, path_size);
+	}
+
+	if ((ret = data->callback(&target, data->private_arg)) != 0) {
+		VL_MSG_ERR("Error from callback in rrr_stats_message_unpack_callback, return was %i\n", ret);
+		goto out;
+	}
+
+	out:
+	return ret;
+}
 
 void rrr_stats_message_pack_and_flip (
 		struct rrr_stats_message_packed *target,
@@ -40,7 +126,7 @@ void rrr_stats_message_pack_and_flip (
 		VL_BUG("BUG: path + data too long in rrr_stats_message_pack_and_flip\n");
 	}
 
-	*total_size = sizeof(*target) - 1 + path_and_data_size;
+	*total_size = sizeof(*target) - sizeof(target->path_and_data) + path_and_data_size;
 
 	target->type = source->type;
 	target->flags = htobe32(source->flags);

@@ -459,7 +459,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	strcpy(addr.sun_path, filename);
 	addr.sun_family = AF_UNIX;
 
-	fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET | (nonblock != 0 ? O_NONBLOCK : 0), 0, creator, filename);
+	fd = rrr_socket(AF_UNIX, SOCK_STREAM | (nonblock != 0 ? O_NONBLOCK : 0), 0, creator, filename);
 	if (fd < 0) {
 		VL_MSG_ERR("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
@@ -574,7 +574,7 @@ int rrr_socket_unix_create_and_connect (
 	addr.sun_family = AF_UNIX;
 	strcpy(addr.sun_path, filename);
 
-	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
+	socket_fd = rrr_socket(AF_UNIX, SOCK_STREAM|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
 	if (socket_fd < 0) {
 		VL_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
