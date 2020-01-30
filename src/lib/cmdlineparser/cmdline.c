@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define CMD_DBG_CMDLINE
 
 static const char *cmd_blank_argument = "";
-static const char *cmd_help = "help";
+//static const char *cmd_help = "help";
 
 static void __cmd_arg_value_destroy(struct cmd_arg_value *value) {
 	RRR_FREE_IF_NOT_NULL(value->value);
@@ -407,13 +407,13 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 	cmd_arg_count noflag_count = 0;
 
 	data->program = data->argv[0];
-	data->command = cmd_help;
+	data->command = cmd_blank_argument;
 
 	if (data->argc <= 1) {
 		return 0;
 	}
 
-	data->command = cmd_blank_argument;
+//	data->command = cmd_blank_argument;
 
 	if ((config & CMD_CONFIG_COMMAND) > 0) {
 		data->command = data->argv[1];

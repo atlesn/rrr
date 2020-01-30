@@ -108,7 +108,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	}
 
 	pid_t pid = getpid();
-	if (rrr_asprintf(&filename, "/tmp/rrr_stats.%i", pid) <= 0) {
+	if (rrr_asprintf(&filename, RRR_TMP_PATH "/" RRR_STATS_SOCKET_PREFIX ".%i", pid) <= 0) {
 		VL_MSG_ERR("Could not generate filename for statistics socket\n");
 		ret = 1;
 		goto out_destroy_mutex;

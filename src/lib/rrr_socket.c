@@ -557,7 +557,7 @@ int rrr_socket_unix_create_and_connect (
 		const char *filename,
 		int nonblock
 ) {
-	int ret = 0;
+	int ret = RRR_SOCKET_OK;
 	int socket_fd = 0;
 	struct sockaddr_un addr;
 	socklen_t addr_len = sizeof(addr);
@@ -567,7 +567,7 @@ int rrr_socket_unix_create_and_connect (
 
 	if (strlen(filename) > sizeof(addr.sun_path) - 1) {
 		VL_MSG_ERR("Socket path from config was too long in rrr_socket_unix_create_and_connect\n");
-		ret = 1;
+		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 
@@ -577,7 +577,7 @@ int rrr_socket_unix_create_and_connect (
 	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
 	if (socket_fd < 0) {
 		VL_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
-		ret = 1;
+		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
 
@@ -595,7 +595,7 @@ int rrr_socket_unix_create_and_connect (
 	}
 
 	if (connected != 1) {
-		ret = 1;
+		ret = RRR_SOCKET_SOFT_ERROR;
 		rrr_socket_close(socket_fd);
 		goto out;
 	}

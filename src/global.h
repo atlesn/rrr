@@ -190,7 +190,8 @@ void rrr_init_global_config (
 		unsigned int no_thread_restart
 );
 int rrr_print_help_and_version (
-		struct cmd_data *cmd
+		struct cmd_data *cmd,
+		int argc_minimum
 );
 
 #endif

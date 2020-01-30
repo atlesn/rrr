@@ -6,6 +6,7 @@ AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type 
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
 AC_DEFINE([RRR_MESSAGE_MIME_TYPE], "application/rrr-message", [MIME type of RRR message])
+AC_DEFINE([RRR_STATS_SOCKET_PREFIX], "rrr_stats", [Socket name prefix for RRR stats socket])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -25,7 +26,7 @@ AM_SILENT_RULES([yes])
 echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
