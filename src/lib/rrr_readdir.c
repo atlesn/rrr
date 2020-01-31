@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "rrr_readdir.h"
+#include "rrr_strerror.h"
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -52,7 +53,7 @@ int rrr_readdir_foreach (
 
 	DIR *dirp = opendir(dir_path);
 	if (dirp == NULL) {
-		VL_MSG_ERR("Could not open directory '%s': %s\n", dir_path, strerror(errno));
+		VL_MSG_ERR("Could not open directory '%s': %s\n", dir_path, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -84,7 +85,7 @@ int rrr_readdir_foreach (
 		while (--i > 0 && (d_type == DT_UNKNOWN || d_type == DT_LNK)) {
 			struct stat sb;
 			if (lstat(resolved_path, &sb) != 0) {
-				VL_MSG_ERR("Could not stat file '%s': %s\n", resolved_path, strerror(errno));
+				VL_MSG_ERR("Could not stat file '%s': %s\n", resolved_path, rrr_strerror(errno));
 				goto next_entry; // Non-critical
 			}
 
@@ -101,7 +102,7 @@ int rrr_readdir_foreach (
 
 			if (d_type == DT_LNK) {
 				if (realpath(resolved_path, realpath_tmp) == NULL) {
-					VL_MSG_ERR("Could not resolve real path for '%s': %s\n", resolved_path, strerror(errno));
+					VL_MSG_ERR("Could not resolve real path for '%s': %s\n", resolved_path, rrr_strerror(errno));
 					goto next_entry; // Non-critical
 				}
 #ifdef RRR_READDIR_DEBUG

@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket_read.h"
 #include "lib/rrr_readdir.h"
 #include "lib/stats_message.h"
+#include "lib/rrr_strerror.h"
 
 #ifdef _GNU_SOURCE
 #	error "Cannot use _GNU_SOURCE, would cause use of incorrect basename() function"
@@ -51,7 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH \
 	RRR_TMP_PATH "/" RRR_STATS_SOCKET_PREFIX
 
-#define RRR_STATS_FIRST_PACKET_WAIT_LIMIT_MS 1000
+#define RRR_STATS_FIRST_PACKET_WAIT_LIMIT_MS	1000
+#define RRR_STATS_CONNECTION_TIMEOUT_MS			RRR_STATS_FIRST_PACKET_WAIT_LIMIT_MS
+#define RRR_STATS_TICK_SLEEP_MS					100
+#define RRR_STATS_RECONNECT_SLEEP_MS			500
+#define RRR_STATS_KEEPALIVE_INTERVAL_MS			RRR_SOCKET_CLIENT_TIMEOUT_S / 2 * 1000
 
 static volatile int rrr_stats_abort = 0;
 
@@ -144,13 +149,14 @@ static int __rrr_stats_socket_prefix_register (struct rrr_stats_data *data, cons
 
 struct rrr_stats_read_message_callback_data {
 	struct rrr_stats_data *data;
-	unsigned int ok_message_count;
+	unsigned int message_count_ok;
+	unsigned int message_count_err;
 };
 
 static int __rrr_stats_read_message_callback_counter (const struct rrr_stats_message *message, void *private_arg) {
 	struct rrr_stats_read_message_callback_data *data = private_arg;
 
-	data->ok_message_count++;
+	data->message_count_ok++;
 
 	VL_DEBUG_MSG_3("RX MSG path '%s'\n", message->path);
 
@@ -169,7 +175,7 @@ static int __rrr_stats_read_message (
 			callback, callback_data
 	};
 
-	if ((ret = rrr_socket_read_message (
+	return rrr_socket_read_message (
 			read_sessions,
 			fd,
 			sizeof(struct rrr_socket_msg),
@@ -180,11 +186,7 @@ static int __rrr_stats_read_message (
 			rrr_stats_message_unpack_callback,
 			&msg_callback_data, // <-- CHECK THAT CALLBACK CORRECT STRUCT IS SENT
 			NULL
-	)) != 0) {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			ret = 0;
-		}
-	}
+	);
 
 	return ret;
 }
@@ -234,25 +236,30 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 	uint64_t time_limit = time_get_64() + RRR_STATS_FIRST_PACKET_WAIT_LIMIT_MS * 1000; // 500ms
 
 	struct rrr_stats_read_message_callback_data callback_data = {
-			data, 0
+			data, 0, 0
 	};
 
-	while (time_get_64() < time_limit && callback_data.ok_message_count == 0) {
+	while (time_get_64() < time_limit && callback_data.message_count_ok == 0) {
 		if ((ret = __rrr_stats_read_message (
 				&data->read_sessions,
 				fd,
 				__rrr_stats_read_message_callback_counter,
 				&callback_data
 		)) != 0) {
-			VL_DEBUG_MSG_1("Error while reading first packet from socket %s, cannot use it.\n", path);
-			ret = 0;
-			goto out_close;
+			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
+				ret = 0;
+			}
+			else {
+				VL_DEBUG_MSG_1("Error while reading first packet from socket %s, cannot use it.\n", path);
+				ret = 0;
+				goto out_close;
+			}
 		}
 
 		usleep(50000); // 50ms
 	}
 
-	if (callback_data.ok_message_count == 0) {
+	if (callback_data.message_count_ok == 0) {
 		VL_DEBUG_MSG_1("No packets received on socket %s within time limit, cannot use it.\n", path);
 		ret = 0;
 		goto out_close;
@@ -459,11 +466,127 @@ static int __rrr_stats_attempt_connect (struct rrr_stats_data *data) {
 	return ret;
 }
 
+static int __rrr_stats_send_message (int fd, const struct rrr_stats_message *message) {
+	struct rrr_stats_message_packed message_packed;
+	size_t total_size;
+
+	rrr_stats_message_pack_and_flip (
+			&message_packed,
+			&total_size,
+			message
+	);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) &message_packed,
+			RRR_SOCKET_MSG_TYPE_TREE_DATA,
+			total_size,
+			message->timestamp
+	);
+
+	rrr_socket_msg_checksum_and_to_network_endian (
+			(struct rrr_socket_msg *) &message_packed
+	);
+
+	VL_DEBUG_MSG_3("TX size %lu sticky %i path %s\n",
+			total_size,
+			RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message),
+			message->path
+	);
+
+	return rrr_socket_send(fd, &message_packed, total_size);
+}
+
+static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {
+	if (data->socket_fd == 0) {
+		return 0;
+	}
+
+	struct rrr_stats_message message;
+
+	if (rrr_stats_message_init(&message, RRR_STATS_MESSAGE_TYPE_KEEPALIVE, 0, "", NULL, 0) != 0) {
+		VL_MSG_ERR("Could not initialize keepalive message in __rrr_stats_send_keepalive\n");
+		return 1;
+	}
+
+	switch (__rrr_stats_send_message(data->socket_fd, &message)) {
+		case RRR_SOCKET_OK:
+			return 0;
+		case RRR_SOCKET_SOFT_ERROR:
+			VL_DEBUG_MSG_1("Soft error while sending message, disconnecting from stats server\n");
+			data->socket_fd = 0;
+			break;
+		default:
+			VL_MSG_ERR("Hard error while sending message to server\n");
+			return 1;
+	};
+
+	return 0;
+}
+
+static int __rrr_stats_process_message (const struct rrr_stats_message *message, void *private_arg) {
+	struct rrr_stats_read_message_callback_data *callback_data = private_arg;
+
+	(void)(message);
+
+	callback_data->message_count_ok += 1;
+
+	return 0;
+}
+
+static int __rrr_stats_tick (struct rrr_stats_data *data) {
+	if (data->socket_fd == 0) {
+		return 0;
+	}
+
+	struct rrr_stats_read_message_callback_data callback_data = { data, 0, 0 };
+
+	unsigned int total_message_count_ok = 0;
+	unsigned int total_message_count_err = 0;
+
+	do {
+		callback_data.message_count_ok = 0;
+		callback_data.message_count_err = 0;
+
+		switch (__rrr_stats_read_message (
+				&data->read_sessions,
+				data->socket_fd,
+				__rrr_stats_process_message,
+				&callback_data
+		)) {
+			case RRR_SOCKET_OK:
+				break;
+			case RRR_SOCKET_READ_INCOMPLETE:
+				break;
+			case RRR_SOCKET_SOFT_ERROR:
+				VL_DEBUG_MSG_1("Soft error while reading from stats server, disconnecting\n");
+				data->socket_fd = 0;
+				break;
+			default:
+				VL_MSG_ERR("Error while reading messages from RRR\n");
+				data->socket_fd = 0;
+				return 1;
+		};
+
+		total_message_count_ok += callback_data.message_count_ok;
+		total_message_count_err += callback_data.message_count_err;
+	}
+	while (data->socket_fd != 0 && (callback_data.message_count_ok != 0 || callback_data.message_count_err != 0));
+
+	if (total_message_count_ok > 0 || total_message_count_err > 0) {
+		VL_DEBUG_MSG_3("Received %u OK messages and %u unknown messages\n",
+				total_message_count_ok, total_message_count_err);
+	}
+
+	return 0;
+}
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
 		VL_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	rrr_strerror_init();
 
 	int ret = EXIT_SUCCESS;
 
@@ -507,6 +630,8 @@ int main (int argc, const char *argv[]) {
 	// Exit immediately with EXIT_FAILURE
 	sigaction (SIGTERM, &action, NULL);
 
+	uint64_t next_keep_alive = 0;
+
 	while (rrr_stats_abort != 1) {
 		rrr_socket_close_all();
 		rrr_socket_read_session_collection_clear(&data.read_sessions);
@@ -518,7 +643,27 @@ int main (int argc, const char *argv[]) {
 			goto out_cleanup_cmd;
 		}
 
-		usleep (100000);
+		if (data.socket_fd != 0) {
+			while (rrr_stats_abort != 1 && data.socket_fd != 0) {
+				if (__rrr_stats_tick(&data) != 0) {
+					ret = EXIT_FAILURE;
+					goto out_cleanup_cmd;
+				}
+
+				if (time_get_64() > next_keep_alive) {
+					if (__rrr_stats_send_keepalive(&data) != 0) {
+						ret = EXIT_FAILURE;
+						goto out_cleanup_cmd;
+					}
+					next_keep_alive = time_get_64() + (RRR_STATS_KEEPALIVE_INTERVAL_MS * 1000);
+				}
+
+				usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
+			}
+		}
+		else {
+			usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
+		}
 	}
 
 	out_cleanup_cmd:
@@ -528,5 +673,6 @@ int main (int argc, const char *argv[]) {
 	out_cleanup_data:
 		__rrr_stats_data_cleanup(&data);
 	out:
+		rrr_strerror_cleanup();
 		return ret;
 }

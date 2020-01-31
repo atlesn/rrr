@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,19 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-// Override possibly dangerous library functions
+#ifndef RRR_STRERROR_H
+#define RRR_STRERROR_H
 
-#ifndef RRR_INTERCEPT_H
-#define RRR_INTERCEPT_H
+// Must be called in main()
+void rrr_strerror_init (void);
+void rrr_strerror_cleanup (void);
 
-#ifndef RRR_INTERCEPT_ALLOW_READDIR
-	// Not guaranteed thread-safety in current POSIX specification, rrr wrapper with
-	// locking must be used
-#	define readdir(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION
-#endif
+// May be called anywhere after init() and before cleanup()
+const char *rrr_strerror (int find_num);
 
-#ifndef RRR_INTERCEPT_ALLOW_STRERROR
-// TODO : intercept strerror, force use of rrr_strerror. Most files must be modified.
-#endif
-
-#endif /* RRR_INTERCEPT_H */
+#endif /* RRR_STRERROR_H */

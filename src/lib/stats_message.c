@@ -156,10 +156,16 @@ int rrr_stats_message_init (
 		return 1;
 	}
 
+	strcpy(message->path, path_postfix);
 	message->type = type;
 	message->flags = flags;
 	message->data_size = data_size;
-	memcpy(message->data, data, data_size);
+	if (data_size > 0) {
+		if (data == NULL) {
+			VL_BUG("data was NULL while data_size was >0 in rrr_stats_message_init\n");
+		}
+		memcpy(message->data, data, data_size);
+	}
 
 	return 0;
 }

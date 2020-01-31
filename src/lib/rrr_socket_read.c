@@ -94,7 +94,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 	struct rrr_socket_read_session *res = NULL;
 
 	uint64_t time_now = time_get_64();
-	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000;
+	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000;
 
 	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->last_read_time < time_limit) {

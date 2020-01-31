@@ -204,7 +204,7 @@ int rrr_socket_client_collection_read (
 ) {
 	int ret = 0;
 	uint64_t time_now = time_get_64();
-	uint64_t timeout = time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000);
+	uint64_t timeout = time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000);
 
 	if (RRR_LL_COUNT(collection) == 0 && (read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
 		usleep(10 * 1000);
