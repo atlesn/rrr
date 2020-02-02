@@ -70,6 +70,7 @@ int rrr_stats_message_unpack_callback (
 	switch (type) {
 		case RRR_STATS_MESSAGE_TYPE_TEXT:			break;
 		case RRR_STATS_MESSAGE_TYPE_BASE10_TEXT:	break;
+		case RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT:	break;
 		default:
 			VL_MSG_ERR("Unknown type %u in received statistics packet\n", type);
 			ret = RRR_SOCKET_SOFT_ERROR;

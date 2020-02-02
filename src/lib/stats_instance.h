@@ -22,7 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_STATS_INSTANCE_H
 #define RRR_STATS_INSTANCE_H
 
+#define RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS 500
+
 #include <pthread.h>
+
+#include "linked_list.h"
 
 #define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
 
@@ -33,11 +37,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_stats_engine;
 
+struct rrr_stats_instance_rate_counter {
+	RRR_LL_NODE(struct rrr_stats_instance_rate_counter);
+	unsigned int id;
+	char *name;
+	unsigned int accumulator;
+	unsigned int accumulator_total;
+	uint64_t prev_time;
+};
+
+struct rrr_stats_instance_rate_counter_collection {
+	RRR_LL_HEAD(struct rrr_stats_instance_rate_counter);
+};
+
 struct rrr_stats_instance {
 	char *name;
 	pthread_mutex_t lock;
 	unsigned int stats_handle;
 	struct rrr_stats_engine *engine;
+	struct rrr_stats_instance_rate_counter_collection rate_counters;
 };
 
 int rrr_stats_instance_new (
@@ -61,6 +79,12 @@ int rrr_stats_instance_post_base10_text (
 );
 int rrr_stats_instance_post_default_stickies (
 		struct rrr_stats_instance *instance
+);
+int rrr_stats_instance_update_rate (
+		struct rrr_stats_instance *instance,
+		unsigned int id,
+		const char *name,
+		unsigned int count
 );
 
 #endif /* RRR_STATS_INSTANCE_H */

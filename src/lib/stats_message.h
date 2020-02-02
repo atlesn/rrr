@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_MESSAGE_TYPE_KEEPALIVE	0
 #define RRR_STATS_MESSAGE_TYPE_TEXT			1
 #define RRR_STATS_MESSAGE_TYPE_BASE10_TEXT	2
+#define RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT	3
 
 #define RRR_STATS_MESSAGE_PATH_INSTANCE_NAME	"name"
 

@@ -186,7 +186,10 @@ static void __rrr_stats_tree_branch_dump (struct rrr_stats_tree_branch *branch, 
 
 	printf("Branch: %s/%s\n", path_prefix, branch->name);
 	if (branch->value != NULL) {
-		if (branch->value->type == RRR_STATS_MESSAGE_TYPE_TEXT || branch->value->type == RRR_STATS_MESSAGE_TYPE_BASE10_TEXT) {
+		if (	branch->value->type == RRR_STATS_MESSAGE_TYPE_TEXT ||
+				branch->value->type == RRR_STATS_MESSAGE_TYPE_BASE10_TEXT ||
+				branch->value->type == RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT
+		) {
 			printf ("-- Value: %s\n", branch->value->data);
 		}
 		else {

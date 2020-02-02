@@ -174,6 +174,7 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 
 	uint64_t time_start = time_get_64();
 	int generated_count = 0;
+	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
 	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
@@ -187,15 +188,24 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 			generated_count_total++;
+			generated_count_to_stats++;
 		}
 
 		uint64_t time_now = time_get_64();
+
+		if (generated_count_to_stats > 500) {
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
+		}
 
 		if (time_now - time_start > 1000000) {
 			VL_DEBUG_MSG_1("dummy instance %s messages per second %i total %llu of %llu\n",
 					INSTANCE_D_NAME(thread_data), generated_count, generated_count_total, data->max_generated);
 			generated_count = 0;
 			time_start = time_now;
+
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
 		}
 
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {

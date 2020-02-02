@@ -23,11 +23,71 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "stats_engine.h"
 #include "stats_instance.h"
 #include "stats_message.h"
 #include "../global.h"
+#include "vl_time.h"
+#include "linked_list.h"
+
+static int __rrr_stats_instance_rate_counter_new (
+		struct rrr_stats_instance_rate_counter **target,
+		unsigned int id,
+		const char *name
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_stats_instance_rate_counter *result = malloc(sizeof(*result));
+	if (result == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new A\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(result, '\0', sizeof(*result));
+
+	if ((result->name = strdup(name)) == NULL) {
+		VL_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new B\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	result->id = id;
+	result->prev_time = time_get_64();
+
+	*target = result;
+
+	goto out;
+
+	out_free:
+		free(result);
+	out:
+		return ret;
+}
+
+static int __rrr_stats_instance_rate_counter_destroy (
+		struct rrr_stats_instance_rate_counter *counter
+) {
+	RRR_FREE_IF_NOT_NULL(counter->name);
+	free(counter);
+	return 0;
+}
+
+static struct rrr_stats_instance_rate_counter *__rrr_stats_instance_rate_counter_find (
+		struct rrr_stats_instance *instance,
+		unsigned int id
+) {
+	RRR_LL_ITERATE_BEGIN(&instance->rate_counters, struct rrr_stats_instance_rate_counter);
+		if (node->id == id) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
 
 int rrr_stats_instance_new (
 		struct rrr_stats_instance **result,
@@ -86,6 +146,7 @@ void rrr_stats_instance_destroy (
 	if (instance->stats_handle != 0) {
 		rrr_stats_engine_handle_unregister(instance->engine, instance->stats_handle);
 	}
+	RRR_LL_DESTROY(&instance->rate_counters, struct rrr_stats_instance_rate_counter, __rrr_stats_instance_rate_counter_destroy(node));
 	RRR_FREE_IF_NOT_NULL(instance->name);
 	pthread_mutex_destroy(&instance->lock);
 	free(instance);
@@ -97,8 +158,9 @@ void rrr_stats_instance_destroy_void (
 	rrr_stats_instance_destroy(instance);
 }
 
-int rrr_stats_instance_post_text (
+static int __rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
+		uint8_t type,
 		const char *text
 ) {
 	int ret = 0;
@@ -111,7 +173,7 @@ int rrr_stats_instance_post_text (
 
 	if (rrr_stats_message_init (
 			&message,
-			RRR_STATS_MESSAGE_TYPE_TEXT,
+			type,
 			(sticky != 0 ? RRR_STATS_MESSAGE_FLAGS_STICKY : 0),
 			path_postfix,
 			text,
@@ -137,6 +199,14 @@ int rrr_stats_instance_post_text (
 	return ret;
 }
 
+
+int rrr_stats_instance_post_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		const char *text
+) {
+	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_TEXT, text);
+}
+
 int rrr_stats_instance_post_base10_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		long long int value
@@ -152,7 +222,78 @@ int rrr_stats_instance_post_base10_text (
 
 	sprintf(text, "%lli", value);
 
-	return rrr_stats_instance_post_text(instance, path_postfix, sticky, text);
+	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_BASE10_TEXT, text);
+}
+
+int rrr_stats_instance_post_double_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		double value
+) {
+	char text[128];
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		return 0;
+	}
+
+	sprintf(text, "%f", value);
+
+	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT, text);
+}
+
+int rrr_stats_instance_update_rate (
+		struct rrr_stats_instance *instance,
+		unsigned int id,
+		const char *name,
+		unsigned int count
+) {
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		return 0;
+	}
+
+	struct rrr_stats_instance_rate_counter *counter = __rrr_stats_instance_rate_counter_find(instance, id);
+	if (counter == NULL) {
+		if (__rrr_stats_instance_rate_counter_new(&counter, id, name) != 0) {
+			VL_MSG_ERR("Could not create rate counter in rrr_stats_instance_update_rate\n");
+			return 1;
+		}
+		RRR_LL_APPEND(&instance->rate_counters, counter);
+	}
+
+	counter->accumulator += count;
+	counter->accumulator_total += count;
+
+	uint64_t time_now = time_get_64();
+	if (time_now - counter->prev_time > RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS * 1000) {
+		double second = 1 * 1000 * 1000;
+		double period = time_now - counter->prev_time;
+		double per_period = ((double) counter->accumulator * 1000.0 * 1000.0) / period;
+
+		double factor = ((double) second) / ((double) period);
+		double per_second = factor * per_period;
+
+		counter->accumulator = 0;
+		counter->prev_time = time_now;
+
+		int ret = 0;
+
+		char path_buf[128];
+		if (strlen(name) > 64) {
+			VL_BUG("name too long in rrr_stats_instance_update_rate\n");
+		}
+
+		sprintf (path_buf, "%s/per_second", name);
+		ret |= rrr_stats_instance_post_double_text(instance, path_buf, 0, per_second);
+		sprintf (path_buf, "%s/total", name);
+		ret |= rrr_stats_instance_post_base10_text(instance, path_buf, 0, counter->accumulator_total);
+		sprintf (path_buf, "%s/class", name);
+		ret |= rrr_stats_instance_post_text(instance, path_buf, 0, "ratecounter");
+
+		return ret;
+	}
+
+	return 0;
 }
 
 int rrr_stats_instance_post_default_stickies (
