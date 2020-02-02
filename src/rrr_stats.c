@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket_read.h"
 #include "lib/rrr_readdir.h"
 #include "lib/stats_message.h"
+#include "lib/stats_tree.h"
 #include "lib/rrr_strerror.h"
 
 #ifdef _GNU_SOURCE
@@ -57,6 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_TICK_SLEEP_MS					100
 #define RRR_STATS_RECONNECT_SLEEP_MS			500
 #define RRR_STATS_KEEPALIVE_INTERVAL_MS			RRR_SOCKET_CLIENT_TIMEOUT_S / 2 * 1000
+#define RRR_STATS_MESSAGE_LIFETIME_MS			1500
 
 static volatile int rrr_stats_abort = 0;
 
@@ -82,6 +84,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 struct rrr_stats_data {
 	struct rrr_socket_read_session_collection read_sessions;
 	struct rrr_linked_list socket_prefixes;
+	struct rrr_stats_tree message_tree;
 	char *socket_path_active;
 	int socket_fd;
 	int socket_path_exact;
@@ -107,6 +110,10 @@ static void __rrr_stats_signal_handler (int s) {
 
 static int __rrr_stats_data_init (struct rrr_stats_data *data) {
 	memset(data, '\0', sizeof(*data));
+	if (rrr_stats_tree_init(&data->message_tree) != 0) {
+		VL_MSG_ERR("Could not initialize message tree in __rrr_stats_data_init\n");
+		return 1;
+	}
 	rrr_socket_read_session_collection_init(&data->read_sessions);
 	return 0;
 }
@@ -114,6 +121,7 @@ static int __rrr_stats_data_init (struct rrr_stats_data *data) {
 static void __rrr_stats_data_cleanup (struct rrr_stats_data *data) {
 	rrr_socket_read_session_collection_clear(&data->read_sessions);
 	rrr_linked_list_clear(&data->socket_prefixes);
+	rrr_stats_tree_clear(&data->message_tree);
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 }
 
@@ -530,7 +538,22 @@ static int __rrr_stats_process_message (const struct rrr_stats_message *message,
 
 	callback_data->message_count_ok += 1;
 
-	return 0;
+	int ret = 0;
+	if ((ret = rrr_stats_tree_insert_or_update(&callback_data->data->message_tree, message)) != 0) {
+		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
+			VL_MSG_ERR("Message with path %s was invalid, not added to tree\n", message->path);
+			ret = 0;
+			goto out;
+		}
+
+		VL_MSG_ERR("Error while inserting message in tree in __rrr_stats_process_message\n");
+		ret = 1;
+		goto out;
+
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_stats_tick (struct rrr_stats_data *data) {
@@ -576,6 +599,14 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 		VL_DEBUG_MSG_3("Received %u OK messages and %u unknown messages\n",
 				total_message_count_ok, total_message_count_err);
 	}
+
+	printf ("- TICK MS %" PRIu64 "\n", time_get_64() / 1000);
+
+	unsigned int purged_total = 0;
+
+	rrr_stats_tree_dump(&data->message_tree);
+	rrr_stats_tree_purge_old_branches(&purged_total, &data->message_tree, time_get_64() - RRR_STATS_MESSAGE_LIFETIME_MS * 1000);
+	printf ("------ Purged: %u\n", purged_total);
 
 	return 0;
 }
@@ -643,25 +674,24 @@ int main (int argc, const char *argv[]) {
 			goto out_cleanup_cmd;
 		}
 
-		if (data.socket_fd != 0) {
-			while (rrr_stats_abort != 1 && data.socket_fd != 0) {
-				if (__rrr_stats_tick(&data) != 0) {
+		while (rrr_stats_abort != 1 && data.socket_fd != 0) {
+			if (__rrr_stats_tick(&data) != 0) {
+				ret = EXIT_FAILURE;
+				goto out_cleanup_cmd;
+			}
+
+			if (time_get_64() > next_keep_alive) {
+				if (__rrr_stats_send_keepalive(&data) != 0) {
 					ret = EXIT_FAILURE;
 					goto out_cleanup_cmd;
 				}
-
-				if (time_get_64() > next_keep_alive) {
-					if (__rrr_stats_send_keepalive(&data) != 0) {
-						ret = EXIT_FAILURE;
-						goto out_cleanup_cmd;
-					}
-					next_keep_alive = time_get_64() + (RRR_STATS_KEEPALIVE_INTERVAL_MS * 1000);
-				}
-
-				usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
+				next_keep_alive = time_get_64() + (RRR_STATS_KEEPALIVE_INTERVAL_MS * 1000);
 			}
+
+			usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
 		}
-		else {
+
+		if (rrr_stats_abort != 1 && data.socket_fd == 0) {
 			usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
 		}
 	}

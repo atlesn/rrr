@@ -67,10 +67,6 @@ struct rrr_stats_message_packed {
 	char path_and_data[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1 + RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 } __attribute((packed));
 
-struct rrr_stats_message_collection {
-	RRR_LL_HEAD(struct rrr_stats_message);
-};
-
 struct rrr_stats_message_unpack_callback_data {
 	int (*callback)(const struct rrr_stats_message *message, void *private_arg);
 	void *private_arg;
