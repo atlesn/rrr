@@ -122,6 +122,14 @@ below on how to specifiy different data types.
 	
 Please note that RRR does not provide a stand-alone MQTT client.
 
+### ipclient (send messages between RRR instances over UDP)
+This module is useful when messages need to be transferred over lossy connections where TCP doesn't work very well.
+
+The `ipclient` module keeps track of all messages and makes sure that they are delivered excactly once (like MQTT QOS2).
+
+The module may function both as a server which accepts connections and a client (also simultaneously).
+
+
 ### udpreader (read data records from UDP)
 Listens on a port and parses data records it receives before forwarding them
 as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`.
