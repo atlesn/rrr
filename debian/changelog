@@ -1,3 +1,19 @@
+rrr (0.16) unstable; urgency=medium
+
+  * New framework for assured single delivery ASD and udpstream
+  * Removed old ipclient/ipserver, new ipclient uses ASD framework
+  * Other fixes/improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 16 Feb 2020 18:00:22 +0100
+
+rrr (0.15) unstable; urgency=medium
+
+  * Bugfixes in array definition parsing
+  * Fix passing of arrays to and manipulation in python3. Improved test suite.
+  * Fix minor bugs in MQTT and add ability to re-connect indefinitely upon failure
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 17 Jan 2020 00:08:26 +0100
+
 rrr (0.14) unstable; urgency=medium
 
   * New fixed pointer and string types for use in arrays

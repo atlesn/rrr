@@ -1,7 +1,7 @@
-AC_INIT([Read Route Record], 0.14)
-AC_DEFINE([VL_CONFIG_VERSION], "0.14", [Full version])
+AC_INIT([Read Route Record], 0.16)
+AC_DEFINE([VL_CONFIG_VERSION], "0.16", [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
-AC_DEFINE([VL_CONFIG_VERSION_MINOR], 14, [Minor version])
+AC_DEFINE([VL_CONFIG_VERSION_MINOR], 16, [Minor version])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -84,7 +84,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	PERL5_LDFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
 	AC_MSG_CHECKING([perl5 compilation and linking])
@@ -116,19 +117,16 @@ AS_IF([test "x$enable_perl5" = xno], [
 		AC_MSG_ERROR([Test of perl5 compilation failed, make sure libperl-dev is installed.])
 	fi
 
-	AC_MSG_CHECKING([Perl5 XSI source])
+	AC_MSG_CHECKING([Generating Perl5 XSI source])
 	perl5_xsi_source="$srcdir/src/lib/perl5_xsi.c"
 	${PERL5_INTERPRETER} -MExtUtils::Embed -e xsinit -- -o ${perl5_xsi_source}
 	perl5_result=$?
 
 	if test x"${perl5_result}" = x"0"; then
-		AC_MSG_RESULT([$perl5_xsi_file])
+		AC_MSG_RESULT([$perl5_xsi_source])
 	else
 		AC_MSG_ERROR([Error while generating Perl5 XSI source file, result was "$perl5_result"])
 	fi
-
-	enable_perl5_xsi=yes
-	AM_CONDITIONAL([VL_WITH_PERL5_XSI], [test "x$enable_perl5_xsi" = "xyes"])
 
 	AC_SUBST([PERL5_CFLAGS])
 	AC_SUBST([PERL5_LDFLAGS])
@@ -293,8 +291,11 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
+AM_COND_IF([VL_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
+AM_COND_IF([VL_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
+
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
+				misc/Makefile
 )
 AC_OUTPUT

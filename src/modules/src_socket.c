@@ -50,6 +50,7 @@ struct socket_data {
 	char *default_topic;
 	ssize_t default_topic_length;
 	int receive_rrr_message;
+	int do_sync_byte_by_byte;
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
@@ -144,6 +145,19 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
+	// Sync byte by byte if parsing fails
+	yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "socket_sync_byte_by_byte")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	data->do_sync_byte_by_byte = yesno;
+
 	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 		VL_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
@@ -213,7 +227,8 @@ int read_data(struct socket_data *data) {
 	}
 	else {
 		struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
-				&data->definitions
+				&data->definitions,
+				data->do_sync_byte_by_byte
 		};
 		return rrr_socket_client_collection_read (
 				&data->clients,

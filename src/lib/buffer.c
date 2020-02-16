@@ -182,6 +182,10 @@ void fifo_buffer_destroy(struct fifo_buffer *buffer) {
 	sem_destroy(&buffer->new_data_available);
 }
 
+static void fifo_default_free(void *ptr) {
+	free(ptr);
+}
+
 int fifo_buffer_init(struct fifo_buffer *buffer) {
 	int ret = 0;
 
@@ -219,7 +223,7 @@ int fifo_buffer_init(struct fifo_buffer *buffer) {
 	if (ret == 0) {
 		pthread_mutex_lock(&buffer->mutex);
 		buffer->invalid = 0;
-		buffer->free_entry = free;
+		buffer->free_entry = &fifo_default_free;
 		pthread_mutex_unlock(&buffer->mutex);
 	}
 	else {
@@ -266,9 +270,11 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 	if (entry_count == 0) {
 		fifo_write_lock(buffer);
 		__fifo_merge_write_queue_nolock(buffer);
+		fifo_write_unlock(buffer);
 	}
 	else if (fifo_write_trylock(buffer) == 0) {
 		__fifo_merge_write_queue_nolock(buffer);
+		fifo_write_unlock(buffer);
 	}
 	else {
 		return;
@@ -276,7 +282,6 @@ static void __fifo_attempt_write_queue_merge(struct fifo_buffer *buffer) {
 
 	FIFO_BUFFER_CONSISTENCY_CHECK();
 
-	fifo_write_unlock(buffer);
 	__fifo_buffer_set_data_available(buffer);
 }
 

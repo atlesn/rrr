@@ -46,9 +46,13 @@ struct rrr_socket_read_session {
 	int read_complete_method;
 	ssize_t target_size;
 
+	// Populated by socket read function (contain all read data)
 	char *rx_buf_ptr;
 	ssize_t rx_buf_size;
 	ssize_t rx_buf_wpos;
+
+	// Populated by get target length-function if bytes are to be skipped at beginning of buffer
+	ssize_t rx_buf_skip;
 
 	char *rx_overshoot;
 	ssize_t rx_overshoot_size;

@@ -233,6 +233,9 @@ static inline void fifo_read_unlock(struct fifo_buffer *buffer) {
 	pthread_mutex_lock(&buffer->mutex);
 	VL_DEBUG_MSG_4("Buffer %p read unlock\n", buffer);
 	buffer->readers--;
+	if (buffer->readers < 0) {
+		VL_BUG("Readers was <0 in fifo_read_unlock\n");
+	}
 	pthread_mutex_unlock(&buffer->mutex);
 }
 

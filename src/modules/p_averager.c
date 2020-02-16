@@ -60,7 +60,7 @@ struct averager_data {
 int averager_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct averager_data *avg_data = data->private_data;
 
-	return fifo_read_clear_forward(&avg_data ->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return fifo_read_clear_forward(&avg_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 // Poll of our output buffer from other modules
@@ -74,7 +74,8 @@ int averager_poll (RRR_MODULE_POLL_SIGNATURE) {
 int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct vl_message *message = (struct vl_message *) data;
 
-	struct averager_data *averager_data = poll_data->private_data;
+	struct instance_thread_data *thread_data = poll_data->private_data;
+	struct averager_data *averager_data = thread_data->private_data;
 
 	// TODO : If we get an info message, the average measurements may get lost due to them having lower timestamps
 
@@ -233,13 +234,12 @@ int data_init(struct averager_data *data) {
 	if (ret != 0) {
 		data_cleanup(data);
 	}
+
 	return ret;
 }
 
 int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-
-	memset(data, '\0', sizeof(*data));
 
 	rrr_setting_uint timespan = 0;
 	rrr_setting_uint interval = 0;
@@ -254,6 +254,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
@@ -263,6 +264,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		interval = VL_DEFAULT_AVERAGER_INTERVAL;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
@@ -272,6 +274,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		preserve_points = 0;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_check_yesno(&discard_unknowns, config, "avg_discard_unknowns")) != 0) {
@@ -281,6 +284,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 			goto out;
 		}
 		discard_unknowns = 0;
+		ret = 0;
 	}
 
 	data->discard_unknown_messages = discard_unknowns;
@@ -320,6 +324,8 @@ static void *thread_entry_averager(struct vl_thread *thread) {
 	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		VL_MSG_ERR("Could parse configuration in averager instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
@@ -338,7 +344,7 @@ static void *thread_entry_averager(struct vl_thread *thread) {
 	uint64_t previous_average_time = time_get_64();
 	uint64_t average_interval_useconds = data->interval * 1000000;
 
-	while (thread_check_encourage_stop(thread_data->thread) != 1) {
+	while (!thread_check_encourage_stop(thread_data->thread)) {
 		update_watchdog_time(thread_data->thread);
 
 		averager_maintain_buffer(data);

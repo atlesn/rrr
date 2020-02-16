@@ -323,8 +323,6 @@ int rrr_socket_read_message (
 			read_session->rx_buf_wpos = 0;
 		}
 
-		/* This number will change after the fixed header is parsed. The first round we can
-		 * only read 2 bytes to make sure we don't read in many packets at a time. */
 		read_session->target_size = 0;
 	}
 
@@ -357,12 +355,36 @@ int rrr_socket_read_message (
 	else if (read_session->target_size == 0 &&
 			read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH
 	) {
+		read_session->rx_buf_skip = 0;
+
 		// In the first read, we take a sneak peak at the first bytes to find a length field
 		// if it is present. If there is not target size function, the target size becomes
 		// the initial bytes parameter (set at the top of the function). The target size function
-		// may change the read complete method. It may also return read incomplete.
+		// may change the read complete method.
 		if ((ret = get_target_size(read_session, get_target_size_arg)) != RRR_SOCKET_OK) {
 			goto out;
+		}
+
+		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
+		if (read_session->rx_buf_skip != 0) {
+			if (read_session->rx_buf_skip < 0) {
+				VL_BUG("read_session rx_data_pos out of range after get_target_size in rrr_socket_read_message\n");
+			}
+
+			VL_DEBUG_MSG_1("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
+
+			char *new_buf = malloc(read_session->rx_buf_size);
+			if (new_buf == NULL) {
+				VL_MSG_ERR("Could not allocate memory while aligning buffer in rrr_socket_read_message\n");
+				ret = RRR_SOCKET_HARD_ERROR;
+				goto out;
+			}
+			memcpy(new_buf, read_session->rx_buf_ptr + read_session->rx_buf_skip, read_session->rx_buf_wpos - read_session->rx_buf_skip);
+
+			free(read_session->rx_buf_ptr);
+
+			read_session->rx_buf_ptr = new_buf;
+			read_session->rx_buf_wpos -= read_session->rx_buf_skip;
 		}
 
 		if (read_session->target_size == 0 &&
@@ -411,7 +433,6 @@ int rrr_socket_read_message (
 
 	out:
 	if (ret != RRR_SOCKET_OK && ret != RRR_SOCKET_READ_INCOMPLETE && read_session != NULL) {
-		printf ("Removing read session following error\n");
 		RRR_LL_REMOVE_NODE(
 				read_session_collection,
 				struct rrr_socket_read_session,

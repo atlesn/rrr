@@ -32,10 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 int rrr_socket_common_receive_message_raw_callback (
 		void *data,
 		ssize_t data_size,
-		void *arg
+		struct rrr_socket_common_receive_message_callback_data *callback_data
 ) {
 	struct vl_message *message = data;
-	struct rrr_socket_common_receive_message_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -146,22 +145,48 @@ int rrr_socket_common_get_session_target_length_from_array (
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data *data = arg;
 
-	ssize_t import_length = 0;
-	int ret = rrr_array_get_packed_length_from_buffer (
-			&import_length,
-			data->definition,
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos
-	);
+	char *pos = read_session->rx_buf_ptr;
+	ssize_t wpos = read_session->rx_buf_wpos;
 
-	if (ret != 0) {
-		if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
-			return RRR_SOCKET_READ_INCOMPLETE;
+	ssize_t import_length = 0;
+	ssize_t skipped_bytes = 0;
+
+	while (wpos > 0) {
+		int ret = rrr_array_get_packed_length_from_buffer (
+				&import_length,
+				data->definition,
+				pos,
+				wpos
+		);
+
+		if (ret == 0) {
+			break;
 		}
+		else {
+			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
+				return RRR_SOCKET_READ_INCOMPLETE;
+			}
+
+			if (data->do_byte_by_byte_sync != 0) {
+				skipped_bytes++;
+				pos++;
+				wpos--;
+			}
+			else {
+				return RRR_SOCKET_SOFT_ERROR;
+			}
+		}
+	}
+
+	if (wpos <= 0) {
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
+	// Raw size to read for socket framework
 	read_session->target_size = import_length;
+
+	// Read position for array framework
+	read_session->rx_buf_skip = skipped_bytes;
 
 	return RRR_SOCKET_OK;
 }
@@ -185,11 +210,12 @@ int rrr_socket_common_receive_array (
 		int fd,
 		int read_flags,
 		const struct rrr_array *definition,
+		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *arg
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
-			definition
+			definition, do_sync_byte_by_byte
 	};
 
 	struct receive_callback_data callback_data = {
