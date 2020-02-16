@@ -1,14 +1,21 @@
 # README FOR READ ROUTE RECORD (triple R)
 ## ABOUT
 
-RRR is designed to read data from sensors and logging it in a threaded and
-buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
-routed between custom modules by having "senders" specified for some of them, instructing
-them who to read from. Source modules should have a buffer which they write to
-independently from their readers.
+RRR is designed to process, transmit and save all kinds of measurements or messages. RRR has a variety
+of different modules which can be chained together to retrieve, transmit and save messages.
 
 RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
-piping or files. MQTT is also supported, both subscribing and publishing.
+piping or files.
+
+- Acquire messages using piping, UNIX sockets, UDP-packets
+- Transfer messages using MQTT or UDP
+- Saving messages using InfluxDB and MySQL
+
+RRR can also be extended by writing custom Perl or Python modules, and can function as a stand-alone MQTT broker.
+
+## DEVELOPMENT
+
+Please create an issue on the RRR GitHub page if you would like to see more functionallity.
 
 ## QUICK START
 
