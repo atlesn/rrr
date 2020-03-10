@@ -284,8 +284,7 @@ This option cannot be used with
 .B mysql_colums.
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
-.It mysql_special_columns={column name 1,column name 2,...}
-.It mysql_special_values={columns value 1,column value 2,...}
+.It mysql_special_columns={column1=value1,column2=value2,...}
 Used to write fixed values to the database.
 .It mysql_add_timestamp_col={yes|no}
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.

@@ -99,6 +99,8 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	// Socket path
 	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
 		VL_MSG_ERR("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
 	struct sockaddr_un addr;
