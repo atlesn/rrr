@@ -94,14 +94,12 @@ int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *d
 	}
 	else {
 		char *delimeter_pos = strstr(input, delimeter);
-		size_t delimeter_length = strlen(delimeter);
-
 		if (delimeter_pos != NULL) {
 			strncpy(column->tag, input, delimeter_pos - input);
 
-			const char *pos = delimeter_pos + delimeter_length;
+			const char *pos = delimeter_pos + 2;
 			if (*pos == '\0' || pos > (input + input_length)) {
-				VL_MSG_ERR("Missing value after delimeter '%s' in definition '%s'\n", delimeter, input);
+				VL_MSG_ERR("Missing column name after -> in column definition\n");
 				ret = 1;
 				goto out;
 			}
