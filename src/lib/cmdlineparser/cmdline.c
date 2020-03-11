@@ -70,7 +70,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 }
 
 static void __cmd_arg_pair_destroy(struct cmd_arg_pair *pair) {
-	RRR_LINKED_LIST_DESTROY(pair, struct cmd_arg_value, __cmd_arg_value_destroy(node));
+	RRR_LL_DESTROY(pair, struct cmd_arg_value, __cmd_arg_value_destroy(node));
 	free(pair);
 }
 
@@ -106,13 +106,13 @@ static int __cmd_arg_pair_append_value (struct cmd_arg_pair *target, const char 
 		return 1;
 	}
 
-	RRR_LINKED_LIST_APPEND(target, value);
+	RRR_LL_APPEND(target, value);
 
 	return 0;
 }
 
 void cmd_destroy(struct cmd_data *data) {
-	RRR_LINKED_LIST_DESTROY(data, struct cmd_arg_pair, __cmd_arg_pair_destroy(node));
+	RRR_LL_DESTROY(data, struct cmd_arg_pair, __cmd_arg_pair_destroy(node));
 }
 
 void cmd_init(struct cmd_data *data, const struct cmd_arg_rule *rules, int argc, const char *argv[]) {
@@ -125,23 +125,23 @@ void cmd_init(struct cmd_data *data, const struct cmd_arg_rule *rules, int argc,
 int cmd_check_all_args_used(struct cmd_data *data) {
 	int err = 0;
 	unsigned long int i = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+	RRR_LL_ITERATE_BEGIN(data, struct cmd_arg_pair);
 		if (node->was_used != 1) {
 			fprintf (stderr, "Error: Argument %lu ('%s') was not used\n", i, node->rule->longname);
 		}
 		i++;
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 	return err;
 }
 
 struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, cmd_arg_count index) {
 	cmd_arg_count index_counter = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+	RRR_LL_ITERATE_BEGIN(data, struct cmd_arg_pair);
 		if (strcmp(node->rule->longname, key) == 0 && index_counter++ == index) {
 			node->was_used = 1;
 			return node;
 		}
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 	return NULL;
 }
 
@@ -228,14 +228,14 @@ void cmd_print_usage(struct cmd_data *data) {
 
 int cmd_exists(struct cmd_data *data, const char *key, cmd_arg_count index) {
 	cmd_arg_count i = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
+	RRR_LL_ITERATE_BEGIN(data, struct cmd_arg_pair);
 		if (strcmp (node->rule->longname, key) == 0) {
 			if (i == index) {
 				return 1;
 			}
 			i++;
 		}
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 	return 0;
 }
 
@@ -246,12 +246,12 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 	}
 
 	cmd_arg_count i = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
+	RRR_LL_ITERATE_BEGIN(pair, struct cmd_arg_value);
 		if (i == sub_index) {
 			return node->value;
 		}
 		i++;
-	RRR_LINKED_LIST_ITERATE_END(pair);
+	RRR_LL_ITERATE_END(pair);
 
 	return NULL;
 }
@@ -268,11 +268,11 @@ int cmd_iterate_subvalues (
 		return 1;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
+	RRR_LL_ITERATE_BEGIN(pair, struct cmd_arg_value);
 		if (callback(node->value, callback_arg) != 0) {
 			return 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END(pair);
+	RRR_LL_ITERATE_END(pair);
 
 	return 0;
 }
@@ -285,13 +285,13 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	struct cmd_arg_value *value = NULL;
 	char *buf = NULL;
 
-	if (RRR_LINKED_LIST_COUNT(pair) != 1) {
+	if (RRR_LL_COUNT(pair) != 1) {
 		fprintf(stderr, "Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
 		abort();
 	}
 
-	value = RRR_LINKED_LIST_FIRST(pair);
-	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(pair);
+	value = RRR_LL_FIRST(pair);
+	RRR_LL_DANGEROUS_CLEAR_HEAD(pair);
 
 	const char *pos = value->value;
 	const char *end = pos + strlen(pos);
@@ -487,7 +487,7 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 					if (__cmd_arg_pair_new(&pair, rule) != 0) {
 						return 1;
 					}
-					RRR_LINKED_LIST_APPEND(data,pair);
+					RRR_LL_APPEND(data,pair);
 					rule = NULL;
 				}
 			}
@@ -533,7 +533,7 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		if (__cmd_arg_pair_new(&pair, rule) != 0) {
 			return 1;
 		}
-		RRR_LINKED_LIST_APPEND(data,pair);
+		RRR_LL_APPEND(data,pair);
 		if (value != NULL) {
 			if (__cmd_arg_pair_append_value(pair, value) != 0) {
 				return 1;
@@ -557,9 +557,9 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		printf ("Argument %i key: %s\n", i, pair->rule->longname);
 		RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
 			printf ("Argument %i value: %s\n", i, node->value);
-		RRR_LINKED_LIST_ITERATE_END(node);
+		RRR_LL_ITERATE_END(node);
 		i++;
-	RRR_LINKED_LIST_ITERATE_END(data);
+	RRR_LL_ITERATE_END(data);
 
 	#endif
 

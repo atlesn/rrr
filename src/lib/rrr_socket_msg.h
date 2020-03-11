@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 // The header_crc32 is calculated AFTER conversion to network
-// byte order (big endian). The crc32 is the converted itself.
+// byte order (big endian). The crc32 is then converted itself.
 
 #define RRR_SOCKET_MSG_HEAD		\
 	vl_u32 header_crc32;		\

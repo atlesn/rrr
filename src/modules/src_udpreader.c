@@ -50,6 +50,7 @@ struct udpreader_data {
 	struct ip_data ip;
 	struct rrr_array definitions;
 	struct rrr_socket_read_session_collection read_sessions;
+	int do_sync_byte_by_byte;
 	char *default_topic;
 	ssize_t default_topic_length;
 };
@@ -153,6 +154,18 @@ int parse_config (struct udpreader_data *data, struct rrr_instance_config *confi
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
+	// Sync byte by byte if parsing fails
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "udpr_sync_byte_by_byte")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	data->do_sync_byte_by_byte = yesno;
+
 	out:
 	return ret;
 }
@@ -199,28 +212,36 @@ int inject_callback(struct fifo_callback_args *poll_data, char *data, unsigned l
 int read_data(struct udpreader_data *data) {
 	int ret = 0;
 
-	ret |= ip_receive_array (
+	if ((ret = ip_receive_array (
 		&data->read_sessions,
 		data->ip.fd,
 		&data->definitions,
+		data->do_sync_byte_by_byte,
 		read_raw_data_callback,
 		data,
 		NULL
-	);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error from ip_receive_packets in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	)) != 0) {
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			VL_MSG_ERR("Received invalid data in ip_receive_packets in udpreader instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			// Don't allow invalid data to stop processing
+			ret = 0;
+		}
+		else {
+			VL_MSG_ERR("Error from ip_receive_packets in udpreader instance %s return was %i\n",
+					INSTANCE_D_NAME(data->thread_data), ret);
+			ret = 1;
+			goto out;
+		}
 	}
 
 	struct fifo_callback_args callback_data = {NULL, data, 0};
-	ret |= fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50);
-
-	if (ret != 0) {
-		VL_MSG_ERR("Error from buffer in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	if ((ret = fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50)) != 0) {
+		VL_MSG_ERR("Error from inject buffer in udpreader instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
 	}
 
-	ret = (ret != 0 ? 1 : 0);
-
+	out:
 	return ret;
 }
 

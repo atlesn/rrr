@@ -59,11 +59,13 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	int ret = 0;
 	struct vl_message *array_message_perl5 = NULL;
 	struct vl_message *array_message_python3 = NULL;
+	struct vl_message *array_message_mqtt_raw = NULL;
 
 	data_init(data);
 
 	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
+	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
 	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
@@ -84,13 +86,15 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	ret = test_type_array (
 			&array_message_perl5,
 			&array_message_python3,
+			&array_message_mqtt_raw,
 			thread_data->init_data.module->all_instances,
 			"instance_udpreader",
 			"instance_socket",
 			"instance_buffer_from_perl5",
-			"instance_buffer_from_python3"
+			"instance_buffer_from_python3",
+			"instance_buffer_from_mqtt_raw"
 	);
-	TEST_MSG("Result from array test: %i %p and %p\n", ret, array_message_perl5, array_message_python3);
+	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
 
 	update_watchdog_time(thread_data->thread);
 
@@ -114,6 +118,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	/* We exit without looping which also makes the other loaded modules exit */
 
 	VL_DEBUG_MSG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

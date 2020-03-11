@@ -42,6 +42,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
+#include "../lib/linked_list.h"
+#include "../lib/map.h"
+#include "../lib/string_builder.h"
 #include "../global.h"
 
 // Should not be smaller than module max
@@ -50,8 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506
 
-#define RRR_MYSQL_SQL_MAX 4096
-#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
+//#define RRR_MYSQL_SQL_MAX 4096
+//#define RRR_MYSQL_MAX_COLUMN_NAME_LENGTH 32
 
 #define RRR_PY_PASTE(x,y) x ## _ ## y
 
@@ -62,7 +65,9 @@ struct mysql_data {
 	struct fifo_buffer output_buffer_local;
 	struct fifo_buffer output_buffer_ip;
 	MYSQL mysql;
-	MYSQL_BIND bind[RRR_MYSQL_BIND_MAX];
+	MYSQL_BIND *bind;
+	unsigned long *bind_string_lengths;
+	ssize_t bind_max;
 	int mysql_initialized;
 	int mysql_connected;
 
@@ -79,25 +84,88 @@ struct mysql_data {
 	int colplan;
 	int add_timestamp_col;
 	int strip_array_separators;
-	unsigned int mysql_special_columns_count;
 
-	/* Must be traversed and non-nulls freed at thread exit */
-	char *mysql_columns[RRR_MYSQL_BIND_MAX];
-	char *mysql_special_columns[RRR_MYSQL_BIND_MAX];
-	char *mysql_special_values[RRR_MYSQL_BIND_MAX];
-	char *mysql_columns_blob_writes[RRR_MYSQL_BIND_MAX]; // Force blob write method
+	struct rrr_map columns;
+	struct rrr_map column_tags;
+	struct rrr_map special_columns;
+	struct rrr_map blob_write_columns;
 
 	/* Used by test module only */
 	int generate_tag_messages;
 };
 
+static void bind_cleanup (struct mysql_data *data) {
+	RRR_FREE_IF_NOT_NULL(data->bind);
+	RRR_FREE_IF_NOT_NULL(data->bind_string_lengths);
+	data->bind_max = 0;
+}
+
+static int allocate_and_clear_bind_as_needed (struct mysql_data *data, ssize_t elements) {
+	if (data->bind != NULL && data->bind_max >= elements) {
+		goto out_clear;
+	}
+
+	bind_cleanup(data);
+
+	if ((data->bind = malloc(sizeof(*(data->bind)) * elements)) == NULL) {
+		VL_MSG_ERR("Could not allocate mysql bind structure in bind_allocate_if_needed\n");
+		return 1;
+	}
+
+	if ((data->bind_string_lengths = malloc(sizeof(*(data->bind_string_lengths)) * elements)) == NULL) {
+		VL_MSG_ERR("Could not allocate mysql bind string lengths in bind_allocate_if_needed\n");
+		return 1;
+	}
+
+	data->bind_max = elements;
+
+	out_clear:
+	memset(data->bind, '\0', sizeof(*(data->bind)) * data->bind_max);
+	memset(data->bind_string_lengths, '\0', sizeof(*(data->bind_string_lengths)) * data->bind_max);
+	return 0;
+}
+
+void data_cleanup(void *arg) {
+	struct mysql_data *data = arg;
+
+	bind_cleanup(data);
+
+	rrr_map_clear(&data->columns);
+	rrr_map_clear(&data->special_columns);
+	rrr_map_clear(&data->column_tags);
+	rrr_map_clear(&data->blob_write_columns);
+
+	fifo_buffer_invalidate (&data->input_buffer);
+	fifo_buffer_invalidate (&data->output_buffer_local);
+	fifo_buffer_invalidate (&data->output_buffer_ip);
+
+	RRR_FREE_IF_NOT_NULL(data->mysql_server);
+	RRR_FREE_IF_NOT_NULL(data->mysql_user);
+	RRR_FREE_IF_NOT_NULL(data->mysql_password);
+	RRR_FREE_IF_NOT_NULL(data->mysql_db);
+	RRR_FREE_IF_NOT_NULL(data->mysql_table);
+}
+
+int data_init(struct mysql_data *data) {
+	int ret = 0;
+	memset (data, '\0', sizeof(*data));
+	ret |= fifo_buffer_init (&data->input_buffer);
+	ret |= fifo_buffer_init (&data->output_buffer_local);
+	ret |= fifo_buffer_init (&data->output_buffer_ip);
+	if (ret != 0) {
+		data_cleanup(data);
+	}
+	return ret;
+}
+
 struct process_entries_data {
 	struct mysql_data *data;
+	ssize_t column_count;
 	MYSQL_STMT *stmt;
 };
 
 struct column_configurator {
-	int (*create_sql)(char *target, unsigned int target_size, struct mysql_data *data);
+	int (*create_sql)(char **target, ssize_t *column_count, struct mysql_data *data);
 	int (*bind_and_execute)(struct process_entries_data *data, struct ip_buffer_entry *entry);
 };
 
@@ -122,17 +190,9 @@ struct column_configurator {
 	RRR_PY_PASTE(COLUMN_PLAN,name)
 
 int mysql_columns_check_blob_write(const struct mysql_data *data, const char *col_1) {
-	for (int i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
-		const char *col_2 = data->mysql_columns_blob_writes[i];
-
-		if (col_2 == NULL) {
-			break;
-		}
-		if (strcmp(col_1, col_2) == 0) {
-			return 1;
-		}
+	if (rrr_map_get_value(&data->blob_write_columns, col_1) != NULL) {
+		return 1;
 	}
-
 	return 0;
 }
 
@@ -154,26 +214,33 @@ int mysql_bind_and_execute(struct process_entries_data *data) {
 	return 0;
 }
 
-int colplan_voltage_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
+int colplan_voltage_create_sql(char **target, ssize_t *column_count, struct mysql_data *data) {
+	(void)(data);
+
+	*column_count = 0;
+
 	const char *query_base = "REPLACE INTO `%s` " \
 			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
 			"VALUES (?,?,?,?,?,?,?,?)";
 
-	unsigned int len = strlen(query_base) + strlen(data->mysql_table) + 1;
-	if (len > target_size) {
-		VL_MSG_ERR("Could not fit voltage column plan SQL in colplan_volate_create_sql");
+	char *res = strdup(query_base);
+	if (res == NULL) {
+		VL_MSG_ERR("Could not allocate memory in colplan_voltage_create_sql\n");
 		return 1;
 	}
 
-	sprintf(target, query_base, data->mysql_table);
+	*target = res;
+	*column_count = 8;
 
 	return 0;
 }
 
 int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
-	MYSQL_BIND *bind = data->data->bind;
+	if (allocate_and_clear_bind_as_needed (data->data, 8) != 0) {
+		return 1;
+	}
 
-	memset(bind, '\0', sizeof(*bind));
+	MYSQL_BIND *bind = data->data->bind;
 
 	struct sockaddr_in *ipv4_in = (struct sockaddr_in*) &entry->addr;
 
@@ -236,86 +303,126 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct ip_bu
 	return mysql_bind_and_execute(data);
 }
 
-int colplan_array_create_sql(char *target, unsigned int target_size, struct mysql_data *data) {
-	static const unsigned int query_base_max = RRR_MYSQL_SQL_MAX + ((RRR_MYSQL_BIND_MAX + 1) * RRR_MYSQL_MAX_COLUMN_NAME_LENGTH * 2);
-	char query_base[query_base_max];
-	int pos = 0;
-	*target = '\0';
+static const char *append_error_string = "Error while appending to mysql query in colplan_array_create_sql\n";
 
-	// Make sure constant strings to be put into query_base do no exceed
-	// VL_MYSQL_SQL_MAX, as we do not use snprintf (YOLO)
+#define APPEND_AND_CHECK(str) \
+	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder,str,append_error_string)
 
-	const char *timestamp_column = (data->add_timestamp_col ? ",`timestamp`" : "");
-	const char *timestamp_column_questionmark = (data->add_timestamp_col ? ",?" : "");
+#define RESERVE_AND_CHECK(size) \
+	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
 
-	sprintf(query_base + pos, "REPLACE INTO `%s` (", data->mysql_table);
-	pos = strlen(query_base);
+#define APPEND_UNCHECKED(str) \
+	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
 
-	// Standard columns
+int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct mysql_data *data) {
+	struct rrr_string_builder string_builder = {0};
+
+	*target = NULL;
+
+	int ret = 0;
+
+	APPEND_AND_CHECK("REPLACE INTO `");
+	APPEND_AND_CHECK(data->mysql_table);
+	APPEND_AND_CHECK("` (");
+
+	const struct rrr_map *column_source = NULL;
+
+	if (RRR_MAP_COUNT(&data->column_tags) > 0) {
+		column_source = &data->column_tags;
+	}
+	else {
+		column_source = &data->columns;
+	}
+
 	int columns_count = 0;
-	for (int i = 0; i < RRR_MYSQL_BIND_MAX && data->mysql_columns[i] != NULL; i++) {
-		unsigned int len = strlen(data->mysql_columns[i]);
 
-		if (len + pos + 4 > query_base_max) {
-			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
-			return 1;
+	RRR_MAP_ITERATE_BEGIN(column_source);
+		const char *column_name = (node_value != NULL && *node_value != '\0' ? node_value : node_tag);
+		RESERVE_AND_CHECK(strlen(column_name) + 3);
+		if (!RRR_MAP_ITERATE_IS_FIRST()) {
+			APPEND_UNCHECKED(",");
 		}
+		APPEND_UNCHECKED("`");
+		APPEND_UNCHECKED(column_name);
+		APPEND_UNCHECKED("`");
+		columns_count++;
+	RRR_MAP_ITERATE_END(&data->column_tags);
 
-		const char *comma = (columns_count > 0 ? "," : "");
+	RRR_MAP_ITERATE_BEGIN(&data->special_columns);
+		RESERVE_AND_CHECK(strlen(node_tag) + 3);
+		APPEND_UNCHECKED(",`");
+		APPEND_UNCHECKED(node_tag);
+		APPEND_UNCHECKED("`");
+		columns_count++;
+	RRR_MAP_ITERATE_END(&data->special_columns);
 
-		sprintf (query_base + pos, "%s`%s`", comma, data->mysql_columns[i]);
-		pos = strlen(query_base);
+	if (data->add_timestamp_col != 0) {
+		APPEND_AND_CHECK(",`timestamp`");
 		columns_count++;
 	}
 
-	// Special columns
-	for (unsigned int i = 0; i < data->mysql_special_columns_count; i++) {
-		int unsigned len = strlen(data->mysql_special_columns[i]);
-
-		if (len + pos + 4 > query_base_max) {
-			VL_MSG_ERR("BUG: Column names were too long in mysql array SQL creation");
-			return 1;
-		}
-
-		const char *comma = (columns_count > 0 ? "," : "");
-
-		sprintf (query_base + pos, "%s`%s`", comma, data->mysql_special_columns[i]);
-		pos = strlen(query_base);
-		columns_count++;
-	}
-
-	sprintf(query_base + pos, "%s) VALUES (", timestamp_column);
-	pos = strlen(query_base);
-
+	RESERVE_AND_CHECK(10 + 1 + columns_count * 2);
+	APPEND_UNCHECKED(") VALUES (");
 	for (int i = 0; i < columns_count; i++) {
-		const char *comma = (i > 0 ? "," : "");
-		sprintf(query_base + pos, "%s?", comma);
-		pos = strlen(query_base);
+		if (i == 0) {
+			APPEND_UNCHECKED("?");
+		}
+		else {
+			APPEND_UNCHECKED(",?");
+		}
 	}
+	APPEND_UNCHECKED(")");
 
-	sprintf(query_base + pos, "%s)", timestamp_column_questionmark);
+	*target = rrr_string_builder_buffer_takeover(&string_builder);
+	*column_count_result = columns_count;
 
-	// Double check length
-	if (strlen(query_base) > query_base_max) {
-		VL_BUG("BUG: query_base was too long in colplan_array_create_sql");
-	}
+//	printf ("%s", *target);
 
-	if (target_size < strlen(query_base)) {
-		VL_MSG_ERR("Mysql query was too long in colplan_array_create_sql\n");
-		return 1;
-	}
-
-	sprintf(target, "%s", query_base);
-
-	return 0;
+	out:
+	rrr_string_builder_clear(&string_builder);
+	return ret;
 }
 
 void free_collection(void *arg) {
 	rrr_array_clear(arg);
 }
 
-int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buffer_entry *entry) {
-	int res = 0;
+static int bind_value (
+		MYSQL_BIND *bind,
+		int bind_pos,
+		struct rrr_type_value *definition,
+		const char *column_name,
+		struct mysql_data *data
+) {
+	if (	// Arrays must be inserted as blobs. They might be shorter than the
+				// maximum length, the input definition decides.
+				definition->element_count > 1 ||
+				RRR_TYPE_IS_BLOB(definition->definition->type) ||
+				mysql_columns_check_blob_write(data, column_name)
+	) {
+		data->bind_string_lengths[bind_pos] = definition->total_stored_length;
+		bind[bind_pos].buffer = definition->data;
+		bind[bind_pos].length = &data->bind_string_lengths[bind_pos];
+		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
+//		printf ("bind position %i string length %lu\n", bind_pos, data->bind_string_lengths[bind_pos]);
+	}
+	else if (RRR_TYPE_IS_64(definition->definition->type)) {
+		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
+		bind[bind_pos].buffer = definition->data;
+		bind[bind_pos].is_unsigned = RRR_TYPE_FLAG_IS_UNSIGNED(definition->flags);
+//		printf ("bind position %i integer %" PRIi64 "\n", bind_pos, *((int64_t*)definition->data));
+	}
+	else {
+		VL_MSG_ERR("Unknown type %ul when binding with mysql\n", definition->definition->type);
+		return 1;
+	}
+	return 0;
+}
+
+int colplan_array_bind_execute(struct process_entries_data *p_data, struct ip_buffer_entry *entry) {
+	int ret = 0;
+
+	struct mysql_data *data = p_data->data;
 
 	struct rrr_array collection;
 	memset(&collection, '\0', sizeof(collection));
@@ -323,107 +430,111 @@ int colplan_array_bind_execute(struct process_entries_data *data, struct ip_buff
 
 	if (rrr_array_message_to_collection(&collection, entry->message) != 0) {
 		VL_MSG_ERR("Could not convert array message to data collection in mysql\n");
-		res = 1;
+		ret = 1;
 		goto out_cleanup;
 	}
-
 
 	if (collection.version != 6) {
 		VL_BUG("Array version mismatch in MySQL colplan_array_bind_execute (%u vs %i), module must be updated\n",
 				collection.version, 6);
 	}
 
-	MYSQL_BIND *bind = data->data->bind;
+	int column_count =	RRR_MAP_COUNT(&data->columns) +
+						RRR_MAP_COUNT(&data->column_tags) +
+						RRR_MAP_COUNT(&data->special_columns) +
+						(data->add_timestamp_col != 0 ? 1 : 0);
 
-	if (collection.node_count + data->data->add_timestamp_col + data->data->mysql_special_columns_count > RRR_MYSQL_BIND_MAX) {
-		VL_MSG_ERR("Number of types exceeded maximum (%i vs %i)\n",
-				collection.node_count + data->data->add_timestamp_col + data->data->mysql_special_columns_count, RRR_MYSQL_BIND_MAX);
-		res = 1;
+	if (allocate_and_clear_bind_as_needed(data, column_count) != 0) {
+		ret = 1;
 		goto out_cleanup;
 	}
 
-	unsigned long string_lengths[RRR_MYSQL_BIND_MAX];
-	memset(string_lengths, '\0', sizeof(string_lengths));
+	MYSQL_BIND *bind = data->bind;
 
-	rrr_def_count bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		struct rrr_type_value *definition = node;
+	int bind_pos = 0;
 
-		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
-			goto next;
-		}
+	if (RRR_MAP_COUNT(&data->column_tags) > 0) {
+		RRR_MAP_ITERATE_BEGIN(&data->column_tags);
+			struct rrr_type_value *array_value = rrr_array_value_get_by_tag(&collection, node_tag);
 
-		if (	// Arrays must be inserted as blobs. They might be shorter than the
-				// maximum length, the input definition decides.
-				definition->element_count > 1 ||
-				RRR_TYPE_IS_BLOB(definition->definition->type) ||
-				mysql_columns_check_blob_write(data->data, data->data->mysql_columns[bind_pos])
-		) {
-			string_lengths[bind_pos] = definition->total_stored_length;
-			bind[bind_pos].buffer = definition->data;
-			bind[bind_pos].length = &string_lengths[bind_pos];
-			bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
-		}
-		else if (RRR_TYPE_IS_64(definition->definition->type)) {
-			bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
-			bind[bind_pos].buffer = definition->data;
-			bind[bind_pos].is_unsigned = RRR_TYPE_FLAG_IS_UNSIGNED(definition->flags);
-		}
-		else {
-			VL_MSG_ERR("Unknown type %ul when binding with mysql\n", definition->definition->type);
-			res = 1;
-			goto out_cleanup;
-		}
+			if (array_value == NULL) {
+				VL_MSG_ERR("Array tag '%s' not found when binding with MySQL\n", node_tag);
+				ret = 1;
+				goto out_cleanup;
+			}
 
-		bind_pos++;
-		next:
-	RRR_LINKED_LIST_ITERATE_END(&collection);
+			if (bind_value(bind, bind_pos, array_value, node_value, data) != 0) {
+				ret = 1;
+				goto out_cleanup;
+			}
 
-	for (rrr_def_count i = 0; i < data->data->mysql_special_columns_count; i++) {
-		string_lengths[bind_pos] = strlen(data->data->mysql_special_values[i]);
-		bind[bind_pos].buffer = data->data->mysql_special_values[i];
-		bind[bind_pos].length = &string_lengths[bind_pos];
+			bind_pos++;
+		RRR_MAP_ITERATE_END(&data->column_tags);
+	}
+	else {
+		RRR_MAP_ITERATOR_CREATE(column_iterator, &data->columns);
+
+		RRR_LL_ITERATE_BEGIN(&collection, struct rrr_type_value);
+			struct rrr_type_value *definition = node;
+
+			if (data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
+				RRR_LL_ITERATE_NEXT();
+			}
+
+			struct rrr_map_item *item = RRR_MAP_ITERATOR_NEXT(&column_iterator);
+			if (item == NULL) {
+				VL_MSG_ERR("Warning: Incoming array message contains more array elements than configuration. The rest is discarded.\n");
+				RRR_LL_ITERATE_BREAK();
+			}
+
+			if (bind_value(
+					bind,
+					bind_pos,
+					definition,
+					(item->value != NULL && *(item->value) != '\0' ? item->value : item->tag),
+					data
+			) != 0) {
+				ret = 1;
+				goto out_cleanup;
+			}
+
+			bind_pos++;
+		RRR_LL_ITERATE_END(&collection);
+	}
+
+	RRR_MAP_ITERATE_BEGIN(&data->special_columns);
+		data->bind_string_lengths[bind_pos] = strlen(node_value);
+		bind[bind_pos].buffer = (char *) node_value;
+		bind[bind_pos].length = &data->bind_string_lengths[bind_pos];
 		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 
 		bind_pos++;
-	}
+	RRR_MAP_ITERATE_END(&data->special_columns);
 
 	unsigned long long int timestamp = time_get_64();
-	if (data->data->add_timestamp_col) {
+	if (data->add_timestamp_col) {
 		bind[bind_pos].buffer = &timestamp;
 		bind[bind_pos].buffer_type = MYSQL_TYPE_LONGLONG;
 		bind[bind_pos].is_unsigned = 1;
-	}
 
-	res = mysql_bind_and_execute(data);
-
-	// Produce warning if blob data was chopped of by mysql
-	bind_pos = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		struct rrr_type_value *definition = node;
-
-		if (data->data->strip_array_separators != 0 && node->definition->type == RRR_TYPE_SEP) {
-			goto next_;
-		}
-
-		if (RRR_TYPE_IS_BLOB(definition->definition->type)) {
-			if (string_lengths[bind_pos] < definition->total_stored_length) {
-				VL_MSG_ERR("Warning: Only %lu bytes of %u where saved to mysql for column with index %u\n",
-						string_lengths[bind_pos], definition->total_stored_length, bind_pos);
-			}
-		}
+//		printf ("bind position %i timestamp %llu\n", bind_pos, timestamp);
 
 		bind_pos++;
-		next_:
-	RRR_LINKED_LIST_ITERATE_END(&collection);
+	}
+
+	if (bind_pos != p_data->column_count) {
+		VL_BUG("Bind items did not match column count in colplan_array_bind_execute\n");
+	}
+
+	ret = mysql_bind_and_execute(p_data);
 
 	out_cleanup:
-	if (res != 0) {
+	if (ret != 0) {
 		VL_MSG_ERR("Could not save array message to mysql database\n");
 	}
 	pthread_cleanup_pop(1);
 
-	return res;
+	return ret;
 }
 
 /* Check index numbers with defines above */
@@ -432,39 +543,6 @@ struct column_configurator column_configurators[] = {
 		{ .create_sql = &colplan_voltage_create_sql,	.bind_and_execute = &colplan_voltage_bind_execute },
 		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
 };
-
-void data_cleanup(void *arg) {
-	struct mysql_data *data = arg;
-
-	for (rrr_def_count i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
-		RRR_FREE_IF_NOT_NULL(data->mysql_special_values[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_special_columns[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_columns[i]);
-		RRR_FREE_IF_NOT_NULL(data->mysql_columns_blob_writes[i]);
-	}
-
-	fifo_buffer_invalidate (&data->input_buffer);
-	fifo_buffer_invalidate (&data->output_buffer_local);
-	fifo_buffer_invalidate (&data->output_buffer_ip);
-
-	RRR_FREE_IF_NOT_NULL(data->mysql_server);
-	RRR_FREE_IF_NOT_NULL(data->mysql_user);
-	RRR_FREE_IF_NOT_NULL(data->mysql_password);
-	RRR_FREE_IF_NOT_NULL(data->mysql_db);
-	RRR_FREE_IF_NOT_NULL(data->mysql_table);
-}
-
-int data_init(struct mysql_data *data) {
-	int ret = 0;
-	memset (data, '\0', sizeof(*data));
-	ret |= fifo_buffer_init (&data->input_buffer);
-	ret |= fifo_buffer_init (&data->output_buffer_local);
-	ret |= fifo_buffer_init (&data->output_buffer_ip);
-	if (ret != 0) {
-		data_cleanup(data);
-	}
-	return ret;
-}
 
 int mysql_disconnect(struct mysql_data *data) {
 	if (data->mysql_connected == 1) {
@@ -522,98 +600,22 @@ int start_mysql(struct mysql_data *data) {
 }
 
 struct mysql_parse_columns_data {
-	char **target;
-	int target_length;
-	struct rrr_instance_config *config;
-	int columns_count;
+	struct rrr_linked_list *target;
 };
 
-int mysql_parse_columns_callback(const char *value, void *_data) {
-	struct mysql_parse_columns_data *data = _data;
-
-	int ret = 0;
-
-	if (value == NULL || *value == '\0') {
-		goto out;
-	}
-	else if (data->columns_count >= data->target_length) {
-		VL_MSG_ERR("BUG: Too many mysql column arguments (%i vs %i) for instance %s\n",
-				data->columns_count, data->target_length, data->config->name);
-		exit (EXIT_FAILURE);
-	}
-
-	int length = strlen(value);
-	if (length > RRR_MYSQL_MAX_COLUMN_NAME_LENGTH) {
-		VL_MSG_ERR("Length of column '%s' was longer than maximum (%i vs %i)\n", value, length, RRR_MYSQL_MAX_COLUMN_NAME_LENGTH);
-		ret = 1;
-		goto out;
-	}
-
-	char *tmp =  malloc(length + 1);
-	if (tmp == NULL) {
-		VL_MSG_ERR("Could not allocate memory in mysql_parse_columns_callback\n");
-		return 1;
-	}
-	sprintf(tmp, "%s", value);
-
-	data->target[data->columns_count] = tmp;
-	data->columns_count++;
-
-	out:
-	return ret;
-}
-
-int mysql_traverse_column_list (char **target, int target_length, int *count, struct rrr_instance_config *config, const char *name) {
-	struct mysql_parse_columns_data columns_data;
-
-	int ret = 0;
-
-	*count = 0;
-
-	columns_data.target = target;
-	columns_data.target_length = target_length;
-	columns_data.config = config;
-	columns_data.columns_count = 0;
-
-	ret = rrr_instance_config_traverse_split_commas_silent_fail (
-			config, name, &mysql_parse_columns_callback, &columns_data
-	);
-
-	*count = columns_data.columns_count;
-
-	return ret;
-}
-
-// Check that blob write columns are also defined in mysql_columns
+// Check that blob write columns are also defined in mysql_columns or mysql_column_tags
 int mysql_verify_blob_write_colums (struct mysql_data *data) {
 	int ret = 0;
-	int all_was_ok = 1;
 
-	for (int i = 0; i < RRR_MYSQL_BIND_MAX; i++) {
-		const char *col_1 = data->mysql_columns_blob_writes[i];
-
-		if (col_1 == NULL) {
-			break;
-		}
-
-		int was_ok = 0;
-		for (int j = 0; j < RRR_MYSQL_BIND_MAX; j++) {
-			const char *col_2 = data->mysql_columns[j];
-			if (strcmp(col_1, col_2) == 0) {
-				was_ok = 1;
-				break;
+	RRR_MAP_ITERATE_BEGIN(&data->blob_write_columns);
+		if (rrr_map_get_value(&data->columns, node_tag) == NULL) {
+			if (rrr_map_get_value(&data->column_tags, node_tag) == NULL) {
+				VL_MSG_ERR("Column %s specified in blob write columns but is not defined as a column used to save data\n",
+						node_tag);
+				ret = 1;
 			}
 		}
-
-		if (was_ok == 0) {
-			VL_MSG_ERR("Column %s specified in mysql_columns_blob_writes but not in mysql_columns\n", col_1);
-			all_was_ok = 0;
-		}
-	}
-
-	if (all_was_ok != 1) {
-		ret = 1;
-	}
+	RRR_MAP_ITERATE_END(&data->blob_write_columns);
 
 	return ret;
 }
@@ -622,10 +624,6 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	int ret = 0;
 
 	int yesno = 0;
-
-	int column_count = 0;
-	int special_column_count = 0;
-	int special_value_count = 0;
 	int strip_separators_was_defined = 0;
 
 	char *mysql_colplan = NULL;
@@ -643,31 +641,20 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	}
 
 	// BLOB WRITE COLUMNS
-	ret = mysql_traverse_column_list (
-			data->mysql_columns_blob_writes, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_blob_write_columns"
-	);
-	VL_DEBUG_MSG_1("%i blob write columns specified for mysql instance %s\n", column_count, config->name);
-	if (mysql_verify_blob_write_colums (data) != 0) {
-		VL_MSG_ERR("Error in blob write column list for mysql instance %s\n", config->name);
-		ret = 1;
+	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mysql_blob_write_columns of instance %s\n", config->name);
 		goto out;
 	}
+	VL_DEBUG_MSG_1("%i blob write columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->blob_write_columns), config->name);
 
 	// SPECIAL COLUMNS AND THEIR VALUES
-	ret = mysql_traverse_column_list (
-			data->mysql_special_columns, RRR_MYSQL_BIND_MAX, &special_column_count, config, "mysql_special_columns"
-	);
-	ret = mysql_traverse_column_list (
-			data->mysql_special_values, RRR_MYSQL_BIND_MAX, &special_value_count, config, "mysql_special_values"
-	);
-	if (special_column_count != special_value_count) {
-		VL_MSG_ERR("Special column/value count mismatch %i vs %i for mysql instance %s\n",
-				special_column_count, special_value_count, config->name);
-		ret = 1;
+	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->special_columns, config, "mysql_special_columns", "=");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mysql_special_columns of instance %s\n", config->name);
 		goto out;
 	}
-	data->mysql_special_columns_count = special_column_count;
-	VL_DEBUG_MSG_1("%i special columns specified for mysql instance %s\n", special_column_count, config->name);
+	VL_DEBUG_MSG_1("%i special columns specified for mysql instance %s\n", RRR_MAP_COUNT(&data->special_columns), config->name);
 
 	// STRIP OUT SEPARATORS
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "mysql_strip_array_separators")) != 0) {
@@ -683,16 +670,39 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		strip_separators_was_defined = 1;
 	}
 
+	// TABLE COLUMNS
+	ret = rrr_instance_config_parse_comma_separated_to_map(&data->columns, config, "mysql_columns");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mysql_columns of instance %s\n", config->name);
+		goto out;
+	}
+
+	ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->column_tags, config, "mysql_column_tags", "->");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		VL_MSG_ERR("Error while parsing mysql_column_tags of instance %s\n", config->name);
+		goto out;
+	}
+
 	if (COLUMN_PLAN_MATCH(mysql_colplan,ARRAY)) {
 		data->colplan = COLUMN_PLAN_INDEX(ARRAY);
 
-		// TABLE COLUMNS
-		ret = mysql_traverse_column_list (
-				data->mysql_columns, RRR_MYSQL_BIND_MAX, &column_count, config, "mysql_columns"
-		);
-		VL_DEBUG_MSG_1("%i ordinary columns specified for mysql instance %s\n", column_count, config->name);
-		if (column_count == 0) {
-			VL_MSG_ERR("No columns specified in mysql_columns; needed when using array column plan for instance %s\n", config->name);
+		if (RRR_MAP_COUNT(&data->columns) != 0 && RRR_MAP_COUNT(&data->column_tags) != 0) {
+			VL_MSG_ERR("mysql_column_tags and mysql_columns cannot be specified simultaneously in instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		VL_DEBUG_MSG_1("%i ordinary columns specified for mysql instance %s\n",
+				RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags), config->name);
+
+		if (RRR_MAP_COUNT(&data->columns) + RRR_MAP_COUNT(&data->column_tags) == 0) {
+			VL_MSG_ERR("No columns specified in mysql_columns or mysql_column_tags; needed when using array column plan for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+
+		if (mysql_verify_blob_write_colums (data) != 0) {
+			VL_MSG_ERR("Error in blob write column list for mysql instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -701,7 +711,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
 		if (strip_separators_was_defined != 0) {
-			VL_MSG_ERR("Cannot use mysql_strip_array_separators with voltage column plan for instance %s\n", config->name);
+			VL_MSG_ERR("Cannot use mysql_strip_array_separators along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
 		}
 
@@ -710,13 +720,18 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 			ret = 1;
 		}
 
-		if (data->mysql_special_columns_count > 0) {
+		if (RRR_MAP_COUNT(&data->columns) != 0 || RRR_MAP_COUNT(&data->column_tags) != 0) {
+			VL_MSG_ERR("Cannot use mysql_column_tags and mysql_columns along with voltage column plan in instance %s\n", config->name);
+			ret = 1;
+		}
+
+		if (RRR_MAP_COUNT(&data->special_columns) != 0) {
 			VL_MSG_ERR("Cannot use mysql_special_columns along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
 		}
 
-		if (data->mysql_columns_blob_writes[0] != NULL) {
-			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with coltage column plan for instance %s\n", config->name);
+		if (RRR_MAP_COUNT(&data->blob_write_columns) != 0) {
+			VL_MSG_ERR("Cannot use mysql_columns_blob_writes along with voltage column plan for instance %s\n", config->name);
 			ret = 1;
 		}
 
@@ -989,6 +1004,7 @@ int process_entries (struct instance_thread_data *thread_data) {
 	}
 
 	int ret = 0;
+	char *query = NULL;
 
 	MYSQL_STMT *stmt = mysql_stmt_init(&data->mysql);
 
@@ -1007,8 +1023,10 @@ int process_entries (struct instance_thread_data *thread_data) {
 		exit (EXIT_FAILURE);
 	}
 
-	char query[RRR_MYSQL_SQL_MAX];
-	column_configurators[data->colplan].create_sql(query, RRR_MYSQL_SQL_MAX, data);
+	if (column_configurators[data->colplan].create_sql(&query, &process_data.column_count, data) != 0) {
+		ret = 1;
+		goto out;
+	}
 
 	if (mysql_stmt_prepare(stmt, query, strlen(query)) != 0) {
 		VL_MSG_ERR ("mysql: Failed to prepare statement: Error: %s\n",
@@ -1030,6 +1048,7 @@ int process_entries (struct instance_thread_data *thread_data) {
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(query);
 	pthread_cleanup_pop(1);
 	return ret;
 }
@@ -1072,25 +1091,7 @@ static void *thread_entry_mysql (struct vl_thread *thread) {
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
 
-	int err = 0;
-	RRR_SENDER_LOOP(sender,thread_data->init_data.senders) {
-		int delete_has = poll_collection_has(&poll, sender->sender->thread_data);
-		int delete_ip_has = poll_collection_has(&poll_ip, sender->sender->thread_data);
-
-		if (delete_has + delete_ip_has == 2) {
-			VL_DEBUG_MSG_1("Sender %s for mysql instance %s has both delete and delete_ip poll functions, preferring IP\n",
-					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
-			poll_collection_remove(&poll, sender->sender->thread_data);
-		}
-		else if (delete_has + delete_ip_has == 0) {
-			VL_MSG_ERR("Sender %s for mysql instance %s did not have delete_ip or delete poll functions\n",
-					INSTANCE_M_NAME(sender->sender), INSTANCE_D_NAME(thread_data));
-			err = 1;
-		}
-	}
-	if (err) {
-		goto out_message;
-	}
+	poll_remove_senders_also_in(&poll, &poll_ip);
 
 	VL_DEBUG_MSG_1 ("mysql started thread %p\n", thread_data);
 

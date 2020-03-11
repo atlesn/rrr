@@ -37,14 +37,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifdef RRR_SOCKET_64_IS_LONG
 	#define RRR_PY_64 T_ULONG
-	#define RRR_PY_32 T_UINT
-	#define RRR_PY_LONG_AS_32 PyLong_AsUnsignedLong
 	#define RRR_PY_LONG_AS_64 PyLong_AsUnsignedLong
-#elif RRR_SOCKET_32_IS_LONG
+#elif RRR_SOCKET_64_IS_LONG_LONG
 	#define RRR_PY_64 T_ULONGLONG
+	#define RRR_PY_LONG_AS_64 PyLong_AsUnsignedLongLong
+#endif
+
+#ifdef RRR_SOCKET_32_IS_UINT
+	#define RRR_PY_32 T_UINT
+	#define RRR_PY_LONG_AS_32 (unsigned int) PyLong_AsLong
+#elif RRR_SOCKET_32_IS_LONG
 	#define RRR_PY_32 T_ULONG
 	#define RRR_PY_LONG_AS_32 PyLong_AsUnsignedLong
-	#define RRR_PY_LONG_AS_64 PyLong_AsUnsignedLongLong
 #endif
 
 #define RRR_PY_QUOTE(str) \

@@ -30,7 +30,7 @@ perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
 lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
-	ipclient.la ipserver.la udpreader.la \
+	ipclient.la udpreader.la \
 	duplicator.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
@@ -54,9 +54,6 @@ averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags} 
 ipclient_la_SOURCES = p_ipclient.c
-
-ipserver_la_LDFLAGS = ${module_ldflags}
-ipserver_la_SOURCES = p_ipserver.c
 
 buffer_la_LDFLAGS = ${module_ldflags}
 buffer_la_SOURCES = p_buffer.c

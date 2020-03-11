@@ -50,14 +50,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 struct rrr_socket_holder {
-	RRR_LINKED_LIST_NODE(struct rrr_socket_holder);
+	RRR_LL_NODE(struct rrr_socket_holder);
 	char *creator;
 	char *filename;
 	struct rrr_socket_options options;
 };
 
 struct rrr_socket_holder_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_socket_holder);
+	RRR_LL_HEAD(struct rrr_socket_holder);
 };
 
 struct rrr_socket_holder_collection socket_list = {0};
@@ -147,13 +147,13 @@ int rrr_socket_get_options_from_fd (
 
 	pthread_mutex_lock(&socket_lock);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
 		if (node->options.fd == fd) {
 			*target = node->options;
 			ret = 0;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LINKED_LIST_ITERATE_END(&socket_list);
+	RRR_LL_ITERATE_END(&socket_list);
 
 	pthread_mutex_unlock(&socket_lock);
 
@@ -172,9 +172,9 @@ int rrr_socket_with_lock_do (
 }
 
 static void __rrr_socket_dump_unlocked (void) {
-	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		VL_DEBUG_MSG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
-	RRR_LINKED_LIST_ITERATE_END(&socket_list);
+	RRR_LL_ITERATE_END(&socket_list);
 	VL_DEBUG_MSG_7("---\n");
 }
 
@@ -195,7 +195,7 @@ static int __rrr_socket_add_unlocked (
 		goto out;
 	}
 
-	RRR_LINKED_LIST_PUSH(&socket_list,holder);
+	RRR_LL_PUSH(&socket_list,holder);
 	holder = NULL;
 
 	if (VL_DEBUGLEVEL_7) {
@@ -347,13 +347,13 @@ int rrr_socket_close (int fd) {
 
 	__rrr_socket_dump_unlocked();
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		if (node->options.fd == fd) {
-			RRR_LINKED_LIST_SET_DESTROY();
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_LAST();
 			did_destroy = 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
 
 	__rrr_socket_dump_unlocked();
 
@@ -387,9 +387,9 @@ int rrr_socket_close_all_except (int fd) {
 
 	pthread_mutex_lock(&socket_lock);
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
+	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		if (node->options.fd != fd) {
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 			count++;
 		}
 		else {
@@ -398,7 +398,7 @@ int rrr_socket_close_all_except (int fd) {
 			}
 			found = 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
 
 	if (found != 1 && fd != 0) {
 		VL_MSG_ERR("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
@@ -704,7 +704,7 @@ static int __rrr_socket_client_new (
 void rrr_socket_client_collection_destroy (
 		struct rrr_socket_client_collection *collection
 ) {
-	RRR_LINKED_LIST_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(node));
+	RRR_LL_DESTROY(collection,struct rrr_socket_client,__rrr_socket_client_destroy(node));
 	RRR_FREE_IF_NOT_NULL(collection->creator);
 	collection->listen_fd = 0;
 }
@@ -747,7 +747,7 @@ int rrr_socket_client_collection_accept (
 		return 1;
 	}
 
-	RRR_LINKED_LIST_PUSH(collection, client_new);
+	RRR_LL_PUSH(collection, client_new);
 
 	return 0;
 }
@@ -766,11 +766,11 @@ int rrr_socket_client_collection_read (
 	uint64_t time_now = time_get_64();
 	uint64_t timeout = time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000);
 
-	if (RRR_LINKED_LIST_COUNT(collection) == 0 && (read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
+	if (RRR_LL_COUNT(collection) == 0 && (read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
 		usleep(10 * 1000);
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_socket_client);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		ret = rrr_socket_read_message (
 				&node->read_sessions,
 				node->connected_fd,
@@ -789,15 +789,15 @@ int rrr_socket_client_collection_read (
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
 				VL_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
-				RRR_LINKED_LIST_SET_DESTROY();
+				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;
 		}
 
 		if (node->last_seen < timeout) {
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_client_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_client_destroy(node));
 
 	return ret;
 }

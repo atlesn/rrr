@@ -80,7 +80,7 @@ struct rrr_mqtt_conn_read_session {
 };
 
 struct rrr_mqtt_conn {
-	RRR_LINKED_LIST_NODE(struct rrr_mqtt_conn);
+	RRR_LL_NODE(struct rrr_mqtt_conn);
 	struct rrr_mqtt_conn_collection *collection;
 
 	pthread_mutex_t lock;
@@ -120,7 +120,7 @@ struct rrr_mqtt_conn {
 };
 
 struct rrr_mqtt_conn_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_conn);
+	RRR_LL_HEAD(struct rrr_mqtt_conn);
 
 	int invalid;
 	ssize_t max;

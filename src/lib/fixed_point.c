@@ -343,7 +343,7 @@ int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length,
 	no_decimals:
 	start = integer_pos;
 	factor = 1.0;
-	for (const char *pos = dot - 1; pos >= start; pos--) {
+	for (const char *pos = (dot != NULL ? dot - 1 : end - 1); pos >= start; pos--) {
 		char c = *pos;
 		result_integer += __rrr_fixp_convert_char(c) * factor;
 		factor *= base;

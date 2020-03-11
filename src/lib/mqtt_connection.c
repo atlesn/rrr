@@ -427,7 +427,7 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 	}
 	pthread_mutex_unlock (&connections->lock);
 
-	RRR_LINKED_LIST_DESTROY(
+	RRR_LL_DESTROY(
 			connections,
 			struct rrr_mqtt_conn,
 			__rrr_mqtt_connection_lock_and_destroy(node)
@@ -516,7 +516,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 		goto out_nolock;
 	}
 
-	RRR_LINKED_LIST_PUSH(connections, res);
+	RRR_LL_PUSH(connections, res);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_unlock(connections)) != RRR_MQTT_CONN_OK) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");
@@ -603,7 +603,7 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_conn);
+	RRR_LL_ITERATE_BEGIN(connections, struct rrr_mqtt_conn);
 		int ret_tmp = callback(node, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONN_OK) {
 			if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {
@@ -612,16 +612,16 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 			if ((ret_tmp & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
 				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 				callback_ret |= ret_tmp;
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 			if ((ret_tmp & RRR_MQTT_CONN_ITERATE_STOP) != 0) {
 				callback_ret |= ret_tmp;
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 
 			VL_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
-	RRR_LINKED_LIST_ITERATE_END(connections);
+	RRR_LL_ITERATE_END(connections);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		VL_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
@@ -664,7 +664,7 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
 					(*cur)->close_wait_time_usec - (time_now - (*cur)->close_wait_start));*/
-			ret = RRR_LINKED_LIST_DIDNT_DESTROY;
+			ret = RRR_LL_DIDNT_DESTROY;
 			goto out_unlock;
 		}
 		VL_DEBUG_MSG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, timer done\n",
@@ -706,7 +706,7 @@ int rrr_mqtt_conn_collection_iterate (
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(connections, struct rrr_mqtt_conn);
+	RRR_LL_ITERATE_BEGIN(connections, struct rrr_mqtt_conn);
 		int ret_tmp = callback(node, callback_arg);
 		if (ret_tmp != RRR_MQTT_CONN_OK) {
 			if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
@@ -724,7 +724,7 @@ int rrr_mqtt_conn_collection_iterate (
 
 			if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {
 //				VL_DEBUG_MSG_1("Destroying connection in rrr_mqtt_connection_collection_iterate\n");
-				RRR_LINKED_LIST_SET_DESTROY();
+				RRR_LL_ITERATE_SET_DESTROY();
 				ret_tmp = ret_tmp & ~RRR_MQTT_CONN_DESTROY_CONNECTION;
 				// Do not let DESTROY_CONNECTION propogate through the iterator since we handle it here
 			}
@@ -741,25 +741,25 @@ int rrr_mqtt_conn_collection_iterate (
 			if (ret_tmp != 0) {
 				VL_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate return was %i\n", ret_tmp);
 				callback_ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 
 			if ((callback_ret & RRR_MQTT_CONN_ITERATE_STOP) != 0) {
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 		}
 
-#define LOCK_ERR																									\
+#define LOCK_ERR \
 			VL_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");			\
-			ret = RRR_MQTT_CONN_INTERNAL_ERROR; \
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;																		\
 			goto out
 
 #define DESTROY_ERR \
 			VL_MSG_ERR("Internal error while destroying connection in rrr_mqtt_connection_collection_iterate\n");	\
-			callback_ret = RRR_MQTT_CONN_INTERNAL_ERROR;														\
-			break
+			callback_ret = RRR_MQTT_CONN_INTERNAL_ERROR;															\
+			RRR_LL_ITERATE_BREAK()
 
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY_WRAP_LOCK (
+	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK (
 			connections,
 			__rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy(node),
 			DESTROY_ERR,

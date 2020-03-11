@@ -45,7 +45,7 @@ struct rrr_mqtt_p_publish;
 struct rrr_mqtt_topic_token;
 
 struct rrr_mqtt_subscription {
-	RRR_LINKED_LIST_NODE(struct rrr_mqtt_subscription);
+	RRR_LL_NODE(struct rrr_mqtt_subscription);
 
 	char *topic_filter;
 	struct rrr_mqtt_topic_token *token_tree;
@@ -57,7 +57,7 @@ struct rrr_mqtt_subscription {
 };
 
 struct rrr_mqtt_subscription_collection {
-	RRR_LINKED_LIST_HEAD(struct rrr_mqtt_subscription);
+	RRR_LL_HEAD(struct rrr_mqtt_subscription);
 };
 
 int rrr_mqtt_subscription_destroy (
