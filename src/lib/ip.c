@@ -245,11 +245,17 @@ static int __ip_receive_callback (
 	read_session->rx_buf_ptr = NULL;
 
 	ret = callback_data->callback(entry, callback_data->callback_arg);
-	if (ret == VL_IP_RECEIVE_STOP) {
+	if (ret == 0) {
+	}
+	else if (ret == VL_IP_RECEIVE_STOP) {
+		ret = 0;
 		goto out;
 	}
 	else if (ret == VL_IP_RECEIVE_ERR) {
 		return 1;
+	}
+	else {
+		VL_BUG("Unknown return value %i from callback in __ip_receive_callback\n", ret);
 	}
 
 	if (callback_data->stats != NULL) {
