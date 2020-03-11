@@ -515,7 +515,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 	if (count != node->element_count && node->element_count != 0) {
 		VL_MSG_ERR("Number of messages in array did not match definition. Found %i but expected %" PRIu32 "\n",
 				count, node->element_count);
-		ret = 1;
+		ret = RRR_TYPE_PARSE_SOFT_ERR;
 		goto out;
 	}
 

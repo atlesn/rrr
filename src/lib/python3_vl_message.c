@@ -38,7 +38,6 @@ static const unsigned long int max_64 = 0xffffffffffffffff;
 
 struct rrr_python3_vl_message_constants {
 		unsigned int TYPE_MSG;
-		unsigned int TYPE_ACK;
 		unsigned int TYPE_TAG;
 		unsigned int CLASS_POINT;
 		unsigned int CLASS_AVG;
@@ -50,7 +49,6 @@ struct rrr_python3_vl_message_constants {
 
 static const struct rrr_python3_vl_message_constants message_constants = {
 		MSG_TYPE_MSG,
-		MSG_TYPE_ACK,
 		MSG_TYPE_TAG,
 		MSG_CLASS_POINT,
 		MSG_CLASS_AVG,
@@ -419,7 +417,6 @@ static PyMemberDef vl_message_members[] = {
 		{"data_numeric",	RRR_PY_64, 	RRR_PY_VL_MESSAGE_OFFSET(data_numeric),		0, "Numeric data"},
 
 		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),	READONLY,	"Type is MSG (default)"},
-		{"TYPE_ACK",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_ACK),	READONLY,	"Type is ACK"},
 		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),	READONLY,	"Type is TAG"},
 		{"CLASS_POINT",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_POINT),	READONLY,	"Class is POINT (default)"},
 		{"CLASS_AVG",		RRR_PY_32,	RRR_PY_VL_MESSAGE_CONSTANT_OFFSET(CLASS_AVG),	READONLY,	"Class is AVG"},
@@ -1095,7 +1092,7 @@ static int __rrr_python3_array_vl_message_get_message_store_array_node_callback 
 		}
 	}
 
-	RRR_LINKED_LIST_APPEND(target, new_value);
+	RRR_LL_APPEND(target, new_value);
 	new_value = NULL;
 
 	out:
@@ -1208,7 +1205,7 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 		goto out_err;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
+	RRR_LL_ITERATE_BEGIN(&array_tmp, struct rrr_type_value);
 		if (node->tag == NULL) {
 			node_tag = PyUnicode_FromString("");
 		}
@@ -1272,7 +1269,7 @@ PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg) {
 
 		node_tag = NULL;
 		node_list = NULL;
-	RRR_LINKED_LIST_ITERATE_END(&array_tmp);
+	RRR_LL_ITERATE_END(&array_tmp);
 
 	no_array:
 

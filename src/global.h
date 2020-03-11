@@ -146,19 +146,20 @@ typedef unsigned short vl_u16;
 #endif
 
 #if UINT_MAX == 0xffffffff
-#   define RRR_SOCKET_32_IS_UINT 1
-#endif
-
-#if ULONG_MAX == 0xffffffff
-#  define RRR_SOCKET_32_IS_LONG 1
+typedef unsigned int vl_u32;
+#define RRR_SOCKET_32_IS_UINT 1
+#elif ULONG_MAX == 0xffffffff
+typedef unsigned long int vl_u32;
+#define RRR_SOCKET_32_IS_LONG 1
 #endif
 
 #if ULONG_MAX == 0xffffffffffffffff
-#  define RRR_SOCKET_64_IS_LONG 1
-#endif
+typedef unsigned long int vl_u64;
+#define RRR_SOCKET_64_IS_LONG 1
+#elif ULLONG_MAX == 0xffffffffffffffff
+typedef unsigned long long int vl_u64;
+#define RRR_SOCKET_64_IS_LONG_LONG
 
-#if ULLONG_MAX == 0xffffffffffffffff
-#  define RRR_SOCKET_64_IS_LONGLONG 1
 #endif
 
 #ifdef RRR_SOCKET_32_IS_UINT

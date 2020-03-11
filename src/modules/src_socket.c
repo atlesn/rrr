@@ -50,6 +50,7 @@ struct socket_data {
 	char *default_topic;
 	ssize_t default_topic_length;
 	int receive_rrr_message;
+	int do_sync_byte_by_byte;
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
@@ -98,6 +99,8 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	// Socket path
 	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
 		VL_MSG_ERR("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
+		ret = 1;
+		goto out;
 	}
 
 	struct sockaddr_un addr;
@@ -144,12 +147,25 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		}
 	}
 
-	if (data->receive_rrr_message != 0 && RRR_LINKED_LIST_COUNT(&data->definitions) > 0) {
+	// Sync byte by byte if parsing fails
+	yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "socket_sync_byte_by_byte")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			VL_MSG_ERR("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n",
+					config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	data->do_sync_byte_by_byte = yesno;
+
+	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 		VL_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
-	else if (data->receive_rrr_message == 0 && RRR_LINKED_LIST_COUNT(&data->definitions) == 0) {
+	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		VL_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
 				config->name);
 		return 1;
@@ -204,7 +220,7 @@ int read_data(struct socket_data *data) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				rrr_socket_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_socket_common_receive_message_callback,
@@ -213,13 +229,14 @@ int read_data(struct socket_data *data) {
 	}
 	else {
 		struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
-				&data->definitions
+				&data->definitions,
+				data->do_sync_byte_by_byte
 		};
 		return rrr_socket_client_collection_read (
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				RRR_SOCKET_READ_METHOD_RECV,
+				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_socket_common_get_session_target_length_from_array,
 				&callback_data,
 				read_raw_data_callback,
@@ -306,7 +323,18 @@ static void *thread_entry_socket (struct vl_thread *thread) {
 			break;
 		}
 
-		if (read_data(data) != 0) {
+		int err = 0;
+		if ((err = read_data(data)) != 0) {
+			if (err == RRR_SOCKET_SOFT_ERROR) {
+				// Upon receival of invalid data, we must close the socket as sizes of
+				// the messages and boundaries might be out of sync
+				VL_MSG_ERR("Invalid data received in socket instance %s, socket must be closed\n",
+						INSTANCE_D_NAME(thread_data));
+			}
+			else {
+				VL_MSG_ERR("Error while reading data in socket instance %s, return was %i\n",
+						INSTANCE_D_NAME(thread_data), err);
+			}
 			break;
 		}
 	}

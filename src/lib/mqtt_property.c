@@ -378,7 +378,7 @@ void rrr_mqtt_property_collection_add (
 ) {
 	property->order = ++(collection->order_count);
 
-	RRR_LINKED_LIST_APPEND(collection, property);
+	RRR_LL_APPEND(collection, property);
 }
 
 int rrr_mqtt_property_collection_add_cloned (
@@ -397,7 +397,7 @@ int rrr_mqtt_property_collection_add_cloned (
 
 	new_property->order = ++(collection->order_count);
 
-	RRR_LINKED_LIST_APPEND(collection, new_property);
+	RRR_LL_APPEND(collection, new_property);
 
 	out:
 	return ret;
@@ -410,12 +410,12 @@ int rrr_mqtt_property_collection_iterate (
 ) {
 	int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
 		ret = callback(node, callback_arg);
 		if (ret != 0) {
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 }
@@ -426,11 +426,11 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 ) {
 	unsigned int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
 		if (RRR_MQTT_PROPERTY_GET_ID(node) == RRR_MQTT_PROPERTY_GET_ID(self) && node != self) {
 			ret += 1;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 
@@ -445,15 +445,15 @@ struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 
 	struct rrr_mqtt_property *ret = NULL;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mqtt_property);
 		if (node->definition->identifier == identifier) {
 			if (match_count == index) {
 				ret = node;
-				RRR_LINKED_LIST_SET_STOP();
+				RRR_LL_ITERATE_LAST();
 			}
 			match_count++;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	return ret;
 }
@@ -472,7 +472,7 @@ int rrr_mqtt_property_collection_calculate_size (
 	ssize_t result_count = 0;
 	uint32_t tmp = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
 		switch (node->definition->internal_data_type) {
 			case RRR_MQTT_PROPERTY_DATA_TYPE_ONE:
 				result += 1; break;
@@ -510,7 +510,7 @@ int rrr_mqtt_property_collection_calculate_size (
 			ret = 1;
 			goto out;
 		}
-	RRR_LINKED_LIST_ITERATE_END(collection);
+	RRR_LL_ITERATE_END(collection);
 
 	*size = result;
 	*count = result_count;
@@ -522,7 +522,7 @@ int rrr_mqtt_property_collection_calculate_size (
 void rrr_mqtt_property_collection_destroy (
 		struct rrr_mqtt_property_collection *collection
 ) {
-	RRR_LINKED_LIST_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
+	RRR_LL_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
 }
 
 int rrr_mqtt_property_collection_add_from_collection (
@@ -531,7 +531,7 @@ int rrr_mqtt_property_collection_add_from_collection (
 ) {
 	int ret = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
 		struct rrr_mqtt_property *new_node = NULL;
 		ret = __rrr_mqtt_property_clone(&new_node, node);
 		if (ret != 0) {
@@ -539,7 +539,7 @@ int rrr_mqtt_property_collection_add_from_collection (
 			goto out_destroy;
 		}
 		rrr_mqtt_property_collection_add(target, new_node);
-	RRR_LINKED_LIST_ITERATE_END(source);
+	RRR_LL_ITERATE_END(source);
 
 	goto out;
 	out_destroy:

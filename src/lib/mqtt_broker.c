@@ -38,7 +38,7 @@ static void __rrr_mqtt_broker_destroy_listen_fd (struct rrr_mqtt_listen_fd *fd) 
 static void __rrr_mqtt_broker_destroy_listen_fds_elements (struct rrr_mqtt_listen_fd_collection *fds) {
 	pthread_mutex_lock(&fds->lock);
 
-	RRR_LINKED_LIST_DESTROY(fds, struct rrr_mqtt_listen_fd, __rrr_mqtt_broker_destroy_listen_fd(node));
+	RRR_LL_DESTROY(fds, struct rrr_mqtt_listen_fd, __rrr_mqtt_broker_destroy_listen_fd(node));
 
 	pthread_mutex_unlock(&fds->lock);
 }
@@ -64,7 +64,7 @@ static struct rrr_mqtt_listen_fd *__rrr_mqtt_broker_listen_fd_allocate_unlocked 
 
 	memset (ret, '\0', sizeof(*ret));
 
-	RRR_LINKED_LIST_APPEND(fds, ret);
+	RRR_LL_APPEND(fds, ret);
 
 	out:
 	return ret;
@@ -74,11 +74,11 @@ static void __rrr_mqtt_broker_listen_fd_remove_unlocked (
 		struct rrr_mqtt_listen_fd_collection *fds,
 		struct rrr_mqtt_listen_fd *fd
 ) {
-	int old_count = RRR_LINKED_LIST_COUNT(fds);
+	int old_count = RRR_LL_COUNT(fds);
 
-	RRR_LINKED_LIST_REMOVE_NODE(fds, struct rrr_mqtt_listen_fd, fd, __rrr_mqtt_broker_destroy_listen_fd(node));
+	RRR_LL_REMOVE_NODE(fds, struct rrr_mqtt_listen_fd, fd, __rrr_mqtt_broker_destroy_listen_fd(node));
 
-	if (old_count == RRR_LINKED_LIST_COUNT(fds)) {
+	if (old_count == RRR_LL_COUNT(fds)) {
 		VL_BUG("FD not found in __rrr_mqtt_broker_listen_fd_destroy_unlocked\n");
 	}
 }
@@ -128,14 +128,14 @@ static int __rrr_mqtt_broker_listen_fds_accept_connections (
 
 	int count = 0;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(fds, struct rrr_mqtt_listen_fd);
+	RRR_LL_ITERATE_BEGIN(fds, struct rrr_mqtt_listen_fd);
 		/* Save the error flag but loop the rest of the FDs even if one FD fails */
 		struct rrr_mqtt_conn *connection = NULL;
 
 		do {
 			RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
 					rrr_mqtt_conn_collection_accept(&connection, &data->mqtt_data.connections, &node->ip, creator),
-					break,
+					RRR_LL_ITERATE_BREAK(),
 					" from callback function in __rrr_mqtt_broker_listen_fd_accept_connections"
 			);
 			if (connection != NULL) {
@@ -144,7 +144,7 @@ static int __rrr_mqtt_broker_listen_fds_accept_connections (
 		} while (connection != NULL);
 
 		ret_preserved |= ret;
-	RRR_LINKED_LIST_ITERATE_END(fds);
+	RRR_LL_ITERATE_END(fds);
 
 	if (count > 0) {
 		VL_DEBUG_MSG_1 ("rrr_mqtt_broker_accept_connections: accepted %i connections\n", count);

@@ -1,5 +1,5 @@
-.Dd 2019-10-04
-.TH RRR 1
+.Dd 2020-01-16
+.TH RRR_POST 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
@@ -15,6 +15,8 @@ program to post data to its modules.
 .Dl [-a|--array_definition[=]ARRAY DEFINITION]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
+.Dl [-s|--sync]
+.Dl [-q|--quiet]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
@@ -45,16 +47,30 @@ reading messages are generated before any reading of a file or standard input be
 .IP -a|--array_definition[=]DEFINITION
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
-section.
+section. If no array is specified, the array "msg" is used (input is RRR messages).
 .IP -c|--count[=]RECORDS
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC
 Set an MQTT topic in the messages generated.
+.IP -s|--sync
+If array parsing fails (invalid input data), try to parse again after skipping one byte forward in the input.
+.IP -q|--quiet
+Don't print statistics upon exit.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
 .IP -D|--debuglevel_on_exit[=]FLAGS
 Debuglevel to use when program exits.
 
+.PP
+.SH SIGNALS
+.IP SIGURS1
+Print sent message statistics, then continue.
+.IP SIGINT/CTRL+C
+Complete processing of current message then exit. SIGINT a second time causes immediate exit.
+.IP SIGTERM
+Exit immediately.
+.IP SIGPIPE
+Ignored (an error message is printed).
 .PP
 .SH ARRAY DEFINITION
 A range of data types may be used in the data records given to
@@ -131,7 +147,7 @@ The length of these types are identified automatically and must not have length 
 .It msg
 A full RRR message complete with headers and checksums.
 .It str
-An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
+An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \\. The
 surrounding quotes are not included in the final string.
 .El
 

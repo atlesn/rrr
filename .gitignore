@@ -9,6 +9,7 @@
 /src/rrr_http_client
 /build_timestamp.h
 /build_directory.h
+input_data
 
 # debian
 /debian/rrr/

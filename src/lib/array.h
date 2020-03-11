@@ -48,12 +48,12 @@ struct rrr_array_value_packed {
 } __attribute((packed));
 
 struct rrr_array {
-		RRR_LINKED_LIST_HEAD(struct rrr_type_value);
+		RRR_LL_HEAD(struct rrr_type_value);
 		uint16_t version;
 };
 
 static inline int rrr_array_count(struct rrr_array *array) {
-	return RRR_LINKED_LIST_COUNT(array);
+	return RRR_LL_COUNT(array);
 }
 
 int rrr_array_parse_single_definition (
@@ -118,6 +118,12 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const struct rrr_array *definition,
 		int (*callback)(struct vl_message *message, void *arg),
 		void *callback_arg
+);
+int rrr_array_selected_tags_to_raw (
+		char **target,
+		ssize_t *target_size,
+		const struct rrr_array *definition,
+		const struct rrr_linked_list *tags
 );
 int rrr_array_new_message_from_collection (
 		struct vl_message **final_message,

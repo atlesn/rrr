@@ -161,7 +161,7 @@ void rrr_mqtt_subscription_replace_and_destroy (
 	 * 5. Zero all data in source
 	 * 6. Free source
 	 */
-	RRR_LINKED_LIST_REPLACE_NODE (
+	RRR_LL_REPLACE_NODE (
 			target,
 			source,
 			struct rrr_mqtt_subscription,
@@ -195,7 +195,7 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 		void *callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
-	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
 			ret = match_callback(publish, node, callback_arg);
@@ -203,18 +203,18 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 				VL_MSG_ERR("Error from match_callback in rrr_mqtt_subscription_collection_match_publish: %i\n",
 						ret);
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-				RRR_LINKED_LIST_SET_STOP();
+				RRR_LL_ITERATE_LAST();
 			}
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
 			VL_MSG_ERR("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
 		else {
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
-	RRR_LINKED_LIST_ITERATE_END(subscriptions);
+	RRR_LL_ITERATE_END(subscriptions);
 	return ret;
 }
 
@@ -224,18 +224,18 @@ int rrr_mqtt_subscription_collection_match_publish (
 ) {
 	int ret = RRR_MQTT_TOKEN_MISMATCH;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
 			ret = RRR_MQTT_TOKEN_MATCH;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
 			VL_MSG_ERR("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-			RRR_LINKED_LIST_SET_STOP();
+			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LINKED_LIST_ITERATE_END(subscriptions);
+	RRR_LL_ITERATE_END(subscriptions);
 
 	return ret;
 }
@@ -249,7 +249,7 @@ int rrr_mqtt_subscription_collection_count (
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
 ) {
-	RRR_LINKED_LIST_DESTROY(target, struct rrr_mqtt_subscription, rrr_mqtt_subscription_destroy(node));
+	RRR_LL_DESTROY(target, struct rrr_mqtt_subscription, rrr_mqtt_subscription_destroy(node));
 }
 
 void rrr_mqtt_subscription_collection_destroy (
@@ -295,7 +295,7 @@ static int __rrr_mqtt_subscription_collection_append_unchecked_clone (
 		goto out;
 	}
 
-	RRR_LINKED_LIST_APPEND(target, new);
+	RRR_LL_APPEND(target, new);
 
 	out:
 	return ret;
@@ -317,7 +317,7 @@ int rrr_mqtt_subscription_collection_clone (
 		goto out;
 	}
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(source, const struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_subscription);
 		if ((ret = __rrr_mqtt_subscription_collection_append_unchecked_clone (
 				res,
 				node
@@ -325,7 +325,7 @@ int rrr_mqtt_subscription_collection_clone (
 			VL_MSG_ERR("Error while appending subscriptions while cloning in rrr_mqtt_subscription_collection_clone\n");
 			goto out_destroy_collection;
 		}
-	RRR_LINKED_LIST_ITERATE_END(source);
+	RRR_LL_ITERATE_END(source);
 
 	*target = res;
 
@@ -343,19 +343,19 @@ int rrr_mqtt_subscription_collection_iterate (
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	RRR_LINKED_LIST_ITERATE_BEGIN(collection, struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_mqtt_subscription);
 		int ret_tmp = callback(node, callback_arg);
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_INTERNAL_ERROR) != 0) {
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-			break;
+			RRR_LL_ITERATE_BREAK();
 		}
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_DESTROY) != 0) {
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		if ((ret_tmp & RRR_MQTT_SUBSCRIPTION_ITERATE_STOP) != 0) {
-			break;
+			RRR_LL_ITERATE_BREAK();
 		}
-	RRR_LINKED_LIST_ITERATE_END_CHECK_DESTROY(collection, rrr_mqtt_subscription_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, rrr_mqtt_subscription_destroy(node));
 
 	return ret;
 }
@@ -392,8 +392,8 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
-	if (RRR_LINKED_LIST_IS_EMPTY(target)) {
-		RRR_LINKED_LIST_APPEND(target, *subscription);
+	if (RRR_LL_IS_EMPTY(target)) {
+		RRR_LL_APPEND(target, *subscription);
 		goto out;
 	}
 
@@ -419,10 +419,10 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 	}
 	else {
 		if (put_at_end == 1) {
-			RRR_LINKED_LIST_APPEND(target, *subscription);
+			RRR_LL_APPEND(target, *subscription);
 		}
 		else {
-			RRR_LINKED_LIST_PUSH(target, *subscription);
+			RRR_LL_PUSH(target, *subscription);
 		}
 	}
 
@@ -439,12 +439,12 @@ struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_
 	}
 
 	int i = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
 		if (i == idx) {
 			return node;
 		}
 		i++;
-	RRR_LINKED_LIST_ITERATE_END(target);
+	RRR_LL_ITERATE_END(target);
 
 	return NULL;
 }
@@ -458,12 +458,12 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 	}
 
 	int i = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
 		if (i == idx) {
 			return node;
 		}
 		i++;
-	RRR_LINKED_LIST_ITERATE_END(target);
+	RRR_LL_ITERATE_END(target);
 
 	return NULL;
 }
@@ -476,12 +476,12 @@ int rrr_mqtt_subscription_collection_remove_topic (
 	*did_remove = 0;
 
 	int did_destroy = 0;
-	RRR_LINKED_LIST_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
 		if (strcmp(node->topic_filter, topic) == 0) {
-			RRR_LINKED_LIST_SET_DESTROY();
+			RRR_LL_ITERATE_SET_DESTROY();
 			did_destroy++;
 		}
-	RRR_LINKED_LIST_ITERATE_END(target);
+	RRR_LL_ITERATE_END(target);
 
 	if (did_destroy > 1) {
 		VL_BUG("More than 1 subscription matched in rrr_mqtt_subscription_collection_remove_topic\n");
@@ -558,22 +558,22 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 
 	// NOTE : append_unique will steal all the pointers from the source
 	//        which means the list cannot be used afterwards
-	RRR_LINKED_LIST_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
 		if (include_invalid_entries != 0 || node->qos_or_reason_v5 <= 2) {
 			ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
 
 			if (ret != 0) {
 				VL_MSG_ERR("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
-				break;
+				RRR_LL_ITERATE_BREAK();
 			}
 		}
 		else {
 			rrr_mqtt_subscription_destroy(node);
 		}
-	RRR_LINKED_LIST_ITERATE_END(source);
+	RRR_LL_ITERATE_END(source);
 
-	RRR_LINKED_LIST_DANGEROUS_CLEAR_HEAD(source);
+	RRR_LL_DANGEROUS_CLEAR_HEAD(source);
 
 	return ret;
 }
@@ -601,7 +601,7 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		goto out;
 	}
 
-	if (!RRR_LINKED_LIST_IS_EMPTY(new_source)) {
+	if (!RRR_LL_IS_EMPTY(new_source)) {
 		VL_BUG("new source was not empty in rrr_mqtt_subscription_collection_append_unique_copy_from_collection\n");
 	}
 

@@ -114,6 +114,10 @@ int ip_buffer_entry_new_with_empty_message (
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
+int ip_buffer_entry_clone (
+		struct ip_buffer_entry **result,
+		const struct ip_buffer_entry *source
+);
 int ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
@@ -129,6 +133,7 @@ int ip_stats_print_reset (
 int ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int no_sleeping,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -137,6 +142,7 @@ int ip_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
+		int do_sync_byte_by_byte,
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -144,12 +150,20 @@ int ip_receive_array (
 int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
+		int no_sleeping,
 #ifdef VL_WITH_OPENSSL
 		struct module_crypt_data *crypt_data,
 #endif
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
+);
+int ip_send_raw (
+	int fd,
+	const struct sockaddr *sockaddr,
+	socklen_t addrlen,
+	void *data,
+	ssize_t data_size
 );
 int ip_send_message (
 		const struct vl_message* message,

@@ -58,8 +58,8 @@ int poll_callback(struct fifo_callback_args *caller_data, char *data, unsigned l
 	struct buffer_data *buffer_data = thread_data->private_data;
 	struct vl_message *message = (struct vl_message *) data;
 
-	VL_DEBUG_MSG_3 ("buffer: Result from buffer: measurement %" PRIu64 " size %lu\n",
-			message->data_numeric, size);
+	VL_DEBUG_MSG_3 ("buffer instance %s: Result from buffer: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(buffer_data->data), message->data_numeric, size);
 
 	fifo_buffer_write(&buffer_data->storage, data, size);
 

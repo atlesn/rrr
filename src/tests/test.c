@@ -270,6 +270,7 @@ int main (int argc, const char **argv) {
 	} TEST_RESULT(config != NULL);
 
 	if (config == NULL) {
+		ret = 1;
 		goto out;
 	}
 

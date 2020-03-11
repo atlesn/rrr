@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 
 struct rrr_array;
+struct rrr_map;
 
 struct rrr_instance_config {
 	char *name;
@@ -116,6 +117,19 @@ int rrr_instance_config_check_all_settings_used (
 
 int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key
+);
+
+int rrr_instance_config_parse_comma_separated_associative_to_map (
+		struct rrr_map *target,
+		struct rrr_instance_config *config,
+		const char *cmd_key,
+		const char *delimeter
+);
+
+int rrr_instance_config_parse_comma_separated_to_map (
+		struct rrr_map *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key
 );
