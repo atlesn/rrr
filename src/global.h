@@ -158,7 +158,7 @@ typedef unsigned long int vl_u64;
 #define RRR_SOCKET_64_IS_LONG 1
 #elif ULLONG_MAX == 18446744073709551615ULL
 typedef unsigned long long int vl_u64;
-#define RRR_SOCKET_64_IS_LONG_LONG
+#define RRR_SOCKET_64_IS_LONG_LONG 1
 
 #endif
 
