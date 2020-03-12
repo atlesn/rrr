@@ -375,10 +375,10 @@ PyObject *__rrr_py_socket_message_to_pyobject (struct rrr_socket_msg *message) {
 	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
 #if RRR_SOCKET_64_IS_LONG
 		ret = PyLong_FromLong(message->msg_value);
-#elif RRR_SOCKET_64_IS_LONGLONG
+#elif RRR_SOCKET_64_IS_LONG_LONG
 		ret = PyLong_FromLongLong(message->msg_value);
 #else
-		#error "RRR_SOCKET_64_IS_LONG or RRR_SOCKET_64_IS_LONGLONG not set"
+		#error "RRR_SOCKET_64_IS_LONG or RRR_SOCKET_64_IS_LONG_LONG not set"
 #endif
 	}
 	else {
