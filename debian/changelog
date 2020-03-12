@@ -1,8 +1,9 @@
 rrr (0.16-2) unstable; urgency=medium
 
   * Remove OpenSSL-code
+  * Fixes for word length on arm64
 
- -- Atle Solbakken <atle@goliathdns.no>  Wed, 11 Mar 2020 22:48:31 +0100
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 12 Mar 2020 16:22:22 +0100
 
 rrr (0.16-1) unstable; urgency=medium
 

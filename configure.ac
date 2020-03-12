@@ -1,5 +1,5 @@
-AC_INIT([Read Route Record], 0.16-1)
-AC_DEFINE([VL_CONFIG_VERSION], "0.16-1", [Full version])
+AC_INIT([Read Route Record], 0.16-2)
+AC_DEFINE([VL_CONFIG_VERSION], "0.16-2", [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
 AC_DEFINE([VL_CONFIG_VERSION_MINOR], 16, [Minor version])
 AC_DEFINE([VL_CONFIG_VERSION_REVISION], 2, [Revesion number])
