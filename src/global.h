@@ -145,18 +145,18 @@ typedef unsigned char vl_u8;
 typedef unsigned short vl_u16;
 #endif
 
-#if UINT_MAX == 0xffffffff
+#if UINT_MAX == 4294967295UL
 typedef unsigned int vl_u32;
 #define RRR_SOCKET_32_IS_UINT 1
-#elif ULONG_MAX == 0xffffffff
+#elif ULONG_MAX == 4294967295UL
 typedef unsigned long int vl_u32;
 #define RRR_SOCKET_32_IS_LONG 1
 #endif
 
-#if ULONG_MAX == 0xffffffffffffffff
+#if ULONG_MAX == 18446744073709551615ULL
 typedef unsigned long int vl_u64;
 #define RRR_SOCKET_64_IS_LONG 1
-#elif ULLONG_MAX == 0xffffffffffffffff
+#elif ULLONG_MAX == 18446744073709551615ULL
 typedef unsigned long long int vl_u64;
 #define RRR_SOCKET_64_IS_LONG_LONG
 
