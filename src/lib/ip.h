@@ -25,10 +25,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#ifdef VL_WITH_OPENSSL
-#include "module_crypt.h"
-#endif
-
 #define VL_IP_DEFAULT_PORT 5555
 
 #define VL_IP_RECEIVE_OK 0
@@ -151,9 +147,6 @@ int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-#ifdef VL_WITH_OPENSSL
-		struct module_crypt_data *crypt_data,
-#endif
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -167,9 +160,6 @@ int ip_send_raw (
 );
 int ip_send_message (
 		const struct vl_message* message,
-#ifdef VL_WITH_OPENSSL
-		struct module_crypt_data *crypt_data,
-#endif
 		struct ip_send_packet_info* info,
 		struct ip_stats *stats
 );

@@ -2,7 +2,7 @@ AC_INIT([Read Route Record], 0.16-1)
 AC_DEFINE([VL_CONFIG_VERSION], "0.16-1", [Full version])
 AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
 AC_DEFINE([VL_CONFIG_VERSION_MINOR], 16, [Minor version])
-AC_DEFINE([VL_CONFIG_VERSION_REVISION], 1, [Revesion number])
+AC_DEFINE([VL_CONFIG_VERSION_REVISION], 2, [Revesion number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -202,21 +202,6 @@ AS_IF([test "x$enable_python3" = xno], [
 		$python3_config_bin --includes
 		AC_MSG_ERROR("Python3 test failed")
 	fi
-])
-
-AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
-AC_MSG_CHECKING([for encryption usage])
-AS_IF([test "x$with_encryption" = xno], [
-	AC_MSG_RESULT([Not compiling with encryption])
-], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([VL_WITH_OPENSSL], [1], [Enable encryption in network modules])
-	AX_CHECK_OPENSSL([], [
-		AC_MSG_ERROR([Cannot compile with encrypion, missing OpenSSL])
-	])
-	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
-	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
-	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
 ])
 
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$with_usb" != xno])

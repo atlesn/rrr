@@ -35,10 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <src/lib/ip.h>
 #include <fcntl.h>
 
-#ifdef VL_WITH_OPENSSL
-#include "module_crypt.h"
-#endif
-
 #include "ip.h"
 #include "../global.h"
 #include "messages.h"
@@ -345,9 +341,6 @@ int ip_receive_socket_msg (
 struct ip_receive_messages_callback_data {
 	int (*callback)(struct ip_buffer_entry *entry, void *arg);
 	void *arg;
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data;
-#endif
 };
 
 static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void *arg) {
@@ -356,9 +349,6 @@ static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void 
 	struct ip_receive_messages_callback_data *data = arg;
 	struct vl_message *message = entry->message;
 
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data = data->crypt_data;
-#endif
 	const ssize_t count = entry->data_length;
 
 	if (count < 10) {
@@ -371,37 +361,6 @@ static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void 
 		VL_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
 		goto out_free;
 	}
-
-#ifdef VL_WITH_OPENSSL
-	if (crypt_data->crypt != NULL) {
-		ssize_t new_size = sizeof(struct vl_message) - 1 + entry->data_length + 1024;
-		struct vl_message *new_message = realloc(entry->message, new_size);
-		if (new_message == NULL) {
-			VL_MSG_ERR("Could not realloc message before decryption in __ip_receive_messages_callback\n");
-			goto out_free;
-		}
-		entry->message = new_message;
-
-		char *crypt_start = ((char*) message) + sizeof(struct rrr_socket_msg);
-		unsigned int crypt_length_orig = message->network_size - sizeof(struct rrr_socket_msg);
-		unsigned int crypt_length = crypt_length_orig;
-
-		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", crypt_length);
-		if (module_decrypt_message(
-				crypt_data,
-				crypt_start,
-				&crypt_length,
-				new_size
-		) != 0) {
-			VL_MSG_ERR("Error returned from module decrypt function\n");
-			ret = 1;
-			goto out_free;
-		}
-
-		message->network_size = crypt_length;
-		ip_buffer_entry_set_message(entry, message, crypt_length);
-	}
-#endif
 
 	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
 		VL_MSG_ERR ("IP: Message checksum was invalid\n");
@@ -427,9 +386,6 @@ int ip_receive_vl_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-#ifdef VL_WITH_OPENSSL
-		struct module_crypt_data *crypt_data,
-#endif
 		int (*callback)(struct ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -438,9 +394,6 @@ int ip_receive_vl_message (
 
 	data.callback = callback;
 	data.arg = arg;
-#ifdef VL_WITH_OPENSSL
-	data.crypt_data = crypt_data;
-#endif
 
 	return ip_receive_socket_msg (
 		read_session_collection,
@@ -496,9 +449,6 @@ int ip_send_raw (
 
 int ip_send_message (
 	const struct vl_message *input_message,
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data,
-#endif
 	struct ip_send_packet_info *info,
 	struct ip_stats *stats
 ) {
@@ -506,10 +456,6 @@ int ip_send_message (
 
 	ssize_t final_size = MSG_TOTAL_SIZE(input_message);
 	ssize_t buf_size = MSG_TOTAL_SIZE(input_message);
-
-#ifdef VL_WITH_OPENSSL
-	buf_size += 1024;
-#endif
 
 	struct vl_message *final_message = malloc(buf_size);
 	if (final_message == NULL) {
@@ -533,24 +479,6 @@ int ip_send_message (
 			final_size,
 			0
 	);
-
-#ifdef VL_WITH_OPENSSL
-	if (crypt_data->crypt != NULL) {
-		char *buf_start = ((char *) final_message) + sizeof(struct rrr_socket_msg);
-		unsigned int crypt_final_size = final_size - sizeof(struct rrr_socket_msg);
-		if (module_encrypt_message (
-				crypt_data,
-				buf_start,
-				&crypt_final_size,
-				buf_size
-		) != 0) {
-			ret = 1;
-			goto out;
-		}
-		final_message->network_size = crypt_final_size + sizeof(struct rrr_socket_msg);
-		final_size = crypt_final_size;
-	}
-#endif
 
 	rrr_socket_msg_checksum_and_to_network_endian (
 			(struct rrr_socket_msg *) final_message
