@@ -615,13 +615,52 @@ void __rrr_py_start_persistent_thread_ro_child (PyObject *function, struct pytho
 	}
 }
 
-static int __fork_callback(void *arg) {
+// This function must only be called with main thread state active and lock held
+static int __fork_main_tstate_callback(void *arg, PyThreadState *tstate_orig) {
 	(void)(arg);
+	PyOS_BeforeFork();
+
 	int ret = fork();
+
+	if (ret == 0) {
+		// PyOS_AfterFork_Child causes deadlock in 3.8.2. Workaround is to delete thread
+		// states prior to calling it.
+
+		if (tstate_orig != NULL) {
+			// Preserve dictionary by copying everything into main tstate dictionary
+			// XXX : The dict merging is apparently not needed
+/*			PyObject *orig_dict = PyInterpreterState_GetDict(tstate_orig->interp);
+			PyObject *main_dict = PyInterpreterState_GetDict(main_python_tstate->interp);
+
+			if (orig_dict != NULL && main_dict != NULL) {
+				if (PyDict_Merge(main_dict, orig_dict, 1) != 0) {
+					VL_MSG_ERR("Warning: Could not merge thread dictionary into main dictionary in __fork_main_tstate_callback\n");
+					PyErr_Print();
+				}
+			}*/
+
+			PyInterpreterState *istate = tstate_orig->interp;
+			if (istate != NULL) {
+				PyInterpreterState_Clear(istate);
+				PyInterpreterState_Delete(istate);
+			}
+		}
+
+		PyOS_AfterFork_Child();
+	}
+	else {
+		PyOS_AfterFork_Parent();
+	}
+
 	if (ret > 0) {
 		printf ("=== FORK PID %i ========================================================================================\n", ret);
 	}
+
 	return ret;
+}
+
+static int __fork_callback(void *arg) {
+	return rrr_py_with_global_tstate_do(__fork_main_tstate_callback, arg);
 }
 
 static pid_t __rrr_py_fork_intermediate (
@@ -634,24 +673,27 @@ static pid_t __rrr_py_fork_intermediate (
 	VL_DEBUG_MSG_1("Before fork child socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_child));
 	VL_DEBUG_MSG_1("Before fork main  socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_main));
 
-	PyOS_BeforeFork();
 	ret = rrr_socket_with_lock_do(__fork_callback, NULL);
 
-	if (ret == 0) {
-		goto child;
-	}
-	else {
-		PyOS_AfterFork_Parent();
+	if (ret != 0) {
 		if (ret < 0) {
 			VL_MSG_ERR("Could not fork python3: %s\n", strerror(errno));
 		}
 		goto out_main;
 	}
 
-	child:
-	PyOS_AfterFork_Child();
+	// Child code
 	// Close sockets from main, we don't need them in the fork
 //	rrr_python3_socket_close(fork_data->socket_main);
+
+
+	// Original thread state is cleared after the fork, but it's dictionary is
+	// before that copied into main tstate dictionary. Make sure we start using main.
+	if (PyGILState_Check()) {
+			PyEval_SaveThread();
+	}
+
+	PyEval_RestoreThread(main_python_tstate);
 
 	VL_DEBUG_MSG_1("Child %i socket is %i\n", getpid(), rrr_python3_socket_get_connected_fd(fork_data->socket_child));
 	VL_DEBUG_MSG_1("Child closing sockets of main\n");
@@ -683,6 +725,7 @@ static pid_t __rrr_py_fork_intermediate (
 
 	out_main:
 
+	// Main code
 	// Close sockets from the fork, we don't need them in main
 //	rrr_python3_socket_close(fork_data->socket_child);
 
@@ -1192,11 +1235,29 @@ void __rrr_py_finalize_decrement_users(void) {
 	__rrr_py_global_unlock(NULL);
 }
 
-int rrr_py_with_global_tstate_do(int (*callback)(void *arg), void *arg) {
+int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg) {
 	int ret = 0;
+
+	// XXX    Feel free to read through this and check if it's correct. The
+	//        goal here is that this function may be called from any context
+	//        and switch to main thread state. If another thread state was
+	//        already active, it is saved and then restored again after the work
+	//        is complete
+
+	PyThreadState *state_orig = NULL;
+
+	if (PyGILState_Check()) {
+			state_orig = PyEval_SaveThread();
+	}
+
 	PyEval_RestoreThread(main_python_tstate);
-	ret = callback(arg);
+	ret = callback(arg, state_orig);
 	PyEval_SaveThread();
+
+	if (state_orig != 0) {
+		PyEval_RestoreThread(state_orig);
+	}
+
 	return ret;
 }
 

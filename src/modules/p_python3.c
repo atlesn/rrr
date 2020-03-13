@@ -395,7 +395,9 @@ int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	return ret;
 }
 
-int thread_cancel_callback(void *arg) {
+int thread_cancel_callback(void *arg, PyThreadState *tstate_orig) {
+	(void)(tstate_orig);
+
 	struct python3_data *data = arg;
 	rrr_py_terminate_threads (&data->rrr_objects);
 	return 0;

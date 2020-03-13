@@ -324,7 +324,8 @@ int test_do_poll_loop (
 
 	// Poll from output
 	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
-		TEST_MSG("Test result polling try: %i of 200\n", i);
+		TEST_MSG("Test result polling from %s try: %i of 200\n",
+				INSTANCE_D_NAME(thread_data), i);
 
 		struct fifo_callback_args poll_data = {NULL, test_result, 0};
 		ret = poll_delete(thread_data, callback, &poll_data, 150);
@@ -334,7 +335,8 @@ int test_do_poll_loop (
 			goto out;
 		}
 
-		TEST_MSG("Result of polling: %i\n", test_result->result);
+		TEST_MSG("Result of polling from %s: %i\n",
+				INSTANCE_D_NAME(thread_data), test_result->result);
 	}
 
 	out:

@@ -107,6 +107,6 @@ int rrr_py_get_rrr_objects (
 		const char **extra_module_paths,
 		int module_paths_length
 );
-int rrr_py_with_global_tstate_do(int (*callback)(void *arg), void *arg);
+int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg);
 void rrr_py_destroy_thread_state(PyThreadState *tstate);
 PyThreadState *rrr_py_new_thread_state(void);
