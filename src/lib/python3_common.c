@@ -87,6 +87,9 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 }
 
 void rrr_py_dump_global_modules(void) {
+#if PY_VERSION_HEX >= 0x03080000
+	printf("Module dumping not possible in Python >= 3.8\n");
+#else
 	// Hack to get tstate
 	PyThreadState *tstate = PyEval_SaveThread();
 	PyEval_RestoreThread(tstate);
@@ -114,6 +117,7 @@ void rrr_py_dump_global_modules(void) {
 			RRR_Py_XDECREF(name_obj);
 		}
 	}
+#endif
 }
 
 void rrr_py_dump_dict_entries (PyObject *dict) {
