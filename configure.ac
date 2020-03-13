@@ -148,20 +148,23 @@ AS_IF([test "x$enable_python3" = xno], [
 
 	AC_DEFINE([VL_WITH_PYTHON3], [1], [Enable python3 extensions])
 
-	python3=""
+	python3_version=""
 
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for python_interpreter_test in python3.8 python3.7; do
-			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python_interpreter_test},yes)
+		for version_tmp in 3.8 3.7; do
+			python3_tmp="python$version_tmp"
+			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
-				python3=${python_interpreter_test}
+				python3_version=${version_tmp}
 				break
 			fi
 		done
 	fi
+
+	python3="python${python3_version}"
 
 	AC_MSG_CHECKING([python version >= 3.7 or forced version])
 	if test "x${python3}" = "x"; then
@@ -178,6 +181,14 @@ AS_IF([test "x$enable_python3" = xno], [
 		AC_MSG_RESULT([no])
 	fi
 
+	python3_libs_from_pkg=""
+	python3_cflags_from_pkg=""
+
+	python3_embed_pkg_path="python-$python3_version-embed"
+
+	python3_libs_from_pkg=`pkg-config $python3_embed_pkg_path --silence-errors --libs`
+	python3_cflags_from_pkg=`pkg-config $python3_embed_pkg_path --silence-errors --cflags`
+
 	AC_CHECK_PROG(PYTHON3_CONFIG,"$python3_config_bin",yes)
 	if test x"${PYTHON3_CONFIG}" = x"yes"; then
 		AC_DEFINE([VL_WITH_PYTHON3], [1], [Build with python3 support], [])
@@ -185,9 +196,17 @@ AS_IF([test "x$enable_python3" = xno], [
 		AC_MSG_ERROR("Could not find python3-config for ${python3}")
 	fi
 
-	PYTHON3_CFLAGS="`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'` ${AM_CFLAGS}"
+	PYTHON3_CFLAGS=`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'`
+	PYTHON3_CFLAGS="${python3_cflags_from_pkg} ${AM_CFLAGS} ${PYTHON3_CFLAGS}"
+
+	PYTHON3_LDFLAGS=`$python3_config_bin --ldflags`
+	PYTHON3_LDFLAGS="${PYTHON3_LDFLAGS} $python3_libs_from_pkg"
+
+	echo "Python3 CFLAGS: $PYTHON3_CFLAGS"
+	echo "Python3 LDFLAGS: $PYTHON3_LDFLAGS"
+
 	AC_SUBST([PYTHON3_CFLAGS])
-	AC_SUBST([PYTHON3_LDFLAGS], `$python3_config_bin --ldflags`)
+	AC_SUBST([PYTHON3_LDFLAGS])
 
 	chmod +x test_python3.sh
 	./test_python3.sh "$python3_config_bin"
