@@ -451,7 +451,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	strcpy(addr.sun_path, filename);
 	addr.sun_family = AF_UNIX;
 
-	fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET | (nonblock != 0 ? O_NONBLOCK : 0), 0, creator, filename);
+	fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET | (nonblock != 0 ? SOCK_NONBLOCK : 0), 0, creator, filename);
 	if (fd < 0) {
 		VL_MSG_ERR("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
