@@ -26,13 +26,11 @@ AM_SILENT_RULES([yes])
 echo "#define RRR_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
 
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
-AC_SUBST(AM_CFLAGS)
-
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
-AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
+AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
+# AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB bindings])],[enable_usb=no],[enable_usb=yes])
@@ -49,6 +47,19 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_DEFINE([RRR_WITH_GNU_DEBUG], [1], [Enable RRR GNU Debug (compat functions always enabled)])
 	AC_MSG_RESULT([yes])
 ])
+
+CFLAGS_CODECOV=""
+AC_MSG_CHECKING([for code coverage compilation])
+AS_IF([test "x$enable_codecov" = xyes], [
+	CFLAGS_CODECOV="-ftest-coverage -fprofile-arcs"
+	AC_MSG_RESULT([$CFLAGS_CODECOV])
+], [
+	AC_MSG_RESULT([no])
+])
+AC_SUBST([CFLAGS_CODECOV])
+
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AC_SUBST(AM_CFLAGS)
 
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])

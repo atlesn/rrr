@@ -14,5 +14,6 @@ test_SOURCES = test.c ../global.c ../main.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
-	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\""
+	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
+	-fprofile-arcs -ftest-coverage
 TESTS = test
