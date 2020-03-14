@@ -56,7 +56,7 @@ int rrr_mqtt_session_properties_clone (
 	ret |= rrr_mqtt_property_clone(&target->auth_data, source->auth_data);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Could not clone properties in rrr_mqtt_session_properties_clone\n");
+		RRR_MSG_ERR("Could not clone properties in rrr_mqtt_session_properties_clone\n");
 		goto out_destroy;
 	}
 

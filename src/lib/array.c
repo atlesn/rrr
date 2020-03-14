@@ -71,25 +71,25 @@ static int __rrr_array_parse_identifier_and_size (
 
 	type = rrr_type_parse_from_string(&parsed_bytes, start, end);
 	if (type == NULL) {
-		VL_MSG_ERR("Unknown type identifier in type definition here --> '%s'\n", start);
+		RRR_MSG_ERR("Unknown type identifier in type definition here --> '%s'\n", start);
 		goto out_err;
 	}
 	start += parsed_bytes;
 
 	if (type->max_length > 0) {
 		if (start >= end || *start == '\0') {
-			VL_MSG_ERR("Missing size for type '%s' in type definition\n", type->identifier);
+			RRR_MSG_ERR("Missing size for type '%s' in type definition\n", type->identifier);
 			goto out_err;
 		}
 
 		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &length, start) != 0) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' was not a valid number\n",
+			RRR_MSG_ERR("Size argument '%s' in type definition '%s' was not a valid number\n",
 					start, type->identifier);
 			goto out_err;
 		}
 
 		if (length > 0xffffffff) {
-			VL_MSG_ERR("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
+			RRR_MSG_ERR("Size argument '%s' in type definition '%s' was too long, max is 0xffffffff\n",
 					start, type->identifier);
 			goto out_err;
 		}
@@ -98,7 +98,7 @@ static int __rrr_array_parse_identifier_and_size (
 		start = integer_end;
 
 		if (length <= 0) {
-			VL_MSG_ERR("Size argument '%lli' in type definition '%s' must be >0\n",
+			RRR_MSG_ERR("Size argument '%lli' in type definition '%s' must be >0\n",
 					length, type->identifier);
 			goto out_err;
 		}
@@ -109,7 +109,7 @@ static int __rrr_array_parse_identifier_and_size (
 
 		if (*start == 's' || *start == 'S' || *start == 'u' || *start == 'U') {
 			if (!RRR_TYPE_ALLOWS_SIGN(type->type)) {
-				VL_MSG_ERR("Sign indicator '%c' found in type definition for type '%s' which does not support being signed\n",
+				RRR_MSG_ERR("Sign indicator '%c' found in type definition for type '%s' which does not support being signed\n",
 						*start, type->identifier);
 				goto out_err;
 			}
@@ -127,7 +127,7 @@ static int __rrr_array_parse_identifier_and_size (
 	}
 	else {
 		if (*start != '\0' && *start != '#' && *start != '@') {
-			VL_MSG_ERR("Extra data or size argument after type definition '%s' which has automatic size\n",
+			RRR_MSG_ERR("Extra data or size argument after type definition '%s' which has automatic size\n",
 					type->identifier);
 			goto out_err;
 		}
@@ -142,12 +142,12 @@ static int __rrr_array_parse_identifier_and_size (
 		parsed_bytes++;
 
 		if (start >= end || *start == '\0') {
-			VL_MSG_ERR("Item count missing after item count definition @ in type %s\n", type->identifier);
+			RRR_MSG_ERR("Item count missing after item count definition @ in type %s\n", type->identifier);
 			goto out_err;
 		}
 
 		if (__rrr_array_convert_unsigned_integer_10(&integer_end, &item_count, start) != 0) {
-			VL_MSG_ERR("Item count argument '%s' in type definition '%s' was not a valid number\n",
+			RRR_MSG_ERR("Item count argument '%s' in type definition '%s' was not a valid number\n",
 					start, type->identifier);
 			goto out_err;
 		}
@@ -156,17 +156,17 @@ static int __rrr_array_parse_identifier_and_size (
 		start = integer_end;
 
 		if (item_count == 0) {
-			VL_MSG_ERR("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
+			RRR_MSG_ERR("Item count definition @ was zero after type '%s', must be in the range 1-65535\n",
 					type->identifier);
 			goto out_err;
 		}
 		if (item_count > 0xffffffff) {
-			VL_MSG_ERR("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
+			RRR_MSG_ERR("Item count definition @ was too big after type '%s', must be in the range 1-65535\n",
 					type->identifier);
 			goto out_err;
 		}
 		if (item_count > 1 && type->max_length == 0 && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG) {
-			VL_MSG_ERR("Item count definition @ found after type '%s' which cannot have multiple values\n",
+			RRR_MSG_ERR("Item count definition @ found after type '%s' which cannot have multiple values\n",
 					type->identifier);
 			goto out_err;
 		}
@@ -208,7 +208,7 @@ int rrr_array_parse_single_definition (
 			start,
 			end
 	)) != 0) {
-		VL_MSG_ERR("Error while parsing type identifier and size\n");
+		RRR_MSG_ERR("Error while parsing type identifier and size\n");
 		goto out;
 	}
 
@@ -224,20 +224,20 @@ int rrr_array_parse_single_definition (
 		}
 
 		if (tag_length == 0) {
-			VL_MSG_ERR("Missing tag name after #\n");
+			RRR_MSG_ERR("Missing tag name after #\n");
 			ret = 1;
 			goto out;
 		}
 	}
 
 	if (*start != '\0') {
-		VL_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
+		RRR_MSG_ERR("Extra data after type definition here --> '%s'\n", start);
 		ret = 1;
 		goto out;
 	}
 
 	if (length > type->max_length) {
-		VL_MSG_ERR("Size argument in type definition '%s' is too large, max is '%u'\n",
+		RRR_MSG_ERR("Size argument in type definition '%s' is too large, max is '%u'\n",
 				type->identifier, type->max_length);
 		ret = 1;
 		goto out;
@@ -255,7 +255,7 @@ int rrr_array_parse_single_definition (
 			item_count,
 			0
 	) != 0) {
-		VL_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
+		RRR_MSG_ERR("Could not create value in rrr_array_parse_definition\n");
 		ret = 1;
 		goto out;
 	}
@@ -294,7 +294,7 @@ int rrr_array_validate_definition (
 		node->definition->type != RRR_TYPE_MSG &&
 		node->definition->type != RRR_TYPE_STR
 	) {
-		VL_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
+		RRR_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
 				node->definition->identifier);
 		ret = 1;
 	}
@@ -306,7 +306,7 @@ int rrr_array_validate_definition (
 				node->definition->max_length == 0 &&
 				node->definition->type != RRR_TYPE_STR
 			) {
-				VL_MSG_ERR("Type %s cannot be followed type %s in array definition as we cannot know where the first ends, use a separator in between\n",
+				RRR_MSG_ERR("Type %s cannot be followed type %s in array definition as we cannot know where the first ends, use a separator in between\n",
 						prev->definition->identifier, node->definition->identifier);
 				ret = 1;
 			}
@@ -330,33 +330,33 @@ int rrr_array_parse_data_from_definition (
 	const char *end = data + length;
 
 	if (length == 0) {
-		VL_BUG("BUG: Length was 0 in rrr_array_parse_data_from_definition\n");
+		RRR_BUG("BUG: Length was 0 in rrr_array_parse_data_from_definition\n");
 	}
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("rrr_types_parse_data input: 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("rrr_types_parse_data input: 0x");
 		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(target,struct rrr_type_value);
-		VL_DEBUG_MSG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->element_count);
+		RRR_DBG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->element_count);
 
 		if (node->definition->import == NULL) {
-			VL_BUG("BUG: No convert function found for type %d\n", node->definition->type);
+			RRR_BUG("BUG: No convert function found for type %d\n", node->definition->type);
 		}
 
 		ssize_t parsed_bytes = 0;
 
 		if (node->data != NULL) {
-			VL_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
+			RRR_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
 		}
 
 		if ((ret = node->definition->import(node, &parsed_bytes, pos, end)) != 0) {
@@ -364,17 +364,17 @@ int rrr_array_parse_data_from_definition (
 				goto out;
 			}
 			else if (ret == RRR_TYPE_PARSE_SOFT_ERR) {
-				VL_MSG_ERR("Invalid data in type conversion\n");
+				RRR_MSG_ERR("Invalid data in type conversion\n");
 			}
 			else {
-				VL_MSG_ERR("Hard error while importing data in rrr_array_parse_data_from_definition, return was %i\n", ret);
+				RRR_MSG_ERR("Hard error while importing data in rrr_array_parse_data_from_definition, return was %i\n", ret);
 				ret = RRR_TYPE_PARSE_HARD_ERR;
 			}
 			goto out;
 		}
 
 		if (parsed_bytes == 0) {
-			VL_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
+			RRR_BUG("Parsed bytes was zero in rrr_array_parse_data_from_definition\n");
 		}
 
 		pos += parsed_bytes;
@@ -396,7 +396,7 @@ int rrr_array_definition_collection_clone (
 	RRR_LL_ITERATE_BEGIN(source, const struct rrr_type_value);
 		struct rrr_type_value *template = malloc(sizeof(*template));
 		if (template == NULL) {
-			VL_MSG_ERR("Could not allocate memory in rrr_array_definition_collection_clone\n");
+			RRR_MSG_ERR("Could not allocate memory in rrr_array_definition_collection_clone\n");
 			goto out_err;
 		}
 		memcpy(template, node, sizeof(*template));
@@ -406,13 +406,13 @@ int rrr_array_definition_collection_clone (
 		if (template->tag_length > 0) {
 			template->tag = malloc(template->tag_length);
 			if (template->tag == NULL) {
-				VL_MSG_ERR("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
+				RRR_MSG_ERR("Could not allocate memory for tag in rrr_array_definition_collection_clone\n");
 				goto out_err;
 			}
 			memcpy(template->tag, node->tag, template->tag_length);
 		}
 		else if (template->tag != NULL) {
-			VL_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
+			RRR_BUG("tag was not NULL but tag length was >0 in rrr_array_definition_collection_clone\n");
 		}
 
 		RRR_LL_APPEND(target,template);
@@ -514,7 +514,7 @@ static ssize_t __rrr_array_get_packed_length (
 }
 
 int rrr_array_new_message_from_buffer (
-		struct vl_message **target,
+		struct rrr_message **target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -522,22 +522,22 @@ int rrr_array_new_message_from_buffer (
 		ssize_t topic_length,
 		const struct rrr_array *definition
 ) {
-	struct vl_message *message = NULL;
+	struct rrr_message *message = NULL;
 	struct rrr_array definitions;
 	int ret = 0;
 
 	if (rrr_array_validate_definition(definition) != 0) {
-		VL_BUG("Definition was not valid in rrr_array_definition_collection_clone\n");
+		RRR_BUG("Definition was not valid in rrr_array_definition_collection_clone\n");
 	}
 
 	if (rrr_array_definition_collection_clone(&definitions, definition) != 0) {
-		VL_MSG_ERR("Could not clone definitions in rrr_array_new_message_from_buffer\n");
+		RRR_MSG_ERR("Could not clone definitions in rrr_array_new_message_from_buffer\n");
 		return RRR_ARRAY_PARSE_HARD_ERR;
 	}
 
 	if ((ret = rrr_array_parse_data_from_definition(&definitions, parsed_bytes, buf, buf_len)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			VL_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
+			RRR_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
 			ret = RRR_ARRAY_PARSE_SOFT_ERR;
 		}
 		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
@@ -552,11 +552,11 @@ int rrr_array_new_message_from_buffer (
 	if ((ret = rrr_array_new_message_from_collection(
 			&message,
 			&definitions,
-			time_get_64(),
+			rrr_time_get_64(),
 			topic,
 			topic_length
 	)) != 0) {
-		VL_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
+		RRR_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
 		return RRR_ARRAY_PARSE_HARD_ERR;
 		goto out_destroy;
 	}
@@ -577,13 +577,13 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const char *topic,
 		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct vl_message *message, void *arg),
+		int (*callback)(struct rrr_message *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	ssize_t parsed_bytes = 0;
-	struct vl_message *message = NULL;
+	struct rrr_message *message = NULL;
 	if ((ret = rrr_array_new_message_from_buffer(
 			&message,
 			&parsed_bytes,
@@ -617,10 +617,10 @@ static int __rrr_array_collection_to_raw (
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		if (node->data == NULL) {
-			VL_BUG("Data not set for node in rrr_array_new_message\n");
+			RRR_BUG("Data not set for node in rrr_array_new_message\n");
 		}
 		if (pos > max) {
-			VL_BUG("pos was > max in __rrr_array_collection_to_raw\n");
+			RRR_BUG("pos was > max in __rrr_array_collection_to_raw\n");
 		}
 
 		if (tags != NULL) {
@@ -643,7 +643,7 @@ static int __rrr_array_collection_to_raw (
 		uint8_t type = node->definition->type;
 
 		if (node->definition->pack == NULL) {
-			VL_BUG("No pack function defined for type %u\n", type);
+			RRR_BUG("No pack function defined for type %u\n", type);
 		}
 
 		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
@@ -669,7 +669,7 @@ static int __rrr_array_collection_to_raw (
 		ssize_t written_bytes = 0;
 
 		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
-			VL_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
+			RRR_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
 			ret = 1;
 			goto out;
 		}
@@ -681,7 +681,7 @@ static int __rrr_array_collection_to_raw (
 		}
 
 		if (written_bytes != node->total_stored_length) {
-			VL_BUG("Size mismatch in rrr_array_new_message\n");
+			RRR_BUG("Size mismatch in rrr_array_new_message\n");
 		}
 
 		pos += written_bytes;
@@ -710,7 +710,7 @@ int rrr_array_selected_tags_to_raw (
 
 	char *result = malloc(total_data_length);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_array_selected_tags_to_raw\n");
 		ret = 1;
 		goto out;
 	}
@@ -723,7 +723,7 @@ int rrr_array_selected_tags_to_raw (
 			tags,
 			1
 	)) != 0) {
-		VL_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw\n");
+		RRR_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw\n");
 		goto out;
 	}
 
@@ -736,7 +736,7 @@ int rrr_array_selected_tags_to_raw (
 }
 
 int rrr_array_new_message_from_collection (
-		struct vl_message **final_message,
+		struct rrr_message **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
@@ -748,9 +748,9 @@ int rrr_array_new_message_from_collection (
 
 	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	struct vl_message *message = message_new_array(time, topic_length, total_data_length);
+	struct rrr_message *message = rrr_message_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
-		VL_MSG_ERR("Could not create message for data collection\n");
+		RRR_MSG_ERR("Could not create message for data collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -772,28 +772,28 @@ int rrr_array_new_message_from_collection (
 			NULL,
 			0
 	)) != 0) {
-		VL_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection\n");
+		RRR_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection\n");
 		goto out;
 	}
 
 	if (written_bytes_total != total_data_length) {
-		VL_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
+		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
 				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("rrr_array_new_message output (data of message only): 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(message); i++) {
 			char c = MSG_DATA_PTR(message)[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
-	*final_message = (struct vl_message *) message;
+	*final_message = (struct rrr_message *) message;
 	message = NULL;
 
 	out:
@@ -803,20 +803,20 @@ int rrr_array_new_message_from_collection (
 
 int rrr_array_message_to_collection (
 		struct rrr_array *target,
-		const struct vl_message *message_orig
+		const struct rrr_message *message_orig
 ) {
 	memset(target, '\0', sizeof(*target));
 
 	if (message_orig->class != MSG_CLASS_ARRAY) {
-		VL_BUG("Message was not array in rrr_array_message_to_collection\n");
+		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");
 	}
 
-	const struct vl_message *array = (struct vl_message *) message_orig;
+	const struct rrr_message *array = (struct rrr_message *) message_orig;
 
 	// Modules should also check for array version to make sure they support any recent changes.
 	uint16_t version = array->version;
 	if (version != RRR_ARRAY_VERSION) {
-		VL_MSG_ERR("Array message version mismatch in rrr_array_message_to_collection. Need V%i but got V%u.\n",
+		RRR_MSG_ERR("Array message version mismatch in rrr_array_message_to_collection. Need V%i but got V%u.\n",
 				RRR_ARRAY_VERSION, array->version);
 		goto out_free_data;
 	}
@@ -825,16 +825,16 @@ int rrr_array_message_to_collection (
 	const char *pos = MSG_DATA_PTR(array);
 	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("rrr_array_message_to_collection input (data of message only): 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("rrr_array_message_to_collection input (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(array); i++) {
 			char c = MSG_DATA_PTR(array)[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
 	int i = 0;
@@ -843,7 +843,7 @@ int rrr_array_message_to_collection (
 		pos += sizeof(struct rrr_array_value_packed) - 1;
 
 		if (pos > end) {
-			VL_MSG_ERR("Data type with index %i was too short in array\n", i);
+			RRR_MSG_ERR("Data type with index %i was too short in array\n", i);
 			goto out_free_data;
 		}
 
@@ -854,19 +854,19 @@ int rrr_array_message_to_collection (
 		rrr_type_length elements = be32toh(data_packed->elements);
 
 		if (pos + tag_length + total_length > end) {
-			VL_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
+			RRR_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",
 					type, i, total_length, end - pos);
 			goto out_free_data;
 		}
 
 		const struct rrr_type_definition *def = rrr_type_get_from_id(type);
 		if (def == NULL) {
-			VL_MSG_ERR("Unknown type %u in type index %i of array message\n", type, i);
+			RRR_MSG_ERR("Unknown type %u in type index %i of array message\n", type, i);
 			goto out_free_data;
 		}
 
 		if (def->unpack == NULL) {
-			VL_MSG_ERR("Illegal type in array message %u/%s\n",
+			RRR_MSG_ERR("Illegal type in array message %u/%s\n",
 					def->type, def->identifier);
 			goto out_free_data;
 		}
@@ -882,7 +882,7 @@ int rrr_array_message_to_collection (
 				elements,
 				total_length
 		) != 0) {
-			VL_MSG_ERR("Could not allocate value in rrr_array_message_to_collection\n");
+			RRR_MSG_ERR("Could not allocate value in rrr_array_message_to_collection\n");
 			goto out_free_data;
 		}
 		RRR_LL_APPEND(target,template);
@@ -892,7 +892,7 @@ int rrr_array_message_to_collection (
 		memcpy (template->data, pos, total_length);
 
 		if (template->definition->unpack(template) != 0) {
-			VL_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
+			RRR_MSG_ERR("Error while converting endianess for type %u index %i of array message\n", type, i);
 			goto out_free_data;
 		}
 

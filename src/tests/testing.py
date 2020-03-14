@@ -28,7 +28,7 @@ def source(socket: rrr_socket):
 
 	return True
 
-def process(socket: rrr_socket, message: vl_message):
+def process(socket: rrr_socket, message: rrr_message):
 	global persistent_setting_a
 	global persistent_setting_b
 

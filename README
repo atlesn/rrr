@@ -183,7 +183,7 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
        from rrr_helper import *
        import time
 
-       def process(socket : rrr_socket, message: vl_message):
+       def process(socket : rrr_socket, message: rrr_message):
             # modify the retrieved message as needed
             message.timestamp_from = message.timestamp_from + 1
             # queue the message to be sent back (optional) for python to give to readers
@@ -193,7 +193,7 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
        def source(socket : rrr_socket):
             # create a new message
-            message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+            message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
             # queue the message to be sent back (optional) for python to give to readers
             if not socket.send(message):
 	         return False
@@ -384,8 +384,8 @@ about which types the return:
 	struct module_operations {
         	void *(*thread_entry)(...) // Main function for starting the thread
         	int (*poll)(...)           // Return messages without deleting them from the buffer
-        	int (*poll_delete)(...)    // Return vl_message structs 
-        	int (*poll_delete_ip)(...) // Return ip_buffer_entry structs (same as vl_message but with IP information at the end)
+        	int (*poll_delete)(...)    // Return rrr_message structs 
+        	int (*poll_delete_ip)(...) // Return ip_buffer_entry structs (same as rrr_message but with IP information at the end)
 	};
 
 If you specify `_delete`-functions, you should remove entries from the buffer after passing them on (but not free the actual data pointer). 
@@ -412,9 +412,9 @@ functions in other modules which are not ready when we start the program.
 
 Threads which create forks should be started prior to network modules. Module priorities are:
 
-0. `VL_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
-1. `VL_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
-2. `VL_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
+0. `RRR_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
+1. `RRR_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
+2. `RRR_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
 
 The basic state flow of a module/thread is like this (see `threads.h` for internal names):
 
@@ -435,12 +435,12 @@ If one or more threads exit, all threads are stopped and restarted automatically
 
 ### Thread data
 
-When a thread/instance starts with the specified entry function, it receives a `vl_thread_start_data` struct. It contains a pointer to the
+When a thread/instance starts with the specified entry function, it receives a `rrr_thread_start_data` struct. It contains a pointer to the
 command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 
 thread to `instance_thread_data` struct. 
 
 There is a slot of 8kB freely available in `instance_thread_data` for a thread to use which does not have to be de-allocated on exit,
-it is called `char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
+it is called `char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
 address.
 
 If your module uses locks and buffers, these should be placed in this memory. DO NOT destroy locks when exiting the module if they are used

@@ -79,19 +79,19 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Server name
 	const char *server = cmd_get_value(cmd, "server", 0);
 	if (cmd_get_value (cmd, "server", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one server argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one server argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (server == NULL) {
-		VL_MSG_ERR("No server specified\n");
+		RRR_MSG_ERR("No server specified\n");
 		ret = 1;
 		goto out;
 	}
 
 	data->server= strdup(server);
 	if (data->server == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -99,7 +99,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Endpoint
 	const char *endpoint = cmd_get_value(cmd, "endpoint", 0);
 	if (cmd_get_value (cmd, "endpoint", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one endpoint argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one endpoint argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
@@ -109,7 +109,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 
 	data->endpoint = strdup(endpoint);
 	if (data->endpoint == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -117,14 +117,14 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Query
 	const char *query = cmd_get_value(cmd, "query", 0);
 	if (cmd_get_value (cmd, "query", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one query argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one query argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (query != NULL) {
 		data->query = strdup(query);
 		if (data->query == NULL) {
-			VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -134,19 +134,19 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 80;
 	if (cmd_get_value (cmd, "count", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one 'count' argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one 'count' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			VL_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
+			RRR_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
 	}
 	if (port_tmp < 1 || port_tmp > 65535) {
-		VL_MSG_ERR("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		RRR_MSG_ERR("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
 		ret = 1;
 		goto out;
 	}
@@ -166,7 +166,7 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 	int ret = 0;
 
 	if (part->response_code < 200 || part->response_code > 299) {
-		VL_MSG_ERR("Error while fetching HTTP: %i %s\n",
+		RRR_MSG_ERR("Error while fetching HTTP: %i %s\n",
 				part->response_code, part->response_str);
 		ret = 1;
 		goto out;
@@ -175,7 +175,7 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 	if (part->data_ptr != 0 && part->data_length > 0) {
 		int bytes = write (STDOUT_FILENO, part->data_ptr, part->data_length);
 		if (bytes != part->data_length) {
-			VL_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
+			RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
 			ret = 1;
 			goto out;
 		}
@@ -203,12 +203,12 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 			"/?e=f",
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
-		VL_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
 	if ((ret = rrr_http_session_connect(data->session)) != 0) {
-		VL_MSG_ERR("Could not connect to server in __rrr_http_client_send_request\n");
+		RRR_MSG_ERR("Could not connect to server in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -217,7 +217,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
 
 	if ((ret = rrr_http_session_send_request(data->session)) != 0) {
-		VL_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
+		RRR_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -226,8 +226,8 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 }
 
 int main (int argc, const char *argv[]) {
-	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
-		VL_MSG_ERR("Library build version mismatch.\n");
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 

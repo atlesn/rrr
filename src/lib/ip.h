@@ -25,18 +25,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#define VL_IP_DEFAULT_PORT 5555
+#define RRR_IP_DEFAULT_PORT 5555
 
-#define VL_IP_RECEIVE_OK 0
-#define VL_IP_RECEIVE_ERR 1
-#define VL_IP_RECEIVE_STOP 2
+#define RRR_IP_RECEIVE_OK 0
+#define RRR_IP_RECEIVE_ERR 1
+#define RRR_IP_RECEIVE_STOP 2
 
-#define VL_IP_RECEIVE_MAX_STEP_SIZE 8096
+#define RRR_IP_RECEIVE_MAX_STEP_SIZE 8096
 
 // Print/reset stats every X seconds
-#define VL_IP_STATS_DEFAULT_PERIOD 3
+#define RRR_IP_STATS_DEFAULT_PERIOD 3
 
-struct vl_message;
+struct rrr_message;
 struct rrr_array;
 struct rrr_socket_read_session_collection;
 struct rrr_socket_read_session;
@@ -56,7 +56,7 @@ struct ip_stats_twoway {
 	struct ip_stats receive;
 };
 
-struct ip_buffer_entry {
+struct rrr_ip_buffer_entry {
 	ssize_t data_length;
 	struct sockaddr addr;
 	socklen_t addr_len;
@@ -64,110 +64,111 @@ struct ip_buffer_entry {
 	void *message;
 };
 
-struct ip_send_packet_info {
+struct rrr_ip_send_packet_info {
 	void *data;
 	int fd;
 	struct addrinfo *res;
 	int packet_counter;
 };
 
-struct ip_data {
+struct rrr_ip_data {
 	int fd;
 	unsigned int port;
 };
 
-struct ip_accept_data {
+struct rrr_ip_accept_data {
 	struct sockaddr addr;
 	socklen_t len;
-	struct ip_data ip_data;
+	struct rrr_ip_data ip_data;
 };
 
-#define VL_IP_STATS_UPDATE_OK 0		// Stats was updated
-#define VL_IP_STATS_UPDATE_ERR 1	// Error
-#define VL_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
+#define RRR_IP_STATS_UPDATE_OK 0		// Stats was updated
+#define RRR_IP_STATS_UPDATE_ERR 1	// Error
+#define RRR_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
-void ip_buffer_entry_destroy (
-		struct ip_buffer_entry *entry
+void rrr_ip_buffer_entry_destroy (
+		struct rrr_ip_buffer_entry *entry
 );
-void ip_buffer_entry_destroy_void (
+void rrr_ip_buffer_entry_destroy_void (
 		void *entry
 );
-void ip_buffer_entry_set_message (
-		struct ip_buffer_entry *entry,
+void rrr_ip_buffer_entry_set_message (
+		struct rrr_ip_buffer_entry *entry,
 		void *message,
 		ssize_t data_length
 );
-int ip_buffer_entry_new (
-		struct ip_buffer_entry **result,
+int rrr_ip_buffer_entry_new (
+		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
 		void *message
 );
-int ip_buffer_entry_new_with_empty_message (
-		struct ip_buffer_entry **result,
+int rrr_ip_buffer_entry_new_with_empty_message (
+		struct rrr_ip_buffer_entry **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 );
-int ip_buffer_entry_clone (
-		struct ip_buffer_entry **result,
-		const struct ip_buffer_entry *source
+int rrr_ip_buffer_entry_clone (
+		struct rrr_ip_buffer_entry **result,
+		const struct rrr_ip_buffer_entry *source
 );
-int ip_stats_init (
+int rrr_ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
-int ip_stats_init_twoway (
+int rrr_ip_stats_init_twoway (
 		struct ip_stats_twoway *stats, unsigned int period, const char *name
 );
-int ip_stats_update (
+int rrr_ip_stats_update (
 		struct ip_stats *stats, unsigned long int packets, unsigned long int bytes
 );
-int ip_stats_print_reset (
+int rrr_ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
-int ip_receive_socket_msg (
+int rrr_ip_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_receive_array (
+int rrr_ip_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_receive_vl_message (
+int rrr_ip_receive_rrr_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int ip_send_raw (
+int rrr_ip_send_raw (
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
 	void *data,
 	ssize_t data_size
 );
-int ip_send_message (
-		const struct vl_message* message,
-		struct ip_send_packet_info* info,
+int rrr_ip_send_message (
+		const struct rrr_message* message,
+		struct rrr_ip_send_packet_info* info,
 		struct ip_stats *stats
 );
-void ip_network_cleanup (void *arg);
-int ip_network_start_udp_ipv4 (struct ip_data *data);
-int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, unsigned int port, const char *host);
-int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections);
-int ip_close (struct ip_data *data);
-int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator, int tcp_nodelay);
+void rrr_ip_network_cleanup (void *arg);
+int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data);
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host);
+int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections);
+int rrr_ip_close (struct rrr_ip_data *data);
+int rrr_ip_accept(struct rrr_ip_accept_data **accept_data,
+		struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay);
 
 #endif

@@ -302,7 +302,7 @@ struct rrr_udpstream_stream_collection {
 // Before freeing it, the clear function must be called. Before using, the init
 // function must be called.
 struct rrr_udpstream {
-	struct ip_data ip;
+	struct rrr_ip_data ip;
 	int flags;
 
 	struct rrr_udpstream_stream_collection streams;

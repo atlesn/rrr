@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		(head->ptr_last != NULL && head->ptr_first == NULL) ||		\
 		(head->ptr_first == NULL && head->node_count != 0)			\
 	) {																\
-		VL_BUG("Bug: Linked list head integrity error");			\
+		RRR_BUG("Bug: Linked list head integrity error");			\
 	}} while(0)
 
 #define RRR_LL_VERIFY_NODE(head)										\
@@ -56,7 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 					(node->ptr_next == NULL || node->ptr_prev == NULL)	\
 				)														\
 		) {																\
-			VL_BUG("Bug: Linked list node integrity error");			\
+			RRR_BUG("Bug: Linked list node integrity error");			\
 		}																\
 	} while(0)
 
@@ -74,7 +74,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_REPLACE_NODE(target, source, type, replace_func)	\
 	do {																	\
 	if (source->ptr_next != NULL)											\
-		VL_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
+		RRR_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
 	type *next_preserve = target->ptr_next;									\
 	type *prev_preserve = target->ptr_prev;									\
 	replace_func;															\
@@ -216,7 +216,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			break;																				\
 		}																						\
 		if (linked_list_iterate_destroy != 0) {													\
-			VL_BUG("RRR_LL_SET_DESTROY was used without destroy "								\
+			RRR_BUG("RRR_LL_SET_DESTROY was used without destroy "								\
 					"function, must use RRR_LL_ITERATE_END_CHECK_DESTROY instead\n");			\
 		}																						\
 		if (linked_list_reverse) {																\

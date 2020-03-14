@@ -74,17 +74,17 @@ void rrr_perl5_program_exit_sys_term (void *arg) {
 	(void)(arg);
 
 	if (perl5_initialized != 1) {
-		VL_BUG("perl5_initialized was not 1 in rrr_perl5_program_exit_sys_term\n");
+		RRR_BUG("perl5_initialized was not 1 in rrr_perl5_program_exit_sys_term\n");
 	}
 
 	if (perl5_users == 0) {
-		VL_DEBUG_MSG_1("Perl5 cleaning up at program exit with PERL_SYS_TERM\n");
+		RRR_DBG_1("Perl5 cleaning up at program exit with PERL_SYS_TERM\n");
 		PERL_SYS_TERM();
 		perl5_initialized = 0;
 	}
 	else {
 		// This might happen if a perl5 thread is ghost
-		VL_MSG_ERR("Warning: perl5 users was not 0 at program exit in rrr_perl5_program_exit_sys_term\n");
+		RRR_MSG_ERR("Warning: perl5 users was not 0 at program exit in rrr_perl5_program_exit_sys_term\n");
 	}
 
 	__rrr_perl5_init_unlock();
@@ -108,7 +108,7 @@ int rrr_perl5_sys_term(void) {
 	__rrr_perl5_init_lock();
 
 	if (--perl5_users == 0) {
-		VL_DEBUG_MSG_1("Last perl5 user done\n");
+		RRR_DBG_1("Last perl5 user done\n");
 	}
 
 	__rrr_perl5_init_unlock();
@@ -122,7 +122,7 @@ static PerlInterpreter *__rrr_perl5_construct(void) {
 
 	ret = perl_alloc();
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate perl5 interpreter in rrr_perl5_construct\n");
+		RRR_MSG_ERR("Could not allocate perl5 interpreter in rrr_perl5_construct\n");
 		goto out_unlock;
 	}
 
@@ -173,7 +173,7 @@ static void __rrr_perl5_remove_ctx (struct rrr_perl5_ctx *ctx) {
 		test = test->next;
 	}
 
-	VL_BUG("Context not found in __rrr_perl5_remove_ctx\n");
+	RRR_BUG("Context not found in __rrr_perl5_remove_ctx\n");
 
 	out:
 	__rrr_perl5_ctx_unlock();
@@ -193,7 +193,7 @@ static struct rrr_perl5_ctx *__rrr_perl5_find_ctx (const PerlInterpreter *interp
 		test = test->next;
 	}
 
-	VL_BUG("Context not found in __rrr_perl5_find_ctx\n");
+	RRR_BUG("Context not found in __rrr_perl5_find_ctx\n");
 
 	out:
 	__rrr_perl5_ctx_unlock();
@@ -212,7 +212,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct vl_message *message, void *private_data),
+		int (*send_message) (struct rrr_message *message, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 ) {
@@ -221,7 +221,7 @@ int rrr_perl5_new_ctx (
 
 	ctx = malloc(sizeof(*ctx));
 	if (ctx == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_perl5_new_ctx\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_perl5_new_ctx\n");
 		ret = 1;
 		goto out;
 	}
@@ -229,7 +229,7 @@ int rrr_perl5_new_ctx (
 
 	ctx->interpreter = __rrr_perl5_construct();
 	if (ctx->interpreter == NULL) {
-		VL_MSG_ERR("Could not create perl5 interpreter in rrr_perl5_new_ctx\n");
+		RRR_MSG_ERR("Could not create perl5 interpreter in rrr_perl5_new_ctx\n");
 		ret = 1;
 		goto out;
 	}
@@ -265,7 +265,7 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	// Test-open file
 	int fd = open(filename, O_RDONLY);
 	if (fd < 1) {
-		VL_MSG_ERR("Could not open perl5 file %s: %s\n",
+		RRR_MSG_ERR("Could not open perl5 file %s: %s\n",
 				filename, strerror(errno));
 		ret = 1;
 		goto out;
@@ -283,7 +283,7 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	};
 
 	if (perl_parse(ctx->interpreter, __rrr_perl5_xs_init, 6, args, (char**) NULL) != 0) {
-		VL_MSG_ERR("Could not parse perl5 file %s\n", filename);
+		RRR_MSG_ERR("Could not parse perl5 file %s\n", filename);
 		ret = 1;
 		goto out;
 	}
@@ -308,17 +308,17 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 
     HV *stash = gv_stashpv(class, GV_ADD);
     if (stash == NULL) {
-    	VL_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
+    	RRR_BUG("No stash HV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
     SV *ref = newRV_inc((SV*) hv);
     if (ref == NULL) {
-    	VL_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
+    	RRR_BUG("No ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
     SV *blessed_ref = sv_bless(ref, stash);
     if (blessed_ref == NULL) {
-    	VL_BUG("No blessed ref SV returned in rrr_perl5_call_blessed_hvref\n");
+    	RRR_BUG("No blessed ref SV returned in rrr_perl5_call_blessed_hvref\n");
     }
 
 //    printf ("A: Blessed a reference, package is %s\n", HvNAME(stash));
@@ -339,7 +339,7 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	err_tmp = ERRSV;
 
 	if ((SvTRUE(err_tmp))) {
-		VL_MSG_ERR("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
+		RRR_MSG_ERR("Error while calling perl5 function: %s\n", SvPV_nolen(err_tmp));
 		ret_tmp = POPs;
 		ret = 1;
 	}
@@ -347,12 +347,12 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 		// Perl subs should return 1 on success
 		ret_tmp = POPs;
 		if (!(SvTRUE(ret_tmp))) {
-			VL_MSG_ERR("perl5 sub %s did not return true (false/0)\n", sub);
+			RRR_MSG_ERR("perl5 sub %s did not return true (false/0)\n", sub);
 			ret = 1;
 		}
 	}
 	else {
-		VL_MSG_ERR("No return value from perl5 sub %s\n", sub);
+		RRR_MSG_ERR("No return value from perl5 sub %s\n", sub);
 		ret = 1;
 	}
 
@@ -379,7 +379,7 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
     struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
     if (message_hv == NULL) {
-    	VL_MSG_ERR("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
+    	RRR_MSG_ERR("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
     	goto out;
     }
 
@@ -586,7 +586,7 @@ int rrr_perl5_settings_to_hv (
 
 	struct rrr_perl5_settings_hv *settings_hv = malloc(sizeof(*settings_hv));
 	if (settings_hv == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_perl5_config_to_hv\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_perl5_config_to_hv\n");
 		ret = 1;
 		goto out;
 	}
@@ -632,13 +632,13 @@ void rrr_perl5_destruct_message_hv (
 }
 
 int rrr_perl5_hv_to_message (
-		struct vl_message **target_final,
+		struct rrr_message **target_final,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
 	int ret = 0;
 
-	struct vl_message *target = *target_final;
+	struct rrr_message *target = *target_final;
 
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -651,7 +651,7 @@ int rrr_perl5_hv_to_message (
 	SvUTF8_on(source->topic);
 	char *topic_str = SvPVutf8_force(source->topic, new_topic_len);
 
-	VL_DEBUG_MSG_3("Perl new hv_to_message reported size of data %lu returned size of data %lu\n",
+	RRR_DBG_3("Perl new hv_to_message reported size of data %lu returned size of data %lu\n",
 			SvUV(source->data_length), new_data_len);
 
     ssize_t old_total_len = MSG_TOTAL_SIZE(target);
@@ -666,9 +666,9 @@ int rrr_perl5_hv_to_message (
     target->network_size = target->msg_size;
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
-		struct vl_message *new_message = realloc(target, MSG_TOTAL_SIZE(target));
+		struct rrr_message *new_message = realloc(target, MSG_TOTAL_SIZE(target));
 		if (new_message == NULL) {
-			VL_MSG_ERR("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
+			RRR_MSG_ERR("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
 			ret = 1;
 			goto out;
 		}
@@ -684,16 +684,16 @@ int rrr_perl5_hv_to_message (
 	memcpy (MSG_TOPIC_PTR(target), topic_str, new_topic_len);
 	memcpy (MSG_DATA_PTR(target), data_str, new_data_len);
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("rrr_perl5_hv_to_message output (data of message only): 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("rrr_perl5_hv_to_message output (data of message only): 0x");
 		for (unsigned int i = 0; i < MSG_DATA_LENGTH(target); i++) {
 			char c = MSG_DATA_PTR(target)[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
 	*target_final = target;
@@ -705,12 +705,12 @@ int rrr_perl5_hv_to_message (
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		struct vl_message *message
+		struct rrr_message *message
 ) {
 	int ret = 0;
 
-	if (!RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
-		VL_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
+	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
+		RRR_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
 	}
 
 	PerlInterpreter *my_perl = ctx->interpreter;
@@ -732,7 +732,7 @@ int rrr_perl5_message_to_hv (
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		struct vl_message *message
+		struct rrr_message *message
 ) {
     int ret = 0;
 
@@ -743,7 +743,7 @@ int rrr_perl5_message_to_new_hv (
     }
 
     if ((ret = rrr_perl5_message_to_hv(message_hv, ctx, message)) != 0) {
-    	VL_MSG_ERR("Error in rrr_perl5_message_to_new_hv\n");
+    	RRR_MSG_ERR("Error in rrr_perl5_message_to_new_hv\n");
     	goto out;
     }
 
@@ -763,7 +763,7 @@ int rrr_perl5_message_send (HV *hv) {
 	SvREFCNT_inc(hv);
 
 	struct rrr_perl5_message_hv *message_new_hv = __rrr_perl5_allocate_message_hv (ctx, hv);
-	struct vl_message *message_new = message_new_reading(0, 0);
+	struct rrr_message *message_new = rrr_message_new_reading(0, 0);
 	if (rrr_perl5_hv_to_message(&message_new, ctx, message_new_hv) != 0) {
 		return FALSE;
 	}

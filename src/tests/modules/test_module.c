@@ -53,34 +53,34 @@ void data_cleanup(void *_data) {
 	data->dummy = 0;
 }
 
-static void *thread_entry_test_module (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_test_module (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
 	int ret = 0;
-	struct vl_message *array_message_perl5 = NULL;
-	struct vl_message *array_message_python3 = NULL;
-	struct vl_message *array_message_mqtt_raw = NULL;
+	struct rrr_message *array_message_perl5 = NULL;
+	struct rrr_message *array_message_python3 = NULL;
+	struct rrr_message *array_message_mqtt_raw = NULL;
 
 	data_init(data);
 
-	VL_DEBUG_MSG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 /*	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 		usleep (20000); // 20 ms
 	}*/
 
-	update_watchdog_time(thread_data->thread);
+	rrr_update_watchdog_time(thread_data->thread);
 
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
@@ -96,7 +96,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	);
 	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
 
-	update_watchdog_time(thread_data->thread);
+	rrr_update_watchdog_time(thread_data->thread);
 
 	if (ret != 0) {
 		goto configtest_done;
@@ -117,7 +117,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 
 	/* We exit without looping which also makes the other loaded modules exit */
 
-	VL_DEBUG_MSG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	RRR_DBG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -126,7 +126,7 @@ static void *thread_entry_test_module (struct vl_thread *thread) {
 	pthread_exit(0);
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_test_module,
 		NULL,
@@ -143,15 +143,15 @@ static const char *module_name = "test_module";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_SOURCE;
+	data->type = RRR_MODULE_TYPE_SOURCE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 	data->special_module_operations = NULL;
 }
 
 void unload(void) {
-	VL_DEBUG_MSG_1 ("Destroy configuration test module\n");
+	RRR_DBG_1 ("Destroy configuration test module\n");
 }

@@ -70,7 +70,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder) {
 		if (ret != 0) {
 			// A socket is sometimes closed by the other host
 			if (errno != EBADF) {
-				VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n",
+				RRR_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n",
 						holder->options.fd, strerror(errno));
 			}
 		}
@@ -102,7 +102,7 @@ int __rrr_socket_holder_new (
 
 	struct rrr_socket_holder *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_socket_holder_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_holder_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -110,7 +110,7 @@ int __rrr_socket_holder_new (
 	memset(result, '\0', sizeof(*result));
 
 	if (creator == NULL || *creator == '\0') {
-		VL_BUG("Creator was NULL in __rrr_socket_holder_new\n");
+		RRR_BUG("Creator was NULL in __rrr_socket_holder_new\n");
 	}
 
 	result->creator = strdup(creator);
@@ -118,7 +118,7 @@ int __rrr_socket_holder_new (
 	if (filename != NULL) {
 		result->filename = strdup(filename);
 		if (result->filename == NULL) {
-			VL_MSG_ERR("Could not allocate memory for filename in __rrr_socket_holder_new\n");
+			RRR_MSG_ERR("Could not allocate memory for filename in __rrr_socket_holder_new\n");
 			ret = 1;
 			goto out;
 		}
@@ -173,9 +173,9 @@ int rrr_socket_with_lock_do (
 
 static void __rrr_socket_dump_unlocked (void) {
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
-		VL_DEBUG_MSG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
+		RRR_DBG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
 	RRR_LL_ITERATE_END(&socket_list);
-	VL_DEBUG_MSG_7("---\n");
+	RRR_DBG_7("---\n");
 }
 
 static int __rrr_socket_add_unlocked (
@@ -190,7 +190,7 @@ static int __rrr_socket_add_unlocked (
 	struct rrr_socket_holder *holder = NULL;
 
 	if (__rrr_socket_holder_new(&holder, creator, filename, fd, domain, type, protocol) != 0) {
-		VL_MSG_ERR("Could not create socket holder in __rrr_socket_add_unlocked\n");
+		RRR_MSG_ERR("Could not create socket holder in __rrr_socket_add_unlocked\n");
 		ret = 1;
 		goto out;
 	}
@@ -198,8 +198,8 @@ static int __rrr_socket_add_unlocked (
 	RRR_LL_PUSH(&socket_list,holder);
 	holder = NULL;
 
-	if (VL_DEBUGLEVEL_7) {
-		VL_DEBUG_MSG_7("rrr_socket add fd %i pid %i, sockets are now:\n", fd, getpid());
+	if (RRR_DEBUGLEVEL_7) {
+		RRR_DBG_7("rrr_socket add fd %i pid %i, sockets are now:\n", fd, getpid());
 		__rrr_socket_dump_unlocked();
 	}
 
@@ -226,7 +226,7 @@ int rrr_socket_accept (
 	struct rrr_socket_options options;
 
 	if (rrr_socket_get_options_from_fd(&options, fd_in) != 0) {
-		VL_MSG_ERR("Could not get socket options in rrr_socket_accept\n");
+		RRR_MSG_ERR("Could not get socket options in rrr_socket_accept\n");
 		fd_out = -1;
 		goto out;
 	}
@@ -241,11 +241,11 @@ int rrr_socket_accept (
 	if (fd_out != -1 && (options.type & O_NONBLOCK) != 0) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
-			VL_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", strerror(errno));
 			goto out_close;
 		}
 		if (fcntl(fd_out, F_SETFL, flags | O_NONBLOCK) == -1) {
-			VL_MSG_ERR("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", strerror(errno));
 			goto out_close;
 		}
 	}
@@ -284,16 +284,16 @@ int rrr_socket_bind_and_listen (
 	if (sockopts != 0) {
 		int enable = 1;
 		if (setsockopt (fd, SOL_SOCKET, sockopts, &enable, sizeof(enable)) != 0) {
-			VL_MSG_ERR ("Could not set SO_REUSEADDR for socket: %s\n", strerror(errno));
+			RRR_MSG_ERR ("Could not set SO_REUSEADDR for socket: %s\n", strerror(errno));
 			return 1;
 		}
 	}
 	if (bind(fd, addr, addr_len) != 0) {
-		VL_MSG_ERR("Could not bind to socket: %s\n",strerror(errno));
+		RRR_MSG_ERR("Could not bind to socket: %s\n",strerror(errno));
 		return 1;
 	}
 	if (listen(fd, num_clients) != 0) {
-		VL_MSG_ERR("Could not listen on socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Could not listen on socket: %s\n", strerror(errno));
 		return 1;
 	}
 	return 0;
@@ -336,10 +336,10 @@ int rrr_socket (
 
 int rrr_socket_close (int fd) {
 	if (fd <= 0) {
-		VL_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
+		RRR_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
 	}
 
-	VL_DEBUG_MSG_7("rrr_socket_close fd %i pid %i\n", fd, getpid());
+	RRR_DBG_7("rrr_socket_close fd %i pid %i\n", fd, getpid());
 
 	pthread_mutex_lock(&socket_lock);
 
@@ -360,12 +360,12 @@ int rrr_socket_close (int fd) {
 	pthread_mutex_unlock(&socket_lock);
 
 	if (did_destroy != 1) {
-		VL_MSG_ERR("Warning: Socket close of fd %i called but it was not registered. Attempting to close anyway.\n", fd);
+		RRR_MSG_ERR("Warning: Socket close of fd %i called but it was not registered. Attempting to close anyway.\n", fd);
 		int ret = close(fd);
 		if (ret != 0) {
 			// A socket is sometimes closed by the other host
 			if (errno != EBADF) {
-				VL_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n", fd, strerror(errno));
+				RRR_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n", fd, strerror(errno));
 			}
 		}
 	}
@@ -377,10 +377,10 @@ int rrr_socket_close_all_except (int fd) {
 	int ret = 0;
 
 	if (fd < 0) {
-		VL_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
+		RRR_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
 	}
 
-	VL_DEBUG_MSG_7("rrr_socket_close_all_except fd %i pid %i\n", fd, getpid());
+	RRR_DBG_7("rrr_socket_close_all_except fd %i pid %i\n", fd, getpid());
 
 	int count = 0;
 	int found = 0;
@@ -394,23 +394,23 @@ int rrr_socket_close_all_except (int fd) {
 		}
 		else {
 			if (found != 0) {
-				VL_BUG("At least two equal FD %i in socket list in rrr_socket_close_all_except\n", fd);
+				RRR_BUG("At least two equal FD %i in socket list in rrr_socket_close_all_except\n", fd);
 			}
 			found = 1;
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
 
 	if (found != 1 && fd != 0) {
-		VL_MSG_ERR("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
+		RRR_MSG_ERR("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
 	}
 
-	if (VL_DEBUGLEVEL_7) {
+	if (RRR_DEBUGLEVEL_7) {
 		__rrr_socket_dump_unlocked();
 	}
 
 	pthread_mutex_unlock(&socket_lock);
 
-	VL_DEBUG_MSG_1("Closed %i sockets pid %i\n", count, getpid());
+	RRR_DBG_1("Closed %i sockets pid %i\n", count, getpid());
 
 	return ret;
 }
@@ -435,14 +435,14 @@ int rrr_socket_unix_create_bind_and_listen (
 	int fd = 0;
 
 	if (strlen(filename) > sizeof(addr.sun_path) - 1) {
-		VL_MSG_ERR("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %li\n",
+		RRR_MSG_ERR("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %li\n",
 				sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}
 
 	if (access (filename, F_OK) == 0) {
-		VL_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
+		RRR_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
 				filename);
 		ret = 1;
 		goto out;
@@ -453,18 +453,18 @@ int rrr_socket_unix_create_bind_and_listen (
 
 	fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET | (nonblock != 0 ? O_NONBLOCK : 0), 0, creator, filename);
 	if (fd < 0) {
-		VL_MSG_ERR("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");
+		RRR_MSG_ERR("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, addr_len, 0, num_clients) != 0) {
-		VL_MSG_ERR("Could not bind an listen to socket in rrr_socket_unix_create_bind_and_listen\n");
+		RRR_MSG_ERR("Could not bind an listen to socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
 		goto out;
 	}
 
-	VL_DEBUG_MSG_7("rrr_socket_unix_create_bind_and_listen fd %i file %s pid %i clients %i\n",
+	RRR_DBG_7("rrr_socket_unix_create_bind_and_listen fd %i file %s pid %i clients %i\n",
 			fd, addr.sun_path, getpid(), num_clients);
 
 	*fd_result = fd;
@@ -493,7 +493,7 @@ int rrr_socket_connect_nonblock (
 		};
 
 		if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
-			VL_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -501,7 +501,7 @@ int rrr_socket_connect_nonblock (
 			goto out;
 		}
 		else if ((pollfd.revents & POLLOUT) == 0) {
-			VL_MSG_ERR("Timeout from poll() while connecting\n");
+			RRR_MSG_ERR("Timeout from poll() while connecting\n");
 			ret = 1;
 			goto out;
 		}
@@ -509,7 +509,7 @@ int rrr_socket_connect_nonblock (
 			int error = 0;
 			socklen_t len = sizeof(error);
 			if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-				VL_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
+				RRR_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -517,24 +517,24 @@ int rrr_socket_connect_nonblock (
 				goto out;
 			}
 			else if (error == EINPROGRESS) {
-				VL_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
+				RRR_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
 				ret = 1;
 				goto out;
 			}
 			else if (error == ECONNREFUSED) {
-				VL_MSG_ERR("Connection refused while connecting\n");
+				RRR_MSG_ERR("Connection refused while connecting\n");
 				ret = 1;
 				goto out;
 			}
 			else {
-				VL_MSG_ERR("Unknown error while connecting: %i\n", error);
+				RRR_MSG_ERR("Unknown error while connecting: %i\n", error);
 				ret = 1;
 				goto out;
 			}
 		}
 	}
 	else {
-		VL_MSG_ERR("Error while connecting: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while connecting: %s\n", strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -558,7 +558,7 @@ int rrr_socket_unix_create_and_connect (
 	*socket_fd_final = 0;
 
 	if (strlen(filename) > sizeof(addr.sun_path) - 1) {
-		VL_MSG_ERR("Socket path from config was too long in rrr_socket_unix_create_and_connect\n");
+		RRR_MSG_ERR("Socket path from config was too long in rrr_socket_unix_create_and_connect\n");
 		ret = 1;
 		goto out;
 	}
@@ -568,7 +568,7 @@ int rrr_socket_unix_create_and_connect (
 
 	socket_fd = rrr_socket(AF_UNIX, SOCK_SEQPACKET|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
 	if (socket_fd < 0) {
-		VL_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -576,7 +576,7 @@ int rrr_socket_unix_create_and_connect (
 	int connected = 0;
 	for (int i = 0; i < 10 && connected == 0; i++) {
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
-			VL_MSG_ERR("Could not connect to socket %s try %i of %i: %s\n",
+			RRR_MSG_ERR("Could not connect to socket %s try %i of %i: %s\n",
 					filename, i, 10, strerror(errno));
 			usleep(25000);
 		}
@@ -610,7 +610,7 @@ int rrr_socket_sendto (
 	int ret = 0;
 
 	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
-		VL_MSG_ERR("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
+		RRR_MSG_ERR("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
 		ret = 1;
 		goto out;
 	}
@@ -630,7 +630,7 @@ int rrr_socket_sendto (
 	if (ret != size) {
 		if (ret == -1) {
 			if (--max_retries == 0) {
-				VL_MSG_ERR("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+				RRR_MSG_ERR("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
 				ret = 1;
 				goto out;
 			}
@@ -643,14 +643,14 @@ int rrr_socket_sendto (
 				goto retry;
 			}
 			else {
-				VL_MSG_ERR("Error from send function in rrr_socket_sendto fd %i: %s\n",
+				RRR_MSG_ERR("Error from send function in rrr_socket_sendto fd %i: %s\n",
 						fd, strerror(errno));
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
-			VL_MSG_ERR("Error while sending message in rrr_socket_sendto, sent %i of %li bytes\n",
+			RRR_MSG_ERR("Error while sending message in rrr_socket_sendto, sent %i of %li bytes\n",
 					ret, size);
 			ret = 1;
 			goto out;
@@ -685,7 +685,7 @@ static int __rrr_socket_client_new (
 
 	struct rrr_socket_client *client = malloc (sizeof(*client));
 	if (client == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_socket_client_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_client_new\n");
 		return 1;
 	}
 
@@ -694,7 +694,7 @@ static int __rrr_socket_client_new (
 	client->connected_fd = fd;
 	client->addr = *addr;
 	client->addr_len = addr_len;
-	client->last_seen = time_get_64();
+	client->last_seen = rrr_time_get_64();
 
 	*result = client;
 
@@ -717,7 +717,7 @@ int rrr_socket_client_collection_init (
 	memset(collection, '\0', sizeof(*collection));
 	collection->creator = strdup(creator);
 	if (collection->creator == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_init\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_init\n");
 		return 1;
 	}
 	collection->listen_fd = listen_fd;
@@ -733,7 +733,7 @@ int rrr_socket_client_collection_accept (
 	int ret = rrr_socket_accept(collection->listen_fd, &temp.addr, &temp.addr_len, collection->creator);
 	if (ret == -1) {
 		if (errno != EWOULDBLOCK) {
-			VL_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", strerror(errno));
 			return 1;
 		}
 		return 0;
@@ -743,7 +743,7 @@ int rrr_socket_client_collection_accept (
 
 	struct rrr_socket_client *client_new = NULL;
 	if (__rrr_socket_client_new(&client_new, temp.connected_fd, &temp.addr, temp.addr_len) != 0) {
-		VL_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_accept\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_accept\n");
 		return 1;
 	}
 
@@ -763,8 +763,8 @@ int rrr_socket_client_collection_read (
 		void *complete_callback_arg
 ) {
 	int ret = 0;
-	uint64_t time_now = time_get_64();
-	uint64_t timeout = time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000);
+	uint64_t time_now = rrr_time_get_64();
+	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000);
 
 	if (RRR_LL_COUNT(collection) == 0 && (read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
 		usleep(10 * 1000);
@@ -788,7 +788,7 @@ int rrr_socket_client_collection_read (
 		}
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				VL_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
+				RRR_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;
