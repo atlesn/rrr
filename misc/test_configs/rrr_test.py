@@ -23,7 +23,7 @@ def process(socket : rrr_socket, message: vl_message):
 
 def source(socket : rrr_socket):
 	# create a new message
-	message = vl_message(1, 2, 3, 4, 5)
+	message = rrr_message(1, 2, 3, 4, 5)
 
 	array = message.get_array()
 	array = (9, 8, 7, 6, 5);

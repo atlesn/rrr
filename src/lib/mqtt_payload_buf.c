@@ -30,7 +30,7 @@ int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));
 	session->buf = malloc(RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
 	if (session->buf == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(session->buf, '\0', RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
@@ -60,7 +60,7 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session) {
 
 int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, ssize_t size) {
 	if (size <= 0) {
-		VL_BUG("size was <= 0 in rrr_mqtt_payload_buf_ensure\n");
+		RRR_BUG("size was <= 0 in rrr_mqtt_payload_buf_ensure\n");
 	}
 
 	if (session->wpos + size <= session->buf + session->buf_size) {
@@ -73,7 +73,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 	ssize_t size_diff = new_size - session->buf_size;
 
 	if (size_diff <= 0) {
-		VL_BUG("size_diff was <= 0 in rrr_mqtt_payload_buf_ensure\n");
+		RRR_BUG("size_diff was <= 0 in rrr_mqtt_payload_buf_ensure\n");
 	}
 
 	if (size_diff < RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE) {
@@ -83,7 +83,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 
 	char *tmp = realloc(session->buf, new_size);
 	if (tmp == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(tmp + session->buf_size, '\0', size_diff);
@@ -146,7 +146,7 @@ int rrr_mqtt_payload_buf_put_variable_int (
 		uint32_t value
 ) {
 	if (value > 0xfffffff) { // <-- Seven f's
-		VL_BUG("Value too large in rrr_mqtt_payload_buf_put_variable_int\n");
+		RRR_BUG("Value too large in rrr_mqtt_payload_buf_put_variable_int\n");
 	}
 
 	uint8_t chunks[4];

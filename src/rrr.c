@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket.h"
 
 const char *module_library_paths[] = {
-		VL_MODULE_PATH,
+		RRR_MODULE_PATH,
 		"/usr/lib/rrr",
 		"/lib/rrr",
 		"/usr/local/lib/rrr",
@@ -52,13 +52,13 @@ const char *module_library_paths[] = {
 		""
 };
 
-#ifndef VL_BUILD_TIMESTAMP
-#define VL_BUILD_TIMESTAMP 1
+#ifndef RRR_BUILD_TIMESTAMP
+#define RRR_BUILD_TIMESTAMP 1
 #endif
 
 // Used so that debugger output at program exit can show function names
 // on the stack correctly
-#define VL_NO_MODULE_UNLOAD
+// #define RRR_NO_MODULE_UNLOAD
 
 static volatile int main_running = 1;
 
@@ -66,14 +66,14 @@ int main_signal_handler(int s, void *arg) {
 	(void)(arg);
 
 	if (s == SIGCHLD) {
-		VL_DEBUG_MSG_1("Received SIGCHLD\n");
+		RRR_DBG_1("Received SIGCHLD\n");
 	}
 	else if (s == SIGUSR1) {
 		main_running = 0;
 		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGPIPE) {
-		VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
 	}
 	else if (s == SIGTERM) {
 		exit(EXIT_FAILURE);
@@ -81,7 +81,7 @@ int main_signal_handler(int s, void *arg) {
 	else if (s == SIGINT) {
 		// Allow double ctrl+c to close program
 		if (s == SIGINT) {
-			VL_MSG_ERR("Received SIGINT\n");
+			RRR_MSG_ERR("Received SIGINT\n");
 			signal(SIGINT, SIG_DFL);
 		}
 
@@ -104,13 +104,13 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 int main (int argc, const char *argv[]) {
-	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
-		VL_MSG_ERR("Library build version mismatch.\n");
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	struct rrr_signal_handler *signal_handler = NULL;
-	struct vl_thread_collection *collection = NULL;
+	struct rrr_thread_collection *collection = NULL;
 	struct instance_metadata_collection *instances = NULL;
 	const char *config_string = NULL;
 	struct rrr_config *config = NULL;
@@ -128,7 +128,7 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = signal_functions.push_handler(main_signal_handler, NULL);
 
-	if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+	if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
@@ -141,7 +141,7 @@ int main (int argc, const char *argv[]) {
 		goto out_destroy_metadata_collection;
 	}
 
-	VL_DEBUG_MSG_1("ReadRouteRecord debuglevel is: %u\n", VL_DEBUGLEVEL);
+	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL && *config_string != '\0') {
@@ -149,22 +149,22 @@ int main (int argc, const char *argv[]) {
 
 		if (config == NULL) {
 			ret = EXIT_FAILURE;
-			VL_MSG_ERR("Configuration file parsing failed\n");
+			RRR_MSG_ERR("Configuration file parsing failed\n");
 			goto out_unload_modules;
 		}
 
-		VL_DEBUG_MSG_1("found %d instances\n", config->module_count);
+		RRR_DBG_1("found %d instances\n", config->module_count);
 
-		ret = instance_process_from_config(instances, config, module_library_paths);
+		ret = rrr_instance_process_from_config(instances, config, module_library_paths);
 
 		if (ret != 0) {
 			goto out_unload_modules;
 		}
 	}
 
-	if (VL_DEBUGLEVEL_1) {
+	if (RRR_DEBUGLEVEL_1) {
 		if (config != NULL && rrr_config_dump(config) != 0) {
-			VL_MSG_ERR("Error occured while dumping configuration\n");
+			RRR_MSG_ERR("Error occured while dumping configuration\n");
 		}
 	}
 
@@ -201,12 +201,12 @@ int main (int argc, const char *argv[]) {
 	while (main_running) {
 		usleep (100000);
 
-		if (instance_check_threads_stopped(instances) == 1) {
-			VL_DEBUG_MSG_1 ("One or more threads have finished or do hard restart. Restart.\n");
+		if (rrr_instance_check_threads_stopped(instances) == 1) {
+			RRR_DBG_1 ("One or more threads have finished or do hard restart. Restart.\n");
 
 			rrr_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
-			thread_destroy_collection (collection);
+			rrr_thread_destroy_collection (collection);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
 				usleep(1000000);
@@ -217,44 +217,44 @@ int main (int argc, const char *argv[]) {
 			}
 		}
 
-		thread_run_ghost_cleanup(&count);
+		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			VL_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
+			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
 		}
 	}
 
-	VL_DEBUG_MSG_1 ("Main loop finished\n");
+	RRR_DBG_1 ("Main loop finished\n");
 
 	out_stop_threads:
 		rrr_set_debuglevel_on_exit();
-		VL_DEBUG_MSG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
+		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
-		thread_destroy_collection (collection);
-		thread_run_ghost_cleanup(&count);
+		rrr_thread_destroy_collection (collection);
+		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			VL_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
+			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
 		rrr_socket_close_all();
 
 	out_unload_modules:
-#ifndef VL_NO_MODULE_UNLOAD
-		instance_unload_all(instances);
+#ifndef RRR_NO_MODULE_UNLOAD
+		rrr_instance_unload_all(instances);
 #endif
 		if (config != NULL) {
 			rrr_config_destroy(config);
 		}
 
 	out_destroy_metadata_collection:
-		instance_metadata_collection_destroy(instances);
+		rrr_instance_metadata_collection_destroy(instances);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
-			VL_DEBUG_MSG_1("Exiting program without errors\n");
+			RRR_DBG_1("Exiting program without errors\n");
 		}
 		else {
-			VL_DEBUG_MSG_1("Exiting program with errors\n");
+			RRR_DBG_1("Exiting program with errors\n");
 		}
 		cmd_destroy(&cmd);
 		return ret;

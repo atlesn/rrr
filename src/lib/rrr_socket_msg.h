@@ -28,12 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // byte order (big endian). The crc32 is then converted itself.
 
 #define RRR_SOCKET_MSG_HEAD		\
-	vl_u32 header_crc32;		\
-	vl_u32 network_size;		\
-	vl_u16 msg_type;			\
-	vl_u32 msg_size;			\
-	vl_u64 msg_value;			\
-	vl_u32 data_crc32;
+	rrr_u32 header_crc32;		\
+	rrr_u32 network_size;		\
+	rrr_u16 msg_type;			\
+	rrr_u32 msg_size;			\
+	rrr_u64 msg_value;			\
+	rrr_u32 data_crc32;
 
 struct rrr_socket_msg {
 	RRR_SOCKET_MSG_HEAD;
@@ -41,7 +41,7 @@ struct rrr_socket_msg {
 
 // All odd numbers are reserved for the control type where bits 1-15 are flags
 #define RRR_SOCKET_MSG_TYPE_CTRL			1
-#define RRR_SOCKET_MSG_TYPE_VL_MESSAGE		2
+#define RRR_SOCKET_MSG_TYPE_RRR_MESSAGE		2
 #define RRR_SOCKET_MSG_TYPE_SETTING			4
 
 // This bit is reserved for holding the type=control number
@@ -62,21 +62,21 @@ struct rrr_socket_msg {
 // The control messages contain flags in the type field
 #define RRR_SOCKET_MSG_IS_CTRL(msg) \
 	(((msg)->msg_type & RRR_SOCKET_MSG_TYPE_CTRL) == RRR_SOCKET_MSG_TYPE_CTRL)
-#define RRR_SOCKET_MSG_IS_VL_MESSAGE(msg) \
-	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_VL_MESSAGE)
+#define RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg) \
+	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_RRR_MESSAGE)
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 
 void rrr_socket_msg_populate_head (
 		struct rrr_socket_msg *message,
-		vl_u16 type,
-		vl_u32 msg_size,
-		vl_u64 value
+		rrr_u16 type,
+		rrr_u32 msg_size,
+		rrr_u64 value
 );
 void rrr_socket_msg_populate_control_msg (
 		struct rrr_socket_msg *message,
-		vl_u16 flags,
-		vl_u64 value
+		rrr_u16 flags,
+		rrr_u64 value
 );
 void rrr_socket_msg_checksum_and_to_network_endian (
 		struct rrr_socket_msg *message

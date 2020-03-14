@@ -41,22 +41,22 @@ static int __rrr_mqtt_topic_filter_char_is_ok(uint32_t c, void *arg) {
 	seq->c2 = c;
 
 	if (seq->c2 == '#' && seq->c1 != '/' && seq->c1 != '\0') {
-		VL_MSG_ERR("Wildcard '#' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
+		RRR_MSG_ERR("Wildcard '#' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
 				seq->orig);
 		return 1;
 	}
 	if (seq->c2 == '+' && seq->c1 != '/' && seq->c1 != '\0') {
-		VL_MSG_ERR("Wildcard '+' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
+		RRR_MSG_ERR("Wildcard '+' must be preceded by separator '/' or be at the beginning in mqtt topic filter '%s'\n",
 				seq->orig);
 		return 1;
 	}
 	if (seq->c1 == '#') {
-		VL_MSG_ERR("Wildcard '#' must be at the very end in mqtt topic filter '%s'\n",
+		RRR_MSG_ERR("Wildcard '#' must be at the very end in mqtt topic filter '%s'\n",
 				seq->orig);
 		return 1;
 	}
 	if (seq->c1 == '+' && seq->c2 != '/' && seq->c1 != '\0') {
-		VL_MSG_ERR("Wildcard '+' must precede separator '/' or be at the end in mqtt topic filter '%s'\n",
+		RRR_MSG_ERR("Wildcard '+' must precede separator '/' or be at the end in mqtt topic filter '%s'\n",
 				seq->orig);
 		return 1;
 	}
@@ -70,7 +70,7 @@ static int __rrr_mqtt_topic_name_char_is_ok(uint32_t c, void *arg) {
 	struct topic_name_seq *seq = arg;
 
 	if (c == '#' || c == '+') {
-		VL_MSG_ERR("mqtt topic name cannot contain '+' and '#', name was '%s'\n",
+		RRR_MSG_ERR("mqtt topic name cannot contain '+' and '#', name was '%s'\n",
 				seq->orig);
 		return 1;
 	}
@@ -84,7 +84,7 @@ int rrr_mqtt_topic_filter_validate_name (
 	struct topic_name_seq seq = { 0, 0, topic_filter };
 
 	if (strlen(topic_filter) > 0xffff) {
-		VL_MSG_ERR("Topic filter too long in rrr_mqtt_topic_filter_validate_name\n");
+		RRR_MSG_ERR("Topic filter too long in rrr_mqtt_topic_filter_validate_name\n");
 		return 1;
 	}
 
@@ -119,7 +119,7 @@ int rrr_mqtt_topic_match_tokens_recursively (
 
 	if (*(sub_token->data) == '#') {
 		if (strlen(sub_token->data) != 1) {
-			VL_BUG("topic filter with # had length != 1 '%s'\n", sub_token->data);
+			RRR_BUG("topic filter with # had length != 1 '%s'\n", sub_token->data);
 		}
 		if (*(pub_token->data) == '$') {
 			return RRR_MQTT_TOKEN_MISMATCH;
@@ -130,7 +130,7 @@ int rrr_mqtt_topic_match_tokens_recursively (
 
 	if (*(sub_token->data) == '+') {
 		if (strlen(sub_token->data) != 1) {
-			VL_BUG("topic filter with + had length != 1 '%s'\n", sub_token->data);
+			RRR_BUG("topic filter with + had length != 1 '%s'\n", sub_token->data);
 		}
 		if (*(pub_token->data) == '$') {
 			return RRR_MQTT_TOKEN_MISMATCH;
@@ -178,7 +178,7 @@ int rrr_mqtt_topic_tokens_clone (
 
 	struct rrr_mqtt_topic_token *result = malloc(strlen(first_token->data) + sizeof(*result));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
 		ret = 1;
 		goto out;
 	}
@@ -187,7 +187,7 @@ int rrr_mqtt_topic_tokens_clone (
 
 	ret = rrr_mqtt_topic_tokens_clone(&result->next, first_token->next);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not clone child topic token in rrr_mqtt_topic_tokens_clone\n");
+		RRR_MSG_ERR("Could not clone child topic token in rrr_mqtt_topic_tokens_clone\n");
 		goto out_free;
 	}
 
@@ -223,7 +223,7 @@ int rrr_mqtt_topic_tokenize (
 		ssize_t len = token_end - pos;
 		token = malloc(sizeof(*token) + len + 1);
 		if (token == NULL) {
-			VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_subscription_topic_tokenize\n");
+			RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_subscription_topic_tokenize\n");
 			ret = 1;
 			goto out;
 		}

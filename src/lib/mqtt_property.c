@@ -91,7 +91,7 @@ int rrr_mqtt_property_new (
 
 	struct rrr_mqtt_property *res = malloc(sizeof(*res));
 	if (res == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -113,7 +113,7 @@ int rrr_mqtt_property_clone (
 	int ret = 0;
 
 	if (*target != NULL) {
-		VL_BUG("Target was not NULL in rr_mqtt_property_clone\n");
+		RRR_BUG("Target was not NULL in rr_mqtt_property_clone\n");
 	}
 
 	if (source == NULL) {
@@ -122,7 +122,7 @@ int rrr_mqtt_property_clone (
 
 	struct rrr_mqtt_property *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone A\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone A\n");
 		ret = 1;
 		goto out;
 	}
@@ -130,12 +130,12 @@ int rrr_mqtt_property_clone (
 	memcpy(result, source, sizeof(*result));
 
 	if (result->length <= 0) {
-		VL_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
+		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
 	}
 
 	result->data = malloc(result->length);
 	if (result->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone B\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_property_clone B\n");
 		ret = 1;
 		goto out_free_property;
 	}
@@ -165,7 +165,7 @@ int rrr_mqtt_property_save_blob (
 
 	target->data = malloc(size_padded);
 	if (target->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
 
@@ -183,7 +183,7 @@ int rrr_mqtt_property_save_blob (
 int rrr_mqtt_property_save_uint32 (struct rrr_mqtt_property *target, uint32_t value) {
 	target->data = malloc(sizeof(value));
 	if (target->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_property_parse_integer\n");
 		return 1;
 	}
 
@@ -198,10 +198,10 @@ uint32_t rrr_mqtt_property_get_uint32 (
 		const struct rrr_mqtt_property *property
 ) {
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32) {
-		VL_BUG("Property was not UINT32 in rrr_mqtt_property_get_uint32\n");
+		RRR_BUG("Property was not UINT32 in rrr_mqtt_property_get_uint32\n");
 	}
 	if (property->length < (ssize_t) sizeof(uint32_t)) {
-		VL_BUG("Length of property was <4 in rrr_mqtt_property_get_uint32\n");
+		RRR_BUG("Length of property was <4 in rrr_mqtt_property_get_uint32\n");
 	}
 	return *((uint32_t*) property->data);
 }
@@ -211,10 +211,10 @@ const char *rrr_mqtt_property_get_blob (
 		ssize_t *length
 ) {
 	if (property->internal_data_type != RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB) {
-		VL_BUG("Property was not BLOB in rrr_mqtt_property_get_blob\n");
+		RRR_BUG("Property was not BLOB in rrr_mqtt_property_get_blob\n");
 	}
 	if (property->length < 1) {
-		VL_BUG("Length of property was <1 in rrr_mqtt_property_get_blob\n");
+		RRR_BUG("Length of property was <1 in rrr_mqtt_property_get_blob\n");
 	}
 	*length = property->length;
 	return property->data;
@@ -232,13 +232,13 @@ static int __rrr_mqtt_property_clone (
 
 	ret = rrr_mqtt_property_new(&result, source->definition);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not create new property in __rrr_mqtt_property_clone\n");
+		RRR_MSG_ERR("Could not create new property in __rrr_mqtt_property_clone\n");
 	}
 
 	if (source->sibling != NULL) {
 		ret = __rrr_mqtt_property_clone(&result->sibling, source->sibling);
 		if (ret != 0) {
-			VL_MSG_ERR("Could not clone sibling in __rrr_mqtt_property_clone\n");
+			RRR_MSG_ERR("Could not clone sibling in __rrr_mqtt_property_clone\n");
 			goto out_destroy;
 		}
 	}
@@ -250,7 +250,7 @@ static int __rrr_mqtt_property_clone (
 		result->length = source->length;
 		result->data = malloc(result->length);
 		if (result->data == NULL) {
-			VL_MSG_ERR("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
+			RRR_MSG_ERR("Could not allocate memory for data in __rrr_mqtt_property_clone\n");
 			ret = 1;
 			goto out_destroy;
 		}
@@ -277,7 +277,7 @@ int rrr_mqtt_property_collection_add_uint32 (
 	struct rrr_mqtt_property *property = NULL;
 	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
 	if (definition == NULL) {
-		VL_BUG("Property %u not found in rrr_mqtt_property_collection_add_uint32\n", id);
+		RRR_BUG("Property %u not found in rrr_mqtt_property_collection_add_uint32\n", id);
 	}
 
 	uint32_t max = 0;
@@ -294,22 +294,22 @@ int rrr_mqtt_property_collection_add_uint32 (
 		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 		default:
-			VL_BUG("Property %u was not an unsigned int value in rrr_mqtt_property_collection_add_uint32\n", id);
+			RRR_BUG("Property %u was not an unsigned int value in rrr_mqtt_property_collection_add_uint32\n", id);
 	};
 
 	if (value > max) {
-		VL_MSG_ERR("Value %u was too long to be held by property 0x%02x in rrr_mqtt_property_collection_add_uint32, max is %" PRIu32"\n",
+		RRR_MSG_ERR("Value %u was too long to be held by property 0x%02x in rrr_mqtt_property_collection_add_uint32, max is %" PRIu32"\n",
 				value, id, max);
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_new(&property, definition)) != 0) {
-		VL_MSG_ERR("Could not create property in rrr_mqtt_property_collection_add_uint32\n");
+		RRR_MSG_ERR("Could not create property in rrr_mqtt_property_collection_add_uint32\n");
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_save_uint32(property, value)) != 0) {
-		VL_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_uint32\n");
+		RRR_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_uint32\n");
 		goto out_free_property;
 	}
 
@@ -333,7 +333,7 @@ int rrr_mqtt_property_collection_add_blob_or_utf8 (
 	struct rrr_mqtt_property *property = NULL;
 	const struct rrr_mqtt_property_definition *definition = rrr_mqtt_property_get_definition(id);
 	if (definition == NULL) {
-		VL_BUG("Property %u not found in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+		RRR_BUG("Property %u not found in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
 	}
 
 	int add_zero_if_needed = 0;
@@ -350,16 +350,16 @@ int rrr_mqtt_property_collection_add_blob_or_utf8 (
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 		default:
-			VL_BUG("Property %u was not a utf8/blob value in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
+			RRR_BUG("Property %u was not a utf8/blob value in rrr_mqtt_property_collection_add_blob_or_utf8\n", id);
 	};
 
 	if ((ret = rrr_mqtt_property_new(&property, definition)) != 0) {
-		VL_MSG_ERR("Could not create property in rrr_mqtt_property_collection_add_blob_or_utf8\n");
+		RRR_MSG_ERR("Could not create property in rrr_mqtt_property_collection_add_blob_or_utf8\n");
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_property_save_blob(property, value, size, add_zero_if_needed)) != 0) {
-		VL_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_blob_or_utf8\n");
+		RRR_MSG_ERR("Could not save property value in rrr_mqtt_property_collection_add_blob_or_utf8\n");
 		goto out_free_property;
 	}
 
@@ -391,7 +391,7 @@ int rrr_mqtt_property_collection_add_cloned (
 
 	ret = rrr_mqtt_property_clone(&new_property, property);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_add_cloned\n");
+		RRR_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_add_cloned\n");
 		goto out;
 	}
 
@@ -483,7 +483,7 @@ int rrr_mqtt_property_collection_calculate_size (
 			case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
 				tmp = *((uint32_t*)(node->data));
 				if ((tmp & ~0xfffffff) != 0) {
-					VL_BUG("VINT was too long in rrr_mqtt_property_collection_calculate_size\n");
+					RRR_BUG("VINT was too long in rrr_mqtt_property_collection_calculate_size\n");
 				}
 				do {
 					result += 1;
@@ -497,16 +497,16 @@ int rrr_mqtt_property_collection_calculate_size (
 			case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 				result += 2 + node->length;
 				if (node->sibling == NULL) {
-					VL_BUG("2UTF8 had no sibling in rrr_mqtt_property_collection_calculate_size\n");
+					RRR_BUG("2UTF8 had no sibling in rrr_mqtt_property_collection_calculate_size\n");
 				}
 				result += 2 + node->sibling->length;
 				break;
 			default:
-				VL_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->internal_data_type);
+				RRR_BUG("Invalid type %u in rrr_mqtt_property_collection_calculate_size\n", node->definition->internal_data_type);
 		};
 		result_count++;
 		if (result < 0) {
-			VL_MSG_ERR("Size overflow in rrr_mqtt_property_collection_calculate_size\n");
+			RRR_MSG_ERR("Size overflow in rrr_mqtt_property_collection_calculate_size\n");
 			ret = 1;
 			goto out;
 		}
@@ -535,7 +535,7 @@ int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property *new_node = NULL;
 		ret = __rrr_mqtt_property_clone(&new_node, node);
 		if (ret != 0) {
-			VL_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_clone\n");
+			RRR_MSG_ERR("Could not clone property in rrr_mqtt_property_collection_clone\n");
 			goto out_destroy;
 		}
 		rrr_mqtt_property_collection_add(target, new_node);
