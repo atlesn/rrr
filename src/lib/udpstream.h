@@ -62,9 +62,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_H
 
 #include <inttypes.h>
-#include <endian.h>
 #include <pthread.h>
 
+#include "rrr_endian.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
 #include "ip.h"

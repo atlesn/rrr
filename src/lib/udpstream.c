@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
 
 #include "../global.h"
 #include "udpstream.h"
