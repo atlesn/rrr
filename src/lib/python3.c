@@ -543,7 +543,7 @@ void __rrr_py_persistent_thread_process (
 	int ret = 0;
 	while (rrr_py_fork_running && (*start_sourcing_requested == 0)) {
 		int max = 100;
-		while (rrr_py_fork_running && (--max != 0)) {
+		while (rrr_py_fork_running && (--max != 0) && (*start_sourcing_requested == 0)) {
 			ret = fork->recv(&message, rrr_socket);
 			if (ret != 0) {
 				RRR_MSG_ERR("Error from socket receive function in python3 persistent rw child process\n");
