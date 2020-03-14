@@ -182,32 +182,52 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
        from rrr_helper import *
        import time
+       
+       my_global_variable = ""   
+
+       def config(socket : rrr_socket, rrr_setting : setting):
+            global my_global_variable
+
+            # retrieve some custom settings from configuration file. The get()
+            # will update the "was-used" flag in the setting.
+            print ("Received a setting: " + setting.name + "=" + setting.get())
+
+            # set a global variable
+            if setting.name == "my_setting":
+                 my_global_variable = setting.get()
+
+            # send settings back to update which have been read (optional)
+            socket.send(setting)
+
+            return True
 
        def process(socket : rrr_socket, message: rrr_message):
+            # Return False if something is wrong
+            if my_global_variable == "":
+                 print("Error: configuration failure")
+                 return False
+
             # modify the retrieved message as needed
             message.timestamp_from = message.timestamp_from + 1
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             return True
 
        def source(socket : rrr_socket):
             # create a new message
             message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             # sleep to limit output rate
             time.sleep(1)
+
             return True
 
-       def config(socket : rrr_socket, settings : rrr_instance_settings):
-            # retrieve some custom settings from configuration file
-            print ("1: " + settings['custom_config_argument_1'])
-            print ("2: " + settings['custom_config_argument_2'])
-            # send settings back to update which have been read (optional)
-            socket.send(settings)
-            return True
+
 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
