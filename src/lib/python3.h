@@ -71,8 +71,10 @@ int rrr_py_start_persistent_rw_thread (
 		struct python3_fork **result_fork,
 		struct python3_rrr_objects *rrr_objects,
 		const char *module_name,
-		const char *function_name
+		const char *function_name,
+		const char *config_function_name
 );
+/*
 int rrr_py_start_persistent_ro_thread (
 		struct python3_fork **result_fork,
 		struct python3_rrr_objects *rrr_objects,
@@ -86,7 +88,7 @@ int rrr_py_start_onetime_rw_thread (
 		const char *function_name,
 		struct rrr_socket_msg *arg
 );
-
+*/
 /* Message handling functions */
 int rrr_py_persistent_receive_message (
 		struct python3_fork *fork,
@@ -96,6 +98,10 @@ int rrr_py_persistent_receive_message (
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
 		struct rrr_socket_msg *message
+);
+// Stop sending data to the fork and call the function continuously
+int rrr_py_persistent_start_sourcing (
+		struct python3_fork *fork
 );
 
 /* State holder functions */

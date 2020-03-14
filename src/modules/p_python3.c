@@ -117,52 +117,29 @@ int data_init(struct python3_data *data, struct python3_preload_data *preload_da
 
 struct python3_send_config_callback_data {
 	struct python3_data *data;
+	struct python3_fork *target;
 };
 
 int python3_send_config_callback (struct rrr_setting_packed *setting_packed, void *callback_arg) {
 	struct python3_send_config_callback_data *data = callback_arg;
 
 	int ret = 0;
-	struct rrr_socket_msg *result = NULL;
 
-	ret = rrr_py_start_onetime_rw_thread (
-			&result,
-			&data->data->rrr_objects,
-			data->data->python3_module,
-			data->data->config_function,
-			rrr_setting_safe_cast(setting_packed)
-	);
-	if (ret != 0) {
-		VL_MSG_ERR("Could not run python3 config function in instance %s:\n",
+	if (rrr_py_persistent_process_message(data->target, rrr_setting_safe_cast(setting_packed)) != 0) {
+		VL_MSG_ERR("Could not send setting to python3 config function in instance %s:\n",
 				INSTANCE_D_NAME(data->data->thread_data));
 		ret = 1;
 		goto out;
 	}
 
-	if (!RRR_SOCKET_MSG_IS_SETTING(result)) {
-		VL_MSG_ERR("Warning: Received back message of unknown type from python3 config function, expected rrr_setting\n");
-		ret = 0;
-		goto out;
-	}
-
-	struct rrr_setting_packed *setting = (struct rrr_setting_packed *) result;
-
-	rrr_settings_update_used (
-			data->data->thread_data->init_data.instance_config->settings,
-			setting->name,
-			setting->was_used,
-			rrr_settings_iterate_nolock
-	);
-
 	out:
-	RRR_FREE_IF_NOT_NULL(result);
 	return ret;
 }
 
-int python3_send_config (struct python3_data *data) {
+int python3_send_config (struct python3_data *data, struct python3_fork *target) {
 	int ret = 0;
 
-	struct python3_send_config_callback_data callback_data = { data };
+	struct python3_send_config_callback_data callback_data = { data, target };
 	ret = rrr_settings_iterate_packed (
 			data->thread_data->init_data.instance_config->settings,
 			python3_send_config_callback,
@@ -170,6 +147,10 @@ int python3_send_config (struct python3_data *data) {
 	);
 
 	return ret;
+}
+
+int python3_send_start_sourcing (struct python3_fork *target) {
+	return rrr_py_persistent_start_sourcing (target);
 }
 
 int python3_start(struct python3_data *data) {
@@ -211,47 +192,51 @@ int python3_start(struct python3_data *data) {
 		goto out_thread_out;
 	}
 
-	if (data->config_function != NULL) {
-		if (python3_send_config(data) != 0) {
-			ret = 1;
-			goto out_thread_out;
-		}
-	}
-
 	// START PROCESSING THREAD
 	if (data->process_function != NULL) {
 		if ((ret = rrr_py_start_persistent_rw_thread (
 				&data->processing_fork,
 				&data->rrr_objects,
 				data->python3_module,
-				data->process_function
+				data->process_function,
+				data->config_function
 		)) != 0) {
 			VL_MSG_ERR("Could not start python3 process function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-			goto out_start_process;
+			goto out_thread_out;
 		}
 
-		out_start_process:
-
-		if (ret != 0) {
+		if (python3_send_config(data, data->processing_fork) != 0) {
+			VL_MSG_ERR("Could not send configuration to processing thread in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
 			goto out_thread_out;
 		}
 	}
 
 	// START SOURCE THREAD
 	if (data->source_function != NULL) {
-		if ((ret = rrr_py_start_persistent_ro_thread (
+		if ((ret = rrr_py_start_persistent_rw_thread (
 				&data->source_fork,
 				&data->rrr_objects,
 				data->python3_module,
-				data->source_function
+				data->source_function,
+				data->config_function
 		)) != 0) {
 			VL_MSG_ERR("Could not start python3 source function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-			goto out_start_source;
+			goto out_thread_out;
 		}
 
-		out_start_source:
+		if (python3_send_config(data, data->source_fork) != 0) {
+			VL_MSG_ERR("Could not send configuration to source thread in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out_thread_out;
+		}
 
-		if (ret != 0) {
+		// This stops read/write behavior and initiates source only behavior
+		if ((ret = python3_send_start_sourcing(data->source_fork)) != 0) {
+			VL_MSG_ERR("Could not start sourcing in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
 			goto out_thread_out;
 		}
 	}
@@ -443,19 +428,29 @@ int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void
 
 	int ret = 0;
 
-	if (!RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
-		VL_MSG_ERR("Warning: Received non vl_message from python3 processor function, discarding it.\n");
+	if (RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
+		struct vl_message *vl_message = (struct vl_message *) message;
+
+		VL_DEBUG_MSG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
+				INSTANCE_D_NAME(python3_data->thread_data), vl_message->timestamp_from);
+
+		callback_data->message_count++;
+		fifo_buffer_write(callback_data->output_buffer, (char*) vl_message, sizeof(*vl_message));
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
+		struct rrr_setting_packed *setting = (struct rrr_setting_packed *) message;
+		rrr_settings_update_used (
+				python3_data->thread_data->init_data.instance_config->settings,
+				setting->name,
+				setting->was_used,
+				rrr_settings_iterate_nolock
+		);
+	}
+	else {
+		VL_MSG_ERR("Warning: Received non vl_message and non rrr_settigns from python3 processor function, discarding it.\n");
 		ret = 1;
 		goto out;
 	}
-
-	struct vl_message *vl_message = (struct vl_message *) message;
-
-	VL_DEBUG_MSG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
-			INSTANCE_D_NAME(python3_data->thread_data), vl_message->timestamp_from);
-
-	callback_data->message_count++;
-	fifo_buffer_write(callback_data->output_buffer, (char*) vl_message, sizeof(*vl_message));
 
 	out:
 	if (ret != 0) {
@@ -722,12 +717,17 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 		goto out_message;
 	}
 
-	// Check after python3 has started, maybe the script uses some settings which will
-	// then be tagged as used to avoid warnings
-	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+	// This must be delayed as the results from any config functions are
+	// asynchronously received
+	uint64_t check_settings_used_time = time_get_64() + 1000000;
 
 	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
+
+		if (check_settings_used_time != 0 && check_settings_used_time > time_get_64()) {
+			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+			check_settings_used_time = 0;
+		}
 
 		int output_buffer_size = fifo_buffer_get_entry_count(&data->output_buffer);
 

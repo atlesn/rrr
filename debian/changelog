@@ -1,3 +1,9 @@
+rrr (0.16-3) unstable; urgency=medium
+
+  * Misc. fixes for Python
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Mar 2020 06:01:07 +0100
+
 rrr (0.16-2) unstable; urgency=medium
 
   * Remove OpenSSL-code
