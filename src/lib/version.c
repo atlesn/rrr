@@ -22,5 +22,5 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "build_timestamp.h"
 
 int rrr_verify_library_build_timestamp (long long int timestamp) {
-	return (timestamp == VL_BUILD_TIMESTAMP);
+	return (timestamp == RRR_BUILD_TIMESTAMP);
 }

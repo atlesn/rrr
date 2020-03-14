@@ -31,7 +31,7 @@ int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));
 
 	if (pthread_mutex_init(&pool->lock, 0) != 0) {
-		VL_MSG_ERR("Could not initialize lock in rrr_mqtt_id_pool_init\n");
+		RRR_MSG_ERR("Could not initialize lock in rrr_mqtt_id_pool_init\n");
 		return 1;
 	}
 
@@ -65,7 +65,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssiz
 
 	uint32_t *new_pool = realloc(pool->pool, new_size);
 	if (new_pool == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
 		return 1;
 	}
 
@@ -93,7 +93,7 @@ static inline uint16_t __rrr_mqtt_id_pool_get_id_32 (uint32_t *source) {
 		tmp >>= 1;
 	}
 
-	VL_BUG("Did not find the free bit in __rrr_mqtt_id_pool_get_id_32\n");
+	RRR_BUG("Did not find the free bit in __rrr_mqtt_id_pool_get_id_32\n");
 
 	return 0;
 }
@@ -114,12 +114,12 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	}
 	MIN_MAJ_MASK(ret);
 
-	VL_DEBUG_MSG_3("Get ID, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+	RRR_DBG_3("Get ID, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
 			min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
 
 	if (maj < pool->allocated_majors && (pool->pool[maj] & mask) == 0) {
 		pool->pool[maj] |= mask;
-		VL_DEBUG_MSG_3("Fast-allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[maj]);
+		RRR_DBG_3("Fast-allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[maj]);
 		goto out;
 	}
 
@@ -130,7 +130,7 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 		uint16_t ret_tmp = __rrr_mqtt_id_pool_get_id_32 (&(pool->pool[i]));
 		if (ret_tmp > 0) {
 			ret = ret_tmp + 32 * i;
-			VL_DEBUG_MSG_3("Allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[i]);
+			RRR_DBG_3("Allocated ID %u, pool block %" PRIu32 "\n", ret, pool->pool[i]);
 			goto out;
 		}
 	}
@@ -139,7 +139,7 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 		goto retry;
 	}
 	else {
-		VL_MSG_ERR("No more room in ID pool\n");
+		RRR_MSG_ERR("No more room in ID pool\n");
 	}
 
 	out:
@@ -153,15 +153,15 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 
 	pthread_mutex_lock(&pool->lock);
 
-	VL_DEBUG_MSG_3("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+	RRR_DBG_3("Release ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
 			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
 
 	if (maj >= pool->allocated_majors) {
-		VL_BUG("Tries to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
+		RRR_BUG("Tries to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
 	}
 
 	if ((pool->pool[maj] & mask) == 0) {
-		VL_BUG("Tried to release unused ID in rrr_mqtt_id_pool_release_id\n");
+		RRR_BUG("Tried to release unused ID in rrr_mqtt_id_pool_release_id\n");
 	}
 
 	pool->pool[maj] &= ~mask;
@@ -176,18 +176,18 @@ int rrr_mqtt_id_pool_reserve_id_hard (struct rrr_mqtt_id_pool *pool, uint16_t id
 
 	pthread_mutex_lock(&pool->lock);
 
-	VL_DEBUG_MSG_3("Hard reserve ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
+	RRR_DBG_3("Hard reserve ID %u, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
 			id, min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
 
 	if (maj >= pool->allocated_majors) {
 		ssize_t diff = maj - pool->allocated_majors;
 		if (__rrr_mqtt_id_pool_realloc(pool, diff + 1) != 0) {
-			VL_BUG("No more room in ID pool in rrr_mqtt_id_pool_reserve_id_hard\n");
+			RRR_BUG("No more room in ID pool in rrr_mqtt_id_pool_reserve_id_hard\n");
 		}
 	}
 
 	if ((pool->pool[maj] & mask) != 0) {
-		VL_DEBUG_MSG_1("Hard reserve of ID %u failed, already taken.\n", id);
+		RRR_DBG_1("Hard reserve of ID %u failed, already taken.\n", id);
 		ret = 1;
 		goto out;
 	}

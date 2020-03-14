@@ -267,7 +267,7 @@ struct rrr_mqtt_p {
 static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	if (p->users == 0) {
-		VL_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
+		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
 	}
 //	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
@@ -280,12 +280,12 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
+	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
 	if ((p)->users < 0) {
-		VL_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
+		RRR_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
 	}
 	if (p->users == 0) {
 		pthread_mutex_destroy(&p->refcount_lock);
@@ -487,7 +487,7 @@ struct rrr_mqtt_p_auth {
 };
 
 struct rrr_mqtt_p_queue {
-	struct fifo_buffer buffer;
+	struct rrr_fifo_buffer buffer;
 };
 
 #define RRR_MQTT_P_TYPE_RESERVED	0
@@ -512,7 +512,7 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
 extern const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[];
 static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_properties (uint8_t id) {
 	if (id > 15 || id == 0) {
-		VL_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
+		RRR_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
 	}
 	return &rrr_mqtt_p_type_properties[id];
 }
@@ -548,7 +548,7 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
 ) {
 	const struct rrr_mqtt_p_type_properties *properties = source->type_properties;
 	if (properties->clone == NULL) {
-		VL_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
+		RRR_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
 	}
 	return properties->clone(source);
 }
