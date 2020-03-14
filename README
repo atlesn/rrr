@@ -1,14 +1,21 @@
 # README FOR READ ROUTE RECORD (triple R)
 ## ABOUT
 
-RRR is designed to read data from sensors and logging it in a threaded and
-buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
-routed between custom modules by having "senders" specified for some of them, instructing
-them who to read from. Source modules should have a buffer which they write to
-independently from their readers.
+RRR is designed to process, transmit and save all kinds of measurements or messages. RRR has a variety
+of different modules which can be chained together to retrieve, transmit and save messages.
 
 RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
-piping or files. MQTT is also supported, both subscribing and publishing.
+piping or files.
+
+- Acquire messages using piping, UNIX sockets, UDP-packets
+- Transfer messages using MQTT or UDP
+- Saving messages using InfluxDB and MySQL
+
+RRR can also be extended by writing custom Perl or Python modules, and can function as a stand-alone MQTT broker.
+
+## DEVELOPMENT
+
+Please create an issue on the RRR GitHub page if you would like to see more functionallity.
 
 ## QUICK START
 
@@ -175,32 +182,52 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
        from rrr_helper import *
        import time
+       
+       my_global_variable = ""   
+
+       def config(socket : rrr_socket, rrr_setting : setting):
+            global my_global_variable
+
+            # retrieve some custom settings from configuration file. The get()
+            # will update the "was-used" flag in the setting.
+            print ("Received a setting: " + setting.name + "=" + setting.get())
+
+            # set a global variable
+            if setting.name == "my_setting":
+                 my_global_variable = setting.get()
+
+            # send settings back to update which have been read (optional)
+            socket.send(setting)
+
+            return True
 
        def process(socket : rrr_socket, message: vl_message):
+            # Return False if something is wrong
+            if my_global_variable == "":
+                 print("Error: configuration failure")
+                 return False
+
             # modify the retrieved message as needed
             message.timestamp_from = message.timestamp_from + 1
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             return True
 
        def source(socket : rrr_socket):
             # create a new message
             message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             # sleep to limit output rate
             time.sleep(1)
+
             return True
 
-       def config(socket : rrr_socket, settings : rrr_instance_settings):
-            # retrieve some custom settings from configuration file
-            print ("1: " + settings['custom_config_argument_1'])
-            print ("2: " + settings['custom_config_argument_2'])
-            # send settings back to update which have been read (optional)
-            socket.send(settings)
-            return True
+
 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 

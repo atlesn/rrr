@@ -1,15 +1,11 @@
-if VL_WITH_OPENSSL
-encryption = crypt.c module_crypt.c
-endif
-
 if VL_WITH_MYSQL
 mysql = mysql.c
 endif
 
 lib_LTLIBRARIES = librrr.la
-librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
-librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${MYSQL_LDFLAGS}
-librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c ${encryption} \
+librrr_la_CFLAGS = ${AM_CFLAGS}
+librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS}
+librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c array.c type.c version.c configuration.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \

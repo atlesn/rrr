@@ -43,8 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "../../config.h"
 
-// TODO : Many of these functions may be used by other modules like ipclient/ipserver. Migrate functionality to rrr_socket.
-
 #define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 10
 #define RRR_PYTHON3_MAX_IN_FLIGHT 50
 
@@ -507,7 +505,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		goto out;
 	}
 
-	uint8_t msg_type = 0;
+	uint16_t msg_type = 0;
 	uint32_t msg_size = 0;
 	uint64_t msg_value = 0;
 
@@ -526,13 +524,13 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			VL_BUG("Received a setting with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
 
-		msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+		msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
 		msg_size = sizeof(struct rrr_setting_packed);
 
 		rrr_settings_packed_prepare_for_network((struct rrr_setting_packed*) message);
 	}
 	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
-		msg_type = RRR_SOCKET_MSG_TYPE_CTRL;
+		msg_type = message->msg_type;
 		msg_size = message->msg_size;
 		msg_value = message->msg_value;
 	}
@@ -615,6 +613,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 
 struct socket_recv_callback_data {
 	struct rrr_socket_msg *result;
+	PyObject *socket;
 };
 
 static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *read_session, void *arg) {
@@ -635,6 +634,12 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 		ret = 1;
 		goto out;
 	}
+
+	VL_DEBUG_MSG_7 ("python3 socket recv on socket %s fd %i pid %i size %u\n",
+			rrr_python3_socket_get_filename(callback_data->socket),
+			rrr_python3_socket_get_fd(callback_data->socket),
+			getpid(), tmp_head->msg_size
+	);
 
 /*
 	if (ret != (int)tmp_head.msg_size) {
@@ -666,18 +671,17 @@ static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *r
 		}
 	}
 	else if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
+		vl_u16 flags = RRR_SOCKET_MSG_CTRL_FLAGS(tmp_head);
+		flags &= ~(RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING|RRR_SOCKET_MSG_CTRL_F_RESERVED);
+		if (flags != 0) {
+			VL_MSG_ERR("Received unknown flags %u in python3 socket control message\n", flags);
+			ret = 1;
+			goto out;
+		}
 	}
 	else {
 		VL_MSG_ERR("Received a message in python3 socket receive function  of unknown type %u\n", tmp_head->msg_type);
 		ret = 1;
-		goto out;
-	}
-
-	if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
-		// Above validate function should catch invalid flags
-		VL_BUG("Unknown flags in control message in python3 socket receive (control message not supported)\n");
-
-		// Do not return control messages to application
 		goto out;
 	}
 
@@ -700,7 +704,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 		goto out;
 	}
 
-	struct socket_recv_callback_data callback_data = { NULL };
+	struct socket_recv_callback_data callback_data = { NULL, socket };
 
 	ret = rrr_socket_read_message (
 			&socket_data->read_sessions,

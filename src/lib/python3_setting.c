@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
+#include "python3_setting.h"
 
 /*
  struct rrr_setting_packed {
@@ -99,6 +100,7 @@ PyObject *rrr_python3_setting_f_get (PyObject *self, PyObject *dummy) {
 	(void)(dummy);
 
 	if (RRR_SETTING_IS_STRING(&data->setting)) {
+		data->setting.was_used = 1;
 		return PyUnicode_FromString(data->setting.data);
 	}
 	else if (RRR_SETTING_IS_UINT(&data->setting)) {
@@ -242,9 +244,6 @@ PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg) {
 		ret = 1;
 		goto out;
 	}
-
-	printf ("Name: %s\n", (char*) new_setting + 36);
-	printf ("Name: %s\n", new_setting->setting.name);
 
 	out:
 	if (ret != 0) {

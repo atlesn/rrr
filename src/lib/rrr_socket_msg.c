@@ -43,6 +43,23 @@ void rrr_socket_msg_populate_head (
 	message->msg_value = value;
 }
 
+void rrr_socket_msg_populate_control_msg (
+		struct rrr_socket_msg *message,
+		vl_u16 flags,
+		vl_u64 value
+) {
+	if ((flags & RRR_SOCKET_MSG_CTRL_F_RESERVED) != 0) {
+		VL_BUG("Reserved flags were set in rrr_socket_msg_populate_control_msg\n");
+	}
+
+	rrr_socket_msg_populate_head (
+			message,
+			RRR_SOCKET_MSG_TYPE_CTRL | flags,
+			sizeof(*message),
+			value
+	);
+}
+
 void rrr_socket_msg_checksum_and_to_network_endian (
 		struct rrr_socket_msg *message
 ) {

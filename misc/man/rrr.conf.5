@@ -1,4 +1,4 @@
-.Dd 2020-02-16
+.Dd 2020-03-14
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -284,8 +284,7 @@ This option cannot be used with
 .B mysql_colums.
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
-.It mysql_special_columns={column name 1,column name 2,...}
-.It mysql_special_values={columns value 1,column value 2,...}
+.It mysql_special_columns={column1=value1,column2=value2,...}
 Used to write fixed values to the database.
 .It mysql_add_timestamp_col={yes|no}
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
@@ -300,9 +299,7 @@ It is possible to specify both source- and process-functions at the same time.
 Functions should return 0 on success and put any messages into the result class provided in the argument.
 If something goes wrong, the functions can return 1 or raise an exception which makes RRR stop all running instances and restart.
 .PP
-The RRR module should be imported by the custom python program.
-It can also be reviewed to understand the classes used, rrr_settings, vl_message and rrr_result.
-It is usually found in "/usr/lib/python(VERSION OF PYTHON)/site-packages/rrr.py", and in the source directory "./src/python/rrr.py".
+The RRR module should be imported by the custom python program, but is in only available when the python script is called from RRR.
 .PP
 The following options may be specified:
 .Bl -tag -width -indent
@@ -315,43 +312,71 @@ The name of the source function in the python program which we read from contino
 .It python3_process_function=FUNCTION NAME
 The name of the processing function in the python program which we send packets from other modules to. We also read any messages sent back.
 .It python3_config_function=FUNCTION NAME
-The name of the function in the python program to which we send the settings structure.
+The name of the function in the python program to which we send settings form the configuration file.
 All settings defined inside the python block in the configuration file are sent in here.
-The function might also send the settings back after which settings which have been accessed are updated.
+The function might also notify that settings have been accessed to avoid warnings.
+The config function is called once for every setting.
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the python program might be set as needed.
 .El
 .PP
-Below follows an example python message processing and generating program.
+Below follows an example python message processing and generating program. A socket is used to
+post messages. The process and source functions have their own environments, and they will not
+share any global variables set by the config function. The config function is called first in
+the process environment, then in the source environment.
 .PP
 .nf
-from rrr import *
+from rrr_helper import *
 import time
 
-def process(result : rrr_result, message: vl_message):
+my_global_variable = ""
+
+def config(socket : rrr_socket, rrr_setting : setting):
+	global my_global_variable
+
+	# retrieve some custom settings from configuration file. The get()
+	# will update the "was-used" flag in the setting.
+	print ("Received a setting: " + setting.name + "=" + setting.get())
+
+	# set a global variable
+	if setting.name == "my_setting":
+		my_global_variable = setting.get()
+
+	# send settings back to update which have been read (optional)
+	socket.send(setting)
+	
+	return True
+
+def process(socket : rrr_socket, message: vl_message):
+	# Return False if something is wrong
+	if my_global_variable == "":
+		print("Error: configuration failure")
+		return False
+		
 	# modify the retrieved message as needed
 	message.timestamp_from = message.timestamp_from + 1
+	
 	# queue the message to be sent back (optional) for python to give to readers
-	result.put(message)
-	return 0
+	socket.send(message)
+	
+	return True
 
-def source(result : rrr_result):
+def source(socket : rrr_socket):
 	# create a new message
 	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	
 	# queue the message to be sent back (optional) for python to give to readers
-	result.put(message)
+	socket.send(message)
+	
 	# sleep to limit output rate
 	time.sleep(1)
-	return 0
 
-def config(result : rrr_result, settings : rrr_instance_settings):
-	# retrieve some custom settings from configuration file
-	print ("1: " + settings['custom_config_argument_1'])
-	print ("2: " + settings['custom_config_argument_2'])
-	# send settings back to update which have been read (optional)
-	result.put(settings)
-	return 0
+	return True
+	
 .fi
+More details about Python in 
+.Xr rrr_python3(5)
+.PP
 .SS perl5 (P)
 The perl5 module makes it possible to process and generate messages in a custom 
 perl script. The first and only argument to the source- and generate-functions

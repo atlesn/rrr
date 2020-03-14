@@ -32,11 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-/*
-#ifdef VL_WITH_OPENSSL
-#include "../lib/module_crypt.h"
-#endif
-*/
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -106,12 +101,6 @@ struct ipclient_data {
 	char *ip_default_remote_port;
 
 	rrr_setting_uint src_port;
-	/*
-#ifdef VL_WITH_OPENSSL
-	char *crypt_file;
-	struct module_crypt_data crypt_data;
-#endif
-*/
 	struct rrr_udpstream_asd *udpstream_asd;
 //	struct ipclient_destination_collection destinations;
 };
@@ -125,9 +114,6 @@ static int __ipclient_destination_destroy (struct ipclient_destination *dest) {
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
 	/*
-#ifdef VL_WITH_OPENSSL
-	RRR_FREE_IF_NOT_NULL(data->crypt_file);
-#endif
 */
 	if (data->udpstream_asd != NULL) {
 		rrr_udpstream_asd_destroy(data->udpstream_asd);
@@ -272,19 +258,6 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		}
 		ret = 0;
 	}
-/*
-#ifdef VL_WITH_OPENSSL
-	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->crypt_file, config, "ipclient_keyfile")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Error while parsing ipclient_keyfile settings of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		data->crypt_file = NULL;
-		ret = 0;
-	}
-#endif
-*/
 /*	if ((ret = rrr_instance_config_check_yesno(&data->listen, config, "ipclient_listen")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			VL_MSG_ERR("Syntax error in ipclient_listen for instance %s, specify yes or no\n", config->name);
@@ -735,16 +708,6 @@ static void *thread_entry_ipclient (struct vl_thread *thread) {
 	int no_polling = poll_collection_count(&poll) + poll_collection_count(&poll_ip) > 0 ? 0 : 1;
 
 	VL_DEBUG_MSG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
-/*
-#ifdef VL_WITH_OPENSSL
-	if (	data->crypt_file != NULL &&
-			module_crypt_data_init(&data->crypt_data, data->crypt_file) != 0
-	) {
-		VL_MSG_ERR("ipclient: Cannot continue without crypt library\n");
-		goto out_message;
-	}
-#endif
-*/
 
 	network_restart:
 	VL_DEBUG_MSG_2 ("ipclient instance %s restarting network\n", INSTANCE_D_NAME(thread_data));

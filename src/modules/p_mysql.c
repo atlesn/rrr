@@ -441,6 +441,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct ip_bu
 
 	int column_count =	RRR_MAP_COUNT(&data->columns) +
 						RRR_MAP_COUNT(&data->column_tags) +
+						RRR_MAP_COUNT(&data->special_columns) +
 						(data->add_timestamp_col != 0 ? 1 : 0);
 
 	if (allocate_and_clear_bind_as_needed(data, column_count) != 0) {
