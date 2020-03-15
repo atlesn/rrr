@@ -46,7 +46,7 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 
 	struct rrr_map_item *item = malloc(sizeof(*item));
 	if (item == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -56,7 +56,7 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 	item->value = malloc(field_size);
 
 	if (item->tag == NULL || item->value == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -101,7 +101,7 @@ int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *d
 
 			const char *pos = delimeter_pos + delimeter_length;
 			if (*pos == '\0' || pos > (input + input_length)) {
-				VL_MSG_ERR("Missing value after delimeter '%s' in definition '%s'\n", delimeter, input);
+				RRR_MSG_ERR("Missing value after delimeter '%s' in definition '%s'\n", delimeter, input);
 				ret = 1;
 				goto out;
 			}

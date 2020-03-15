@@ -85,7 +85,7 @@ struct rrr_mqtt_conn {
 
 	pthread_mutex_t lock;
 
-	struct ip_data ip_data;
+	struct rrr_ip_data ip_data;
 
 	uint64_t connect_time;
 	uint64_t last_seen_time;
@@ -208,7 +208,7 @@ int rrr_mqtt_conn_collection_init (
 int rrr_mqtt_conn_collection_new_connection (
 		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_conn_collection *connections,
-		const struct ip_data *ip_data,
+		const struct rrr_ip_data *ip_data,
 		const struct sockaddr *remote_addr
 );
 int rrr_mqtt_conn_collection_connect (
@@ -220,7 +220,7 @@ int rrr_mqtt_conn_collection_connect (
 int rrr_mqtt_conn_collection_accept (
 		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_conn_collection *connections,
-		struct ip_data *ip,
+		struct rrr_ip_data *ip,
 		const char *creator
 );
 

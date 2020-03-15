@@ -48,19 +48,19 @@ typedef unsigned long long int rrr_setting_uint;
 // TODO : convert to RRR linked list
 
 struct rrr_setting {
-	vl_u32 type;
+	rrr_u32 type;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
-	vl_u32 data_size;
+	rrr_u32 data_size;
 	void *data;
-	vl_u32 was_used;
+	rrr_u32 was_used;
 };
 
 struct rrr_setting_packed {
 	RRR_SOCKET_MSG_HEAD;
 	char name[RRR_SETTINGS_MAX_NAME_SIZE];
-	vl_u32 type;
-	vl_u32 was_used;
-	vl_u32 data_size;
+	rrr_u32 type;
+	rrr_u32 was_used;
+	rrr_u32 data_size;
 	char data[RRR_SETTINGS_MAX_DATA_SIZE];
 } __attribute((packed));
 

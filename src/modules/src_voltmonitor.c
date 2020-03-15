@@ -51,7 +51,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../global.h"
 
 struct voltmonitor_data {
-	struct fifo_buffer buffer;
+	struct rrr_fifo_buffer buffer;
 	usb_dev_handle *usb_handle;
 	struct usb_device *usb_device;
 
@@ -116,33 +116,33 @@ static int usb_connect(struct voltmonitor_data *data) {
 	}
 
 	if ( ! founddev ) {
-		VL_MSG_ERR ("voltmonitor: USB dev not found\n");
+		RRR_MSG_ERR ("voltmonitor: USB dev not found\n");
 		goto err_out;
 	}
 
 	usb_dev_handle *h = usb_open ( founddev );
 
 	if ( ! h ) {
-		VL_MSG_ERR ("voltmonitor: USB open failed\n");
+		RRR_MSG_ERR ("voltmonitor: USB open failed\n");
 		goto err_out;
 	}
 
 	char drivername[64] ;
 	if ( usb_get_driver_np ( h, 0, drivername, sizeof(drivername) ) == 0 ) {
-		VL_DEBUG_MSG_2 ( "voltage monitor usb device driver: %s\n", drivername );
+		RRR_DBG_2 ( "voltage monitor usb device driver: %s\n", drivername );
 		
 		if ( drivername[0] != 0 ) {
-			VL_DEBUG_MSG_2 ( "voltagemonitor releasing driver\n" );
+			RRR_DBG_2 ( "voltagemonitor releasing driver\n" );
 			
 			if ( usb_detach_kernel_driver_np ( h, 0 ) ) {
-				VL_MSG_ERR ("voltmonitor: release kernel USB driver failed\n");
+				RRR_MSG_ERR ("voltmonitor: release kernel USB driver failed\n");
 				goto err_close_device;
 			}
 		}
 	}
 
 	if ( usb_claim_interface ( h, 0 ) ) {
-		VL_MSG_ERR ("voltmonitor: USB claim failed\n");
+		RRR_MSG_ERR ("voltmonitor: USB claim failed\n");
 		goto err_close_device;
 	}
 
@@ -152,7 +152,7 @@ static int usb_connect(struct voltmonitor_data *data) {
 	outbuf[0] = 0xff;
 	outbuf[1] = 0x37;
 	if ( usb_interrupt_write ( h, 1, outbuf, sizeof(outbuf), 1000 ) != 64 ) {
-		VL_MSG_ERR ("voltmonitor: USB write failed\n");
+		RRR_MSG_ERR ("voltmonitor: USB write failed\n");
 		goto err_close_device;
 	}
 
@@ -160,18 +160,18 @@ static int usb_connect(struct voltmonitor_data *data) {
 	char inbuf[64];
 	memset(inbuf, '\0', 64);
 	if ( usb_interrupt_read ( h, 1, inbuf, sizeof(inbuf), 1000 ) != 64 ) {
-		VL_MSG_ERR ("voltmonitor: USB read failed\n");
+		RRR_MSG_ERR ("voltmonitor: USB read failed\n");
 		goto err_close_device;
 	}
 
 	int subtype = inbuf[6];
 	int unitversion = inbuf[5];
 
-	VL_DEBUG_MSG_2 ( "voltagemonitor device subtype: %d\n", subtype );
-	VL_DEBUG_MSG_2 ( "voltagemonitor unitversion: %d\n", unitversion );
+	RRR_DBG_2 ( "voltagemonitor device subtype: %d\n", subtype );
+	RRR_DBG_2 ( "voltagemonitor unitversion: %d\n", unitversion );
 	
 	if ( unitversion != 5 || subtype != 7 ) {
-		VL_MSG_ERR ("voltmonitor: Unknown USB voltmeter version\n");
+		RRR_MSG_ERR ("voltmonitor: Unknown USB voltmeter version\n");
 		goto err_close_device;
 	}
 
@@ -190,20 +190,20 @@ static int usb_connect(struct voltmonitor_data *data) {
 
 static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	if (data->usb_channel > 2 || data->usb_channel < 1) {
-		VL_MSG_ERR ("voltmonitor: Channel must be 1 or 2, got %i\n", data->usb_channel);
+		RRR_MSG_ERR ("voltmonitor: Channel must be 1 or 2, got %i\n", data->usb_channel);
 		exit(EXIT_FAILURE);
 	}
 
-	VL_DEBUG_MSG_2 ("Read voltage channel %i calibration %f\n", data->usb_channel, data->usb_calibration);
+	RRR_DBG_2 ("Read voltage channel %i calibration %f\n", data->usb_channel, data->usb_calibration);
 
 	unsigned int channel = data->usb_channel - 1;
 
 	if (data->usb_handle == NULL) {
 		if (usb_connect(data) != 0) {
-			VL_MSG_ERR ("voltmonitor: USB-device connect failed\n");
+			RRR_MSG_ERR ("voltmonitor: USB-device connect failed\n");
 		}
 		if (data->usb_handle == NULL) {
-			VL_MSG_ERR ("voltmonitor: USB-device not ready\n");
+			RRR_MSG_ERR ("voltmonitor: USB-device not ready\n");
 			goto err_out;
 		}
 	}
@@ -213,28 +213,28 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	memset ( outbuf, 255, 64 );
 	outbuf[0] = 0x37;
 		if ( usb_interrupt_write ( data->usb_handle, 1, outbuf, sizeof(outbuf), 1000 ) != 64 ) {
-			VL_MSG_ERR ("voltmonitor: USB write failed\n");
+			RRR_MSG_ERR ("voltmonitor: USB write failed\n");
 			goto err_close_device;
 		}
 
 	char inbuf[64];
 	memset ( inbuf, 255, 64 );
 		if ( usb_interrupt_read ( data->usb_handle, 1, inbuf, sizeof(inbuf), 1000 ) != 64 ) {
-			VL_MSG_ERR ( "voltagemonitor read failed\n" );
-			VL_MSG_ERR ("voltmonitor: USB read failed\n");
+			RRR_MSG_ERR ( "voltagemonitor read failed\n" );
+			RRR_MSG_ERR ("voltmonitor: USB read failed\n");
 			goto err_close_device;
 		}
 
 		if ( inbuf[0] != 0x37 ) {
-			VL_MSG_ERR ("voltmonitor: USB parse failed, 0x37 not found\n");
+			RRR_MSG_ERR ("voltmonitor: USB parse failed, 0x37 not found\n");
 			goto err_close_device;
 		}
 
-	if (VL_DEBUGLEVEL_3) {
+	if (RRR_DEBUGLEVEL_3) {
 		for (int j = 0; j < 64; j++) {
-			VL_DEBUG_MSG ("%02x ", inbuf[j]);
+			RRR_DBG ("%02x ", inbuf[j]);
 		}
-		VL_DEBUG_MSG ("\n");
+		RRR_DBG ("\n");
 	}
 
 	unsigned int channel_add = (channel == 0 ? 0 : 4);
@@ -262,7 +262,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 	*millivolts = value_1 * 1000;
 
-	VL_DEBUG_MSG_2 ("voltmonitor reading: %04f - %d\n", value_1, *millivolts);
+	RRR_DBG_2 ("voltmonitor reading: %04f - %d\n", value_1, *millivolts);
 
 	return 0;
 
@@ -279,22 +279,22 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return  fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+	return  rrr_fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 int data_init(struct voltmonitor_data *data) {
 	memset(data, '\0', sizeof(*data));
-	return fifo_buffer_init(&data->buffer);
+	return rrr_fifo_buffer_init(&data->buffer);
 }
 
 void data_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
-	fifo_buffer_invalidate(&data->buffer);
+	rrr_fifo_buffer_invalidate(&data->buffer);
 }
 
 int convert_float(const char *value, float *result) {
@@ -333,19 +333,19 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 
 	if (vm_calibration != NULL) {
 		if (convert_float(vm_calibration, &calibration) != 0) {
-			VL_MSG_ERR ("Syntax error in vm_calibration parameter, could not understand the number '%s'\n", vm_calibration);
+			RRR_MSG_ERR ("Syntax error in vm_calibration parameter, could not understand the number '%s'\n", vm_calibration);
 			ret = 1;
 			goto out;
 		}
 	}
 	if (vm_channel != NULL) {
 		if (averager_convert_integer_10(vm_channel, &channel) != 0) {
-			VL_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
+			RRR_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
 			ret = 1;
 			goto out;
 		}
 		if (channel != 1 && channel != 2) {
-			VL_MSG_ERR ("vm_channel must be 1 or 2\n");
+			RRR_MSG_ERR ("vm_channel must be 1 or 2\n");
 			ret = 1;
 			goto out;
 		}
@@ -366,26 +366,26 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	return ret;
 }
 
-static void *thread_entry_voltmonitor (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
 	thread_data->thread = thread;
 
 	if (data_init(data) != 0) {
-		VL_MSG_ERR("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	pthread_cleanup_push(data_cleanup, data);
 
-	VL_DEBUG_MSG_1 ("voltmonitor thread data is %p\n", thread_data);
+	RRR_DBG_1 ("voltmonitor thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		pthread_exit(0);
@@ -397,25 +397,25 @@ static void *thread_entry_voltmonitor (struct vl_thread *thread) {
 
 	pthread_cleanup_push(usb_cleanup, data);
 
-	while (!thread_check_encourage_stop(thread_data->thread)) {
-		update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
+		rrr_update_watchdog_time(thread_data->thread);
 
-		uint64_t time = time_get_64();
+		uint64_t time = rrr_time_get_64();
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
-			VL_MSG_ERR ("voltmonitor: Voltage reading failed\n");
+			RRR_MSG_ERR ("voltmonitor: Voltage reading failed\n");
 			usleep (1000000); // 1000 ms
 			continue;
 		}
 
-		struct vl_message *reading = message_new_reading(abs(millivolts), time);
-		fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+		struct rrr_message *reading = rrr_message_new_reading(abs(millivolts), time);
+		rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 
 		usleep (250000); // 250 ms
 
 	}
 
-	VL_DEBUG_MSG_1 ("voltmonitor received encourage stop\n");
+	RRR_DBG_1 ("voltmonitor received encourage stop\n");
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -438,7 +438,7 @@ static int test_config (struct rrr_instance_config *config) {
 	return ret;
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_voltmonitor,
 		NULL,
@@ -456,9 +456,9 @@ static const char *module_name = "voltmonitor";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 		data->module_name = module_name;
-		data->type = VL_MODULE_TYPE_SOURCE;
+		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
 		data->private_data = NULL;

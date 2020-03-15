@@ -68,7 +68,7 @@ int rrr_http_session_new (
 
 	struct rrr_http_session *session = malloc(sizeof(*session));
 	if (session == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_session_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -80,7 +80,7 @@ int rrr_http_session_new (
 
 	session->host = strdup(host);
 	if (session->host == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_session_new A\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new A\n");
 		ret = 1;
 		goto out;
 	}
@@ -93,7 +93,7 @@ int rrr_http_session_new (
 	}
 
 	if (session->endpoint == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_session_new B\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new B\n");
 		ret = 1;
 		goto out;
 	}
@@ -101,7 +101,7 @@ int rrr_http_session_new (
 	if (user_agent != NULL && *user_agent != '\0') {
 		session->user_agent = strdup(user_agent);
 		if (session->user_agent == NULL) {
-			VL_MSG_ERR("Could not allocate memory in rrr_http_session_new D\n");
+			RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new D\n");
 			ret = 1;
 			goto out;
 		}
@@ -110,7 +110,7 @@ int rrr_http_session_new (
 	rrr_socket_read_session_collection_init(&session->read_sessions);
 
 	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
-		VL_MSG_ERR("Could not create request part in rrr_http_session_new\n");
+		RRR_MSG_ERR("Could not create request part in rrr_http_session_new\n");
 		goto out;
 	}
 
@@ -151,7 +151,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 	// RFC7578
 
 	if ((ret = rrr_asprintf (&boundary_buf, "rrr-boundary-%i", rand())) < 0) {
-		VL_MSG_ERR("Could not create boundary_buf string in __rrr_http_session_send_post_body\n");
+		RRR_MSG_ERR("Could not create boundary_buf string in __rrr_http_session_send_post_body\n");
 		ret = 1;
 		goto out;
 	}
@@ -161,12 +161,12 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 			"Content-Type: multipart/form-data; boundary=%s\r\n", // <-- ONE CRLF
 			boundary_buf
 	)) < 0) {
-		VL_MSG_ERR("Could not create content type string in __rrr_http_session_send_post_body\n");
+		RRR_MSG_ERR("Could not create content type string in __rrr_http_session_send_post_body\n");
 		goto out;
 	}
 
 	if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send first part of HTTP request in __rrr_http_session_send_post_body\n");
+		RRR_MSG_ERR("Could not send first part of HTTP request in __rrr_http_session_send_post_body\n");
 		goto out;
 	}
 
@@ -179,13 +179,13 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 
 		if (node->name != NULL) {
 			if ((name_buf = rrr_http_util_quote_header_value(node->name, '"', '"')) == NULL) {
-				VL_MSG_ERR("Could not quote field name_buf in __rrr_http_session_send_multipart_form_data_body\n");
+				RRR_MSG_ERR("Could not quote field name_buf in __rrr_http_session_send_multipart_form_data_body\n");
 				ret = 1;
 				goto out;
 			}
 
 			if ((ret = rrr_asprintf (&name_buf_full, "; name=%s", name_buf)) != 0) {
-				VL_MSG_ERR("Could not create name_buf_full in __rrr_http_session_send_multipart_form_data_body\n");
+				RRR_MSG_ERR("Could not create name_buf_full in __rrr_http_session_send_multipart_form_data_body\n");
 				ret = 1;
 				goto out;
 			}
@@ -202,13 +202,13 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 				(name_buf_full != NULL ? name_buf_full : ""),
 				node->value
 		)) < 0) {
-			VL_MSG_ERR("Could not create content type string and body  in __rrr_http_session_send_multipart_form_data_body\n");
+			RRR_MSG_ERR("Could not create content type string and body  in __rrr_http_session_send_multipart_form_data_body\n");
 			ret = 1;
 			goto out;
 		}
 
 		if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
-			VL_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
+			RRR_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 			goto out;
 		}
 	RRR_LL_ITERATE_END();
@@ -219,13 +219,13 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 			"\r\n--%s--",  // <-- ONE CRLF AFTER BODY
 			boundary_buf
 	)) < 0) {
-		VL_MSG_ERR("Could not create last boundary in __rrr_http_session_send_multipart_form_data_body\n");
+		RRR_MSG_ERR("Could not create last boundary in __rrr_http_session_send_multipart_form_data_body\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
+		RRR_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 		goto out;
 	}
 
@@ -251,7 +251,7 @@ static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session
 	}
 
 	if (body_buf == NULL) {
-		VL_MSG_ERR("Could not create body in __rrr_http_session_send_post_urlencoded_body\n");
+		RRR_MSG_ERR("Could not create body in __rrr_http_session_send_post_urlencoded_body\n");
 		ret = 1;
 		goto out;
 	}
@@ -263,13 +263,13 @@ static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session
 			strlen(body_buf),
 			body_buf
 	)) < 0) {
-		VL_MSG_ERR("Could not create content type string in __rrr_http_session_send_get_body\n");
+		RRR_MSG_ERR("Could not create content type string in __rrr_http_session_send_get_body\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_socket_sendto(session->fd, final_buf, strlen(final_buf), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send GET body in __rrr_http_session_send_get_body\n");
+		RRR_MSG_ERR("Could not send GET body in __rrr_http_session_send_get_body\n");
 		goto out;
 	}
 
@@ -290,14 +290,14 @@ int rrr_http_session_send_request (
 
 	host_buf = rrr_http_util_quote_header_value(session->host, '"', '"');
 	if (host_buf == NULL) {
-		VL_MSG_ERR("Invalid host '%s' in rrr_http_session_send_request\n", session->host);
+		RRR_MSG_ERR("Invalid host '%s' in rrr_http_session_send_request\n", session->host);
 		ret = 1;
 		goto out;
 	}
 
 	user_agent_buf = rrr_http_util_quote_header_value(session->user_agent, '"', '"');
 	if (user_agent_buf == NULL) {
-		VL_MSG_ERR("Invalid user agent '%s' in rrr_http_session_send_request\n", session->user_agent);
+		RRR_MSG_ERR("Invalid user agent '%s' in rrr_http_session_send_request\n", session->user_agent);
 		ret = 1;
 		goto out;
 	}
@@ -313,43 +313,43 @@ int rrr_http_session_send_request (
 			host_buf,
 			user_agent_buf
 	)) < 0) {
-		VL_MSG_ERR("Error while making request string in rrr_http_session_send_request\n");
+		RRR_MSG_ERR("Error while making request string in rrr_http_session_send_request\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_socket_sendto(session->fd, request_buf, strlen(request_buf), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send first part of HTTP request in rrr_http_session_send_request\n");
+		RRR_MSG_ERR("Could not send first part of HTTP request in rrr_http_session_send_request\n");
 		goto out;
 	}
 
 	if (RRR_LL_COUNT(&session->request_part->fields) > 0) {
 		if (session->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
 			if ((ret = __rrr_http_session_send_multipart_form_data_body (session)) != 0) {
-				VL_MSG_ERR("Could not send POST multipart body in rrr_http_session_send_request\n");
+				RRR_MSG_ERR("Could not send POST multipart body in rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED) {
 			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 0)) != 0) {
-				VL_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				RRR_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
 			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 1)) != 0) {
-				VL_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
+				RRR_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else {
-			VL_MSG_ERR("Unknown request method for request with fields set (GET request cannot have body)\n");
+			RRR_MSG_ERR("Unknown request method for request with fields set (GET request cannot have body)\n");
 			ret = 1;
 			goto out;
 		}
 	}
 	else if ((ret = rrr_socket_sendto(session->fd, "\r\n", strlen("\r\n"), NULL, 0)) != 0) {
-		VL_MSG_ERR("Could not send last \r\n rrr_http_session_send_request\n");
+		RRR_MSG_ERR("Could not send last \r\n rrr_http_session_send_request\n");
 		goto out;
 	}
 
@@ -431,7 +431,7 @@ int rrr_http_session_receive (
 	}
 
 	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
-		VL_MSG_ERR("Could not create HTTP part in rrr_http_session_receive\n");
+		RRR_MSG_ERR("Could not create HTTP part in rrr_http_session_receive\n");
 		goto out;
 	}
 
@@ -461,7 +461,7 @@ int rrr_http_session_receive (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			VL_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
+			RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
 			ret = 1;
 			goto out;
 		}
@@ -474,10 +474,10 @@ int rrr_http_session_receive (
 int rrr_http_session_connect (struct rrr_http_session *session) {
 	int ret = 0;
 
-	struct ip_accept_data *accept_data = NULL;
+	struct rrr_ip_accept_data *accept_data = NULL;
 
-	if (ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, session->port, session->host) != 0) {
-		VL_MSG_ERR("Could not connect to HTTP server '%s'\n", session->host);
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, session->port, session->host) != 0) {
+		RRR_MSG_ERR("Could not connect to HTTP server '%s'\n", session->host);
 		ret = 1;
 		goto out;
 	}

@@ -51,14 +51,14 @@ int senders_add_sender (struct instance_sender_collection *collection, struct in
 	int ret = 0;
 
 	if (senders_check_exists(collection,sender)) {
-		VL_MSG_ERR("Sender %s was specified twice\n", sender->dynamic_data->instance_name);
+		RRR_MSG_ERR("Sender %s was specified twice\n", sender->dynamic_data->instance_name);
 		ret = 1;
 		goto out;
 	}
 
 	struct instance_sender *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __add_to_sender_collection\n");
+		RRR_MSG_ERR("Could not allocate memory in __add_to_sender_collection\n");
 		ret = 1;
 		goto out;
 	}

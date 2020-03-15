@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct test_result {
 	int result;
-	struct vl_message *message;
+	struct rrr_message *message;
 };
 
 /* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
@@ -64,7 +64,7 @@ struct test_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct vl_message msg;
+	struct rrr_message msg;
 } __attribute__((packed));
 
 struct test_final_data {
@@ -85,7 +85,7 @@ struct test_final_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct vl_message msg;
+	struct rrr_message msg;
 };
 
 #define TEST_DATA_ELEMENTS 12
@@ -104,21 +104,21 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	(void)(size);
 
-	struct vl_message *message = (struct vl_message *) data;
+	struct rrr_message *message = (struct rrr_message *) data;
 	struct rrr_array collection = {0};
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("dump message: 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("dump message: 0x");
 		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			char c = ((char*)message)[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
 	if (!MSG_IS_ARRAY(message)) {
@@ -217,7 +217,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
 
 	if (types[10]->element_count != 2) {
-		VL_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
+		RRR_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -226,19 +226,19 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
 
 	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
-		VL_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
+		RRR_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
 	if (blob_a[blob_a_length - 1] != '\0' || blob_b[blob_b_length - 1] != '\0') {
-		VL_MSG_ERR("Returned blobs were not zero terminated in test_type_array_callback\n");
+		RRR_MSG_ERR("Returned blobs were not zero terminated in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
 	if (strcmp(blob_a, "abcdefg") != 0 || strcmp(blob_b, "gfedcba") != 0) {
-		VL_MSG_ERR("Returned blobs did not match input in test_type_array_callback\n");
+		RRR_MSG_ERR("Returned blobs did not match input in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -248,16 +248,16 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
 
-	if (VL_DEBUGLEVEL_3) {
-		VL_DEBUG_MSG("dump final_data_raw: 0x");
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_DBG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
 			char c = ((char*)final_data_raw)[i];
 			if (c < 0x10) {
-				VL_DEBUG_MSG("0");
+				RRR_DBG("0");
 			}
-			VL_DEBUG_MSG("%x", c);
+			RRR_DBG("%x", c);
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 
 	if (final_data_raw->be1 != final_data_raw->le1 ||
@@ -317,7 +317,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 int test_do_poll_loop (
 		struct test_result *test_result,
-		struct instance_thread_data *thread_data,
+		struct rrr_instance_thread_data *thread_data,
 		int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE),
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 ) {
@@ -328,7 +328,7 @@ int test_do_poll_loop (
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
 				INSTANCE_D_NAME(thread_data), i);
 
-		struct fifo_callback_args poll_data = {NULL, test_result, 0};
+		struct rrr_fifo_callback_args poll_data = {NULL, test_result, 0};
 		ret = poll_delete(thread_data, callback, &poll_data, 150);
 		if (ret != 0) {
 			TEST_MSG("Error from poll_delete function in test_type_array\n");
@@ -390,9 +390,9 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 }
 
 int test_type_array (
-		struct vl_message **result_message_1,
-		struct vl_message **result_message_2,
-		struct vl_message **result_message_3,
+		struct rrr_message **result_message_1,
+		struct rrr_message **result_message_2,
+		struct rrr_message **result_message_3,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
 		const char *input_socket_name,
@@ -405,14 +405,14 @@ int test_type_array (
 	*result_message_2 = NULL;
 	*result_message_3 = NULL;
 
-	struct ip_buffer_entry *entry = NULL;
+	struct rrr_ip_buffer_entry *entry = NULL;
 	struct test_data *data = NULL;
 
-	struct instance_metadata *input = instance_find(instances, input_name);
-	struct instance_metadata *input_buffer_socket = instance_find(instances, input_socket_name);
-	struct instance_metadata *output_1 = instance_find(instances, output_name_1);
-	struct instance_metadata *output_2 = instance_find(instances, output_name_2);
-	struct instance_metadata *output_3 = instance_find(instances, output_name_3);
+	struct instance_metadata *input = rrr_instance_find(instances, input_name);
+	struct instance_metadata *input_buffer_socket = rrr_instance_find(instances, input_socket_name);
+	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name_1);
+	struct instance_metadata *output_2 = rrr_instance_find(instances, output_name_2);
+	struct instance_metadata *output_3 = rrr_instance_find(instances, output_name_3);
 
 	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL || output_3 == NULL) {
 		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
@@ -435,7 +435,7 @@ int test_type_array (
 		return 1;
 	}
 
-	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not a vl_message)
+	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not an rrr_message)
 
 	data = malloc(sizeof(*data));
 	memset(data, '\0', sizeof(*data));
@@ -468,15 +468,15 @@ int test_type_array (
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	data->msg.network_size = sizeof(struct vl_message) - 1;
-	data->msg.msg_size = sizeof(struct vl_message) - 1;
-	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+	data->msg.network_size = sizeof(struct rrr_message) - 1;
+	data->msg.msg_size = sizeof(struct rrr_message) - 1;
+	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_RRR_MESSAGE;
 	data->msg.topic_length = 0;
 	data->msg.data_numeric = 33;
 	data->msg.type = MSG_TYPE_MSG;
 	data->msg.class = MSG_CLASS_POINT;
 
-	message_prepare_for_network(&data->msg);
+	rrr_message_prepare_for_network(&data->msg);
 	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
 
 	ret = test_type_array_write_to_socket(data, input_buffer_socket);
@@ -486,7 +486,7 @@ int test_type_array (
 		goto out;
 	}
 
-	if (ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
+	if (rrr_ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
 		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
 		ret = 1;
 		goto out;
@@ -528,7 +528,7 @@ int test_type_array (
 	out:
 	RRR_FREE_IF_NOT_NULL(data);
 	if (entry != NULL) {
-		ip_buffer_entry_destroy(entry);
+		rrr_ip_buffer_entry_destroy(entry);
 	}
 	return ret;
 }
@@ -536,11 +536,11 @@ int test_type_array (
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_4("Received message_1 of size %lu in test_type_array_mysql_and_network_callback\n", size);
+	RRR_DBG_4("Received message_1 of size %lu in test_type_array_mysql_and_network_callback\n", size);
 
 	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
 	struct test_result *test_result = poll_data->private_data;
-	struct vl_message *message = (struct vl_message *) data;
+	struct rrr_message *message = (struct rrr_message *) data;
 
 	test_result->message = message;
 	test_result->result = 0;
@@ -562,7 +562,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	mysql_thread_init();
 
 	static const char *create_table_sql =
-	"CREATE TABLE IF NOT EXISTS `rrr-test-array-types` ("
+	"CREATE TABLE IF NOT EXISTS `rrr-test-array-types-2` ("
 		"`int1` bigint(20) NOT NULL,"
 		"`int2` bigint(20) NOT NULL,"
 		"`int3` bigint(20) NOT NULL,"
@@ -571,7 +571,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
-		"`vl_message` blob NOT NULL,"
+		"`rrr_message` blob NOT NULL,"
 		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";
@@ -581,7 +581,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 
 	ptr = mysql_init(&mysql);
 	if (ptr == NULL) {
-		VL_MSG_ERR ("Could not initialize MySQL\n");
+		RRR_MSG_ERR ("Could not initialize MySQL\n");
 		ret = 1;
 		goto out;
 	}
@@ -598,14 +598,16 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	);
 
 	if (ptr == NULL) {
-		VL_MSG_ERR ("mysql_type_array_setup_mysql: Failed to connect to database: Error: %s\n",
+		RRR_MSG_ERR ("mysql_type_array_setup_mysql: Failed to connect to database: Error: %s\n",
 				mysql_error(&mysql));
 		ret = 1;
 		goto out;
 	}
 
+	TEST_MSG("%s\n", create_table_sql);
+
 	if (mysql_query(&mysql, create_table_sql)) {
-		VL_MSG_ERR ("mysql_type_array_setup_mysql: Failed to create table: Error: %s\n",
+		RRR_MSG_ERR ("mysql_type_array_setup_mysql: Failed to create table: Error: %s\n",
 				mysql_error(&mysql));
 		ret = 1;
 		goto out_close;
@@ -657,38 +659,38 @@ int test_type_array_mysql_and_network (
 		const char *input_buffer_name,
 		const char *tag_buffer_name,
 		const char *mysql_name,
-		const struct vl_message *message
+		const struct rrr_message *message
 ) {
 	int ret = 0;
 
 	struct test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct vl_message *new_message = NULL;
-	struct ip_buffer_entry *entry = NULL;
+	struct rrr_message *new_message = NULL;
+	struct rrr_ip_buffer_entry *entry = NULL;
 	uint64_t expected_ack_timestamp = message->timestamp_from;
 
 	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
-	VL_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
 
-	new_message = message_duplicate(message);
+	new_message = rrr_message_duplicate(message);
 	if (new_message == NULL) {
-		VL_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
+		RRR_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, new_message) != 0) {
+	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, new_message) != 0) {
 		TEST_MSG("Could not allocate ip buffer entry in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
 	new_message = NULL;
 
-	struct instance_metadata *input_buffer = instance_find(instances, input_buffer_name);
-	struct instance_metadata *tag_buffer = instance_find(instances, tag_buffer_name);
-	struct instance_metadata *mysql = instance_find(instances, mysql_name);
+	struct instance_metadata *input_buffer = rrr_instance_find(instances, input_buffer_name);
+	struct instance_metadata *tag_buffer = rrr_instance_find(instances, tag_buffer_name);
+	struct instance_metadata *mysql = rrr_instance_find(instances, mysql_name);
 
 	if (input_buffer == NULL || tag_buffer == NULL || mysql == NULL) {
 		TEST_MSG("Could not find input, tag and mysql instances %s, %s and %s in test_type_array_mysql_and_network\n",
@@ -699,7 +701,7 @@ int test_type_array_mysql_and_network (
 
 	ret = test_type_array_mysql_steal_config(&mysql_data, mysql);
 	if (ret != 0) {
-		VL_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
+		RRR_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
@@ -707,7 +709,7 @@ int test_type_array_mysql_and_network (
 	TEST_MSG("The error message_1 'Failed to prepare statement' is fine, it might show up before the table is created\n");
 	ret = test_type_array_setup_mysql (&mysql_data);
 	if (ret != 0) {
-		VL_MSG_ERR("Failed to setup MySQL test environment\n");
+		RRR_MSG_ERR("Failed to setup MySQL test environment\n");
 		ret = 1;
 		goto out;
 	}
@@ -729,7 +731,7 @@ int test_type_array_mysql_and_network (
 		entry = NULL;
 	}
 	else {
-		VL_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
+		RRR_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
@@ -740,20 +742,20 @@ int test_type_array_mysql_and_network (
 
 	ret = test_result.result;
 	if (ret != 0) {
-		VL_MSG_ERR("Result was not OK from test_type_array_mysql_and_network_callback\n");
+		RRR_MSG_ERR("Result was not OK from test_type_array_mysql_and_network_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	struct vl_message *result_message = test_result.message;
+	struct rrr_message *result_message = test_result.message;
 	if (!MSG_IS_TAG(result_message)) {
-		VL_MSG_ERR("Message from MySQL was not a TAG message_1\n");
+		RRR_MSG_ERR("Message from MySQL was not a TAG message_1\n");
 		ret = 1;
 		goto out;
 	};
 
 	if (result_message->timestamp_from != expected_ack_timestamp) {
-		VL_MSG_ERR("Timestamp of TAG message_1 from MySQL did not match original message_1 (%" PRIu64 " vs %" PRIu64 ")\n",
+		RRR_MSG_ERR("Timestamp of TAG message_1 from MySQL did not match original message_1 (%" PRIu64 " vs %" PRIu64 ")\n",
 				result_message->timestamp_from, expected_ack_timestamp);
 		ret = 1;
 		goto out;

@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_listen_fd {
 	RRR_LL_NODE(struct rrr_mqtt_listen_fd);
-	struct ip_data ip;
+	struct rrr_ip_data ip;
 };
 
 struct rrr_mqtt_listen_fd_collection {
