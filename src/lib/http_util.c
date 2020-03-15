@@ -185,7 +185,7 @@ char *rrr_http_util_encode_uri (
 
 	char *result = malloc(result_max_length);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_util_encode_uri\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_util_encode_uri\n");
 		err = 1;
 		goto out;
 	}
@@ -208,7 +208,7 @@ char *rrr_http_util_encode_uri (
 	}
 
 	if (wpos > wpos_max) {
-		VL_BUG("Result string was too long in rrr_http_util_encode_uri\n");
+		RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 	}
 
 	out:
@@ -236,7 +236,7 @@ char *rrr_http_util_quote_header_value (
 	ssize_t result_length = length * 2 + 2 + 1;
 	char *result = malloc(result_length);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_util_quote_header_value\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_util_quote_header_value\n");
 		err = 1;
 		goto out;
 	}
@@ -260,7 +260,7 @@ char *rrr_http_util_quote_header_value (
 			// OK
 		}
 		else {
-			VL_MSG_ERR("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
+			RRR_MSG_ERR("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
 			err = 1;
 			goto out;
 		}
@@ -289,7 +289,7 @@ char *rrr_http_util_quote_header_value (
 		wpos++;
 
 		if (wpos > wpos_max) {
-			VL_BUG("Result string was too long in rrr_http_util_quote_ascii\n");
+			RRR_BUG("Result string was too long in rrr_http_util_quote_ascii\n");
 		}
 	}
 
@@ -344,7 +344,7 @@ int rrr_http_util_strtoull (
 	}
 
 	if (numbers_end - start > 63) {
-		VL_MSG_ERR("Number was too long in __rrr_http_part_strtoull\n");
+		RRR_MSG_ERR("Number was too long in __rrr_http_part_strtoull\n");
 		return 1;
 	}
 
@@ -355,7 +355,7 @@ int rrr_http_util_strtoull (
 	unsigned long long int number = strtoull(buf, &endptr, 10);
 
 	if (endptr == NULL) {
-		VL_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
+		RRR_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
 	}
 
 	*result = number;

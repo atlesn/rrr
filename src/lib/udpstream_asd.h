@@ -71,11 +71,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // message.
 //#define RRR_UDPSTREAM_FRAME_TYPE_COMPLETE_ACK		07
 
-struct ip_buffer_entry;
+struct rrr_ip_buffer_entry;
 
 struct rrr_udpstream_asd_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_queue_entry);
-	struct ip_buffer_entry *message;
+	struct rrr_ip_buffer_entry *message;
 	uint32_t message_id;
 	uint64_t send_time;
 	int delivered_grace_counter;
@@ -136,11 +136,11 @@ int rrr_udpstream_asd_new (
 );
 int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
-		struct ip_buffer_entry **message
+		struct rrr_ip_buffer_entry **message
 );
 int rrr_udpstream_asd_deliver_messages (
 		struct rrr_udpstream_asd *session,
-		int (*receive_callback)(struct ip_buffer_entry *message, void *arg),
+		int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg),
 		void *receive_callback_arg
 );
 int rrr_udpstream_asd_buffer_tick (

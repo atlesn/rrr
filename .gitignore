@@ -47,6 +47,13 @@ src/vlogger
 *.lai
 .dirstamp
 
+# code coverage
+*.gcov
+*.gcda
+*.gcno
+/lcov
+/main_coverage.info
+
 # perl
 blib
 Makefile.PL

@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"
-#define RRR_PYTHON3_VL_MESSAGE_TYPE_NAME "vl_message"
+#define RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME "rrr_message"
 #define RRR_PYTHON3_ARRAY_TYPE_NAME "rrr_array"
 #define RRR_PYTHON3_ARRAY_VALUE_TYPE_NAME "rrr_array_value"
 #define RRR_PYTHON3_SETTING_TYPE_NAME "rrr_setting"
@@ -60,7 +60,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	a ## b
 
 #define RRR_PY_ASSERT_IN_BOUNDS(name,bits) \
-	do {if (name > RRR_PY_PASTE(max_,bits)) { VL_MSG_ERR("Value of parameter " RRR_PY_QUOTE(name) " exceeds maximum in .set()\n"); ret = 1; }}while(0)
+	do {if (name > RRR_PY_PASTE(max_,bits)) { RRR_MSG_ERR("Value of parameter " RRR_PY_QUOTE(name) " exceeds maximum in .set()\n"); ret = 1; }}while(0)
 
 #define RRR_PY_DECLARE_GET_TEST_32(idx,name) \
 		unsigned long long name = RRR_PY_LONG_AS_32(args[idx]); \

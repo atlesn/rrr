@@ -104,13 +104,13 @@ void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 		}
 	}
 	if (did_remove != 1) {
-		VL_BUG("Attempted to remove signal handler which did not exist\n");
+		RRR_BUG("Attempted to remove signal handler which did not exist\n");
 	}
 	pthread_mutex_unlock(&signal_lock);
 }
 
 void rrr_signal (int s) {
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
+    RRR_DBG_1("Received signal %i\n", s);
 
 	struct rrr_signal_handler *test = first_handler;
 

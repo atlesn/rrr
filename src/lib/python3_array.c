@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -80,7 +80,7 @@ void rrr_python3_array_value_set_list (struct rrr_python3_array_value_data *node
 
 static int __rrr_python3_array_value_set_type (struct rrr_python3_array_value_data *data, long int id) {
 	if (id < 0) {
-		VL_MSG_ERR("Negative integer provided to rrr_array_value.set_type()\n");
+		RRR_MSG_ERR("Negative integer provided to rrr_array_value.set_type()\n");
 		return 1;
 	}
 
@@ -88,7 +88,7 @@ static int __rrr_python3_array_value_set_type (struct rrr_python3_array_value_da
 		// Note : It is possible to set other types than those provided in the constants
 		const struct rrr_type_definition *type_def = rrr_type_get_from_id (id);
 		if (type_def == NULL) {
-			VL_MSG_ERR("Invalid type ID provided to rrr_array_value.set_type(), please utilize the constants provided in the object\n");
+			RRR_MSG_ERR("Invalid type ID provided to rrr_array_value.set_type(), please utilize the constants provided in the object\n");
 			return 1;
 		}
 	}
@@ -116,7 +116,7 @@ static void rrr_python3_array_value_f_dealloc (PyObject *self) {
 static PyObject *rrr_python3_array_value_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
 	PyObject *self = PyType_GenericNew(type, args, kwds);
 	if (self == NULL) {
-		VL_MSG_ERR("Could not create new value in rrr_python3_array_value_f_new\n");
+		RRR_MSG_ERR("Could not create new value in rrr_python3_array_value_f_new\n");
 		goto out_err;
 	}
 
@@ -124,13 +124,13 @@ static PyObject *rrr_python3_array_value_f_new (PyTypeObject *type, PyObject *ar
 
 	value->list = PyList_New(0);
 	if (value->list == NULL) {
-		VL_MSG_ERR("Could not allocate memory for list in rrr_python3_array_value_f_new\n");
+		RRR_MSG_ERR("Could not allocate memory for list in rrr_python3_array_value_f_new\n");
 		goto out_err;
 	}
 
 	value->tag = PyUnicode_FromString("");
 	if (value->list == NULL) {
-		VL_MSG_ERR("Could not allocate memory for tag in rrr_python3_array_value_f_new\n");
+		RRR_MSG_ERR("Could not allocate memory for tag in rrr_python3_array_value_f_new\n");
 		goto out_err;
 	}
 
@@ -154,26 +154,26 @@ static PyObject *rrr_python3_array_value_f_remove (PyObject *self, PyObject *arg
 	PyObject *new_list = NULL;
 
 	if (!PyLong_Check(arg)) {
-		VL_MSG_ERR("Argument to rrr_array_value.remove() was not an integer\n");
+		RRR_MSG_ERR("Argument to rrr_array_value.remove() was not an integer\n");
 		goto out_err;
 	}
 
 	long idx = PyLong_AsLong(arg);
 	if (idx < 0) {
-		VL_MSG_ERR("Argument to rrr_array_value.remove() was negative\n");
+		RRR_MSG_ERR("Argument to rrr_array_value.remove() was negative\n");
 		goto out_err;
 	}
 
 	long size = PyList_GET_SIZE(data->list);
 
 	if (idx >= size) {
-		VL_MSG_ERR("Element out of range in rrr_array_value.remove()\n");
+		RRR_MSG_ERR("Element out of range in rrr_array_value.remove()\n");
 		goto out_err;
 	}
 
 	new_list = PyList_New(size - 1);
 	if (new_list == NULL) {
-		VL_MSG_ERR("Could not create new list in python3_array_value_f_remove\n");
+		RRR_MSG_ERR("Could not create new list in python3_array_value_f_remove\n");
 		goto out_err;
 	}
 
@@ -207,7 +207,7 @@ static PyObject *rrr_python3_array_value_f_get_tag (PyObject *self, PyObject *ar
 static PyObject *rrr_python3_array_value_f_set_tag (PyObject *self, PyObject *arg) {
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
 	if (!PyUnicode_Check(arg)) {
-		VL_MSG_ERR("Argument to rrr_array_value.set_tag() was not a string\n");
+		RRR_MSG_ERR("Argument to rrr_array_value.set_tag() was not a string\n");
 		Py_RETURN_FALSE;
 	}
 	Py_XDECREF(data->tag);
@@ -220,20 +220,20 @@ static PyObject *rrr_python3_array_value_f_get (PyObject *self, PyObject *arg_id
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
 
 	if (!PyLong_Check(arg_idx)) {
-		VL_MSG_ERR("First argument to rrr_array_value.set() was not an integer\n");
+		RRR_MSG_ERR("First argument to rrr_array_value.set() was not an integer\n");
 		Py_RETURN_FALSE;
 	}
 
 	long idx = PyLong_AsLong(arg_idx);
 	if (idx < 0) {
-		VL_MSG_ERR("Index given to rrr_array_value.set() was negative\n");
+		RRR_MSG_ERR("Index given to rrr_array_value.set() was negative\n");
 		Py_RETURN_FALSE;
 	}
 
 	long size = PyList_GET_SIZE(data->list);
 
 	if (idx > size - 1) {
-		VL_MSG_ERR("Index out of range in rrr_array_value.get()\n");
+		RRR_MSG_ERR("Index out of range in rrr_array_value.get()\n");
 		Py_RETURN_NONE;
 	}
 
@@ -246,7 +246,7 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
 
 	if (count != 2) {
-		VL_MSG_ERR("Arguments given to rrr_array_value.set() must be 2, one index and one value\n");
+		RRR_MSG_ERR("Arguments given to rrr_array_value.set() must be 2, one index and one value\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -254,20 +254,20 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 	PyObject *value = args[1];
 
 	if (!PyLong_Check(arg_idx)) {
-		VL_MSG_ERR("First argument to rrr_array_value.set() was not an integer\n");
+		RRR_MSG_ERR("First argument to rrr_array_value.set() was not an integer\n");
 		Py_RETURN_FALSE;
 	}
 
 	long idx = PyLong_AsLong(arg_idx);
 	if (idx < 0) {
-		VL_MSG_ERR("Index given to rrr_array_value.set() was negative\n");
+		RRR_MSG_ERR("Index given to rrr_array_value.set() was negative\n");
 		Py_RETURN_FALSE;
 	}
 
 	long size = PyList_GET_SIZE(data->list);
 
 	if (idx > size) {
-		VL_MSG_ERR("Index out of range in rrr_array_value.set()\n");
+		RRR_MSG_ERR("Index out of range in rrr_array_value.set()\n");
 		Py_RETURN_FALSE;
 	}
 	else if (idx < size) {
@@ -277,7 +277,7 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 	}
 	else {
 		if (__rrr_python3_array_value_append(data, value) != 0) {
-			VL_MSG_ERR("Could not append value in rrr_python3_array_value_f_set\n");
+			RRR_MSG_ERR("Could not append value in rrr_python3_array_value_f_set\n");
 			Py_RETURN_FALSE;
 		}
 	}
@@ -288,7 +288,7 @@ static PyObject *rrr_python3_array_value_f_set (PyObject *self, PyObject *args[]
 static PyObject *rrr_python3_array_value_f_append (PyObject *self, PyObject *arg) {
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
 	if (__rrr_python3_array_value_append (data, arg) != 0) {
-		VL_MSG_ERR("Could not append item to value list in rrr_python3_array_value_f_append\n");
+		RRR_MSG_ERR("Could not append item to value list in rrr_python3_array_value_f_append\n");
 		Py_RETURN_FALSE;
 	}
 	Py_RETURN_TRUE;
@@ -299,7 +299,7 @@ static PyObject *rrr_python3_array_value_f_count (PyObject *self) {
 	long count = PyList_GET_SIZE(data->list);
 	PyObject *result = PyLong_FromLong(count);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not create long in rrr_python3_array_value_f_count\n");
+		RRR_MSG_ERR("Could not create long in rrr_python3_array_value_f_count\n");
 		Py_RETURN_NONE;
 	}
 	return result;
@@ -319,7 +319,7 @@ static PyObject *rrr_python3_array_value_f_get_type_str (PyObject *self) {
 
 	const struct rrr_type_definition *type_def = rrr_type_get_from_id (data->type_orig);
 	if (type_def == NULL) {
-		VL_BUG("Type was not known in rrr_python3_array_value_f_get_type_str\n");
+		RRR_BUG("Type was not known in rrr_python3_array_value_f_get_type_str\n");
 	}
 	return PyUnicode_FromString(type_def->identifier);
 }
@@ -328,7 +328,7 @@ static PyObject *rrr_python3_array_value_f_set_type (PyObject *self, PyObject *t
 	struct rrr_python3_array_value_data *data = (struct rrr_python3_array_value_data *) self;
 
 	if (!PyLong_Check(type_arg)) {
-		VL_MSG_ERR("Non-integer provided to rrr_array_value.set_type()\n");
+		RRR_MSG_ERR("Non-integer provided to rrr_array_value.set_type()\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -350,7 +350,7 @@ static int rrr_python3_array_value_f_init(PyObject *self, PyObject *args, PyObje
 
 	if (argc > 0) {
 		if (!PyLong_Check(PyTuple_GET_ITEM(args, 0))) {
-			VL_MSG_ERR("First argument (type) to rrr_array_value() was not an integer\n");
+			RRR_MSG_ERR("First argument (type) to rrr_array_value() was not an integer\n");
 			return 1;
 		}
 		if (__rrr_python3_array_value_set_type(data, PyLong_AsLong(PyTuple_GET_ITEM(args, 0))) != 0) {
@@ -530,7 +530,7 @@ int rrr_python3_array_iterate (
 		PyObject *node = PyList_GET_ITEM(data->list, i);
 		struct rrr_python3_array_value_data *value = (struct rrr_python3_array_value_data *) node;
 		if ((ret = callback(value->tag, value->list, value->type_orig, callback_arg)) != 0) {
-			VL_MSG_ERR("Error from callback in rrr_python3_array_iterate\n");
+			RRR_MSG_ERR("Error from callback in rrr_python3_array_iterate\n");
 			goto out;
 		}
 		node = NULL;
@@ -573,7 +573,7 @@ static PyObject *rrr_python3_array_f_new (PyTypeObject *type, PyObject *args, Py
 
 	data->list = PyList_New(0);
 	if (data->list == NULL) {
-		VL_MSG_ERR("Could not create list in rrr_python3_array_f_new\n");
+		RRR_MSG_ERR("Could not create list in rrr_python3_array_f_new\n");
 		goto out_err;
 	}
 
@@ -648,7 +648,7 @@ static int __rrr_python3_array_append_raw (
 ) {
 	// PyList_Append will INCREF as of 3.6
 	if (PyList_Append(data->list, value) != 0) {
-		VL_MSG_ERR("Could not append new value to list in __rrr_python3_array_append_raw\n");
+		RRR_MSG_ERR("Could not append new value to list in __rrr_python3_array_append_raw\n");
 		return 1;
 	}
 	return 0;
@@ -668,12 +668,12 @@ int rrr_python3_array_append_value_with_list (
 
 	struct rrr_python3_array_value_data *result = (struct rrr_python3_array_value_data *) rrr_python3_array_value_f_new(&rrr_python3_array_value_type, NULL, NULL);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate array value in rrr_python3_array_append\n");
+		RRR_MSG_ERR("Could not allocate array value in rrr_python3_array_append\n");
 		goto out_err;
 	}
 
 	if (!PyList_Check(list)) {
-		VL_BUG("Argument to rrr_python3_array_append_list was not a list\n");
+		RRR_BUG("Argument to rrr_python3_array_append_list was not a list\n");
 	}
 
 	result->type_orig = type_orig;
@@ -698,7 +698,7 @@ static PyObject *rrr_python3_array_f_append (PyObject *self, PyObject *value) {
 	struct rrr_python3_array_data *data = (struct rrr_python3_array_data *) self;
 
 	if (!rrr_python3_array_value_check(value)) {
-		VL_MSG_ERR("Single argument to rrr_array.append() was not an rrr_array_value object\n");
+		RRR_MSG_ERR("Single argument to rrr_array.append() was not an rrr_array_value object\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -717,24 +717,24 @@ static PyObject *rrr_python3_array_f_get_by_tag_or_index (PyObject *self, PyObje
 	if (PyUnicode_Check(tag)) {
 		value = (PyObject *) __rrr_python3_array_get_node_by_tag(data, tag);
 		if (value == NULL) {
-			VL_MSG_ERR("Tag '%s' not found in rrr_array.get()\n", PyUnicode_AsUTF8(tag));
+			RRR_MSG_ERR("Tag '%s' not found in rrr_array.get()\n", PyUnicode_AsUTF8(tag));
 			Py_RETURN_NONE;
 		}
 	}
 	else if (PyLong_Check(tag)) {
 		long index = PyLong_AsLong(tag);
 		if (index < 0) {
-			VL_MSG_ERR("Negative index given to rrr_array.get()\n");
+			RRR_MSG_ERR("Negative index given to rrr_array.get()\n");
 			Py_RETURN_NONE;
 		}
 		value = (PyObject *) __rrr_python3_array_get_node_by_index(data, index);
 		if (value == NULL) {
-			VL_MSG_ERR("Could not get node with index %li in rrr_array.get()\n", index);
+			RRR_MSG_ERR("Could not get node with index %li in rrr_array.get()\n", index);
 			Py_RETURN_NONE;
 		}
 	}
 	else {
-		VL_MSG_ERR("Tag argument to rrr_array.get() was not a string or integer\n");
+		RRR_MSG_ERR("Tag argument to rrr_array.get() was not a string or integer\n");
 		Py_RETURN_NONE;
 	}
 
@@ -758,7 +758,7 @@ static PyObject *rrr_python3_array_f_remove (PyObject *self, PyObject *tag) {
 	ssize_t old_size = PyList_GET_SIZE(data->list);
 	PyObject *new_list = PyList_New(old_size - 1);
 	if (new_list == NULL) {
-		VL_MSG_ERR("Could not create new list in rrr_python3_array_f_remove\n");
+		RRR_MSG_ERR("Could not create new list in rrr_python3_array_f_remove\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -786,7 +786,7 @@ static PyObject *rrr_python3_array_f_count (PyObject *self) {
 
 	PyObject *result = PyLong_FromLong(rrr_python3_array_count(data));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not create Long-object in rrr_python3_array_count\n");
+		RRR_MSG_ERR("Could not create Long-object in rrr_python3_array_count\n");
 		PyErr_Print();
 		Py_RETURN_NONE;
 	}

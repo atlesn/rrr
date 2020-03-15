@@ -97,10 +97,10 @@ static void __rrr_post_signal_handler (int s) {
 		rrr_post_print_stats = 1;
 	}
 	else if (s == SIGPIPE) {
-		VL_MSG_ERR("Received SIGPIPE, ignoring\n");
+		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
 	}
 	else if (s == SIGTERM) {
-		VL_MSG_ERR("Received SIGTERM, exiting\n");
+		RRR_MSG_ERR("Received SIGTERM, exiting\n");
 		exit(EXIT_FAILURE);
 	}
 	else if (s == SIGINT) {
@@ -112,7 +112,7 @@ static void __rrr_post_signal_handler (int s) {
 
 static void __rrr_post_data_init (struct rrr_post_data *data) {
 	memset (data, '\0', sizeof(*data));
-	data->start_time = time_get_64();
+	data->start_time = rrr_time_get_64();
 }
 
 static void __rrr_post_destroy_data (struct rrr_post_data *data) {
@@ -132,12 +132,12 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 				if (reading != NULL) {
 					uint64_t value;
 					if (cmd_convert_uint64_10(reading, &value) != 0) {
-						VL_MSG_ERR("Error in reading '%s', not an unsigned integer\n", reading);
+						RRR_MSG_ERR("Error in reading '%s', not an unsigned integer\n", reading);
 						return 1;
 					}
 					struct rrr_post_reading *reading_new = malloc(sizeof(*reading_new));
 					if (reading_new == NULL) {
-						VL_MSG_ERR("Could not allocate memory in __rrr_post_add_readings\n");
+						RRR_MSG_ERR("Could not allocate memory in __rrr_post_add_readings\n");
 						return 1;
 					}
 					reading_new->value = value;
@@ -161,14 +161,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Socket
 	const char *socket = cmd_get_value(cmd, "socket", 0);
 	if (socket == NULL || *socket == '\0') {
-		VL_MSG_ERR("No socket path specified\n");
+		RRR_MSG_ERR("No socket path specified\n");
 		ret = 1;
 		goto out;
 	}
 
 	data->socket_path = strdup(socket);
 	if (data->socket_path == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -192,14 +192,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Filename
 	const char *filename = cmd_get_value(cmd, "file", 0);
 	if (cmd_get_value (cmd, "file", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one filename argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one filename argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (filename != NULL) {
 		data->filename = strdup(filename);
 		if (data->filename == NULL) {
-			VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -207,14 +207,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 
 	const char *topic = cmd_get_value(cmd, "topic", 0);
 	if (cmd_get_value (cmd, "topic", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one topic argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one topic argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (topic != NULL) {
 		data->topic = strdup(topic);
 		if (data->topic == NULL) {
-			VL_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -228,13 +228,13 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Count
 	const char *max_elements = cmd_get_value(cmd, "count", 0);
 	if (cmd_get_value (cmd, "count", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one 'count' argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one 'count' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (max_elements != NULL) {
 		if (cmd_convert_uint64_10(max_elements, &data->max_elements)) {
-			VL_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
+			RRR_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -263,13 +263,13 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	}
 
 	if (ret != 0 || callback_data.parse_ret != 0 || rrr_array_validate_definition(&data->definition) != 0) {
-		VL_MSG_ERR("Error while parsing array definition\n");
+		RRR_MSG_ERR("Error while parsing array definition\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (cmd_get_value (cmd, "array_definition", 1) != NULL) {
-		VL_MSG_ERR("Error: Only one array_definition argument may be specified\n");
+		RRR_MSG_ERR("Error: Only one array_definition argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
@@ -282,7 +282,7 @@ static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
 	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != 0) {
-		VL_MSG_ERR("Could not connect to socket\n");
+		RRR_MSG_ERR("Could not connect to socket\n");
 		ret = 1;
 		goto out;
 	}
@@ -303,7 +303,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 	else {
 		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, "rrr_post");
 		if (data->input_fd < 0) {
-			VL_MSG_ERR("Could not open input file %s: %s\n",
+			RRR_MSG_ERR("Could not open input file %s: %s\n",
 					data->filename, strerror(errno));
 			ret = 1;
 			goto out;
@@ -323,16 +323,16 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 	}
 }
 
-static int __rrr_post_send_message(struct rrr_post_data *data, struct vl_message *message) {
+static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_message *message) {
 	int ret = 0;
 
 	ssize_t msg_size = MSG_TOTAL_SIZE(message);
 
-	message_prepare_for_network((struct vl_message *) message);
+	rrr_message_prepare_for_network((struct rrr_message *) message);
 	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
 
 	if ((ret = rrr_socket_sendto(data->output_fd, message, msg_size, NULL, 0)) != 0) {
-		VL_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
+		RRR_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}
 
@@ -343,9 +343,9 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct vl_message
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
-	struct vl_message *message = message_new_reading(reading->value, time_get_64());
+	struct rrr_message *message = rrr_message_new_reading(reading->value, rrr_time_get_64());
 	if (message == NULL) {
-		VL_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
+		RRR_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
@@ -370,7 +370,7 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 	return ret;
 }
 
-static int __rrr_post_read_message_callback (struct vl_message *message, void *arg) {
+static int __rrr_post_read_message_callback (struct rrr_message *message, void *arg) {
 	struct rrr_post_data *data = arg;
 	int ret = 0;
 
@@ -396,7 +396,7 @@ static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session
 			__rrr_post_read_message_callback,
 			data
 	)) != 0) {
-		VL_MSG_ERR("Could not create or send message in __rrr_post_read_callback\n");
+		RRR_MSG_ERR("Could not create or send message in __rrr_post_read_callback\n");
 		goto out;
 	}
 
@@ -405,7 +405,7 @@ static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session
 }
 
 static void __rrr_post_print_statistics (struct rrr_post_data *data) {
-	uint64_t runtime = time_get_64() - data->start_time;
+	uint64_t runtime = rrr_time_get_64() - data->start_time;
 	runtime = runtime / 1000 / 1000;
 
 	if (runtime == 0) {
@@ -414,7 +414,7 @@ static void __rrr_post_print_statistics (struct rrr_post_data *data) {
 
 	uint64_t speed = data->elements_count / runtime;
 
-	VL_DEBUG_MSG("Processed messages: %" PRIu64 " (%" PRIu64 " m/s), limit: %" PRIu64 ", run time: %" PRIu64 "\n",
+	RRR_DBG("Processed messages: %" PRIu64 " (%" PRIu64 " m/s), limit: %" PRIu64 ", run time: %" PRIu64 "\n",
 			data->elements_count,
 			speed,
 			data->max_elements,
@@ -458,7 +458,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	}
 
 	if (ret == RRR_SOCKET_READ_EOF) {
-		VL_DEBUG_MSG_1("End of file reached\n");
+		RRR_DBG_1("End of file reached\n");
 		ret = 0;
 	}
 
@@ -468,8 +468,8 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 }
 
 int main (int argc, const char *argv[]) {
-	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
-		VL_MSG_ERR("Library build version mismatch.\n");
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 

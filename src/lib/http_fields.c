@@ -48,7 +48,7 @@ static int __rrr_http_fields_collection_add_field_raw (
 
 	struct rrr_http_field *field = malloc(sizeof(*field));
 	if (field == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;
 		goto out;
 	}
@@ -57,7 +57,7 @@ static int __rrr_http_fields_collection_add_field_raw (
 	if (name != NULL && strlen(name) > 0) {
 		field->name = strdup(name);
 		if (field->name == NULL) {
-			VL_MSG_ERR("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
+			RRR_MSG_ERR("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
 		}
@@ -66,7 +66,7 @@ static int __rrr_http_fields_collection_add_field_raw (
 	if (value != NULL && size > 0) {
 		field->value = malloc(size);
 		if (field->value == NULL) {
-			VL_MSG_ERR("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
+			RRR_MSG_ERR("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
 		}
@@ -132,7 +132,7 @@ static char *__rrr_http_fields_to_form_data (
 	;
 
 	if ((result = malloc(result_max_length)) == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_fields_to_form_data\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_fields_to_form_data\n");
 		err = 1;
 		goto out;
 	}
@@ -155,7 +155,7 @@ static char *__rrr_http_fields_to_form_data (
 				name = rrr_http_util_encode_uri(node->name);
 
 				if (name == NULL) {
-					VL_MSG_ERR("Could not encode parameter '%s' name '%s' in __rrr_http_fields_to_form_data\n",
+					RRR_MSG_ERR("Could not encode parameter '%s' name '%s' in __rrr_http_fields_to_form_data\n",
 							node->name, node->value);
 					err = 1;
 					goto out;
@@ -176,7 +176,7 @@ static char *__rrr_http_fields_to_form_data (
 				value = rrr_http_util_encode_uri(node->value);
 
 				if (value == NULL) {
-					VL_MSG_ERR("Could not encode parameter '%s' value '%s' in __rrr_http_fields_to_form_data\n",
+					RRR_MSG_ERR("Could not encode parameter '%s' value '%s' in __rrr_http_fields_to_form_data\n",
 							node->name, node->value);
 					err = 1;
 					goto out;
@@ -195,7 +195,7 @@ static char *__rrr_http_fields_to_form_data (
 	RRR_LL_ITERATE_END(fields);
 
 	if (wpos > wpos_max) {
-		VL_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");
+		RRR_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");
 	}
 
 	out:

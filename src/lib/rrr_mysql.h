@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-struct instance_thread_data;
+struct rrr_instance_thread_data;
 struct rrr_array;
 
 #define MYSQL_CREATE_TABLE_DEFINITION \

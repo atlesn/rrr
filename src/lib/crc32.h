@@ -19,12 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef BDL_CRC32_H
-#define BDL_CRC32_H
+#ifndef RRR_CRC32_H
+#define RRR_CRC32_H
 
 #include <stdint.h>
 
 uint32_t crc32buf (const char *buf, int len);
 int crc32cmp (const char *buf, int len, uint32_t crc32);
 
-#endif
+#endif /* RRR_CRC32_H */

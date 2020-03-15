@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef VL_MESSAGES_H
-#define VL_MESSAGES_H
+#ifndef RRR_MESSAGES_H
+#define RRR_MESSAGES_H
 
 #include "rrr_socket_msg.h"
 
@@ -70,82 +70,82 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_DATA_LENGTH(message)	((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
 #define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
 
-#define VL_MESSAGE_HEAD 	\
-	vl_u16 type;			\
-	vl_u16 type_flags;		\
-	vl_u16 class;			\
-	vl_u16 version;			\
-	vl_u64 timestamp_from;	\
-	vl_u64 timestamp_to;	\
-	vl_u64 data_numeric;	\
-	vl_u16 topic_length;	\
-	vl_u16 reserved
+#define RRR_MESSAGE_HEAD 	\
+	rrr_u16 type;			\
+	rrr_u16 type_flags;		\
+	rrr_u16 class;			\
+	rrr_u16 version;			\
+	rrr_u64 timestamp_from;	\
+	rrr_u64 timestamp_to;	\
+	rrr_u64 data_numeric;	\
+	rrr_u16 topic_length;	\
+	rrr_u16 reserved
 
-struct vl_message {
+struct rrr_message {
 	RRR_SOCKET_MSG_HEAD;
-	VL_MESSAGE_HEAD;
+	RRR_MESSAGE_HEAD;
 	char data[1];
 } __attribute__((packed));
 
-static inline struct rrr_socket_msg *rrr_vl_message_safe_cast (struct vl_message *message) {
+static inline struct rrr_socket_msg *rrr_message_safe_cast (struct rrr_message *message) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_VL_MESSAGE;
+	ret->msg_type = RRR_SOCKET_MSG_TYPE_RRR_MESSAGE;
 	ret->msg_size = MSG_TOTAL_SIZE(message);
 	ret->msg_value = 0;
 	return ret;
 }
-struct vl_message *message_new_reading (
-	vl_u64 reading_millis,
-	vl_u64 time
+struct rrr_message *rrr_message_new_reading (
+	rrr_u64 reading_millis,
+	rrr_u64 time
 );
-struct vl_message *message_new_array (
-	vl_u64 time,
-	vl_u16 topic_length,
-	vl_u32 data_length
+struct rrr_message *rrr_message_new_array (
+	rrr_u64 time,
+	rrr_u16 topic_length,
+	rrr_u32 data_length
 );
-int message_new_empty (
-		struct vl_message **final_result,
-		vl_u16 type,
-		vl_u16 type_flags,
-		vl_u32 class,
-		vl_u64 timestamp_from,
-		vl_u64 timestamp_to,
-		vl_u64 data_numeric,
-		vl_u16 topic_length,
-		vl_u32 data_length
+int rrr_message_new_empty (
+		struct rrr_message **final_result,
+		rrr_u16 type,
+		rrr_u16 type_flags,
+		rrr_u32 class,
+		rrr_u64 timestamp_from,
+		rrr_u64 timestamp_to,
+		rrr_u64 data_numeric,
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 );
-int message_new_with_data (
-		struct vl_message **final_result,
-		vl_u16 type,
-		vl_u16 type_flags,
-		vl_u32 class,
-		vl_u64 timestamp_from,
-		vl_u64 timestamp_to,
-		vl_u64 data_numeric,
+int rrr_message_new_with_data (
+		struct rrr_message **final_result,
+		rrr_u16 type,
+		rrr_u16 type_flags,
+		rrr_u32 class,
+		rrr_u64 timestamp_from,
+		rrr_u64 timestamp_to,
+		rrr_u64 data_numeric,
 		const char *topic,
-		vl_u16 topic_length,
+		rrr_u16 topic_length,
 		const char *data,
-		vl_u32 data_length
+		rrr_u32 data_length
 );
-int message_to_string (
+int rrr_message_to_string (
 	char **final_target,
-	struct vl_message *message
+	struct rrr_message *message
 );
-int message_to_host_and_verify (struct vl_message *message, ssize_t expected_size);
-void message_prepare_for_network (struct vl_message *message);
-struct vl_message *message_duplicate_no_data_with_size (
-		const struct vl_message *message,
+int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size);
+void rrr_message_prepare_for_network (struct rrr_message *message);
+struct rrr_message *rrr_message_duplicate_no_data_with_size (
+		const struct rrr_message *message,
 		ssize_t topic_length,
 		ssize_t data_length
 );
-struct vl_message *message_duplicate (
-		const struct vl_message *message
+struct rrr_message *rrr_message_duplicate (
+		const struct rrr_message *message
 );
-struct vl_message *message_duplicate_no_data (
-		struct vl_message *message
+struct rrr_message *rrr_message_duplicate_no_data (
+		struct rrr_message *message
 );
-int message_set_topic (
-		struct vl_message **message,
+int rrr_message_set_topic (
+		struct rrr_message **message,
 		const char *topic,
 		ssize_t topic_len
 );

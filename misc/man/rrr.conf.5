@@ -347,7 +347,7 @@ def config(socket : rrr_socket, rrr_setting : setting):
 	
 	return True
 
-def process(socket : rrr_socket, message: vl_message):
+def process(socket : rrr_socket, message: rrr_message):
 	# Return False if something is wrong
 	if my_global_variable == "":
 		print("Error: configuration failure")
@@ -363,7 +363,7 @@ def process(socket : rrr_socket, message: vl_message):
 
 def source(socket : rrr_socket):
 	# create a new message
-	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
 	
 	# queue the message to be sent back (optional) for python to give to readers
 	socket.send(message)

@@ -32,14 +32,14 @@ struct rrr_string_builder {
 
 #define RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder,str,err_str)		\
 		do {if (rrr_string_builder_append((string_builder), str) != 0) {	\
-			VL_MSG_ERR("%s", err_str);										\
+			RRR_MSG_ERR("%s", err_str);										\
 			ret = 1;														\
 			goto out;														\
 		}} while(0)
 
 #define RRR_STRING_BUILDER_RESERVE_AND_CHECK(string_builder,bytes,err_str)	\
 		do {if (rrr_string_builder_reserve((string_builder), bytes) != 0) {	\
-			VL_MSG_ERR("%s", err_str);										\
+			RRR_MSG_ERR("%s", err_str);										\
 			ret = 1;														\
 			goto out;														\
 		}} while(0)
@@ -52,7 +52,7 @@ static inline void rrr_string_builder_unchecked_append (struct rrr_string_builde
 	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
 	string_builder->wpos += length;
 	if (string_builder->wpos + 1 > string_builder->size) {
-		VL_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
+		RRR_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
 	}
 }
 

@@ -69,13 +69,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define PUT_AND_VERIFY_RAW_WITH_LENGTH(data,size,msg) do {			\
 			if ((data) == NULL) {									\
-				VL_BUG("Data was null " msg "\n");					\
+				RRR_BUG("Data was null " msg "\n");					\
 			}														\
 			if (*(data) == '\0' && (size) > 0) {					\
-				VL_BUG("Data was \\0 but length was > 0 " msg "\n");\
+				RRR_BUG("Data was \\0 but length was > 0 " msg "\n");\
 			}														\
 			if ((size) > 0xffff) {									\
-				VL_BUG("Data was too long " msg "\n");				\
+				RRR_BUG("Data was too long " msg "\n");				\
 			}														\
 			PUT_RAW_WITH_LENGTH(data,size);							\
 		} while(0)
@@ -122,7 +122,7 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 	struct rrr_mqtt_payload_buf_session *session = arg;
 
 	if (property->data == NULL || property->length == 0) {
-		VL_BUG("Property data and/or length was 0 in __rrr_mqtt_assemble_put_properties_callback\n");
+		RRR_BUG("Property data and/or length was 0 in __rrr_mqtt_assemble_put_properties_callback\n");
 	}
 
 	PUT_U8(property->definition->identifier);
@@ -139,34 +139,34 @@ static int __rrr_mqtt_assemble_put_properties_callback (
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_VINT:
 			if (*((uint32_t *) property->data) > 0xfffffff) { // <-- Seven f's
-				VL_BUG("Length of VINT field was too long in __rrr_mqtt_assemble_put_properties_callback");
+				RRR_BUG("Length of VINT field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
 			PUT_VARIABLE_INT(*((uint32_t *) property->data));
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_BLOB:
 			if (property->length > 0xffff) {
-				VL_BUG("Length of BLOB field was too long in __rrr_mqtt_assemble_put_properties_callback");
+				RRR_BUG("Length of BLOB field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
 			PUT_RAW_WITH_LENGTH(property->data, property->length);
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_UTF8:
 			if (property->length > 0xffff) {
-				VL_BUG("Length of UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
+				RRR_BUG("Length of UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
 			PUT_RAW_WITH_LENGTH(property->data, property->length);
 			break;
 		case RRR_MQTT_PROPERTY_DATA_TYPE_2UTF8:
 			if (property->sibling == NULL || property->sibling->sibling != NULL) {
-				VL_BUG("Sibling problem of 2UTF8 property in __rrr_mqtt_assemble_put_properties_callback\n");
+				RRR_BUG("Sibling problem of 2UTF8 property in __rrr_mqtt_assemble_put_properties_callback\n");
 			}
 			if (property->length > 0xffff || property->sibling->length > 0xffff) {
-				VL_BUG("Length of 2UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
+				RRR_BUG("Length of 2UTF8 field was too long in __rrr_mqtt_assemble_put_properties_callback");
 			}
 			PUT_RAW_WITH_LENGTH(property->data, property->length);
 			PUT_RAW_WITH_LENGTH(property->sibling->data, property->sibling->length);
 			break;
 		default:
-			VL_BUG("Unknown property type %u in __rrr_mqtt_assemble_put_properties_callback\n",
+			RRR_BUG("Unknown property type %u in __rrr_mqtt_assemble_put_properties_callback\n",
 					property->definition->internal_data_type);
 	};
 
@@ -183,7 +183,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	ssize_t total_size = 0;
 	ssize_t count = 0;
 	if (rrr_mqtt_property_collection_calculate_size (&total_size, &count, properties) != 0) {
-		VL_MSG_ERR("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
+		RRR_MSG_ERR("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
 		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 		goto out;
 	}
@@ -193,7 +193,7 @@ static int __rrr_mqtt_assemble_put_properties (
 
 	if (total_size + count > 0xfffffff) { // <-- Seven f's
 		// This should be checked prior to calling assembly function
-		VL_BUG("Size of collection was too large in __rrr_mqtt_assemble_put_properties\n");
+		RRR_BUG("Size of collection was too large in __rrr_mqtt_assemble_put_properties\n");
 	}
 
 	PUT_VARIABLE_INT(total_size);
@@ -201,7 +201,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	const char *begin = session->wpos;
 
 	if (rrr_mqtt_property_collection_iterate(properties, __rrr_mqtt_assemble_put_properties_callback, session) != 0) {
-		VL_MSG_ERR("Error while iterating properties in __rrr_mqtt_assemble_put_properties\n");
+		RRR_MSG_ERR("Error while iterating properties in __rrr_mqtt_assemble_put_properties\n");
 		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 		goto out;
 	}
@@ -209,7 +209,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	const char *end = session->wpos;
 
 	if (end - begin != total_size) {
-		VL_BUG("Size mismatch in __rrr_mqtt_assemble_put_properties\n");
+		RRR_BUG("Size mismatch in __rrr_mqtt_assemble_put_properties\n");
 	}
 
 	out:
@@ -294,7 +294,7 @@ int rrr_mqtt_assemble_connack (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	else {
 		uint8_t reason_v31 = rrr_mqtt_p_translate_reason_from_v5(connack->reason_v5);
 		if (reason_v31 > 5) {
-			VL_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
+			RRR_BUG("invalid v31 reason in rrr_mqtt_assemble_connack for v5 reason %u\n", connack->reason_v5);
 		}
 		PUT_U8(connack->ack_flags);
 		PUT_U8(reason_v31);
@@ -354,7 +354,7 @@ int __rrr_mqtt_assemble_subscribe_callback (struct rrr_mqtt_subscription *sub, v
 	struct rrr_mqtt_payload_buf_session *session = callback_data->session;
 
 	if (sub->nl > 0 || sub->rap > 0 || sub->retain_handling > 2 || sub->qos_or_reason_v5 > 2) {
-		VL_BUG("Invalid flags/QoS in __rrr_mqtt_assemble_subscribe_callback\n");
+		RRR_BUG("Invalid flags/QoS in __rrr_mqtt_assemble_subscribe_callback\n");
 	}
 
 	uint8_t flags = sub->qos_or_reason_v5;
@@ -367,7 +367,7 @@ int __rrr_mqtt_assemble_subscribe_callback (struct rrr_mqtt_subscription *sub, v
 
 	ssize_t length = strlen(sub->topic_filter);
 	if (length > 0xffff) {
-		VL_BUG("Topic filter was too long in __rrr_mqtt_assemble_subscribe_callback\n");
+		RRR_BUG("Topic filter was too long in __rrr_mqtt_assemble_subscribe_callback\n");
 	}
 
 	PUT_RAW_WITH_LENGTH(sub->topic_filter,length);
@@ -388,7 +388,7 @@ int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	}
 
 	if (rrr_mqtt_subscription_collection_count(subscribe->subscriptions) <= 0) {
-		VL_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_subscribe\n");
+		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_subscribe\n");
 	}
 
 	struct assemble_subscribe_callback_data callback_data = {
@@ -401,7 +401,7 @@ int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			&callback_data
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		VL_MSG_ERR("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_suback\n");
+		RRR_MSG_ERR("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_suback\n");
 		goto out;
 	}
 
@@ -430,7 +430,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	}
 
 	if (rrr_mqtt_subscription_collection_count(suback->subscriptions_) <= 0) {
-		VL_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_suback\n");
+		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_suback\n");
 	}
 
 	ret = rrr_mqtt_subscription_collection_iterate(
@@ -439,7 +439,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			session
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		VL_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
+		RRR_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
 		goto out;
 	}
 
@@ -448,12 +448,12 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	(void)(packet);
-	VL_MSG_ERR("Assemble function not implemented\n");
+	RRR_MSG_ERR("Assemble function not implemented\n");
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
+	RRR_MSG_ERR("Assemble function not implemented\n");
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
@@ -485,6 +485,6 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	VL_MSG_ERR("Assemble function not implemented\n");
+	RRR_MSG_ERR("Assemble function not implemented\n");
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
