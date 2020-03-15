@@ -733,7 +733,7 @@ static int __rrr_udpstream_handle_received_frame_control (
 		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
 		struct rrr_udpstream_frame *new_frame,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = 0;
@@ -745,7 +745,7 @@ static int __rrr_udpstream_handle_received_frame_control (
 	int was_new = 0;
 
 	if ((ret = control_frame_listener (
-			stream->stream_id,
+			stream->connect_handle,
 			new_frame->application_data,
 			control_frame_listener_arg
 	)) != 0) {
@@ -803,7 +803,7 @@ static int __rrr_udpstream_handle_received_frame (
 		const struct rrr_udpstream_frame_packed *frame,
 		const struct sockaddr *src_addr,
 		socklen_t addr_len,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -966,7 +966,7 @@ static int __rrr_udpstream_handle_received_frame (
 struct rrr_udpstream_read_callback_data {
 	struct rrr_udpstream *data;
 	int receive_count;
-	int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg);
+	int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg);
 	void *control_frame_listener_arg;
 };
 
@@ -1363,7 +1363,7 @@ static int __rrr_udpstream_maintain (
 // the callback function.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = 0;

@@ -48,9 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Should not be smaller than module max
 #define RRR_IPCLIENT_MAX_SENDERS RRR_MODULE_MAX_SENDERS
-#define RRR_IPCLIENT_SERVER_NAME "localhost"
-#define RRR_IPCLIENT_SERVER_PORT "5555"
-#define RRR_IPCLIENT_LOCAL_PORT 5555
+#define RRR_IPCLIENT_DEFAULT_PORT 5555
 
 // Max unsent messages to store from other modules
 #define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 500
@@ -70,10 +68,11 @@ struct ipclient_data {
 	char *ip_default_remote;
 	char *ip_default_remote_port;
 
+	int (*queue_method)(struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
+
 	rrr_setting_uint src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
 };
-
 
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
@@ -108,6 +107,9 @@ int data_init(struct ipclient_data *data, struct rrr_instance_thread_data *threa
 	return (ret != 0);
 }
 
+int delete_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
+int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
+
 int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
@@ -117,13 +119,15 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 1;
 			goto out;
 		}
-		data->ip_default_remote = strdup(RRR_IPCLIENT_SERVER_NAME);
-		if (data->ip_default_remote == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for default remote string in ipclient\n");
-			ret = 1;
-			goto out;
-		}
+		data->ip_default_remote = NULL;
 		ret = 0;
+	}
+
+	if (data->ip_default_remote == NULL || *(data->ip_default_remote) == '\0') {
+		data->queue_method = delete_message_callback;
+	}
+	else {
+		data->queue_method = queue_message_callback;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote_port, config, "ipclient_default_remote_port")) != 0) {
@@ -132,7 +136,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 1;
 			goto out;
 		}
-		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_LOCAL_PORT) <= 0) {
+		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_DEFAULT_PORT) <= 0) {
 			RRR_MSG_ERR("Could not allocate string for port number in ipclient instance %s\n", config->name);
 			ret = 1;
 			goto out;
@@ -145,7 +149,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		data->src_port = src_port;
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND) {
-		data->src_port = RRR_IPCLIENT_LOCAL_PORT;
+		data->src_port = RRR_IPCLIENT_DEFAULT_PORT;
 		ret = 0;
 	}
 	else {
@@ -304,12 +308,26 @@ struct ipclient_queue_messages_data {
 	int count;
 };
 
+
+int delete_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
+	struct ipclient_queue_messages_data *callback_data = args->private_data;
+	struct ipclient_data *ipclient_data = callback_data->ipclient_data;
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+
+	RRR_MSG_ERR("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
+			INSTANCE_D_NAME(ipclient_data->thread_data));
+
+	rrr_ip_buffer_entry_destroy(entry);
+
+	return RRR_FIFO_OK;
+}
+
 int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
 	struct ipclient_queue_messages_data *callback_data = args->private_data;
 	struct ipclient_data *ipclient_data = callback_data->ipclient_data;
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 
-	int ret = 0;
+	int ret = RRR_FIFO_OK;
 
 	(void)(size);
 
@@ -335,7 +353,7 @@ int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, uns
 	return ret | (entry == NULL ? RRR_FIFO_SEARCH_GIVE : RRR_FIFO_SEARCH_KEEP|RRR_FIFO_SEARCH_STOP);
 }
 
-int queue_messages(int *send_count, struct ipclient_data *data) {
+int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 	int ret = 0;
 
 	*send_count = 0;
@@ -345,8 +363,7 @@ int queue_messages(int *send_count, struct ipclient_data *data) {
 	struct rrr_fifo_callback_args fifo_callback_args = {
 		data->thread_data, &callback_data, 0
 	};
-
-	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, queue_message_callback, &fifo_callback_args, 0)) != 0) {
+	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, data->queue_method, &fifo_callback_args, 0)) != 0) {
 		RRR_MSG_ERR("Error from buffer in ipclient send_packets\n");
 		ret = 1;
 		goto out;
@@ -472,7 +489,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		int queue_count = 0;
 		rrr_update_watchdog_time(thread_data->thread);
-		if (queue_messages(&queue_count, data) != 0) {
+		if (queue_or_delete_messages(&queue_count, data) != 0) {
 			usleep (10000); // 10 ms
 			goto network_restart;
 		}
