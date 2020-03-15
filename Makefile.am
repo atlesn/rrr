@@ -5,4 +5,4 @@ endif
 SUBDIRS = src misc $(perl_dir)
 
 clean-local:
-	find | grep '.gcno' | xargs rm; find | grep '.gcda' | xargs rm; find | grep '.gcov' | xargs rm; true
+	find | grep '.gcno' | xargs rm; find | grep '.gcda' | xargs rm; find | grep '.gcov' | xargs rm; rm -rf lcov; rm main_coverage.info; true

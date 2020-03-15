@@ -51,6 +51,8 @@ src/vlogger
 *.gcov
 *.gcda
 *.gcno
+/lcov
+/main_coverage.info
 
 # perl
 blib
