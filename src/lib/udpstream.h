@@ -62,15 +62,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_UDPSTREAM_H
 
 #include <inttypes.h>
-#include <endian.h>
 #include <pthread.h>
 
+#include "rrr_endian.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
 #include "ip.h"
 
 // Configuration
-#define RRR_UDPSTREAM_VERSION 1
+#define RRR_UDPSTREAM_VERSION 2
 
 #define RRR_UDPSTREAM_BUFFER_LIMIT 1500
 
@@ -226,6 +226,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
 
 #define RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS (1<<0)
+#define RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP (1<<1)
+#define RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE (1<<2)
 
 #define RRR_UDPSTREAM_HEADER_FIELDS 							\
 	uint8_t flags_and_type;										\
@@ -374,7 +376,7 @@ int rrr_udpstream_do_process_receive_buffers (
 // is received, the callback is called.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 );
 

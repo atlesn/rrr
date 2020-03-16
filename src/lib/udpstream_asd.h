@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : The following method to avoid duplicate IDs is very inefficient
 // Max unreleased messages awaiting release ACK
 #define RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX (RRR_UDPSTREAM_WINDOW_SIZE_MAX*2)
+
 // This many delivered messages must follow a message before it is deleted from release queue
 #define RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER RRR_UDPSTREAM_WINDOW_SIZE_MAX
 
@@ -82,12 +83,19 @@ struct rrr_udpstream_asd_queue_entry {
 	int ack_status_flags;
 };
 
-struct rrr_udpstream_asd_queue {
+struct rrr_udpstream_asd_queue_new {
+	RRR_LL_NODE(struct rrr_udpstream_asd_queue_new);
 	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_entry);
+	uint32_t source_connect_handle;
+};
+
+struct rrr_udpstream_asd_queue_collection {
+	RRR_LL_HEAD(struct rrr_udpstream_asd_queue_new);
 };
 
 struct rrr_udpstream_asd_control_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_control_queue_entry);
+	uint32_t connect_handle;
 	uint32_t message_id;
 	uint32_t ack_flags;
 };
@@ -99,8 +107,13 @@ struct rrr_udpstream_asd_control_queue {
 struct rrr_udpstream_asd {
 	struct rrr_udpstream udpstream;
 
-	struct rrr_udpstream_asd_queue release_queue;
-	struct rrr_udpstream_asd_queue send_queue;
+	// Stores inbound messages from multiple remote hosts
+	struct rrr_udpstream_asd_queue_collection release_queues;
+
+	// Stores outbound messages to default remote host
+	struct rrr_udpstream_asd_queue_new send_queue;
+
+	// Stores control messages to multiple remote hosts
 	struct rrr_udpstream_asd_control_queue control_send_queue;
 
 	char *remote_host;
@@ -110,8 +123,6 @@ struct rrr_udpstream_asd {
 	int is_connected;
 	uint64_t connection_attempt_time;
 	uint32_t connect_handle;
-
-	uint32_t client_id;
 
 	pthread_mutex_t message_id_lock;
 	uint32_t message_id_pos;
@@ -132,7 +143,9 @@ int rrr_udpstream_asd_new (
 		unsigned int local_port,
 		const char *remote_host,
 		const char *remote_port,
-		uint32_t client_id
+		uint32_t client_id,
+		int accept_connections,
+		int disallow_ip_swap
 );
 int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
