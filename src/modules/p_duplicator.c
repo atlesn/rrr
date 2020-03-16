@@ -238,49 +238,29 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 
 	RRR_DBG_3 ("duplicator %s: Result from duplicator: measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
-	/*
-	readers_read_lock(duplicator_data);
-
-	uint64_t time_begin = time_get_64();
-
-	int count = 0;
-	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-		struct duplicator_reader *test = &duplicator_data->readers[i];
-		if (test->identifier != NULL) {
-			char *new_data = malloc(size);
-			if (new_data == NULL) {
-				VL_MSG_ERR("Could not allocate memory for message in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
-				ret = 1;
-				break;
-			}
-			memcpy(new_data, data, size);
-
-			uint64_t time_middle = time_get_64();
-
-			VL_DEBUG_MSG_3 ("duplicator %s write measurement to buffer %p: %" PRIu64 " to %s time since begin is %" PRIu64 "\n",
-					INSTANCE_D_NAME(thread_data), &test->buffer, message->data_numeric,
-					INSTANCE_D_NAME(test->identifier), time_middle - time_begin);
-			fifo_buffer_write(&test->buffer, new_data, size);
-			count++;
-		}
-	}
-
-	uint64_t time_end = time_get_64();
-
-	VL_DEBUG_MSG_3 ("duplicator %s loop time: %" PRIu64 "\n", INSTANCE_D_NAME(thread_data), time_end - time_begin);
-
-	readers_read_unlock(duplicator_data);
-
-	free(data);
-
-	VL_DEBUG_MSG_3 ("duplicator %s: Message duplicated %i times\n", INSTANCE_D_NAME(thread_data), count);
-*/
 
 	rrr_update_watchdog_time(thread_data->thread);
 	rrr_fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp_from, data, size);
 
 	return ret;
 }
+// TODO : Support IP modules when polling
+/*
+static int poll_callback_ip (struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct rrr_instance_thread_data *thread_data = poll_data->source;
+	struct ipclient_data *private_data = thread_data->private_data;
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+
+	RRR_DBG_3 ("duplicator instance %s: Result from buffer ip: size %lu\n",
+			INSTANCE_D_NAME(thread_data), size);
+
+	if (size < sizeof(struct rrr_message)) {
+
+	}
+
+	return poll_callback_final(private_data, entry);
+}
+*/
 
 int maintain_input_buffer(struct duplicator_data *data) {
 	int ret = 0;
@@ -361,6 +341,8 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 		RRR_MSG_ERR("duplicator instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
 
 	RRR_DBG_1 ("duplicator instance %s started thread, waiting a bit for readers to register\n",
 			INSTANCE_D_NAME(thread_data));
