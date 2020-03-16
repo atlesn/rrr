@@ -76,6 +76,7 @@ struct rrr_ip_buffer_entry;
 struct rrr_udpstream_asd_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_queue_entry);
 	struct rrr_ip_buffer_entry *message;
+	uint32_t source_connect_handle;
 	uint32_t message_id;
 	uint64_t send_time;
 	int delivered_grace_counter;
@@ -88,6 +89,7 @@ struct rrr_udpstream_asd_queue {
 
 struct rrr_udpstream_asd_control_queue_entry {
 	RRR_LL_NODE(struct rrr_udpstream_asd_control_queue_entry);
+	uint32_t connect_handle;
 	uint32_t message_id;
 	uint32_t ack_flags;
 };

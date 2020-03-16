@@ -374,7 +374,7 @@ int rrr_udpstream_do_process_receive_buffers (
 // is received, the callback is called.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 );
 
