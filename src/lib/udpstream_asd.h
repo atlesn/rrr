@@ -151,7 +151,7 @@ int rrr_udpstream_asd_queue_message (
 		struct rrr_udpstream_asd *session,
 		struct rrr_ip_buffer_entry **message
 );
-int rrr_udpstream_asd_deliver_messages (
+int rrr_udpstream_asd_deliver_and_maintain_queues (
 		struct rrr_udpstream_asd *session,
 		int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg),
 		void *receive_callback_arg

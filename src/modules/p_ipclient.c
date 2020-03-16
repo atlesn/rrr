@@ -318,7 +318,7 @@ static int receive_messages (int *receive_count, struct ipclient_data *data) {
 
 	struct receive_messages_callback_data callback_data = { data, 0 };
 
-	if ((ret = rrr_udpstream_asd_deliver_messages (
+	if ((ret = rrr_udpstream_asd_deliver_and_maintain_queues (
 			data->udpstream_asd,
 			receive_messages_callback_final,
 			&callback_data

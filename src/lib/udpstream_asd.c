@@ -955,20 +955,13 @@ static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_
 	return ret;
 }
 
-struct deliver_messages_callback_data {
-	struct rrr_udpstream_asd *session;
-	int delivered_count;
-	int grace_count;
-	int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg);
-	void *receive_callback_arg;
-
-};
-
-int __rrr_udpstream_asd_deliver_messages_from_queue (
+int __rrr_udpstream_asd_queue_deliver_messages (
+		int *delivered_count,
 		struct rrr_udpstream_asd_queue_new *queue,
-		void *private_arg
+		int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg),
+		void *receive_callback_arg
 ) {
-	struct deliver_messages_callback_data *callback_data = private_arg;
+	*delivered_count = 0;
 
 	int ret = 0;
 
@@ -982,13 +975,13 @@ int __rrr_udpstream_asd_deliver_messages_from_queue (
 			node->message = NULL;
 
 			// !!! Callback MUST take care of message memory also upon errors
-			if ((ret = callback_data->receive_callback(message, callback_data->receive_callback_arg)) != 0) {
+			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
 				RRR_MSG_ERR("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 				ret = 1;
 				goto out;
 			}
 
-			callback_data->delivered_count++;
+			delivered_count++;
 
 			RRR_DBG_3("ASD DELIVER %u timestamp %" PRIu64 ", grace started\n",
 					node->message_id, message->send_time);
@@ -1001,19 +994,20 @@ int __rrr_udpstream_asd_deliver_messages_from_queue (
 	return ret;
 }
 
-int __rrr_udpstream_asd_update_delivery_grace_in_queue (
+int __rrr_udpstream_asd_queue_update_delivery_grace (
+		int *grace_count,
 		struct rrr_udpstream_asd_queue_new *queue,
-		void *private_arg
+		int delivered_count
 ) {
-	struct deliver_messages_callback_data *callback_data = private_arg;
+	*grace_count = 0;
 
 	// Once grace counter reaches zero, the queue entry is finally removed. A fixed number
 	// of new messages need to be delivered after an delivered entry is removed, this is
 	// to prevent ID collisions. The grace "distance" must be much greater than window size.
 	RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
 		if (node->delivered_grace_counter > 0) {
-			callback_data->grace_count++;
-			node->delivered_grace_counter -= callback_data->delivered_count;
+			(*grace_count)++;
+			node->delivered_grace_counter -= delivered_count;
 			// Important to check for less than or equal to zero, or the
 			// entry might be delivered to application again
 			if (node->delivered_grace_counter <= 0) {
@@ -1027,55 +1021,97 @@ int __rrr_udpstream_asd_update_delivery_grace_in_queue (
 	return 0;
 }
 
+int __rrr_udpstream_asd_queue_regulate_window_size (
+		struct rrr_udpstream_asd *session,
+		struct rrr_udpstream_asd_queue_new *queue,
+		int grace_count
+) {
+	int ret = 0;
+
+	if (RRR_LL_COUNT(queue) - grace_count > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD) {
+		if ((ret = rrr_udpstream_regulate_window_size (
+				&session->udpstream,
+				queue->source_connect_handle,
+				RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT
+		)) != 0) {
+			// Don't produce fatal error here, let something else fail
+			RRR_DBG_1("Error while regulating window size in ASD while delivering messages, return from UDP-stream was %i\n", ret);
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+static int __rrr_udpstream_asd_deliver_and_maintain_queue (
+		struct rrr_udpstream_asd *session,
+		int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg),
+		void *receive_callback_arg,
+		struct rrr_udpstream_asd_queue_new *queue
+) {
+	int ret = 0;
+
+	int graced_messages_count = 0;
+	int delivered_messages_count = 0;
+
+	// Deliver messages
+	if ((ret = __rrr_udpstream_asd_queue_deliver_messages (
+			&delivered_messages_count,
+			queue,
+			receive_callback,
+			receive_callback_arg
+	)) != 0) {
+		RRR_MSG_ERR("Error while delivering messages in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		goto out;
+	}
+
+	// Update grace counters
+	if ((ret = __rrr_udpstream_asd_queue_update_delivery_grace (
+			&graced_messages_count,
+			queue,
+			delivered_messages_count
+	)) != 0) {
+		RRR_MSG_ERR("Error while updating grace in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		goto out;
+	}
+
+	// Reduce message traffic if we have many ACK handshakes to complete
+	if ((ret = __rrr_udpstream_asd_queue_regulate_window_size (
+			session,
+			queue,
+			graced_messages_count
+	)) != 0) {
+		RRR_MSG_ERR("Error while adjusting window sizes in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 // Deliver ready messages to application through callback function
-int rrr_udpstream_asd_deliver_messages (
+int rrr_udpstream_asd_deliver_and_maintain_queues (
 		struct rrr_udpstream_asd *session,
 		int (*receive_callback)(struct rrr_ip_buffer_entry *message, void *arg),
 		void *receive_callback_arg
 ) {
 	int ret = 0;
 
-	// This data is shared by both callback functions,
-	// read through both before changing anything
-	struct deliver_messages_callback_data callback_data = {
-			session,
-			0,
-			0,
-			receive_callback,
-			receive_callback_arg
-	};
+	// Note : We could have deleted empty queues here, but they never get empty
+	//        due to the grace time of delivered messages
 
-	// Deliver messages
-	if ((ret = __rrr_udpstream_asd_queue_collection_iterate (
-			&session->release_queues,
-			__rrr_udpstream_asd_deliver_messages_from_queue,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_ERR("Error while delivering messages in rrr_udpstream_asd_deliver_messages\n");
-		goto out;
-	}
-
-	// Update grace counters
-	if ((ret = __rrr_udpstream_asd_queue_collection_iterate (
-			&session->release_queues,
-			__rrr_udpstream_asd_update_delivery_grace_in_queue,
-			&callback_data
-	)) != 0) {
-		RRR_MSG_ERR("Error while updating grace in rrr_udpstream_asd_deliver_messages\n");
-		goto out;
-	}
-
-	// Reduce message traffic if we have many ACK handshakes to complete
-	if (__rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues) - callback_data.grace_count > RRR_UDPSTREAM_ASD_RELEASE_QUEUE_WINDOW_SIZE_REDUCTION_THRESHOLD) {
-		if ((ret = rrr_udpstream_regulate_window_size (
-				&session->udpstream,
-				session->connect_handle,
-				RRR_UDPSTREAM_ASD_WINDOW_SIZE_REDUCTION_AMOUNT
+	RRR_LL_ITERATE_BEGIN(&session->release_queues, struct rrr_udpstream_asd_queue_new);
+		if ((ret = __rrr_udpstream_asd_deliver_and_maintain_queue (
+				session,
+				receive_callback,
+				receive_callback_arg,
+				node
 		)) != 0) {
-			RRR_DBG_1("Error while regulating window size in ASD while delivering messages, return from UDP-stream was %i\n", ret);
-			ret = 0;
+			RRR_MSG_ERR("ASD error while maintaining release queue for connect handle %u\n", node->source_connect_handle);
+			ret = 1;
+			goto out;
 		}
-	}
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
