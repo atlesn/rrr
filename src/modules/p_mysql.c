@@ -925,7 +925,7 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 		goto out;
 	}
 	else {
-		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save", message->class, message->type);
+		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", message->class, message->type);
 		is_unknown = 1;
 		goto out;
 	}
