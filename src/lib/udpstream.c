@@ -198,6 +198,10 @@ int rrr_udpstream_init (
 ) {
 	memset (data, '\0', sizeof(*data));
 	data->flags = flags;
+	flags &= ~(RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS|RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE);
+	if (flags != 0) {
+		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
+	}
 	__rrr_udpstream_stream_collection_init(&data->streams);
 	rrr_socket_read_session_collection_init(&data->read_sessions);
 	pthread_mutex_init(&data->lock, 0);
@@ -423,13 +427,22 @@ static int __rrr_udpstream_send_connect (
 ) {
 	int ret = 0;
 
-	*connect_handle_result = 0;
+	uint32_t connect_handle = 0;
 
-	uint32_t connect_handle = __rrr_udpstream_allocate_connect_handle(data);
-	if (connect_handle == 0) {
-		RRR_MSG_ERR("Could not allocate connect handle in __rrr_udpstream_send_connect\n");
-		ret = 1;
-		goto out;
+	if ((data->flags & RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE) != 0) {
+		connect_handle = *connect_handle_result;
+		if (connect_handle == 0) {
+			RRR_BUG("Zero connect handle to __rrr_udpstream_send_connect with FIXED_CONNECT_HANDLE set\n");
+		}
+	}
+	else {
+		*connect_handle_result = 0;
+		connect_handle = __rrr_udpstream_allocate_connect_handle(data);
+		if (connect_handle == 0) {
+			RRR_MSG_ERR("Could not allocate connect handle in __rrr_udpstream_send_connect\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	struct rrr_udpstream_frame_packed frame = {0};
@@ -582,9 +595,32 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_stream_id (
 	return NULL;
 }
 
+static int __rrr_udpstream_update_stream_remote (
+		struct rrr_udpstream_stream *stream,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	if (stream->remote_addr == NULL || stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, addr, addr_len) != 0) {
+		if (stream->remote_addr_len != addr_len || stream->remote_addr == NULL) {
+			RRR_FREE_IF_NOT_NULL(stream->remote_addr);
+			if ((stream->remote_addr = malloc(sizeof(*(stream->remote_addr)))) == NULL) {
+				RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_update_stream_remote\n");
+				ret = 1;
+				goto out;
+			}
+		}
+		memcpy(stream->remote_addr, addr, addr_len);
+	}
+
+	out:
+	return ret;
+}
+
 static int __rrr_udpstream_handle_received_connect (
 		struct rrr_udpstream *data,
-		struct rrr_udpstream_frame *new_frame,
+		struct rrr_udpstream_frame *frame,
 		const struct sockaddr *src_addr,
 		socklen_t addr_len
 ) {
@@ -592,11 +628,12 @@ static int __rrr_udpstream_handle_received_connect (
 
 	struct rrr_udpstream_stream *stream = NULL;
 
-	if (new_frame->data_size != 0) {
-		RRR_DBG_3("Received UDP-stream CONNECT packet with non-zero payload\n");
+	if (frame->data_size != 0) {
+		RRR_DBG_3("Received UDP-stream CONNECT packet with non-zero payload, dropping it\n");
 		goto out;
 	}
-	stream = __rrr_udpstream_find_stream_by_connect_handle_and_addr(data, new_frame->connect_handle, src_addr, addr_len);
+
+	stream = __rrr_udpstream_find_stream_by_connect_handle_and_addr(data, frame->connect_handle, src_addr, addr_len);
 	if (stream != NULL && stream->stream_id == 0) {
 		// We are expecting CONNECT response
 		if (stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, src_addr, addr_len) != 0) {
@@ -604,23 +641,23 @@ static int __rrr_udpstream_handle_received_connect (
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
-		if (new_frame->stream_id == 0) {
+		if (frame->stream_id == 0) {
 			RRR_MSG_ERR("Received zero stream ID in CONNECT response in __rrr_udpstream_handle_received_connect, connection was rejected\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 
-		struct rrr_udpstream_stream *stream_test = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id);
+		struct rrr_udpstream_stream *stream_test = __rrr_udpstream_find_stream_by_stream_id(data, frame->stream_id);
 		if (stream_test != NULL) {
-			RRR_DBG_2("Stream ID collision for connect with handle %u, connection must be closed\n", new_frame->connect_handle);
+			RRR_DBG_2("Stream ID collision for connect with handle %u, connection must be closed\n", frame->connect_handle);
 			__rrr_udpstream_stream_invalidate(stream);
 			goto out;
 		}
 
-		stream->stream_id = new_frame->stream_id;
+		stream->stream_id = frame->stream_id;
 
 		RRR_DBG_2("Outbound UDP-stream connection established with stream id %u connect handle was %u\n",
-				stream->stream_id, new_frame->connect_handle);
+				stream->stream_id, frame->connect_handle);
 	}
 	else if (stream != NULL && stream->stream_id != 0) {
 		// Already connected
@@ -631,17 +668,30 @@ static int __rrr_udpstream_handle_received_connect (
 		uint16_t stream_id = 0;
 
 		if ((data->flags & RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS) == 0) {
-			RRR_MSG_ERR("Received CONNECT packet with handle %u in __rrr_udpstream_handle_received_frame, but we are not expecting CONNECT response nor accepting connections\n",
-					RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(new_frame));
+			RRR_MSG_ERR("Received CONNECT packet with handle %u in __rrr_udpstream_handle_received_connect, but we are neither expecting CONNECT response nor accepting connections\n",
+					RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(frame));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 
-		stream = __rrr_udpstream_find_stream_by_connect_handle_and_addr(data, new_frame->connect_handle, src_addr, addr_len);
+		if ((data->flags & RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP) != 0) {
+			stream = __rrr_udpstream_find_stream_by_connect_handle_and_addr(data, frame->connect_handle, src_addr, addr_len);
+		}
+		else {
+			if ((stream = __rrr_udpstream_find_stream_by_connect_handle(data, frame->connect_handle)) != NULL) {
+				if (__rrr_udpstream_update_stream_remote(stream, src_addr, addr_len) != 0) {
+					RRR_MSG_ERR("Could not update stream remote in __rrr_udpstream_handle_received_connect\n");
+					ret = RRR_SOCKET_HARD_ERROR;
+					goto out;
+				}
+			}
+		}
+
 		if (stream != NULL) {
-			// Already connected
+			// Already connected, send new response
 			RRR_DBG_2("Incoming UDP-stream duplicate CONNECT\n");
-			goto out;
+			stream_id = stream->stream_id;
+			goto send_response;
 		}
 
 		// If stream id is zero, we cannot accept more connections and the connection is rejected
@@ -656,7 +706,7 @@ static int __rrr_udpstream_handle_received_connect (
 			// We do not store the address of the remote client. The receive function callback
 			// receives the currently used sender address for every message.
 			stream->stream_id = stream_id;
-			stream->connect_handle = new_frame->connect_handle;
+			stream->connect_handle = frame->connect_handle;
 
 			RRR_DBG_2("Incoming UDP-stream connection established with stream id %u connect handle %u\n",
 					stream_id, stream->connect_handle);
@@ -668,9 +718,9 @@ static int __rrr_udpstream_handle_received_connect (
 		}
 
 		send_response:
-		RRR_DBG_2("Sending UDP-stream connect response stream id %u connect handle %u\n",
+		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u\n",
 				stream_id, stream->connect_handle);
-		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, new_frame->connect_handle) != 0) {
+		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
 			RRR_MSG_ERR("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
@@ -730,10 +780,9 @@ static int __rrr_udpstream_handle_received_frame_ack (
 }
 
 static int __rrr_udpstream_handle_received_frame_control (
-		struct rrr_udpstream *data,
 		struct rrr_udpstream_stream *stream,
 		struct rrr_udpstream_frame *new_frame,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = 0;
@@ -741,11 +790,8 @@ static int __rrr_udpstream_handle_received_frame_control (
 	RRR_DBG_3("UDP-stream RX CTRL %u-%" PRIu64 "\n",
 			new_frame->stream_id, new_frame->application_data);
 
-	uint8_t next_ack_type = 0;
-	int was_new = 0;
-
 	if ((ret = control_frame_listener (
-			stream->stream_id,
+			stream->connect_handle,
 			new_frame->application_data,
 			control_frame_listener_arg
 	)) != 0) {
@@ -775,35 +821,12 @@ static int __rrr_udpstream_regulate_window_size (
 	return 0;
 }
 
-static int __rrr_udpstream_update_stream_remote (
-		struct rrr_udpstream_stream *stream,
-		const struct sockaddr *addr,
-		socklen_t addr_len
-) {
-	int ret = 0;
-
-	if (stream->remote_addr == NULL || stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, addr, addr_len) != 0) {
-		if (stream->remote_addr_len != addr_len || stream->remote_addr == NULL) {
-			RRR_FREE_IF_NOT_NULL(stream->remote_addr);
-			if ((stream->remote_addr = malloc(sizeof(*(stream->remote_addr)))) == NULL) {
-				RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_update_stream_remote\n");
-				ret = 1;
-				goto out;
-			}
-		}
-		memcpy(stream->remote_addr, addr, addr_len);
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_udpstream_handle_received_frame (
 		struct rrr_udpstream *data,
 		const struct rrr_udpstream_frame_packed *frame,
 		const struct sockaddr *src_addr,
 		socklen_t addr_len,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -835,8 +858,9 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	struct rrr_udpstream_stream *stream = NULL;
-	if ((stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id)) == NULL) {
+	struct rrr_udpstream_stream *stream = __rrr_udpstream_find_stream_by_stream_id(data, new_frame->stream_id);
+
+	if (stream == NULL) {
 		// Check that unknown packet is not a reset, if not we would keep sending resets back and forward
 		if (!RRR_UDPSTREAM_FRAME_IS_RESET(frame)) {
 			RRR_DBG_2("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
@@ -849,13 +873,21 @@ static int __rrr_udpstream_handle_received_frame (
 		goto out;
 	}
 
-	if (RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
-		ret = __rrr_udpstream_handle_received_reset(stream, new_frame);
-		goto out;
+	if ((data->flags & RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP) != 0) {
+		if (stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, src_addr, addr_len) != 0) {
+			RRR_DBG_1("Remote IP mismatch in received packet for connect handle %u, dropping packet\n", stream->connect_handle);
+			goto out;
+		}
+	}
+	else {
+		if ((ret = __rrr_udpstream_update_stream_remote(stream, src_addr, addr_len)) != 0) {
+			RRR_MSG_ERR("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
+			goto out;
+		}
 	}
 
-	if ((ret = __rrr_udpstream_update_stream_remote(stream, src_addr, addr_len)) != 0) {
-		RRR_MSG_ERR("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
+	if (RRR_UDPSTREAM_FRAME_IS_RESET(new_frame)) {
+		ret = __rrr_udpstream_handle_received_reset(stream, new_frame);
 		goto out;
 	}
 
@@ -877,7 +909,6 @@ static int __rrr_udpstream_handle_received_frame (
 
 	if (RRR_UDPSTREAM_FRAME_IS_CONTROL(frame)) {
 		ret = __rrr_udpstream_handle_received_frame_control (
-				data,
 				stream,
 				new_frame,
 				control_frame_listener,
@@ -966,7 +997,7 @@ static int __rrr_udpstream_handle_received_frame (
 struct rrr_udpstream_read_callback_data {
 	struct rrr_udpstream *data;
 	int receive_count;
-	int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg);
+	int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg);
 	void *control_frame_listener_arg;
 };
 
@@ -1354,7 +1385,6 @@ static int __rrr_udpstream_maintain (
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->streams, __rrr_udpstream_stream_destroy(node));
 
-	out:
 	return ret;
 }
 
@@ -1363,7 +1393,7 @@ static int __rrr_udpstream_maintain (
 // the callback function.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
-		int (*control_frame_listener)(uint16_t stream_id, uint64_t application_data, void *arg),
+		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),
 		void *control_frame_listener_arg
 ) {
 	int ret = 0;

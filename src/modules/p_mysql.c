@@ -146,9 +146,9 @@ void data_cleanup(void *arg) {
 int data_init(struct mysql_data *data) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
-	ret |= rrr_fifo_buffer_init (&data->input_buffer);
+	ret |= rrr_fifo_buffer_init_custom_free (&data->input_buffer, rrr_ip_buffer_entry_destroy_void);
 	ret |= rrr_fifo_buffer_init (&data->output_buffer_local);
-	ret |= rrr_fifo_buffer_init (&data->output_buffer_ip);
+	ret |= rrr_fifo_buffer_init_custom_free (&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void);
 	if (ret != 0) {
 		data_cleanup(data);
 	}
@@ -211,25 +211,35 @@ int mysql_bind_and_execute(struct process_entries_data *data) {
 	return 0;
 }
 
+static const char *append_error_string = "Error while appending to mysql query string builder\n";
+
+#define APPEND_AND_CHECK(str) \
+	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder,str,append_error_string)
+
+#define RESERVE_AND_CHECK(size) \
+	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
+
+#define APPEND_UNCHECKED(str) \
+	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
+
 int colplan_voltage_create_sql(char **target, ssize_t *column_count, struct mysql_data *data) {
-	(void)(data);
+	struct rrr_string_builder string_builder = {0};
 
 	*column_count = 0;
 
-	const char *query_base = "REPLACE INTO `%s` " \
-			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
-			"VALUES (?,?,?,?,?,?,?,?)";
+	int ret = 0;
 
-	char *res = strdup(query_base);
-	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in colplan_voltage_create_sql\n");
-		return 1;
-	}
+	APPEND_AND_CHECK("REPLACE INTO `");
+	APPEND_AND_CHECK(data->mysql_table);
+	APPEND_AND_CHECK("` (`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) ");
+	APPEND_AND_CHECK("VALUES (?,?,?,?,?,?,?,?)");
 
-	*target = res;
+	*target = rrr_string_builder_buffer_takeover(&string_builder);
 	*column_count = 8;
 
-	return 0;
+	out:
+	rrr_string_builder_clear(&string_builder);
+	return ret;
 }
 
 int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_ip_buffer_entry *entry) {
@@ -299,17 +309,6 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_i
 
 	return mysql_bind_and_execute(data);
 }
-
-static const char *append_error_string = "Error while appending to mysql query in colplan_array_create_sql\n";
-
-#define APPEND_AND_CHECK(str) \
-	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder,str,append_error_string)
-
-#define RESERVE_AND_CHECK(size) \
-	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
-
-#define APPEND_UNCHECKED(str) \
-	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
 
 int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct mysql_data *data) {
 	struct rrr_string_builder string_builder = {0};
@@ -919,14 +918,16 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 		}
 		colplan_index = COLUMN_PLAN_ARRAY;
 	}
-
-	else if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
-		RRR_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
-		is_unknown = 1;
-		goto out;
+	else if (MSG_IS_MSG(message)) {
+		if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
+			RRR_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
+			is_unknown = 1;
+			goto out;
+		}
+		colplan_index = COLUMN_PLAN_VOLTAGE;
 	}
 	else {
-		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save", message->class, message->type);
+		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", message->class, message->type);
 		is_unknown = 1;
 		goto out;
 	}
@@ -948,7 +949,7 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 
 	rrr_update_watchdog_time(thread_data->thread);
 
-	int err = 0;
+	int err = RRR_FIFO_OK;
 
 	RRR_DBG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
 
@@ -957,13 +958,14 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 	if (mysql_save_res != 0) {
 		if (mysql_data->drop_unknown_messages) {
 			RRR_MSG_ERR("mysql instance %s dropping message\n", INSTANCE_D_NAME(thread_data));
-			free(entry);
+			rrr_ip_buffer_entry_destroy(entry);
+			entry = NULL;
 		}
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp_from);
-			rrr_fifo_buffer_write(&mysql_data->input_buffer, data, size);
-			err = 1;
+			rrr_fifo_buffer_write(&mysql_data->input_buffer, (char *) entry, size);
+			entry = NULL;
 		}
 	}
 	else if (mysql_data->generate_tag_messages != 0) {
@@ -975,14 +977,17 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 		entry->data_length = MSG_TOTAL_SIZE(message);
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally
-			rrr_fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
+			rrr_fifo_buffer_write(&mysql_data->output_buffer_local, entry->message, entry->data_length);
+			entry->message = NULL;
 		}
 		else {
-			rrr_fifo_buffer_write(&mysql_data->output_buffer_ip, data, size);
+			rrr_fifo_buffer_write(&mysql_data->output_buffer_ip, (char *) entry, size);
+			entry = NULL;
 		}
 	}
-	else {
-		free(entry);
+
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_destroy(entry);
 	}
 
 	return err;

@@ -1,3 +1,10 @@
+rrr (0.16-5) unstable; urgency=medium
+
+  * Fixes in ASD and UDP-stream to correctly handle multiple clients
+  * Misc. code cleanup and minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 16 Mar 2020 17:30:23 +0100
+
 rrr (0.16-3) unstable; urgency=medium
 
   * Misc. fixes for Python

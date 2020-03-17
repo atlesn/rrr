@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,51 +48,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Should not be smaller than module max
 #define RRR_IPCLIENT_MAX_SENDERS RRR_MODULE_MAX_SENDERS
-#define RRR_IPCLIENT_SERVER_NAME "localhost"
-#define RRR_IPCLIENT_SERVER_PORT "5555"
-#define RRR_IPCLIENT_LOCAL_PORT 5555
-//#define RRR_IPCLIENT_SEND_RATE 50 // Time between sending packets, milliseconds
-//#define RRR_IPCLIENT_BURST_LIMIT 50 // Number of packets to send before we switch to reading
-//#define RRR_IPCLIENT_RELEASE_QUEUE_URGE_TIMEOUT_MS 100 // Time before urging for release ACK
+#define RRR_IPCLIENT_DEFAULT_PORT 5555
 
-#define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 500 // Max unsent messages to store from other modules
-
-/*#define RRR_IPCLIENT_SEND_BUFFER_ASSURED_MAX 500 // Max unsent messages to store
-#define RRR_IPCLIENT_SEND_BUFFER_ASSURED_MIN 400 // Min unsent messages to store
-
-#define RRR_IPCLIENT_SEND_BUFFER_UNASSURED_MAX 20000 // Max unsent messages to store from senders
-#define RRR_IPCLIENT_SEND_BUFFER_UNASSURED MIN 10000 // Min unsent messages to store from senders*/
+// Max unsent messages to store from other modules
+#define RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX 500
 
 #define RRR_IPCLIENT_CONNECT_TIMEOUT_MS 5000
 #define RRR_IPCLIENT_CONCURRENT_CONNECTIONS 3
 
-
-/*
-struct ipclient_destination {
-	RRR_LL_NODE(struct ipclient_destination);
-	struct sockaddr *addr;
-	socklen_t addrlen;
-	uint32_t connect_handle;
-	uint64_t connect_time;
-};
-
-struct ipclient_destination_collection {
-	RRR_LL_HEAD(struct ipclient_destination);
-};
-
-struct connect_handle {
-	uint32_t connect_handle;
-	uint64_t start_time;
-	int is_established;
-};
-*/
 struct ipclient_data {
 	struct rrr_fifo_buffer local_output_buffer;
 	struct rrr_fifo_buffer send_queue_intermediate;
 
 	struct rrr_instance_thread_data *thread_data;
 
-//	int listen;
+	uint32_t client_number;
+	int disallow_remote_ip_swap;
+	int listen;
 
 	uint64_t total_poll_count;
 	uint64_t total_queued_count;
@@ -100,26 +72,20 @@ struct ipclient_data {
 	char *ip_default_remote;
 	char *ip_default_remote_port;
 
+	int (*queue_method)(struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
+
 	rrr_setting_uint src_port;
 	struct rrr_udpstream_asd *udpstream_asd;
-//	struct ipclient_destination_collection destinations;
 };
-/*
-static int __ipclient_destination_destroy (struct ipclient_destination *dest) {
-	RRR_FREE_IF_NOT_NULL(dest->addr);
-	free(dest);
-	return 0;
-}
-*/
+
 void data_cleanup(void *arg) {
 	struct ipclient_data *data = arg;
-	/*
-*/
+
 	if (data->udpstream_asd != NULL) {
 		rrr_udpstream_asd_destroy(data->udpstream_asd);
 		data->udpstream_asd = NULL;
 	}
-//	RRR_LL_DESTROY(&data->destinations, struct ipclient_destination, __ipclient_destination_destroy(node));
+
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote_port);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote);
 	rrr_fifo_buffer_invalidate(&data->local_output_buffer);
@@ -144,105 +110,44 @@ int data_init(struct ipclient_data *data, struct rrr_instance_thread_data *threa
 	err:
 	return (ret != 0);
 }
-/*
-static int __ipclient_destination_new (
-		struct ipclient_destination **target,
-		const struct sockaddr *addr,
-		socklen_t addrlen
-) {
-	int ret = 0;
 
-	struct ipclient_destination *result = malloc(sizeof(*result));
-	if (result == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __ipclient_destination_new A\n");
-		ret = 1;
-		goto out;
-	}
-	memset(result, '\0', sizeof(*result));
+int delete_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
+int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size);
 
-	result->addr = malloc(addrlen);
-	if (result->addr == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __ipclient_destination_new B\n");
-		ret = 1;
-		goto out;
-	}
-
-	memcpy(result->addr, addr, addrlen);
-	result->addrlen = addrlen;
-
-	*target = result;
-	result = NULL;
-
-	out:
-	if (result != NULL) {
-		__ipclient_destination_destroy(result);
-	}
-	return ret;
-}
-
-static struct ipclient_destination *__ipclient_destination_find_or_create (
-		struct ipclient_destination_collection *collection,
-		const struct sockaddr *addr,
-		socklen_t addrlen
-) {
-	struct ipclient_destination *result = NULL;
-
-	RRR_LL_ITERATE_BEGIN(collection, struct ipclient_destination);
-		if (node->addrlen == addrlen && memcmp(node->addr, addr, addrlen) == 0) {
-			result = node;
-			goto out;
-		}
-	RRR_LL_ITERATE_END(collection);
-
-	if (__ipclient_destination_new(&result, addr, addrlen) != 0) {
-		goto out;
-	}
-
-	RRR_LL_PUSH(collection, result);
-
-	out:
-	return result;
-}
-
-static void clean_destinations(struct ipclient_data *data) {
-	uint64_t time_now = time_get_64();
-	RRR_LL_ITERATE_BEGIN(&data->destinations, struct ipclient_destination);
-		if (node->connect_time == 0) {
-			node->connect_time = time_now;
-		}
-		if (node->connect_handle > 0) {
-			int status = rrr_udpstream_connection_check(&data->udpstream, node->connect_handle);
-			if (status == 0) {
-				RRR_LL_ITERATE_NEXT();
-			}
-			else if (status == RRR_UDPSTREAM_NOT_READY) {
-				if (time_now - node->connect_time > RRR_IPCLIENT_CONNECT_TIMEOUT_MS * 1000) {
-					RRR_LL_ITERATE_SET_DESTROY();
-				}
-			}
-			else {
-				RRR_LL_ITERATE_SET_DESTROY();
-			}
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->destinations, __ipclient_destination_destroy(node));
-}
-*/
 int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	rrr_setting_uint client_id = 0;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&client_id, config, "ipclient_client_number")) != 0) {
+		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be set to a unique number for this client\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (client_id == 0 || client_id > 0xffffffff) {
+		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	data->client_number = client_id;
+
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote, config, "ipclient_default_remote")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ipclient_default_remote settings of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing setting ipclient_default_remote of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
-		data->ip_default_remote = strdup(RRR_IPCLIENT_SERVER_NAME);
-		if (data->ip_default_remote == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for default remote string in ipclient\n");
-			ret = 1;
-			goto out;
-		}
+		data->ip_default_remote = NULL;
 		ret = 0;
+	}
+
+	if (data->ip_default_remote == NULL || *(data->ip_default_remote) == '\0') {
+		data->queue_method = delete_message_callback;
+	}
+	else {
+		data->queue_method = queue_message_callback;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote_port, config, "ipclient_default_remote_port")) != 0) {
@@ -251,29 +156,20 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 1;
 			goto out;
 		}
-		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_LOCAL_PORT) <= 0) {
+		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_DEFAULT_PORT) <= 0) {
 			RRR_MSG_ERR("Could not allocate string for port number in ipclient instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		ret = 0;
 	}
-/*	if ((ret = rrr_instance_config_check_yesno(&data->listen, config, "ipclient_listen")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in ipclient_listen for instance %s, specify yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		data->listen = 0;
-		ret = 0;
-	}*/
 
 	rrr_setting_uint src_port;
 	if ((ret = rrr_instance_config_read_port_number(&src_port, config, "ipclient_src_port")) == 0) {
 		data->src_port = src_port;
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND) {
-		data->src_port = RRR_IPCLIENT_LOCAL_PORT;
+		data->src_port = RRR_IPCLIENT_DEFAULT_PORT;
 		ret = 0;
 	}
 	else {
@@ -281,6 +177,34 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		ret = 1;
 		goto out;
 	}
+
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_disallow_remote_ip_swap"))) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Invalid value for setting ipclient_disallow_remote_ip_swap of instance %s, please specify yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->disallow_remote_ip_swap = yesno;
+
+	yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_listen"))) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Invalid value for setting ipclient_listen of instance %s, please specify yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->listen = yesno;
 
 	out:
 	return ret;
@@ -394,7 +318,7 @@ static int receive_messages (int *receive_count, struct ipclient_data *data) {
 
 	struct receive_messages_callback_data callback_data = { data, 0 };
 
-	if ((ret = rrr_udpstream_asd_deliver_messages (
+	if ((ret = rrr_udpstream_asd_deliver_and_maintain_queues (
 			data->udpstream_asd,
 			receive_messages_callback_final,
 			&callback_data
@@ -427,171 +351,33 @@ struct queue_message_callback_data {
 	int fifo_action;
 };
 
-/*
-static int queue_message_callback (const struct rrr_udpstream_send_data *send_data, void *arg) {
-	struct queue_message_callback_data *callback_data = arg;
-
-	if (callback_data->entry != send_data->data) {
-		RRR_BUG("data pointer mismatch in queue_message_callback\n");
-	}
-
-	if (send_data->boundary_id != 0) {
-		callback_data->fifo_action = FIFO_SEARCH_GIVE;
-
-		if (__ipclient_queue_insert_entry_or_destroy (
-				&callback_data->data->send_queue,
-				callback_data->entry,
-				send_data->stream_id,
-				send_data->boundary_id
-		) != 0) {
-			RRR_MSG_ERR("Could not add ip buffer entry to queue in ipclient poll_callback_final\n");
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
-static int queue_message (
-		int *packet_counter,
-		struct queue_message_callback_data *callback_data,
-		int no_callback
-) {
-	struct instance_thread_data *thread_data = callback_data->data->thread_data;
-	const struct vl_message *message = callback_data->entry->message;
-	const struct ip_buffer_entry *entry = callback_data->entry;
-	struct ipclient_data *ipclient_data = callback_data->data;
-
-	struct vl_message *message_network = NULL;
-
-	int ret = 0;
-
-	RRR_DEBUG_MSG_3 ("ipclient queing packet for sending timestamp %" PRIu64 " boundary %" PRIu64 "\n",
-			message->timestamp_from, callback_data->boundary_id);
-
-	update_watchdog_time(thread_data->thread);
-
-	struct ipclient_destination *destination = NULL;
-	uint32_t connect_handle = 0;
-
-	if (entry->addr_len != 0) {
-		if (ipclient_data->active_connect_handle != 0 &&
-			rrr_udpstream_connection_check_address_equal (
-					&ipclient_data->udpstream,
-					ipclient_data->active_connect_handle,
-					&entry->addr,
-					entry->addr_len
-			)
-		) {
-			connect_handle = ipclient_data->active_connect_handle;
-		}
-		else {
-			struct ipclient_destination *destination = __ipclient_destination_find_or_create (
-					&ipclient_data->destinations,
-					&entry->addr,
-					entry->addr_len
-			);
-
-			if (destination != NULL) {
-				if (destination->connect_handle == 0) {
-					if (rrr_udpstream_connect_raw (
-							&destination->connect_handle,
-							ipclient_data->send_boundary_high,
-							&ipclient_data->udpstream,
-							destination->addr,
-							destination->addrlen
-					) != 0) {
-						RRR_MSG_ERR("Could not send connect packet with address information from message in ipclient instance %s, packet must be dropped\n",
-								INSTANCE_D_NAME(thread_data));
-						ret = IPCLIENT_QUEUE_RESULT_DATA_ERR;
-						goto out;
-					}
-
-					// Do housekeeping here (a quiet place) to avoid doing it repeatedly
-					clean_destinations(ipclient_data);
-
-					// Don't try to send the message immediately, will most likely block
-					ret = IPCLIENT_QUEUE_RESULT_NOT_QUEUED;
-					goto out;
-				}
-				connect_handle = destination->connect_handle;
-			}
-		}
-	}
-	else if (ipclient_data->ip_default_remote != NULL) {
-		connect_handle = ipclient_data->active_connect_handle;
-		if (connect_handle == 0) {
-			// Connection not ready
-			ret = IPCLIENT_QUEUE_RESULT_NOT_QUEUED;
-			goto out;
-		}
-	}
-	else {
-		RRR_MSG_ERR("ipclient instance %s dropping message from sender without address information\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = IPCLIENT_QUEUE_RESULT_DATA_ERR;
-		goto out;
-	};
-
-	message_network = message_duplicate(message);
-	ssize_t message_network_size = MSG_TOTAL_SIZE(message_network);
-
-	message_prepare_for_network((struct vl_message *) message_network);
-	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message_network);
-
-	if ((ret = rrr_udpstream_queue_outbound_data (
-			&ipclient_data->udpstream,
-			connect_handle,
-			message_network,
-			message_network_size,
-			callback_data->boundary_id,
-			(no_callback ? NULL : queue_message_callback),
-			(no_callback ? NULL : callback_data)
-	)) != 0) {
-		if (ret == RRR_UDPSTREAM_BUFFER_FULL || ret == RRR_UDPSTREAM_NOT_READY) {
-			ret = IPCLIENT_QUEUE_RESULT_OK | IPCLIENT_QUEUE_RESULT_STOP | IPCLIENT_QUEUE_RESULT_NOT_QUEUED;
-			goto out;
-		}
-		else if (ret == RRR_UDPSTREAM_IDS_EXHAUSTED || ret == RRR_UDPSTREAM_UNKNOWN_CONNECT_ID) {
-			// Stop using this stream, a new one must be created
-			if (destination != NULL) {
-				destination->connect_handle = 0;
-			}
-			else {
-				invalidate_connect_handle(ipclient_data, connect_handle);
-			}
-			ret = IPCLIENT_QUEUE_RESULT_OK | IPCLIENT_QUEUE_RESULT_STOP | IPCLIENT_QUEUE_RESULT_NOT_QUEUED;
-			goto out;
-		}
-		else {
-			RRR_MSG_ERR("Error while queuing message for sending in ipclient instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			ret = IPCLIENT_QUEUE_RESULT_OK | IPCLIENT_QUEUE_RESULT_ERR | IPCLIENT_QUEUE_RESULT_NOT_QUEUED;
-			goto out;
-		}
-	}
-
-	ipclient_data->total_queued_count++;
-
-	(*packet_counter)++;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(message_network);
-	return ret;
-}
-*/
-
 struct ipclient_queue_messages_data {
 	struct ipclient_data *ipclient_data;
 	int count;
 };
+
+
+int delete_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
+	struct ipclient_queue_messages_data *callback_data = args->private_data;
+	struct ipclient_data *ipclient_data = callback_data->ipclient_data;
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+
+	(void)(size);
+
+	RRR_MSG_ERR("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
+			INSTANCE_D_NAME(ipclient_data->thread_data));
+
+	rrr_ip_buffer_entry_destroy(entry);
+
+	return RRR_FIFO_OK|RRR_FIFO_SEARCH_GIVE;
+}
 
 int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
 	struct ipclient_queue_messages_data *callback_data = args->private_data;
 	struct ipclient_data *ipclient_data = callback_data->ipclient_data;
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 
-	int ret = 0;
+	int ret = RRR_FIFO_OK;
 
 	(void)(size);
 
@@ -617,7 +403,7 @@ int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, uns
 	return ret | (entry == NULL ? RRR_FIFO_SEARCH_GIVE : RRR_FIFO_SEARCH_KEEP|RRR_FIFO_SEARCH_STOP);
 }
 
-int queue_messages(int *send_count, struct ipclient_data *data) {
+int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 	int ret = 0;
 
 	*send_count = 0;
@@ -628,7 +414,7 @@ int queue_messages(int *send_count, struct ipclient_data *data) {
 		data->thread_data, &callback_data, 0
 	};
 
-	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, queue_message_callback, &fifo_callback_args, 0)) != 0) {
+	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, data->queue_method, &fifo_callback_args, 0)) != 0) {
 		RRR_MSG_ERR("Error from buffer in ipclient send_packets\n");
 		ret = 1;
 		goto out;
@@ -658,7 +444,9 @@ static int __ipclient_asd_reconnect (struct ipclient_data *data) {
 			data->src_port,
 			data->ip_default_remote,
 			data->ip_default_remote_port,
-			1 // TODO : Set client other IDs
+			data->client_number,
+			data->listen,
+			data->disallow_remote_ip_swap
 	)) != 0) {
 		RRR_MSG_ERR("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
@@ -754,7 +542,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		int queue_count = 0;
 		rrr_update_watchdog_time(thread_data->thread);
-		if (queue_messages(&queue_count, data) != 0) {
+		if (queue_or_delete_messages(&queue_count, data) != 0) {
 			usleep (10000); // 10 ms
 			goto network_restart;
 		}
