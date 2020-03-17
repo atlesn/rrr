@@ -211,25 +211,35 @@ int mysql_bind_and_execute(struct process_entries_data *data) {
 	return 0;
 }
 
+static const char *append_error_string = "Error while appending to mysql query string builder\n";
+
+#define APPEND_AND_CHECK(str) \
+	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder,str,append_error_string)
+
+#define RESERVE_AND_CHECK(size) \
+	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
+
+#define APPEND_UNCHECKED(str) \
+	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
+
 int colplan_voltage_create_sql(char **target, ssize_t *column_count, struct mysql_data *data) {
-	(void)(data);
+	struct rrr_string_builder string_builder = {0};
 
 	*column_count = 0;
 
-	const char *query_base = "REPLACE INTO `%s` " \
-			"(`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) " \
-			"VALUES (?,?,?,?,?,?,?,?)";
+	int ret = 0;
 
-	char *res = strdup(query_base);
-	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in colplan_voltage_create_sql\n");
-		return 1;
-	}
+	APPEND_AND_CHECK("REPLACE INTO `");
+	APPEND_AND_CHECK(data->mysql_table);
+	APPEND_AND_CHECK("` (`timestamp`, `source`, `class`, `time_from`, `time_to`, `value`, `message`, `message_length`) ");
+	APPEND_AND_CHECK("VALUES (?,?,?,?,?,?,?,?)");
 
-	*target = res;
+	*target = rrr_string_builder_buffer_takeover(&string_builder);
 	*column_count = 8;
 
-	return 0;
+	out:
+	rrr_string_builder_clear(&string_builder);
+	return ret;
 }
 
 int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_ip_buffer_entry *entry) {
@@ -299,17 +309,6 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_i
 
 	return mysql_bind_and_execute(data);
 }
-
-static const char *append_error_string = "Error while appending to mysql query in colplan_array_create_sql\n";
-
-#define APPEND_AND_CHECK(str) \
-	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder,str,append_error_string)
-
-#define RESERVE_AND_CHECK(size) \
-	RRR_STRING_BUILDER_RESERVE_AND_CHECK(&string_builder,size,append_error_string)
-
-#define APPEND_UNCHECKED(str) \
-	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
 
 int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct mysql_data *data) {
 	struct rrr_string_builder string_builder = {0};
