@@ -949,7 +949,7 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 
 	rrr_update_watchdog_time(thread_data->thread);
 
-	int err = 0;
+	int err = RRR_FIFO_OK;
 
 	RRR_DBG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
 
@@ -958,13 +958,14 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 	if (mysql_save_res != 0) {
 		if (mysql_data->drop_unknown_messages) {
 			RRR_MSG_ERR("mysql instance %s dropping message\n", INSTANCE_D_NAME(thread_data));
-			free(entry);
+			rrr_ip_buffer_entry_destroy(entry);
+			entry = NULL;
 		}
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp_from);
-			rrr_fifo_buffer_write(&mysql_data->input_buffer, data, size);
-			err = 1;
+			rrr_fifo_buffer_write(&mysql_data->input_buffer, (char *) entry, size);
+			entry = NULL;
 		}
 	}
 	else if (mysql_data->generate_tag_messages != 0) {
@@ -976,14 +977,17 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 		entry->data_length = MSG_TOTAL_SIZE(message);
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally
-			rrr_fifo_buffer_write(&mysql_data->output_buffer_local, data, size);
+			rrr_fifo_buffer_write(&mysql_data->output_buffer_local, entry->message, entry->data_length);
+			entry->message = NULL;
 		}
 		else {
-			rrr_fifo_buffer_write(&mysql_data->output_buffer_ip, data, size);
+			rrr_fifo_buffer_write(&mysql_data->output_buffer_ip, (char *) entry, size);
+			entry = NULL;
 		}
 	}
-	else {
-		free(entry);
+
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_destroy(entry);
 	}
 
 	return err;
