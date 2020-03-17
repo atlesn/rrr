@@ -333,6 +333,9 @@ int main (int argc, const char **argv) {
 	out_cleanup_instances:
 	rrr_instance_metadata_collection_destroy(instances);
 
+	// Don't unload modules in the test suite
+	//rrr_instance_unload_all(instances);
+
 	out_cleanup_config:
 	if (config != NULL) {
 		rrr_config_destroy(config);

@@ -180,24 +180,27 @@ data it reads from other modules for each reader. The readers of duplicator are 
 The ipclient module collects any messages from senders and sends them over the network to another 
 .B RRR
 environment's ipclient module using UDP. It may also accept connections from other clients and receive data,
-or a combination of these. An underlying UDP stream protocol ensures delivery of
-all messages, and messages are checksummed with a CRC32 algorithm.
+or a combination of these. An underlying UDP stream protocol ensures single delivery of
+all messages (similar design as MQTT QOS2), and messages are checksummed with a CRC32 algorithm.
 .PP
-If messages read from other modules contain address information, ipclient will attempt
-to connect to this host (if not already connected) and send the messages to it. Messages without address use the default
-server or are dropped if none is specified.
+.B ipclient is not secure in any way and must only be used on closed networks!
 .PP
-Per default, ipclient will make sure that messages are delivered exactly once to the remote host. Some extra acknowledgment
-packets are sent to take care of this. This functionality may be disabled if higher throughput is desired and some packet
-loss or duplicates is not an issue.
+After an ipclient instance has connected to a remote ipclient, the remote will accept packets, and the connection
+persists even if the connecting clients IP-address changes unless specified otherwise in the configuration.
 .PP
-ipclient will not accept incoming connections from other clients unless specified in the configuration file.
+Please not that ipclient is not designed to receive connections and packets from arbitary remote hosts.
+If a remote sends packets and does not complete the acknowledgement handshakes, the packets will persist in memory.
 .PP
-A keyfile of an arbitary length may be specified from which an AES256 key is generated. It should contain good
-random data. ipclient will then encrypt messages prior to sending (and use the same key to decrypt received messages).
+If a remote host becomes unavailable for a longer period of time, unfinished acknowledgement handshakes
+are re-initiated when it becomes available again, even if it has been re-started in the mean time.
+.PP
+ipclient will not accept incoming connections from other clients unless explicitly told to in the configuration file.
 .PP
 .Bl -tag -width -indent
-.It ipclient_default_remote=REMOTENAME OR ADDRESS
+.It ipclient_client_number=NUMBER
+Each ipclient instance in a set of instances which communicate together must have a unique ID number in the range 1-4294967295.
+If you have two instances running, set one of them to 1 and the other one to 2.
+.It ipclient_default_remote=REMOTE NAME OR ADDRESS
 The name or address of the client which we send packets without address information to.
 .It ipclient_default_remote_port=PORT NUMBER
 The port number of the default remote, defaults to 5555.
@@ -205,15 +208,10 @@ The port number of the default remote, defaults to 5555.
 Source port used for sending and receiving packtes, defaults to 5555.
 .It ipclient_keyfile=KEY FILE
 An optional keyfile which we use to generate a key used to encrypt messages we send. The server must use the same file.
-.It ipclient_list={yes|no}
-Accept incoming connections if set to yes.
-.It ipclient_no_assured_single_delivery={yes|no}
-Do not make sure messages are delivered exactly ones. Allows for some loss and messages might be delivered more
-than once, but throughput it somewhat increased and traffic is reduced.
-.It ipclient_boundary_id={unsigned number}
-Set a boundary ID, which uniquely identifies messages from a particular client, manually. If not specified, a random number
-will be used. Two clients with the same ID may not connect to another client simultaneously. Collisions are however unlikely,
-random numbers should work fine in most configurations. Boundary IDs are not used unless assured delivery is active.
+.It ipclient_listen={yes|no}
+Accept incoming connections if set to yes. Default is no.
+.It ipclient_disallow_remote_ip_swap={yes|no}
+If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
 .SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 

@@ -270,10 +270,13 @@ int rrr_instance_add_senders (
 	sender_data.instances = instances;
 	sender_data.senders = &instance->senders;
 
-	ret = rrr_settings_traverse_split_commas_silent_fail (
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
 			instance_config->settings, "senders",
 			&__rrr_add_sender_callback, &sender_data
-	);
+	))!= 0) {
+		RRR_MSG_ERR("Error while adding senders for instance %s\n", instance->dynamic_data->instance_name);
+		goto out;
+	}
 
 	if (instance->dynamic_data->type == RRR_MODULE_TYPE_PROCESSOR ||
 		instance->dynamic_data->type == RRR_MODULE_TYPE_FLEXIBLE ||

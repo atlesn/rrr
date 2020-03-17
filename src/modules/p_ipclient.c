@@ -62,6 +62,10 @@ struct ipclient_data {
 
 	struct rrr_instance_thread_data *thread_data;
 
+	uint32_t client_number;
+	int disallow_remote_ip_swap;
+	int listen;
+
 	uint64_t total_poll_count;
 	uint64_t total_queued_count;
 
@@ -113,9 +117,25 @@ int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, uns
 int parse_config (struct ipclient_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
+	rrr_setting_uint client_id = 0;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&client_id, config, "ipclient_client_number")) != 0) {
+		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be set to a unique number for this client\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (client_id == 0 || client_id > 0xffffffff) {
+		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	data->client_number = client_id;
+
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote, config, "ipclient_default_remote")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ipclient_default_remote settings of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing setting ipclient_default_remote of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -157,6 +177,34 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		ret = 1;
 		goto out;
 	}
+
+	int yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_disallow_remote_ip_swap"))) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Invalid value for setting ipclient_disallow_remote_ip_swap of instance %s, please specify yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->disallow_remote_ip_swap = yesno;
+
+	yesno = 0;
+	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ipclient_listen"))) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Invalid value for setting ipclient_listen of instance %s, please specify yes or no\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->listen = yesno;
 
 	out:
 	return ret;
@@ -270,7 +318,7 @@ static int receive_messages (int *receive_count, struct ipclient_data *data) {
 
 	struct receive_messages_callback_data callback_data = { data, 0 };
 
-	if ((ret = rrr_udpstream_asd_deliver_messages (
+	if ((ret = rrr_udpstream_asd_deliver_and_maintain_queues (
 			data->udpstream_asd,
 			receive_messages_callback_final,
 			&callback_data
@@ -314,12 +362,14 @@ int delete_message_callback (struct rrr_fifo_callback_args *args, char *data, un
 	struct ipclient_data *ipclient_data = callback_data->ipclient_data;
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 
+	(void)(size);
+
 	RRR_MSG_ERR("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
 			INSTANCE_D_NAME(ipclient_data->thread_data));
 
 	rrr_ip_buffer_entry_destroy(entry);
 
-	return RRR_FIFO_OK;
+	return RRR_FIFO_OK|RRR_FIFO_SEARCH_GIVE;
 }
 
 int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
@@ -363,6 +413,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 	struct rrr_fifo_callback_args fifo_callback_args = {
 		data->thread_data, &callback_data, 0
 	};
+
 	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, data->queue_method, &fifo_callback_args, 0)) != 0) {
 		RRR_MSG_ERR("Error from buffer in ipclient send_packets\n");
 		ret = 1;
@@ -393,7 +444,9 @@ static int __ipclient_asd_reconnect (struct ipclient_data *data) {
 			data->src_port,
 			data->ip_default_remote,
 			data->ip_default_remote_port,
-			1 // TODO : Set client other IDs
+			data->client_number,
+			data->listen,
+			data->disallow_remote_ip_swap
 	)) != 0) {
 		RRR_MSG_ERR("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;

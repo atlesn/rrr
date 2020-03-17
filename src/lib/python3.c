@@ -478,7 +478,7 @@ void __rrr_py_persistent_thread_source (PyObject *function, struct python3_fork 
 	while (rrr_py_fork_running) {
 		result = PyObject_CallFunctionObjArgs(function, socket, NULL);
 		if (result == NULL) {
-			RRR_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+			RRR_MSG_ERR("Error while calling python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
 			PyErr_Print();
 			ret = 1;
@@ -486,7 +486,7 @@ void __rrr_py_persistent_thread_source (PyObject *function, struct python3_fork 
 
 		}
 		if (!PyObject_IsTrue(result)) {
-			RRR_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+			RRR_MSG_ERR("Non-true returned from python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
 			ret = 1;
 			goto out;
@@ -498,8 +498,9 @@ void __rrr_py_persistent_thread_source (PyObject *function, struct python3_fork 
 			struct rrr_socket_msg *result = NULL;
 			ret = rrr_python3_socket_recv(&result, socket);
 			if (ret != 0) {
-				RRR_MSG_ERR("Error while checking for packets in __rrr_py_start_persistent_thread_ro_child pid %i\n",
+				RRR_MSG_ERR("Error while checking for packets in __rrr_py_persistent_thread_source pid %i\n",
 						getpid());
+				goto out;
 			}
 			if (result != NULL) {
 				RRR_BUG("Python3 received packet in read-only fork\n");
@@ -529,7 +530,7 @@ void __rrr_py_persistent_thread_process (
 	*start_sourcing_requested = 0;
 
 	if (rrr_fifo_buffer_init(&receive_buffer) != 0) {
-		RRR_MSG_ERR("Could not initialize fifo buffer in __rrr_py_start_persistent_thread_rw_child\n");
+		RRR_MSG_ERR("Could not initialize fifo buffer in __rrr_py_persistent_thread_process\n");
 		goto out;
 	}
 
@@ -546,7 +547,7 @@ void __rrr_py_persistent_thread_process (
 		while (rrr_py_fork_running && (--max != 0) && (*start_sourcing_requested == 0)) {
 			ret = fork->recv(&message, rrr_socket);
 			if (ret != 0) {
-				RRR_MSG_ERR("Error from socket receive function in python3 persistent rw child process\n");
+				RRR_MSG_ERR("Error from socket receive function in python3 __rrr_py_persistent_thread_process\n");
 				goto out;
 			}
 			if (message == NULL) {
@@ -559,7 +560,7 @@ void __rrr_py_persistent_thread_process (
 					*start_sourcing_requested = 1;
 				}
 				else {
-					RRR_MSG_ERR("Unknown flags %u in control message in __rrr_py_start_persistent_thread_rw_child\n",
+					RRR_MSG_ERR("Unknown flags %u in control message in __rrr_py_persistent_thread_process\n",
 							RRR_SOCKET_MSG_CTRL_FLAGS(message));
 					ret = 1;
 					goto out;
@@ -575,7 +576,7 @@ void __rrr_py_persistent_thread_process (
 
 		ret = rrr_fifo_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
 		if (ret != 0) {
-			RRR_MSG_ERR("Error from fifo buffer in python3 persistent rw child process\n");
+			RRR_MSG_ERR("Error from fifo buffer in python3 __rrr_py_persistent_thread_process\n");
 			break;
 		}
 	}

@@ -70,7 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 
 // Configuration
-#define RRR_UDPSTREAM_VERSION 1
+#define RRR_UDPSTREAM_VERSION 2
 
 #define RRR_UDPSTREAM_BUFFER_LIMIT 1500
 
@@ -226,6 +226,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((RRR_UDPSTREAM_FRAME_TYPE(frame) == RRR_UDPSTREAM_FRAME_TYPE_RESET) != 0)
 
 #define RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS (1<<0)
+#define RRR_UDPSTREAM_FLAGS_DISALLOW_IP_SWAP (1<<1)
+#define RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE (1<<2)
 
 #define RRR_UDPSTREAM_HEADER_FIELDS 							\
 	uint8_t flags_and_type;										\
