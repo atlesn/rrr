@@ -918,11 +918,13 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 		}
 		colplan_index = COLUMN_PLAN_ARRAY;
 	}
-
-	else if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
-		RRR_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
-		is_unknown = 1;
-		goto out;
+	else if (MSG_IS_MSG(message)) {
+		if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
+			RRR_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
+			is_unknown = 1;
+			goto out;
+		}
+		colplan_index = COLUMN_PLAN_VOLTAGE;
 	}
 	else {
 		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", message->class, message->type);
