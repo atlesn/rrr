@@ -146,9 +146,9 @@ void data_cleanup(void *arg) {
 int data_init(struct mysql_data *data) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
-	ret |= rrr_fifo_buffer_init (&data->input_buffer);
+	ret |= rrr_fifo_buffer_init_custom_free (&data->input_buffer, rrr_ip_buffer_entry_destroy_void);
 	ret |= rrr_fifo_buffer_init (&data->output_buffer_local);
-	ret |= rrr_fifo_buffer_init (&data->output_buffer_ip);
+	ret |= rrr_fifo_buffer_init_custom_free (&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void);
 	if (ret != 0) {
 		data_cleanup(data);
 	}
