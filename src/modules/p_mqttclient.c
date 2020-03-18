@@ -58,6 +58,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
 
+// Timeout before we send PUBLISH packets to the broker. This is to allow,
+// if the broker has just been started, other clients to subscribe first
+// before we send anything (to prevent it from getting deleted by the broker)
+#define RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS 3000
+
 struct mqtt_client_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_fifo_buffer output_buffer;
@@ -1135,6 +1140,18 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 	}
 
+	uint64_t startup_time = rrr_time_get_64() + RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000;
+
+	RRR_DBG_1("MQTT client %s startup send grace period %i ms started\n",
+			INSTANCE_D_NAME(thread_data),
+			RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS
+	);
+
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && startup_time > rrr_time_get_64()) {
+		usleep(10 * 1000);
+		rrr_update_watchdog_time(thread_data->thread);
+	}
+
 	// Successive connect attempts or re-connect does not require clean start to be set. Server
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
 	clean_start = 0;
@@ -1153,7 +1170,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 		if (alive == 0) {
 			RRR_DBG_1("Connection lost for mqtt client instance %s, reconnecting\n",
-					INSTANCE_D_NAME(thread_data));
+				INSTANCE_D_NAME(thread_data));
 			goto reconnect;
 		}
 
