@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -50,15 +50,15 @@ struct python3_preload_data {
 struct python3_reader_data {
 	struct python3_fork *fork;
 	struct python3_data *data;
-	struct fifo_buffer *output_buffer;
-	struct vl_thread *thread;
+	struct rrr_fifo_buffer *output_buffer;
+	struct rrr_thread *thread;
 	int message_counter;
 };
 
 struct python3_data {
-	struct instance_thread_data *thread_data;
+	struct rrr_instance_thread_data *thread_data;
 
-	struct fifo_buffer output_buffer;
+	struct rrr_fifo_buffer output_buffer;
 
 	char *python3_module;
 	char *source_function;
@@ -78,34 +78,34 @@ struct python3_data {
 
 	struct python3_rrr_objects rrr_objects;
 
-	struct vl_thread_collection *thread_collection;
+	struct rrr_thread_collection *thread_collection;
 	struct python3_reader_data source_thread;
 	struct python3_reader_data process_thread;
 
 	int reader_thread_became_ghost;
 };
 
-static int thread_preload_python3 (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static int thread_preload_python3 (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
-	VL_ASSERT(VL_MODULE_PRELOAD_MEMORY_SIZE >= sizeof(*preload_data),python3_preload_data_size_ok);
+	RRR_ASSERT(RRR_MODULE_PRELOAD_MEMORY_SIZE >= sizeof(*preload_data),python3_preload_data_size_ok);
 
 	if ((preload_data->istate = rrr_py_new_thread_state()) == NULL) {
-		VL_MSG_ERR("Could not get thread state in python3 preload function\n");
+		RRR_MSG_ERR("Could not get thread state in python3 preload function\n");
 		return 1;
 	}
 
 	return 0;
 }
 
-int data_init(struct python3_data *data, struct python3_preload_data *preload_data, struct instance_thread_data *thread_data) {
+int data_init(struct python3_data *data, struct python3_preload_data *preload_data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
 
-	ret |= fifo_buffer_init (&data->output_buffer);
+	ret |= rrr_fifo_buffer_init (&data->output_buffer);
 
 	if (preload_data == NULL) {
-		VL_MSG_ERR("Bug: No preload data in python3 data_init\n");
+		RRR_MSG_ERR("Bug: No preload data in python3 data_init\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -117,52 +117,29 @@ int data_init(struct python3_data *data, struct python3_preload_data *preload_da
 
 struct python3_send_config_callback_data {
 	struct python3_data *data;
+	struct python3_fork *target;
 };
 
 int python3_send_config_callback (struct rrr_setting_packed *setting_packed, void *callback_arg) {
 	struct python3_send_config_callback_data *data = callback_arg;
 
 	int ret = 0;
-	struct rrr_socket_msg *result = NULL;
 
-	ret = rrr_py_start_onetime_rw_thread (
-			&result,
-			&data->data->rrr_objects,
-			data->data->python3_module,
-			data->data->config_function,
-			rrr_setting_safe_cast(setting_packed)
-	);
-	if (ret != 0) {
-		VL_MSG_ERR("Could not run python3 config function in instance %s:\n",
+	if (rrr_py_persistent_process_message(data->target, rrr_setting_safe_cast(setting_packed)) != 0) {
+		RRR_MSG_ERR("Could not send setting to python3 config function in instance %s:\n",
 				INSTANCE_D_NAME(data->data->thread_data));
 		ret = 1;
 		goto out;
 	}
 
-	if (!RRR_SOCKET_MSG_IS_SETTING(result)) {
-		VL_MSG_ERR("Warning: Received back message of unknown type from python3 config function, expected rrr_setting\n");
-		ret = 0;
-		goto out;
-	}
-
-	struct rrr_setting_packed *setting = (struct rrr_setting_packed *) result;
-
-	rrr_settings_update_used (
-			data->data->thread_data->init_data.instance_config->settings,
-			setting->name,
-			setting->was_used,
-			rrr_settings_iterate_nolock
-	);
-
 	out:
-	RRR_FREE_IF_NOT_NULL(result);
 	return ret;
 }
 
-int python3_send_config (struct python3_data *data) {
+int python3_send_config (struct python3_data *data, struct python3_fork *target) {
 	int ret = 0;
 
-	struct python3_send_config_callback_data callback_data = { data };
+	struct python3_send_config_callback_data callback_data = { data, target };
 	ret = rrr_settings_iterate_packed (
 			data->thread_data->init_data.instance_config->settings,
 			python3_send_config_callback,
@@ -170,6 +147,10 @@ int python3_send_config (struct python3_data *data) {
 	);
 
 	return ret;
+}
+
+int python3_send_start_sourcing (struct python3_fork *target) {
+	return rrr_py_persistent_start_sourcing (target);
 }
 
 int python3_start(struct python3_data *data) {
@@ -180,7 +161,7 @@ int python3_start(struct python3_data *data) {
 	// LOAD PYTHON MAIN DICTIONARY
 	data->py_main = PyImport_AddModule("__main__"); // Borrowed reference
 	if (data->py_main == NULL) {
-		VL_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
+		RRR_MSG_ERR("Could not get python3 __main__ in python3_start in instance %s:\n",
 				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
 		ret = 1;
@@ -189,7 +170,7 @@ int python3_start(struct python3_data *data) {
 
 	data->py_main_dict = PyModule_GetDict(data->py_main); // Borrowed reference
 	if (data->py_main == NULL) {
-		VL_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
+		RRR_MSG_ERR("Could not get python3 main dictionary in python3_start in instance %s:\n",
 				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
 		ret = 1;
@@ -204,18 +185,11 @@ int python3_start(struct python3_data *data) {
 		module_path_length = 1;
 	}
 	if (rrr_py_get_rrr_objects(&data->rrr_objects, data->py_main_dict, (const char **) module_path, module_path_length) != 0) {
-		VL_MSG_ERR("Could not get rrr objects function in python3 instance %s\n",
+		RRR_MSG_ERR("Could not get rrr objects function in python3 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
 		ret = 1;
 		goto out_thread_out;
-	}
-
-	if (data->config_function != NULL) {
-		if (python3_send_config(data) != 0) {
-			ret = 1;
-			goto out_thread_out;
-		}
 	}
 
 	// START PROCESSING THREAD
@@ -224,34 +198,45 @@ int python3_start(struct python3_data *data) {
 				&data->processing_fork,
 				&data->rrr_objects,
 				data->python3_module,
-				data->process_function
+				data->process_function,
+				data->config_function
 		)) != 0) {
-			VL_MSG_ERR("Could not start python3 process function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-			goto out_start_process;
+			RRR_MSG_ERR("Could not start python3 process function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			goto out_thread_out;
 		}
 
-		out_start_process:
-
-		if (ret != 0) {
+		if (python3_send_config(data, data->processing_fork) != 0) {
+			RRR_MSG_ERR("Could not send configuration to processing thread in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
 			goto out_thread_out;
 		}
 	}
 
 	// START SOURCE THREAD
 	if (data->source_function != NULL) {
-		if ((ret = rrr_py_start_persistent_ro_thread (
+		if ((ret = rrr_py_start_persistent_rw_thread (
 				&data->source_fork,
 				&data->rrr_objects,
 				data->python3_module,
-				data->source_function
+				data->source_function,
+				data->config_function
 		)) != 0) {
-			VL_MSG_ERR("Could not start python3 source function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-			goto out_start_source;
+			RRR_MSG_ERR("Could not start python3 source function thread in instance %s\n", INSTANCE_D_NAME(data->thread_data));
+			goto out_thread_out;
 		}
 
-		out_start_source:
+		if (python3_send_config(data, data->source_fork) != 0) {
+			RRR_MSG_ERR("Could not send configuration to source thread in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out_thread_out;
+		}
 
-		if (ret != 0) {
+		// This stops read/write behavior and initiates source only behavior
+		if ((ret = python3_send_start_sourcing(data->source_fork)) != 0) {
+			RRR_MSG_ERR("Could not start sourcing in instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
 			goto out_thread_out;
 		}
 	}
@@ -285,7 +270,7 @@ void python3_stop(void *arg) {
 
 void data_cleanup(void *arg) {
 	struct python3_data *data = arg;
-	fifo_buffer_invalidate (&data->output_buffer);
+	rrr_fifo_buffer_invalidate (&data->output_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->python3_module);
 	RRR_FREE_IF_NOT_NULL(data->source_function);
@@ -302,11 +287,11 @@ void data_cleanup(void *arg) {
 	}
 }
 
-static void thread_poststop_python3 (const struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void thread_poststop_python3 (const struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
 
-	VL_DEBUG_MSG_1 ("python3 stop thread instance %s\n", INSTANCE_D_NAME(thread_data));
+	RRR_DBG_1 ("python3 stop thread instance %s\n", INSTANCE_D_NAME(thread_data));
 
 	if (preload_data->istate) {
 		rrr_py_destroy_thread_state(preload_data->istate);
@@ -321,7 +306,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	ret = rrr_instance_config_get_string_noconvert_silent (&data->python3_module, config, "python3_module");
 
 	if (ret != 0) {
-		VL_MSG_ERR("No python3_module specified for python module\n");
+		RRR_MSG_ERR("No python3_module specified for python module\n");
 		ret = 1;
 		goto out;
 	}
@@ -332,7 +317,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	rrr_instance_config_get_string_noconvert_silent (&data->module_path, config, "python3_module_path");
 
 	if (data->source_function == NULL && data->process_function == NULL) {
-		VL_MSG_ERR("No source or processor function defined for python3 instance %s\n",
+		RRR_MSG_ERR("No source or processor function defined for python3 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -347,35 +332,35 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	(void)(size);
 
-	struct instance_thread_data *thread_data = (struct instance_thread_data *) poll_data->source;
+	struct rrr_instance_thread_data *thread_data = (struct rrr_instance_thread_data *) poll_data->source;
 	struct python3_data *python3_data = thread_data->private_data;
-	struct vl_message *message = (struct vl_message *) data;
+	struct rrr_message *message = (struct rrr_message *) data;
 
-	update_watchdog_time(python3_data->thread_data->thread);
+	rrr_update_watchdog_time(python3_data->thread_data->thread);
 
-	VL_DEBUG_MSG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
+	RRR_DBG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
 
 	ret = rrr_py_persistent_process_message (
 			python3_data->processing_fork,
-			rrr_vl_message_safe_cast(message)
+			rrr_message_safe_cast(message)
 	);
 	if (ret != 0) {
-		VL_MSG_ERR("Error returned from rrr_py_persistent_process_message in instance %s\n",
+		RRR_MSG_ERR("Error returned from rrr_py_persistent_process_message in instance %s\n",
 				INSTANCE_D_NAME(python3_data->thread_data));
 		ret = 1;
 		goto out;
 	}
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
-	return (ret == 0 ? 0 : FIFO_SEARCH_STOP|FIFO_CALLBACK_ERR);
+	return (ret == 0 ? 0 : RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR);
 }
 
 int python3_poll(struct python3_data *data, struct poll_collection *poll) {
 	int ret = 0;
 
 	if ((ret = poll_do_poll_delete_simple (poll, data->thread_data, process_input_callback, 1000)) != 0) {
-		VL_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
+		RRR_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
 				ret, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -390,32 +375,34 @@ int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 
 	int ret = 0;
 
-	ret |= fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	ret |= rrr_fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 
 	return ret;
 }
 
-int thread_cancel_callback(void *arg) {
+int thread_cancel_callback(void *arg, PyThreadState *tstate_orig) {
+	(void)(tstate_orig);
+
 	struct python3_data *data = arg;
 	rrr_py_terminate_threads (&data->rrr_objects);
 	return 0;
 }
 
-static int thread_cancel_python3 (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static int thread_cancel_python3 (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data;
 
 	(void)(data);
 
-	VL_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
+	RRR_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
 
 	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
-		VL_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
+		RRR_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
 		PyErr_Print();
 		return 1;
 	}
 
-	VL_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
+	RRR_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
 
 	return 0;
 }
@@ -425,13 +412,13 @@ void child_exit_handler (pid_t pid, void *arg) {
 	struct python3_data *data = arg;
 	int res = rrr_py_invalidate_fork_unlocked(&data->rrr_objects, pid);
 	if (res == 0) {
-		VL_DEBUG_MSG_1("A fork was invalidated in child_exit_handler\n");
+		RRR_DBG_1("A fork was invalidated in child_exit_handler\n");
 	}
 }
 
 struct read_from_processor_callback_data {
 	struct python3_data *data;
-	struct fifo_buffer *output_buffer;
+	struct rrr_fifo_buffer *output_buffer;
 	int message_count;
 };
 
@@ -441,19 +428,29 @@ int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void
 
 	int ret = 0;
 
-	if (!RRR_SOCKET_MSG_IS_VL_MESSAGE(message)) {
-		VL_MSG_ERR("Warning: Received non vl_message from python3 processor function, discarding it.\n");
+	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
+		struct rrr_message *rrr_message = (struct rrr_message *) message;
+
+		RRR_DBG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
+				INSTANCE_D_NAME(python3_data->thread_data), rrr_message->timestamp_from);
+
+		callback_data->message_count++;
+		rrr_fifo_buffer_write(callback_data->output_buffer, (char*) rrr_message, sizeof(*rrr_message));
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
+		struct rrr_setting_packed *setting = (struct rrr_setting_packed *) message;
+		rrr_settings_update_used (
+				python3_data->thread_data->init_data.instance_config->settings,
+				setting->name,
+				setting->was_used,
+				rrr_settings_iterate_nolock
+		);
+	}
+	else {
+		RRR_MSG_ERR("Warning: Received non rrr_message and non rrr_settigns from python3 processor function, discarding it.\n");
 		ret = 1;
 		goto out;
 	}
-
-	struct vl_message *vl_message = (struct vl_message *) message;
-
-	VL_DEBUG_MSG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
-			INSTANCE_D_NAME(python3_data->thread_data), vl_message->timestamp_from);
-
-	callback_data->message_count++;
-	fifo_buffer_write(callback_data->output_buffer, (char*) vl_message, sizeof(*vl_message));
 
 	out:
 	if (ret != 0) {
@@ -486,32 +483,32 @@ int read_from_source_or_processor(struct python3_reader_data *data) {
 	return ret;
 }
 
-static void *thread_entry_python3_reader (struct vl_thread *thread) {
+static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 	struct python3_reader_data *data = thread->private_data;
 	struct python3_data *python3_data = data->data;
 
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	uint64_t start_time = time_get_64();
-	while (thread_check_encourage_stop(data->thread) == 0) {
-		update_watchdog_time(data->thread);
+	uint64_t start_time = rrr_time_get_64();
+	while (rrr_thread_check_encourage_stop(data->thread) == 0) {
+		rrr_update_watchdog_time(data->thread);
 
 		if (read_from_source_or_processor(data) != 0) {
-			VL_MSG_ERR("Error while reading in python3 instance %s thread '%s'\n",
+			RRR_MSG_ERR("Error while reading in python3 instance %s thread '%s'\n",
 					INSTANCE_D_NAME(python3_data->thread_data), data->thread->name);
 			break;
 		}
 
-		uint64_t now_time = time_get_64();
+		uint64_t now_time = rrr_time_get_64();
 		if (now_time - start_time > 1000000) {
-			VL_DEBUG_MSG_1("python3 read thread '%s' messages per second: %i\n",
+			RRR_DBG_1("python3 read thread '%s' messages per second: %i\n",
 					data->thread->name, data->message_counter);
 			data->message_counter = 0;
-			start_time = time_get_64();
+			start_time = rrr_time_get_64();
 		}
 	}
 
@@ -523,32 +520,32 @@ static void *thread_entry_python3_reader (struct vl_thread *thread) {
 
 int preload_reader_thread (
 		struct python3_reader_data *reader_data,
-		struct vl_thread_collection *collection,
+		struct rrr_thread_collection *collection,
 		struct python3_data *python3_data,
 		struct python3_fork *fork,
-		struct fifo_buffer *output_buffer,
+		struct rrr_fifo_buffer *output_buffer,
 		const char *name
 ) {
 	int ret = 0;
-	struct vl_thread *thread = NULL;
+	struct rrr_thread *thread = NULL;
 
 	reader_data->message_counter = 0;
 	reader_data->data = python3_data;
 	reader_data->fork = fork;
 	reader_data->output_buffer = output_buffer;
-	thread = thread_preload_and_register (
+	thread = rrr_thread_preload_and_register (
 			collection,
 			thread_entry_python3_reader,
 			NULL,
 			NULL,
 			NULL,
-			VL_THREAD_START_PRIORITY_NORMAL,
+			RRR_THREAD_START_PRIORITY_NORMAL,
 			reader_data,
 			name
 	);
 
 	if (thread == NULL) {
-		VL_MSG_ERR("Could not preload thread '%s' in python3 instance %s\n",
+		RRR_MSG_ERR("Could not preload thread '%s' in python3 instance %s\n",
 				name, INSTANCE_D_NAME(python3_data->thread_data));
 		ret = 1;
 		goto out;
@@ -567,11 +564,11 @@ static int threads_start(struct python3_data *data) {
 	const char *name_template = "%s %s read thread";
 
 	if (strlen(data->thread_data->thread->name) > sizeof(name) - strlen(name_template)) {
-		VL_BUG("thread name was too long in python3 threads_start\n");
+		RRR_BUG("thread name was too long in python3 threads_start\n");
 	}
 
-	if ((ret = thread_new_collection(&data->thread_collection)) != 0) {
-		VL_MSG_ERR("Could not create thread collection in python3 instance %s\n",
+	if ((ret = rrr_thread_new_collection(&data->thread_collection)) != 0) {
+		RRR_MSG_ERR("Could not create thread collection in python3 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -604,34 +601,34 @@ static int threads_start(struct python3_data *data) {
 		}
 	}
 
-	if (data->source_thread.thread != NULL && thread_start(data->source_thread.thread) != 0) {
-		VL_MSG_ERR("Could not start source read thread collection in python3 instance %s, can't continue.\n",
+	if (data->source_thread.thread != NULL && rrr_thread_start(data->source_thread.thread) != 0) {
+		RRR_MSG_ERR("Could not start source read thread collection in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		exit(EXIT_FAILURE);
 	}
 
-	if (data->process_thread.thread != NULL && thread_start(data->process_thread.thread) != 0) {
-		VL_MSG_ERR("Could not start process read thread collection in python3 instance %s, can't continue.\n",
+	if (data->process_thread.thread != NULL && rrr_thread_start(data->process_thread.thread) != 0) {
+		RRR_MSG_ERR("Could not start process read thread collection in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		exit(EXIT_FAILURE);
 	}
 
-	if (thread_start_all_after_initialized(data->thread_collection) != 0) {
-		VL_MSG_ERR("Error while waiting for threads to initialize in python3 instance %s, can't continue.\n",
+	if (rrr_thread_start_all_after_initialized(data->thread_collection) != 0) {
+		RRR_MSG_ERR("Error while waiting for threads to initialize in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		return (EXIT_FAILURE);
 	}
 
 	goto out;
 	out_destroy_collection:
-		thread_destroy_collection(data->thread_collection);
+		rrr_thread_destroy_collection(data->thread_collection);
 
 	out:
 	return ret;
 }
 
 // We shouldn't really end up here, but...
-void python3_ghost_handler (struct vl_thread *thread) {
+void python3_ghost_handler (struct rrr_thread *thread) {
 	struct python3_reader_data *data = thread->private_data;
 
 	// See threads_cleanup()-function
@@ -642,27 +639,27 @@ void threads_cleanup(void *arg) {
 	struct python3_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		threads_stop_and_join(data->thread_collection, python3_ghost_handler);
-		thread_destroy_collection(data->thread_collection);
+		rrr_threads_stop_and_join(data->thread_collection, python3_ghost_handler);
+		rrr_thread_destroy_collection(data->thread_collection);
 		data->thread_collection = NULL;
 	}
 
 	// Since the reader threads might continue to use our memory after they
 	// begin to run again, we cannot proceed.
 	if (data->reader_thread_became_ghost != 0) {
-		VL_MSG_ERR("Could not stop reader threads in python3 module instance %s. Can't continue.",
+		RRR_MSG_ERR("Could not stop reader threads in python3 module instance %s. Can't continue.",
 				INSTANCE_D_NAME(data->thread_data));
 		exit(EXIT_FAILURE);
 	}
 }
 
-static void *thread_entry_python3 (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_python3 (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 	struct python3_preload_data *preload_data = thread_data->preload_data;
 	struct poll_collection poll;
 
-	VL_DEBUG_MSG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
+	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
@@ -670,64 +667,69 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 	pthread_cleanup_push(python3_stop, data);
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(threads_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	if (data_init(data, preload_data, thread_data) != 0) {
-		VL_MSG_ERR("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	VL_DEBUG_MSG_1("python3 instance %s tstate: %p\n", INSTANCE_D_NAME(thread_data), data->tstate);
+	RRR_DBG_1("python3 instance %s tstate: %p\n", INSTANCE_D_NAME(thread_data), data->tstate);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
 
 	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK) != 0) {
-		VL_MSG_ERR("Python3 instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Python3 instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	int no_polling = 1;
 	if (poll_collection_count (&poll) > 0) {
 		if (!data->process_function) {
-			VL_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
 		}
 		no_polling = 0;
 	}
 
 	if (python3_start(data) != 0) {
-		VL_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Python3 instance %s failed to start python program\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	int res = 0;
 	if ((res = python3_swap_thread_out(&data->python3_thread_ctx))) {
-		VL_MSG_ERR("python3 return from thread swap out was not 0 but %i in instance %s\n",
+		RRR_MSG_ERR("python3 return from thread swap out was not 0 but %i in instance %s\n",
 				res, INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING_FORKED);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
 	if (threads_start(data) != 0) {
-		VL_MSG_ERR("Python3 instance %s failed to start reader threads\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Python3 instance %s failed to start reader threads\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
-	// Check after python3 has started, maybe the script uses some settings which will
-	// then be tagged as used to avoid warnings
-	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+	// This must be delayed as the results from any config functions are
+	// asynchronously received
+	uint64_t check_settings_used_time = rrr_time_get_64() + 1000000;
 
-	while (thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
+		rrr_update_watchdog_time(thread_data->thread);
 
-		int output_buffer_size = fifo_buffer_get_entry_count(&data->output_buffer);
+		if (check_settings_used_time != 0 && check_settings_used_time > rrr_time_get_64()) {
+			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+			check_settings_used_time = 0;
+		}
+
+		int output_buffer_size = rrr_fifo_buffer_get_entry_count(&data->output_buffer);
 
 		if (output_buffer_size > 500) {
 			usleep(1000);
@@ -743,14 +745,14 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 			}
 			else {
 				if ((res = python3_poll(data, &poll)) != 0) {
-					VL_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
+					RRR_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
 							res, INSTANCE_D_NAME(thread_data));
 					break;
 				}
 			}
 
-			if (thread_check_any_stopped (data->thread_collection) != 0) {
-				VL_MSG_ERR("One or more reader threads have stopped in python3 instance %s\n",
+			if (rrr_thread_check_any_stopped (data->thread_collection) != 0) {
+				RRR_MSG_ERR("One or more reader threads have stopped in python3 instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
 			}
@@ -758,7 +760,7 @@ static void *thread_entry_python3 (struct vl_thread *thread) {
 	}
 
 	out_message:
-	VL_DEBUG_MSG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
+	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	rrr_py_handle_sigchld(child_exit_handler, data);
 
@@ -782,7 +784,7 @@ static int test_config (struct rrr_instance_config *config) {
 	return ret;
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 		thread_preload_python3,
 		thread_entry_python3,
 		thread_poststop_python3,
@@ -802,14 +804,14 @@ int signal_handler(int signal, void *private_arg) {
 
 	(void)(private_arg);
 
-	VL_DEBUG_MSG_1("Python got signal %i\n", signal);
+	RRR_DBG_1("Python got signal %i\n", signal);
 	if (signal == SIGCHLD) {
 		sigchld_pending = 1;
 		ret = 0;
-		VL_DEBUG_MSG_1("Python took SIGCHLD signal\n");
+		RRR_DBG_1("Python took SIGCHLD signal\n");
 	}
 	else {
-		VL_DEBUG_MSG_1("Python did not take signal\n");
+		RRR_DBG_1("Python did not take signal\n");
 	}
 
 	return ret;
@@ -817,17 +819,17 @@ int signal_handler(int signal, void *private_arg) {
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_FLEXIBLE;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = VL_THREAD_START_PRIORITY_FORK;
+	data->start_priority = RRR_THREAD_START_PRIORITY_FORK;
 	data->signal_handler = signal_handler;
 }
 
 void unload(void) {
-	VL_DEBUG_MSG_1 ("Destroy python3 module\n");
+	RRR_DBG_1 ("Destroy python3 module\n");
 }
 

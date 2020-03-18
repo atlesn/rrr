@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "mqtt_property.h"
+#include "linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -185,8 +186,13 @@ struct rrr_mqtt_p_payload {
 // memory might however also be managed elsewhere for locally created packets. Packets
 // may share the same payload data.
 
+// Packets have parameters for being a linked list node. This must however be managed
+// locally, and the parameters are disregarded by the packet framework. In normal
+// operations, packets are stored in FIFO buffers in which these parameters are not used.
+
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
+	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
 	uint8_t dup;														\
@@ -267,7 +273,7 @@ struct rrr_mqtt_p {
 static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	if (p->users == 0) {
-		VL_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
+		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
 	}
 //	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
@@ -280,12 +286,12 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
+//	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
 	if ((p)->users < 0) {
-		VL_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
+		RRR_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
 	}
 	if (p->users == 0) {
 		pthread_mutex_destroy(&p->refcount_lock);
@@ -311,6 +317,14 @@ static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
 		RRR_MQTT_P_DECREF(p)
+
+static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
+	// Cast away const is OK
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) arg;
+	if (pthread_mutex_trylock(&packet->data_lock) == 0) {
+		RRR_BUG("BUG: Packet not locked triggered in rrr_mqtt_p_bug_if_not_locked(), run in debugger to get call stack.\n");
+	}
+}
 
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
@@ -487,7 +501,7 @@ struct rrr_mqtt_p_auth {
 };
 
 struct rrr_mqtt_p_queue {
-	struct fifo_buffer buffer;
+	struct rrr_fifo_buffer buffer;
 };
 
 #define RRR_MQTT_P_TYPE_RESERVED	0
@@ -512,7 +526,7 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
 extern const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[];
 static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_properties (uint8_t id) {
 	if (id > 15 || id == 0) {
-		VL_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
+		RRR_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
 	}
 	return &rrr_mqtt_p_type_properties[id];
 }
@@ -548,7 +562,7 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
 ) {
 	const struct rrr_mqtt_p_type_properties *properties = source->type_properties;
 	if (properties->clone == NULL) {
-		VL_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
+		RRR_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
 	}
 	return properties->clone(source);
 }

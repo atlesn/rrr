@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_listen_fd {
 	RRR_LL_NODE(struct rrr_mqtt_listen_fd);
-	struct ip_data ip;
+	struct rrr_ip_data ip;
 };
 
 struct rrr_mqtt_listen_fd_collection {
@@ -65,6 +65,10 @@ int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
 static inline void rrr_mqtt_broker_destroy_void (void *broker) {
 	rrr_mqtt_broker_destroy (broker);
+}
+void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker);
+static inline void rrr_mqtt_broker_notify_pthread_cancel_void (void *broker) {
+	rrr_mqtt_broker_notify_pthread_cancel(broker);
 }
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,

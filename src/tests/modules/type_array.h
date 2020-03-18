@@ -21,13 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
-struct vl_message;
+struct rrr_message;
 struct instance_metadata_collection;
 
 int test_type_array (
-		struct vl_message **result_message_1,
-		struct vl_message **result_message_2,
-		struct vl_message **result_message_3,
+		struct rrr_message **result_message_1,
+		struct rrr_message **result_message_2,
+		struct rrr_message **result_message_3,
 		struct instance_metadata_collection *instances,
 		const char *input_name,
 		const char *input_socket_name,
@@ -41,5 +41,5 @@ int test_type_array_mysql_and_network (
 		const char *input_buffer_name,
 		const char *tag_buffer_name,
 		const char *mysql_name,
-		const struct vl_message *message
+		const struct rrr_message *message
 );

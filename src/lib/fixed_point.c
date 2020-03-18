@@ -156,7 +156,7 @@ static long double __rrr_fixp_convert_char (char c) {
 		c += 10;
 	}
 	else {
-		VL_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
+		RRR_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
 	}
 
 	return c;

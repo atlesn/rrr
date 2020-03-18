@@ -1,13 +1,13 @@
 AM_CFLAGS = @AM_CFLAGS@ -Wextra
 
-if VL_WITH_MYSQL
+if RRR_WITH_MYSQL
 mysql = mysql.la
 mysql_la_SOURCES = p_mysql.c
 mysql_la_CFLAGS = ${MYSQL_CFLAGS} ${AM_CFLAGS}
 mysql_la_LDFLAGS = ${module_ldflags} ${MYSQL_LDFLAGS}
 endif
 
-if VL_WITH_PYTHON3
+if RRR_WITH_PYTHON3
 python3 = python3.la
 python3_la_SOURCES = p_python3.c
 python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
@@ -21,7 +21,7 @@ voltmonitor_la_SOURCES = src_voltmonitor.c
 voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
 endif
 
-if VL_WITH_PERL5
+if RRR_WITH_PERL5
 perl5 = perl5.la
 perl5_la_SOURCES = p_perl5.c
 perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}

@@ -54,13 +54,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
+#define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
 
+// Timeout before we send PUBLISH packets to the broker. This is to allow,
+// if the broker has just been started, other clients to subscribe first
+// before we send anything (to prevent it from getting deleted by the broker)
+#define RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS 3000
+
 struct mqtt_client_data {
-	struct instance_thread_data *thread_data;
-	struct fifo_buffer output_buffer;
+	struct rrr_instance_thread_data *thread_data;
+	struct rrr_fifo_buffer output_buffer;
 	struct rrr_mqtt_client_data *mqtt_client_data;
 	rrr_setting_uint server_port;
 	struct rrr_mqtt_subscription_collection *subscriptions;
@@ -76,14 +82,15 @@ struct mqtt_client_data {
 	uint8_t qos;
 	uint8_t version;
 	int publish_rrr_message;
-	int receive_vl_message;
+	int receive_rrr_message;
 	char *connect_error_action;
 	struct rrr_mqtt_conn *connection;
+	rrr_setting_uint connect_attempts;
 };
 
 static void data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
-	fifo_buffer_invalidate(&data->output_buffer);
+	rrr_fifo_buffer_invalidate(&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
@@ -98,22 +105,22 @@ static void data_cleanup(void *arg) {
 
 static int data_init (
 		struct mqtt_client_data *data,
-		struct instance_thread_data *thread_data
+		struct rrr_instance_thread_data *thread_data
 ) {
 	memset(data, '\0', sizeof(*data));
 	int ret = 0;
 
 	data->thread_data = thread_data;
 
-	ret |= fifo_buffer_init(&data->output_buffer);
+	ret |= rrr_fifo_buffer_init(&data->output_buffer);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Could not initialize fifo buffer in mqtt client data_init\n");
+		RRR_MSG_ERR("Could not initialize fifo buffer in mqtt client data_init\n");
 		goto out;
 	}
 
 	if (rrr_mqtt_subscription_collection_new(&data->subscriptions) != 0) {
-		VL_MSG_ERR("Could not create subscription collection in mqtt client data_init\n");
+		RRR_MSG_ERR("Could not create subscription collection in mqtt client data_init\n");
 		goto out;
 	}
 
@@ -140,7 +147,7 @@ static int parse_sub_topic (const char *topic_str, void *arg) {
 			0,
 			data->qos
 	) != 0) {
-		VL_MSG_ERR("Could not add topic '%s' to subscription collection\n", topic_str);
+		RRR_MSG_ERR("Could not add topic '%s' to subscription collection\n", topic_str);
 		return 1;
 	}
 
@@ -154,7 +161,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	struct rrr_linked_list_node *node = malloc(sizeof(*node));
 	if (node == NULL) {
-		VL_MSG_ERR("Could not allocate memory in parse_publish_value_tag\n");
+		RRR_MSG_ERR("Could not allocate memory in parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
 	}
@@ -162,7 +169,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	node->data = strdup(value);
 	if (node->data == NULL) {
-		VL_MSG_ERR("Could not allocate memory for data in parse_publish_value_tag\n");
+		RRR_MSG_ERR("Could not allocate memory for data in parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
 	}
@@ -185,12 +192,32 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 	rrr_setting_uint mqtt_port = 0;
 	rrr_setting_uint mqtt_qos = 0;
+	rrr_setting_uint mqtt_connect_attempts = 0;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_connect_attempts, config, "mqtt_connect_attempts")) == 0) {
+		if (mqtt_connect_attempts < 1) {
+			RRR_MSG_ERR("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %llu was given.",
+					config->name, mqtt_connect_attempts);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_ERR("Error while parsing mqtt_reconnect_attempts setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		mqtt_port = RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS;
+		ret = 0;
+	}
+	data->connect_attempts = mqtt_connect_attempts;
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_server_port")) == 0) {
 		// OK
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		VL_MSG_ERR("Error while parsing mqtt_server_port setting of instance %s\n", config->name);
+		RRR_MSG_ERR("Error while parsing mqtt_server_port setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -202,13 +229,13 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_qos, config, "mqtt_qos")) == 0) {
 		if (mqtt_qos > 2) {
-			VL_MSG_ERR("Setting mqtt_qos was >2 in config of instance %s\n", config->name);
+			RRR_MSG_ERR("Setting mqtt_qos was >2 in config of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		VL_MSG_ERR("Error while parsing mqtt_qos setting of instance %s\n", config->name);
+		RRR_MSG_ERR("Error while parsing mqtt_qos setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -221,18 +248,18 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->client_identifier, config, "mqtt_client_identifier")) != 0) {
 		data->client_identifier = malloc(strlen(config->name) + 1);
 		if (data->client_identifier == NULL) {
-			VL_MSG_ERR("Could not allocate memory in parse_config of instance %s\n", config->name);
+			RRR_MSG_ERR("Could not allocate memory in parse_config of instance %s\n", config->name);
 		}
 		strcpy(data->client_identifier, config->name);
 	}
 
 	if (rrr_utf8_validate(data->client_identifier, strlen(data->client_identifier)) != 0) {
-		VL_MSG_ERR("Client identifier of mqtt client instance %s was not valid UTF-8\n", config->name);
+		RRR_MSG_ERR("Client identifier of mqtt client instance %s was not valid UTF-8\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
-	VL_DEBUG_MSG_2 ("MQTT instance %s using '%s' as client identifier\n",
+	RRR_DBG_2 ("MQTT instance %s using '%s' as client identifier\n",
 			config->name, data->client_identifier);
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
@@ -246,7 +273,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			data->version = 5;
 		}
 		else {
-			VL_MSG_ERR("Unknown protocol version '%s' in setting mqtt_version of instance %s. " \
+			RRR_MSG_ERR("Unknown protocol version '%s' in setting mqtt_version of instance %s. " \
 					"Supported values are 3.1.1 and 5\n", data->version_str, config->name);
 			ret = 1;
 			goto out;
@@ -255,14 +282,14 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->server, config, "mqtt_server")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing mqtt_server setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 
 		data->server = strdup("localhost");
 		if (data->server == NULL) {
-			VL_MSG_ERR("Could not allocate memory for mqtt_server in mqtt client\n");
+			RRR_MSG_ERR("Could not allocate memory for mqtt_server in mqtt client\n");
 			ret = 1;
 			goto out;
 		}
@@ -273,7 +300,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_publish_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Could not interpret mqtt_publish_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			RRR_MSG_ERR("Could not interpret mqtt_publish_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -289,7 +316,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_publish_topic_force")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Could not interpret mqtt_publish_topic_force setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			RRR_MSG_ERR("Could not interpret mqtt_publish_topic_force setting of instance %s, must be 'yes' or 'no'\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -304,68 +331,68 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			"mqtt_receive_array"
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing array definition in mqtt_receive_array of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (rrr_array_count(&data->array_definition) == 0) {
-			VL_MSG_ERR("No items specified in array definition in mqtt_receive_array of instance %s\n", config->name);
+			RRR_MSG_ERR("No items specified in array definition in mqtt_receive_array of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 
-	data->receive_vl_message = 0;
+	data->receive_rrr_message = 0;
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_receive_rrr_message")
 	)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Could not interpret mqtt_receive_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
+			RRR_MSG_ERR("Could not interpret mqtt_receive_rrr_message setting of instance %s, must be 'yes' or 'no'\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (yesno > 0) {
 		if (rrr_array_count(&data->array_definition) > 0) {
-			VL_MSG_ERR("mqtt_receive_rrr_message was set to yes but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
+			RRR_MSG_ERR("mqtt_receive_rrr_message was set to yes but mqtt_receive_array_definition was also specified for instance %s, cannot have both.\n", config->name);
 			ret = 1;
 			goto out;
 		}
-		data->receive_vl_message = 1;
+		data->receive_rrr_message = 1;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_topic, config, "mqtt_publish_topic")) == 0) {
 		if (strlen(data->publish_topic) == 0) {
-			VL_MSG_ERR("Topic name in mqtt_publish_topic was empty for instance %s\n", config->name);
+			RRR_MSG_ERR("Topic name in mqtt_publish_topic was empty for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (rrr_mqtt_topic_validate_name(data->publish_topic) != 0) {
-			VL_MSG_ERR("Topic name in mqtt_publish_topic was invalid for instance %s\n", config->name);
+			RRR_MSG_ERR("Topic name in mqtt_publish_topic was invalid for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (ret == RRR_SETTING_NOT_FOUND && data->force_publish_topic != 0) {
-		VL_MSG_ERR("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
+		RRR_MSG_ERR("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", parse_sub_topic, data)) != 0) {
-		VL_MSG_ERR("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
+		RRR_MSG_ERR("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->publish_values_from_array, config, "mqtt_publish_array_values")) == 0) {
 		if (strlen(data->publish_values_from_array) == 0) {
-			VL_MSG_ERR("Parameter in mqtt_publish_values_from_array was empty for instance %s\n", config->name);
+			RRR_MSG_ERR("Parameter in mqtt_publish_values_from_array was empty for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 
 		if (publish_rrr_message_was_present != 0 && data->publish_rrr_message == 1) {
-			VL_MSG_ERR("Cannot have mqtt_publish_values_from_array set while mqtt_publish_rrr_message is 'yes'\n");
+			RRR_MSG_ERR("Cannot have mqtt_publish_values_from_array set while mqtt_publish_rrr_message is 'yes'\n");
 			ret = 1;
 			goto out;
 		}
@@ -376,14 +403,14 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 			// OK, publish full raw array
 		}
 		else if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_publish_array_values", parse_publish_value_tag, data)) != 0) {
-			VL_MSG_ERR("Error while parsing mqtt_publish_values_from_array setting of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing mqtt_publish_values_from_array setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Error while parsing mqtt_publish_values_from_array\n");
+			RRR_MSG_ERR("Error while parsing mqtt_publish_values_from_array\n");
 			ret = 1;
 			goto out;
 		}
@@ -396,20 +423,20 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		else if (strcmp(data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
 		}
 		else {
-			VL_MSG_ERR("Unknown value for mqtt_connect_error_action (̈́'%s') in mqtt client instance %s, please refer to documentation\n",
+			RRR_MSG_ERR("Unknown value for mqtt_connect_error_action (̈́'%s') in mqtt client instance %s, please refer to documentation\n",
 					data->connect_error_action, config->name);
 		}
 	}
 	else {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Error while parsing mqtt_connect_error_action\n");
+			RRR_MSG_ERR("Error while parsing mqtt_connect_error_action\n");
 			ret = 1;
 			goto out;
 		}
 
 		data->connect_error_action = strdup(RRR_MQTT_CONNECT_ERROR_DO_RESTART);
 		if (data->connect_error_action == NULL) {
-			VL_MSG_ERR("Could not allocate memory for connect_error_action in mqtt client\n");
+			RRR_MSG_ERR("Could not allocate memory for connect_error_action in mqtt client\n");
 			ret = 1;
 			goto out;
 		}
@@ -425,12 +452,12 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct mqtt_client_data *client_data = data->private_data;
-	return fifo_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll_keep (RRR_MODULE_POLL_SIGNATURE) {
 	struct mqtt_client_data *client_data = data->private_data;
-	return fifo_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
 static int process_suback_subscription (
@@ -444,11 +471,11 @@ static int process_suback_subscription (
 	if (qos_or_reason_v5 > 2) {
 		const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5(qos_or_reason_v5);
 		if (reason == NULL) {
-			VL_MSG_ERR("Unknown reason 0x%02x from mqtt broker in SUBACK topic index %i in mqtt client instance %s",
+			RRR_MSG_ERR("Unknown reason 0x%02x from mqtt broker in SUBACK topic index %i in mqtt client instance %s",
 					qos_or_reason_v5, i, INSTANCE_D_NAME(data->thread_data));
 			return 1;
 		}
-		VL_MSG_ERR("Warning: Subscription '%s' index '%i' rejected from broker in mqtt client instance %s with reason '%s'\n",
+		RRR_MSG_ERR("Warning: Subscription '%s' index '%i' rejected from broker in mqtt client instance %s with reason '%s'\n",
 				subscription->topic_filter,
 				i,
 				INSTANCE_D_NAME(data->thread_data),
@@ -456,7 +483,7 @@ static int process_suback_subscription (
 		);
 	}
 	else if (qos_or_reason_v5 < subscription->qos_or_reason_v5) {
-		VL_MSG_ERR("Warning: Subscription '%s' index '%i' assigned QoS %u from server while %u was requested in mqtt client instance %s \n",
+		RRR_MSG_ERR("Warning: Subscription '%s' index '%i' assigned QoS %u from server while %u was requested in mqtt client instance %s \n",
 				subscription->topic_filter,
 				i,
 				qos_or_reason_v5,
@@ -474,7 +501,7 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 	(void)(mqtt_client_data);
 
 	if (RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_SUBACK) {
-		VL_BUG("Unknown packet of type %u received in mqtt client process_suback\n",
+		RRR_BUG("Unknown packet of type %u received in mqtt client process_suback\n",
 				RRR_MQTT_P_GET_TYPE(packet));
 	}
 
@@ -485,7 +512,7 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 
 	if (orig_count != new_count) {
 		// Session framework should catch this
-		VL_BUG("Count mismatch in SUBSCRIBE and SUBACK messages in mqtt client instance %s (%i vs %i)\n",
+		RRR_BUG("Count mismatch in SUBSCRIBE and SUBACK messages in mqtt client instance %s (%i vs %i)\n",
 				INSTANCE_D_NAME(data->thread_data), orig_count, new_count);
 	}
 
@@ -506,12 +533,12 @@ static int process_suback(struct rrr_mqtt_client_data *mqtt_client_data, struct 
 static int message_data_to_payload (
 		char **payload,
 		ssize_t *payload_size,
-		struct vl_message *reading
+		struct rrr_message *reading
 ) {
 	char *result = malloc(MSG_DATA_LENGTH(reading));
 
 	if (result == NULL) {
-		VL_MSG_ERR ("could not allocate memory for PUBLISH payload in message_data_to_payload \n");
+		RRR_MSG_ERR ("could not allocate memory for PUBLISH payload in message_data_to_payload \n");
 		return 1;
 	}
 
@@ -521,11 +548,11 @@ static int message_data_to_payload (
 	return 0;
 }
 
-static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct instance_thread_data *thread_data = poll_data->source;
+static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct rrr_instance_thread_data *thread_data = poll_data->source;
 	struct mqtt_client_data *private_data = thread_data->private_data;
 	struct rrr_mqtt_p_publish *publish = NULL;
-	struct vl_message *reading = (struct vl_message *) data;
+	struct rrr_message *reading = (struct rrr_message *) data;
 
 	(void)(size);
 
@@ -535,11 +562,11 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	struct rrr_array array_tmp = {0};
 
-	VL_DEBUG_MSG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
+	RRR_DBG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
 			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
 
 	if (private_data->mqtt_client_data->protocol_version == NULL) {
-		VL_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
+		RRR_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -547,7 +574,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, private_data->mqtt_client_data->protocol_version);
 	if (publish == NULL) {
-		VL_MSG_ERR("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
+		RRR_MSG_ERR("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -570,16 +597,16 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	}
 	else {
 		if (private_data->force_publish_topic != 0) {
-			VL_BUG("force_publish_topic was 1 but topic was not set in poll_callback of mqttclient\n");
+			RRR_BUG("force_publish_topic was 1 but topic was not set in poll_callback of mqttclient\n");
 		}
-		VL_MSG_ERR("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
+		RRR_MSG_ERR("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 0;
 		goto out_free;
 	}
 
 	if (publish->topic == NULL) {
-		VL_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
+		RRR_MSG_ERR("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -592,7 +619,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 		reading->network_size = network_size;
 
-		message_prepare_for_network(reading);
+		rrr_message_prepare_for_network(reading);
 
 		rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) reading);
 
@@ -602,7 +629,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 				RRR_MESSAGE_MIME_TYPE,
 				strlen(RRR_MESSAGE_MIME_TYPE)
 		) != 0) {
-			VL_MSG_ERR("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_ERR("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -613,7 +640,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	}
 	else if (private_data->publish_values_from_array != NULL) {
 		if (!MSG_IS_ARRAY(reading)) {
-			VL_MSG_ERR("Received message was not an array while mqtt_publish_values_from_array was set in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_ERR("Received message was not an array while mqtt_publish_values_from_array was set in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -621,14 +648,14 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 		if (*private_data->publish_values_from_array == '*') {
 			if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
-				VL_MSG_ERR("Error while creating payload from message array data in mqtt client poll_callback of mqtt client instance %s\n",
+				RRR_MSG_ERR("Error while creating payload from message array data in mqtt client poll_callback of mqtt client instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				goto out_free;
 			}
 		}
 		else {
 			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-				VL_MSG_ERR("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
+				RRR_MSG_ERR("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out_free;
@@ -640,7 +667,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 					&array_tmp,
 					&private_data->publish_values_from_array_list)
 			) != 0) {
-				VL_MSG_ERR("Could not create payload data from selected array tags in mqtt client instance %s\n",
+				RRR_MSG_ERR("Could not create payload data from selected array tags in mqtt client instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out_free;
@@ -649,14 +676,14 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	}
 	else if (MSG_DATA_LENGTH(reading) > 0) {
 		if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
-			VL_MSG_ERR("Error while creating payload from message data in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_ERR("Error while creating payload from message data in mqtt client poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_free;
 		}
 	}
 	else {
-		if ((ret = message_to_string(&payload, reading)) != 0) {
-			VL_MSG_ERR("could not convert message to string for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
+		if ((ret = rrr_message_to_string(&payload, reading)) != 0) {
+			RRR_MSG_ERR("could not convert message to string for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			goto out_free;
 		}
@@ -665,7 +692,7 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 
 	if (payload != NULL) {
 		if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
-			VL_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_ERR("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -673,11 +700,11 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 		payload = NULL;
 	}
 
-	VL_DEBUG_MSG_2 ("mqtt client %s: PUBLISH with topic %s\n",
+	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",
 			INSTANCE_D_NAME(thread_data), publish->topic);
 
 	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
-		VL_MSG_ERR("Could not publish message in mqtt client instance %s\n",
+		RRR_MSG_ERR("Could not publish message in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -692,8 +719,8 @@ static int poll_callback(struct fifo_callback_args *poll_data, char *data, unsig
 	return ret;
 }
 
-static int __try_create_vl_message_with_publish_data (
-		struct vl_message **result,
+static int __try_create_rrr_message_with_publish_data (
+		struct rrr_message **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
 ) {
@@ -713,7 +740,7 @@ static int __try_create_vl_message_with_publish_data (
 
 	ssize_t topic_len = strlen(publish->topic);
 
-	if (message_new_empty (
+	if (rrr_message_new_empty (
 			result,
 			MSG_TYPE_MSG,
 			0,
@@ -724,7 +751,7 @@ static int __try_create_vl_message_with_publish_data (
 			topic_len,
 			publish->payload->length
 	) != 0) {
-		VL_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (A)\n",
+		RRR_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (A)\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out_unlock_payload;
@@ -740,8 +767,8 @@ static int __try_create_vl_message_with_publish_data (
 	return ret;
 }
 
-static int __try_get_vl_message_from_publish (
-		struct vl_message **result,
+static int __try_get_rrr_message_from_publish (
+		struct rrr_message **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
 ) {
@@ -753,14 +780,14 @@ static int __try_get_vl_message_from_publish (
 
 	ssize_t message_actual_length = publish->payload->length;
 	ssize_t message_stated_length = 0;
-	struct vl_message *message = (struct vl_message *) publish->payload->payload_start;
+	struct rrr_message *message = (struct rrr_message *) publish->payload->payload_start;
 
 	*result = NULL;
 
 	RRR_MQTT_P_LOCK(publish->payload);
 
 	if (message_actual_length < (ssize_t) sizeof(struct rrr_socket_msg)) {
-		VL_DEBUG_MSG_1("RRR Message of unknown length %li in mqtt client instance %s\n",
+		RRR_DBG_1("RRR Message of unknown length %li in mqtt client instance %s\n",
 				message_actual_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -770,36 +797,36 @@ static int __try_get_vl_message_from_publish (
 			(struct rrr_socket_msg *) message,
 			message_actual_length)
 	) {
-		VL_DEBUG_MSG_1("RRR Message of size %li with corrupted header in mqtt client instance %s\n",
+		RRR_DBG_1("RRR Message of size %li with corrupted header in mqtt client instance %s\n",
 				message_actual_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (message_actual_length != message_stated_length) {
-		VL_DEBUG_MSG_1("RRR message_final size mismatch, have %li bytes but packet states %li in mqtt client instance %s\n",
+		RRR_DBG_1("RRR message_final size mismatch, have %li bytes but packet states %li in mqtt client instance %s\n",
 				message_actual_length, message_stated_length, INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, message_actual_length) != 0) {
-		VL_DEBUG_MSG_1("RRR Message with invalid header in mqtt client instance %s\n",
+		RRR_DBG_1("RRR Message with invalid header in mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, message_actual_length) != 0) {
-		VL_MSG_ERR("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_ERR("RRR message_final CRC32 mismatch in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if (message_to_host_and_verify(message, message_actual_length) != 0) {
-		VL_MSG_ERR("RRR message_final was invalid in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	if (rrr_message_to_host_and_verify(message, message_actual_length) != 0) {
+		RRR_MSG_ERR("RRR message_final was invalid in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	*result = malloc(message_actual_length);
 	if (*result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __try_get_vl_message_from_publish\n");
+		RRR_MSG_ERR("Could not allocate memory in __try_get_rrr_message_from_publish\n");
 		ret = 1;
 		goto out;
 	}
@@ -813,7 +840,7 @@ static int __try_get_vl_message_from_publish (
 }
 
 static int __try_create_array_message_from_publish (
-		struct vl_message **result,
+		struct rrr_message **result,
 		ssize_t *parsed_bytes,
 		struct rrr_mqtt_p_publish *publish,
 		ssize_t read_pos,
@@ -831,7 +858,7 @@ static int __try_create_array_message_from_publish (
 	RRR_MQTT_P_LOCK(publish->payload);
 
 	if (publish->payload->length == 0) {
-		VL_MSG_ERR("Received PUBLISH message had zero length in MQTT client instance %s\n",
+		RRR_MSG_ERR("Received PUBLISH message had zero length in MQTT client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -852,17 +879,17 @@ static int __try_create_array_message_from_publish (
 			&data->array_definition
 	)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data\n",
+			RRR_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 		}
 		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
-			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, message was too short\n",
+			RRR_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, message was too short\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 		}
 		else {
-			VL_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, hard error\n",
+			RRR_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, hard error\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 		}
@@ -878,60 +905,60 @@ static int __try_create_array_message_from_publish (
 
 
 #define WRITE_TO_BUFFER_AND_SET_TO_NULL(msg)								\
-	fifo_buffer_write(&data->output_buffer, (char*) msg, sizeof(*msg));		\
+	rrr_fifo_buffer_write(&data->output_buffer, (char*) msg, sizeof(*msg));		\
 	msg = NULL
 
-static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
+static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
 
 	struct mqtt_client_data *data = arg;
-	struct vl_message *message_final = NULL;
+	struct rrr_message *message_final = NULL;
 
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
-	VL_DEBUG_MSG_2 ("mqtt client %s: Receive PUBLISH payload length %li\n",
+	RRR_DBG_2 ("mqtt client %s: Receive PUBLISH payload length %li\n",
 			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0));
 
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
 		ssize_t length = 0;
 		content_type = rrr_mqtt_property_get_blob(property, &length);
 		if (content_type[length] != '\0') {
-			VL_BUG("Content type was not zero-terminated in mqtt client receive_publish\n");
+			RRR_BUG("Content type was not zero-terminated in mqtt client receive_publish\n");
 		}
 	}
 
-	// is_vl_message is set to 1 if we want the data to be a message. It is set to zero
-	// again if the data turns out not to be a message after all. If receive_vl_message
+	// is_rrr_message is set to 1 if we want the data to be a message. It is set to zero
+	// again if the data turns out not to be a message after all. If receive_rrr_message
 	// is not set, data which is not auto-detected as message (V5 only) will be wrapped
-	// inside a new vl_message. If receive_vl_message is set and the data is incorrect,
+	// inside a new rrr_message. If receive_rrr_message is set and the data is incorrect,
 	// it will be dropped.
-	int is_vl_message = data->receive_vl_message;
-	int expecting_vl_message = data->receive_vl_message;
+	int is_rrr_message = data->receive_rrr_message;
+	int expecting_rrr_message = data->receive_rrr_message;
 
 	if (content_type != NULL) {
-		VL_DEBUG_MSG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
+		RRR_DBG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
 				INSTANCE_D_NAME(data->thread_data), content_type);
 
 		if (strcmp (content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
-			is_vl_message = 1;
+			is_rrr_message = 1;
 		}
 	}
 
 	// Try to extract a message from the data of the publish
-	if (is_vl_message != 0) {
-		if ((ret = __try_get_vl_message_from_publish (
+	if (is_rrr_message != 0) {
+		if ((ret = __try_get_rrr_message_from_publish (
 				&message_final,
 				publish,
 				data
 		)) != 0) {
-			VL_MSG_ERR("Error while parsing RRR message in receive_publish of mqtt client instance %s\n",
+			RRR_MSG_ERR("Error while parsing RRR message in receive_publish of mqtt client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
 
-		if (message_final == NULL && expecting_vl_message != 0) {
-			VL_MSG_ERR("Received supposed RRR message_final turned out not to be, dropping it in mqtt client instance %s\n",
+		if (message_final == NULL && expecting_rrr_message != 0) {
+			RRR_MSG_ERR("Received supposed RRR message_final turned out not to be, dropping it in mqtt client instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
@@ -953,13 +980,13 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 					read_pos,
 					data
 			)) != 0) {
-				VL_MSG_ERR("Error while parsing data array from received PUBLISH in mqtt client instance %s\n",
+				RRR_MSG_ERR("Error while parsing data array from received PUBLISH in mqtt client instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				break;
 			}
 			if (message_final == NULL) {
 				if (count == 0) {
-					VL_MSG_ERR("Parsing of supposed received data array failed, dropping the data in mqtt client instance %s\n",
+					RRR_MSG_ERR("Parsing of supposed received data array failed, dropping the data in mqtt client instance %s\n",
 							INSTANCE_D_NAME(data->thread_data));
 				}
 				break;
@@ -969,30 +996,30 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			WRITE_TO_BUFFER_AND_SET_TO_NULL(message_final);
 		} while (1);
 
-		VL_DEBUG_MSG_2("MQTT client instance %s parsed %i array records from PUBLISH message\n",
+		RRR_DBG_2("MQTT client instance %s parsed %i array records from PUBLISH message\n",
 				INSTANCE_D_NAME(data->thread_data), count);
 		goto out;
 	}
 
 	// Try to create a message with the data being the data of the publish. This will return
 	// NULL in message_final if there is no data in the publish message.
-	if ((ret = __try_create_vl_message_with_publish_data (
+	if ((ret = __try_create_rrr_message_with_publish_data (
 			&message_final,
 			publish,
 			data
 	)) != 0) {
-		VL_MSG_ERR("Error while creating RRR message from publish data in mqtt client instance %s\n",
+		RRR_MSG_ERR("Error while creating RRR message from publish data in mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 	else if (message_final != NULL) {
-		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message payload\n",
+		RRR_DBG_2("MQTT client instance %s created message from PUBLISH message payload\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out_write_to_buffer;
 	}
 
 	// Try to create a message with the data being the topic of the publish
-	if (message_new_with_data (
+	if (rrr_message_new_with_data (
 			&message_final,
 			MSG_TYPE_MSG,
 			0,
@@ -1005,13 +1032,13 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 			publish->topic,
 			strlen(publish->topic) + 1
 	) != 0) {
-		VL_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (B)\n",
+		RRR_MSG_ERR("Could not initialize message_final in receive_publish of mqtt client instance %s (B)\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
 	else {
-		VL_DEBUG_MSG_2("MQTT client instance %s created message from PUBLISH message topic, which was '%s'\n",
+		RRR_DBG_2("MQTT client instance %s created message from PUBLISH message topic, which was '%s'\n",
 				INSTANCE_D_NAME(data->thread_data), publish->topic);
 	}
 
@@ -1023,31 +1050,31 @@ static int receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	return ret;
 }
 
-static void *thread_entry_mqtt_client (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
-		VL_MSG_ERR("Could not initalize data in mqtt client instance %s flags %i\n",
+		RRR_MSG_ERR("Could not initalize data in mqtt client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
 
-	VL_DEBUG_MSG_1 ("mqtt client thread data is %p\n", thread_data);
+	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parse failed for mqtt client instance '%s'\n", thread_data->init_data.module->instance_name);
+		RRR_MSG_ERR("Configuration parse failed for mqtt client instance '%s'\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
 
@@ -1069,39 +1096,52 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 			process_suback,
 			data
 		) != 0) {
-		VL_MSG_ERR("Could not create new mqtt client\n");
+		RRR_MSG_ERR("Could not create new mqtt client\n");
 		goto out_message;
 	}
 
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
+	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
 	if (poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {
-			VL_MSG_ERR("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
+			RRR_MSG_ERR("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
 		}
 	}
 
-	VL_DEBUG_MSG_1 ("mqtt client started thread %p\n", thread_data);
+	RRR_DBG_1 ("mqtt client started thread %p\n", thread_data);
 
 	if (rrr_mqtt_property_collection_add_uint32(
 			&data->connect_properties,
 			RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
 			0xffff
 	) != 0) {
-		VL_MSG_ERR("Could not set CONNECT properties in mqtt client instance %s\n",
+		RRR_MSG_ERR("Could not set CONNECT properties in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_destroy_client;
 	}
 
-	reconnect:
-	for (int i = 20; i >= 0 && thread_check_encourage_stop(thread_data->thread) != 1; i--) {
-		update_watchdog_time(thread_data->thread);
+	// We have do use clean start the first time we connect as the server
+	// might remember packets from our last session (if any)
+	int clean_start = 1;
 
-		VL_DEBUG_MSG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/20\n",
-				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i);
+	int i_first = data->connect_attempts;
+	if (i_first < 1 || (uint64_t) i_first != (uint64_t) data->connect_attempts) {
+		i_first = 0x7fffffff; // One 7, seven f's
+		RRR_MSG_ERR("Warning: Connection attempt parameter overflow for mqtt client instance %s, changed to %i\n",
+				INSTANCE_D_NAME(thread_data), i_first);
+	}
+
+	reconnect:
+
+	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(thread_data->thread) != 1; i--) {
+		rrr_update_watchdog_time(thread_data->thread);
+
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i, i_first);
 
 		if (rrr_mqtt_client_connect (
 				&data->connection,
@@ -1110,42 +1150,60 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 				data->server_port,
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
-				0, // <-- Clean start
+				clean_start,
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
 				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
-					VL_MSG_ERR("MQTT client instance %s: 20 connection attempts failed, trying again.\n",
-							INSTANCE_D_NAME(thread_data));
+					RRR_MSG_ERR("MQTT client instance %s: %i connection attempts failed, trying again.\n",
+							INSTANCE_D_NAME(thread_data),
+							i_first
+					);
 					goto reconnect;
 				}
 
-				VL_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s, restarting.\n",
+				RRR_MSG_ERR("Could not connect to mqtt server '%s' port %llu in instance %s, restarting.\n",
 						data->server, data->server_port, INSTANCE_D_NAME(thread_data));
 				goto out_destroy_client;
 			}
-			usleep (100000);
+			usleep (100 * 1000);
 		}
 		else {
 			break;
 		}
 	}
 
+	uint64_t startup_time = rrr_time_get_64() + RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000;
+
+	RRR_DBG_1("MQTT client %s startup send grace period %i ms started\n",
+			INSTANCE_D_NAME(thread_data),
+			RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS
+	);
+
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && startup_time > rrr_time_get_64()) {
+		usleep(10 * 1000);
+		rrr_update_watchdog_time(thread_data->thread);
+	}
+
+	// Successive connect attempts or re-connect does not require clean start to be set. Server
+	// will respond with CONNACK with session present=0 if we need to clean up our state.
+	clean_start = 0;
+
 	int subscriptions_sent = 0;
-	while (thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
+		rrr_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
 		int send_allowed = 0;
 		if (rrr_mqtt_client_connection_check_alive(&alive, &send_allowed, data->mqtt_client_data, data->connection)) {
-			VL_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
+			RRR_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
 		if (alive == 0) {
-			VL_DEBUG_MSG_1("Connection lost for mqtt client instance %s, reconnecting\n",
-					INSTANCE_D_NAME(thread_data));
+			RRR_DBG_1("Connection lost for mqtt client instance %s, reconnecting\n",
+				INSTANCE_D_NAME(thread_data));
 			goto reconnect;
 		}
 
@@ -1160,7 +1218,7 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 						data->connection,
 						data->subscriptions
 				) != 0) {
-					VL_MSG_ERR("Could not subscribe to topics in mqtt client instance %s\n",
+					RRR_MSG_ERR("Could not subscribe to topics in mqtt client instance %s\n",
 							INSTANCE_D_NAME(thread_data));
 					goto reconnect;
 				}
@@ -1169,13 +1227,13 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 		}
 
 		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
-			VL_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
+			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
-		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, receive_publish, data) != 0) {
-			VL_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
+		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, __receive_publish, data) != 0) {
+			RRR_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
 		}
@@ -1185,15 +1243,16 @@ static void *thread_entry_mqtt_client (struct vl_thread *thread) {
 
 	out_destroy_client:
 		pthread_cleanup_pop(1);
+		pthread_cleanup_pop(1);
 	out_message:
-		VL_DEBUG_MSG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
+		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_exit(0);
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
 		NULL,
@@ -1211,16 +1270,16 @@ static const char *module_name = "mqtt_client";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_FLEXIBLE;
+	data->type = RRR_MODULE_TYPE_FLEXIBLE;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
-	data->start_priority = VL_THREAD_START_PRIORITY_NETWORK;
+	data->start_priority = RRR_THREAD_START_PRIORITY_NETWORK;
 }
 
 void unload(void) {
-	VL_DEBUG_MSG_1 ("Destroy mqtt client module\n");
+	RRR_DBG_1 ("Destroy mqtt client module\n");
 }
 

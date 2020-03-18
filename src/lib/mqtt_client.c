@@ -96,12 +96,12 @@ int rrr_mqtt_client_subscribe (
 		goto out;
 	}
 	else if (ret < 0) {
-		VL_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_subscribe\n", ret);
+		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_subscribe\n", ret);
 	}
 	ret = 0;
 
 	if (data->protocol_version == NULL) {
-		VL_MSG_ERR("Protocol version not set in rrr_mqtt_client_send_subscriptions\n");
+		RRR_MSG_ERR("Protocol version not set in rrr_mqtt_client_send_subscriptions\n");
 		ret = 1;
 		goto out;
 	}
@@ -111,7 +111,7 @@ int rrr_mqtt_client_subscribe (
 			data->protocol_version
 	);
 	if (subscribe == NULL) {
-		VL_MSG_ERR("Could not allocate SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
+		RRR_MSG_ERR("Could not allocate SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
 		ret = 1;
 		goto out;
 	}
@@ -119,7 +119,7 @@ int rrr_mqtt_client_subscribe (
 	RRR_MQTT_P_LOCK(subscribe);
 
 	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(subscribe->subscriptions, subscriptions, 0) != 0) {
-		VL_MSG_ERR("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
+		RRR_MSG_ERR("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
 		goto out_unlock;
 	}
 
@@ -169,19 +169,19 @@ int rrr_mqtt_client_connect (
 	usleep(500000); // 500ms
 
 	if (rrr_mqtt_conn_collection_connect(connection, &data->mqtt_data.connections, port, server) != 0) {
-		VL_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
+		RRR_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
 
 	if (*connection == NULL) {
-		VL_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
+		RRR_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
 		return 1;
 	}
 
 	const struct rrr_mqtt_p_protocol_version *protocol_version = rrr_mqtt_p_get_protocol_version(version);
 	if (protocol_version == NULL) {
-		VL_BUG("Invalid protocol version %u in rrr_mqtt_client_connect\n", version);
+		RRR_BUG("Invalid protocol version %u in rrr_mqtt_client_connect\n", version);
 	}
 
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
@@ -190,7 +190,7 @@ int rrr_mqtt_client_connect (
 	// TODO : Support zero-byte client identifier
 	connect->client_identifier = malloc(strlen(data->mqtt_data.client_name) + 1);
 	if (connect->client_identifier == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_client_connect\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_client_connect\n");
 		ret = 1;
 		goto out;
 	}
@@ -202,7 +202,7 @@ int rrr_mqtt_client_connect (
 	// connect->connect_flags |= 2 << 3;
 
 	if (rrr_mqtt_property_collection_add_from_collection(&connect->properties, connect_properties) != 0) {
-		VL_MSG_ERR("Could not add properties to CONNECT packet in rrr_mqtt_client_connect\n");
+		RRR_MSG_ERR("Could not add properties to CONNECT packet in rrr_mqtt_client_connect\n");
 		ret = 1;
 		goto out;
 	}
@@ -224,7 +224,7 @@ int rrr_mqtt_client_connect (
 					RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
 					data->session_properties.session_expiry
 			) != 0) {
-				VL_MSG_ERR("Could not set session expiry for CONNECT packet in rrr_mqtt_client_connect\n");
+				RRR_MSG_ERR("Could not set session expiry for CONNECT packet in rrr_mqtt_client_connect\n");
 				ret = 1;
 				goto out;
 			}
@@ -260,7 +260,7 @@ int rrr_mqtt_client_connect (
 			0 // Create if non-existent client ID
 	)) != RRR_MQTT_SESSION_OK || session == NULL) {
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-		VL_MSG_ERR("Internal error getting session in rrr_mqtt_client_connect\n");
+		RRR_MSG_ERR("Internal error getting session in rrr_mqtt_client_connect\n");
 		goto out;
 	}
 
@@ -276,10 +276,10 @@ int rrr_mqtt_client_connect (
 			&session_present
 	)) != RRR_MQTT_SESSION_OK) {
 		if ((ret & RRR_MQTT_SESSION_DELETED) != 0) {
-			VL_MSG_ERR("New session was deleted in rrr_mqtt_client_connect\n");
+			RRR_MSG_ERR("New session was deleted in rrr_mqtt_client_connect\n");
 		}
 		else {
-			VL_MSG_ERR("Error while initializing session in rrr_mqtt_client_connect, return was %i\n", ret);
+			RRR_MSG_ERR("Error while initializing session in rrr_mqtt_client_connect, return was %i\n", ret);
 		}
 		ret = 1;
 		goto out;
@@ -291,7 +291,7 @@ int rrr_mqtt_client_connect (
 			(struct rrr_mqtt_p *) connect,
 			rrr_mqtt_conn_iterator_ctx_send_packet
 	) != 0) {
-		VL_MSG_ERR("Could not send CONNECT packet in rrr_mqtt_client_connect");
+		RRR_MSG_ERR("Could not send CONNECT packet in rrr_mqtt_client_connect");
 		ret = 1;
 		goto out;
 	}
@@ -309,7 +309,7 @@ int rrr_mqtt_client_connect (
 				__rrr_mqtt_client_connect_set_connection_settings,
 				&callback_data
 		) != 0) {
-			VL_MSG_ERR("Could not set protocol version and keep alive from CONNECT packet in rrr_mqtt_client_connect");
+			RRR_MSG_ERR("Could not set protocol version and keep alive from CONNECT packet in rrr_mqtt_client_connect");
 			ret = 1;
 			goto out;
 		}
@@ -333,7 +333,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_P_LOCK(packet);
 
 	if (connack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
-		VL_MSG_ERR("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
+		RRR_MSG_ERR("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
@@ -374,7 +374,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (client_data->session_properties.server_keep_alive > 0) {
 		if (client_data->session_properties.server_keep_alive > 0xffff) {
-			VL_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
+			RRR_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
 		}
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
 				rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
@@ -388,7 +388,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 	}
 
-	VL_DEBUG_MSG_1("Received CONNACK, now connected\n");
+	RRR_DBG_1("Received CONNACK, now connected\n");
 
 	out:
 		RRR_MQTT_P_UNLOCK(packet);
@@ -414,13 +414,13 @@ static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 
 	if (match_count == 0) {
-		VL_MSG_ERR("Received SUBACK but did not find corresponding SUBSCRIBE packet, possible duplicate\n");
+		RRR_MSG_ERR("Received SUBACK but did not find corresponding SUBSCRIBE packet, possible duplicate\n");
 		goto out;
 	}
 
 	if (client_data->suback_handler != NULL) {
 		if (client_data->suback_handler(client_data, packet, client_data->suback_handler_arg) != 0) {
-			VL_MSG_ERR("Error from custom suback handler in __rrr_mqtt_client_handle_suback\n");
+			RRR_MSG_ERR("Error from custom suback handler in __rrr_mqtt_client_handle_suback\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 		}
 	}
@@ -445,7 +445,7 @@ int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 
 	if (match_count == 0) {
-		VL_DEBUG_MSG_1("Received PINGRESP with no matching PINGREQ\n");
+		RRR_DBG_1("Received PINGRESP with no matching PINGREQ\n");
 	}
 
 	out:
@@ -501,6 +501,10 @@ void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	free(client);
 }
 
+void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client) {
+	rrr_mqtt_common_data_notify_pthread_cancel(&client->mqtt_data);
+}
+
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
@@ -514,7 +518,7 @@ int rrr_mqtt_client_new (
 	struct rrr_mqtt_client_data *result = malloc(sizeof(*result));
 
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_client_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_client_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -532,12 +536,12 @@ int rrr_mqtt_client_new (
 	);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Could not initialize MQTT common data in rrr_mqtt_client_new\n");
+		RRR_MSG_ERR("Could not initialize MQTT common data in rrr_mqtt_client_new\n");
 		ret = 1;
 		goto out_free;
 	}
 
-	result->last_pingreq_time = time_get_64();
+	result->last_pingreq_time = rrr_time_get_64();
 	result->suback_handler = suback_handler;
 	result->suback_handler_arg = suback_handler_arg;
 
@@ -567,7 +571,7 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 		goto out;
 	}
 
-	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > time_get_64()) {
+	if (connection->keep_alive * 1000 * 1000 + data->last_pingreq_time > rrr_time_get_64()) {
 		goto out;
 	}
 
@@ -583,7 +587,7 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"
 	);
 
-	data->last_pingreq_time = time_get_64();
+	data->last_pingreq_time = rrr_time_get_64();
 
 	out:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(pingreq);

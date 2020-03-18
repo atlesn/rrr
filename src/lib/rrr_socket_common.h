@@ -23,11 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_COMMON_H
 
 struct rrr_socket_read_session;
-struct vl_message;
+struct rrr_message;
 struct rrr_array;
 
 struct rrr_socket_common_receive_message_callback_data {
-	int (*callback)(struct vl_message *message, void *arg);
+	int (*callback)(struct rrr_message *message, void *arg);
 	void *callback_arg;
 };
 int rrr_socket_common_receive_message_raw_callback (

@@ -24,6 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Python.h>
 
+#include "rrr_socket_msg.h"
+
+// Tell a python3 fork to start calling it's function continuously without
+// sending data to it
+#define RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING \
+	RRR_SOCKET_MSG_CTRL_F_USR_A
+
 struct rrr_socket_msg;
 
 int rrr_python3_socket_get_fd (PyObject *self);

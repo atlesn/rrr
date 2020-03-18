@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,17 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
-
-/*
- struct rrr_setting_packed {
-	RRR_SOCKET_MSG_HEAD;
-	char name[RRR_SETTINGS_MAX_NAME_SIZE];
-	vl_u32 type;
-	vl_u32 was_used;
-	vl_u32 data_size;
-	char var_data[1];
-} __attribute((packed));
- */
+#include "python3_setting.h"
 
 struct rrr_python3_setting_data {
 	PyObject_HEAD
@@ -75,7 +65,7 @@ PyObject *rrr_python3_setting_f_set (PyObject *self, PyObject *arg) {
 	struct rrr_python3_setting_data *data = (struct rrr_python3_setting_data *) self;
 
 	if (!PyUnicode_Check(arg)) {
-		VL_MSG_ERR("Expected unicode/string argument in rrr_setting.set()\n");
+		RRR_MSG_ERR("Expected unicode/string argument in rrr_setting.set()\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -83,7 +73,7 @@ PyObject *rrr_python3_setting_f_set (PyObject *self, PyObject *arg) {
 	const char *str = PyUnicode_AsUTF8(arg);
 	int len = strlen (str);
 	if (len > RRR_SETTINGS_MAX_DATA_SIZE - 1) {
-		VL_MSG_ERR("Length of string in rrr_setting.set() was too long, max is %i\n", RRR_SETTINGS_MAX_DATA_SIZE - 1);
+		RRR_MSG_ERR("Length of string in rrr_setting.set() was too long, max is %i\n", RRR_SETTINGS_MAX_DATA_SIZE - 1);
 		Py_RETURN_FALSE;
 	}
 
@@ -99,13 +89,14 @@ PyObject *rrr_python3_setting_f_get (PyObject *self, PyObject *dummy) {
 	(void)(dummy);
 
 	if (RRR_SETTING_IS_STRING(&data->setting)) {
+		data->setting.was_used = 1;
 		return PyUnicode_FromString(data->setting.data);
 	}
 	else if (RRR_SETTING_IS_UINT(&data->setting)) {
-		VL_BUG("Unsigned integer setting not implemented\n");
+		RRR_BUG("Unsigned integer setting not implemented\n");
 	}
 	else {
-		VL_BUG("Unknown setting type %u in rrr_python3_setting_f_get\n", data->setting.type);
+		RRR_BUG("Unknown setting type %u in rrr_python3_setting_f_get\n", data->setting.type);
 	}
 
 	Py_RETURN_NONE;
@@ -225,11 +216,11 @@ PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg) {
 	int ret = 0;
 
 	if (!RRR_SOCKET_MSG_IS_SETTING(msg)) {
-		VL_BUG("Non-setting socket message given to rrr_python3_setting_new_from_setting\n");
+		RRR_BUG("Non-setting socket message given to rrr_python3_setting_new_from_setting\n");
 	}
 
 	if (msg->msg_size > sizeof(new_setting->setting)) {
-		VL_BUG("Received object of wrong size in rrr_python3_setting_new_from_setting\n");
+		RRR_BUG("Received object of wrong size in rrr_python3_setting_new_from_setting\n");
 	}
 
 	new_setting = PyObject_New(struct rrr_python3_setting_data, &rrr_python3_setting_type);
@@ -238,13 +229,10 @@ PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg) {
 	}
 
 	if (rrr_settings_packed_validate(&new_setting->setting)) {
-		VL_MSG_ERR("Received an invalid setting in rrr_python3_setting_new_from_setting\n");
+		RRR_MSG_ERR("Received an invalid setting in rrr_python3_setting_new_from_setting\n");
 		ret = 1;
 		goto out;
 	}
-
-	printf ("Name: %s\n", (char*) new_setting + 36);
-	printf ("Name: %s\n", new_setting->setting.name);
 
 	out:
 	if (ret != 0) {

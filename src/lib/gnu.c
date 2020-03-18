@@ -52,7 +52,7 @@ int rrr_asprintf (char **resultp, const char *format, ...) {
 	ret = vsnprintf(buf, size - 1, format, args);
 	if (ret > 0) {
 		if (++retry_count > 1) {
-			VL_MSG_ERR("More than two attempts to format string in rrr_asprintf\n");
+			RRR_MSG_ERR("More than two attempts to format string in rrr_asprintf\n");
 			ret = -1;
 			goto out;
 		}
@@ -60,7 +60,7 @@ int rrr_asprintf (char **resultp, const char *format, ...) {
 		goto retry;
 	}
 	else if (ret < 0) {
-		VL_MSG_ERR("Error returned from vsnprintf in rrr_asprintf\n");
+		RRR_MSG_ERR("Error returned from vsnprintf in rrr_asprintf\n");
 		ret = -1;
 		goto out;
 	}

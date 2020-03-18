@@ -54,7 +54,7 @@ static int __rrr_mqtt_p_standarized_usercount_init (
 ) {
 	int ret = pthread_mutex_init(&head->refcount_lock, 0);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_standarized_usercount_init\n");
+		RRR_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_standarized_usercount_init\n");
 		return 1;
 	}
 
@@ -84,7 +84,7 @@ int rrr_mqtt_p_payload_set_data (
 
 	target->packet_data = malloc(size);
 	if (target->packet_data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_mqtt_p_payload_set_data\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_p_payload_set_data\n");
 		ret = 1;
 		goto out_unlock;
 	}
@@ -107,7 +107,7 @@ int rrr_mqtt_p_payload_new (
 	struct rrr_mqtt_p_payload *result = malloc(sizeof(*result));
 
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_payload_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -115,7 +115,7 @@ int rrr_mqtt_p_payload_new (
 
 	ret = pthread_mutex_init(&result->data_lock, 0);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_payload_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -125,7 +125,7 @@ int rrr_mqtt_p_payload_new (
 			__rrr_mqtt_p_payload_destroy
 	);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
 		ret = 1;
 		goto out_destroy_mutex;
 	}
@@ -155,7 +155,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 
 	ret = rrr_mqtt_p_payload_new (&result);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not create payload in rrr_mqtt_p_payload_new_with_allocated_payload\n");
+		RRR_MSG_ERR("Could not create payload in rrr_mqtt_p_payload_new_with_allocated_payload\n");
 		ret = 1;
 		goto out;
 	}
@@ -175,7 +175,7 @@ int rrr_mqtt_p_payload_new_with_allocated_payload (
 static void __rrr_mqtt_p_destroy (void *arg) {
 	struct rrr_mqtt_p *p = arg;
 	if (p->users != 0) {
-		VL_BUG("users was not 0 in __rrr_mqtt_p_destroy\n");
+		RRR_BUG("users was not 0 in __rrr_mqtt_p_destroy\n");
 	}
 	RRR_MQTT_P_RELEASE_POOL_ID(p);
 	RRR_FREE_IF_NOT_NULL(p->_assembled_data);
@@ -191,14 +191,14 @@ static void __rrr_mqtt_p_destroy (void *arg) {
 static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION) {
 	struct rrr_mqtt_p *ret = malloc(type_properties->packet_size);
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_allocate_raw\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_p_allocate_raw\n");
 		goto out;
 	}
 
 	memset(ret, '\0', type_properties->packet_size);
 	ret->type_properties = type_properties;
 	ret->protocol_version = protocol_version;
-	ret->create_time = time_get_64();
+	ret->create_time = rrr_time_get_64();
 	ret->packet_identifier = 0;
 
 	if (type_properties->has_reserved_flags != 0) {
@@ -206,7 +206,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 	}
 
 	if (pthread_mutex_init(&ret->data_lock, 0) != 0) {
-		VL_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_allocate_raw\n");
+		RRR_MSG_ERR("Could not initialize mutex in __rrr_mqtt_p_allocate_raw\n");
 		goto out_free;
 	}
 
@@ -214,7 +214,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_allocate_raw (RRR_MQTT_P_TYPE_ALLOCATE_DE
 			(struct rrr_mqtt_p_standarized_usercount *) ret,
 			__rrr_mqtt_p_destroy
 	) != 0) {
-		VL_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
+		RRR_MSG_ERR("Could not initialize refcount in __rrr_mqtt_p_payload_new\n");
 		goto out_destroy_mutex;
 	}
 
@@ -235,13 +235,13 @@ static struct rrr_mqtt_p *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_ALLOCATE
 	int ret = 0;
 
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
+		RRR_MSG_ERR("Could not allocate subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
 		goto out;
 	}
 
 	ret = rrr_mqtt_subscription_collection_new(&subscribe->subscriptions);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		VL_MSG_ERR("Could not allocate subscriptions in subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
+		RRR_MSG_ERR("Could not allocate subscriptions in subscribe packet in rrr_mqtt_p_allocate_subscribe\n");
 		goto out_destroy_properties;
 	}
 
@@ -257,25 +257,27 @@ static struct rrr_mqtt_p *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_ALLOCATE
 static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFINITION) {
 	const struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) source;
 
+	rrr_mqtt_p_bug_if_not_locked((struct rrr_mqtt_p *) publish);
+
 	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_raw (
 			source->type_properties,
 			source->protocol_version
 	);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate PUBLISH packet while cloning in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_ERR("Could not allocate PUBLISH packet while cloning in __rrr_mqtt_p_clone_publish\n");
 		goto out;
 	}
 
 	int ret = rrr_mqtt_property_collection_add_from_collection(&result->properties, &publish->properties);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_ERR("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
 		goto out_free;
 	}
 
 	if (publish->topic != NULL) {
 		result->topic = malloc(strlen(publish->topic) + 1);
 		if (result->topic == NULL) {
-			VL_MSG_ERR("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
+			RRR_MSG_ERR("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
 			goto out_destroy_properties;
 		}
 		strcpy(result->topic, publish->topic);
@@ -283,7 +285,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFI
 
 	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree, publish->token_tree);
 	if (ret != 0) {
-		VL_MSG_ERR("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
+		RRR_MSG_ERR("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
 		goto out_free_topic;
 	}
 
@@ -506,13 +508,13 @@ uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason) {
 			return test->v31_reason;
 		}
 	}
-	VL_BUG("Could not find v5 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v5_reason);
+	RRR_BUG("Could not find v5 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v5_reason);
 	return 0;
 }
 
 uint8_t rrr_mqtt_p_translate_reason_from_v31 (uint8_t v31_reason) {
 	if (v31_reason > RRR_MQTT_P_31_REASON_MAX) {
-		VL_BUG("Reason was above max in rrr_mqtt_p_translate_reason_from_v31 (got %u)\n", v31_reason);
+		RRR_BUG("Reason was above max in rrr_mqtt_p_translate_reason_from_v31 (got %u)\n", v31_reason);
 	}
 	for (int i = 0; rrr_mqtt_p_reason_map[i].description != NULL; i++) {
 		const struct rrr_mqtt_p_reason *test = &rrr_mqtt_p_reason_map[i];
@@ -520,6 +522,6 @@ uint8_t rrr_mqtt_p_translate_reason_from_v31 (uint8_t v31_reason) {
 			return test->v5_reason;
 		}
 	}
-	VL_BUG("Could not find v31 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v31_reason);
+	RRR_BUG("Could not find v31 reason code %u in rrr_mqtt_p_translate_connect_reason\n", v31_reason);
 	return 0;
 }

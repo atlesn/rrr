@@ -1,3 +1,31 @@
+rrr (0.16-5) unstable; urgency=medium
+
+  * Fixes in ASD and UDP-stream to correctly handle multiple clients
+  * Misc. code cleanup and minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 16 Mar 2020 17:30:23 +0100
+
+rrr (0.16-3) unstable; urgency=medium
+
+  * Misc. fixes for Python
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Mar 2020 06:01:07 +0100
+
+rrr (0.16-2) unstable; urgency=medium
+
+  * Remove OpenSSL-code
+  * Fixes for word length on arm64
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 12 Mar 2020 16:22:22 +0100
+
+rrr (0.16-1) unstable; urgency=medium
+
+  * Fixed problems when using mysql_special_columns including segfault
+  * Update documentation for this which also was wrong
+  * Add new revision number to use for bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 11 Mar 2020 00:01:45 +0100
+
 rrr (0.16) unstable; urgency=medium
 
   * New framework for assured single delivery ASD and udpstream

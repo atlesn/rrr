@@ -35,10 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <src/lib/ip.h>
 #include <fcntl.h>
 
-#ifdef VL_WITH_OPENSSL
-#include "module_crypt.h"
-#endif
-
 #include "ip.h"
 #include "../global.h"
 #include "messages.h"
@@ -50,21 +46,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 #include "rrr_socket_read.h"
 
-void ip_buffer_entry_destroy (
-		struct ip_buffer_entry *entry
+void rrr_ip_buffer_entry_destroy (
+		struct rrr_ip_buffer_entry *entry
 ) {
 	RRR_FREE_IF_NOT_NULL(entry->message);
 	free(entry);
 }
 
-void ip_buffer_entry_destroy_void (
+void rrr_ip_buffer_entry_destroy_void (
 		void *entry
 ) {
-	ip_buffer_entry_destroy(entry);
+	rrr_ip_buffer_entry_destroy(entry);
 }
 
-void ip_buffer_entry_set_message (
-		struct ip_buffer_entry *entry,
+void rrr_ip_buffer_entry_set_message (
+		struct rrr_ip_buffer_entry *entry,
 		void *message,
 		ssize_t data_length
 ) {
@@ -72,8 +68,8 @@ void ip_buffer_entry_set_message (
 	entry->data_length = data_length;
 }
 
-int ip_buffer_entry_new (
-		struct ip_buffer_entry **result,
+int rrr_ip_buffer_entry_new (
+		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -83,9 +79,9 @@ int ip_buffer_entry_new (
 
 	*result = NULL;
 
-	struct ip_buffer_entry *entry = malloc(sizeof(*entry));
+	struct rrr_ip_buffer_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		VL_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
+		RRR_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -98,7 +94,7 @@ int ip_buffer_entry_new (
 	}
 
 	if (addr_len > sizeof(entry->addr)) {
-		VL_BUG("addr_len too long in ip_buffer_entry_new\n");
+		RRR_BUG("addr_len too long in ip_buffer_entry_new\n");
 	}
 	entry->addr_len = addr_len;
 
@@ -112,35 +108,35 @@ int ip_buffer_entry_new (
 	return ret;
 }
 
-int ip_buffer_entry_new_with_empty_message (
-		struct ip_buffer_entry **result,
+int rrr_ip_buffer_entry_new_with_empty_message (
+		struct rrr_ip_buffer_entry **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len
 ) {
 	int ret = 0;
 
-	struct ip_buffer_entry *entry = NULL;
-	struct vl_message *message = NULL;
+	struct rrr_ip_buffer_entry *entry = NULL;
+	struct rrr_message *message = NULL;
 
 	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
 
 	message = malloc(message_size);
 	if (message == NULL) {
-		VL_MSG_ERR("Could not allocate message in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_ERR("Could not allocate message in ip_buffer_entry_new_with_message\n");
 		goto out;
 	}
 
 	memset(message, '\0', message_size);
 
-	if (ip_buffer_entry_new (
+	if (rrr_ip_buffer_entry_new (
 			&entry,
 			message_size,
 			addr,
 			addr_len,
 			message
 	) != 0) {
-		VL_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -154,11 +150,11 @@ int ip_buffer_entry_new_with_empty_message (
 	return ret;
 }
 
-int ip_buffer_entry_clone (
-		struct ip_buffer_entry **result,
-		const struct ip_buffer_entry *source
+int rrr_ip_buffer_entry_clone (
+		struct rrr_ip_buffer_entry **result,
+		const struct rrr_ip_buffer_entry *source
 ) {
-	int ret = ip_buffer_entry_new_with_empty_message (
+	int ret = rrr_ip_buffer_entry_new_with_empty_message (
 			result,
 			source->data_length,
 			&source->addr,
@@ -173,50 +169,50 @@ int ip_buffer_entry_clone (
 	return ret;
 }
 
-int ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
+int rrr_ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;
 	stats->name = name;
 	stats->type = type;
 	return (pthread_mutex_init(&stats->lock, NULL) != 0);
 }
 
-int ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
+int rrr_ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
 	memset(stats, '\0', sizeof(*stats));
 	int ret = 0;
-	ret |= ip_stats_init(&stats->send, period, "send", name);
-	ret |= ip_stats_init(&stats->receive, period, "receive", name);
+	ret |= rrr_ip_stats_init(&stats->send, period, "send", name);
+	ret |= rrr_ip_stats_init(&stats->receive, period, "receive", name);
 	return ret;
 }
 
-int ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {
-	int ret = VL_IP_STATS_UPDATE_OK;
+int rrr_ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {
+	int ret = RRR_IP_STATS_UPDATE_OK;
 
 	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return VL_IP_STATS_UPDATE_ERR;
+		return RRR_IP_STATS_UPDATE_ERR;
 	}
 
 	stats->packets += packets;
 	stats->bytes += bytes;
 
 	if (stats->time_from == 0) {
-		stats->time_from = time_get_64();
+		stats->time_from = rrr_time_get_64();
 	}
-	else if (stats->time_from + stats->period * 1000000 < time_get_64()) {
-		ret = VL_IP_STATS_UPDATE_READY;
+	else if (stats->time_from + stats->period * 1000000 < rrr_time_get_64()) {
+		ret = RRR_IP_STATS_UPDATE_READY;
 	}
 
 	pthread_mutex_unlock(&stats->lock);
 	return ret;
 }
 
-int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
-	int ret = VL_IP_STATS_UPDATE_OK;
+int rrr_stats_print_reset(struct ip_stats *stats, int do_reset) {
+	int ret = RRR_IP_STATS_UPDATE_OK;
 
 	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return VL_IP_STATS_UPDATE_ERR;
+		return RRR_IP_STATS_UPDATE_ERR;
 	}
 
-	VL_DEBUG_MSG_2("IP stats for %s %s: %lu packets/s %lu bytes/s, period is %u\n",
+	RRR_DBG_2("IP stats for %s %s: %lu packets/s %lu bytes/s, period is %u\n",
 			stats->name, stats->type, stats->packets/stats->period, stats->bytes/stats->period, stats->period);
 
 	if (do_reset) {
@@ -230,7 +226,7 @@ int ip_stats_print_reset(struct ip_stats *stats, int do_reset) {
 }
 
 struct ip_receive_callback_data {
-	int (*callback)(struct ip_buffer_entry *entry, void *arg);
+	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
 	struct ip_stats *stats;
 };
@@ -244,19 +240,19 @@ static int __ip_receive_callback (
 	int ret = 0;
 
 	if (read_session->read_complete == 0) {
-		VL_BUG("Read complete was 0 in __ip_receive_packets_callback\n");
+		RRR_BUG("Read complete was 0 in __ip_receive_packets_callback\n");
 	}
 
-	struct ip_buffer_entry *entry = NULL;
+	struct rrr_ip_buffer_entry *entry = NULL;
 
-	if (ip_buffer_entry_new (
+	if (rrr_ip_buffer_entry_new (
 			&entry,
 			read_session->target_size,
 			&read_session->src_addr,
 			read_session->src_addr_len,
 			read_session->rx_buf_ptr
 	) != 0) {
-		VL_MSG_ERR("Could not allocate ip buffer entry in __ip_receive_packets_callback\b");
+		RRR_MSG_ERR("Could not allocate ip buffer entry in __ip_receive_packets_callback\b");
 		ret = 1;
 		goto out;
 	}
@@ -264,22 +260,28 @@ static int __ip_receive_callback (
 	read_session->rx_buf_ptr = NULL;
 
 	ret = callback_data->callback(entry, callback_data->callback_arg);
-	if (ret == VL_IP_RECEIVE_STOP) {
+	if (ret == 0) {
+	}
+	else if (ret == RRR_IP_RECEIVE_STOP) {
+		ret = 0;
 		goto out;
 	}
-	else if (ret == VL_IP_RECEIVE_ERR) {
+	else if (ret == RRR_IP_RECEIVE_ERR) {
 		return 1;
+	}
+	else {
+		RRR_BUG("Unknown return value %i from callback in __ip_receive_callback\n", ret);
 	}
 
 	if (callback_data->stats != NULL) {
-		ret = ip_stats_update(callback_data->stats, 1, VL_IP_RECEIVE_MAX_STEP_SIZE);
-		if (ret == VL_IP_STATS_UPDATE_ERR) {
-			VL_MSG_ERR("ip: Error returned from stats update function\n");
+		ret = rrr_ip_stats_update(callback_data->stats, 1, RRR_IP_RECEIVE_MAX_STEP_SIZE);
+		if (ret == RRR_IP_STATS_UPDATE_ERR) {
+			RRR_MSG_ERR("ip: Error returned from stats update function\n");
 			return 1;
 		}
-		if (ret == VL_IP_STATS_UPDATE_READY) {
-			if (ip_stats_print_reset(callback_data->stats, 1) != VL_IP_STATS_UPDATE_OK) {
-				VL_MSG_ERR("ip: Error returned from stats print function\n");
+		if (ret == RRR_IP_STATS_UPDATE_READY) {
+			if (rrr_stats_print_reset(callback_data->stats, 1) != RRR_IP_STATS_UPDATE_OK) {
+				RRR_MSG_ERR("ip: Error returned from stats print function\n");
 				return 1;
 			}
 		}
@@ -289,12 +291,12 @@ static int __ip_receive_callback (
 	return ret;
 }
 
-int ip_receive_array (
+int rrr_ip_receive_array (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {
@@ -313,11 +315,11 @@ int ip_receive_array (
 	);
 }
 
-int ip_receive_socket_msg (
+int rrr_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {
@@ -337,94 +339,51 @@ int ip_receive_socket_msg (
 }
 
 struct ip_receive_messages_callback_data {
-	int (*callback)(struct ip_buffer_entry *entry, void *arg);
+	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *arg;
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data;
-#endif
 };
 
-static int __ip_receive_vl_message_callback(struct ip_buffer_entry *entry, void *arg) {
+static int __rrr_ip_receive_rrr_message_callback (
+		struct rrr_ip_buffer_entry *entry,
+		void *arg
+) {
 	int ret = 0;
-
 	struct ip_receive_messages_callback_data *data = arg;
-	struct vl_message *message = entry->message;
-
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data = data->crypt_data;
-#endif
+	struct rrr_message *message = entry->message;
 	const ssize_t count = entry->data_length;
-
 	if (count < 10) {
-		VL_MSG_ERR ("Received short message/packet from network\n");
+		RRR_MSG_ERR("Received short message/packet from network\n");
 		goto out_free;
 	}
-
 	// Header CRC32 is checked when reading the data from remote and getting size
-	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
+	if (rrr_socket_msg_head_to_host_and_verify(
+			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
+		RRR_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
 		goto out_free;
 	}
-
-#ifdef VL_WITH_OPENSSL
-	if (crypt_data->crypt != NULL) {
-		ssize_t new_size = sizeof(struct vl_message) - 1 + entry->data_length + 1024;
-		struct vl_message *new_message = realloc(entry->message, new_size);
-		if (new_message == NULL) {
-			VL_MSG_ERR("Could not realloc message before decryption in __ip_receive_messages_callback\n");
-			goto out_free;
-		}
-		entry->message = new_message;
-
-		char *crypt_start = ((char*) message) + sizeof(struct rrr_socket_msg);
-		unsigned int crypt_length_orig = message->network_size - sizeof(struct rrr_socket_msg);
-		unsigned int crypt_length = crypt_length_orig;
-
-		VL_DEBUG_MSG_3("ip decrypting message of length %u \n", crypt_length);
-		if (module_decrypt_message(
-				crypt_data,
-				crypt_start,
-				&crypt_length,
-				new_size
-		) != 0) {
-			VL_MSG_ERR("Error returned from module decrypt function\n");
-			ret = 1;
-			goto out_free;
-		}
-
-		message->network_size = crypt_length;
-		ip_buffer_entry_set_message(entry, message, crypt_length);
-	}
-#endif
-
-	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR ("IP: Message checksum was invalid\n");
+	if (rrr_socket_msg_check_data_checksum_and_length(
+			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
+		RRR_MSG_ERR("IP: Message checksum was invalid\n");
 		goto out_free;
 	}
-
-	if (message_to_host_and_verify(entry->message, entry->data_length) != 0) {
-		VL_MSG_ERR("Message verification failed in __ip_receive_messages_callback (size: %u<>%u)\n",
+	if (rrr_message_to_host_and_verify(entry->message, entry->data_length) != 0) {
+		RRR_MSG_ERR(
+				"Message verification failed in __ip_receive_messages_callback (size: %u<>%u)\n",
 				MSG_TOTAL_SIZE(message), message->msg_size);
 		ret = 1;
 		goto out_free;
 	}
-
 	return data->callback(entry, data->arg);
-
-	out_free:
-	ip_buffer_entry_destroy(entry);
+	out_free: rrr_ip_buffer_entry_destroy(entry);
 	return ret;
 }
 
 /* Receive packets and parse vl_message struct or fail */
-int ip_receive_vl_message (
+int rrr_ip_receive_rrr_message (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
-#ifdef VL_WITH_OPENSSL
-		struct module_crypt_data *crypt_data,
-#endif
-		int (*callback)(struct ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {
@@ -432,21 +391,18 @@ int ip_receive_vl_message (
 
 	data.callback = callback;
 	data.arg = arg;
-#ifdef VL_WITH_OPENSSL
-	data.crypt_data = crypt_data;
-#endif
 
-	return ip_receive_socket_msg (
+	return rrr_receive_socket_msg (
 		read_session_collection,
 		fd,
 		no_sleeping,
-		__ip_receive_vl_message_callback,
+		__rrr_ip_receive_rrr_message_callback,
 		&data,
 		stats
 	);
 }
 
-int ip_send_raw (
+int rrr_ip_send_raw (
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
@@ -461,7 +417,7 @@ int ip_send_raw (
 	retry:
 	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
 		if (--max_retries == 100) {
-			VL_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
+			RRR_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
 					fd, getpid());
 			ret = 1;
 			goto out;
@@ -473,13 +429,13 @@ int ip_send_raw (
 		else if (errno == EINTR) {
 			goto retry;
 		}
-		VL_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	if (bytes != data_size) {
-		VL_MSG_ERR("All bytes were not sent in sendto in ip_send_raw\n");
+		RRR_MSG_ERR("All bytes were not sent in sendto in ip_send_raw\n");
 		ret = 1;
 		goto out;
 	}
@@ -488,12 +444,9 @@ int ip_send_raw (
 	return ret;
 }
 
-int ip_send_message (
-	const struct vl_message *input_message,
-#ifdef VL_WITH_OPENSSL
-	struct module_crypt_data *crypt_data,
-#endif
-	struct ip_send_packet_info *info,
+int rrr_ip_send_message (
+	const struct rrr_message *input_message,
+	struct rrr_ip_send_packet_info *info,
 	struct ip_stats *stats
 ) {
 	int ret = 0;
@@ -501,13 +454,9 @@ int ip_send_message (
 	ssize_t final_size = MSG_TOTAL_SIZE(input_message);
 	ssize_t buf_size = MSG_TOTAL_SIZE(input_message);
 
-#ifdef VL_WITH_OPENSSL
-	buf_size += 1024;
-#endif
-
-	struct vl_message *final_message = malloc(buf_size);
+	struct rrr_message *final_message = malloc(buf_size);
 	if (final_message == NULL) {
-		VL_MSG_ERR("Could not allocate memory in ip_send_message\n");
+		RRR_MSG_ERR("Could not allocate memory in ip_send_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -517,54 +466,36 @@ int ip_send_message (
 	final_message->network_size = final_size;
 	final_message->msg_size = final_size;
 
-	message_prepare_for_network(final_message);
+	rrr_message_prepare_for_network(final_message);
 
-	VL_DEBUG_MSG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp_from);
+	RRR_DBG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp_from);
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) final_message,
-			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
+			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
 			final_size,
 			0
 	);
-
-#ifdef VL_WITH_OPENSSL
-	if (crypt_data->crypt != NULL) {
-		char *buf_start = ((char *) final_message) + sizeof(struct rrr_socket_msg);
-		unsigned int crypt_final_size = final_size - sizeof(struct rrr_socket_msg);
-		if (module_encrypt_message (
-				crypt_data,
-				buf_start,
-				&crypt_final_size,
-				buf_size
-		) != 0) {
-			ret = 1;
-			goto out;
-		}
-		final_message->network_size = crypt_final_size + sizeof(struct rrr_socket_msg);
-		final_size = crypt_final_size;
-	}
-#endif
 
 	rrr_socket_msg_checksum_and_to_network_endian (
 			(struct rrr_socket_msg *) final_message
 	);
 
-	if ((ret = ip_send_raw(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
-		VL_MSG_ERR("Data could not be sent in ip_send_message\n");
+	if ((ret = rrr_ip_send_raw(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
+		RRR_MSG_ERR("Data could not be sent in ip_send_message\n");
 		goto out;
 	}
 
 	if (stats != NULL) {
-		int res = ip_stats_update(stats, 1, final_size);
-		if (res == VL_IP_STATS_UPDATE_ERR) {
-			VL_MSG_ERR("ip: Error returned from stats update function\n");
+		int res = rrr_ip_stats_update(stats, 1, final_size);
+		if (res == RRR_IP_STATS_UPDATE_ERR) {
+			RRR_MSG_ERR("ip: Error returned from stats update function\n");
 			ret = 1;
 			goto out;
 		}
-		if (res == VL_IP_STATS_UPDATE_READY) {
-			if (ip_stats_print_reset(stats, 1) != VL_IP_STATS_UPDATE_OK) {
-				VL_MSG_ERR("ip: Error returned from stats print function\n");
+		if (res == RRR_IP_STATS_UPDATE_READY) {
+			if (rrr_stats_print_reset(stats, 1) != RRR_IP_STATS_UPDATE_OK) {
+				RRR_MSG_ERR("ip: Error returned from stats print function\n");
 				ret = 1;
 				goto out;
 			}
@@ -576,15 +507,15 @@ int ip_send_message (
 	return ret;
 }
 
-void ip_network_cleanup (void *arg) {
-	struct ip_data *data = arg;
+void rrr_ip_network_cleanup (void *arg) {
+	struct rrr_ip_data *data = arg;
 	if (data->fd != 0) {
 		rrr_socket_close(data->fd);
 		data->fd = 0;
 	}
 }
 
-int ip_network_start_udp_ipv4 (struct ip_data *data) {
+int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
@@ -593,12 +524,12 @@ int ip_network_start_udp_ipv4 (struct ip_data *data) {
 			NULL
 	);
 	if (fd == -1) {
-		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
 	}
 
 	if (data->port < 1 || data->port > 65535) {
-		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		RRR_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}
 
@@ -609,7 +540,7 @@ int ip_network_start_udp_ipv4 (struct ip_data *data) {
 	si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		VL_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
+		RRR_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -624,13 +555,13 @@ int ip_network_start_udp_ipv4 (struct ip_data *data) {
 	return 1;
 }
 
-int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, unsigned int port, const char *host) {
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host) {
 	int fd = 0;
 
 	*accept_data = NULL;
 
 	if (port < 1 || port > 65535) {
-		VL_BUG ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", port);
+		RRR_BUG ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", port);
 	}
 
 	char port_str[16];
@@ -645,7 +576,7 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 
     int s = getaddrinfo(host, port_str, &hints, &result);
     if (s != 0) {
-    	VL_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+    	RRR_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
     	goto out_error;
     }
 
@@ -659,7 +590,7 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 				NULL
 		);
     	if (fd == -1) {
-    		VL_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
+    		RRR_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
     		continue;
     	}
 
@@ -673,13 +604,13 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
     freeaddrinfo(result);
 
     if (fd < 0 || rp == NULL) {
-		VL_MSG_ERR ("Could not create socket for host '%s'\n", host);
+		RRR_MSG_ERR ("Could not create socket for host '%s'\n", host);
 		goto out_error;
     }
 
-    struct ip_accept_data *accept_result = malloc(sizeof(*result));
+    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*result));
     if (accept_result == NULL) {
-    	VL_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+    	RRR_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
     	goto out_close_socket;
     }
 
@@ -689,7 +620,7 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
     accept_result->ip_data.port = port;
     accept_result->len = sizeof(accept_result->addr);
     if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
-    	VL_MSG_ERR("getsockname failed: %s\n", strerror(errno));
+    	RRR_MSG_ERR("getsockname failed: %s\n", strerror(errno));
     	goto out_free_accept;
     }
 
@@ -705,7 +636,7 @@ int ip_network_connect_tcp_ipv4_or_ipv6 (struct ip_accept_data **accept_data, un
 		return 1;
 }
 
-int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connections) {
+int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections) {
 	int fd = rrr_socket (
 			AF_INET6,
 			SOCK_NONBLOCK|SOCK_STREAM,
@@ -714,12 +645,12 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 			NULL
 	);
 	if (fd == -1) {
-		VL_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
 		goto out_error;
 	}
 
 	if (data->port < 1 || data->port > 65535) {
-		VL_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		RRR_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}
 
@@ -730,7 +661,7 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 	si.sin6_addr = in6addr_any;
 
 	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
-		VL_MSG_ERR ("Could not listen on port %d: %s\n", data->port, strerror(errno));
+		RRR_MSG_ERR ("Could not listen on port %d: %s\n", data->port, strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -745,9 +676,9 @@ int ip_network_start_tcp_ipv4_and_ipv6 (struct ip_data *data, int max_connection
 	return 1;
 }
 
-int ip_close (struct ip_data *data) {
+int rrr_ip_close (struct rrr_ip_data *data) {
 	if (data->fd == 0) {
-		VL_BUG("Received zero-value FD in ip_close\n");
+		RRR_BUG("Received zero-value FD in ip_close\n");
 	}
 	int ret = rrr_socket_close(data->fd);
 
@@ -756,12 +687,12 @@ int ip_close (struct ip_data *data) {
 	return ret;
 }
 
-int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data, const char *creator, int tcp_nodelay) {
+int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay) {
 	int ret = 0;
 
 	struct sockaddr sockaddr_tmp = {0};
 	socklen_t socklen_tmp = sizeof(sockaddr_tmp);
-	struct ip_accept_data *res = NULL;
+	struct rrr_ip_accept_data *res = NULL;
 
 	*accept_data = NULL;
 
@@ -772,7 +703,7 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 			goto out;
 		}
 		else {
-			VL_MSG_ERR("Error in ip_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error in ip_accept: %s\n", strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -784,37 +715,37 @@ int ip_accept (struct ip_accept_data **accept_data, struct ip_data *listen_data,
 	int enable = 1;
 	if (tcp_nodelay == 1) {
 		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
-			VL_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", strerror(errno));
 			ret = 1;
 			goto out_close_socket;
 		}
 	}
 
 	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
-		VL_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", strerror(errno));
 		goto out_close_socket;
 	}
 
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1) {
-		VL_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", strerror(errno));
 		goto out_close_socket;
 	}
 	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-		VL_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", strerror(errno));
 		goto out_close_socket;
 	}
 
 	res = malloc(sizeof(*res));
 	if (res == NULL) {
-		VL_MSG_ERR("Could not allocate memory in ip_accept\n");
+		RRR_MSG_ERR("Could not allocate memory in ip_accept\n");
 		ret = 1;
 		goto out;
 	}
 	memset (res, '\0', sizeof(*res));
 
 	if (sockaddr_tmp.sa_family != AF_INET && sockaddr_tmp.sa_family != AF_INET6) {
-		VL_BUG("Non AF_INET/AF_INET6 from accept() in ip_accept\n");
+		RRR_BUG("Non AF_INET/AF_INET6 from accept() in ip_accept\n");
 	}
 
 	res->ip_data.fd = fd;
