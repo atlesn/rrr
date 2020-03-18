@@ -987,12 +987,12 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
+		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read, errno is %i\n", errno);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
+		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read, revents are %i\n", pollfd.revents);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
