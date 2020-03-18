@@ -1864,11 +1864,14 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		goto no_delete;
 	}
 
-	if (ram_session->clean_session == 1) {
+/*	This seems stupid, Don't do this.
+ * 	if (ram_session->clean_session == 1) {
 		RRR_DBG_1("Destroying session which had clean session set upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
-	else if (ram_session->session_properties.session_expiry == 0) {
+	else */
+     
+	if (ram_session->session_properties.session_expiry == 0) {
 		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}

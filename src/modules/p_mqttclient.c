@@ -1096,6 +1096,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto out_destroy_client;
 	}
 
+	// We have do use clean start the first time we connect as the server
+	// might remember packets from our last session (if any)
+	int clean_start = 1;
+
 	reconnect:
 	for (int i = 20; i >= 0 && rrr_thread_check_encourage_stop(thread_data->thread) != 1; i--) {
 		rrr_update_watchdog_time(thread_data->thread);
@@ -1110,7 +1114,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 				data->server_port,
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
-				0, // <-- Clean start
+				clean_start,
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
@@ -1130,6 +1134,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			break;
 		}
 	}
+
+	// Successive connect attempts or re-connect does not require clean start to be set. Server
+	// will respond with CONNACK with session present=0 if we need to clean up our state.
+	clean_start = 0;
 
 	int subscriptions_sent = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
