@@ -814,6 +814,7 @@ struct preserve_publish_list {
 
 static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback (RRR_FIFO_CALLBACK_ARGS) {
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
 	struct preserve_publish_list *preserve_data = callback_data->private_data;
 
 	// Upon errors, the generated linked list must be cleared by caller
@@ -823,25 +824,31 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 
 	(void)(size);
 
-	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
-		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(packet) != 0) {
-			RRR_DBG_1("Preserving outbound PUBLISH id %u when cleaning session. ID will be reset.\n", packet->packet_identifier);
+	// We need to check for all possible complete states, just like when housekeeping
+	// the queue. Complete packets are not preserved.
+	if (	RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH &&
+			packet->planned_expiry_time == 0 &&
+			(
+					(publish->qos == 1 && publish->qos_packets.puback == NULL) ||
+					(publish->qos == 2 && publish->qos_packets.pubcomp == NULL)
+			)
+	) {
+		RRR_DBG_1("Preserving outbound PUBLISH id %u when cleaning session. ID will be reset.\n", packet->packet_identifier);
 
-			// In case anybody else holds reference to the packet, we clone it. The payload
-			// is not cloned, but it is INCREF'ed by the clone function.
-			struct rrr_mqtt_p *packet_new = rrr_mqtt_p_clone(packet);
-			if (packet_new == NULL) {
-				RRR_MSG_ERR("Could not clone PUBLISH in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
-				preserve_data->error_in_callback = 1;
-				goto out;
-			}
-
-			if (rrr_mqtt_p_standardized_get_refcount(packet_new) != 1) {
-				RRR_BUG("Usercount was not 1 in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
-			}
-
-			RRR_LL_APPEND(preserve_data, packet_new);
+		// In case anybody else holds reference to the packet, we clone it. The payload
+		// is not cloned, but it is INCREF'ed by the clone function.
+		struct rrr_mqtt_p *packet_new = rrr_mqtt_p_clone(packet);
+		if (packet_new == NULL) {
+			RRR_MSG_ERR("Could not clone PUBLISH in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
+			preserve_data->error_in_callback = 1;
+			goto out;
 		}
+
+		if (rrr_mqtt_p_standardized_get_refcount(packet_new) != 1) {
+			RRR_BUG("Usercount was not 1 in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
+		}
+
+		RRR_LL_APPEND(preserve_data, packet_new);
 	}
 
 	if (__rrr_mqtt_session_ram_packet_id_release(packet) != 0) {
