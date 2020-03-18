@@ -571,7 +571,7 @@ Default action if connecting to the server failed. If set to
 all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
 .B retry,
 the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
-.It mqtt_reconnect_attempts=NUMBER OF ATTEMPTS
+.It mqtt_connect_attempts=NUMBER OF ATTEMPTS
 How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting
 .B mqtt_connect_error_action.

@@ -1128,7 +1128,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	int clean_start = 1;
 
 	int i_first = data->connect_attempts;
-	if (i_first < 1) {
+	if (i_first < 1 || (uint64_t) i_first != (uint64_t) data->connect_attempts) {
 		i_first = 0x7fffffff; // One 7, seven f's
 		RRR_MSG_ERR("Warning: Connection attempt parameter overflow for mqtt client instance %s, changed to %i\n",
 				INSTANCE_D_NAME(thread_data), i_first);
@@ -1139,8 +1139,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(thread_data->thread) != 1; i--) {
 		rrr_update_watchdog_time(thread_data->thread);
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%llu\n",
-				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i, data->connect_attempts);
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i, i_first);
 
 		if (rrr_mqtt_client_connect (
 				&data->connection,
@@ -1154,9 +1154,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		) != 0) {
 			if (i == 0) {
 				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
-					RRR_MSG_ERR("MQTT client instance %s: %llu connection attempts failed, trying again.\n",
+					RRR_MSG_ERR("MQTT client instance %s: %i connection attempts failed, trying again.\n",
 							INSTANCE_D_NAME(thread_data),
-							data->connect_attempts
+							i_first
 					);
 					goto reconnect;
 				}
