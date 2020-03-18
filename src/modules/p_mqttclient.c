@@ -1101,6 +1101,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	}
 
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
+	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
@@ -1241,6 +1242,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	}
 
 	out_destroy_client:
+		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);

@@ -438,6 +438,20 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 	pthread_mutex_destroy (&connections->lock);
 }
 
+// Called for instance upon pthread_cancel. We should be sure that everyone is out first
+// prior to calling. Hard lock reset should be performed prior to destruction in abnormal
+// situations. It's OK to call this in normal situations as well but not required.
+void rrr_mqtt_conn_collection_reset_locks_hard (struct rrr_mqtt_conn_collection *connections) {
+	// Disregard return value
+	pthread_mutex_trylock(&connections->lock);
+
+	connections->readers = 0;
+	connections->write_locked = 0;
+	connections->writers_waiting = 0;
+
+	pthread_mutex_unlock(&connections->lock);
+}
+
 int rrr_mqtt_conn_collection_init (
 		struct rrr_mqtt_conn_collection *connections,
 		unsigned int max_connections,

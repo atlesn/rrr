@@ -252,6 +252,7 @@ struct rrr_mqtt_common_parse_properties_data_publish {
 extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties;
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
+void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
