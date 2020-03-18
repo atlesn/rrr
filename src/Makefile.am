@@ -16,13 +16,7 @@ rrr_http_client_CFLAGS = ${AM_CFLAGS}
 
 if RRR_WITH_PERL5
 all-local:
-	if [ ! -f ${top_srcdir}/src/perl5/xsub/Makefile ]; then				\
-		cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL;	\
-	fi;										\
-	cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Making perl xsub"; make
+	if [ ! -f ${top_srcdir}/src/perl5/xsub/Makefile ]; then	cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL; fi; cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Making perl xsub"; make
 clean-local:
-	if [ ! -f ${top_srcdir}/src/perl5/xsub/Makefile ]; then				\
-		cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL;	\
-	fi;										\
-	cd ${top_srcdir}/src/perl5/xsub; echo "Cleaning perl xsub"; make clean
+	if [ ! -f ${top_srcdir}/src/perl5/xsub/Makefile ]; then cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL; fi; cd ${top_srcdir}/src/perl5/xsub; echo "Cleaning perl xsub"; make clean
 endif

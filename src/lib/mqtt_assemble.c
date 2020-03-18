@@ -337,7 +337,6 @@ int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		if (RRR_MQTT_P_IS_V5(packet)) {
 			PUT_PROPERTIES(&puback->properties);
 		}
-		// TODO : Replace zero byte with properties
 	}
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
