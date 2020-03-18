@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -232,15 +232,18 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		return ret;
 }
 
-static int __packet_id_release_callback (RRR_FIFO_CALLBACK_ARGS) {
+static int __rrr_mqtt_session_ram_packet_id_release (struct rrr_mqtt_p *packet) {
+	RRR_MQTT_P_CLEAR_POOL_ID(packet);
+	return 0;
+}
+
+static int __rrr_mqtt_session_ram_packet_id_release_callback (RRR_FIFO_CALLBACK_ARGS) {
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	(void)(size);
 	(void)(callback_data);
 
-	RRR_MQTT_P_CLEAR_POOL_ID(packet);
-
-	return RRR_FIFO_OK;
+	return (__rrr_mqtt_session_ram_packet_id_release(packet) == 0 ? RRR_FIFO_OK : RRR_FIFO_GLOBAL_ERR);
 }
 
 static int __rrr_mqtt_session_ram_decref_unlocked (
@@ -257,8 +260,8 @@ static int __rrr_mqtt_session_ram_decref_unlocked (
 	// session system to release packet ID when they are destroyed, which cause
 	// deadlock with main session collection lock. The whole ID pool is to be
 	// destroyed here anyway, not need for the packets to release IDs.
-	rrr_fifo_buffer_invalidate_with_callback(&session->to_remote_queue.buffer, __packet_id_release_callback, NULL);
-	rrr_fifo_buffer_invalidate_with_callback(&session->from_remote_queue.buffer, __packet_id_release_callback, NULL);
+	rrr_fifo_buffer_invalidate_with_callback(&session->to_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
+	rrr_fifo_buffer_invalidate_with_callback(&session->from_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 	//  TODO : Look into proper destruction of the buffer mutexes.
 	//	fifo_buffer_destroy(&session->qos_queue.buffer);
 
@@ -804,28 +807,121 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	free(sessions);
 }
 
-static void __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *ram_session) {
+struct preserve_publish_list {
+	RRR_LL_HEAD(struct rrr_mqtt_p);
+	int error_in_callback;
+};
+
+static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback (RRR_FIFO_CALLBACK_ARGS) {
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
+	struct preserve_publish_list *preserve_data = callback_data->private_data;
+
+	// Upon errors, the generated linked list must be cleared by caller
+
+	RRR_MQTT_P_INCREF(packet);
+	RRR_MQTT_P_LOCK(packet);
+
+	(void)(size);
+
+	// We need to check for all possible complete states, just like when housekeeping
+	// the queue. Complete packets are not preserved.
+	if (	RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH &&
+			packet->planned_expiry_time == 0 &&
+			(
+					(publish->qos == 1 && publish->qos_packets.puback == NULL) ||
+					(publish->qos == 2 && publish->qos_packets.pubcomp == NULL)
+			)
+	) {
+		RRR_DBG_1("Preserving outbound PUBLISH id %u when cleaning session. ID will be reset.\n", packet->packet_identifier);
+
+		// In case anybody else holds reference to the packet, we clone it. The payload
+		// is not cloned, but it is INCREF'ed by the clone function.
+		struct rrr_mqtt_p *packet_new = rrr_mqtt_p_clone(packet);
+		if (packet_new == NULL) {
+			RRR_MSG_ERR("Could not clone PUBLISH in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
+			preserve_data->error_in_callback = 1;
+			goto out;
+		}
+
+		if (rrr_mqtt_p_standardized_get_refcount(packet_new) != 1) {
+			RRR_BUG("Usercount was not 1 in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
+		}
+
+		RRR_LL_APPEND(preserve_data, packet_new);
+	}
+
+	if (__rrr_mqtt_session_ram_packet_id_release(packet) != 0) {
+		RRR_BUG("Error while releasing packet ID in __rrr_mqtt_session_ram_clean_preserve_publish_callback\n");
+	}
+
+	out:
+
+	RRR_MQTT_P_UNLOCK(packet);
+	RRR_MQTT_P_DECREF(packet);
+
+	// We are not allowed to return anything but zero
+	return RRR_FIFO_OK;
+}
+
+static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *ram_session) {
+	int ret = 0;
+
+	struct preserve_publish_list preserve_data = {0};
+
+	struct rrr_fifo_callback_args fifo_args = {
+		NULL, &preserve_data, 0
+	};
+
 	// Remove the packet ID free functions as the packets might call back in the
 	// session system to release packet ID when they are destroyed, which cause
-	// deadlock with ram session lock.
+	// deadlock with ram session lock. We also preserve the outbound PUBLISH packets
+	// by re-queing them after the list is emptied (QOS0 are deleted, QOS1-2 are preserved).
 	if (rrr_fifo_buffer_clear_with_callback (
 			&ram_session->to_remote_queue.buffer,
-			__packet_id_release_callback,
-			NULL
+			__rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback,
+			&fifo_args
 	) != 0) {
-		RRR_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
+		RRR_MSG_ERR("Error from FIFO while clearing to_remote-buffer and preserving PUBLISH white cleaning ram session\n");
+		ret = 1;
+		goto out;
 	}
+
+	if (preserve_data.error_in_callback != 0) {
+		RRR_MSG_ERR("Error from callback while clearing to_remote-buffer and preserving PUBLISH white cleaning ram session\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Add PUBLISH-packets to preserve back to buffer. The list is finally cleared further down.
+	RRR_LL_ITERATE_BEGIN(&preserve_data, struct rrr_mqtt_p);
+		// INCREF before adding to buffer
+		RRR_MQTT_P_INCREF(node);
+
+		RRR_MQTT_P_LOCK(node);
+		// ID should already be zero, but hey
+		node->packet_identifier = 0;
+		// All PUBLISH packets will appear to be new packets
+		node->dup = 0;
+		RRR_MQTT_P_UNLOCK(node);
+
+		rrr_fifo_buffer_write(&ram_session->to_remote_queue.buffer, (char*) node, sizeof(*node));
+	RRR_LL_ITERATE_END();
 
 	if (rrr_fifo_buffer_clear_with_callback (
 			&ram_session->from_remote_queue.buffer,
-			__packet_id_release_callback,
+			__rrr_mqtt_session_ram_packet_id_release_callback,
 			NULL
 	) != 0) {
 		RRR_BUG("Buffer was invalid in __rrr_mqtt_session_ram_init\n");
 	}
 
+	out:
+	RRR_LL_DESTROY(&preserve_data, struct rrr_mqtt_p, rrr_mqtt_p_standardized_decref(node));
 	rrr_mqtt_subscription_collection_clear(ram_session->subscriptions);
 	rrr_mqtt_id_pool_clear(&ram_session->id_pool);
+
+	return ret;
 }
 
 static int __rrr_mqtt_session_ram_init (
@@ -1775,11 +1871,14 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		goto no_delete;
 	}
 
-	if (ram_session->clean_session == 1) {
+/*	This seems stupid, Don't do this.
+ * 	if (ram_session->clean_session == 1) {
 		RRR_DBG_1("Destroying session which had clean session set upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
-	else if (ram_session->session_properties.session_expiry == 0) {
+	else */
+     
+	if (ram_session->session_properties.session_expiry == 0) {
 		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}

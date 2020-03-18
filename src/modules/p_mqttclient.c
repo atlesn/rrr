@@ -54,9 +54,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
+#define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
+
+// Timeout before we send PUBLISH packets to the broker. This is to allow,
+// if the broker has just been started, other clients to subscribe first
+// before we send anything (to prevent it from getting deleted by the broker)
+#define RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS 3000
 
 struct mqtt_client_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -79,6 +85,7 @@ struct mqtt_client_data {
 	int receive_rrr_message;
 	char *connect_error_action;
 	struct rrr_mqtt_conn *connection;
+	rrr_setting_uint connect_attempts;
 };
 
 static void data_cleanup(void *arg) {
@@ -185,6 +192,26 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 	rrr_setting_uint mqtt_port = 0;
 	rrr_setting_uint mqtt_qos = 0;
+	rrr_setting_uint mqtt_connect_attempts = 0;
+
+	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_connect_attempts, config, "mqtt_connect_attempts")) == 0) {
+		if (mqtt_connect_attempts < 1) {
+			RRR_MSG_ERR("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %llu was given.",
+					config->name, mqtt_connect_attempts);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_ERR("Error while parsing mqtt_reconnect_attempts setting of instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+	else {
+		mqtt_port = RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS;
+		ret = 0;
+	}
+	data->connect_attempts = mqtt_connect_attempts;
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_server_port")) == 0) {
 		// OK
@@ -1074,6 +1101,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	}
 
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
+	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
 	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
@@ -1096,12 +1124,24 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto out_destroy_client;
 	}
 
+	// We have do use clean start the first time we connect as the server
+	// might remember packets from our last session (if any)
+	int clean_start = 1;
+
+	int i_first = data->connect_attempts;
+	if (i_first < 1 || (uint64_t) i_first != (uint64_t) data->connect_attempts) {
+		i_first = 0x7fffffff; // One 7, seven f's
+		RRR_MSG_ERR("Warning: Connection attempt parameter overflow for mqtt client instance %s, changed to %i\n",
+				INSTANCE_D_NAME(thread_data), i_first);
+	}
+
 	reconnect:
-	for (int i = 20; i >= 0 && rrr_thread_check_encourage_stop(thread_data->thread) != 1; i--) {
+
+	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(thread_data->thread) != 1; i--) {
 		rrr_update_watchdog_time(thread_data->thread);
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/20\n",
-				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i);
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
+				INSTANCE_D_NAME(thread_data), data->server, data->server_port, i, i_first);
 
 		if (rrr_mqtt_client_connect (
 				&data->connection,
@@ -1110,13 +1150,15 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 				data->server_port,
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
-				0, // <-- Clean start
+				clean_start,
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
 				if (strcmp (data->connect_error_action, RRR_MQTT_CONNECT_ERROR_DO_RETRY) == 0) {
-					RRR_MSG_ERR("MQTT client instance %s: 20 connection attempts failed, trying again.\n",
-							INSTANCE_D_NAME(thread_data));
+					RRR_MSG_ERR("MQTT client instance %s: %i connection attempts failed, trying again.\n",
+							INSTANCE_D_NAME(thread_data),
+							i_first
+					);
 					goto reconnect;
 				}
 
@@ -1124,12 +1166,28 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 						data->server, data->server_port, INSTANCE_D_NAME(thread_data));
 				goto out_destroy_client;
 			}
-			usleep (100000);
+			usleep (100 * 1000);
 		}
 		else {
 			break;
 		}
 	}
+
+	uint64_t startup_time = rrr_time_get_64() + RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS * 1000;
+
+	RRR_DBG_1("MQTT client %s startup send grace period %i ms started\n",
+			INSTANCE_D_NAME(thread_data),
+			RRR_MQTT_STARTUP_SEND_GRACE_TIME_MS
+	);
+
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && startup_time > rrr_time_get_64()) {
+		usleep(10 * 1000);
+		rrr_update_watchdog_time(thread_data->thread);
+	}
+
+	// Successive connect attempts or re-connect does not require clean start to be set. Server
+	// will respond with CONNACK with session present=0 if we need to clean up our state.
+	clean_start = 0;
 
 	int subscriptions_sent = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -1145,7 +1203,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 		if (alive == 0) {
 			RRR_DBG_1("Connection lost for mqtt client instance %s, reconnecting\n",
-					INSTANCE_D_NAME(thread_data));
+				INSTANCE_D_NAME(thread_data));
 			goto reconnect;
 		}
 
@@ -1184,6 +1242,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	}
 
 	out_destroy_client:
+		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);

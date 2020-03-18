@@ -730,6 +730,10 @@ void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	free(broker);
 }
 
+void rrr_mqtt_broker_notify_pthread_cancel (struct rrr_mqtt_broker_data *broker) {
+	rrr_mqtt_common_data_notify_pthread_cancel(&broker->mqtt_data);
+}
+
 int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,

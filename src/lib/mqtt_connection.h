@@ -197,6 +197,7 @@ struct rrr_mqtt_conn_collection {
 
 // Can ONLY be used at program exit when only one thread is running
 void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connections);
+void rrr_mqtt_conn_collection_reset_locks_hard (struct rrr_mqtt_conn_collection *connections);
 
 int rrr_mqtt_conn_collection_init (
 		struct rrr_mqtt_conn_collection *connections,

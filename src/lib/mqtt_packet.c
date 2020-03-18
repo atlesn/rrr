@@ -257,6 +257,8 @@ static struct rrr_mqtt_p *rrr_mqtt_p_allocate_subscribe(RRR_MQTT_P_TYPE_ALLOCATE
 static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFINITION) {
 	const struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) source;
 
+	rrr_mqtt_p_bug_if_not_locked((struct rrr_mqtt_p *) publish);
+
 	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_raw (
 			source->type_properties,
 			source->protocol_version

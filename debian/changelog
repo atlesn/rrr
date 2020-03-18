@@ -1,3 +1,10 @@
+rrr (0.16-6) unstable; urgency=medium
+
+  * Misc. bugfixes in MQTT and MySQL
+  * Better handling of session cleaning in MQTT client
+
+ -- Atle Solbakken <atle@goliathdns.no> Wed, 18 Mar 2020 08:37:47 +0100
+
 rrr (0.16-5) unstable; urgency=medium
 
   * Fixes in ASD and UDP-stream to correctly handle multiple clients

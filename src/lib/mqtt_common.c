@@ -69,6 +69,11 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 	data->handler_properties = NULL;
 }
 
+/* Call this when a thread has been cancelled to make sure mutexes are unlocked etc. */
+void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
+	rrr_mqtt_conn_collection_reset_locks_hard(&data->connections);
+}
+
 /*
  * We are called in here from the connection framework on packet events as it
  * is unaware of sessions. We assess here whether something needs to be updated
