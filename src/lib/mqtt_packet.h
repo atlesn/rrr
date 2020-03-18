@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "mqtt_property.h"
+#include "linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -185,8 +186,13 @@ struct rrr_mqtt_p_payload {
 // memory might however also be managed elsewhere for locally created packets. Packets
 // may share the same payload data.
 
+// Packets have parameters for being a linked list node. This must however be managed
+// locally, and the parameters are disregarded by the packet framework. In normal
+// operations, packets are stored in FIFO buffers in which these parameters are not used.
+
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
+	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
 	uint8_t dup;														\
@@ -311,6 +317,14 @@ static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
 		RRR_MQTT_P_DECREF(p)
+
+static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
+	// Cast away const is OK
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) arg;
+	if (pthread_mutex_trylock(&packet->data_lock) == 0) {
+		RRR_BUG("BUG: Packet not locked triggered in rrr_mqtt_p_bug_if_not_locked(), run in debugger to get call stack.\n");
+	}
+}
 
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
