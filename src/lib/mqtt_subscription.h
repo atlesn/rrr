@@ -92,6 +92,9 @@ int rrr_mqtt_subscription_collection_match_publish (
 int rrr_mqtt_subscription_collection_count (
 		const struct rrr_mqtt_subscription_collection *target
 );
+void rrr_mqtt_subscription_collection_dump (
+		const struct rrr_mqtt_subscription_collection *subscriptions
+);
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
 );
@@ -110,8 +113,8 @@ int rrr_mqtt_subscription_collection_iterate (
 		int (*callback)(struct rrr_mqtt_subscription *sub, void *arg),
 		void *callback_arg
 );
-struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
-		struct rrr_mqtt_subscription_collection *target,
+const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
+		const struct rrr_mqtt_subscription_collection *target,
 		ssize_t idx
 );
 const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
@@ -148,6 +151,11 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
 		const struct rrr_mqtt_subscription_collection *source,
 		int include_invalid_entries
+);
+int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
+		struct rrr_mqtt_subscription_collection *target,
+		struct rrr_mqtt_subscription_collection *source,
+		int *removed_count
 );
 
 #endif /* RRR_MQTT_SUBSCRIPTION_H */

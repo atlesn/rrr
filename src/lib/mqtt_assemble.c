@@ -341,15 +341,16 @@ int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
 }
 
-struct assemble_subscribe_callback_data {
+struct assemble_sub_usub_callback_data {
 	struct rrr_mqtt_payload_buf_session *session;
 	int is_v5;
+	int has_topic_options; // For SUBSCRIBE packet
 };
 
-int __rrr_mqtt_assemble_subscribe_callback (struct rrr_mqtt_subscription *sub, void *arg) {
+int __rrr_mqtt_assemble_sub_usub_callback (struct rrr_mqtt_subscription *sub, void *arg) {
 	int ret = RRR_MQTT_SUBSCRIPTION_ITERATE_OK;
 
-	struct assemble_subscribe_callback_data *callback_data = arg;
+	struct assemble_sub_usub_callback_data *callback_data = arg;
 	struct rrr_mqtt_payload_buf_session *session = callback_data->session;
 
 	if (sub->nl > 0 || sub->rap > 0 || sub->retain_handling > 2 || sub->qos_or_reason_v5 > 2) {
@@ -370,33 +371,40 @@ int __rrr_mqtt_assemble_subscribe_callback (struct rrr_mqtt_subscription *sub, v
 	}
 
 	PUT_RAW_WITH_LENGTH(sub->topic_filter,length);
-	PUT_U8(sub->qos_or_reason_v5);
+	if (callback_data->has_topic_options) {
+		PUT_U8(flags);
+	}
 
 	out:
 	return ret;
 }
 
-int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
+static int __rrr_mqtt_assemble_sub_usub (
+		RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION,
+		int has_topic_options
+) {
+	struct rrr_mqtt_p_sub_usub *sub_usub = (struct rrr_mqtt_p_sub_usub *) packet;
 
 	BUF_INIT();
-	PUT_U16(subscribe->packet_identifier);
+	PUT_U16(sub_usub->packet_identifier);
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
-		PUT_PROPERTIES(&subscribe->properties);
+		PUT_PROPERTIES(&sub_usub->properties);
 	}
 
-	if (rrr_mqtt_subscription_collection_count(subscribe->subscriptions) <= 0) {
+	if (rrr_mqtt_subscription_collection_count(sub_usub->subscriptions) <= 0) {
 		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_subscribe\n");
 	}
 
-	struct assemble_subscribe_callback_data callback_data = {
-			session, RRR_MQTT_P_IS_V5(packet)
+	struct assemble_sub_usub_callback_data callback_data = {
+			session,
+			RRR_MQTT_P_IS_V5(packet),
+			has_topic_options
 	};
 
 	ret = rrr_mqtt_subscription_collection_iterate(
-			subscribe->subscriptions,
-			__rrr_mqtt_assemble_subscribe_callback,
+			sub_usub->subscriptions,
+			__rrr_mqtt_assemble_sub_usub_callback,
 			&callback_data
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
@@ -405,6 +413,14 @@ int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	}
 
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_P_5_REASON_OK);
+}
+
+int rrr_mqtt_assemble_subscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	return __rrr_mqtt_assemble_sub_usub(target, size, packet, 1);
+}
+
+int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
+	return __rrr_mqtt_assemble_sub_usub(target, size, packet, 0);
 }
 
 int __rrr_mqtt_assemble_suback_callback (struct rrr_mqtt_subscription *sub, void *arg) {
@@ -443,17 +459,35 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	}
 
 	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
- }
-
-int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	(void)(packet);
-	RRR_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }
 
 int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	RRR_MSG_ERR("Assemble function not implemented\n");
-	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
+	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
+
+	BUF_INIT();
+
+	PUT_U16(suback->packet_identifier);
+
+	// V3.1 has no payload
+	if (RRR_MQTT_P_IS_V5(packet)) {
+		PUT_PROPERTIES(&suback->properties);
+
+		if (rrr_mqtt_subscription_collection_count(suback->subscriptions_) <= 0) {
+			RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_suback\n");
+		}
+
+		ret = rrr_mqtt_subscription_collection_iterate(
+				suback->subscriptions_,
+				__rrr_mqtt_assemble_suback_callback,
+				session
+		);
+		if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+			RRR_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
+			goto out;
+		}
+	}
+
+	BUF_DESTROY_AND_RETURN(RRR_MQTT_ASSEMBLE_OK);
 }
 
 int rrr_mqtt_assemble_pingreq (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {

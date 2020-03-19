@@ -41,6 +41,10 @@ const char *library_paths[] = {
 		""
 };
 
+// After one or more threads have exited, wait with killing other
+// threads to allow for debugging
+//#define RRR_TEST_DELAYED_EXIT 1
+
 int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
 	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
@@ -324,6 +328,11 @@ int main (int argc, const char **argv) {
 		}
 
 		ret = main_get_configuration_test_result(instances);
+
+#ifdef RRR_TEST_DELAYED_EXIT
+		usleep (3600000000); // 3600 seconds
+#endif
+
 		main_threads_stop(collection, instances);
 
 	} TEST_RESULT(ret == 0);

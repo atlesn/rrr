@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL			0x04
 
 #define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS			0x10
+#define RRR_MQTT_P_5_REASON_NO_SUBSCRIPTION_EXISTED			0x11
 
 #define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR				0x80
 #define RRR_MQTT_P_5_REASON_MALFORMED_PACKET				0x81
@@ -151,6 +152,7 @@ struct rrr_mqtt_p_reason {
 	uint8_t for_puback_pubrec;
 	uint8_t for_pubrel_pubcomp;
 	uint8_t for_suback;
+	uint8_t for_unsuback;
 
 	const char *description;
 };
@@ -441,30 +443,52 @@ struct rrr_mqtt_p_publish {
 #define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
 	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
 
+struct rrr_mqtt_p_suback_unsuback;
+struct rrr_mqtt_p_suback;
+struct rrr_mqtt_p_unsuback;
+
+#define RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS					\
+		RRR_MQTT_P_PACKET_HEADER;								\
+		char *data_tmp;											\
+		int max_qos;											\
+		struct rrr_mqtt_property_collection properties;			\
+		struct rrr_mqtt_subscription_collection *subscriptions
+
+// These three must be --equal-- except for the last pointer name
+struct rrr_mqtt_p_sub_usub {
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
+	struct rrr_mqtt_p_suback_unsuback *sub_usuback;
+};
 struct rrr_mqtt_p_subscribe {
-	RRR_MQTT_P_PACKET_HEADER;
-	char *data_tmp;
-	int max_qos;
-	struct rrr_mqtt_property_collection properties;
-	struct rrr_mqtt_subscription_collection *subscriptions;
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
 	struct rrr_mqtt_p_suback *suback;
 };
+struct rrr_mqtt_p_unsubscribe {
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
+	struct rrr_mqtt_p_unsuback *unsuback;
+};
 
+#define RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS											\
+	RRR_MQTT_P_PACKET_HEADER;														\
+	struct rrr_mqtt_property_collection properties;									\
+	/* Used only when assembling */													\
+	struct rrr_mqtt_subscription_collection *subscriptions_;						\
+	/* Used only when parsing/handling */											\
+	const uint8_t *acknowledgements;												\
+	ssize_t acknowledgements_size
+
+// These three must be --equal-- except for the last pointer name
+struct rrr_mqtt_p_suback_unsuback {
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
+	const struct rrr_mqtt_p_sub_usub *orig_sub_usub;
+};
 struct rrr_mqtt_p_suback {
-	RRR_MQTT_P_PACKET_HEADER;
-	struct rrr_mqtt_property_collection properties;
-
-	// Used only when assembling
-	struct rrr_mqtt_subscription_collection *subscriptions_;
-
-	// Used only when parsing/handling
-	const uint8_t *acknowledgements;
-	ssize_t acknowledgements_size;
-
-	// We do not make any reference counting on this parameter because
-	// when set, the memory of the SUBACK packet is managed by the pointed
-	// to SUBSCRIBE packet, thus both will always be valid.
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
 	const struct rrr_mqtt_p_subscribe *orig_subscribe;
+};
+struct rrr_mqtt_p_unsuback {
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
+	const struct rrr_mqtt_p_unsubscribe *orig_unsubscribe;
 };
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,idx) \
@@ -479,12 +503,6 @@ struct rrr_mqtt_p_suback {
 #define RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,idx) \
 	((suback)->acknowledgements[(idx)])
 
-struct rrr_mqtt_p_unsubscribe {
-	RRR_MQTT_P_PACKET_HEADER;
-};
-struct rrr_mqtt_p_unsuback {
-	RRR_MQTT_P_PACKET_HEADER;
-};
 struct rrr_mqtt_p_pingreq {
 	RRR_MQTT_P_PACKET_HEADER;
 	int pingresp_received;

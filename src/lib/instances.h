@@ -64,7 +64,7 @@ struct rrr_instance_dynamic_data {
 };
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
-#define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->instance_name
+#define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->module_name
 
 struct instance_thread_init_data {
 	struct cmd_data *cmd_data;

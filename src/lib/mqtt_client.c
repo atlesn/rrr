@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -140,6 +140,66 @@ int rrr_mqtt_client_subscribe (
 		RRR_MQTT_P_UNLOCK(subscribe);
 	out_decref:
 		RRR_MQTT_P_DECREF(subscribe);
+	out:
+		return (ret != 0);
+}
+
+int rrr_mqtt_client_unsubscribe (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_subscription_collection *subscriptions
+) {
+	int ret = 0;
+
+	if ((ret = rrr_mqtt_subscription_collection_count(subscriptions)) == 0) {
+//		VL_DEBUG_MSG_1("No subscriptions in rrr_mqtt_client_subscribe\n");
+		goto out;
+	}
+	else if (ret < 0) {
+		RRR_BUG("Unknown return value %i from rrr_mqtt_subscription_collection_count in rrr_mqtt_client_unsubscribe\n", ret);
+	}
+	ret = 0;
+
+	if (data->protocol_version == NULL) {
+		RRR_MSG_ERR("Protocol version not set in rrr_mqtt_client_unsubscribe\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_mqtt_p_unsubscribe *unsubscribe = (struct rrr_mqtt_p_unsubscribe *) rrr_mqtt_p_allocate(
+			RRR_MQTT_P_TYPE_UNSUBSCRIBE,
+			data->protocol_version
+	);
+	if (unsubscribe == NULL) {
+		RRR_MSG_ERR("Could not allocate UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(unsubscribe);
+
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(unsubscribe->subscriptions, subscriptions, 0) != 0) {
+		RRR_MSG_ERR("Could not add subscriptions to UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
+		goto out_unlock;
+	}
+
+	RRR_MQTT_P_UNLOCK(unsubscribe);
+
+	RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(
+			data->mqtt_data.sessions->methods->send_packet (
+					data->mqtt_data.sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) unsubscribe
+			),
+			goto out_decref,
+			" while sending UNSUBSCRIBE packet in rrr_mqtt_client_unsubscribe\n"
+	);
+
+	goto out_decref;
+	out_unlock:
+		RRR_MQTT_P_UNLOCK(unsubscribe);
+	out_decref:
+		RRR_MQTT_P_DECREF(unsubscribe);
 	out:
 		return (ret != 0);
 }
@@ -395,7 +455,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		return ret;
 }
 
-static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+static int __rrr_mqtt_client_handle_suback_unsuback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
 
 	struct rrr_mqtt_client_data *client_data = (struct rrr_mqtt_client_data *) mqtt_data;
@@ -410,18 +470,24 @@ static int __rrr_mqtt_client_handle_suback (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					&match_count
 			),
 			goto out,
-			" while handling SUBACK packet"
+			" while handling SUBACK or UNSUBACK packet"
 	);
 
 	if (match_count == 0) {
-		RRR_MSG_ERR("Received SUBACK but did not find corresponding SUBSCRIBE packet, possible duplicate\n");
+		RRR_MSG_ERR("Received %s but did not find corresponding original packet, possible duplicate\n",
+				RRR_MQTT_P_GET_TYPE_NAME(packet));
 		goto out;
 	}
 
-	if (client_data->suback_handler != NULL) {
-		if (client_data->suback_handler(client_data, packet, client_data->suback_handler_arg) != 0) {
-			RRR_MSG_ERR("Error from custom suback handler in __rrr_mqtt_client_handle_suback\n");
+	if (client_data->suback_unsuback_handler != NULL) {
+		if (client_data->suback_unsuback_handler(
+				client_data,
+				(struct rrr_mqtt_p_suback_unsuback *) packet,
+				client_data->suback_unsuback_handler_arg
+		) != 0) {
+			RRR_MSG_ERR("Error from custom handler in __rrr_mqtt_client_handle_suback_unsuback\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
+			goto out;
 		}
 	}
 
@@ -462,9 +528,9 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{rrr_mqtt_common_handle_pubrel},
 	{rrr_mqtt_common_handle_puback_pubcomp},
 	{NULL},
-	{__rrr_mqtt_client_handle_suback},
+	{__rrr_mqtt_client_handle_suback_unsuback},
 	{NULL},
-	{NULL},
+	{__rrr_mqtt_client_handle_suback_unsuback},
 	{NULL},
 	{__rrr_mqtt_client_handle_pingresp},
 	{rrr_mqtt_common_handle_disconnect},
@@ -510,8 +576,8 @@ int rrr_mqtt_client_new (
 		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg),
-		void *suback_handler_arg
+		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
+		void *suback_unsuback_handler_arg
 ) {
 	int ret = 0;
 
@@ -542,8 +608,8 @@ int rrr_mqtt_client_new (
 	}
 
 	result->last_pingreq_time = rrr_time_get_64();
-	result->suback_handler = suback_handler;
-	result->suback_handler_arg = suback_handler_arg;
+	result->suback_unsuback_handler = suback_unsuback_handler;
+	result->suback_unsuback_handler_arg = suback_unsuback_handler_arg;
 
 	*client = result;
 

@@ -925,24 +925,25 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
-	PARSE_INIT(subscribe);
-	PARSE_BEGIN(subscribe);
+static int __rrr_mqtt_parse_subscribe_unsubscribe (
+		struct rrr_mqtt_parse_session *session,
+		struct parse_state *parse_state,
+		struct rrr_mqtt_p_sub_usub *sub_usub,
+		int has_topic_options // For SUBSCRIBE packet
+) {
+	PARSE_BEGIN(sub_usub);
 
-	PARSE_REQUIRE_PROTOCOL_VERSION();
-	PARSE_ALLOCATE(subscribe);
+	PARSE_PACKET_ID(sub_usub);
+	PARSE_PROPERTIES_IF_V5(sub_usub,properties);
 
-	PARSE_PACKET_ID(subscribe);
-	PARSE_PROPERTIES_IF_V5(subscribe,properties);
-
-	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(subscribe);
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(sub_usub);
 
 	/* If we need several attempts to parse the SUBSCRIBE-packet, the subscriptions parsed in the
 	 * previous rounds are parsed again and overwritten. We do however skip to our payload position
 	 * checkpoint to avoid doing this with all of the subscriptions, only at most one should actually
 	 * be overwritten. */
 	while (!PARSE_CHECK_TARGET_END()) {
-		PARSE_UTF8(subscribe,data_tmp);
+		PARSE_UTF8(sub_usub,data_tmp);
 
 		uint8_t subscription_flags = 0;
 		uint8_t reserved = 0;
@@ -951,34 +952,36 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 		uint8_t nl = 0;
 		uint8_t qos = 0;
 
-		PARSE_U8_RAW(parse_state->start,parse_state->end,subscription_flags);
+		if (has_topic_options) {
+			PARSE_U8_RAW(parse_state->start,parse_state->end,subscription_flags);
 
-		reserved = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(subscription_flags);
-		retain = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(subscription_flags);
-		rap = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(subscription_flags);
-		nl = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(subscription_flags);
-		qos = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(subscription_flags);
+			reserved = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RESERVED(subscription_flags);
+			retain = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RETAIN(subscription_flags);
+			rap = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_RAP(subscription_flags);
+			nl = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_NL(subscription_flags);
+			qos = RRR_MQTT_SUBSCRIPTION_GET_FLAG_RAW_QOS(subscription_flags);
 
-		PARSE_VALIDATE_QOS(qos);
-		PARSE_VALIDATE_ZERO_RESERVED(reserved);
+			PARSE_VALIDATE_QOS(qos);
+			PARSE_VALIDATE_ZERO_RESERVED(reserved);
 
-		if (PARSE_CHECK_V5(subscribe)) {
-			PARSE_VALIDATE_RETAIN(retain);
-		}
-		else {
-			PARSE_VALIDATE_ZERO_RESERVED(retain);
-			PARSE_VALIDATE_ZERO_RESERVED(rap);
-			PARSE_VALIDATE_ZERO_RESERVED(nl);
+			if (PARSE_CHECK_V5(sub_usub)) {
+				PARSE_VALIDATE_RETAIN(retain);
+			}
+			else {
+				PARSE_VALIDATE_ZERO_RESERVED(retain);
+				PARSE_VALIDATE_ZERO_RESERVED(rap);
+				PARSE_VALIDATE_ZERO_RESERVED(nl);
+			}
 		}
 
 		struct rrr_mqtt_subscription *subscription = NULL;
-		parse_state->ret = rrr_mqtt_subscription_new (&subscription, subscribe->data_tmp, retain, rap, nl, qos);
+		parse_state->ret = rrr_mqtt_subscription_new (&subscription, sub_usub->data_tmp, retain, rap, nl, qos);
 		if (parse_state->ret != 0) {
 			RRR_MSG_ERR("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
 			return RRR_MQTT_PARSE_INTERNAL_ERROR;
 		}
 
-		parse_state->ret = rrr_mqtt_subscription_collection_append_unique (subscribe->subscriptions, &subscription);
+		parse_state->ret = rrr_mqtt_subscription_collection_append_unique (sub_usub->subscriptions, &subscription);
 		if (parse_state->ret != RRR_MQTT_SUBSCRIPTION_OK) {
 			rrr_mqtt_subscription_destroy(subscription);
 			RRR_MSG_ERR("Error while adding subscription to collection in rrr_mqtt_parse_subscribe\n");
@@ -993,16 +996,54 @@ int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
-	PARSE_INIT(suback);
-	PARSE_BEGIN(suback);
-
+int rrr_mqtt_parse_subscribe (struct rrr_mqtt_parse_session *session) {
+	PARSE_INIT(subscribe);
 	PARSE_REQUIRE_PROTOCOL_VERSION();
-	PARSE_ALLOCATE(suback);
-	PARSE_PACKET_ID(suback);
-	PARSE_PROPERTIES_IF_V5(suback,properties);
+	PARSE_ALLOCATE(subscribe);
 
-	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback);
+	parse_state->ret = __rrr_mqtt_parse_subscribe_unsubscribe (
+			session,
+			parse_state,
+			(struct rrr_mqtt_p_sub_usub *) subscribe,
+			1
+	);
+
+	return parse_state->ret;
+}
+
+int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session) {
+	PARSE_INIT(unsubscribe);
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(unsubscribe);
+
+	parse_state->ret = __rrr_mqtt_parse_subscribe_unsubscribe (
+			session,
+			parse_state,
+			(struct rrr_mqtt_p_sub_usub *) unsubscribe,
+			0
+	);
+
+	return parse_state->ret;
+}
+
+static int __rrr_mqtt_parse_suback_unsuback (
+		struct rrr_mqtt_parse_session *session,
+		struct parse_state *parse_state,
+		struct rrr_mqtt_p_suback_unsuback *suback_unsuback,
+		int no_payload
+) {
+	PARSE_BEGIN(suback_unsuback);
+	PARSE_PACKET_ID(suback_unsuback);
+
+	if (no_payload == 0) { // This check is redundant in practice, just here to clarify
+		PARSE_PROPERTIES_IF_V5(suback_unsuback,properties);
+	}
+
+	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(suback_unsuback);
+
+	if (no_payload) {
+		goto parse_done;
+	}
 
 	PARSE_GET_PAYLOAD_SIZE();
 
@@ -1022,19 +1063,19 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 
 	process_reasons:
 
-	suback->acknowledgements = (void*) (session->buf + session->payload_pos);
-	suback->acknowledgements_size = parse_state->payload_length;
+	suback_unsuback->acknowledgements = (void*) (session->buf + session->payload_pos);
+	suback_unsuback->acknowledgements_size = parse_state->payload_length;
 
-	if (suback->acknowledgements_size == 0) {
+	if (suback_unsuback->acknowledgements_size == 0) {
 		RRR_MSG_ERR("Zero payload in received SUBACK packet while parsing\n");
 		return RRR_MQTT_PARSE_PARAMETER_ERROR;
 	}
 
-	for (ssize_t i = 0; i < suback->acknowledgements_size; i++) {
+	for (ssize_t i = 0; i < suback_unsuback->acknowledgements_size; i++) {
 		const struct rrr_mqtt_p_reason *reason_struct = NULL;
 
-		if (PARSE_CHECK_V5(suback)) {
-			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,i);
+		if (PARSE_CHECK_V5(suback_unsuback)) {
+			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback_unsuback,i);
 
 			// This will also catch invalid QoS
 			reason_struct = rrr_mqtt_p_reason_get_v5(reason);
@@ -1045,9 +1086,9 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 			}
 		}
 		else {
-			uint8_t qos = RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,i);
-			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_REASON(suback,i);
-			uint8_t reserved = RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback,i);
+			uint8_t qos = RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback_unsuback,i);
+			uint8_t reason = RRR_MQTT_SUBACK_GET_FLAGS_REASON(suback_unsuback,i);
+			uint8_t reserved = RRR_MQTT_SUBACK_GET_FLAGS_RESERVED(suback_unsuback,i);
 
 			if (reserved != 0) {
 				RRR_MSG_ERR("Reserved bits in v31 reason for subscription index %li in SUBACK message was not 0\n", i);
@@ -1069,9 +1110,14 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 			}
 		}
 
-		if (reason_struct->for_suback == 0) {
-			RRR_MSG_ERR("Received unknown reason '%s' in SUBACK subscription acknowledgment with index %li\n",
-					reason_struct->description, i);
+		if (	(RRR_MQTT_P_GET_TYPE(suback_unsuback) == RRR_MQTT_P_TYPE_SUBACK && reason_struct->for_suback == 0) ||
+				(RRR_MQTT_P_GET_TYPE(suback_unsuback) == RRR_MQTT_P_TYPE_UNSUBACK && reason_struct->for_unsuback == 0)
+		) {
+			RRR_MSG_ERR("Received unknown reason '%s' in %s (un)subscription acknowledgment with index %li\n",
+					reason_struct->description,
+					RRR_MQTT_P_GET_TYPE_NAME(suback_unsuback),
+					i
+			);
 			return RRR_MQTT_PARSE_PARAMETER_ERROR;
 		}
 	}
@@ -1079,14 +1125,37 @@ int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
 	PARSE_END_PAYLOAD();
 }
 
-int rrr_mqtt_parse_unsubscribe (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+int rrr_mqtt_parse_suback (struct rrr_mqtt_parse_session *session) {
+	PARSE_INIT(suback);
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(suback);
+
+	parse_state->ret = __rrr_mqtt_parse_suback_unsuback (
+			session,
+			parse_state,
+			(struct rrr_mqtt_p_suback_unsuback *) suback,
+			0
+	);
+
+	return parse_state->ret;
 }
 
 int rrr_mqtt_parse_unsuback (struct rrr_mqtt_parse_session *session) {
-	int ret = 0;
-	return ret;
+	PARSE_INIT(unsuback);
+	PARSE_REQUIRE_PROTOCOL_VERSION();
+	PARSE_ALLOCATE(unsuback);
+
+	// V3.1 does not have payload in UNSUBACK
+	int no_payload = (PARSE_CHECK_V5(unsuback) ? 0 : 1);
+
+	parse_state->ret = __rrr_mqtt_parse_suback_unsuback (
+			session,
+			parse_state,
+			(struct rrr_mqtt_p_suback_unsuback *) unsuback,
+			no_payload
+	);
+
+	return parse_state->ret;
 }
 
 int rrr_mqtt_parse_pingreq (struct rrr_mqtt_parse_session *session) {
