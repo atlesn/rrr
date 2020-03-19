@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -246,6 +246,18 @@ int rrr_mqtt_subscription_collection_count (
 	return target->node_count;
 }
 
+void rrr_mqtt_subscription_collection_dump (
+		const struct rrr_mqtt_subscription_collection *subscriptions
+) {
+	int i = 0;
+	RRR_MSG("=== DUMPING SUBSCRIPTIONS IN SESSION COLLECTION %p ===\n", subscriptions);
+	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
+		i++;
+		RRR_MSG("%i: %s\n", i, node->topic_filter);
+	RRR_LL_ITERATE_END(subscriptions);
+	RRR_MSG("===\n");
+}
+
 void rrr_mqtt_subscription_collection_clear (
 		struct rrr_mqtt_subscription_collection *target
 ) {
@@ -430,8 +442,8 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 	return ret;
 }
 
-struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
-		struct rrr_mqtt_subscription_collection *target,
+const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_by_idx (
+		const struct rrr_mqtt_subscription_collection *target,
 		ssize_t idx
 ) {
 	if (idx > target->node_count - 1) {
@@ -439,7 +451,7 @@ struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscription_
 	}
 
 	int i = 0;
-	RRR_LL_ITERATE_BEGIN(target,struct rrr_mqtt_subscription);
+	RRR_LL_ITERATE_BEGIN(target,const struct rrr_mqtt_subscription);
 		if (i == idx) {
 			return node;
 		}
@@ -481,7 +493,7 @@ int rrr_mqtt_subscription_collection_remove_topic (
 			RRR_LL_ITERATE_SET_DESTROY();
 			did_destroy++;
 		}
-	RRR_LL_ITERATE_END(target);
+	RRR_LL_ITERATE_END_CHECK_DESTROY(target,rrr_mqtt_subscription_destroy(node));
 
 	if (did_destroy > 1) {
 		RRR_BUG("More than 1 subscription matched in rrr_mqtt_subscription_collection_remove_topic\n");
@@ -611,4 +623,50 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 	}
 	return ret;
 
+}
+
+int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
+		struct rrr_mqtt_subscription_collection *target,
+		struct rrr_mqtt_subscription_collection *source,
+		int *removed_count
+) {
+	int ret = RRR_MQTT_SUBSCRIPTION_OK;
+
+	*removed_count = 0;
+
+	int did_remove;
+
+	RRR_LL_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
+		did_remove = 0;
+
+		if (node->qos_or_reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+			RRR_MSG_ERR("MQTT not removing topic '%s' due to reason %u set\n",
+					node->topic_filter,
+					node->qos_or_reason_v5
+			);
+			RRR_LL_ITERATE_NEXT();
+		}
+
+		if (rrr_mqtt_subscription_collection_remove_topic (
+				&did_remove,
+				target,
+				node->topic_filter
+		)) {
+			RRR_MSG_ERR("Error while removing topic in rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason\n");
+			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
+			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+			goto out;
+		}
+
+		if (did_remove == 0) {
+			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_NO_SUBSCRIPTION_EXISTED;
+		}
+		else {
+			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_OK;
+			(*removed_count)++;
+		}
+	RRR_LL_ITERATE_END(source);
+
+	out:
+	return ret;
 }

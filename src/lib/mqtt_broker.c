@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -639,7 +639,49 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 }
 
 static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	int ret = 0;
+	int ret = RRR_MQTT_CONN_OK;
+
+	struct rrr_mqtt_p_unsubscribe *unsubscribe = (struct rrr_mqtt_p_unsubscribe *) packet;
+
+	struct rrr_mqtt_p_unsuback *unsuback = (struct rrr_mqtt_p_unsuback *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_UNSUBACK, packet->protocol_version);
+	if (unsuback == NULL) {
+		RRR_MSG_ERR("Could not allocate UNSUBACK packet in __rrr_mqtt_broker_handle_unsubscribe \n");
+		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+		goto out;
+	}
+
+	unsigned int dummy;
+
+	// Session subsystem will update the subscription list and set reason codes for each topic
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->receive_packet(
+					mqtt_data->sessions,
+					&connection->session,
+					packet,
+					&dummy
+			),
+			goto out,
+			" while sending UNSUBSCRIBE message to session in __rrr_mqtt_broker_handle_unsubscribe "
+	);
+
+	RRR_MQTT_P_LOCK(unsuback);
+	unsuback->packet_identifier = unsubscribe->packet_identifier;
+	unsuback->subscriptions_ = unsubscribe->subscriptions;
+	unsubscribe->subscriptions = NULL;
+	RRR_MQTT_P_UNLOCK(unsuback);
+
+	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
+			mqtt_data->sessions->methods->send_packet(
+					mqtt_data->sessions,
+					&connection->session,
+					(struct rrr_mqtt_p *) unsuback
+			),
+			goto out,
+			" while sending UNSUBACK to session in __rrr_mqtt_broker_handle_unsubscribe"
+	);
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(unsuback);
 	return ret;
 }
 

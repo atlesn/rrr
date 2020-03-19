@@ -81,7 +81,7 @@ void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
  * is also called as it might have stuff to maintain. Packets which come in
  * and are handled by the broker or client, are NOT passed to the
  * session framework through this function. The packet handlers notify the sessions
- * directly. This goes for PUBLISH and SUBSCRIBE.
+ * directly. This goes for PUBLISH, SUBSCRIBE and UNSUBSCRIBE.
  */
 static int __rrr_mqtt_common_connection_event_handler (
 		struct rrr_mqtt_conn *connection,

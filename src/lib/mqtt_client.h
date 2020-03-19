@@ -43,8 +43,8 @@ struct rrr_mqtt_client_data {
 	ssize_t connection_count;
 	uint64_t last_pingreq_time;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
-	int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg);
-	void *suback_handler_arg;
+	int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg);
+	void *suback_unsuback_handler_arg;
 };
 
 int rrr_mqtt_client_connection_check_alive (
@@ -59,6 +59,11 @@ int rrr_mqtt_client_publish (
 		struct rrr_mqtt_p_publish *publish
 );
 int rrr_mqtt_client_subscribe (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_subscription_collection *subscriptions
+);
+int rrr_mqtt_client_unsubscribe (
 		struct rrr_mqtt_client_data *data,
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_subscription_collection *subscriptions
@@ -86,8 +91,8 @@ int rrr_mqtt_client_new (
 		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg),
-		void *suback_handler_arg
+		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
+		void *suback_unsuback_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
 int rrr_mqtt_client_iterate_and_clear_local_delivery (

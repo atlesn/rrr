@@ -565,6 +565,8 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_CALLBACK_ARG
 	int ack_complete = 0;
 	int discard_now = 0;
 
+	// Packets for which we expect ACK are retained in the queue to be matched
+	// with their ACKs later
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
@@ -575,9 +577,12 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_CALLBACK_ARG
 			ack_complete = 1;
 		}
 	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
-		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
-		if (subscribe->suback != NULL) {
+	else if (
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE
+	) {
+		struct rrr_mqtt_p_sub_usub *sub_usub = (struct rrr_mqtt_p_sub_usub *) packet;
+		if (sub_usub->sub_usuback != NULL) {
 			ack_complete = 1;
 		}
 	}
@@ -1100,6 +1105,17 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_CALLBACK_ARGS) 
 				RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
 		);
 	}
+	else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_UNSUBACK &&
+			RRR_MQTT_P_GET_TYPE(packet) != RRR_MQTT_P_TYPE_UNSUBSCRIBE
+	) {
+		RRR_BUG("Expected packet of type %s while traversing buffer for complementary of %s," \
+				"but %s was found with matching packet ID %u\n",
+				RRR_MQTT_P_GET_TYPE_NAME_RAW(RRR_MQTT_P_TYPE_UNSUBACK),
+				RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+				RRR_MQTT_P_GET_TYPE_NAME(packet),
+				RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
+		);
+	}
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
@@ -1198,30 +1214,44 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_CALLBACK_ARGS) 
 			goto out;
 		}
 	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
-		if (RRR_MQTT_P_GET_TYPE(ack_packet) != RRR_MQTT_P_TYPE_SUBACK) {
-			RRR_MSG_ERR("Received unknown ACK packet type %s for SUBSCRIBE with id %u\n",
-					RRR_MQTT_P_GET_TYPE_NAME(ack_packet), RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
+	else if (
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE
+	) {
+		if (	(	RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE &&
+				 	RRR_MQTT_P_GET_TYPE(ack_packet) != RRR_MQTT_P_TYPE_SUBACK
+				) ||
+				(	RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE &&
+					RRR_MQTT_P_GET_TYPE(ack_packet) != RRR_MQTT_P_TYPE_UNSUBACK
+				)
+		) {
+			RRR_MSG_ERR("Received unknown ACK packet type %s for %s with id %u\n",
+					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					RRR_MQTT_P_GET_IDENTIFIER(ack_packet)
+			);
 			ret = RRR_FIFO_CALLBACK_ERR;
 			goto out;
 		}
 
-		struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) ack_packet;
-		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
-		if (subscribe->suback != NULL) {
-			RRR_DBG_1("Received duplicate SUBACK for SUBSCRIBE with id %u\n",
+		struct rrr_mqtt_p_suback_unsuback *sub_usuback = (struct rrr_mqtt_p_suback_unsuback *) ack_packet;
+		struct rrr_mqtt_p_sub_usub *sub_usub = (struct rrr_mqtt_p_sub_usub *) packet;
+		if (sub_usub->sub_usuback != NULL) {
+			RRR_DBG_1("Received duplicate %s for %s with id %u\n",
+					RRR_MQTT_P_GET_TYPE_NAME(ack_packet),
+					RRR_MQTT_P_GET_TYPE_NAME(packet),
 					RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
-			if (suback->dup == 0) {
-				RRR_MSG_ERR("Duplicate SUBACK did not have DUP flag set\n");
+			if (sub_usuback->dup == 0) {
+				RRR_MSG_ERR("Duplicate %s did not have DUP flag set\n", RRR_MQTT_P_GET_TYPE_NAME(ack_packet));
 				ret = RRR_FIFO_CALLBACK_ERR;
 				goto out;
 			}
-			RRR_MQTT_P_DECREF(subscribe->suback);
-			subscribe->suback = NULL;
+			RRR_MQTT_P_DECREF(sub_usub->sub_usuback);
+			sub_usub->sub_usuback = NULL;
 		}
 
-		suback->orig_subscribe = subscribe;
-		subscribe->suback = suback;
+		sub_usuback->orig_sub_usub = sub_usub;
+		sub_usub->sub_usuback = sub_usuback;
 		ack_packet = NULL;
 	}
 	else {
@@ -1295,7 +1325,48 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 	}
 
+	if (RRR_DEBUGLEVEL_1) {
+		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
+	}
+
 	SESSION_RAM_UNLOCK(ram_session);
+
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_remove_subscriptions (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p_unsubscribe *unsubscribe
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	int removed_count = 0;
+
+	SESSION_RAM_LOCK(ram_session);
+
+	ret = rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
+			ram_session->subscriptions,
+			unsubscribe->subscriptions,
+			&removed_count
+	);
+	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
+		RRR_MSG_ERR("Could not remove subscriptions from session in __rrr_mqtt_session_ram_add_subscriptions\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	}
+
+	if (RRR_DEBUGLEVEL_1) {
+		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
+	}
+
+	// Don't goto and jump over this
+	SESSION_RAM_UNLOCK(ram_session);
+
+	if (RRR_LL_COUNT(unsubscribe->subscriptions) != removed_count) {
+		RRR_MSG_ERR("MQTT %i of %i subscriptions were not removed from the session as requested\n",
+				RRR_LL_COUNT(unsubscribe->subscriptions) - removed_count,
+				RRR_LL_COUNT(unsubscribe->subscriptions)
+		);
+	}
 
 	return ret;
 }
@@ -1363,6 +1434,105 @@ static int __rrr_mqtt_session_ram_receive_suback (
 	return ret;
 }
 
+
+static int __rrr_mqtt_session_ram_receive_unsuback (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p_unsuback *unsuback
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	int removed_count = 0;
+
+	if (unsuback->orig_unsubscribe == NULL) {
+		RRR_BUG("orig_unsubscribe not set for UNSUBACK in __rrr_mqtt_session_ram_receive_unsuback\n");
+	}
+
+	// Needs to be copied due to const
+	struct rrr_mqtt_subscription_collection *orig_collection = NULL;
+	if (rrr_mqtt_subscription_collection_clone(&orig_collection, unsuback->orig_unsubscribe->subscriptions) != 0) {
+		RRR_MSG_ERR("Could not clone subscription collection in __rrr_mqtt_session_ram_receive_unsuback\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out;
+	}
+
+	int orig_count = rrr_mqtt_subscription_collection_count(orig_collection);
+	int new_count = unsuback->acknowledgements_size;
+
+	if (RRR_MQTT_P_IS_V5(unsuback) && orig_count != new_count) {
+		RRR_MSG_ERR("Topic count in received SUBACK did not match the original SUBSCRIBE, broker error\n");
+		ret = RRR_MQTT_SESSION_ERROR;
+		goto out;
+	}
+
+	SESSION_RAM_LOCK(ram_session);
+
+	if (RRR_MQTT_P_IS_V5(unsuback)) {
+		for (int i = 0; i < unsuback->acknowledgements_size; i++) {
+			const struct rrr_mqtt_subscription *subscription;
+			subscription = rrr_mqtt_subscription_collection_get_subscription_by_idx_const (
+					orig_collection,
+					i
+			);
+
+			if (unsuback->acknowledgements[i] == RRR_MQTT_P_5_REASON_OK) {
+				int did_remove = 0;
+				if (rrr_mqtt_subscription_collection_remove_topic (
+						&did_remove,
+						ram_session->subscriptions,
+						subscription->topic_filter
+				) != 0) {
+					RRR_MSG_ERR("Error while removing subscription from collection in __rrr_mqtt_session_ram_receive_unsuback\n");
+					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+					goto out_unlock;
+				}
+
+				if (did_remove != 1) {
+					RRR_MSG_ERR("Tried to remove non-existent topic '%s' from collection in __rrr_mqtt_session_ram_receive_unsuback\n",
+							subscription->topic_filter);
+					ret = RRR_MQTT_SESSION_ERROR;
+					goto out_unlock;
+				}
+
+				removed_count++;
+			}
+			else {
+				RRR_DBG_1("MQTT unsubscription of topic '%s' failed as it was rejected by the broker with reason %u\n",
+						subscription->topic_filter, unsuback->acknowledgements[i]);
+			}
+		}
+	}
+	else {
+		// For version 3.1 we just have to assume that all subscriptions were removed at broker
+		// as no success messages are returned in the ACK
+		ret = rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
+				ram_session->subscriptions,
+				orig_collection,
+				&removed_count
+		);
+
+		if (ret != 0) {
+			goto out_unlock;
+		}
+	}
+
+	if (RRR_DEBUGLEVEL_1) {
+		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
+	}
+
+	if (RRR_LL_COUNT(orig_collection) != removed_count) {
+		RRR_MSG_ERR("Warning: Removed subscription count upon UNSUBACK did not match topic count in UNSUBSCRIBE\n");
+	}
+
+	out_unlock:
+	SESSION_RAM_UNLOCK(ram_session);
+
+	out:
+	if (orig_collection != NULL) {
+		rrr_mqtt_subscription_collection_destroy(orig_collection);
+	}
+	return ret;
+}
+
 static int __rrr_mqtt_session_ram_process_ack (
 		unsigned int *match_count,
 		struct rrr_mqtt_session_ram *ram_session,
@@ -1412,6 +1582,9 @@ static int __rrr_mqtt_session_ram_process_ack (
 		else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBACK) {
 			// Duplicate SUBACK packet is OK
 		}
+		else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBACK) {
+			// Duplicate UNSUBACK packet is OK
+		}
 		else {
 			RRR_MSG_ERR("Packet identifier %u missing for ACK of type %s for packet which originated from us, this is a session error\n",
 					RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
@@ -1426,6 +1599,16 @@ static int __rrr_mqtt_session_ram_process_ack (
 		}
 		if (__rrr_mqtt_session_ram_receive_suback(ram_session, (struct rrr_mqtt_p_suback *) packet) != 0) {
 			RRR_MSG_ERR("Error while handling SUBACK packet in __rrr_mqtt_session_ram_process_ack\n");
+			ret = RRR_MQTT_SESSION_ERROR;
+			goto out;
+		}
+	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBACK) {
+		if (packet_was_outbound == 0) {
+			RRR_BUG("packet_was_outbound was zero for UNSUBACK in __rrr_mqtt_session_ram_process_ack\n");
+		}
+		if (__rrr_mqtt_session_ram_receive_unsuback(ram_session, (struct rrr_mqtt_p_unsuback *) packet) != 0) {
+			RRR_MSG_ERR("Error while handling UNSUBACK packet in __rrr_mqtt_session_ram_process_ack\n");
 			ret = RRR_MQTT_SESSION_ERROR;
 			goto out;
 		}
@@ -1720,9 +1903,12 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_CALLBACK
 			}
 		}
 	}
-	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
-		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
-		if (subscribe->suback != NULL) {
+	else if (
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE
+	) {
+		struct rrr_mqtt_p_sub_usub *sub_usub = (struct rrr_mqtt_p_sub_usub *) packet;
+		if (sub_usub->sub_usuback != NULL) {
 			goto out_unlock;
 		}
 		packet_to_transmit = packet;
@@ -1909,6 +2095,7 @@ static int __rrr_mqtt_session_ram_send_packet (
 
 	RRR_MQTT_P_LOCK(packet);
 
+	// TODO : Re-order based on probability
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
 		if ((ret = __rrr_mqtt_session_ram_add_subscriptions(
 				ram_session,
@@ -1916,6 +2103,10 @@ static int __rrr_mqtt_session_ram_send_packet (
 		) != RRR_MQTT_SESSION_OK) {
 			goto out_unlock;
 		}
+	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE) {
+		// Changes take effect when we receive UNSUBACK
+		goto out_write_to_buffer;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
@@ -1999,6 +2190,9 @@ static int __rrr_mqtt_session_ram_receive_packet (
 		// to the session.
 		ret = __rrr_mqtt_session_ram_add_subscriptions(ram_session, (struct rrr_mqtt_p_subscribe *) packet);
 	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBSCRIBE) {
+		ret = __rrr_mqtt_session_ram_remove_subscriptions(ram_session, (struct rrr_mqtt_p_unsubscribe *) packet);
+	}
 	else if (RRR_MQTT_P_IS_ACK(packet)) {
 		RRR_DBG_3("Receive ACK packet %p with identifier %u of type %s\n",
 			packet, RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
@@ -2017,6 +2211,9 @@ static int __rrr_mqtt_session_ram_receive_packet (
 				packet_was_outbound = 1;
 				break;
 			case RRR_MQTT_P_TYPE_SUBACK:
+				packet_was_outbound = 1;
+				break;
+			case RRR_MQTT_P_TYPE_UNSUBACK:
 				packet_was_outbound = 1;
 				break;
 			case RRR_MQTT_P_TYPE_PINGRESP:
