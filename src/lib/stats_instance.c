@@ -43,7 +43,7 @@ static int __rrr_stats_instance_rate_counter_new (
 
 	struct rrr_stats_instance_rate_counter *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new A\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new A\n");
 		ret = 1;
 		goto out;
 	}
@@ -51,13 +51,13 @@ static int __rrr_stats_instance_rate_counter_new (
 	memset(result, '\0', sizeof(*result));
 
 	if ((result->name = strdup(name)) == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new B\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_instance_rate_counter_new B\n");
 		ret = 1;
 		goto out_free;
 	}
 
 	result->id = id;
-	result->prev_time = time_get_64();
+	result->prev_time = rrr_time_get_64();
 
 	*target = result;
 
@@ -99,7 +99,7 @@ int rrr_stats_instance_new (
 
 	struct rrr_stats_instance *instance = malloc(sizeof(*instance));
 	if (instance == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_stats_instance_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_stats_instance_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -107,20 +107,20 @@ int rrr_stats_instance_new (
 	memset(instance, '\0', sizeof(*instance));
 
 	if (pthread_mutex_init(&instance->lock, 0) != 0) {
-		VL_MSG_ERR("Could not initialize mutex in  rrr_stats_instance_new\n");
+		RRR_MSG_ERR("Could not initialize mutex in  rrr_stats_instance_new\n");
 		ret = 1;
 		goto out_free;
 	}
 
 	if ((instance->name = strdup(name)) == NULL) {
-		VL_MSG_ERR("Could not save instance name in rrr_stats_instance_new\n");
+		RRR_MSG_ERR("Could not save instance name in rrr_stats_instance_new\n");
 		ret = 1;
 		goto out_destroy_mutex;
 	}
 
 	// NOTE : We won't trap memory or other errors here very well as program continues to run upon any error
 	if ((ret = rrr_stats_engine_handle_obtain(&instance->stats_handle, engine)) != 0) {
-		VL_DEBUG_MSG_1("Could not obtain stats handle in rrr_stats_instance_new, statistics will be disabled. Return was %i.\n", ret);
+		RRR_DBG_1("Could not obtain stats handle in rrr_stats_instance_new, statistics will be disabled. Return was %i.\n", ret);
 		ret = 0;
 	}
 
@@ -179,7 +179,7 @@ static int __rrr_stats_instance_post_text (
 			text,
 			strlen(text) + 1
 	) != 0) {
-		VL_MSG_ERR("Could not initialize statistics message in rrr_stats_message_post_text\n");
+		RRR_MSG_ERR("Could not initialize statistics message in rrr_stats_message_post_text\n");
 		ret = 1;
 		goto out;
 	}
@@ -190,7 +190,7 @@ static int __rrr_stats_instance_post_text (
 			RRR_STATS_INSTANCE_PATH_PREFIX,
 			&message
 	)) != 0) {
-		VL_MSG_ERR("Error returned from post function in rrr_stats_message_post_text\n");
+		RRR_MSG_ERR("Error returned from post function in rrr_stats_message_post_text\n");
 		ret = 1;
 		goto out;
 	}
@@ -213,7 +213,7 @@ int rrr_stats_instance_post_base10_text (
 ) {
 	char text[128];
 
-	VL_ASSERT(sizeof(long long int) <= 64, long_long_is_lteq_64);
+	RRR_ASSERT(sizeof(long long int) <= 64, long_long_is_lteq_64);
 
 	if (instance->stats_handle == 0) {
 		// Not registered with statistics engine
@@ -255,7 +255,7 @@ int rrr_stats_instance_update_rate (
 	struct rrr_stats_instance_rate_counter *counter = __rrr_stats_instance_rate_counter_find(instance, id);
 	if (counter == NULL) {
 		if (__rrr_stats_instance_rate_counter_new(&counter, id, name) != 0) {
-			VL_MSG_ERR("Could not create rate counter in rrr_stats_instance_update_rate\n");
+			RRR_MSG_ERR("Could not create rate counter in rrr_stats_instance_update_rate\n");
 			return 1;
 		}
 		RRR_LL_APPEND(&instance->rate_counters, counter);
@@ -264,7 +264,7 @@ int rrr_stats_instance_update_rate (
 	counter->accumulator += count;
 	counter->accumulator_total += count;
 
-	uint64_t time_now = time_get_64();
+	uint64_t time_now = rrr_time_get_64();
 	if (time_now - counter->prev_time > RRR_STATS_INSTANCE_RATE_POST_INTERVAL_MS * 1000) {
 		double second = 1 * 1000 * 1000;
 		double period = time_now - counter->prev_time;
@@ -280,7 +280,7 @@ int rrr_stats_instance_update_rate (
 
 		char path_buf[128];
 		if (strlen(name) > 64) {
-			VL_BUG("name too long in rrr_stats_instance_update_rate\n");
+			RRR_BUG("name too long in rrr_stats_instance_update_rate\n");
 		}
 
 		sprintf (path_buf, "%s/per_second", name);

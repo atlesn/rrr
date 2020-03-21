@@ -143,7 +143,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (rrr_stats_instance_new(&stats, INSTANCE_D_STATS(thread_data), INSTANCE_D_NAME(thread_data)) != 0) {
-		VL_MSG_ERR("Could not initialize stats engine for dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initialize stats engine for dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -167,16 +167,12 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		rrr_fifo_buffer_set_do_ratelimit(&data->buffer, 1);
 	}
 
-<<<<<<< HEAD
 	if (rrr_stats_instance_post_default_stickies(stats) != 0) {
-		VL_MSG_ERR("Error while posting default sticky statistics in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Error while posting default sticky statistics in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
 
-	uint64_t time_start = time_get_64();
-=======
 	uint64_t time_start = rrr_time_get_64();
->>>>>>> master
 	int generated_count = 0;
 	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
@@ -188,7 +184,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 			struct rrr_message *reading = rrr_message_new_reading(time, time);
 
-//			VL_DEBUG_MSG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
+//			RRR_DBG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 			generated_count_total++;

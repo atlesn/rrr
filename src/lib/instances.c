@@ -376,6 +376,17 @@ int rrr_instance_metadata_collection_new (
 	return ret;
 }
 
+unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection) {
+	unsigned int result = 0;
+
+	RRR_INSTANCE_LOOP(instance, collection) {
+		(void)(instance);
+		result++;
+	}
+
+	return result;
+}
+
 void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
 	if (data == NULL) {
 		return;

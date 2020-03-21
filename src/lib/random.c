@@ -34,7 +34,7 @@ int rrr_rand(void) {
 	pthread_mutex_lock(&rrr_rand_lock);
 
 	if (rrr_rand_initialized != 1) {
-		srand((unsigned int) (time_get_64() & 0xffffffff));
+		srand((unsigned int) (rrr_time_get_64() & 0xffffffff));
 		rrr_rand_initialized = 1;
 	}
 

@@ -36,7 +36,7 @@ static int __rrr_stats_tree_branch_new (
 
 	struct rrr_stats_tree_branch *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_stats_tree_branch_new A\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_tree_branch_new A\n");
 		ret = 1;
 		goto out;
 	}
@@ -45,12 +45,12 @@ static int __rrr_stats_tree_branch_new (
 
 	result->name = strdup(name);
 	if (name == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_stats_tree_branch_new B\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_tree_branch_new B\n");
 		ret = 1;
 		goto out_free_result;
 	}
 
-	result->last_seen = time_get_64();
+	result->last_seen = rrr_time_get_64();
 
 	*target = result;
 	goto out;
@@ -131,13 +131,13 @@ static int __rrr_stats_tree_insert_or_update_branch (
 		const char *path_position,
 		const struct rrr_stats_message *value
 ) {
-	branch->last_seen = time_get_64();
+	branch->last_seen = rrr_time_get_64();
 
 	// Last level (leaf)?
 	if (strlen(path_position) == 0) {
 		struct rrr_stats_message *new_value;
 		if (rrr_stats_message_duplicate(&new_value, value) != 0) {
-			VL_MSG_ERR("Could not duplicate message in __rrr_stats_tree_insert_or_update_branch n");
+			RRR_MSG_ERR("Could not duplicate message in __rrr_stats_tree_insert_or_update_branch n");
 			return RRR_STATS_TREE_HARD_ERROR;
 		}
 		if (branch->value != NULL) {
@@ -152,7 +152,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 	__rrr_stats_get_first_path_level(path_tmp, &path_position, path_position);
 
 	if (strlen(path_tmp) == 0) {
-		VL_MSG_ERR("Invalid path '%s' in message\n", value->path);
+		RRR_MSG_ERR("Invalid path '%s' in message\n", value->path);
 		return RRR_STATS_TREE_SOFT_ERROR;
 	}
 
@@ -164,7 +164,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 
 	struct rrr_stats_tree_branch *new_branch;
 	if (__rrr_stats_tree_branch_new(&new_branch, path_tmp) != 0) {
-		VL_MSG_ERR("Could not create new branch in __rrr_stats_tree_insert_or_update_branch \n");
+		RRR_MSG_ERR("Could not create new branch in __rrr_stats_tree_insert_or_update_branch \n");
 		return RRR_STATS_TREE_HARD_ERROR;
 	}
 	RRR_LL_APPEND(branch, new_branch);
@@ -174,7 +174,7 @@ static int __rrr_stats_tree_insert_or_update_branch (
 
 int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct rrr_stats_message *message) {
 	if (strlen (message->path) < 2) {
-		VL_MSG_ERR("Path of message was too short in rrr_stats_tree_insert_or_update (value was '%s')", message->path);
+		RRR_MSG_ERR("Path of message was too short in rrr_stats_tree_insert_or_update (value was '%s')", message->path);
 		return RRR_STATS_TREE_SOFT_ERROR;
 	}
 

@@ -120,6 +120,7 @@ struct instance_metadata *rrr_instance_find (
 		const char *name
 );
 
+unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection);
 void rrr_instance_free_thread(struct rrr_instance_thread_data *data);
 struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data);
 int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);

@@ -122,11 +122,11 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 			text,
 			strlen(text) + 1
 	) != 0) {
-		VL_BUG("Could not initialize main statistics message\n");
+		RRR_BUG("Could not initialize main statistics message\n");
 	}
 
 	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
-		VL_MSG_ERR("Could not post main statistics message\n");
+		RRR_MSG_ERR("Could not post main statistics message\n");
 		return EXIT_FAILURE;
 	}
 
@@ -136,7 +136,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct instance_metadata_collection *instances) {
 	int ret = 0;
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
-		VL_MSG_ERR("Error while obtaining statistics handle in main\n");
+		RRR_MSG_ERR("Error while obtaining statistics handle in main\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -147,9 +147,9 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 			msg_text,
 			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
 			"RRR running with %u instances\n",
-			instance_metadata_collection_count(instances)
+			rrr_instance_metadata_collection_count(instances)
 	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
-		VL_BUG("Statistics message too long in main\n");
+		RRR_BUG("Statistics message too long in main\n");
 	}
 
 	if (main_stats_post_sticky_text_message(stats_data, "status", msg_text) != 0) {
@@ -235,7 +235,7 @@ int main (int argc, const char *argv[]) {
 	// Start statistics engine
 	if (cmd_exists(&cmd, "stats", 0)) {
 		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
-			VL_MSG_ERR("Could not initialize statistics engine\n");
+			RRR_MSG_ERR("Could not initialize statistics engine\n");
 			goto out_destroy_metadata_collection;
 		}
 	}
@@ -328,15 +328,11 @@ int main (int argc, const char *argv[]) {
 			}
 		}
 
-<<<<<<< HEAD
 		if (stats_data.engine.initialized != 0) {
 				rrr_stats_engine_tick(&stats_data.engine);
 		}
 
-		thread_run_ghost_cleanup(&count);
-=======
 		rrr_thread_run_ghost_cleanup(&count);
->>>>>>> master
 		if (count > 0) {
 			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
 		}
