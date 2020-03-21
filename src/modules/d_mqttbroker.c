@@ -198,6 +198,12 @@ static void update_stats (struct mqtt_broker_data *data, struct rrr_stats_instan
 	rrr_stats_instance_post_unsigned_base10_text(stats, "connections_active", 0, broker_stats.connections_active);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_connected", 0, broker_stats.total_connections_accepted);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_disconnected", 0, broker_stats.total_connections_closed);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, broker_stats.session_stats.total_publish_received);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, broker_stats.session_stats.total_publish_not_forwarded);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, broker_stats.session_stats.total_publish_forwarded);
+
+	// This will always be zero for the broker, nothing is delivered locally. Keep it here nevertheless to avoid accidently activating it.
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_delivered", 0, broker_stats.session_stats.total_publish_delivered);
 }
 
 static void *thread_entry_mqtt (struct rrr_thread *thread) {

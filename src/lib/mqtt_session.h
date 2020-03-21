@@ -73,6 +73,10 @@ struct rrr_mqtt_session_collection_stats {
 	uint64_t active;
 	uint64_t total_created;
 	uint64_t total_deleted;
+	uint64_t total_publish_received;
+	uint64_t total_publish_delivered;
+	uint64_t total_publish_forwarded;
+	uint64_t total_publish_not_forwarded;
 };
 
 // Session engines must implement these methods

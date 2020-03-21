@@ -119,14 +119,22 @@ struct rrr_mqtt_session_collection_ram_data {
 	pthread_mutex_unlock(&session->lock); } while(0)
 
 // Session collection lock must be held when using stats data
-static void __rrr_mqtt_session_collection_ram_stats_notify_create (struct rrr_mqtt_session_collection_ram_data *data) {
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_create (struct rrr_mqtt_session_collection_ram_data *data) {
 	data->stats.active++;
 	data->stats.total_created++;
 }
 
-static void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct rrr_mqtt_session_collection_ram_data *data) {
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct rrr_mqtt_session_collection_ram_data *data) {
 	data->stats.active--;
 	data->stats.total_deleted++;
+}
+
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_forwarded (struct rrr_mqtt_session_collection_ram_data *data, int num) {
+	data->stats.total_publish_forwarded += num;
+}
+
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_not_forwarded (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.total_publish_not_forwarded++;
 }
 
 static int __rrr_mqtt_session_collection_ram_get_stats (
@@ -135,7 +143,28 @@ static int __rrr_mqtt_session_collection_ram_get_stats (
 ) {
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *)(collection);
 
+	struct rrr_fifo_buffer_stats fifo_stats = {0};
+
 	SESSION_COLLECTION_RAM_LOCK(data);
+
+	// We can obtain some statistics from the buffers, hence we don't need to count
+	// the following parameters continuously:
+
+	// Remember to use the most logic parameter from fifo (written entries or deleted entries)
+
+	if (rrr_fifo_buffer_get_stats(&fifo_stats, &data->publish_forward_queue.buffer) == 0) {
+		data->stats.total_publish_received = fifo_stats.total_entries_written;
+	}
+	else {
+		RRR_MSG_ERR("Warning: Error while getting stats from fifo publish_forward_queue in __rrr_mqtt_session_collection_ram_get_stats \n");
+	}
+
+	if (rrr_fifo_buffer_get_stats(&fifo_stats, &data->publish_local_queue.buffer) == 0) {
+		data->stats.total_publish_delivered = fifo_stats.total_entries_deleted;
+	}
+	else {
+		RRR_MSG_ERR("Warning: Error while getting stats from fifo publish_local_queue in __rrr_mqtt_session_collection_ram_get_stats \n");
+	}
 
 	*target = data->stats;
 
@@ -517,7 +546,8 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 		struct rrr_mqtt_session_ram *ram_session,
-		const struct rrr_mqtt_p_publish *publish
+		const struct rrr_mqtt_p_publish *publish,
+		int *match_count
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -529,7 +559,8 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 			ram_session->subscriptions,
 			publish,
 			__rrr_mqtt_session_ram_receive_forwarded_publish_match_callback,
-			&callback_data
+			&callback_data,
+			match_count
 	);
 
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
@@ -557,21 +588,37 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 
 	SESSION_COLLECTION_RAM_LOCK(ram_data);
 
+	int total_match_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
 		RRR_MQTT_P_INCREF(publish);
 		RRR_MQTT_P_LOCK(publish);
-		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish);
+
+		int match_count = 0;
+		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish, &match_count);
+		total_match_count += match_count;
+
 		if (ret_tmp != RRR_MQTT_SESSION_OK) {
 			RRR_MSG_ERR("Error while receiving forwarded publish message, return was %i\n", ret);
 			ret |= RRR_FIFO_GLOBAL_ERR;
 			RRR_LL_ITERATE_LAST();
 		}
+
 		RRR_MQTT_P_UNLOCK(publish);
 		RRR_MQTT_P_DECREF(publish);
 	RRR_LL_ITERATE_END_CHECK_DESTROY(
 			ram_data,
 			__rrr_mqtt_session_ram_decref_unlocked(node)
 	);
+	// TODO : Probably don't need CHECK_DESTROY here, don't seem to destroy anything anyway
+
+
+	if (total_match_count == 0) {
+		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
+	}
+	else {
+		__rrr_mqtt_session_collection_ram_stats_notify_forwarded(ram_data, total_match_count);
+	}
 
 	SESSION_COLLECTION_RAM_UNLOCK(ram_data);
 
