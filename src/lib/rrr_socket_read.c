@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
+#include "rrr_strerror.h"
 #include "vl_time.h"
 
 static struct rrr_socket_read_session *__rrr_socket_read_session_new (
@@ -185,7 +186,7 @@ int rrr_socket_read_message (
 
 	/*
 	if (ioctl (fd, FIONREAD, &bytes_int) != 0) {
-		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", strerror(errno));
+		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -245,7 +246,7 @@ int rrr_socket_read_message (
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -276,7 +277,7 @@ int rrr_socket_read_message (
 					// Not a file
 				}
 				else {
-					VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", strerror(errno));
+					VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", rrr_strerror(errno));
 				}
 			}
 			else {

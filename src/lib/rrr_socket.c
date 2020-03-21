@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
+#include "rrr_strerror.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -71,7 +72,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder) {
 			// A socket is sometimes closed by the other host
 			if (errno != EBADF) {
 				RRR_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n",
-						holder->options.fd, strerror(errno));
+						holder->options.fd, rrr_strerror(errno));
 			}
 		}
 	}
@@ -241,11 +242,11 @@ int rrr_socket_accept (
 	if (fd_out != -1 && (options.type & O_NONBLOCK) != 0) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
-			RRR_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
 			goto out_close;
 		}
 		if (fcntl(fd_out, F_SETFL, flags | O_NONBLOCK) == -1) {
-			RRR_MSG_ERR("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while setting O_NONBLOCK on socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
 			goto out_close;
 		}
 	}
@@ -284,16 +285,16 @@ int rrr_socket_bind_and_listen (
 	if (sockopts != 0) {
 		int enable = 1;
 		if (setsockopt (fd, SOL_SOCKET, sockopts, &enable, sizeof(enable)) != 0) {
-			RRR_MSG_ERR ("Could not set SO_REUSEADDR for socket: %s\n", strerror(errno));
+			RRR_MSG_ERR ("Could not set SO_REUSEADDR for socket: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 	}
 	if (bind(fd, addr, addr_len) != 0) {
-		RRR_MSG_ERR("Could not bind to socket: %s\n",strerror(errno));
+		RRR_MSG_ERR("Could not bind to socket: %s\n",rrr_strerror(errno));
 		return 1;
 	}
 	if (listen(fd, num_clients) != 0) {
-		RRR_MSG_ERR("Could not listen on socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Could not listen on socket: %s\n", rrr_strerror(errno));
 		return 1;
 	}
 	return 0;
@@ -365,7 +366,7 @@ static int __rrr_socket_close (int fd, int ignore_unregistered) {
 		if (ret != 0) {
 			// A socket is sometimes closed by the other host
 			if (errno != EBADF) {
-				RRR_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n", fd, strerror(errno));
+				RRR_MSG_ERR("Warning: Socket close of fd %i failed in rrr_socket_close: %s\n", fd, rrr_strerror(errno));
 			}
 		}
 	}
@@ -502,7 +503,7 @@ int rrr_socket_connect_nonblock (
 		};
 
 		if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
-			RRR_MSG_ERR("Error from poll() while connecting: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error from poll() while connecting: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -518,7 +519,7 @@ int rrr_socket_connect_nonblock (
 			int error = 0;
 			socklen_t len = sizeof(error);
 			if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-				RRR_MSG_ERR("Error from getsockopt while connecting: %s\n", strerror(errno));
+				RRR_MSG_ERR("Error from getsockopt while connecting: %s\n", rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -526,7 +527,7 @@ int rrr_socket_connect_nonblock (
 				goto out;
 			}
 			else if (error == EINPROGRESS) {
-				RRR_MSG_ERR("Timeout from while connecting: %s\n", strerror(errno));
+				RRR_MSG_ERR("Timeout from while connecting: %s\n", rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -543,7 +544,7 @@ int rrr_socket_connect_nonblock (
 		}
 	}
 	else {
-		RRR_MSG_ERR("Error while connecting: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while connecting: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -577,7 +578,7 @@ int rrr_socket_unix_create_and_connect (
 
 	socket_fd = rrr_socket(AF_UNIX, SOCK_STREAM|(nonblock ? SOCK_NONBLOCK : 0), 0, creator, NULL);
 	if (socket_fd < 0) {
-		RRR_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while creating socket in rrr_socket_unix_create_and_connect: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
@@ -586,7 +587,7 @@ int rrr_socket_unix_create_and_connect (
 	for (int i = 0; i < 10 && connected == 0; i++) {
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
 			RRR_MSG_ERR("Could not connect to socket %s try %i of %i: %s\n",
-					filename, i, 10, strerror(errno));
+					filename, i, 10, rrr_strerror(errno));
 			usleep(25000);
 		}
 		else {
@@ -653,7 +654,7 @@ int rrr_socket_sendto (
 			}
 			else {
 				RRR_MSG_ERR("Error from send function in rrr_socket_sendto fd %i: %s\n",
-						fd, strerror(errno));
+						fd, rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}

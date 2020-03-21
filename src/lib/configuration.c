@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "configuration.h"
+#include "rrr_strerror.h"
 
 #include "instance_config.h"
 
@@ -516,19 +517,19 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 	FILE *cfgfile = fopen(filename, "r");
 
 	if (cfgfile == NULL) {
-		RRR_MSG_ERR("Could not open configuration file %s: %s\n", filename, strerror(errno));
+		RRR_MSG_ERR("Could not open configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out;
 	}
 
 	if (fseek(cfgfile, 0L, SEEK_END) != 0) {
-		RRR_MSG_ERR("Could not fseek to the end in configuration file %s: %s\n", filename, strerror(errno));
+		RRR_MSG_ERR("Could not fseek to the end in configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
 	ssize_t size_signed = ftell(cfgfile);
 	if (size_signed < 0) {
-		RRR_MSG_ERR("Could not get size of configuration file %s: %s\n", filename, strerror(errno));
+		RRR_MSG_ERR("Could not get size of configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
@@ -541,7 +542,7 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 	}
 
 	if (fseek(cfgfile, 0L, 0) != 0) {
-		RRR_MSG_ERR("Could not fseek to the beginning in configuration file %s: %s\n", filename, strerror(errno));
+		RRR_MSG_ERR("Could not fseek to the beginning in configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
@@ -555,7 +556,7 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 
 	size_t bytes = fread(file_data, 1, size, cfgfile);
 	if (bytes != size) {
-		RRR_MSG_ERR("The whole configuration file was not read (result %lu): %s\n", bytes, strerror(ferror(cfgfile)));
+		RRR_MSG_ERR("The whole configuration file was not read (result %lu): %s\n", bytes, rrr_strerror(ferror(cfgfile)));
 		err = 1;
 		goto out_free;
 	}

@@ -214,6 +214,8 @@ int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
 
+	rrr_strerror_init();
+
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 
@@ -358,5 +360,6 @@ int main (int argc, const char **argv) {
 	rrr_signal_handler_remove(signal_handler);
 	rrr_exit_cleanup_methods_run_and_free();
 	cmd_destroy(&cmd);
+	rrr_strerror_cleanup();
 	return ret;
 }

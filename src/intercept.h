@@ -27,11 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INTERCEPT_ALLOW_READDIR
 	// Not guaranteed thread-safety in current POSIX specification, rrr wrapper with
 	// locking must be used
-#	define readdir(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION
+#	define readdir(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_READDIR
 #endif
 
 #ifndef RRR_INTERCEPT_ALLOW_STRERROR
-// TODO : intercept strerror, force use of rrr_strerror. Most files must be modified.
+#	define strerror(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_STRERROR
 #endif
 
 #endif /* RRR_INTERCEPT_H */

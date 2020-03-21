@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
 #include "mqtt_assemble.h"
+#include "rrr_strerror.h"
 
 int __rrr_mqtt_connection_collection_read_lock (struct rrr_mqtt_conn_collection *connections) {
 	int ret = RRR_MQTT_CONN_OK;
@@ -1020,7 +1021,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	if (ioctl (connection->ip_data.fd, FIONREAD, &bytes_int) != 0) {
-		RRR_MSG_ERR("Error from ioctl in rrr_mqtt_connection_read: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error from ioctl in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
@@ -1128,7 +1129,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			goto out_unlock;
 		}
-		RRR_MSG_ERR("Error from read in rrr_mqtt_connection_read: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error from read in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
 		goto out_unlock;
 	}
@@ -1370,7 +1371,7 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 				goto out;
 			}
 			RRR_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write: %s\n",
-					strerror(errno));
+					rrr_strerror(errno));
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 		}
 		else if (bytes != data_size) {

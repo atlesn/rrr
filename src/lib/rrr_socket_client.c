@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_client.h"
 #include "rrr_socket_read.h"
+#include "rrr_strerror.h"
 #include "vl_time.h"
 
 static int __rrr_socket_client_destroy (
@@ -138,7 +139,7 @@ int rrr_socket_client_collection_accept (
 	int ret = rrr_socket_accept(collection->listen_fd, &temp.addr, &temp.addr_len, collection->creator);
 	if (ret == -1) {
 		if (errno != EWOULDBLOCK) {
-			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 		return 0;

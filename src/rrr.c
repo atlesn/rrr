@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket.h"
 #include "lib/stats_engine.h"
 #include "lib/stats_message.h"
+#include "lib/rrr_strerror.h"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -195,6 +196,8 @@ int main (int argc, const char *argv[]) {
 		RRR_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	rrr_strerror_init();
 
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_thread_collection *collection = NULL;
@@ -377,5 +380,6 @@ int main (int argc, const char *argv[]) {
 			RRR_DBG_1("Exiting program with errors\n");
 		}
 		cmd_destroy(&cmd);
+		rrr_strerror_cleanup();
 		return ret;
 }

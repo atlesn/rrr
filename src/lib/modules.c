@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "modules.h"
+#include "rrr_strerror.h"
 
 #ifndef RRR_MODULE_PATH
 #define RRR_MODULE_PATH "./modules/"
@@ -61,7 +62,7 @@ int rrr_module_load(struct rrr_module_load_data *target, const char *name, const
 			if (errno == ENOENT) {
 				continue;
 			}
-			RRR_MSG_ERR ("Could not stat %s while loading module: %s\n", path, strerror(errno));
+			RRR_MSG_ERR ("Could not stat %s while loading module: %s\n", path, rrr_strerror(errno));
 			continue;
 		}
 
