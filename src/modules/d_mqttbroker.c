@@ -196,6 +196,7 @@ static void update_stats (struct mqtt_broker_data *data, struct rrr_stats_instan
 	rrr_mqtt_broker_get_stats (&broker_stats, data->mqtt_broker_data);
 
 	rrr_stats_instance_post_unsigned_base10_text(stats, "connections_active", 0, broker_stats.connections_active);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "sessions_in_memory", 0, broker_stats.session_stats.in_memory_sessions);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_connected", 0, broker_stats.total_connections_accepted);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_disconnected", 0, broker_stats.total_connections_closed);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, broker_stats.session_stats.total_publish_received);

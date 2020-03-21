@@ -147,6 +147,8 @@ static int __rrr_mqtt_session_collection_ram_get_stats (
 
 	SESSION_COLLECTION_RAM_LOCK(data);
 
+	data->stats.in_memory_sessions = RRR_LL_COUNT(data);
+
 	// We can obtain some statistics from the buffers, hence we don't need to count
 	// the following parameters continuously:
 
