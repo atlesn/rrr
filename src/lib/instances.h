@@ -28,6 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "senders.h"
 #include "threads.h"
 
+struct rrr_stats_engine;
+
 // TODO : Many pointers in different structs are probably redundant
 
 struct instance_metadata {
@@ -72,6 +74,7 @@ struct instance_thread_init_data {
 	struct rrr_config *global_config;
 	struct rrr_instance_dynamic_data *module;
 	struct instance_sender_collection *senders;
+	struct rrr_stats_engine *stats;
 };
 
 struct rrr_instance_thread_data {
@@ -85,6 +88,8 @@ struct rrr_instance_thread_data {
 	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
 	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
 };
+
+#define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
 
 #define RRR_INSTANCE_LOOP(target,collection) \
 	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
@@ -114,6 +119,8 @@ struct instance_metadata *rrr_instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
 );
+
+unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection);
 void rrr_instance_free_thread(struct rrr_instance_thread_data *data);
 struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data);
 int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);

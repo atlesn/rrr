@@ -36,6 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection_ram_data;
 
+/*struct rrr_mqtt_session_ram_stats {
+	uint64_t total_p_received_per_type[16];
+	uint64_t total_p_sent_per_type[16];
+};*/
+
 struct rrr_mqtt_session_ram {
 	// MUST be first
 	struct rrr_mqtt_session session;
@@ -68,6 +73,7 @@ struct rrr_mqtt_session_ram {
 	uint32_t complete_publish_grace_time;
 	int clean_session;
 	struct rrr_mqtt_subscription_collection *subscriptions;
+//	struct rrr_mqtt_session_ram_stats stats;
 };
 
 struct rrr_mqtt_session_collection_ram_data {
@@ -82,6 +88,9 @@ struct rrr_mqtt_session_collection_ram_data {
 
 	// Packets in this queue are stored until read from. Used by client program.
 	struct rrr_mqtt_p_queue publish_local_queue;
+
+	// Should be updated using provided functions to avoid difficult to find bugs
+	struct rrr_mqtt_session_collection_stats stats;
 };
 
 #define SESSION_COLLECTION_RAM_LOCK(data) \
@@ -108,6 +117,63 @@ struct rrr_mqtt_session_collection_ram_data {
 
 #define SESSION_RAM_UNLOCK(session) \
 	pthread_mutex_unlock(&session->lock); } while(0)
+
+// Session collection lock must be held when using stats data
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_create (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.active++;
+	data->stats.total_created++;
+}
+
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.active--;
+	data->stats.total_deleted++;
+}
+
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_forwarded (struct rrr_mqtt_session_collection_ram_data *data, int num) {
+	data->stats.total_publish_forwarded += num;
+}
+
+static inline void __rrr_mqtt_session_collection_ram_stats_notify_not_forwarded (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.total_publish_not_forwarded++;
+}
+
+static int __rrr_mqtt_session_collection_ram_get_stats (
+		struct rrr_mqtt_session_collection_stats *target,
+		struct rrr_mqtt_session_collection *collection
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *)(collection);
+
+	struct rrr_fifo_buffer_stats fifo_stats = {0};
+
+	SESSION_COLLECTION_RAM_LOCK(data);
+
+	data->stats.in_memory_sessions = RRR_LL_COUNT(data);
+
+	// We can obtain some statistics from the buffers, hence we don't need to count
+	// the following parameters continuously:
+
+	// Remember to use the most logic parameter from fifo (written entries or deleted entries)
+
+	if (rrr_fifo_buffer_get_stats(&fifo_stats, &data->publish_forward_queue.buffer) == 0) {
+		data->stats.total_publish_received = fifo_stats.total_entries_written;
+	}
+	else {
+		RRR_MSG_ERR("Warning: Error while getting stats from fifo publish_forward_queue in __rrr_mqtt_session_collection_ram_get_stats \n");
+	}
+
+	if (rrr_fifo_buffer_get_stats(&fifo_stats, &data->publish_local_queue.buffer) == 0) {
+		data->stats.total_publish_delivered = fifo_stats.total_entries_deleted;
+	}
+	else {
+		RRR_MSG_ERR("Warning: Error while getting stats from fifo publish_local_queue in __rrr_mqtt_session_collection_ram_get_stats \n");
+	}
+
+	*target = data->stats;
+
+	SESSION_COLLECTION_RAM_UNLOCK(data);
+
+	return 0;
+}
 
 static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_session_ram *ram_session,
@@ -367,6 +433,9 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out_unlock;
 		}
+
+		__rrr_mqtt_session_collection_ram_stats_notify_create(data);
+
 	}
 
 	RRR_DBG_1("Got a session, session present was %i and no creation was %i\n",
@@ -479,7 +548,8 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 		struct rrr_mqtt_session_ram *ram_session,
-		const struct rrr_mqtt_p_publish *publish
+		const struct rrr_mqtt_p_publish *publish,
+		int *match_count
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -491,7 +561,8 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 			ram_session->subscriptions,
 			publish,
 			__rrr_mqtt_session_ram_receive_forwarded_publish_match_callback,
-			&callback_data
+			&callback_data,
+			match_count
 	);
 
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
@@ -519,21 +590,37 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 
 	SESSION_COLLECTION_RAM_LOCK(ram_data);
 
+	int total_match_count = 0;
+
 	RRR_LL_ITERATE_BEGIN(ram_data, struct rrr_mqtt_session_ram);
 		RRR_MQTT_P_INCREF(publish);
 		RRR_MQTT_P_LOCK(publish);
-		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish);
+
+		int match_count = 0;
+		int ret_tmp = __rrr_mqtt_session_ram_receive_forwarded_publish(node, publish, &match_count);
+		total_match_count += match_count;
+
 		if (ret_tmp != RRR_MQTT_SESSION_OK) {
 			RRR_MSG_ERR("Error while receiving forwarded publish message, return was %i\n", ret);
 			ret |= RRR_FIFO_GLOBAL_ERR;
 			RRR_LL_ITERATE_LAST();
 		}
+
 		RRR_MQTT_P_UNLOCK(publish);
 		RRR_MQTT_P_DECREF(publish);
 	RRR_LL_ITERATE_END_CHECK_DESTROY(
 			ram_data,
 			__rrr_mqtt_session_ram_decref_unlocked(node)
 	);
+	// TODO : Probably don't need CHECK_DESTROY here, don't seem to destroy anything anyway
+
+
+	if (total_match_count == 0) {
+		__rrr_mqtt_session_collection_ram_stats_notify_not_forwarded(ram_data);
+	}
+	else {
+		__rrr_mqtt_session_collection_ram_stats_notify_forwarded(ram_data, total_match_count);
+	}
 
 	SESSION_COLLECTION_RAM_UNLOCK(ram_data);
 
@@ -2057,14 +2144,11 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		goto no_delete;
 	}
 
-/*	This seems stupid, Don't do this.
- * 	if (ram_session->clean_session == 1) {
+ 	if (ram_session->clean_session == 1) {
 		RRR_DBG_1("Destroying session which had clean session set upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
-	else */
-     
-	if (ram_session->session_properties.session_expiry == 0) {
+	else if (ram_session->session_properties.session_expiry == 0) {
 		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
@@ -2075,6 +2159,10 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 				ram_session
 		);
 		*session_to_find = NULL;
+
+		SESSION_COLLECTION_RAM_LOCK(ram_data);
+		__rrr_mqtt_session_collection_ram_stats_notify_delete(ram_data);
+		SESSION_COLLECTION_RAM_UNLOCK(ram_data);
 	}
 
 	no_delete:
@@ -2241,6 +2329,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 }
 
 const struct rrr_mqtt_session_collection_methods methods = {
+		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,

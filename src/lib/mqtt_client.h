@@ -35,6 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection;
 
+struct rrr_mqtt_client_stats {
+	struct rrr_mqtt_session_collection_stats session_stats;
+};
+
 struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
@@ -99,6 +103,11 @@ int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
+);
+
+void rrr_mqtt_client_get_stats (
+		struct rrr_mqtt_client_stats *target,
+		struct rrr_mqtt_client_data *data
 );
 
 #endif /* RRR_MQTT_CLIENT_H */

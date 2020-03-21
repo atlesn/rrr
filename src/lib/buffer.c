@@ -84,6 +84,28 @@ static int __rrr_fifo_verify_counter(struct rrr_fifo_buffer *buffer) {
 
 #endif
 
+#define RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(action)		\
+	pthread_mutex_lock(&buffer->stats_mutex);					\
+	action;												\
+	pthread_mutex_unlock(&buffer->stats_mutex)
+
+static inline void __rrr_fifo_buffer_stats_add_written (struct rrr_fifo_buffer *buffer, int num) {
+	RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_written += num);
+}
+
+static inline void __rrr_fifo_buffer_stats_add_deleted (struct rrr_fifo_buffer *buffer, int num) {
+	RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(buffer->stats.total_entries_deleted += num);
+}
+
+int rrr_fifo_buffer_get_stats (struct rrr_fifo_buffer_stats *stats, struct rrr_fifo_buffer *buffer) {
+	// TODO : Needs proper locking, the whole buffer-lock-thing needs to be re-done
+	if (buffer->invalid) {
+		return 1;
+	}
+	RRR_FIFO_BUFFER_WITH_STATS_LOCK_DO(*stats = buffer->stats);
+	return 0;
+}
+
 static void __rrr_fifo_merge_write_queue_nolock(struct rrr_fifo_buffer *buffer) {
 	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
 
@@ -105,6 +127,8 @@ static void __rrr_fifo_merge_write_queue_nolock(struct rrr_fifo_buffer *buffer) 
 
 	//	int merge_entries = 0;
 	//  int merge_result = 0;
+
+		__rrr_fifo_buffer_stats_add_written(buffer, buffer->write_queue_entry_count);
 
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
 	//	merge_entries = buffer->write_queue_entry_count;
@@ -167,6 +191,8 @@ void rrr_fifo_buffer_invalidate_with_callback (
 
 	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
 
+	__rrr_fifo_buffer_stats_add_deleted(buffer, freed_counter);
+
 	RRR_DBG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 	pthread_mutex_unlock (&buffer->mutex);
 }
@@ -179,6 +205,7 @@ void rrr_fifo_buffer_destroy(struct rrr_fifo_buffer *buffer) {
 	pthread_mutex_destroy (&buffer->mutex);
 	pthread_mutex_destroy (&buffer->write_queue_mutex);
 	pthread_mutex_destroy (&buffer->ratelimit_mutex);
+	pthread_mutex_destroy (&buffer->stats_mutex);
 	sem_destroy(&buffer->new_data_available);
 }
 
@@ -198,6 +225,9 @@ int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer) {
 	if (ret != 0) { goto out;}
 
 	ret = pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
+	if (ret != 0) { goto out;}
+
+	ret = pthread_mutex_init (&buffer->stats_mutex, NULL);
 	if (ret != 0) { goto out;}
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
@@ -320,6 +350,8 @@ int rrr_fifo_buffer_clear_with_callback (
 		entry = next;
 	}
 
+	__rrr_fifo_buffer_stats_add_deleted(buffer, freed_counter);
+
 	RRR_DBG_3 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
@@ -417,6 +449,8 @@ int rrr_fifo_search (
 
 	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
 
+	__rrr_fifo_buffer_stats_add_deleted(buffer, cleared_entries);
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= cleared_entries;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
@@ -485,6 +519,8 @@ int rrr_fifo_clear_order_lt (
 	}
 
 	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
+
+	__rrr_fifo_buffer_stats_add_deleted(buffer, cleared_entries);
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= cleared_entries;
@@ -615,6 +651,8 @@ int rrr_fifo_read_clear_forward (
 
 		current = next;
 	}
+
+	__rrr_fifo_buffer_stats_add_deleted(buffer, processed_entries);
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count -= processed_entries;
@@ -932,6 +970,8 @@ void rrr_fifo_buffer_write(struct rrr_fifo_buffer *buffer, char *data, unsigned 
 
 	__rrr_fifo_buffer_update_ratelimit(buffer);
 
+	__rrr_fifo_buffer_stats_add_written(buffer, 1);
+
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count++;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
@@ -1059,6 +1099,8 @@ void rrr_fifo_buffer_write_ordered (struct rrr_fifo_buffer *buffer, uint64_t ord
 	__rrr_fifo_buffer_set_data_available(buffer);
 
 	__rrr_fifo_buffer_update_ratelimit(buffer);
+
+	__rrr_fifo_buffer_stats_add_written(buffer, 1);
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->entry_count++;

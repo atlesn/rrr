@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
 #include "vl_time.h"
+#include "rrr_strerror.h"
 #include "../global.h"
 
 //#define VL_THREAD_NO_WATCHDOGS
@@ -747,7 +748,7 @@ int rrr_thread_start (struct rrr_thread *thread) {
 
 	err = pthread_create(&thread->thread, NULL, __thread_start_routine_intermediate, thread);
 	if (err != 0) {
-		RRR_MSG_ERR ("Error while starting thread: %s\n", strerror(err));
+		RRR_MSG_ERR ("Error while starting thread: %s\n", rrr_strerror(err));
 		goto out_error;
 	}
 
@@ -770,7 +771,7 @@ int rrr_thread_start (struct rrr_thread *thread) {
 
 	err = pthread_create(&thread->watchdog->thread, NULL, __thread_watchdog_entry, watchdog_data);
 	if (err != 0) {
-		RRR_MSG_ERR ("Error while starting watchdog thread: %s\n", strerror(err));
+		RRR_MSG_ERR ("Error while starting watchdog thread: %s\n", rrr_strerror(err));
 		pthread_cancel(thread->thread);
 		goto out_error;
 	}

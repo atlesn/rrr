@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "settings.h"
 #include "rrr_socket_msg.h"
+#include "rrr_strerror.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
 	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"
@@ -266,7 +267,7 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	int fd = open(filename, O_RDONLY);
 	if (fd < 1) {
 		RRR_MSG_ERR("Could not open perl5 file %s: %s\n",
-				filename, strerror(errno));
+				filename, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}

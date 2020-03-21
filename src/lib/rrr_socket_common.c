@@ -231,7 +231,8 @@ int rrr_socket_common_receive_array (
 			rrr_socket_common_get_session_target_length_from_array,
 			&callback_data_array,
 			__rrr_socket_common_receive_callback,
-			&callback_data
+			&callback_data,
+			NULL
 	);
 
 	if (ret != RRR_SOCKET_OK) {
@@ -276,7 +277,8 @@ int rrr_socket_common_receive_socket_msg (
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_common_receive_callback,
-			&callback_data
+			&callback_data,
+			NULL
 	);
 
 	if (ret != RRR_SOCKET_OK) {

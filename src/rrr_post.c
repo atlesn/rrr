@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket.h"
 #include "lib/rrr_socket_read.h"
 #include "lib/rrr_socket_common.h"
+#include "lib/rrr_strerror.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
 
@@ -281,7 +282,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
-	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != 0) {
+	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
 		RRR_MSG_ERR("Could not connect to socket\n");
 		ret = 1;
 		goto out;
@@ -304,7 +305,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, "rrr_post");
 		if (data->input_fd < 0) {
 			RRR_MSG_ERR("Could not open input file %s: %s\n",
-					data->filename, strerror(errno));
+					data->filename, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -473,6 +474,8 @@ int main (int argc, const char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	rrr_strerror_init();
+
 	int ret = EXIT_SUCCESS;
 
 	struct cmd_data cmd;
@@ -485,7 +488,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd) != 0) {
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 
@@ -538,5 +541,6 @@ int main (int argc, const char *argv[]) {
 	__rrr_post_destroy_data(&data);
 	cmd_destroy(&cmd);
 	rrr_socket_close_all();
+	rrr_strerror_cleanup();
 	return ret;
 }

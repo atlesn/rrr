@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
+#include "rrr_strerror.h"
 #include "vl_time.h"
 
 static struct rrr_socket_read_session *__rrr_socket_read_session_new (
@@ -94,7 +95,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 	struct rrr_socket_read_session *res = NULL;
 
 	uint64_t time_now = rrr_time_get_64();
-	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000;
+	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000;
 
 	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->last_read_time < time_limit) {
@@ -131,7 +132,8 @@ int rrr_socket_read_message (
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
-		void *complete_callback_arg
+		void *complete_callback_arg,
+		struct rrr_socket_client *client
 ) {
 	int ret = RRR_SOCKET_OK;
 
@@ -184,7 +186,7 @@ int rrr_socket_read_message (
 
 	/*
 	if (ioctl (fd, FIONREAD, &bytes_int) != 0) {
-		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", strerror(errno));
+		VL_MSG_ERR("Error from ioctl in rrr_socket_read_message: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -244,7 +246,7 @@ int rrr_socket_read_message (
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -275,7 +277,7 @@ int rrr_socket_read_message (
 					// Not a file
 				}
 				else {
-					VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", strerror(errno));
+					VL_MSG_ERR("Could not seek to the beginning of the file: %s\n", rrr_strerror(errno));
 				}
 			}
 			else {
@@ -422,6 +424,7 @@ int rrr_socket_read_message (
 				RRR_MSG_ERR("Error from callback in rrr_socket_read_message\n");
 				goto out;
 			}
+
 			RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 			read_session->read_complete = 0;
 		}

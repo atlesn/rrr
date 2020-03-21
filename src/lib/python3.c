@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 #include "python3.h"
 #include "buffer.h"
+#include "rrr_strerror.h"
 #include "../global.h"
 
 struct python3_fork_zombie {
@@ -159,7 +160,7 @@ void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callbac
 			goto remove_and_next;
 		}
 		else {
-			RRR_MSG_ERR("Warning: python3 waitpid error for fork %i: %s\n", zombie->pid, strerror(errno));
+			RRR_MSG_ERR("Warning: python3 waitpid error for fork %i: %s\n", zombie->pid, rrr_strerror(errno));
 		}
 
 		goto next;
@@ -649,7 +650,7 @@ static pid_t __rrr_py_fork_intermediate (
 
 	if (ret != 0) {
 		if (ret < 0) {
-			RRR_MSG_ERR("Could not fork python3: %s\n", strerror(errno));
+			RRR_MSG_ERR("Could not fork python3: %s\n", rrr_strerror(errno));
 		}
 		goto out_main;
 	}

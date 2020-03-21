@@ -36,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_socket.h"
+#include "lib/stats_engine.h"
+#include "lib/stats_message.h"
+#include "lib/rrr_strerror.h"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -98,16 +101,103 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
+		{0,							's',	"stats",				"[-s|--stats]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
 };
+
+struct stats_data {
+	unsigned int handle;
+	struct rrr_stats_engine engine;
+};
+
+static int main_stats_post_sticky_text_message (struct stats_data *stats_data, const char *path, const char *text) {
+	struct rrr_stats_message message;
+
+	if (rrr_stats_message_init (
+			&message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			RRR_STATS_MESSAGE_FLAGS_STICKY,
+			path,
+			text,
+			strlen(text) + 1
+	) != 0) {
+		RRR_BUG("Could not initialize main statistics message\n");
+	}
+
+	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
+		RRR_MSG_ERR("Could not post main statistics message\n");
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct instance_metadata_collection *instances) {
+	int ret = 0;
+	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
+		RRR_MSG_ERR("Error while obtaining statistics handle in main\n");
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	char msg_text[RRR_STATS_MESSAGE_DATA_MAX_SIZE + 1];
+
+	if (snprintf (
+			msg_text,
+			RRR_STATS_MESSAGE_DATA_MAX_SIZE,
+			"RRR running with %u instances\n",
+			rrr_instance_metadata_collection_count(instances)
+	) >= RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
+		RRR_BUG("Statistics message too long in main\n");
+	}
+
+	if (main_stats_post_sticky_text_message(stats_data, "status", msg_text) != 0) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	unsigned int i = 0;
+	RRR_INSTANCE_LOOP(instance, instances) {
+		char path[128];
+		sprintf(path, "instance_metadata/%u", i);
+
+		if (main_stats_post_sticky_text_message(stats_data, path, instance->dynamic_data->instance_name) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		sprintf(path, "instance_metadata/%u/module", i);
+		if (main_stats_post_sticky_text_message(stats_data, path, instance->dynamic_data->module_name) != 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+
+		unsigned int j = 0;
+		RRR_SENDER_LOOP(sender, &instance->senders) {
+			sprintf(path, "instance_metadata/%u/senders/%u", i, j);
+			if (main_stats_post_sticky_text_message(stats_data, path, sender->sender->dynamic_data->instance_name) != 0) {
+				ret = EXIT_FAILURE;
+				goto out;
+			}
+			j++;
+		}
+
+		i++;
+	}
+
+	out:
+	return ret;
+}
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		RRR_MSG_ERR("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
+
+	rrr_strerror_init();
 
 	struct rrr_signal_handler *signal_handler = NULL;
 	struct rrr_thread_collection *collection = NULL;
@@ -116,6 +206,8 @@ int main (int argc, const char *argv[]) {
 	struct rrr_config *config = NULL;
 	int ret = EXIT_SUCCESS;
 	int count = 0;
+
+	struct stats_data stats_data = {0};
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -137,12 +229,21 @@ int main (int argc, const char *argv[]) {
 		goto out_destroy_metadata_collection;
 	}
 
-	if (rrr_print_help_and_version(&cmd) != 0) {
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out_destroy_metadata_collection;
 	}
 
 	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
+	// Start statistics engine
+	if (cmd_exists(&cmd, "stats", 0)) {
+		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
+			RRR_MSG_ERR("Could not initialize statistics engine\n");
+			goto out_destroy_metadata_collection;
+		}
+	}
+
+	// Load configuration
 	config_string = cmd_get_value(&cmd, "config", 0);
 	if (config_string != NULL && *config_string != '\0') {
 		config = rrr_config_parse_file(config_string);
@@ -168,7 +269,7 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
-	// Initialzie dynamic_data thread data
+	// Initialize signal handling
 	struct sigaction action;
 	action.sa_handler = rrr_signal;
 	sigemptyset (&action.sa_mask);
@@ -176,7 +277,7 @@ int main (int argc, const char *argv[]) {
 
 	threads_restart:
 
-	rrr_socket_close_all();
+	rrr_socket_close_all_except(stats_data.engine.socket);
 
 	// During preload stage, signals are temporarily deactivated.
 	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
@@ -194,12 +295,25 @@ int main (int argc, const char *argv[]) {
 	sigaction (SIGTERM, &action, NULL);
 
 	rrr_set_debuglevel_orig();
-	if ((ret = main_start_threads(&collection, instances, config, &cmd)) != 0) {
+	if ((ret = main_start_threads(&collection, instances, config, &cmd, &stats_data.engine)) != 0) {
 		goto out_stop_threads;
 	}
 
+	// Post main sticky statistics messages
+	if (stats_data.handle != 0) {
+		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
+		stats_data.handle = 0;
+	}
+
+	if (stats_data.engine.initialized != 0) {
+		if (main_stats_post_sticky_messages(&stats_data, instances) != 0) {
+			goto out_stop_threads;
+		}
+	}
+
+	// Main loop
 	while (main_running) {
-		usleep (100000);
+		usleep (50000);
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished or do hard restart. Restart.\n");
@@ -217,6 +331,10 @@ int main (int argc, const char *argv[]) {
 			}
 		}
 
+		if (stats_data.engine.initialized != 0) {
+				rrr_stats_engine_tick(&stats_data.engine);
+		}
+
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
 			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
@@ -226,6 +344,9 @@ int main (int argc, const char *argv[]) {
 	RRR_DBG_1 ("Main loop finished\n");
 
 	out_stop_threads:
+		if (stats_data.handle != 0) {
+			rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
+		}
 		rrr_set_debuglevel_on_exit();
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
@@ -244,6 +365,8 @@ int main (int argc, const char *argv[]) {
 			rrr_config_destroy(config);
 		}
 
+		rrr_stats_engine_cleanup(&stats_data.engine);
+
 	out_destroy_metadata_collection:
 		rrr_instance_metadata_collection_destroy(instances);
 
@@ -257,5 +380,6 @@ int main (int argc, const char *argv[]) {
 			RRR_DBG_1("Exiting program with errors\n");
 		}
 		cmd_destroy(&cmd);
+		rrr_strerror_cleanup();
 		return ret;
 }

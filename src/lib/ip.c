@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_common.h"
 #include "rrr_socket_msg.h"
 #include "rrr_socket_read.h"
+#include "rrr_strerror.h"
 
 void rrr_ip_buffer_entry_destroy (
 		struct rrr_ip_buffer_entry *entry
@@ -429,7 +430,7 @@ int rrr_ip_send_raw (
 		else if (errno == EINTR) {
 			goto retry;
 		}
-		RRR_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -524,7 +525,7 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
 		goto out_error;
 	}
 
@@ -540,7 +541,7 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 	si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		RRR_MSG_ERR ("Could not bind to port %d: %s", data->port, strerror(errno));
+		RRR_MSG_ERR ("Could not bind to port %d: %s", data->port, rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -590,7 +591,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
 				NULL
 		);
     	if (fd == -1) {
-    		RRR_MSG_ERR("Error while creating socket: %s\n", strerror(errno));
+    		RRR_MSG_ERR("Error while creating socket: %s\n", rrr_strerror(errno));
     		continue;
     	}
 
@@ -620,7 +621,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     accept_result->ip_data.port = port;
     accept_result->len = sizeof(accept_result->addr);
     if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
-    	RRR_MSG_ERR("getsockname failed: %s\n", strerror(errno));
+    	RRR_MSG_ERR("getsockname failed: %s\n", rrr_strerror(errno));
     	goto out_free_accept;
     }
 
@@ -645,7 +646,7 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR ("Could not create socket: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
 		goto out_error;
 	}
 
@@ -661,7 +662,7 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 	si.sin6_addr = in6addr_any;
 
 	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
-		RRR_MSG_ERR ("Could not listen on port %d: %s\n", data->port, strerror(errno));
+		RRR_MSG_ERR ("Could not listen on port %d: %s\n", data->port, rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -703,7 +704,7 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 			goto out;
 		}
 		else {
-			RRR_MSG_ERR("Error in ip_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Error in ip_accept: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -715,24 +716,24 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 	int enable = 1;
 	if (tcp_nodelay == 1) {
 		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
-			RRR_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", strerror(errno));
+			RRR_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_close_socket;
 		}
 	}
 
 	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
-		RRR_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", strerror(errno));
+		RRR_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1) {
-		RRR_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-		RRR_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 

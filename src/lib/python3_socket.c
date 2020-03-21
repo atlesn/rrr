@@ -116,7 +116,7 @@ static PyObject *rrr_python3_socket_f_accept (PyObject *self, PyObject *args) {
 	int new_fd = rrr_socket_accept(socket_data->socket_fd, &addr, &len, "rrr_python3_socket_f_accept");
 
 	if (new_fd == -1) {
-		RRR_MSG_ERR("Could not accept connection on python3 socket: %s\n", strerror(errno));
+		RRR_MSG_ERR("Could not accept connection on python3 socket: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -141,7 +141,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 	if (args != NULL) {
 		if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", valid_keys, &arg_filename)) {
-			RRR_MSG_ERR("Could not parse arguments to socket __init__ python3 module: %s\n", strerror(errno));
+			RRR_MSG_ERR("Could not parse arguments to socket __init__ python3 module: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -156,7 +156,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 	);
 
 	if (new_socket == -1) {
-		RRR_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", strerror(errno));
+		RRR_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -179,7 +179,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 		int fd = rrr_socket_mkstemp (filename, "rrr_python3_socket_f_start - mkstemp");
 		if (fd == -1) {
-			RRR_MSG_ERR("Could not create temporary filename for UNIX socket in python3 module in socket __init_: %s\n", strerror(errno));
+			RRR_MSG_ERR("Could not create temporary filename for UNIX socket in python3 module in socket __init_: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -196,14 +196,14 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 	if (socket_data->socket_fd > 0) {
 		if (rrr_socket_bind_and_listen(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr), 0, 1) != 0) {
-			RRR_MSG_ERR("Could not bind and listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
+			RRR_MSG_ERR("Could not bind and listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
 		if (rrr_socket_connect_nonblock(socket_data->connected_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
-			RRR_MSG_ERR("Could not connect to existing socket %s in python3 module in socket __init_: %s\n", socket_data->filename, strerror(errno));
+			RRR_MSG_ERR("Could not connect to existing socket %s in python3 module in socket __init_: %s\n", socket_data->filename, rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -463,7 +463,7 @@ int rrr_python3_socket_poll (PyObject *socket, int timeout) {
 			goto retry;
 		}
 		RRR_MSG_ERR("Error from poll function in python3 unix socket fd %i pid %i: %s\n",
-				socket_data->connected_fd, getpid(), strerror(errno));
+				socket_data->connected_fd, getpid(), rrr_strerror(errno));
 		ret = -1;
 	}
 /* TODO : Implement check of pollfd.revents
@@ -589,7 +589,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			}
 			else {
 				RRR_MSG_ERR("Error from send function in python3 unix socket fd %i pid %i: %s\n",
-						socket_data->connected_fd, getpid(), strerror(errno));
+						socket_data->connected_fd, getpid(), rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -715,7 +715,8 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
-			&callback_data
+			&callback_data,
+			NULL
 	);
 
 	if (ret != RRR_SOCKET_OK) {

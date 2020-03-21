@@ -34,6 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "../global.h"
 
+// TODO : Re-order functions in .c-file and in this file
+// TODO : Move static inline functions from .h to .c
+// TODO : Fix so that mutexes may be destroyed properly
+
 //#define FIFO_DEBUG_COUNTER
 //#define FIFO_SPIN_DELAY 0 // microseconds
 #define RRR_FIFO_DEFAULT_RATELIMIT 100 // If this many entries has been inserted without a read, sleep a bit
@@ -73,6 +77,11 @@ struct rrr_fifo_buffer_ratelimit {
 	long long int spins_per_us;
 };
 
+struct rrr_fifo_buffer_stats {
+	uint64_t total_entries_written;
+	uint64_t total_entries_deleted;
+};
+
 /*
  * Buffer rules:
  * - There may be many readers at the same time
@@ -98,6 +107,7 @@ struct rrr_fifo_buffer {
 	pthread_mutex_t mutex;
 	pthread_mutex_t write_queue_mutex;
 	pthread_mutex_t ratelimit_mutex;
+	pthread_mutex_t stats_mutex;
 
 	int readers;
 	int writers;
@@ -110,6 +120,7 @@ struct rrr_fifo_buffer {
 	int write_queue_entry_count;
 
 	struct rrr_fifo_buffer_ratelimit ratelimit;
+	struct rrr_fifo_buffer_stats stats;
 
 	void (*free_entry)(void *arg);
 
@@ -347,5 +358,6 @@ void rrr_fifo_buffer_invalidate(struct rrr_fifo_buffer *buffer);
 // void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
 int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer);
 int rrr_fifo_buffer_init_custom_free(struct rrr_fifo_buffer *buffer, void (*custom_free)(void *arg));
+int rrr_fifo_buffer_get_stats (struct rrr_fifo_buffer_stats *stats, struct rrr_fifo_buffer *buffer);
 
 #endif

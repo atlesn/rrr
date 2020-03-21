@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/ip.h"
 #include "../../lib/messages.h"
 #include "../../lib/rrr_endian.h"
+#include "../../lib/rrr_strerror.h"
 
 struct test_result {
 	int result;
@@ -360,14 +361,14 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 			"test_type_array_write_to_socket",
 			socket_path,
 			1
-	) != 0) {
+	) != RRR_SOCKET_OK) {
 		TEST_MSG("Could not connect to socket %s in test_type_array_write_to_socket\n", socket_path);
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = write (socket_fd, data, sizeof(*data) - 1)) == -1) {
-		TEST_MSG("Error while writing to socket in test_type_array_write_to_socket: %s\n", strerror(errno));
+		TEST_MSG("Error while writing to socket in test_type_array_write_to_socket: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}

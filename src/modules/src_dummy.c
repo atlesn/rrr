@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 struct dummy_data {
@@ -139,6 +140,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -158,8 +160,11 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		rrr_fifo_buffer_set_do_ratelimit(&data->buffer, 1);
 	}
 
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
 	uint64_t time_start = rrr_time_get_64();
 	int generated_count = 0;
+	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_update_watchdog_time(thread_data->thread);
@@ -169,19 +174,28 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 			struct rrr_message *reading = rrr_message_new_reading(time, time);
 
-//			VL_DEBUG_MSG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
+//			RRR_DBG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 			generated_count_total++;
+			generated_count_to_stats++;
 		}
 
 		uint64_t time_now = rrr_time_get_64();
+
+		if (generated_count_to_stats > 500) {
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
+		}
 
 		if (time_now - time_start > 1000000) {
 			RRR_DBG_1("dummy instance %s messages per second %i total %llu of %llu\n",
 					INSTANCE_D_NAME(thread_data), generated_count, generated_count_total, data->max_generated);
 			generated_count = 0;
 			time_start = time_now;
+
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
 		}
 
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
@@ -193,6 +207,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	out_cleanup:
 	RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
+	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
