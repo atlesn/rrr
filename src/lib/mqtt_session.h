@@ -66,9 +66,24 @@ struct rrr_mqtt_session_properties {
 #define RRR_MQTT_SESSION_DELETED		(1<<1)
 #define RRR_MQTT_SESSION_ERROR			(1<<2)
 
+// Session collections may maintain a copy of this struct and copy it into
+// the argument to get_stats() or maintain the numbers in some other fashion
+// and fill the provided struct field by field
+struct rrr_mqtt_session_collection_stats {
+	uint64_t active;
+	uint64_t total_created;
+	uint64_t total_deleted;
+};
+
 // Session engines must implement these methods
 struct rrr_mqtt_session_collection_methods {
 	// COLLECTION METHODS
+
+	// Fill provided struct with statistics
+	int (*get_stats) (
+			struct rrr_mqtt_session_collection_stats *target,
+			struct rrr_mqtt_session_collection *sessions
+	);
 
 	// Iterate local delivery queue (used by client). Packets are freed after
 	// callback returns. To keep packets in client program, do an INCREF. All

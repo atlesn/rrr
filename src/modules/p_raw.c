@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 struct raw_data {
@@ -116,6 +117,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -138,6 +140,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
 	uint64_t total_counter = 0;
 	uint64_t timer_start = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
@@ -156,6 +160,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 			RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 "\n",
 					INSTANCE_D_NAME(thread_data), raw_data->message_count, total_counter);
 
+			rrr_stats_instance_update_rate (stats, 0, "received", raw_data->message_count);
+
 			raw_data->message_count = 0;
 		}
 	}
@@ -164,6 +170,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
 	pthread_cleanup_pop(1);
+	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 
 	RRR_DBG_1 ("Thread raw %p instance %s exiting 2 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);

@@ -143,6 +143,9 @@ int rrr_stats_instance_new (
 void rrr_stats_instance_destroy (
 		struct rrr_stats_instance *instance
 ) {
+	if (instance == NULL) {
+		return;
+	}
 	if (instance->stats_handle != 0) {
 		rrr_stats_engine_handle_unregister(instance->engine, instance->stats_handle);
 	}
@@ -221,6 +224,24 @@ int rrr_stats_instance_post_base10_text (
 	}
 
 	sprintf(text, "%lli", value);
+
+	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_BASE10_TEXT, text);
+}
+
+int rrr_stats_instance_post_unsigned_base10_text (
+		RRR_INSTANCE_POST_ARGUMENTS,
+		long long unsigned int value
+) {
+	char text[128];
+
+	RRR_ASSERT(sizeof(long long unsigned int) <= 64, long_long_is_lteq_64);
+
+	if (instance->stats_handle == 0) {
+		// Not registered with statistics engine
+		return 0;
+	}
+
+	sprintf(text, "%llu", value);
 
 	return __rrr_stats_instance_post_text(instance, path_postfix, sticky, RRR_STATS_MESSAGE_TYPE_BASE10_TEXT, text);
 }

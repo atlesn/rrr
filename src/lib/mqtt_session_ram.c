@@ -36,6 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection_ram_data;
 
+/*struct rrr_mqtt_session_ram_stats {
+	uint64_t total_p_received_per_type[16];
+	uint64_t total_p_sent_per_type[16];
+};*/
+
 struct rrr_mqtt_session_ram {
 	// MUST be first
 	struct rrr_mqtt_session session;
@@ -68,6 +73,7 @@ struct rrr_mqtt_session_ram {
 	uint32_t complete_publish_grace_time;
 	int clean_session;
 	struct rrr_mqtt_subscription_collection *subscriptions;
+//	struct rrr_mqtt_session_ram_stats stats;
 };
 
 struct rrr_mqtt_session_collection_ram_data {
@@ -82,6 +88,9 @@ struct rrr_mqtt_session_collection_ram_data {
 
 	// Packets in this queue are stored until read from. Used by client program.
 	struct rrr_mqtt_p_queue publish_local_queue;
+
+	// Should be updated using provided functions to avoid difficult to find bugs
+	struct rrr_mqtt_session_collection_stats stats;
 };
 
 #define SESSION_COLLECTION_RAM_LOCK(data) \
@@ -108,6 +117,32 @@ struct rrr_mqtt_session_collection_ram_data {
 
 #define SESSION_RAM_UNLOCK(session) \
 	pthread_mutex_unlock(&session->lock); } while(0)
+
+// Session collection lock must be held when using stats data
+static void __rrr_mqtt_session_collection_ram_stats_notify_create (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.active++;
+	data->stats.total_created++;
+}
+
+static void __rrr_mqtt_session_collection_ram_stats_notify_delete (struct rrr_mqtt_session_collection_ram_data *data) {
+	data->stats.active--;
+	data->stats.total_deleted++;
+}
+
+static int __rrr_mqtt_session_collection_ram_get_stats (
+		struct rrr_mqtt_session_collection_stats *target,
+		struct rrr_mqtt_session_collection *collection
+) {
+	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *)(collection);
+
+	SESSION_COLLECTION_RAM_LOCK(data);
+
+	*target = data->stats;
+
+	SESSION_COLLECTION_RAM_UNLOCK(data);
+
+	return 0;
+}
 
 static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_session_ram *ram_session,
@@ -367,6 +402,9 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out_unlock;
 		}
+
+		__rrr_mqtt_session_collection_ram_stats_notify_create(data);
+
 	}
 
 	RRR_DBG_1("Got a session, session present was %i and no creation was %i\n",
@@ -2075,6 +2113,10 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 				ram_session
 		);
 		*session_to_find = NULL;
+
+		SESSION_COLLECTION_RAM_LOCK(ram_data);
+		__rrr_mqtt_session_collection_ram_stats_notify_delete(ram_data);
+		SESSION_COLLECTION_RAM_UNLOCK(ram_data);
 	}
 
 	no_delete:
@@ -2241,6 +2283,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 }
 
 const struct rrr_mqtt_session_collection_methods methods = {
+		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,

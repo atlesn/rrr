@@ -440,7 +440,7 @@ int rrr_stats_engine_handle_obtain (
 	*handle = 0;
 
 	if (stats->initialized == 0) {
-		RRR_MSG_ERR("Could not create handle in rrr_stats_engine_obtain_handle, not initialized\n");
+		RRR_DBG_1("Note: Could not create handle in rrr_stats_engine_handle_obtain, not initialized\n");
 		ret = 1;
 		goto out;
 	}

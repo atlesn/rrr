@@ -43,10 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE 30
+#define RRR_MQTT_BROKER_STATS_INTERVAL_MS 1000
 
 struct mqtt_broker_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -185,6 +187,19 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	return ret;
 }
 
+static void update_stats (struct mqtt_broker_data *data, struct rrr_stats_instance *stats) {
+	if (stats->stats_handle == 0) {
+		return;
+	}
+
+	struct rrr_mqtt_broker_stats broker_stats;
+	rrr_mqtt_broker_get_stats (&broker_stats, data->mqtt_broker_data);
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "connections_active", 0, broker_stats.connections_active);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_connected", 0, broker_stats.total_connections_accepted);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_disconnected", 0, broker_stats.total_connections_closed);
+}
+
 static void *thread_entry_mqtt (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_broker_data* data = thread_data->private_data = thread_data->private_memory;
@@ -199,6 +214,7 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mqtt broker thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -241,12 +257,21 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 		goto out_destroy_broker;
 	}
 
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
+	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		uint64_t time_now = rrr_time_get_64();
+			rrr_update_watchdog_time(thread_data->thread);
 
 		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
 			RRR_MSG_ERR("Error from MQTT broker while running tasks\n");
 			break;
+		}
+
+		if (time_now > (prev_stats_time + RRR_MQTT_BROKER_STATS_INTERVAL_MS * 1000)) {
+			update_stats(data, stats);
+			prev_stats_time = rrr_time_get_64();
 		}
 
 		usleep (5000); // 50 ms
@@ -263,6 +288,7 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 	out_message:
 		RRR_DBG_1 ("Thread mqtt broker %p exiting\n", thread_data->thread);
 		pthread_cleanup_pop(1);
+		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

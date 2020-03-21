@@ -184,16 +184,16 @@ int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct r
 static void __rrr_stats_tree_branch_dump (struct rrr_stats_tree_branch *branch, const char *path_prefix) {
 	char path_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 
-	printf("Branch: %s/%s\n", path_prefix, branch->name);
+//	printf("Branch: %s/%s\n", path_prefix, branch->name);
 	if (branch->value != NULL) {
 		if (	branch->value->type == RRR_STATS_MESSAGE_TYPE_TEXT ||
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_BASE10_TEXT ||
 				branch->value->type == RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT
 		) {
-			printf ("-- Value: %s\n", branch->value->data);
+			printf ("-- %s/%s: %s\n", path_prefix, branch->name, branch->value->data);
 		}
 		else {
-			printf ("-- Value (not text): %s\n", branch->value->path);
+			printf ("-- %s/%s (not text): %s\n", path_prefix, branch->name, branch->value->path);
 		}
 	}
 
