@@ -544,6 +544,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			session
 	);
 
+	RRR_DBG_1("Setting keep-alive to %u in __rrr_mqtt_broker_handle_connect\n", use_keep_alive);
+
 	if (rrr_mqtt_property_collection_add_uint32 (
 			&connack->properties,
 			RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE,

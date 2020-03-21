@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE 30
-#define RRR_MQTT_BROKER_STATS_INTERVAL_MS 1000
+#define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
 
 struct mqtt_broker_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -268,14 +268,14 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-			rrr_update_watchdog_time(thread_data->thread);
+		rrr_update_watchdog_time(thread_data->thread);
 
 		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
 			RRR_MSG_ERR("Error from MQTT broker while running tasks\n");
 			break;
 		}
 
-		if (time_now > (prev_stats_time + RRR_MQTT_BROKER_STATS_INTERVAL_MS * 1000)) {
+		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
 			update_stats(data, stats);
 			prev_stats_time = rrr_time_get_64();
 		}

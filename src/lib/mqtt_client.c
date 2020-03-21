@@ -448,7 +448,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 	}
 
-	RRR_DBG_1("Received CONNACK, now connected\n");
+	RRR_DBG_1("Received CONNACK with keep-alive %u, now connected\n", client_data->session_properties.server_keep_alive);
 
 	out:
 		RRR_MQTT_P_UNLOCK(packet);
@@ -690,9 +690,23 @@ int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
 ) {
-	return rrr_mqtt_common_iterate_and_clear_local_delivery(
+	return rrr_mqtt_common_iterate_and_clear_local_delivery (
 			&data->mqtt_data,
 			callback,
 			callback_arg
 	) & 1; // Clear all errors but internal error
+}
+
+void rrr_mqtt_client_get_stats (
+		struct rrr_mqtt_client_stats *target,
+		struct rrr_mqtt_client_data *data
+) {
+	memset(target, '\0', sizeof(*target));
+
+	if (data->mqtt_data.sessions->methods->get_stats (
+			&target->session_stats,
+			data->mqtt_data.sessions
+	) != 0) {
+		RRR_MSG_ERR("Warning: Failed to get session stats in rrr_mqtt_client_get_stats\n");
+	}
 }

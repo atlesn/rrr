@@ -49,12 +49,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
 #include "../lib/array.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 #define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
+#define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
@@ -1322,6 +1324,22 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 	return 0;
 }
 
+static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instance *stats) {
+	if (stats->stats_handle == 0) {
+		return;
+	}
+
+	struct rrr_mqtt_client_stats client_stats;
+	rrr_mqtt_client_get_stats (&client_stats, data->mqtt_client_data);
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_delivered", 0, client_stats.session_stats.total_publish_delivered);
+
+	// This will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
+}
+
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
@@ -1339,6 +1357,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -1421,8 +1440,12 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
 	clean_start = 0;
 
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
 	// Main loop
+	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
+		uint64_t time_now = rrr_time_get_64();
 		rrr_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
@@ -1458,6 +1481,11 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			goto out_destroy_client;
 		}
 
+		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
+			update_stats(data, stats);
+			prev_stats_time = rrr_time_get_64();
+		}
+
 		usleep (5000); // 50 ms
 	}
 
@@ -1467,6 +1495,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
 		pthread_cleanup_pop(1);
+		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		pthread_exit(0);
