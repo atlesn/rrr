@@ -375,7 +375,7 @@ static int __rrr_mqtt_connection_new (
 	}
 
 	res->ip_data = *ip_data;
-	res->connect_time = res->last_seen_time = rrr_time_get_64();
+	res->connect_time = res->last_read_time = res->last_write_time = rrr_time_get_64();
 	res->close_wait_time_usec = close_wait_time_usec;
 	res->collection = collection;
 
@@ -946,8 +946,12 @@ int rrr_mqtt_conn_check_alive (
 	return ret;
 }
 
-void __rrr_mqtt_connection_update_last_seen_unlocked (struct rrr_mqtt_conn *connection) {
-	connection->last_seen_time = rrr_time_get_64();
+void __rrr_mqtt_connection_update_last_read_time_unlocked (struct rrr_mqtt_conn *connection) {
+	connection->last_read_time = rrr_time_get_64();
+}
+
+void __rrr_mqtt_connection_update_last_write_time_unlocked (struct rrr_mqtt_conn *connection) {
+	connection->last_write_time = rrr_time_get_64();
 }
 
 // TODO : Convert to use rrr_socket_read_message
@@ -1164,7 +1168,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		}
 	}
 
-	__rrr_mqtt_connection_update_last_seen_unlocked (connection);
+	__rrr_mqtt_connection_update_last_read_time_unlocked (connection);
 
 	out_unlock:
 	RRR_MQTT_CONN_UNLOCK(connection);
@@ -1327,13 +1331,14 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 		uint64_t limit = (double) connection->keep_alive * 1.5;
 		limit_ping *= 1000000;
 		limit *= 1000000;
-		if (connection->last_seen_time + limit < rrr_time_get_64()) {
+		if (connection->last_write_time + limit < rrr_time_get_64() || connection->last_read_time + limit < rrr_time_get_64()) {
 			RRR_DBG_1("Keep-alive exceeded for connection\n");
 			ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 		else if (callback_data->exceeded_keep_alive_callback != NULL &&
-				connection->last_seen_time + limit_ping < rrr_time_get_64() &&
+				(connection->last_read_time + limit_ping < rrr_time_get_64() ||
+				connection->last_write_time + limit_ping < rrr_time_get_64()) &&
 				(ret = callback_data->exceeded_keep_alive_callback(connection, callback_data->callback_arg)) != RRR_MQTT_CONN_OK
 		) {
 			RRR_MSG_ERR("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
@@ -1375,6 +1380,8 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 			goto out;
 		}
 	}
+
+	__rrr_mqtt_connection_update_last_write_time_unlocked(connection);
 
 	out:
 	return ret;
