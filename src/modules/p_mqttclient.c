@@ -95,6 +95,7 @@ struct mqtt_client_data {
 	int debug_unsubscribe_cycle;
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
+	uint64_t total_sent_count;
 };
 
 static void data_cleanup(void *arg) {
@@ -799,6 +800,8 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 		goto out_free;
 	}
 
+	private_data->total_sent_count++;
+
 	out_free:
 	rrr_array_clear (&array_tmp);
 	RRR_FREE_IF_NOT_NULL(data);
@@ -1332,12 +1335,16 @@ static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instan
 	struct rrr_mqtt_client_stats client_stats;
 	rrr_mqtt_client_get_stats (&client_stats, data->mqtt_client_data);
 
-	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
-	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_delivered", 0, client_stats.session_stats.total_publish_delivered);
 
-	// This will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
+	// This is difficult to count in the MQTT-framework as the same function is used to send packets
+	// regardless of their origin. We therefore count it in the module poll callback function.
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
+
+	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
+	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_not_forwarded", 0, client_stats.session_stats.total_publish_not_forwarded);
 }
 
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
