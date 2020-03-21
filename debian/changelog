@@ -1,3 +1,11 @@
+rrr (0.16-8) unstable; urgency=medium
+
+  * New preliminary statistics engine, works with MQTT, raw and dummy
+  * Safety fixes for rand() and strerror()
+  * Misc. other fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 21 Mar 2020 18:21:52 +0100
+
 rrr (0.16-7) unstable; urgency=medium
 
   * MQTT: Implement UNSUBSCRIBE and UNSUBACK
