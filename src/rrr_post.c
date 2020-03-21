@@ -281,7 +281,7 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
-	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != 0) {
+	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
 		RRR_MSG_ERR("Could not connect to socket\n");
 		ret = 1;
 		goto out;
@@ -485,7 +485,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd) != 0) {
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 

@@ -1,5 +1,5 @@
 SUBDIRS = lib modules tests python
-bin_PROGRAMS = rrr rrr_post
+bin_PROGRAMS = rrr rrr_post rrr_stats
 noinst_PROGRAMS = rrr_http_client
 
 rrr_LDFLAGS = -ldl -lpthread -L./lib -lrrr
@@ -13,6 +13,10 @@ rrr_post_CFLAGS = ${AM_CFLAGS}
 rrr_http_client_LDFLAGS = -lrrr -L./lib
 rrr_http_client_SOURCES = rrr_http_client.c global.c main.c
 rrr_http_client_CFLAGS = ${AM_CFLAGS}
+
+rrr_stats_LDFLAGS = -lrrr -L./lib
+rrr_stats_SOURCES = rrr_stats.c global.c main.c
+rrr_stats_CFLAGS = ${AM_CFLAGS}
 
 if RRR_WITH_PERL5
 all-local:

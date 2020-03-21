@@ -83,7 +83,8 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
 		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int *match_count_final
 );
 int rrr_mqtt_subscription_collection_match_publish (
 		const struct rrr_mqtt_subscription_collection *subscriptions,

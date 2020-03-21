@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/rrr_socket.h"
+#include "../lib/rrr_socket_client.h"
 #include "../lib/rrr_socket_common.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -60,7 +61,7 @@ void data_cleanup(void *arg) {
 	rrr_fifo_buffer_invalidate(&data->buffer);
 	rrr_fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
-	rrr_socket_client_collection_destroy(&data->clients);
+	rrr_socket_client_collection_clear(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
@@ -274,7 +275,7 @@ static void socket_stop (void *arg) {
 	if (data->socket_fd != 0) {
 		rrr_socket_close(data->socket_fd);
 	}
-	rrr_socket_client_collection_destroy(&data->clients);
+	rrr_socket_client_collection_clear(&data->clients);
 }
 
 static void *thread_entry_socket (struct rrr_thread *thread) {
@@ -318,7 +319,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_update_watchdog_time(thread_data->thread);
 
-		if (rrr_socket_client_collection_accept(&data->clients) != 0) {
+		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
 			break;
 		}
 

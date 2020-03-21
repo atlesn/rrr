@@ -34,7 +34,8 @@ int main_start_threads (
 		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
-		struct cmd_data *cmd
+		struct cmd_data *cmd,
+		struct rrr_stats_engine *stats
 ) {
 	/*
 #ifdef VL_WITH_OPENSSL
@@ -56,6 +57,7 @@ int main_start_threads (
 		init_data.cmd_data = cmd;
 		init_data.global_config = global_config;
 		init_data.instance_config = instance->config;
+		init_data.stats = stats;
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 

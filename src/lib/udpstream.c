@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "vl_time.h"
 #include "crc32.h"
+#include "random.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -313,7 +314,7 @@ static uint16_t __rrr_udpstream_allocate_stream_id (
 		struct rrr_udpstream *data
 ) {
 	uint16_t ret = 0;
-	uint16_t stream_id = (uint16_t) rand();
+	uint16_t stream_id = (uint16_t) rrr_rand();
 
 	for (int retries = 0xffff; retries > 0; retries--) {
 		int collission = 0;
@@ -400,8 +401,7 @@ static int __rrr_udpstream_send_connect_response (
 static uint32_t __rrr_udpstream_allocate_connect_handle (
 		struct rrr_udpstream *data
 ) {
-	srand((uint32_t) (rrr_time_get_64() & 0xffffffff));
-	uint32_t ret = rand();
+	uint32_t ret = rrr_rand();
 	for (int retries = 0xffff; retries > 0; retries--) {
 		int collission = 0;
 		RRR_LL_ITERATE_BEGIN(&data->streams, struct rrr_udpstream_stream);
@@ -1423,7 +1423,8 @@ int rrr_udpstream_do_read_tasks (
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,
-				&callback_data
+				&callback_data,
+				NULL
 		)) != 0) {
 			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 				ret = 0;

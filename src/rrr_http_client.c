@@ -243,7 +243,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd) != 0) {
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 

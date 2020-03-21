@@ -43,6 +43,7 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_TYPE_CTRL			1
 #define RRR_SOCKET_MSG_TYPE_RRR_MESSAGE		2
 #define RRR_SOCKET_MSG_TYPE_SETTING			4
+#define RRR_SOCKET_MSG_TYPE_TREE_DATA		6
 
 // This bit is reserved for holding the type=control number
 #define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)

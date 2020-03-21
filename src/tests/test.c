@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/fixed_point.h"
+#include "../lib/stats_engine.h"
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -213,6 +214,9 @@ int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
 
+	// TODO : Implement stats engine for test program
+	struct rrr_stats_engine stats_engine = {0};
+
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
@@ -301,7 +305,7 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (main_start_threads(&collection, instances, config, &cmd) != 0) {
+		if (main_start_threads(&collection, instances, config, &cmd, &stats_engine) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);

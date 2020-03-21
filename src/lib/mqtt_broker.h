@@ -47,6 +47,14 @@ struct rrr_mqtt_listen_fd_collection {
 	pthread_mutex_t lock;
 };
 
+struct rrr_mqtt_broker_stats {
+	uint64_t connections_active;
+	uint64_t total_connections_accepted;
+	uint64_t total_connections_closed;
+
+	struct rrr_mqtt_session_collection_stats session_stats;
+};
+
 struct rrr_mqtt_broker_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
@@ -56,10 +64,16 @@ struct rrr_mqtt_broker_data {
 	int max_clients;
 	uint16_t max_keep_alive;
 
-	pthread_mutex_t client_serial_and_count_lock;
+	pthread_mutex_t client_serial_stats_lock;
 	uint32_t client_serial;
 	int client_count;
+	struct rrr_mqtt_broker_stats stats;
 };
+
+#define RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(action)				\
+	pthread_mutex_lock(&data->client_serial_stats_lock);		\
+	action;														\
+	pthread_mutex_unlock(&data->client_serial_stats_lock)
 
 int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
@@ -85,5 +99,10 @@ void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker);
 
 /* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
 int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data);
+
+void rrr_mqtt_broker_get_stats (
+		struct rrr_mqtt_broker_stats *target,
+		struct rrr_mqtt_broker_data *data
+);
 
 #endif /* RRR_MQTT_BROKER_H */

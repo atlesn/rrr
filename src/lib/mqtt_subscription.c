@@ -192,9 +192,14 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
 		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
-		void *callback_arg
+		void *callback_arg,
+		int *match_count_final
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
+
+	*match_count_final = 0;
+
+	int match_count = 0;
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
@@ -205,6 +210,7 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 				RRR_LL_ITERATE_LAST();
 			}
+			match_count++;
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
 			RRR_MSG_ERR("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
@@ -215,6 +221,9 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
 	RRR_LL_ITERATE_END(subscriptions);
+
+	*match_count_final = match_count;
+
 	return ret;
 }
 
