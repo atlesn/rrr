@@ -88,7 +88,8 @@ struct rrr_mqtt_conn {
 	struct rrr_ip_data ip_data;
 
 	uint64_t connect_time;
-	uint64_t last_seen_time;
+	uint64_t last_read_time;
+	uint64_t last_write_time;
 
 	char *client_id;
 	struct rrr_mqtt_session *session;
