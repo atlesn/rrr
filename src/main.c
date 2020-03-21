@@ -30,20 +30,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/instance_config.h"
 #include "lib/threads.h"
 
-#ifdef VL_WITH_OPENSSL
-#include "lib/crypt.h"
-#endif
-
 int main_start_threads (
-		struct vl_thread_collection **thread_collection,
+		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats
 ) {
+	/*
 #ifdef VL_WITH_OPENSSL
 	vl_crypt_initialize_locks();
 #endif
+*/
 
 	int ret = 0;
 
@@ -61,16 +59,16 @@ int main_start_threads (
 		init_data.instance_config = instance->config;
 		init_data.stats = stats;
 
-		VL_DEBUG_MSG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
+		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		if ((instance->thread_data = instance_init_thread(&init_data)) == NULL) {
+		if ((instance->thread_data = rrr_instance_init_thread(&init_data)) == NULL) {
 			goto out;
 		}
 	}
 
 	// Create thread collection
-	if (thread_new_collection (thread_collection) != 0) {
-		VL_MSG_ERR("Could not create thread collection\n");
+	if (rrr_thread_new_collection (thread_collection) != 0) {
+		RRR_MSG_ERR("Could not create thread collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -84,8 +82,8 @@ int main_start_threads (
 			break;
 		}
 
-		if (instance_preload_thread(*thread_collection, instance->thread_data) != 0) {
-			VL_BUG("Error while preloading thread for instance %s, can't proceed\n",
+		if (rrr_instance_preload_thread(*thread_collection, instance->thread_data) != 0) {
+			RRR_BUG("Error while preloading thread for instance %s, can't proceed\n",
 					instance->dynamic_data->instance_name);
 		}
 	}
@@ -93,8 +91,8 @@ int main_start_threads (
 
 	int threads_total = 0;
 	RRR_INSTANCE_LOOP(instance,instances) {
-		if (instance_start_thread (instance->thread_data) != 0) {
-			VL_BUG("Error while starting thread for instance %s, can't proceed\n",
+		if (rrr_instance_start_thread (instance->thread_data) != 0) {
+			RRR_BUG("Error while starting thread for instance %s, can't proceed\n",
 					instance->dynamic_data->instance_name);
 		}
 
@@ -102,12 +100,12 @@ int main_start_threads (
 	}
 
 	if (threads_total == 0) {
-		VL_MSG_ERR("No instances started, exiting\n");
+		RRR_MSG_ERR("No instances started, exiting\n");
 		return EXIT_FAILURE;
 	}
 
-	if (thread_start_all_after_initialized(*thread_collection) != 0) {
-		VL_MSG_ERR("Error while waiting for threads to initialize\n");
+	if (rrr_thread_start_all_after_initialized(*thread_collection) != 0) {
+		RRR_MSG_ERR("Error while waiting for threads to initialize\n");
 		return EXIT_FAILURE;
 	}
 
@@ -117,24 +115,25 @@ int main_start_threads (
 
 // The thread framework calls us back to here if a thread is marked as ghost.
 // Make sure we do not free the memory the thread uses.
-void main_ghost_handler (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+void main_ghost_handler (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	thread_data->used_by_ghost = 1;
 	thread->free_private_data_by_ghost = 1;
 }
 
-void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances) {
-	threads_stop_and_join(collection, main_ghost_handler);
-	instance_free_all_thread_data(instances);
-
+void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
+	rrr_threads_stop_and_join(collection, main_ghost_handler);
+	rrr_instance_free_all_thread_data(instances);
+/*
 #ifdef VL_WITH_OPENSSL
 	vl_crypt_free_locks();
 #endif
+*/
 }
 
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (cmd_parse(cmd, config) != 0) {
-		VL_MSG_ERR("Error while parsing command line\n");
+		RRR_MSG_ERR("Error while parsing command line\n");
 		return EXIT_FAILURE;
 	}
 
@@ -147,18 +146,18 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (debuglevel_string != NULL) {
 		int debuglevel_tmp;
 		if (strcmp(debuglevel_string, "all") == 0) {
-			debuglevel_tmp = __VL_DEBUGLEVEL_ALL;
+			debuglevel_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
-			VL_MSG_ERR(
+			RRR_MSG_ERR(
 					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
 			return EXIT_FAILURE;
 		}
-		if (debuglevel_tmp < 0 || debuglevel_tmp > __VL_DEBUGLEVEL_ALL) {
-			VL_MSG_ERR(
+		if (debuglevel_tmp < 0 || debuglevel_tmp > __RRR_DEBUGLEVEL_ALL) {
+			RRR_MSG_ERR(
 					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
-					__VL_DEBUGLEVEL_ALL, debuglevel_tmp);
+					__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
 			return EXIT_FAILURE;
 		}
 		debuglevel = debuglevel_tmp;
@@ -168,18 +167,18 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (debuglevel_on_exit_string != NULL) {
 		int debuglevel_on_exit_tmp;
 		if (strcmp(debuglevel_on_exit_string, "all") == 0) {
-			debuglevel_on_exit_tmp = __VL_DEBUGLEVEL_ALL;
+			debuglevel_on_exit_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
-			VL_MSG_ERR(
+			RRR_MSG_ERR(
 					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
 					debuglevel_on_exit_string);
 			return EXIT_FAILURE;
 		}
-		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __VL_DEBUGLEVEL_ALL) {
-			VL_MSG_ERR(
+		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __RRR_DEBUGLEVEL_ALL) {
+			RRR_MSG_ERR(
 					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
-					__VL_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
+					__RRR_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
 			return EXIT_FAILURE;
 		}
 		debuglevel_on_exit = debuglevel_on_exit_tmp;

@@ -34,25 +34,25 @@ int rrr_socket_common_receive_message_raw_callback (
 		ssize_t data_size,
 		struct rrr_socket_common_receive_message_callback_data *callback_data
 ) {
-	struct vl_message *message = data;
+	struct rrr_message *message = data;
 
 	int ret = 0;
 
 	// Header CRC32 is checked when reading the data from remote and getting size
 	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, data_size) != 0) {
-		VL_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		RRR_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, data_size) != 0) {
-		VL_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		RRR_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
 	}
 
-	if (message_to_host_and_verify(message, data_size) != 0) {
-		VL_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
+	if (rrr_message_to_host_and_verify(message, data_size) != 0) {
+		RRR_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
 				MSG_TOTAL_SIZE(message), message->msg_size);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out_free;
@@ -92,7 +92,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
 		void *arg
 ) {
 	if (arg != NULL) {
-		VL_BUG("arg was not NULL in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
+		RRR_BUG("arg was not NULL in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
 	}
 
 	*result = 0;
@@ -106,7 +106,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
 
 	if (ret != 0) {
 		if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			VL_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
+			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
 		}
 		goto out;
 	}
@@ -130,7 +130,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 
 	if (ret != 0) {
 		if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			VL_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
+			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
 		}
 		goto out;
 	}
@@ -243,11 +243,11 @@ int rrr_socket_common_receive_array (
 			return ret;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_array\n");
+			RRR_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_array\n");
 			return 0;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			VL_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_array\n");
+			RRR_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_array\n");
 			return 1;
 		}
 	}
@@ -286,11 +286,11 @@ int rrr_socket_common_receive_socket_msg (
 			return 0;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			VL_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_socket_msg\n");
+			RRR_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_socket_msg\n");
 			return 0;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			VL_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_socket_msg\n");
+			RRR_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_socket_msg\n");
 			return 1;
 		}
 	}

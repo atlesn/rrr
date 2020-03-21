@@ -41,12 +41,12 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_new (
 ) {
 	struct rrr_socket_read_session *read_session = malloc(sizeof(*read_session));
 	if (read_session == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_socket_read_session_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
 	}
 	memset(read_session, '\0', sizeof(*read_session));
 
-	read_session->last_read_time = time_get_64();
+	read_session->last_read_time = rrr_time_get_64();
 	read_session->src_addr = *src_addr;
 	read_session->src_addr_len = src_addr_len;
 
@@ -93,8 +93,8 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 ) {
 	struct rrr_socket_read_session *res = NULL;
 
-	uint64_t time_now = time_get_64();
-	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000;
+	uint64_t time_now = rrr_time_get_64();
+	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT * 1000 * 1000;
 
 	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
 		if (node->last_read_time < time_limit) {
@@ -102,7 +102,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 		}
 		else if (memcmp(src_addr, &node->src_addr, sizeof(*src_addr)) == 0) {
 			if (res != NULL) {
-				VL_BUG("Two equal src_addr in rrr_socket_read_session_collection_maintain_and_find\n");
+				RRR_BUG("Two equal src_addr in rrr_socket_read_session_collection_maintain_and_find\n");
 			}
 			res = node;
 		}
@@ -111,7 +111,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 	if (res == NULL) {
 		res = __rrr_socket_read_session_new(src_addr, src_addr_len);
 		if (res == NULL) {
-			VL_MSG_ERR("Could not allocate memory for read session in rrr_socket_read_message\n");
+			RRR_MSG_ERR("Could not allocate memory for read session in rrr_socket_read_message\n");
 			goto out;
 		}
 
@@ -162,12 +162,12 @@ int rrr_socket_read_message (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		VL_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		VL_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -180,7 +180,7 @@ int rrr_socket_read_message (
 	}
 
 	if ((pollfd.revents & POLLHUP) != 0) {
-		VL_DEBUG_MSG_3("Socket POLLHUP in rrr_socket_read_message, read EOF imminent\n");
+		RRR_DBG_3("Socket POLLHUP in rrr_socket_read_message, read EOF imminent\n");
 	}
 
 	/*
@@ -232,7 +232,7 @@ int rrr_socket_read_message (
 		);
 	}
 	else {
-		VL_BUG("Unknown read method %i in rrr_socket_read_message\n", read_flags);
+		RRR_BUG("Unknown read method %i in rrr_socket_read_message\n", read_flags);
 	}
 
 	if (bytes == -1) {
@@ -245,7 +245,7 @@ int rrr_socket_read_message (
 			}
 			goto out;
 		}
-		VL_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -288,7 +288,7 @@ int rrr_socket_read_message (
 		}
 		else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE) {
 			if (read_session->target_size > 0) {
-				VL_BUG("Target size was set in rrr_socket_read_message while complete method was connection closed\n");
+				RRR_BUG("Target size was set in rrr_socket_read_message while complete method was connection closed\n");
 			}
 			read_session->target_size = read_session->rx_buf_wpos;
 		}
@@ -297,7 +297,7 @@ int rrr_socket_read_message (
 			goto out;
 		}
 		else {
-			VL_MSG_ERR("Read returned 0 in rrr_socket_read_message, possible close of connection\n");
+			RRR_MSG_ERR("Read returned 0 in rrr_socket_read_message, possible close of connection\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -316,7 +316,7 @@ int rrr_socket_read_message (
 		else {
 			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
 			if (read_session->rx_buf_ptr == NULL) {
-				VL_MSG_ERR("Could not allocate memory in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -328,7 +328,7 @@ int rrr_socket_read_message (
 	}
 
 	if (read_session->read_complete != 0) {
-		VL_BUG("Read complete was non-zero in rrr_socket_read_message, read session must be cleared prior to reading more data\n");
+		RRR_BUG("Read complete was non-zero in rrr_socket_read_message, read session must be cleared prior to reading more data\n");
 	}
 
 	/* Check for expansion of buffer */
@@ -337,7 +337,7 @@ int rrr_socket_read_message (
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
 			if (new_buf == NULL) {
-				VL_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -347,7 +347,7 @@ int rrr_socket_read_message (
 
 		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
 		read_session->rx_buf_wpos += bytes;
-		read_session->last_read_time = time_get_64();
+		read_session->last_read_time = rrr_time_get_64();
 	}
 
 	if (get_target_size == NULL) {
@@ -369,14 +369,14 @@ int rrr_socket_read_message (
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
 			if (read_session->rx_buf_skip < 0) {
-				VL_BUG("read_session rx_data_pos out of range after get_target_size in rrr_socket_read_message\n");
+				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_socket_read_message\n");
 			}
 
-			VL_DEBUG_MSG_1("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
+			RRR_DBG_1("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
 			char *new_buf = malloc(read_session->rx_buf_size);
 			if (new_buf == NULL) {
-				VL_MSG_ERR("Could not allocate memory while aligning buffer in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Could not allocate memory while aligning buffer in rrr_socket_read_message\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -391,7 +391,7 @@ int rrr_socket_read_message (
 		if (read_session->target_size == 0 &&
 				read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH
 		) {
-			VL_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
+			RRR_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
 		}
 	}
 
@@ -399,7 +399,7 @@ int rrr_socket_read_message (
 			read_session->read_complete_method != RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
 	) {
 		if (read_session->rx_overshoot != NULL) {
-			VL_BUG("overshoot was not NULL in rrr_socket_read_message\n");
+			RRR_BUG("overshoot was not NULL in rrr_socket_read_message\n");
 		}
 
 		read_session->rx_overshoot_size = read_session->rx_buf_wpos - read_session->target_size;
@@ -407,7 +407,7 @@ int rrr_socket_read_message (
 
 		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
 		if (read_session->rx_overshoot == NULL) {
-			VL_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
+			RRR_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -418,14 +418,9 @@ int rrr_socket_read_message (
 	if (read_session->rx_buf_wpos == read_session->target_size && read_session->target_size > 0) {
 		read_session->read_complete = 1;
 		if (complete_callback != NULL) {
-			// These two are usually the same every time (for data from the same client) but they are
-			// set here for readability reasons, they are only used by the callback function (if used at all).
-			// *client is NULL unless client collection is being used.
-			read_session->fd = fd;
-			read_session->client = client;
-
-			if ((ret = complete_callback (read_session, complete_callback_arg)) != 0) {
-				VL_MSG_ERR("Error from callback in rrr_socket_read_message\n");
+			ret = complete_callback (read_session, complete_callback_arg);
+			if (ret != 0) {
+				RRR_MSG_ERR("Error from callback in rrr_socket_read_message\n");
 				goto out;
 			}
 

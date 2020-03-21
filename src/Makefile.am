@@ -4,7 +4,7 @@ noinst_PROGRAMS = rrr_http_client
 
 rrr_LDFLAGS = -ldl -lpthread -L./lib -lrrr
 rrr_SOURCES = rrr.c global.c main.c
-rrr_CFLAGS = ${AM_CFLAGS} -DVL_MODULE_PATH="\"${libdir}/rrr\""
+rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\""
 
 rrr_post_LDFLAGS = -lrrr -L./lib
 rrr_post_SOURCES = rrr_post.c global.c main.c
@@ -18,7 +18,9 @@ rrr_stats_LDFLAGS = -lrrr -L./lib
 rrr_stats_SOURCES = rrr_stats.c global.c main.c
 rrr_stats_CFLAGS = ${AM_CFLAGS}
 
-if VL_WITH_PERL5
+if RRR_WITH_PERL5
 all-local:
-	cd ${top_srcdir}/src/perl5/xsub; ${PERL5_INTERPRETER} ./Makefile.PL
+	echo "Generating Perl Makefile"; cd ${top_srcdir}/src/perl5/xsub; rm -f Makefile; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Making perl xsub"; make
+clean-local:
+	echo "Generating Perl Makefile"; cd ${top_srcdir}/src/perl5/xsub; rm -f Makefile; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Cleaning perl xsub"; make clean
 endif

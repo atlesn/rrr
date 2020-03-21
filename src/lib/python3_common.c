@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,12 +35,12 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
 	PyObject *ret = rrr_py_import_object(dictionary, symbol);
 
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not load %s function\n", symbol);
+		RRR_MSG_ERR("Could not load %s function\n", symbol);
 		goto out_err;
 	}
 
 	if (!PyCallable_Check(ret)) {
-	        VL_MSG_ERR("%s was not a callable\n", symbol);
+	        RRR_MSG_ERR("%s was not a callable\n", symbol);
         	goto out_err_cleanup;
 	}
 
@@ -75,7 +75,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 	result = PyEval_CallObject(function, args);
 	RRR_Py_XDECREF(args);
 	if (result == NULL) {
-		VL_MSG_ERR("NULL result from function %s\n", symbol);
+		RRR_MSG_ERR("NULL result from function %s\n", symbol);
 		PyErr_Print();
 		goto out_cleanup;
 	}
@@ -87,6 +87,9 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 }
 
 void rrr_py_dump_global_modules(void) {
+#if PY_VERSION_HEX >= 0x03080000
+	printf("Module dumping not possible in Python >= 3.8\n");
+#else
 	// Hack to get tstate
 	PyThreadState *tstate = PyEval_SaveThread();
 	PyEval_RestoreThread(tstate);
@@ -98,7 +101,7 @@ void rrr_py_dump_global_modules(void) {
 		if (strcmp(obj->ob_type->tp_name, "module") == 0) {
 			PyObject *name_obj  = PyObject_GetAttrString(obj, "__name__");
 			if (name_obj == NULL) {
-				VL_MSG_ERR("Could not get name of object %s:\n",obj->ob_type->tp_name );
+				RRR_MSG_ERR("Could not get name of object %s:\n",obj->ob_type->tp_name );
 				PyErr_Print();
 				continue;
 			}
@@ -108,17 +111,18 @@ void rrr_py_dump_global_modules(void) {
 				printf ("-> [%i]: %s\n", i, name);
 			}
 			else {
-				VL_MSG_ERR ("Warning: __name__ not found in module object with index %i\n", i);
+				RRR_MSG_ERR ("Warning: __name__ not found in module object with index %i\n", i);
 			}
 
 			RRR_Py_XDECREF(name_obj);
 		}
 	}
+#endif
 }
 
 void rrr_py_dump_dict_entries (PyObject *dict) {
 	if (!PyDict_CheckExact(dict)) {
-		VL_BUG("Bug: Non-PyDict object given to __rrr_py_dump_dict_entries\n");
+		RRR_BUG("Bug: Non-PyDict object given to __rrr_py_dump_dict_entries\n");
 	}
 
     PyObject *keys = PyDict_Keys(dict);

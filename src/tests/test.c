@@ -37,16 +37,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats_engine.h"
 
 const char *library_paths[] = {
-		VL_MODULE_PATH,
-		VL_TEST_MODULE_PATH,
+		RRR_MODULE_PATH,
+		RRR_TEST_MODULE_PATH,
 		""
 };
 
+// After one or more threads have exited, wait with killing other
+// threads to allow for debugging
+//#define RRR_TEST_DELAYED_EXIT 1
+
 int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
-	struct instance_metadata *instance = instance_find(instances, "instance_test_module");
+	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
-		VL_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
+		RRR_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
@@ -57,7 +61,7 @@ int main_get_configuration_test_result(struct instance_metadata_collection *inst
 	int (*get_test_result)(void) = dlsym(handle, "get_test_module_result");
 
 	if (get_test_result == NULL) {
-		VL_MSG_ERR("Could not find test result function in test module: %s\n", dlerror());
+		RRR_MSG_ERR("Could not find test result function in test module: %s\n", dlerror());
 		return 1;
 	}
 
@@ -71,7 +75,7 @@ int signal_interrupt (int s, void *arg) {
 
     (void)(arg);
 
-    VL_DEBUG_MSG_1("Received signal %i\n", s);
+    RRR_DBG_1("Received signal %i\n", s);
 
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
@@ -224,16 +228,16 @@ int main (int argc, const char **argv) {
 
 	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
 
-	if (!rrr_verify_library_build_timestamp(VL_BUILD_TIMESTAMP)) {
-		VL_MSG_ERR("Library build version mismatch.\n");
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
 		ret = 1;
 		goto out;
 	}
 
-	TEST_MSG("Starting test with module path %s\n", VL_MODULE_PATH);
-	TEST_MSG("Change to directory %s\n", VL_TEST_PATH);
+	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
+	TEST_MSG("Change to directory %s\n", RRR_TEST_PATH);
 
-	if (chdir(VL_TEST_PATH) != 0) {
+	if (chdir(RRR_TEST_PATH) != 0) {
 		TEST_MSG("Error while changing directory\n");
 		ret = 1;
 		goto out;
@@ -245,7 +249,7 @@ int main (int argc, const char **argv) {
 		}
 	} TEST_RESULT(ret == 0);
 
-	VL_DEBUG_MSG_1("debuglevel is: %u\n", VL_DEBUGLEVEL);
+	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	if (ret == 1) {
 		goto out;
@@ -280,7 +284,7 @@ int main (int argc, const char **argv) {
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
-		if (instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+		if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -290,7 +294,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("process instances from config") {
-		if (instance_process_from_config(instances, config, library_paths) != 0) {
+		if (rrr_instance_process_from_config(instances, config, library_paths) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -299,7 +303,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_instances;
 	}
 
-	struct vl_thread_collection *collection = NULL;
+	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
 		if (main_start_threads(&collection, instances, config, &cmd, &stats_engine) != 0) {
 			ret = 1;
@@ -323,19 +327,27 @@ int main (int argc, const char **argv) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	TEST_BEGIN("testing type array parsing") {
-		while (main_running && (rrr_global_config.no_thread_restart || instance_check_threads_stopped(instances) == 0)) {
+		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			usleep(10000);
 		}
 
 		ret = main_get_configuration_test_result(instances);
+
+#ifdef RRR_TEST_DELAYED_EXIT
+		usleep (3600000000); // 3600 seconds
+#endif
+
 		main_threads_stop(collection, instances);
 
 	} TEST_RESULT(ret == 0);
 
-	thread_destroy_collection(collection);
+	rrr_thread_destroy_collection(collection);
 
 	out_cleanup_instances:
-	instance_metadata_collection_destroy(instances);
+	rrr_instance_metadata_collection_destroy(instances);
+
+	// Don't unload modules in the test suite
+	//rrr_instance_unload_all(instances);
 
 	out_cleanup_config:
 	if (config != NULL) {

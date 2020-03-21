@@ -1,6 +1,41 @@
 from rrr_helper import *
 
-def process(socket: rrr_socket, message: vl_message):
+persistent_setting_a = "not touched"
+persistent_setting_b = "not touched"
+
+def config(socket: rrr_socket, setting : rrr_setting):
+	global persistent_setting_a
+	global persistent_setting_b
+
+	print ("python3 received setting with name " + setting.name)
+
+	if setting.name == "python3_persistent_setting_b":
+		print("python3 touching setting b, value was '" + persistent_setting_b + "'")
+		persistent_setting_b = setting.get()
+		print("python3 touching setting b, value is now '" + persistent_setting_b + "'")
+
+	socket.send(setting)
+
+	return True
+
+def source(socket: rrr_socket):
+	global persistent_setting_a
+	global persistent_setting_b
+
+	if persistent_setting_b != "touched":
+		print("python3 configuration error, persistent_setting_b was not touched during config, value was '" + persistent_setting_b + "'")
+		return False
+
+	return True
+
+def process(socket: rrr_socket, message: rrr_message):
+	global persistent_setting_a
+	global persistent_setting_b
+
+	if persistent_setting_b != "touched":
+		print("python3 configuration error, persistent_setting_b was not touched during config, value was '" + persistent_setting_b + "'")
+		return False
+
 	print ("python3 timestamp before: " + str(message.timestamp_from))
 	message.timestamp_from = message.timestamp_from + 1
 	print ("python3 timestamp after : " + str(message.timestamp_from))
@@ -12,7 +47,7 @@ def process(socket: rrr_socket, message: vl_message):
 	array_old = message.get_array()
 	array_new = rrr_array()
 
-	print ("python3 array has " + str(array_old.count()) + " members")
+	print ("python3 array has " + str(array_old.count()) + " members, persistent settings are " + persistent_setting_a + " and " + persistent_setting_b)
 
 	message.discard_array()
 

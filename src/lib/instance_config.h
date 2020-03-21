@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef INSTANCE_CONFIG_H
-#define INSTANCE_CONFIG_H
+#ifndef RRR_INSTANCE_CONFIG_H
+#define RRR_INSTANCE_CONFIG_H
 
 #include "../global.h"
 #include "settings.h"
@@ -134,4 +134,4 @@ int rrr_instance_config_parse_comma_separated_to_map (
 		const char *cmd_key
 );
 
-#endif /* INSTANCE_CONFIG_H */
+#endif /* RRR_INSTANCE_CONFIG_H */

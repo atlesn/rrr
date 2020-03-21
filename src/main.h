@@ -24,20 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "lib/cmdlineparser/cmdline.h"
 
-struct vl_thread_collection;
+struct rrr_thread_collection;
 struct instance_metadata_collection;
 struct rrr_config;
 struct rrr_stats_engine;
 
 int main_start_threads (
-		struct vl_thread_collection **thread_collection,
+		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats
 );
 
-void main_threads_stop (struct vl_thread_collection *collection, struct instance_metadata_collection *instances);
+void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances);
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
 
 #endif /* RRR_MAIN_H */

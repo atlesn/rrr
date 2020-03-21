@@ -1,4 +1,4 @@
-.Dd 2020-02-16
+.Dd 2020-03-14
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -180,29 +180,36 @@ data it reads from other modules for each reader. The readers of duplicator are 
 The ipclient module collects any messages from senders and sends them over the network to another 
 .B RRR
 environment's ipclient module using UDP. It may also accept connections from other clients and receive data,
-or a combination of these. An underlying UDP stream protocol ensures delivery of
-all messages, and messages are checksummed with a CRC32 algorithm.
+or a combination of these. An underlying UDP stream protocol ensures single delivery of
+all messages (similar design as MQTT QOS2), and messages are checksummed with a CRC32 algorithm.
 .PP
-If messages read from other modules contain address information, ipclient will attempt
-to connect to this host (if not already connected) and send the messages to it. Messages without address use the default
-server or are dropped if none is specified.
+.B ipclient is not secure in any way and must only be used on closed networks!
 .PP
-Per default, ipclient will make sure that messages are delivered exactly once to the remote host. Some extra acknowledgment
-packets are sent to take care of this. This functionality may be disabled if higher throughput is desired and some packet
-loss or duplicates is not an issue.
+After an ipclient instance has connected to a remote ipclient, the remote will accept packets, and the connection
+persists even if the connecting clients IP-address changes unless specified otherwise in the configuration.
 .PP
-ipclient will not accept incoming connections from other clients unless specified in the configuration file.
+Please not that ipclient is not designed to receive connections and packets from arbitary remote hosts.
+If a remote sends packets and does not complete the acknowledgement handshakes, the packets will persist in memory.
 .PP
-A keyfile of an arbitary length may be specified from which an AES256 key is generated. It should contain good
-random data. ipclient will then encrypt messages prior to sending (and use the same key to decrypt received messages).
+If a remote host becomes unavailable for a longer period of time, unfinished acknowledgement handshakes
+are re-initiated when it becomes available again, even if it has been re-started in the mean time.
+.PP
+ipclient will not accept incoming connections from other clients unless explicitly told to in the configuration file.
 .PP
 .Bl -tag -width -indent
-.It ipclient_default_remote=REMOTENAME OR ADDRESS
+.It ipclient_client_number=NUMBER
+Each ipclient instance in a set of instances which communicate together must have a unique ID number in the range 1-4294967295.
+If you have two instances running, set one of them to 1 and the other one to 2.
+.It ipclient_default_remote=REMOTE NAME OR ADDRESS
 The name or address of the client which we send packets without address information to.
 .It ipclient_default_remote_port=PORT NUMBER
 The port number of the default remote, defaults to 5555.
 .It ipclient_src_port=PORT NUMBER
 Source port used for sending and receiving packtes, defaults to 5555.
+.It ipclient_listen={yes|no}
+Accept incoming connections if set to yes. Default is no.
+.It ipclient_disallow_remote_ip_swap={yes|no}
+If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
 .SS mysql (DAIV)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
@@ -273,8 +280,7 @@ This option cannot be used with
 .B mysql_colums.
 .It mysql_blob_write_columns={column name 1,column name 2,...}
 Used to force to send data as blob (raw data) to the database for the specified columns regardless of their type.
-.It mysql_special_columns={column name 1,column name 2,...}
-.It mysql_special_values={columns value 1,column value 2,...}
+.It mysql_special_columns={column1=value1,column2=value2,...}
 Used to write fixed values to the database.
 .It mysql_add_timestamp_col={yes|no}
 In addition to the other columns, write to a column named `timestamp` and save the timestamp from the message here.
@@ -289,9 +295,7 @@ It is possible to specify both source- and process-functions at the same time.
 Functions should return 0 on success and put any messages into the result class provided in the argument.
 If something goes wrong, the functions can return 1 or raise an exception which makes RRR stop all running instances and restart.
 .PP
-The RRR module should be imported by the custom python program.
-It can also be reviewed to understand the classes used, rrr_settings, vl_message and rrr_result.
-It is usually found in "/usr/lib/python(VERSION OF PYTHON)/site-packages/rrr.py", and in the source directory "./src/python/rrr.py".
+The RRR module should be imported by the custom python program, but is in only available when the python script is called from RRR.
 .PP
 The following options may be specified:
 .Bl -tag -width -indent
@@ -304,43 +308,71 @@ The name of the source function in the python program which we read from contino
 .It python3_process_function=FUNCTION NAME
 The name of the processing function in the python program which we send packets from other modules to. We also read any messages sent back.
 .It python3_config_function=FUNCTION NAME
-The name of the function in the python program to which we send the settings structure.
+The name of the function in the python program to which we send settings form the configuration file.
 All settings defined inside the python block in the configuration file are sent in here.
-The function might also send the settings back after which settings which have been accessed are updated.
+The function might also notify that settings have been accessed to avoid warnings.
+The config function is called once for every setting.
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the python program might be set as needed.
 .El
 .PP
-Below follows an example python message processing and generating program.
+Below follows an example python message processing and generating program. A socket is used to
+post messages. The process and source functions have their own environments, and they will not
+share any global variables set by the config function. The config function is called first in
+the process environment, then in the source environment.
 .PP
 .nf
-from rrr import *
+from rrr_helper import *
 import time
 
-def process(result : rrr_result, message: vl_message):
+my_global_variable = ""
+
+def config(socket : rrr_socket, rrr_setting : setting):
+	global my_global_variable
+
+	# retrieve some custom settings from configuration file. The get()
+	# will update the "was-used" flag in the setting.
+	print ("Received a setting: " + setting.name + "=" + setting.get())
+
+	# set a global variable
+	if setting.name == "my_setting":
+		my_global_variable = setting.get()
+
+	# send settings back to update which have been read (optional)
+	socket.send(setting)
+	
+	return True
+
+def process(socket : rrr_socket, message: rrr_message):
+	# Return False if something is wrong
+	if my_global_variable == "":
+		print("Error: configuration failure")
+		return False
+		
 	# modify the retrieved message as needed
 	message.timestamp_from = message.timestamp_from + 1
+	
 	# queue the message to be sent back (optional) for python to give to readers
-	result.put(message)
-	return 0
+	socket.send(message)
+	
+	return True
 
-def source(result : rrr_result):
+def source(socket : rrr_socket):
 	# create a new message
-	message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+	
 	# queue the message to be sent back (optional) for python to give to readers
-	result.put(message)
+	socket.send(message)
+	
 	# sleep to limit output rate
 	time.sleep(1)
-	return 0
 
-def config(result : rrr_result, settings : rrr_instance_settings):
-	# retrieve some custom settings from configuration file
-	print ("1: " + settings['custom_config_argument_1'])
-	print ("2: " + settings['custom_config_argument_2'])
-	# send settings back to update which have been read (optional)
-	result.put(settings)
-	return 0
+	return True
+	
 .fi
+More details about Python in 
+.Xr rrr_python3(5)
+.PP
 .SS perl5 (P)
 The perl5 module makes it possible to process and generate messages in a custom 
 perl script. The first and only argument to the source- and generate-functions
@@ -531,6 +563,17 @@ Host name or IP of the broker to connect to. Defaults to localhost.
 TCP port on the server, defaults to 1883.
 .It mqtt_client_identifier=IDENTIFIER
 Client identifier to use. If left unspecified, broker pics one.
+.It mqtt_connect_error_action={restart|retry}
+Default action if connecting to the server failed. If set to
+.B restart,
+all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
+.B retry,
+the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
+.It mqtt_connect_attempts=NUMBER OF ATTEMPTS
+How many times we attempt connecting to the broker before giving up.
+What we do when this number is reached depends on the setting
+.B mqtt_connect_error_action.
+One connection attempt lasts approximately 100ms. Must be 1 or more, defaults to 20.
 .It mqtt_qos={0|1|2}
 Default Quality of Service to use, defaults to 1.
 .It mqtt_version={3.1.1|5}
@@ -566,12 +609,6 @@ Refer to
 .Xr rrr_post(1)
 for syntax of array definitions.
 Defaults to yes.
-.It mqtt_connect_error_action={restart|retry}
-Default action if connecting to the server failed. If set to
-.B restart,
-all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
-.B retry,
-the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
 .El
 
 .SH SEE ALSO

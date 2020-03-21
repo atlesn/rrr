@@ -38,7 +38,7 @@ static int __rrr_http_header_parse_unsigned_value (RRR_HTTP_HEADER_FIELD_PARSER_
 			field->value,
 			field->value + strlen(field->value)
 	)) != 0) {
-		VL_MSG_ERR("Could not get value from field '%s'\n", field->name);
+		RRR_MSG_ERR("Could not get value from field '%s'\n", field->name);
 		goto out;
 	}
 
@@ -99,7 +99,7 @@ static int __rrr_http_header_field_new (
 
 	struct rrr_http_header_field *field = malloc(sizeof(*field));
 	if (field == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_header_field_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_header_field_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -111,7 +111,7 @@ static int __rrr_http_header_field_new (
 
 	field->name = malloc(field_len + 1);
 	if (field->name == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_header_field_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_header_field_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -165,7 +165,7 @@ int rrr_http_part_new (struct rrr_http_part **result) {
 
 	struct rrr_http_part *part = malloc (sizeof(*part));
 	if (part == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_http_part_new\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_part_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -203,7 +203,7 @@ static int __rrr_http_parse_response_code (
 	}
 
 	if ((ret = rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
-		VL_MSG_ERR("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
+		RRR_MSG_ERR("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -213,7 +213,7 @@ static int __rrr_http_parse_response_code (
 
 	unsigned long long int response_code = 0;
 	if ((ret = rrr_http_util_strtoull(&response_code, &tmp_len, start, crlf)) != 0 || response_code > 999) {
-		VL_MSG_ERR("Could not understand HTTP response code in __rrr_http_parse_response_code\n");
+		RRR_MSG_ERR("Could not understand HTTP response code in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -226,14 +226,14 @@ static int __rrr_http_parse_response_code (
 		ssize_t response_str_len = crlf - start;
 		result->response_str = malloc(response_str_len + 1);
 		if (result->response_str == NULL) {
-			VL_MSG_ERR("Could not allocate memory for response string in __rrr_http_parse_response_code\n");
+			RRR_MSG_ERR("Could not allocate memory for response string in __rrr_http_parse_response_code\n");
 			goto out;
 		}
 		memcpy(result->response_str, start, response_str_len);
 		result->response_str[response_str_len] = '\0';
 	}
 	else if (start > crlf) {
-		VL_BUG("pos went beyond CRLF in __rrr_http_parse_response_code\n");
+		RRR_BUG("pos went beyond CRLF in __rrr_http_parse_response_code\n");
 	}
 
 	*parsed_bytes = (crlf - start_orig + 2);
@@ -263,7 +263,7 @@ static int __rrr_http_parse_header_field (
 
 	const char *colon = rrr_http_util_strchr(start, crlf, ':');
 	if (colon == NULL) {
-		VL_MSG_ERR("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
+		RRR_MSG_ERR("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -277,7 +277,7 @@ static int __rrr_http_parse_header_field (
 	start += rrr_http_util_count_whsp(start, crlf);
 
 	if (start >= crlf) {
-		VL_MSG_ERR("No value for header field in __rrr_http_parse_header_field\n");
+		RRR_MSG_ERR("No value for header field in __rrr_http_parse_header_field\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -285,7 +285,7 @@ static int __rrr_http_parse_header_field (
 	ssize_t value_len = crlf - start;
 	field->value = malloc(value_len + 1);
 	if (field->value == NULL) {
-		VL_MSG_ERR("Could not allocate memory in __rrr_http_parse_header_field\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_parse_header_field\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -293,7 +293,7 @@ static int __rrr_http_parse_header_field (
 	field->value[value_len] = '\0';
 
 	if (field->definition != NULL && field->definition->parse(field) != 0) {
-		VL_MSG_ERR("Could not parse field '%s' in __rrr_http_parse_header_field\n", field->name);
+		RRR_MSG_ERR("Could not parse field '%s' in __rrr_http_parse_header_field\n", field->name);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}

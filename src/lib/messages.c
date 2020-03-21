@@ -33,13 +33,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
 
-struct vl_message *message_new_reading (
-		vl_u64 reading_millis,
-		vl_u64 time
+struct rrr_message *rrr_message_new_reading (
+		rrr_u64 reading_millis,
+		rrr_u64 time
 ) {
-	struct vl_message *res;
+	struct rrr_message *res;
 
-	if (message_new_empty (
+	if (rrr_message_new_empty (
 			&res,
 			MSG_TYPE_MSG,
 			0,
@@ -56,15 +56,15 @@ struct vl_message *message_new_reading (
 	return res;
 }
 
-struct vl_message *message_new_array (
-	vl_u64 time,
-	vl_u16 topic_length,
-	vl_u32 data_length
+struct rrr_message *rrr_message_new_array (
+	rrr_u64 time,
+	rrr_u16 topic_length,
+	rrr_u32 data_length
 ) {
-	struct vl_message *res;
+	struct rrr_message *res;
 
-	if (message_new_empty (
-			(struct vl_message **) &res,
+	if (rrr_message_new_empty (
+			(struct rrr_message **) &res,
 			MSG_TYPE_MSG,
 			0,
 			MSG_CLASS_ARRAY,
@@ -80,22 +80,22 @@ struct vl_message *message_new_array (
 	return res;
 }
 
-int message_new_empty (
-		struct vl_message **final_result,
-		vl_u16 type,
-		vl_u16 type_flags,
-		vl_u32 class,
-		vl_u64 timestamp_from,
-		vl_u64 timestamp_to,
-		vl_u64 data_numeric,
-		vl_u16 topic_length,
-		vl_u32 data_length
+int rrr_message_new_empty (
+		struct rrr_message **final_result,
+		rrr_u16 type,
+		rrr_u16 type_flags,
+		rrr_u32 class,
+		rrr_u64 timestamp_from,
+		rrr_u64 timestamp_to,
+		rrr_u64 data_numeric,
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 ) {
-	ssize_t total_size = sizeof(struct vl_message) - 1 + topic_length + data_length;
+	ssize_t total_size = sizeof(struct rrr_message) - 1 + topic_length + data_length;
 	// -1 because the char which points to the data holds 1 byte
-	struct vl_message *result = malloc(total_size);
+	struct rrr_message *result = malloc(total_size);
 	if (result == NULL) {
-		VL_MSG_ERR("Could not allocate memory in new_empty_message\n");
+		RRR_MSG_ERR("Could not allocate memory in new_empty_message\n");
 		return 1;
 	}
 
@@ -103,7 +103,7 @@ int message_new_empty (
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_VL_MESSAGE,
+			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
 			total_size,
 			0
 	);
@@ -121,20 +121,20 @@ int message_new_empty (
 	return 0;
 }
 
-int message_new_with_data (
-		struct vl_message **final_result,
-		vl_u16 type,
-		vl_u16 type_flags,
-		vl_u32 class,
-		vl_u64 timestamp_from,
-		vl_u64 timestamp_to,
-		vl_u64 data_numeric,
+int rrr_message_new_with_data (
+		struct rrr_message **final_result,
+		rrr_u16 type,
+		rrr_u16 type_flags,
+		rrr_u32 class,
+		rrr_u64 timestamp_from,
+		rrr_u64 timestamp_to,
+		rrr_u64 data_numeric,
 		const char *topic,
-		vl_u16 topic_length,
+		rrr_u16 topic_length,
 		const char *data,
-		vl_u32 data_length
+		rrr_u32 data_length
 ) {
-	if (message_new_empty (
+	if (rrr_message_new_empty (
 			final_result,
 			type,
 			type_flags,
@@ -154,15 +154,15 @@ int message_new_with_data (
 	return 0;
 }
 
-int message_to_string (
+int rrr_message_to_string (
 	char **final_target,
-	struct vl_message *message
+	struct rrr_message *message
 ) {
 	int ret = 0;
 
 	char *target = malloc(128);
 	if (target == NULL) {
-		VL_MSG_ERR("Could not allocate memory in message_to_string\n");
+		RRR_MSG_ERR("Could not allocate memory in message_to_string\n");
 		ret = 1;
 		goto out;
 	}
@@ -176,7 +176,7 @@ int message_to_string (
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		VL_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
+		RRR_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
 		ret = 1;
 		goto out;
 	}
@@ -202,7 +202,7 @@ int message_to_string (
 		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
-		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
+		RRR_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
 		ret = 1;
 		goto out;
 	}
@@ -223,8 +223,8 @@ int message_to_string (
 	return ret;
 }
 
-void flip_endianess_64(vl_u64 *value) {
-	vl_u64 result = 0;
+void flip_endianess_64(rrr_u64 *value) {
+	rrr_u64 result = 0;
 
 	result |= (*value & 0x00000000000000ff) << 56;
 	result |= (*value & 0x000000000000ff00) << 40;
@@ -238,8 +238,8 @@ void flip_endianess_64(vl_u64 *value) {
 	*value = result;
 }
 
-void flip_endianess_32(vl_u32 *value) {
-	vl_u32 result = 0;
+void flip_endianess_32(rrr_u32 *value) {
+	rrr_u32 result = 0;
 
 	result |= (*value & 0x000000ff) << 24;
 	result |= (*value & 0x0000ff00) << 8;
@@ -249,27 +249,27 @@ void flip_endianess_32(vl_u32 *value) {
 	*value = result;
 }
 
-static int __message_validate (const struct vl_message *message){
+static int __message_validate (const struct rrr_message *message){
 	int ret = 0;
 
 	if (message->msg_size < sizeof(*message) - 1 ||
 			MSG_TOTAL_SIZE(message) != message->msg_size
 	) {
-		VL_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
+		RRR_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
 				message->msg_size, MSG_TOTAL_SIZE(message));
 		ret = 1;
 		goto out;
 	}
 	if (!MSG_CLASS_OK(message)) {
-		VL_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
+		RRR_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
 		ret = 1;
 	}
 	if (!MSG_TYPE_OK(message)) {
-		VL_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
+		RRR_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
 		ret = 1;
 	}
 	if (rrr_utf8_validate(MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message)) != 0) {
-		VL_MSG_ERR("Invalid topic for message in message_validate, not valid UTF-8\n");
+		RRR_MSG_ERR("Invalid topic for message in message_validate, not valid UTF-8\n");
 		ret = 1;
 	}
 
@@ -277,9 +277,9 @@ static int __message_validate (const struct vl_message *message){
 	return ret;
 }
 
-int message_to_host_and_verify (struct vl_message *message, ssize_t expected_size) {
+int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size) {
 	if (expected_size < ((ssize_t) sizeof(*message)) - 1) {
-		VL_MSG_ERR("Message was too short in message_to_host_and_verify\n");
+		RRR_MSG_ERR("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
 	message->type = be16toh(message->type);
@@ -292,7 +292,7 @@ int message_to_host_and_verify (struct vl_message *message, ssize_t expected_siz
 	message->topic_length = be16toh(message->topic_length);
 
 	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
-		VL_MSG_ERR("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
+		RRR_MSG_ERR("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
 				expected_size, MSG_TOTAL_SIZE(message));
 		return 1;
 	}
@@ -300,7 +300,7 @@ int message_to_host_and_verify (struct vl_message *message, ssize_t expected_siz
 	return __message_validate(message);
 }
 
-void message_prepare_for_network (struct vl_message *message) {
+void rrr_message_prepare_for_network (struct rrr_message *message) {
 	message->type = htobe16(message->type);
 	message->type_flags = htobe16(message->type_flags);
 	message->class = htobe16(message->class);
@@ -310,13 +310,13 @@ void message_prepare_for_network (struct vl_message *message) {
 	message->data_numeric = htobe64(message->data_numeric);
 	message->topic_length = htobe16(message->topic_length);
 
-	if (VL_DEBUGLEVEL_6) {
-		VL_DEBUG_MSG("Message prepared for network: ");
+	if (RRR_DEBUGLEVEL_6) {
+		RRR_DBG("Message prepared for network: ");
 		for (unsigned int i = 0; i < sizeof(*message); i++) {
 			unsigned char *buf = (unsigned char *) message;
-			VL_DEBUG_MSG("%x-", *(buf + i));
+			RRR_DBG("%x-", *(buf + i));
 		}
-		VL_DEBUG_MSG("\n");
+		RRR_DBG("\n");
 	}
 /*
 	if (message_to_string (message, buf+1, buf_size) != 0) {
@@ -326,16 +326,16 @@ void message_prepare_for_network (struct vl_message *message) {
 */
 }
 
-struct vl_message *message_duplicate_no_data_with_size (
-		const struct vl_message *message,
+struct rrr_message *rrr_message_duplicate_no_data_with_size (
+		const struct rrr_message *message,
 		ssize_t topic_length,
 		ssize_t data_length
 ) {
-	ssize_t new_total_size = (sizeof (struct vl_message) - 1 + topic_length + data_length);
+	ssize_t new_total_size = (sizeof (struct rrr_message) - 1 + topic_length + data_length);
 
-	struct vl_message *ret = malloc(new_total_size);
+	struct rrr_message *ret = malloc(new_total_size);
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 
@@ -349,25 +349,25 @@ struct vl_message *message_duplicate_no_data_with_size (
 	return ret;
 }
 
-struct vl_message *message_duplicate (
-		const struct vl_message *message
+struct rrr_message *rrr_message_duplicate (
+		const struct rrr_message *message
 ) {
-	struct vl_message *ret = malloc(MSG_TOTAL_SIZE(message));
+	struct rrr_message *ret = malloc(MSG_TOTAL_SIZE(message));
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 	memcpy(ret, message, MSG_TOTAL_SIZE(message));
 	return ret;
 }
 
-struct vl_message *message_duplicate_no_data (
-		struct vl_message *message
+struct rrr_message *rrr_message_duplicate_no_data (
+		struct rrr_message *message
 ) {
-	ssize_t new_size = sizeof(struct vl_message) - 1 + MSG_TOPIC_LENGTH(message);
-	struct vl_message *ret = malloc(new_size);
+	ssize_t new_size = sizeof(struct rrr_message) - 1 + MSG_TOPIC_LENGTH(message);
+	struct rrr_message *ret = malloc(new_size);
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 	memcpy(ret, message, new_size);
@@ -376,14 +376,14 @@ struct vl_message *message_duplicate_no_data (
 	return ret;
 }
 
-int message_set_topic (
-		struct vl_message **message,
+int rrr_message_set_topic (
+		struct rrr_message **message,
 		const char *topic,
 		ssize_t topic_len
 ) {
-	struct vl_message *ret = message_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
+	struct rrr_message *ret = rrr_message_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory in message_set_topic\n");
+		RRR_MSG_ERR("Could not allocate memory in message_set_topic\n");
 		return 1;
 	}
 
