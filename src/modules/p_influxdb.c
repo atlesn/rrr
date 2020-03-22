@@ -338,6 +338,7 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 
 	if ((ret = rrr_http_session_new (
 			&session,
+			RRR_HTTP_TRANSPORT_HTTP,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			data->server,
 			data->server_port,

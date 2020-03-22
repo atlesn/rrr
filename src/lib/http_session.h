@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_fields.h"
 #include "http_part.h"
-#include "rrr_socket_read.h"
+#include "net_transport.h"
 
 enum rrr_http_method {
 	RRR_HTTP_METHOD_GET,
@@ -33,21 +33,27 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING
 };
 
+enum rrr_http_transport {
+	RRR_HTTP_TRANSPORT_HTTP,
+	RRR_HTTP_TRANSPORT_HTTPS
+};
+
 struct rrr_http_session {
-	int fd;
+	struct rrr_net_transport *transport;
+	int transport_handle;
 	enum rrr_http_method method;
 	char *host;
 	char *endpoint;
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
-	struct rrr_socket_read_session_collection read_sessions;
 	uint16_t port;
 };
 
 void rrr_http_session_destroy (struct rrr_http_session *session);
 int rrr_http_session_new (
 		struct rrr_http_session **target,
+		enum rrr_http_transport transport,
 		enum rrr_http_method method,
 		const char *host,
 		uint16_t port,

@@ -31,9 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_session.h"
 #include "http_util.h"
 #include "http_part.h"
-#include "rrr_socket.h"
-#include "rrr_socket_read.h"
-#include "ip.h"
+#include "net_transport.h"
+//#include "ip.h"
 #include "random.h"
 
 void rrr_http_session_destroy (struct rrr_http_session *session) {
@@ -47,16 +46,15 @@ void rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
-	rrr_socket_read_session_collection_clear(&session->read_sessions);
-	if (session->fd != 0) {
-		rrr_socket_close(session->fd);
-		session->fd = 0;
+	if (session->transport != NULL) {
+		rrr_net_transport_destroy(session->transport);
 	}
 	free(session);
 }
 
 int rrr_http_session_new (
 		struct rrr_http_session **target,
+		enum rrr_http_transport transport,
 		enum rrr_http_method method,
 		const char *host,
 		uint16_t port,
@@ -76,8 +74,29 @@ int rrr_http_session_new (
 
 	memset(session, '\0', sizeof(*session));
 
+	uint16_t default_port = 0;
+	switch (transport) {
+		case RRR_HTTP_TRANSPORT_HTTP:
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN);
+			default_port = 80;
+			break;
+//		case RRR_HTTP_TRANSPORT_HTTPS:
+//			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS);
+//			default_port = 443;
+//			break;
+		default:
+			RRR_BUG("Requested transport method %i not implemented in rrr_http_session_new\n", transport);
+			break;
+	};
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Could not create transport method in rrr_http_session_new\n");
+		ret = 1;
+		goto out;
+	}
+
 	session->method = method;
-	session->port = port;
+	session->port = (port > 0 ? port : default_port);
 
 	session->host = strdup(host);
 	if (session->host == NULL) {
@@ -107,8 +126,6 @@ int rrr_http_session_new (
 			goto out;
 		}
 	}
-
-	rrr_socket_read_session_collection_init(&session->read_sessions);
 
 	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
 		RRR_MSG_ERR("Could not create request part in rrr_http_session_new\n");
@@ -166,7 +183,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 		goto out;
 	}
 
-	if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
+	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
 		RRR_MSG_ERR("Could not send first part of HTTP request in __rrr_http_session_send_post_body\n");
 		goto out;
 	}
@@ -208,7 +225,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 			goto out;
 		}
 
-		if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
+		if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
 			RRR_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 			goto out;
 		}
@@ -225,7 +242,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 		goto out;
 	}
 
-	if ((ret = rrr_socket_sendto(session->fd, body_buf, strlen(body_buf), NULL, 0)) != 0) {
+	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
 		RRR_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 		goto out;
 	}
@@ -269,7 +286,7 @@ static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session
 		goto out;
 	}
 
-	if ((ret = rrr_socket_sendto(session->fd, final_buf, strlen(final_buf), NULL, 0)) != 0) {
+	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, final_buf, strlen(final_buf))) != 0) {
 		RRR_MSG_ERR("Could not send GET body in __rrr_http_session_send_get_body\n");
 		goto out;
 	}
@@ -319,7 +336,7 @@ int rrr_http_session_send_request (
 		goto out;
 	}
 
-	if ((ret = rrr_socket_sendto(session->fd, request_buf, strlen(request_buf), NULL, 0)) != 0) {
+	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, request_buf, strlen(request_buf))) != 0) {
 		RRR_MSG_ERR("Could not send first part of HTTP request in rrr_http_session_send_request\n");
 		goto out;
 	}
@@ -349,8 +366,8 @@ int rrr_http_session_send_request (
 			goto out;
 		}
 	}
-	else if ((ret = rrr_socket_sendto(session->fd, "\r\n", strlen("\r\n"), NULL, 0)) != 0) {
-		RRR_MSG_ERR("Could not send last \r\n rrr_http_session_send_request\n");
+	else if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, "\r\n", strlen("\r\n"))) != 0) {
+		RRR_MSG_ERR("Could not send last \\r\\n in rrr_http_session_send_request\n");
 		goto out;
 	}
 
@@ -369,12 +386,13 @@ struct rrr_http_session_receive_data {
 };
 
 static int __rrr_http_session_receive_callback (
-		struct rrr_socket_read_session *read_session, void *arg
+		struct rrr_net_transport_read_session *read_session,
+		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
 
-	const char *data_start = read_session->rx_buf_ptr + receive_data->parse_complete_pos;
-	const char *data_end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
+	const char *data_start = read_session->buffer + receive_data->parse_complete_pos;
+	const char *data_end = read_session->buffer + read_session->buffer_size;
 
 	if (data_end > data_start) {
 		receive_data->session->response_part->data_ptr = data_start;
@@ -385,20 +403,21 @@ static int __rrr_http_session_receive_callback (
 }
 
 static int __rrr_http_session_receive_get_total_size (
-		struct rrr_socket_read_session *read_session, void *arg
+		struct rrr_net_transport_read_session *read_session,
+		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
 
 	int ret = 0;
 
-	const char *start = read_session->rx_buf_ptr + receive_data->parse_complete_pos;
+	const char *start = read_session->buffer + receive_data->parse_complete_pos;
 
 	ssize_t parsed_bytes = 0;
 	ret = rrr_http_part_parse (
 			receive_data->session->response_part,
 			&parsed_bytes,
 			start,
-			read_session->rx_buf_ptr + read_session->rx_buf_wpos
+			read_session->buffer + read_session->buffer_size
 	);
 
 	receive_data->parse_complete_pos += parsed_bytes;
@@ -407,14 +426,14 @@ static int __rrr_http_session_receive_get_total_size (
 		read_session->target_size = receive_data->parse_complete_pos + receive_data->session->response_part->data_length;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
-		ret = RRR_SOCKET_READ_INCOMPLETE;
+		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
 	}
 	else if (ret == RRR_HTTP_PARSE_UNTIL_CLOSE) {
-		read_session->read_complete_method = RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE;
-		ret = RRR_SOCKET_OK;
+		read_session->read_complete_method = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE;
+		ret = RRR_NET_TRANSPORT_READ_OK;
 	}
 	else {
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 	}
 
 	return ret;
@@ -443,30 +462,21 @@ int rrr_http_session_receive (
 			callback_arg
 	};
 
-	for (int i = 1000; i >= 0; i--) {
-		ret = rrr_socket_read_message (
-				&session->read_sessions,
-				session->fd,
-				4096,
-				65535,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
-				__rrr_http_session_receive_get_total_size,
-				&callback_data,
-				__rrr_http_session_receive_callback,
-				&callback_data,
-				NULL
-		);
+	ret = rrr_net_transport_read_message (
+			session->transport,
+			session->transport_handle,
+			4096,
+			65535,
+			__rrr_http_session_receive_get_total_size,
+			&callback_data,
+			__rrr_http_session_receive_callback,
+			&callback_data
+	);
 
-		if (ret == RRR_SOCKET_OK) {
-			// TODO : Check for persistent connection/more results which might be
-			//		  stored in read session overshoot buffer
-			goto out;
-		}
-		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
-			ret = 1;
-			goto out;
-		}
+	if (ret != 0) {
+		RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
+		ret = 1;
+		goto out;
 	}
 
 	out:
@@ -476,24 +486,21 @@ int rrr_http_session_receive (
 int rrr_http_session_connect (struct rrr_http_session *session) {
 	int ret = 0;
 
-	struct rrr_ip_accept_data *accept_data = NULL;
-
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, session->port, session->host) != 0) {
-		RRR_MSG_ERR("Could not connect to HTTP server '%s'\n", session->host);
+	if (rrr_net_transport_connect(&session->transport_handle, session->transport, session->port, session->host) != 0) {
+		RRR_MSG_ERR("Could not connect to HTTP server '%s' port '%u'\n", session->host, session->port);
 		ret = 1;
 		goto out;
 	}
 
-	session->fd = accept_data->ip_data.fd;
-
 	out:
-	RRR_FREE_IF_NOT_NULL(accept_data);
 	return ret;
 }
 
 void rrr_http_session_close (struct rrr_http_session *session) {
-	if (session->fd > 0) {
-		rrr_socket_close(session->fd);
-		session->fd = 0;
+	if (session->transport_handle > 0) {
+		if (rrr_net_transport_close(session->transport, session->transport_handle) != 0) {
+			RRR_MSG_ERR("Warning: Error while closing transport handle in rrr_http_session_close\n");
+		}
+		session->transport_handle = 0;
 	}
 }

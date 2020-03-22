@@ -133,6 +133,7 @@ int rrr_socket_read_message (
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
 		void *complete_callback_arg,
+		// TODO : This argument is not being used, consider removing
 		struct rrr_socket_client *client
 ) {
 	int ret = RRR_SOCKET_OK;

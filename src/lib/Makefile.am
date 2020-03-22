@@ -15,6 +15,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
 					stats_engine.c stats_instance.c stats_message.c stats_tree.c \
 					http_session.c http_util.c http_fields.c http_part.c \
+					net_transport.c net_transport_plain.c net_transport_tls.c \
 					fixed_point.c \
 					${mysql}
 

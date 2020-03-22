@@ -65,7 +65,7 @@ static void __rrr_http_client_data_init (struct rrr_http_client_data *data) {
 	memset (data, '\0', sizeof(*data));
 }
 
-static void __rrr_http_client_destroy_data (struct rrr_http_client_data *data) {
+static void __rrr_http_client_data_cleanup (struct rrr_http_client_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->query);
@@ -187,7 +187,6 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 	return ret;
 }
 
-
 static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	int ret = 0;
 
@@ -198,6 +197,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 	if ((ret = rrr_http_session_new (
 			&data->session,
+			RRR_HTTP_TRANSPORT_HTTP,
 			RRR_HTTP_METHOD_POST_URLENCODED,
 			data->server,
 			data->http_port,
@@ -264,7 +264,7 @@ int main (int argc, const char *argv[]) {
 
 	out:
 	rrr_set_debuglevel_on_exit();
-	__rrr_http_client_destroy_data(&data);
+	__rrr_http_client_data_cleanup(&data);
 	cmd_destroy(&cmd);
 	rrr_socket_close_all();
 	rrr_strerror_cleanup();
