@@ -116,6 +116,19 @@ int rrr_http_fields_get_total_length (
 	return ret;
 }
 
+const struct rrr_http_field *rrr_http_fields_get_field (
+		struct rrr_http_field_collection *fields,
+		const char *name
+) {
+	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
+		if (strcmp(node->name, name) == 0) {
+			return node;
+		}
+	RRR_LL_ITERATE_END(fields);
+	return NULL;
+}
+
+
 static char *__rrr_http_fields_to_form_data (
 		struct rrr_http_field_collection *fields,
 		int no_urlencoding

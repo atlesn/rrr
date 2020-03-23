@@ -55,18 +55,31 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 struct rrr_http_client_data {
-	char *server;
+	char *protocol;
+	char *hostname;
 	char *endpoint;
 	char *query;
 	uint16_t http_port;
 	struct rrr_http_session *session;
 };
+
+struct rrr_http_client_response {
+	int code;
+	char *argument;
+};
+
+static void __rrr_http_client_response_cleanup (struct rrr_http_client_response *response) {
+	RRR_FREE_IF_NOT_NULL(response->argument);
+	response->code = 0;
+}
+
 static void __rrr_http_client_data_init (struct rrr_http_client_data *data) {
 	memset (data, '\0', sizeof(*data));
 }
 
 static void __rrr_http_client_data_cleanup (struct rrr_http_client_data *data) {
-	RRR_FREE_IF_NOT_NULL(data->server);
+	RRR_FREE_IF_NOT_NULL(data->protocol);
+	RRR_FREE_IF_NOT_NULL(data->hostname);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->query);
 	if (data->session != NULL) {
@@ -90,8 +103,8 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		goto out;
 	}
 
-	data->server= strdup(server);
-	if (data->server == NULL) {
+	data->hostname= strdup(server);
+	if (data->hostname == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
@@ -158,22 +171,43 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 }
 
 static int __rrr_http_client_receive_callback (struct rrr_http_session *session, void *arg) {
-	struct rrr_http_client_data *data = arg;
-
-	(void)(data);
-
+	struct rrr_http_client_response *response = arg;
 	struct rrr_http_part *part = session->response_part;
 
 	int ret = 0;
 
-	if (part->response_code < 200 || part->response_code > 299) {
+	if (response->code != 0 || response->argument != NULL) {
+		RRR_BUG("Response struct was not clear in __rrr_http_client_receive_callback\n");
+	}
+
+	response->code = part->response_code;
+
+	// Moved-codes. Maybe this parsing is too persmissive.
+	if (part->response_code >= 300 && part->response_code <= 399) {
+		const struct rrr_http_header_field *location = rrr_http_part_get_header_field(part, "location");
+		if (location == NULL) {
+			RRR_MSG_ERR("Could not find Location-field in HTTP response %i %s\n",
+					part->response_code, part->response_str);
+			ret = 1;
+		}
+		RRR_DBG_1("HTTP Redirect to %s\n", location->value);
+
+		if ((response->argument = strdup(location->value)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
+			ret = 1;
+			goto out;
+		}
+
+		goto out;
+	}
+	else if (part->response_code < 200 || part->response_code > 299) {
 		RRR_MSG_ERR("Error while fetching HTTP: %i %s\n",
 				part->response_code, part->response_str);
 		ret = 1;
 		goto out;
 	}
 
-	if (part->data_ptr != 0 && part->data_length > 0) {
+	if (part->data_ptr != NULL && part->data_length > 0) {
 		int bytes = write (STDOUT_FILENO, part->data_ptr, part->data_length);
 		if (bytes != part->data_length) {
 			RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
@@ -197,9 +231,9 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 	if ((ret = rrr_http_session_new (
 			&data->session,
-			RRR_HTTP_TRANSPORT_HTTP,
+			RRR_HTTP_TRANSPORT_HTTPS,
 			RRR_HTTP_METHOD_POST_URLENCODED,
-			data->server,
+			data->hostname,
 			data->http_port,
 			"/?e=f",
 			RRR_HTTP_CLIENT_USER_AGENT
@@ -238,6 +272,12 @@ int main (int argc, const char *argv[]) {
 
 	struct cmd_data cmd;
 	struct rrr_http_client_data data;
+	struct rrr_http_client_response response = {0};
+
+	char *use_hostname = NULL;
+	char *use_endpoint = NULL;
+	char *use_protocol = NULL;
+	unsigned int use_port = 0;
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_client_data_init(&data);
@@ -254,15 +294,83 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
+	int retry_max = 10;
+
+	retry:
+	if (use_hostname != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->hostname);
+		data->hostname = use_hostname;
+		use_hostname = NULL;
+	}
+	if (use_endpoint != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->endpoint);
+		data->endpoint = use_endpoint;
+		use_endpoint = NULL;
+	}
+	if (use_protocol != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->hostname);
+		data->protocol = use_protocol;
+		use_protocol = NULL;
+	}
+
+	if (--retry_max == 0) {
+		RRR_MSG_ERR("Maximum number of retries reached\n");
+		ret = 1;
+		goto out;
+	}
+
+	__rrr_http_client_response_cleanup(&response);
+
 	if ((ret = __rrr_http_client_send_request(&data)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_receive(data.session, __rrr_http_client_receive_callback, &data)) != 0) {
+	if ((ret = rrr_http_session_receive(data.session, __rrr_http_client_receive_callback, &response)) != 0) {
 		goto out;
 	}
 
+	if (response.code >= 300 && response.code <= 399) {
+		if (response.argument == NULL) {
+			RRR_BUG("BUG: Argument was NULL with 300<=code<=399\n");
+		}
+
+		struct rrr_http_uri *uri = NULL;
+
+		if (rrr_http_util_uri_parse(&uri, response.argument) != 0) {
+			RRR_MSG_ERR("Could not parse Location from response header\n");
+			ret = 1;
+			goto out;
+		}
+
+		RRR_FREE_IF_NOT_NULL(use_hostname);
+		RRR_FREE_IF_NOT_NULL(use_endpoint);
+		RRR_FREE_IF_NOT_NULL(use_protocol);
+
+		// Remember to set URI fields to NULL to avoid double free
+		if (uri->host != NULL && *(uri->host) != '\0') {
+			use_hostname = uri->host;
+			uri->host = NULL;
+		}
+		if (uri->endpoint != NULL && *(uri->endpoint) != '\0') {
+			use_endpoint = uri->endpoint;
+			uri->endpoint = NULL;
+		}
+		if (uri->protocol != NULL && *(uri->protocol) != '\0') {
+			use_protocol = uri->protocol;
+			uri->protocol = NULL;
+		}
+		if (uri->port > 0) {
+			use_port = uri->port;
+		}
+
+		rrr_http_util_uri_destroy(uri);
+	}
+
 	out:
+	RRR_FREE_IF_NOT_NULL(use_hostname);
+	RRR_FREE_IF_NOT_NULL(use_endpoint);
+	RRR_FREE_IF_NOT_NULL(use_protocol);
+	__rrr_http_client_response_cleanup(&response);
 	rrr_set_debuglevel_on_exit();
 	__rrr_http_client_data_cleanup(&data);
 	cmd_destroy(&cmd);

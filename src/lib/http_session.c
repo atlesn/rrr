@@ -80,10 +80,10 @@ int rrr_http_session_new (
 			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN);
 			default_port = 80;
 			break;
-//		case RRR_HTTP_TRANSPORT_HTTPS:
-//			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS);
-//			default_port = 443;
-//			break;
+		case RRR_HTTP_TRANSPORT_HTTPS:
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS);
+			default_port = 443;
+			break;
 		default:
 			RRR_BUG("Requested transport method %i not implemented in rrr_http_session_new\n", transport);
 			break;
@@ -392,7 +392,7 @@ static int __rrr_http_session_receive_callback (
 	struct rrr_http_session_receive_data *receive_data = arg;
 
 	const char *data_start = read_session->buffer + receive_data->parse_complete_pos;
-	const char *data_end = read_session->buffer + read_session->buffer_size;
+	const char *data_end = read_session->buffer + read_session->wpos;
 
 	if (data_end > data_start) {
 		receive_data->session->response_part->data_ptr = data_start;

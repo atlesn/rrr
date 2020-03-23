@@ -445,3 +445,164 @@ void rrr_http_util_strtolower (char *str) {
 		str[i] = tolower(str[i]);
 	}
 }
+
+void rrr_http_util_uri_destroy (struct rrr_http_uri *uri) {
+	RRR_FREE_IF_NOT_NULL(uri->endpoint);
+	RRR_FREE_IF_NOT_NULL(uri->host);
+	RRR_FREE_IF_NOT_NULL(uri->protocol);
+	free(uri);
+}
+
+int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) {
+	int ret = 0;
+	struct rrr_http_uri *uri_new = NULL;
+
+	*uri_result = NULL;
+
+	if (uri == NULL) {
+		RRR_BUG("uri was NULL in rrr_http_uri_parse\n");
+	}
+
+	if ((uri_new = malloc(sizeof(*uri_new))) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_uri_parse\n");
+		ret = 1;
+		goto out;
+	}
+
+	size_t len = strlen(uri);
+
+	const char *pos = uri;
+	const char *end = uri + len;
+
+	const char *new_pos;
+	ssize_t result_len;
+
+	// Parse protocol if present
+	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") && new_pos == pos) {
+		if ((uri_new->protocol = strdup("")) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for protocol in rrr_http_uri_parse\n");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+	else if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "://") == 0) {
+		ssize_t protocol_name_length = new_pos - pos;
+		if (protocol_name_length > 0 && strncasecmp(pos, "http", 4) == 0) {
+			uri_new->protocol = strdup("http");
+		}
+		else if (protocol_name_length > 0 && strncasecmp(pos, "https", 5) == 0) {
+			uri_new->protocol = strdup("https");
+		}
+		else {
+			RRR_MSG_ERR("Unsupported or missing protocol name in URI '%s'\n", uri);
+			ret = 1;
+			goto out_destroy;
+		}
+		if (uri_new->protocol == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for protocol in rrr_http_uri_parse\n");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+
+	pos = new_pos + result_len;
+
+	// Parse hostname if protocol is present
+	if (uri_new->protocol != NULL) {
+		result_len = 0;
+		while (pos < end) {
+			if (__rrr_http_util_is_alphanumeric(*pos)) {
+				result_len++;
+			}
+			else if (*pos == '-') {
+				if (result_len == 0) {
+					RRR_MSG_ERR("Invalid hostname in URI '%s', cannot begin with '-'\n", uri);
+					ret = 1;
+					goto out_destroy;
+				}
+				result_len++;
+			}
+			else if (*pos == '/' || *pos == ':') {
+				break;
+			}
+			else {
+				RRR_MSG_ERR("Invalid character %c in URI '%s' hostname\n", *pos, uri);
+				ret = 1;
+				goto out_destroy;
+			}
+
+			pos++;
+		}
+
+		if (result_len > 0) {
+			if ((uri_new->host = malloc(result_len + 1)) == NULL) {
+				RRR_MSG_ERR("Could not allocate memory for hostname in rrr_http_uri_parse\n");
+				ret = 1;
+				goto out_destroy;
+			}
+			memcpy(uri_new->host, pos, result_len);
+			uri_new->host[result_len] = '\0';
+		}
+
+		if (*pos == ':') {
+			pos++;
+			unsigned long long port = 0;
+			if (rrr_http_util_strtoull(&port, &result_len, pos, end) != 0 || port < 1 || port > 65535) {
+				RRR_MSG_ERR("Invalid port in URL '%s'\n", uri);
+				ret = 1;
+				goto out_destroy;
+			}
+
+			uri_new->port = port;
+
+			pos += result_len;
+		}
+	}
+
+	// Parse the rest
+	result_len = 0;
+	const char *endpoint_begin = pos;
+	while (pos < end) {
+		if (__rrr_http_util_is_alphanumeric(*pos)) {
+			result_len++;
+		}
+		else if (__rrr_http_util_is_header_nonspecial_rfc7230(*pos)) {
+			result_len++;
+		}
+		else {
+			RRR_MSG_ERR("Invalid character %c in URI '%s'\n", *pos, uri);
+			ret = 1;
+			goto out_destroy;
+		}
+		pos++;
+	}
+
+	if (pos != end) {
+		RRR_BUG("BUG: pos was != end after parsing in rrr_http_uri_parse\n");
+	}
+
+	if (result_len == 0) {
+		if ((uri_new->endpoint = strdup("")) == 0) {
+			RRR_MSG_ERR("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+	else {
+		if ((uri_new->endpoint = malloc(result_len + 1)) == 0) {
+			RRR_MSG_ERR("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
+			ret = 1;
+			goto out_destroy;
+		}
+		memcpy(uri_new->endpoint, endpoint_begin, result_len);
+		uri_new->endpoint[result_len] = '\0';
+	}
+
+	*uri_result = uri_new;
+
+	goto out;
+	out_destroy:
+		rrr_http_util_uri_destroy(uri_new);
+	out:
+		return ret;
+}

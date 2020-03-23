@@ -131,7 +131,7 @@ static int __rrr_http_header_field_new (
 	return ret;
 }
 
-static struct rrr_http_header_field *__rrr_header_field_collection_get_field (
+static struct rrr_http_header_field *__rrr_http_header_field_collection_get_field (
 		struct rrr_http_header_field_collection *collection,
 		const char *name_lowercase
 ) {
@@ -176,6 +176,13 @@ int rrr_http_part_new (struct rrr_http_part **result) {
 
 	out:
 	return ret;
+}
+
+const struct rrr_http_header_field *rrr_http_part_get_header_field (
+		struct rrr_http_part *part,
+		const char *name_lowercase
+) {
+	return __rrr_http_header_field_collection_get_field(&part->headers, name_lowercase);
 }
 
 static int __rrr_http_parse_response_code (
@@ -355,7 +362,7 @@ int rrr_http_part_parse (
 	}
 
 	if (result->header_complete != 0) {
-		struct rrr_http_header_field *content_length = __rrr_header_field_collection_get_field(&result->headers, "content-length");
+		struct rrr_http_header_field *content_length = __rrr_http_header_field_collection_get_field(&result->headers, "content-length");
 		if (content_length != NULL) {
 			result->data_length = content_length->value_unsigned;
 			ret = RRR_HTTP_PARSE_OK;

@@ -24,6 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
+struct rrr_http_uri {
+	char *protocol;
+	char *host;
+	unsigned int port;
+	char *endpoint;
+};
+
 char *rrr_http_util_encode_uri (
 		const char *input
 );
@@ -59,5 +66,7 @@ ssize_t rrr_http_util_count_whsp (
 		const char *end
 );
 void rrr_http_util_strtolower (char *str);
+void rrr_http_util_uri_destroy (struct rrr_http_uri *uri);
+int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri);
 
 #endif /* RRR_HTTP_UTIL_H */

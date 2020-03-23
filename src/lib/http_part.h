@@ -72,6 +72,10 @@ struct rrr_http_part {
 
 void rrr_http_part_destroy (struct rrr_http_part *part);
 int rrr_http_part_new (struct rrr_http_part **result);
+const struct rrr_http_header_field *rrr_http_part_get_header_field (
+		struct rrr_http_part *part,
+		const char *name_lowercase
+);
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
 		ssize_t *parsed_bytes,

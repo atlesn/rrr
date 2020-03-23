@@ -2,9 +2,13 @@ if RRR_WITH_MYSQL
 mysql = mysql.c
 endif
 
+if RRR_WITH_OPENSSL
+encryption = rrr_openssl.c
+endif
+
 lib_LTLIBRARIES = librrr.la
-librrr_la_CFLAGS = ${AM_CFLAGS}
-librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS}
+librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
+librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c array.c type.c version.c configuration.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
@@ -17,7 +21,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c net_transport_tls.c \
 					fixed_point.c \
-					${mysql}
+					${mysql} ${encryption}
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = rrr_readdir.c

@@ -31,7 +31,7 @@ AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
 AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
-# AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
+AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable OpenSSL/TLS support in network modules])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB bindings])],[enable_usb=no],[enable_usb=yes])
@@ -61,6 +61,25 @@ AC_SUBST([CFLAGS_CODECOV])
 
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
+
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$with_encryption" != xno])
+AC_MSG_CHECKING([for OpenSSL usage])
+AS_IF([test "x$with_encryption" = xno], [
+       AC_MSG_RESULT([Not compiling with OpenSSL])
+], [
+       AC_MSG_RESULT([yes])
+       AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules])
+       AX_CHECK_OPENSSL([], [
+               AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
+       ])
+       AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+# Only version >=1.1 supported
+#       AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
+       AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+       OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
+       AC_SUBST([OPENSSL_CFLAGS_COMPAT])
+       AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+])
 
 AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])

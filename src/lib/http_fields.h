@@ -50,6 +50,10 @@ int rrr_http_fields_collection_add_field_binary (
 int rrr_http_fields_get_total_length (
 		struct rrr_http_field_collection *fields
 );
+const struct rrr_http_field *rrr_http_fields_get_field (
+		struct rrr_http_field_collection *fields,
+		const char *name
+);
 char *rrr_http_fields_to_urlencoded_form_data (
 		struct rrr_http_field_collection *fields
 );

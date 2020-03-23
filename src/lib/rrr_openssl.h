@@ -19,20 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_NET_TRANSPORT_TLS_H
-#define RRR_NET_TRANSPORT_TLS_H
+#ifndef RRR_OPENSSL_H
+#define RRR_OPENSSL_H
 
-#include <openssl/ossl_typ.h>
-#include <openssl/ssl.h>
+void rrr_openssl_global_register_user(void);
+void rrr_openssl_global_unregister_user(void);
 
-#include "net_transport.h"
-
-struct rrr_net_transport_tls {
-	RRR_NET_TRANSPORT_HEAD;
-
-	const SSL_METHOD *ssl_method;
-};
-
-int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target);
-
-#endif /* RRR_NET_TRANSPORT_TLS_H */
+#endif /* RRR_OPENSSL_H */

@@ -31,8 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_plain.h"
 #include "ip.h"
 
-static int __rrr_net_transport_plain_close (struct rrr_net_transport *transport, int handle) {
+static int __rrr_net_transport_plain_close (struct rrr_net_transport *transport, void *private_ptr, int handle) {
 	(void)(transport);
+	(void)(private_ptr);
 
 	if (rrr_socket_close(handle) != 0) {
 		RRR_MSG_ERR("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
@@ -41,8 +42,8 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport *transport,
 	return 0;
 }
 
-static int __rrr_net_transport_plain_handle_destroy_callback (int handle, void *arg) {
-	return __rrr_net_transport_plain_close ((struct rrr_net_transport *) arg, handle);
+static int __rrr_net_transport_plain_handle_destroy_callback (int handle, void *private_ptr, void *arg) {
+		return __rrr_net_transport_plain_close ((struct rrr_net_transport *) arg, private_ptr, handle);
 }
 
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
@@ -73,7 +74,7 @@ static int __rrr_net_transport_plain_connect (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_handle_collection_handle_add(&transport->handles, accept_data->ip_data.fd)) != 0) {
+	if ((ret = rrr_net_transport_handle_collection_handle_add(&transport->handles, accept_data->ip_data.fd, NULL)) != 0) {
 		RRR_MSG_ERR("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
 		goto out_disconnect;
