@@ -79,7 +79,45 @@ void rrr_socket_read_session_collection_init (
 void rrr_socket_read_session_collection_clear (
 		struct rrr_socket_read_session_collection *collection
 );
-int rrr_socket_read_message (
+int rrr_socket_read_message_using_callbacks (
+		int fd,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		int read_flags,
+		int									 (*function_get_target_size) (
+													struct rrr_socket_read_session *read_session,
+													void *private_arg
+											 ),
+		int									 (*function_complete_callback) (
+													struct rrr_socket_read_session *read_session,
+													void *private_arg
+											 ),
+		int									 (*function_poll) (
+													int fd,
+													int read_flags,
+													void *private_arg
+											 ),
+		int									 (*function_read) (
+													char *buf,
+													ssize_t *read_bytes,
+													int fd,
+													int read_flags,
+													ssize_t read_step_max_size,
+													void *private_arg
+	 	 	 	 	 	 	 	 	 	 	 ),
+		struct rrr_socket_read_session		*(*function_get_read_session_with_overshoot) (
+													void *private_arg
+											 ),
+		struct rrr_socket_read_session		*(*function_get_read_session) (
+													void *private_arg
+											 ),
+		void								 (*function_read_session_remove) (
+													struct rrr_socket_read_session *read_session,
+													void *private_arg
+											 ),
+		void *functions_callback_arg
+);
+int rrr_socket_read_message_default (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,
@@ -88,8 +126,7 @@ int rrr_socket_read_message (
 		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
-		void *complete_callback_arg,
-		struct rrr_socket_client *client
+		void *complete_callback_arg
 );
 
 #endif /* RRR_SOCKET_READ_H */
