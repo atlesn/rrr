@@ -90,51 +90,25 @@ static int __rrr_net_transport_plain_connect (
 		return ret;
 }
 
-struct plain_read_callback_data {
-	int (*get_target_size)(struct rrr_net_transport_read_session *read_session, void *arg);
-	void *get_target_size_arg;
-	int (*complete_callback)(struct rrr_net_transport_read_session *read_session, void *arg);
-	void *complete_callback_arg;
+struct rrr_net_transport_plain_read_session {
+	RRR_NET_TRANSPORT_READ_SESSION_HEAD;
+	struct rrr_socket_read_session_collection *read_sessions;
 };
 
 static int __rrr_net_transport_plain_read_get_target_size_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct plain_read_callback_data *callback_data = arg;
-
-	int ret = RRR_SOCKET_READ_INCOMPLETE;
-
-	struct rrr_net_transport_read_session net_read_session = {
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			read_session->read_complete_method,
-			read_session->target_size
-	};
-
-	// rrr_net_transport return values are equal to rrr_socket return values
-	ret = callback_data->get_target_size(&net_read_session, callback_data->get_target_size_arg);
-
-	read_session->target_size = net_read_session.target_size;
-	read_session->read_complete_method = net_read_session.read_complete_method;
-
-	return ret;
+	struct rrr_net_transport_plain_read_session *callback_data = arg;
+	return callback_data->get_target_size(arg, callback_data->get_target_size_arg);
 }
 
 static int __rrr_net_transport_plain_read_complete_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct plain_read_callback_data *callback_data = arg;
-
-	struct rrr_net_transport_read_session net_read_session = {
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			read_session->read_complete_method,
-			read_session->target_size
-	};
-
-	return callback_data->complete_callback(&net_read_session, callback_data->complete_callback_arg);
+	struct rrr_net_transport_plain_read_session *callback_data = arg;
+	return callback_data->complete_callback(arg, callback_data->complete_callback_arg);
 }
 
 static int __rrr_net_transport_plain_read_message (
@@ -142,9 +116,9 @@ static int __rrr_net_transport_plain_read_message (
 	int transport_handle,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
-	int (*get_target_size)(struct rrr_net_transport_read_session *read_session, void *arg),
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_net_transport_read_session *read_session, void *arg),
+	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 	void *complete_callback_arg
 ) {
 	int ret = 0;
@@ -154,15 +128,17 @@ static int __rrr_net_transport_plain_read_message (
 	struct rrr_socket_read_session_collection read_sessions;
 	rrr_socket_read_session_collection_init(&read_sessions);
 
-	struct plain_read_callback_data callback_data = {
+	struct rrr_net_transport_plain_read_session callback_data = {
+			NULL,
 			get_target_size,
 			get_target_size_arg,
 			complete_callback,
-			complete_callback_arg
+			complete_callback_arg,
+			&read_sessions
 	};
 
 	for (int i = 1000; i >= 0; i--) {
-		ret = rrr_socket_read_message (
+		ret = rrr_socket_read_message_default (
 				&read_sessions,
 				transport_handle,
 				read_step_initial,
@@ -171,8 +147,7 @@ static int __rrr_net_transport_plain_read_message (
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,
-				&callback_data,
-				NULL
+				&callback_data
 		);
 
 		if (ret == RRR_SOCKET_OK) {

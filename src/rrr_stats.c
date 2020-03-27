@@ -183,7 +183,7 @@ static int __rrr_stats_read_message (
 			callback, callback_data
 	};
 
-	return rrr_socket_read_message (
+	return rrr_socket_read_message_default (
 			read_sessions,
 			fd,
 			sizeof(struct rrr_socket_msg),
@@ -192,8 +192,7 @@ static int __rrr_stats_read_message (
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			rrr_stats_message_unpack_callback,
-			&msg_callback_data, // <-- CHECK THAT CALLBACK CORRECT STRUCT IS SENT
-			NULL
+			&msg_callback_data // <-- CHECK THAT CALLBACK CORRECT STRUCT IS SENT
 	);
 
 	return ret;

@@ -76,7 +76,7 @@ int rrr_http_session_send_request (
 );
 int rrr_http_session_receive (
 		struct rrr_http_session *session,
-		int (*callback)(struct rrr_http_session *session, void *arg),
+		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
 		void *callback_arg
 );
 int rrr_http_session_connect (struct rrr_http_session *session);

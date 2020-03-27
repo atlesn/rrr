@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
+#include "lib/read_session.h"
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
@@ -383,7 +384,7 @@ static int __rrr_post_read_message_callback (struct rrr_message *message, void *
 	return ret;
 }
 
-static int __rrr_post_read_callback(struct rrr_socket_read_session *read_session, void *arg) {
+static int __rrr_post_read_callback(struct rrr_read_session *read_session, void *arg) {
 	struct rrr_post_data *data = arg;
 
 	int ret = 0;

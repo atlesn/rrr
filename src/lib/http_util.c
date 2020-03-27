@@ -67,7 +67,7 @@ static int __rrr_http_util_is_uri_unreserved_rfc2396 (unsigned char c) {
 	};
 	return 0;
 }
-/*
+
 static int __rrr_http_util_is_uri_reserved(unsigned char c) {
 	switch (c) {
 		case ';':
@@ -95,7 +95,7 @@ static int __rrr_http_util_is_uri_reserved(unsigned char c) {
 	};
 	return 0;
 }
-*/
+
 static int __rrr_http_util_is_header_special_rfc822 (unsigned char c) {
 	// RFC822 §3.3.
 	switch (c) {
@@ -319,7 +319,8 @@ int rrr_http_util_strtoull (
 		unsigned long long int *result,
 		ssize_t *result_len,
 		const char *start,
-		const char *end
+		const char *end,
+		int base
 ) {
 	char buf[64];
 	const char *numbers_end = NULL;
@@ -329,9 +330,23 @@ int rrr_http_util_strtoull (
 
 	const char *pos = NULL;
 	for (pos = start; pos < end; pos++) {
-		if (*pos < '0' || *pos > '9') {
-			numbers_end = pos;
-			break;
+		if (base == 10) {
+			if (*pos < '0' || *pos > '9') {
+				numbers_end = pos;
+				break;
+			}
+		}
+		else if (base == 16) {
+			if ((*pos >= '0' && *pos <= '9') || (*pos >= 'a' && *pos <= 'f') || (*pos >= 'A' && *pos <= 'F')) {
+				// OK
+			}
+			else {
+				numbers_end = pos;
+				break;
+			}
+		}
+		else {
+			RRR_BUG("Unkonwn base %i in rrr_http_util_strtoull\n", base);
 		}
 	}
 
@@ -352,7 +367,7 @@ int rrr_http_util_strtoull (
 	buf[numbers_end - start] = '\0';
 
 	char *endptr;
-	unsigned long long int number = strtoull(buf, &endptr, 10);
+	unsigned long long int number = strtoull(buf, &endptr, base);
 
 	if (endptr == NULL) {
 		RRR_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
@@ -469,6 +484,8 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 		goto out;
 	}
 
+	memset(uri_new, '\0', sizeof(*uri_new));
+
 	size_t len = strlen(uri);
 
 	const char *pos = uri;
@@ -487,11 +504,11 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	}
 	else if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "://") == 0) {
 		ssize_t protocol_name_length = new_pos - pos;
-		if (protocol_name_length > 0 && strncasecmp(pos, "http", 4) == 0) {
-			uri_new->protocol = strdup("http");
-		}
-		else if (protocol_name_length > 0 && strncasecmp(pos, "https", 5) == 0) {
+		if (protocol_name_length > 0 && strncasecmp(pos, "https", 5) == 0) {
 			uri_new->protocol = strdup("https");
+		}
+		else if (protocol_name_length > 0 && strncasecmp(pos, "http", 4) == 0) {
+			uri_new->protocol = strdup("http");
 		}
 		else {
 			RRR_MSG_ERR("Unsupported or missing protocol name in URI '%s'\n", uri);
@@ -508,6 +525,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	pos = new_pos + result_len;
 
 	// Parse hostname if protocol is present
+	const char *hostname_begin = pos;
 	if (uri_new->protocol != NULL) {
 		result_len = 0;
 		while (pos < end) {
@@ -520,6 +538,9 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 					ret = 1;
 					goto out_destroy;
 				}
+				result_len++;
+			}
+			else if (*pos == '.') {
 				result_len++;
 			}
 			else if (*pos == '/' || *pos == ':') {
@@ -540,14 +561,14 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 				ret = 1;
 				goto out_destroy;
 			}
-			memcpy(uri_new->host, pos, result_len);
+			memcpy(uri_new->host, hostname_begin, result_len);
 			uri_new->host[result_len] = '\0';
 		}
 
 		if (*pos == ':') {
 			pos++;
 			unsigned long long port = 0;
-			if (rrr_http_util_strtoull(&port, &result_len, pos, end) != 0 || port < 1 || port > 65535) {
+			if (rrr_http_util_strtoull(&port, &result_len, pos, end, 10) != 0 || port < 1 || port > 65535) {
 				RRR_MSG_ERR("Invalid port in URL '%s'\n", uri);
 				ret = 1;
 				goto out_destroy;
@@ -569,8 +590,11 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 		else if (__rrr_http_util_is_header_nonspecial_rfc7230(*pos)) {
 			result_len++;
 		}
+		else if (__rrr_http_util_is_uri_reserved(*pos)) {
+			result_len++;
+		}
 		else {
-			RRR_MSG_ERR("Invalid character %c in URI '%s'\n", *pos, uri);
+			RRR_MSG_ERR("Invalid character %c in URI endpoint '%s'\n", *pos, uri);
 			ret = 1;
 			goto out_destroy;
 		}

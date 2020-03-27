@@ -297,10 +297,12 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int __receive_http_response (struct rrr_http_session *session, void *arg) {
+static int __receive_http_response (struct rrr_http_session *session, const char *start, const char *end, void *arg) {
 	struct response_callback_data *data = arg;
 
 	(void)(data);
+	(void)(start);
+	(void)(end);
 
 	struct rrr_http_part *part = session->response_part;
 

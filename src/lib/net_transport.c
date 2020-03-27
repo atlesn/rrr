@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK() \
 		pthread_mutex_unlock(&collection->lock)
 
+// TODO : Consider refcounting returned object
 void *rrr_net_transport_handle_collection_handle_get_private_ptr (
 		struct rrr_net_transport_handle_collection *collection,
 		int handle

@@ -47,7 +47,8 @@ int rrr_http_util_strtoull (
 		unsigned long long int *result,
 		ssize_t *result_len,
 		const char *start,
-		const char *end
+		const char *end,
+		int base
 );
 int rrr_http_util_strcasestr (
 		const char **result_start,

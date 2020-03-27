@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "crc32.h"
 #include "random.h"
+#include "read_session.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -519,7 +520,7 @@ static int __rrr_udpstream_frame_packed_validate (
 }
 
 static int __rrr_udpstream_read_get_target_size (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -1002,7 +1003,7 @@ struct rrr_udpstream_read_callback_data {
 };
 
 static int __rrr_udpstream_read_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -1414,7 +1415,7 @@ int rrr_udpstream_do_read_tasks (
 
 	int errors = 0;
 	do {
-		if ((ret = rrr_socket_read_message (
+		if ((ret = rrr_socket_read_message_default (
 				&data->read_sessions,
 				data->ip.fd,
 				1024,
@@ -1423,8 +1424,7 @@ int rrr_udpstream_do_read_tasks (
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,
-				&callback_data,
-				NULL
+				&callback_data
 		)) != 0) {
 			if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 				ret = 0;

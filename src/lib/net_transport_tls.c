@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/bio.h>
@@ -31,7 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "net_transport_tls.h"
 #include "rrr_openssl.h"
+#include "rrr_strerror.h"
 #include "gnu.h"
+#include "read_session.h"
 
 #define RRR_SSL_ERR(msg)								\
 	do {												\
@@ -43,7 +46,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;
 	BIO *web;
-	struct rrr_net_transport_read_session read_session;
 };
 
 static int __rrr_net_transport_tls_close (struct rrr_net_transport *transport, void *private_ptr, int handle) {
@@ -63,13 +65,6 @@ static int __rrr_net_transport_tls_close (struct rrr_net_transport *transport, v
 			SSL_CTX_free(ssl_data->ctx);
 		}
 
-		// Cast away const OK
-		void *buffer = (void *)  ssl_data->read_session.buffer;
-		void *overshoot = (void *)  ssl_data->read_session.overshoot;
-
-		RRR_FREE_IF_NOT_NULL(buffer);
-		RRR_FREE_IF_NOT_NULL(overshoot);
-
 		free(ssl_data);
 	}
 
@@ -88,6 +83,25 @@ static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport
 	free(tls);
 
 	rrr_openssl_global_unregister_user();
+}
+
+static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
+	STACK_OF(SSL_CIPHER) *sk = SSL_get1_supported_ciphers(ssl);
+
+	RRR_MSG("Enabled ciphers: ");
+
+	for (int i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
+		const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+
+		const char *name = SSL_CIPHER_get_name(c);
+		if (name == NULL) {
+			break;
+		}
+
+		RRR_MSG("%s%s", (i == 0 ? "" : ":"), name);
+	}
+
+	RRR_MSG("\n");
 }
 
 static int __rrr_net_transport_tls_connect (
@@ -174,16 +188,39 @@ static int __rrr_net_transport_tls_connect (
 		goto out_unregister_handle;
 	}
 
+	// Set non-blocking I/O
+	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
+
+	retry_connect:
 	if (BIO_do_connect(ssl_data->web) != 1) {
+		if (BIO_should_retry(ssl_data->web)) {
+			usleep(1000);
+			goto retry_connect;
+		}
 		RRR_SSL_ERR("Could not do TLS connect");
 		ret = 1;
 		goto out_unregister_handle;
 	}
 
+	if (RRR_DEBUGLEVEL_1) {
+		__rrr_net_transport_tls_dump_enabled_ciphers(ssl);
+	}
+
+	retry_handshake:
 	if (BIO_do_handshake(ssl_data->web) != 1) {
+		if (BIO_should_retry(ssl_data->web)) {
+			usleep(1000);
+			goto retry_handshake;
+		}
 		RRR_SSL_ERR("Could not do TLS handshake");
 		ret = 1;
 		goto out_unregister_handle;
+	}
+
+	if (RRR_DEBUGLEVEL_1) {
+		const SSL_METHOD *method_1 = SSL_CTX_get_ssl_method(ssl_data->ctx);
+		const SSL_METHOD *method_2 = SSL_get_ssl_method(ssl);
+		RRR_MSG("SSL versions: CTX: %i SSL: %i\n", *((int*)method_1), *((int*)method_2));
 	}
 
 	X509 *cert = SSL_get_peer_certificate(ssl);
@@ -224,140 +261,145 @@ static int __rrr_net_transport_tls_connect (
 		return ret;
 }
 
+struct rrr_net_transport_tls_read_session {
+	RRR_NET_TRANSPORT_READ_SESSION_HEAD;
+	struct rrr_net_transport_tls_ssl_data *ssl_data;
+};
+
+static int __rrr_net_transport_tls_read_poll(int read_flags, void *private_arg) {
+	(void)(private_arg);
+	(void)(read_flags);
+	return RRR_SOCKET_OK;
+}
+
+static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_with_overshoot(void *private_arg) {
+	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	if (callback_data->read_session->rx_overshoot != NULL) {
+		return callback_data->read_session;
+	}
+	return NULL;
+}
+
+static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(void *private_arg) {
+	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	return callback_data->read_session;
+}
+
+static void __rrr_net_transport_tls_read_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
+	(void)(read_session);
+	(void)(private_arg);
+	return;
+}
+
+static int __rrr_net_transport_tls_read_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
+	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
+}
+
+static int __rrr_net_transport_tls_read_complete_callback(struct rrr_read_session *read_session, void *private_arg) {
+	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
+}
+
+static int __rrr_net_transport_tls_read_read (
+		char *buf,
+		ssize_t *read_bytes,
+		int read_flags,
+		ssize_t read_step_max_size,
+		void *private_arg
+) {
+	(void)(read_flags);
+
+	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->ssl_data;
+
+	int ret = RRR_SOCKET_OK;
+
+	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
+	if (result <= 0) {
+		if (BIO_should_retry(ssl_data->web) == 0) {
+			int reason = BIO_get_retry_reason(ssl_data->web);
+			RRR_SSL_ERR("Error while reading from TLS connection");
+			RRR_MSG_ERR("Reason: %s\n", rrr_strerror(reason));
+			// Possible close of connection
+			goto out;
+		}
+		else {
+			// Retry later
+			return RRR_SOCKET_READ_INCOMPLETE;
+		}
+	}
+	else if (ERR_peek_error() != 0) {
+		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_read");
+		return RRR_SOCKET_HARD_ERROR;
+	}
+
+	out:
+	ERR_clear_error();
+	*read_bytes = (result >= 0 ? result : 0);
+	return ret;
+}
+
 static int __rrr_net_transport_tls_read_message (
 	struct rrr_net_transport *transport,
 	int transport_handle,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
-	int (*get_target_size)(struct rrr_net_transport_read_session *read_session, void *arg),
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_net_transport_read_session *read_session, void *arg),
+	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 	void *complete_callback_arg
 ) {
+	int ret = 0;
+
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
 	if ((ssl_data = rrr_net_transport_handle_collection_handle_get_private_ptr(&transport->handles, transport_handle)) == NULL) {
 		RRR_MSG_ERR("Handle %i not found in __rrr_net_transport_tls_send\n", transport_handle);
 		return 1;
 	}
 
-	struct rrr_net_transport_read_session *read_session = &ssl_data->read_session;
+	struct rrr_read_session socket_read_session = {0};
+	struct rrr_net_transport_tls_read_session read_session = {0};
 
-	if (read_session->overshoot != NULL) {
-		if (read_session->buffer != NULL) {
-			RRR_BUG("Both overshoot and buffer was non-NULL in __rrr_net_transport_tls_read_message\n");
+	read_session.get_target_size = get_target_size;
+	read_session.get_target_size_arg = get_target_size_arg;
+	read_session.complete_callback = complete_callback;
+	read_session.complete_callback_arg = complete_callback_arg;
+	read_session.read_session = &socket_read_session;
+	read_session.ssl_data = ssl_data;
+
+	while (1) {
+		ret = rrr_socket_read_message_using_callbacks (
+				read_step_initial,
+				read_step_max_size,
+				0,
+				__rrr_net_transport_tls_read_get_target_size,
+				__rrr_net_transport_tls_read_complete_callback,
+				__rrr_net_transport_tls_read_poll,
+				__rrr_net_transport_tls_read_read,
+				__rrr_net_transport_tls_read_get_read_session_with_overshoot,
+				__rrr_net_transport_tls_read_get_read_session,
+				__rrr_net_transport_tls_read_remove_read_session,
+				&read_session
+		);
+
+		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+			continue;
 		}
-
-		read_session->buffer = read_session->overshoot;
-		read_session->buffer_size = read_session->overshoot_size;
-
-		read_session->overshoot = NULL;
-		read_session->overshoot_size = 0;
-	}
-
-	// Check for allocation or expansion of buffer
-	// NOTE : Buffer is always cleaned up when handle is unregistered
-	if (read_session->wpos + read_step_max_size > read_session->buffer_size) {
-		char *new_buf = realloc((void*) read_session->buffer, read_session->buffer_size + read_step_max_size);
-		if (new_buf == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_net_transport_tls_read_message\n");
-			return 1;
-		}
-		read_session->buffer = new_buf;
-		read_session->buffer_size = read_session->buffer_size + read_step_max_size;
-	}
-
-	// Cast away const OK, we only want const in the callback functions
-	char *buffer = (char *) read_session->buffer;
-
-	int bytes_to_read = read_session->buffer_size - read_session->wpos;
-
-	if (read_session->target_size > 0) {
-		bytes_to_read = read_session->target_size - read_session->wpos;
-	}
-	else if (read_session->wpos == 0) {
-		bytes_to_read = read_step_initial;
-	}
-
-	ERR_clear_error();
-
-	int result = BIO_read(ssl_data->web, buffer + read_session->wpos, bytes_to_read);
-	if (result == 0) {
-		if (BIO_should_retry(ssl_data->web) == 0) {
-			if (read_session->read_complete_method == RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE) {
-				read_session->target_size = read_session->wpos;
-			}
-			else {
-				RRR_MSG_ERR("Connection closed before read completed in __rrr_net_transport_tls_read_message\n");
-				return 1;
-			}
+		else if (ret == RRR_NET_TRANSPORT_READ_OK) {
+			ret = 0;
+			break;
 		}
 		else {
-			// Retry later
-			return 0;
-		}
-	}
-	else if (ERR_peek_error() != 0) {
-		RRR_SSL_ERR("Error while reading");
-		return 1;
-	}
-
-	read_session->wpos += result;
-
-	if (read_session->target_size == 0 && read_session->read_complete_method != RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE) {
-		int ret = 0;
-		if ((ret = get_target_size(read_session, get_target_size_arg)) != 0) {
-			if (ret != RRR_NET_TRANSPORT_READ_INCOMPLETE) {
-				RRR_MSG_ERR("Error %i from get_target_size in TLS read\n", ret);
-				return 1;
-			}
-		}
-		else if (read_session->read_complete_method == RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE) {
-			if (read_session->target_size != 0)  {
-				RRR_BUG("BUG: get_target_size set both a target size and RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE\n");
-			}
-		}
-		else if (read_session->read_complete_method == RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH) {
-			if (read_session->target_size == 0) {
-				RRR_BUG("BUG: get_target_size did not set any target size in __rrr_net_transport_tls_read_message\n");
-			}
-		}
-		else {
-			RRR_BUG("BUG: get_target_size returned invalid complete method %i in __rrr_net_transport_tls_read_message\n",
-					read_session->read_complete_method);
-		}
-
-		if (ret == 0 && read_session->target_size < read_session->wpos) {
-			read_session->overshoot_size = read_session->wpos - read_session->target_size;
-
-			if ((read_session->overshoot = malloc(read_session->overshoot_size)) == NULL) {
-				RRR_MSG_ERR("Could not allocate memory for overshoot in __rrr_net_transport_tls_read_message\n");
-				return 1;
-			}
-
-			memcpy((void *) read_session->overshoot, read_session->buffer + read_session->wpos, read_session->overshoot_size);
-
-			read_session->wpos = read_session->target_size;
+			RRR_MSG_ERR("Error while reading from remote\n");
+			ret = 1;
+			goto out;
 		}
 	}
 
-	if (read_session->wpos == read_session->target_size) {
-		int ret = 0;
-		if ((ret = complete_callback(read_session, complete_callback_arg)) != 0) {
-			RRR_MSG_ERR("Error %i from callback in __rrr_net_transport_tls_read_message\n", ret);
-			return 1;
-		}
-
-		// Don't clear overshoot here
-		void *buffer = (void*) read_session->buffer; // Cast away const OK
-		RRR_FREE_IF_NOT_NULL(buffer);
-		read_session->buffer = NULL;
-		read_session->target_size = 0;
-		read_session->wpos = 0;
-		read_session->read_complete_method = 0;
-		read_session->buffer_size = 0;
-	}
-
-	return 0;
+	out:
+	rrr_socket_read_session_cleanup(&socket_read_session);
+	return ret;
 }
 
 static int __rrr_net_transport_tls_send (

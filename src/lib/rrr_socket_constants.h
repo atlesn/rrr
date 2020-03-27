@@ -29,7 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_READ_EOF			4
 
 #define RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH	0
-#define RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE		1
+#define RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE		11
+// TODO : Implement chunked size retrieval, call get_target_size many times
 
 #define RRR_SOCKET_CLIENT_TIMEOUT_S	30
 

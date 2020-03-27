@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <pthread.h>
 
+#include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
 #include "linked_list.h"
 
@@ -47,6 +48,8 @@ enum rrr_net_transport_type {
 	RRR_NET_TRANSPORT_TLS
 };
 
+struct rrr_read_session;
+
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 	int handle;
@@ -66,19 +69,15 @@ struct rrr_net_transport {
 	RRR_NET_TRANSPORT_HEAD;
 };
 
+#define RRR_NET_TRANSPORT_READ_SESSION_HEAD										\
+	struct rrr_read_session *read_session;										\
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);	\
+	void *get_target_size_arg;													\
+	int (*complete_callback)(struct rrr_read_session *read_session, void *arg);	\
+	void *complete_callback_arg
+
 struct rrr_net_transport_read_session {
-	// Populated by transport layer
-	const char *buffer;
-	ssize_t buffer_size;
-	ssize_t wpos;
-
-	// Populated by get_target_size-method
-	int read_complete_method;
-	ssize_t target_size;
-
-	// Overshoot if we read too many bytes
-	const char *overshoot;
-	ssize_t overshoot_size;
+	RRR_NET_TRANSPORT_READ_SESSION_HEAD;
 };
 
 struct rrr_net_transport_methods {
@@ -90,9 +89,9 @@ struct rrr_net_transport_methods {
 		int transport_handle,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		int (*get_target_size)(struct rrr_net_transport_read_session *read_session, void *arg),
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_net_transport_read_session *read_session, void *arg),
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 	);
 	int (*send)(
@@ -152,9 +151,9 @@ static inline int rrr_net_transport_read_message (
 		int transport_handle,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
-		int (*get_target_size)(struct rrr_net_transport_read_session *read_session, void *arg),
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_net_transport_read_session *read_session, void *arg),
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
 	return transport->methods->read_message (

@@ -198,9 +198,9 @@ int rrr_socket_client_collection_read (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
-		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
 	int ret = 0;
@@ -212,7 +212,7 @@ int rrr_socket_client_collection_read (
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
-		ret = rrr_socket_read_message (
+		ret = rrr_socket_read_message_default (
 				&node->read_sessions,
 				node->connected_fd,
 				read_step_initial,
@@ -221,8 +221,7 @@ int rrr_socket_client_collection_read (
 				get_target_size,
 				get_target_size_arg,
 				complete_callback,
-				complete_callback_arg,
-				node
+				complete_callback_arg
 		);
 
 		if (ret == RRR_SOCKET_OK) {

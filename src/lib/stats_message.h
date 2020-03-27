@@ -44,7 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_MESSAGE_PATH_MAX_LENGTH 512
 #define RRR_STATS_MESSAGE_DATA_MAX_SIZE 512
 
-struct rrr_socket_read_session;
+struct rrr_read_session;
 
 struct rrr_stats_message {
 	RRR_LL_NODE(struct rrr_stats_message);
@@ -74,7 +74,7 @@ struct rrr_stats_message_unpack_callback_data {
 };
 
 int rrr_stats_message_unpack_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *private_arg
 );
 

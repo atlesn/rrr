@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "vl_time.h"
 #include "random.h"
+#include "read_session.h"
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
@@ -170,7 +171,7 @@ struct rrr_stats_engine_read_callback_data {
 	struct rrr_stats_engine *engine;
 };
 
-static int __rrr_stats_engine_read_callback (struct rrr_socket_read_session *read_session, void *arg) {
+static int __rrr_stats_engine_read_callback (struct rrr_read_session *read_session, void *arg) {
 	struct rrr_stats_engine *stats = arg;
 
 	(void)(stats);

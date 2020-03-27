@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "settings.h"
 #include "../../config.h"
+#include "read_session.h"
 
 #define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 10
 #define RRR_PYTHON3_MAX_IN_FLIGHT 50
@@ -616,7 +617,7 @@ struct socket_recv_callback_data {
 	PyObject *socket;
 };
 
-static int __rrr_python3_socket_recv_callback (struct rrr_socket_read_session *read_session, void *arg) {
+static int __rrr_python3_socket_recv_callback (struct rrr_read_session *read_session, void *arg) {
 	int ret = 0;
 
 	struct socket_recv_callback_data *callback_data = arg;
@@ -706,7 +707,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 
 	struct socket_recv_callback_data callback_data = { NULL, socket };
 
-	ret = rrr_socket_read_message (
+	ret = rrr_socket_read_message_default (
 			&socket_data->read_sessions,
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
@@ -715,8 +716,7 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
-			&callback_data,
-			NULL
+			&callback_data
 	);
 
 	if (ret != RRR_SOCKET_OK) {

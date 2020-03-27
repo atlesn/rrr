@@ -39,7 +39,7 @@ struct rrr_socket_options {
 	int protocol;
 };
 
-struct rrr_socket_read_session;
+struct rrr_read_session;
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
 		int fd

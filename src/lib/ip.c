@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 #include "rrr_socket_read.h"
 #include "rrr_strerror.h"
+#include "read_session.h"
 
 void rrr_ip_buffer_entry_destroy (
 		struct rrr_ip_buffer_entry *entry
@@ -233,7 +234,7 @@ struct ip_receive_callback_data {
 };
 
 static int __ip_receive_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	struct ip_receive_callback_data *callback_data = arg;

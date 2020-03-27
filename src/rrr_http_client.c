@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket_read.h"
 #include "lib/http_session.h"
 #include "lib/http_part.h"
+#include "lib/http_util.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
 #include "lib/rrr_strerror.h"
@@ -170,7 +171,50 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	return ret;
 }
 
-static int __rrr_http_client_receive_callback (struct rrr_http_session *session, void *arg) {
+static int __rrr_http_client_update_target_if_not_null (
+		struct rrr_http_client_data *data,
+		const char *protocol,
+		const char *hostname,
+		const char *endpoint,
+		unsigned int port
+) {
+	if (protocol != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->hostname);
+		if ((data->protocol = strdup(protocol)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for protocol in __rrr_http_client_update_target_if_not_null\n");
+			return 1;
+		}
+	}
+
+	if (hostname != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->hostname);
+		if ((data->hostname = strdup(hostname)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for hostname in __rrr_http_client_update_target_if_not_null\n");
+			return 1;
+		}
+	}
+
+	if (endpoint != NULL) {
+		RRR_FREE_IF_NOT_NULL(data->endpoint);
+		if ((data->endpoint = strdup(endpoint)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for endpoint in __rrr_http_client_update_target_if_not_null\n");
+			return 1;
+		}
+	}
+
+	if (port > 0) {
+		data->http_port = port;
+	}
+
+	return 0;
+}
+
+static int __rrr_http_client_receive_callback (
+		struct rrr_http_session *session,
+		const char *start,
+		const char *end,
+		void *arg
+) {
 	struct rrr_http_client_response *response = arg;
 	struct rrr_http_part *part = session->response_part;
 
@@ -192,6 +236,9 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 		}
 		RRR_DBG_1("HTTP Redirect to %s\n", location->value);
 
+		if (response->argument != NULL) {
+			RRR_BUG("Response argument was not NULL in __rrr_http_client_receive_callback, possible double call with non-200 response\n");
+		}
 		if ((response->argument = strdup(location->value)) == NULL) {
 			RRR_MSG_ERR("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
 			ret = 1;
@@ -207,9 +254,9 @@ static int __rrr_http_client_receive_callback (struct rrr_http_session *session,
 		goto out;
 	}
 
-	if (part->data_ptr != NULL && part->data_length > 0) {
-		int bytes = write (STDOUT_FILENO, part->data_ptr, part->data_length);
-		if (bytes != part->data_length) {
+	if (start != NULL && end != NULL) {
+		int bytes = write (STDOUT_FILENO, start, end - start);
+		if (bytes != end - start) {
 			RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
 			ret = 1;
 			goto out;
@@ -274,11 +321,6 @@ int main (int argc, const char *argv[]) {
 	struct rrr_http_client_data data;
 	struct rrr_http_client_response response = {0};
 
-	char *use_hostname = NULL;
-	char *use_endpoint = NULL;
-	char *use_protocol = NULL;
-	unsigned int use_port = 0;
-
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_client_data_init(&data);
 
@@ -297,22 +339,6 @@ int main (int argc, const char *argv[]) {
 	int retry_max = 10;
 
 	retry:
-	if (use_hostname != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->hostname);
-		data->hostname = use_hostname;
-		use_hostname = NULL;
-	}
-	if (use_endpoint != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->endpoint);
-		data->endpoint = use_endpoint;
-		use_endpoint = NULL;
-	}
-	if (use_protocol != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->hostname);
-		data->protocol = use_protocol;
-		use_protocol = NULL;
-	}
-
 	if (--retry_max == 0) {
 		RRR_MSG_ERR("Maximum number of retries reached\n");
 		ret = 1;
@@ -337,39 +363,38 @@ int main (int argc, const char *argv[]) {
 		struct rrr_http_uri *uri = NULL;
 
 		if (rrr_http_util_uri_parse(&uri, response.argument) != 0) {
-			RRR_MSG_ERR("Could not parse Location from response header\n");
+			RRR_MSG_ERR("Could not parse Location from redirect response header\n");
 			ret = 1;
 			goto out;
 		}
 
-		RRR_FREE_IF_NOT_NULL(use_hostname);
-		RRR_FREE_IF_NOT_NULL(use_endpoint);
-		RRR_FREE_IF_NOT_NULL(use_protocol);
+		RRR_DBG_1("Redirected to %s (%s, %s, %s, %u)\n",
+				response.argument,
+				(uri->protocol != NULL ? uri->protocol : "-"),
+				(uri->host != NULL ? uri->host : "-"),
+				(uri->endpoint != NULL ? uri->endpoint : "-"),
+				uri->port
+		);
 
-		// Remember to set URI fields to NULL to avoid double free
-		if (uri->host != NULL && *(uri->host) != '\0') {
-			use_hostname = uri->host;
-			uri->host = NULL;
+		if (__rrr_http_client_update_target_if_not_null (
+				&data,
+				uri->protocol,
+				uri->host,
+				uri->endpoint,
+				uri->port
+		) != 0) {
+			RRR_MSG_ERR("Could not update target after redirect\n");
+			ret = 1;
+			goto out;
 		}
-		if (uri->endpoint != NULL && *(uri->endpoint) != '\0') {
-			use_endpoint = uri->endpoint;
-			uri->endpoint = NULL;
-		}
-		if (uri->protocol != NULL && *(uri->protocol) != '\0') {
-			use_protocol = uri->protocol;
-			uri->protocol = NULL;
-		}
-		if (uri->port > 0) {
-			use_port = uri->port;
-		}
+
 
 		rrr_http_util_uri_destroy(uri);
+
+		goto retry;
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(use_hostname);
-	RRR_FREE_IF_NOT_NULL(use_endpoint);
-	RRR_FREE_IF_NOT_NULL(use_protocol);
 	__rrr_http_client_response_cleanup(&response);
 	rrr_set_debuglevel_on_exit();
 	__rrr_http_client_data_cleanup(&data);

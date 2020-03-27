@@ -34,13 +34,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
 #include "rrr_strerror.h"
+#include "read_session.h"
 #include "vl_time.h"
 
-static struct rrr_socket_read_session *__rrr_socket_read_session_new (
+static struct rrr_read_session *__rrr_socket_read_session_new (
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
-	struct rrr_socket_read_session *read_session = malloc(sizeof(*read_session));
+	struct rrr_read_session *read_session = malloc(sizeof(*read_session));
 	if (read_session == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
@@ -54,15 +55,6 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_new (
 	return read_session;
 }
 
-static int __rrr_socket_read_session_destroy (
-		struct rrr_socket_read_session *read_session
-) {
-	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
-	RRR_FREE_IF_NOT_NULL(read_session->rx_overshoot);
-	free(read_session);
-	return 0;
-}
-
 void rrr_socket_read_session_collection_init (
 		struct rrr_socket_read_session_collection *collection
 ) {
@@ -72,14 +64,14 @@ void rrr_socket_read_session_collection_init (
 void rrr_socket_read_session_collection_clear (
 		struct rrr_socket_read_session_collection *collection
 ) {
-	RRR_LL_DESTROY(collection,struct rrr_socket_read_session,__rrr_socket_read_session_destroy(node));
+	RRR_LL_DESTROY(collection,struct rrr_read_session,rrr_socket_read_session_destroy(node));
 }
 
-static struct rrr_socket_read_session *__rrr_socket_read_session_collection_get_session_with_overshoot (
+static struct rrr_read_session *__rrr_socket_read_session_collection_get_session_with_overshoot (
 		struct rrr_socket_read_session_collection *collection
 ) {
 
-	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
+	RRR_LL_ITERATE_BEGIN(collection,struct rrr_read_session);
 		if (node->rx_overshoot != NULL) {
 			return node;
 		}
@@ -87,17 +79,17 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_get_
 	return NULL;
 }
 
-static struct rrr_socket_read_session *__rrr_socket_read_session_collection_maintain_and_find_or_create (
+static struct rrr_read_session *__rrr_socket_read_session_collection_maintain_and_find_or_create (
 		struct rrr_socket_read_session_collection *collection,
 		struct sockaddr *src_addr,
 		socklen_t src_addr_len
 ) {
-	struct rrr_socket_read_session *res = NULL;
+	struct rrr_read_session *res = NULL;
 
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t time_limit = time_now - RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000;
 
-	RRR_LL_ITERATE_BEGIN(collection,struct rrr_socket_read_session);
+	RRR_LL_ITERATE_BEGIN(collection,struct rrr_read_session);
 		if (node->last_read_time < time_limit) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
@@ -107,7 +99,7 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 			}
 			res = node;
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,__rrr_socket_read_session_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection,rrr_socket_read_session_destroy(node));
 
 	if (res == NULL) {
 		res = __rrr_socket_read_session_new(src_addr, src_addr_len);
@@ -125,22 +117,24 @@ static struct rrr_socket_read_session *__rrr_socket_read_session_collection_main
 
 struct rrr_socket_read_message_default_callback_data {
 	struct rrr_socket_read_session_collection *read_sessions;
+	int fd;
 	struct sockaddr src_addr;
 	socklen_t src_addr_len;
-	int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg);
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);
 	void *get_target_size_arg;
-	int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg);
+	int (*complete_callback)(struct rrr_read_session *read_session, void *arg);
 	void *complete_callback_arg;
 };
 
-static int __rrr_socket_read_message_default_poll(int fd, int read_flags, void *private_arg) {
-	(void)(private_arg);
+static int __rrr_socket_read_message_default_poll(int read_flags, void *private_arg) {
+	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
 	(void)(read_flags);
 
 	int ret = RRR_SOCKET_OK;
 
 	ssize_t items = 0;
-	struct pollfd pollfd = { fd, POLLIN, 0 };
+	struct pollfd pollfd = { callback_data->fd, POLLIN, 0 };
 
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
@@ -174,12 +168,12 @@ static int __rrr_socket_read_message_default_poll(int fd, int read_flags, void *
 	return ret;
 }
 
-static struct rrr_socket_read_session *__rrr_socket_read_message_default_get_read_session_with_overshoot(void *private_arg) {
+static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session_with_overshoot(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	return __rrr_socket_read_session_collection_get_session_with_overshoot(callback_data->read_sessions);
 }
 
-static struct rrr_socket_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
+static struct rrr_read_session *__rrr_socket_read_message_default_get_read_session(void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	return __rrr_socket_read_session_collection_maintain_and_find_or_create (
 		callback_data->read_sessions,
@@ -188,22 +182,22 @@ static struct rrr_socket_read_session *__rrr_socket_read_message_default_get_rea
 	);
 }
 
-static void __rrr_socket_read_message_default_remove_read_session(struct rrr_socket_read_session *read_session, void *private_arg) {
+static void __rrr_socket_read_message_default_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	RRR_LL_REMOVE_NODE(
 			callback_data->read_sessions,
-			struct rrr_socket_read_session,
+			struct rrr_read_session,
 			read_session,
-			__rrr_socket_read_session_destroy(node)
+			rrr_socket_read_session_destroy(node)
 	);
 }
 
-static int __rrr_socket_read_message_default_get_target_size(struct rrr_socket_read_session *read_session, void *private_arg) {
+static int __rrr_socket_read_message_default_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
 }
 
-static int __rrr_socket_read_message_default_complete_callback(struct rrr_socket_read_session *read_session, void *private_arg) {
+static int __rrr_socket_read_message_default_complete_callback(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
 	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
 }
@@ -211,14 +205,13 @@ static int __rrr_socket_read_message_default_complete_callback(struct rrr_socket
 static int __rrr_socket_read_message_default_read (
 		char *buf,
 		ssize_t *read_bytes,
-		int fd,
 		int read_flags,
 		ssize_t read_step_max_size,
 		void *private_arg
 ) {
-	int ret = 0;
-
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
+	int ret = 0;
 
 	*read_bytes = 0;
 
@@ -231,7 +224,7 @@ static int __rrr_socket_read_message_default_read (
 	if ((read_flags & RRR_SOCKET_READ_METHOD_RECVFROM) != 0) {
 		/* Read and distinguish between senders based on source addresses */
 		bytes = recvfrom (
-				fd,
+				callback_data->fd,
 				buf,
 				read_step_max_size,
 				0,
@@ -242,7 +235,7 @@ static int __rrr_socket_read_message_default_read (
 	else if ((read_flags & RRR_SOCKET_READ_METHOD_RECV) != 0) {
 		/* Read and don't distinguish between senders */
 		bytes = recv (
-				fd,
+				callback_data->fd,
 				buf,
 				read_step_max_size,
 				0
@@ -251,7 +244,7 @@ static int __rrr_socket_read_message_default_read (
 	else if ((read_flags & RRR_SOCKET_READ_METHOD_READ_FILE) != 0) {
 		/* Read from file */
 		bytes = read (
-				fd,
+				callback_data->fd,
 				buf,
 				read_step_max_size
 		);
@@ -282,39 +275,36 @@ static int __rrr_socket_read_message_default_read (
 }
 
 int rrr_socket_read_message_using_callbacks (
-		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
 		int									 (*function_get_target_size) (
-													struct rrr_socket_read_session *read_session,
+													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_complete_callback) (
-													struct rrr_socket_read_session *read_session,
+													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		int									 (*function_poll) (
-													int fd,
 													int read_flags,
 													void *private_arg
 											 ),
 		int									 (*function_read) (
 													char *buf,
 													ssize_t *read_bytes,
-													int fd,
 													int read_flags,
 													ssize_t read_step_max_size,
 													void *private_arg
 	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_socket_read_session		*(*function_get_read_session_with_overshoot) (
+		struct rrr_read_session		*(*function_get_read_session_with_overshoot) (
 													void *private_arg
 											 ),
-		struct rrr_socket_read_session		*(*function_get_read_session) (
+		struct rrr_read_session		*(*function_get_read_session) (
 													void *private_arg
 											 ),
 		void								 (*function_read_session_remove) (
-													struct rrr_socket_read_session *read_session,
+													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
 		void *functions_callback_arg
@@ -322,14 +312,14 @@ int rrr_socket_read_message_using_callbacks (
 	int ret = RRR_SOCKET_OK;
 
 	char buf[read_step_max_size];
-	struct rrr_socket_read_session *read_session = NULL;
+	struct rrr_read_session *read_session = NULL;
 
 	read_session = function_get_read_session_with_overshoot(functions_callback_arg);
 	if (read_session != NULL) {
 		goto process_overshoot;
 	}
 
-	if ((ret = function_poll(fd, read_flags, functions_callback_arg)) != RRR_SOCKET_OK) {
+	if ((ret = function_poll(read_flags, functions_callback_arg)) != RRR_SOCKET_OK) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 			if ((read_flags & RRR_SOCKET_READ_NO_SLEEPING) == 0) {
 				usleep(10 * 1000);
@@ -344,7 +334,7 @@ int rrr_socket_read_message_using_callbacks (
 	ssize_t bytes;
 
 	/* Read */
-	ret = function_read (buf, &bytes, fd, read_flags, read_step_max_size, functions_callback_arg);
+	ret = function_read (buf, &bytes, read_flags, read_step_max_size, functions_callback_arg);
 	if (ret != 0) {
 		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
 			goto out;
@@ -526,13 +516,14 @@ int rrr_socket_read_message_default (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
-		int (*get_target_size)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 ) {
 	struct rrr_socket_read_message_default_callback_data callback_data = {0};
 
+	callback_data.fd = fd;
 	callback_data.read_sessions = read_session_collection;
 	callback_data.get_target_size = get_target_size;
 	callback_data.get_target_size_arg = get_target_size_arg;
@@ -540,7 +531,6 @@ int rrr_socket_read_message_default (
 	callback_data.complete_callback_arg = complete_callback_arg;
 
 	return rrr_socket_read_message_using_callbacks (
-			fd,
 			read_step_initial,
 			read_step_max_size,
 			read_flags,

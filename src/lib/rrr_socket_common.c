@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "messages.h"
 #include "array.h"
+#include "read_session.h"
 
 int rrr_socket_common_receive_message_raw_callback (
 		void *data,
@@ -68,7 +69,7 @@ int rrr_socket_common_receive_message_raw_callback (
 }
 
 int rrr_socket_common_receive_message_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	int ret = 0;
@@ -118,7 +119,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
 }
 
 int rrr_socket_common_get_session_target_length_from_message_and_checksum (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	int ret = rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
@@ -140,7 +141,7 @@ int rrr_socket_common_get_session_target_length_from_message_and_checksum (
 }
 
 int rrr_socket_common_get_session_target_length_from_array (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data *data = arg;
@@ -192,12 +193,12 @@ int rrr_socket_common_get_session_target_length_from_array (
 }
 
 struct receive_callback_data {
-	int (*callback)(struct rrr_socket_read_session *read_session, void *arg);
+	int (*callback)(struct rrr_read_session *read_session, void *arg);
 	void *arg;
 };
 
 static int __rrr_socket_common_receive_callback (
-		struct rrr_socket_read_session *read_session,
+		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	struct receive_callback_data *data = arg;
@@ -211,7 +212,7 @@ int rrr_socket_common_receive_array (
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
-		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 ) {
 	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
@@ -222,7 +223,7 @@ int rrr_socket_common_receive_array (
 			callback, arg
 	};
 
-	int ret = rrr_socket_read_message (
+	int ret = rrr_socket_read_message_default (
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_socket_msg),
@@ -231,8 +232,7 @@ int rrr_socket_common_receive_array (
 			rrr_socket_common_get_session_target_length_from_array,
 			&callback_data_array,
 			__rrr_socket_common_receive_callback,
-			&callback_data,
-			NULL
+			&callback_data
 	);
 
 	if (ret != RRR_SOCKET_OK) {
@@ -259,7 +259,7 @@ int rrr_socket_common_receive_socket_msg (
 		struct rrr_socket_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
-		int (*callback)(struct rrr_socket_read_session *read_session, void *arg),
+		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 ) {
 	int ret = 0;
@@ -268,7 +268,7 @@ int rrr_socket_common_receive_socket_msg (
 			callback, arg
 	};
 
-	ret = rrr_socket_read_message (
+	ret = rrr_socket_read_message_default (
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_socket_msg),
@@ -277,8 +277,7 @@ int rrr_socket_common_receive_socket_msg (
 			rrr_socket_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_common_receive_callback,
-			&callback_data,
-			NULL
+			&callback_data
 	);
 
 	if (ret != RRR_SOCKET_OK) {
