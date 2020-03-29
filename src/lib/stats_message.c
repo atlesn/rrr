@@ -23,9 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <endian.h>
-#include <read.h>
 
+#include "rrr_endian.h"
 #include "../global.h"
 #include "stats_message.h"
 #include "read.h"
