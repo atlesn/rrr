@@ -239,7 +239,7 @@ int rrr_socket_accept (
 	}
 	pthread_mutex_unlock(&socket_lock);
 
-	if (fd_out != -1 && (options.type & O_NONBLOCK) != 0) {
+	if (fd_out != -1 && (options.type & SOCK_NONBLOCK) != 0) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
 			RRR_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
@@ -629,14 +629,19 @@ int rrr_socket_sendto (
 	if ((options.type & SOCK_SEQPACKET) != 0) {
 		flags |= MSG_EOR;
 	}
-	if ((options.type & O_NONBLOCK) != 0) {
+	if ((options.type & SOCK_NONBLOCK) != 0) {
 		flags |= MSG_DONTWAIT;
 	}
 
 	int max_retries = 10000;
 
 	retry:
-	ret = sendto(fd, data, size, flags, addr, addr_len);
+	if (addr == NULL) {
+		ret = send(fd, data, size, flags);
+	}
+	else {
+		ret = sendto(fd, data, size, flags, addr, addr_len);
+	}
 	if (ret != size) {
 		if (ret == -1) {
 			if (--max_retries == 0) {
@@ -653,8 +658,13 @@ int rrr_socket_sendto (
 				goto retry;
 			}
 			else {
-				RRR_MSG_ERR("Error from send function in rrr_socket_sendto fd %i: %s\n",
-						fd, rrr_strerror(errno));
+				RRR_MSG_ERR("Error from send(to) function in rrr_socket_sendto fd %i flags %i addr ptr %p addr len %i: %s\n",
+						fd,
+						flags,
+						addr,
+						addr_len,
+						rrr_strerror(errno)
+				);
 				ret = 1;
 				goto out;
 			}

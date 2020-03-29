@@ -150,7 +150,7 @@ static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyO
 
 	int new_socket = rrr_socket (
 			AF_UNIX,
-			SOCK_SEQPACKET|O_NONBLOCK,
+			SOCK_SEQPACKET|SOCK_NONBLOCK,
 			0,
 			"rrr_python3_socket_f_start - socket",
 			NULL // We unlink the file ourselves after closing
