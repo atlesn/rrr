@@ -622,6 +622,15 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 		uri_new->endpoint[result_len] = '\0';
 	}
 
+	if (uri_new->port == 0 && uri_new->protocol != NULL) {
+		if (strcasecmp(uri_new->protocol, "https") == 0) {
+			uri_new->port = 443;
+		}
+		else if (strcasecmp(uri_new->protocol, "http") == 0) {
+			uri_new->port = 80;
+		}
+	}
+
 	*uri_result = uri_new;
 
 	goto out;

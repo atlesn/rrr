@@ -431,7 +431,9 @@ int rrr_socket_read_message_using_callbacks (
 		// In the first read, we take a sneak peak at the first bytes to find a length field
 		// if it is present. If there is not target size function, the target size becomes
 		// the initial bytes parameter (set at the top of the function). The target size function
-		// may change the read complete method.
+		// may change the read complete method. This function may called multiple times if it does
+		// not return OK the first time. In that case, we will read more data repeatedly time until
+		// OK is returned.
 		if ((ret = function_get_target_size(read_session, functions_callback_arg)) != RRR_SOCKET_OK) {
 			goto out;
 		}
@@ -498,9 +500,14 @@ int rrr_socket_read_message_using_callbacks (
 			read_session->read_complete = 0;
 		}
 	}
-	else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE) {
+	else if (read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE ||
+			read_session->read_complete_method == RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH
+	) {
 		ret = RRR_SOCKET_READ_INCOMPLETE;
 		goto out;
+	}
+	else {
+		RRR_BUG("Some sort of invalid read complete method state at end of rrr_socket_read_message_using_callbacks");
 	}
 
 	out:

@@ -100,7 +100,7 @@ static int __rrr_net_transport_plain_read_get_target_size_callback (
 		void *arg
 ) {
 	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->get_target_size(arg, callback_data->get_target_size_arg);
+	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
 }
 
 static int __rrr_net_transport_plain_read_complete_callback (
@@ -108,7 +108,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 		void *arg
 ) {
 	struct rrr_net_transport_plain_read_session *callback_data = arg;
-	return callback_data->complete_callback(arg, callback_data->complete_callback_arg);
+	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
 }
 
 static int __rrr_net_transport_plain_read_message (

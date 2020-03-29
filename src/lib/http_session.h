@@ -34,6 +34,7 @@ enum rrr_http_method {
 };
 
 enum rrr_http_transport {
+	RRR_HTTP_TRANSPORT_ANY,
 	RRR_HTTP_TRANSPORT_HTTP,
 	RRR_HTTP_TRANSPORT_HTTPS
 };

@@ -392,7 +392,7 @@ static int __rrr_http_part_parse_chunk_header (
 		}
 
 		if (pos + parsed_bytes_tmp == end) {
-//			printf("Chunk header incomplete\n");
+			// Chunk header incomplete
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			goto out;
 		}
@@ -402,23 +402,25 @@ static int __rrr_http_part_parse_chunk_header (
 			goto out;
 		}
 
-		parsed_bytes_tmp += 2; // Plus CRLF after chunk header
 		pos += parsed_bytes_tmp;
-		// Allow extra \r\n at size
-		if (rrr_http_util_find_crlf(pos, end) == pos) {
-//			printf ("Parsed CRLF after chunk header\n");
-			pos += 2;
+		pos += 2; // Plus CRLF after chunk header
+
+		if (pos + 1 >= end) {
+			ret = RRR_HTTP_PARSE_INCOMPLETE;
+			goto out;
 		}
 
 		struct rrr_http_chunk *new_chunk = NULL;
-		ssize_t chunk_start = start_pos + parsed_bytes_tmp;
+		ssize_t chunk_start = pos - buf;
+
+//		printf ("First character in chunk: %i\n", *(buf + chunk_start));
 
 		if ((new_chunk = __rrr_http_part_chunk_new(chunk_start, chunk_length)) == NULL) {
 			ret = RRR_HTTP_PARSE_HARD_ERR;
 			goto out;
 		}
 
-		*parsed_bytes = (pos - start);
+		*parsed_bytes = pos - start;
 		*result_chunk = new_chunk;
 	}
 
@@ -438,6 +440,8 @@ static int __rrr_http_part_parse_header_fields (
 	const char *pos = buf + start_pos;
 
 	*parsed_bytes = 0;
+
+	ssize_t parsed_bytes_total = 0;
 	ssize_t parsed_bytes_tmp = 0;
 
 //	static int run_count_loop = 0;
@@ -452,7 +456,7 @@ static int __rrr_http_part_parse_header_fields (
 		else if (crlf == pos) {
 			// Header complete
 			pos += 2;
-			*parsed_bytes += 2;
+			parsed_bytes_total += 2;
 			break;
 		}
 
@@ -464,10 +468,11 @@ static int __rrr_http_part_parse_header_fields (
 		__rrr_header_field_collection_add(target, field);
 
 		pos += parsed_bytes_tmp;
-		*parsed_bytes += parsed_bytes_tmp;
+		parsed_bytes_total += parsed_bytes_tmp;
 	}
 
 	out:
+	*parsed_bytes = parsed_bytes_total;
 	return ret;
 }
 
@@ -510,7 +515,7 @@ static int __rrr_http_part_parse_chunk (
 	);
 
 	if (ret == 0) {
-//		printf ("Found new chunk start == %s == %i length %i\n", buf + start_pos + parsed_bytes_previous_chunk, new_chunk->start, new_chunk->length);
+		RRR_DBG_3("Found new HTTP chunk start %li length %li\n", new_chunk->start, new_chunk->length);
 		RRR_LL_APPEND(chunks, new_chunk);
 
 		// All of the bytes in the previous chunk (if any) have been read
@@ -544,6 +549,7 @@ static int __rrr_http_part_parse_chunk (
 
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
+		ssize_t *target_size,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t start_pos,
@@ -554,7 +560,9 @@ int rrr_http_part_parse (
 //	static int run_count = 0;
 //	printf ("Run count: %i pos %i\n", ++run_count, start_pos);
 
+	*target_size = 0;
 	*parsed_bytes = 0;
+
 	ssize_t parsed_bytes_tmp = 0;
 	ssize_t parsed_bytes_total = 0;
 
@@ -576,6 +584,8 @@ int rrr_http_part_parse (
 		if (ret != RRR_HTTP_PARSE_OK) {
 			goto out;
 		}
+
+		result->response_code_length = parsed_bytes_tmp;
 	}
 
 	if (result->header_complete == 0) {
@@ -593,25 +603,39 @@ int rrr_http_part_parse (
 			goto out;
 		}
 
+		RRR_DBG_3("HTTP header complete, response was %i\n", result->response_code);
+
+		// Make sure the maths are done correctly. Header may be partially parsed in a previous round,
+		// we need to figure out the header length using the current parsing position
+		result->header_length = start_pos + parsed_bytes_total - result->response_code_length;
 		result->header_complete = 1;
 
 		struct rrr_http_header_field *content_length = __rrr_http_header_field_collection_get_field(&result->headers, "content-length");
 		struct rrr_http_header_field *transfer_encoding = __rrr_http_header_field_collection_get_field(&result->headers, "transfer-encoding");
 
 		if (content_length != NULL) {
-			ret = RRR_HTTP_PARSE_OK;
 			result->data_length = content_length->value_unsigned;
+			*target_size = result->response_code_length + result->header_length + content_length->value_unsigned;
+
+			RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
+					content_length->value_unsigned, result->response_code_length, result->header_length, *target_size);
+
+			ret = RRR_HTTP_PARSE_OK;
+
 			goto out;
 		}
 		else if (transfer_encoding != NULL && strcasecmp(transfer_encoding->value, "chunked") == 0) {
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			result->is_chunked = 1;
+			RRR_DBG_3("HTTP chunked transfer encoding specified\n");
 			goto parse_chunked;
 		}
 		else {
 			if (result->response_code == 204) {
 				// No content
 				result->data_length = 0;
+				*target_size = 0;
+
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {
@@ -634,8 +658,16 @@ int rrr_http_part_parse (
 
 	parsed_bytes_total += parsed_bytes_tmp;
 
-	if (ret == 0) {
-		result->data_length = RRR_LL_LAST(&result->chunks)->start + 2; // Plus CRLF
+	if (ret == RRR_HTTP_PARSE_OK) {
+		if (RRR_LL_LAST(&result->chunks)->length != 0) {
+			RRR_BUG("BUG: __rrr_http_part_parse_chunk return OK but last chunk length was not 0 in rrr_http_part_parse\n");
+		}
+
+		// Part length is position of last chunk plus CRLF minus header and response code
+		result->data_length = RRR_LL_LAST(&result->chunks)->start + 2 - result->header_length - result->response_code_length;
+
+		// Target size is total length from start of session to last chunk plus CRLF
+		*target_size = RRR_LL_LAST(&result->chunks)->start + 2;
 	}
 
 	out:

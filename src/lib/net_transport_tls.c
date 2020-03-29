@@ -102,6 +102,8 @@ static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
 	}
 
 	RRR_MSG("\n");
+
+	sk_SSL_CIPHER_free(sk);
 }
 
 static int __rrr_net_transport_tls_connect (
@@ -142,10 +144,18 @@ static int __rrr_net_transport_tls_connect (
 	SSL_CTX_set_verify(ssl_data->ctx, SSL_VERIFY_PEER, NULL);
 	SSL_CTX_set_verify_depth(ssl_data->ctx, 4);
 
-	const long flags = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2 | SSL_OP_NO_COMPRESSION;
+	// Unused flag: SSL_OP_NO_TLSv1_2, we need to support 1.2
+	// TODO : Apparently the version restrictions with set_options are deprecated
+	const long flags = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_COMPRESSION;
 	SSL_CTX_set_options(ssl_data->ctx, flags);
 
-	// TODO : Add user-configurabe cerfificates and paths
+	if (SSL_CTX_set_min_proto_version(ssl_data->ctx, TLS1_2_VERSION) != 1) {
+		RRR_SSL_ERR("Could not set minimum protocol version to TLSv1.2");
+		ret = 1;
+		goto out_unregister_handle;
+	}
+
+	// TODO : Add user-configurable cerfificates and paths
 	if (SSL_CTX_load_verify_locations(ssl_data->ctx, NULL, "/etc/ssl/certs/") != 1) {
 		RRR_SSL_ERR("Could not set certificate verification path\n");
 		ret = 1;
@@ -188,6 +198,10 @@ static int __rrr_net_transport_tls_connect (
 		goto out_unregister_handle;
 	}
 
+	if (RRR_DEBUGLEVEL_1) {
+		__rrr_net_transport_tls_dump_enabled_ciphers(ssl);
+	}
+
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
@@ -202,10 +216,6 @@ static int __rrr_net_transport_tls_connect (
 		goto out_unregister_handle;
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
-		__rrr_net_transport_tls_dump_enabled_ciphers(ssl);
-	}
-
 	retry_handshake:
 	if (BIO_do_handshake(ssl_data->web) != 1) {
 		if (BIO_should_retry(ssl_data->web)) {
@@ -215,12 +225,6 @@ static int __rrr_net_transport_tls_connect (
 		RRR_SSL_ERR("Could not do TLS handshake");
 		ret = 1;
 		goto out_unregister_handle;
-	}
-
-	if (RRR_DEBUGLEVEL_1) {
-		const SSL_METHOD *method_1 = SSL_CTX_get_ssl_method(ssl_data->ctx);
-		const SSL_METHOD *method_2 = SSL_get_ssl_method(ssl);
-		RRR_MSG("SSL versions: CTX: %i SSL: %i\n", *((int*)method_1), *((int*)method_2));
 	}
 
 	X509 *cert = SSL_get_peer_certificate(ssl);

@@ -75,8 +75,20 @@ int rrr_http_session_new (
 
 	memset(session, '\0', sizeof(*session));
 
+	if (transport == RRR_HTTP_TRANSPORT_ANY) {
+		if (port == 443) {
+			// Assume SSL
+			transport = RRR_HTTP_TRANSPORT_HTTPS;
+		}
+		else if (port == 80) {
+			// Assume Plaintext
+			transport = RRR_HTTP_TRANSPORT_HTTP;
+		}
+	}
+
 	uint16_t default_port = 0;
 	switch (transport) {
+		case RRR_HTTP_TRANSPORT_ANY:
 		case RRR_HTTP_TRANSPORT_HTTP:
 			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN);
 			default_port = 80;
@@ -381,7 +393,6 @@ int rrr_http_session_send_request (
 
 struct rrr_http_session_receive_data {
 	struct rrr_http_session *session;
-	ssize_t header_complete_pos;
 	ssize_t parse_complete_pos;
 	int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg);
 	void *callback_arg;
@@ -396,34 +407,39 @@ static int __rrr_http_session_receive_callback (
 
 	int ret = 0;
 
-	const char *start = read_session->rx_buf_ptr + receive_data->header_complete_pos;
+	const char *start = read_session->rx_buf_ptr;
+	const char *part_start = start + part->response_code_length + part->header_length;
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
 	receive_data->session->response_part->data_ptr = start;
 	receive_data->session->response_part->data_length = end - start;
 
+	RRR_DBG_3("HTTP reading complete, total session length is %li response length is %li header length is %li\n",
+			(ssize_t) (end - start),  part->response_code_length, part->header_length);
+
 	if (RRR_LL_COUNT(&part->chunks) == 0) {
-		ret = receive_data->callback(receive_data->session, start, end, receive_data->callback_arg);
+		ret = receive_data->callback(receive_data->session, part_start, end, receive_data->callback_arg);
 		goto out;
 	}
-	else {
-		const char *buf = read_session->rx_buf_ptr;
-		RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
-			if (node->length == 0) {
-				RRR_LL_ITERATE_NEXT();
-			}
-			const char *data_start = buf + node->start;
-			const char *data_end = data_start + node->length;
-			if (data_end > end) {
-				RRR_BUG("Chunk end overrun in __rrr_http_session_receive_callback\n");
-			}
 
-			ret = receive_data->callback(receive_data->session, data_start, data_end, receive_data->callback_arg);
-			if (ret != 0) {
-				goto out;
-			}
-		RRR_LL_ITERATE_END();
-	}
+	RRR_DBG_3("HTTP reading complete, found %i chunks\n", RRR_LL_COUNT(&part->chunks));
+
+	const char *buf = read_session->rx_buf_ptr;
+	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
+		if (node->length == 0) {
+			RRR_LL_ITERATE_NEXT();
+		}
+		const char *data_start = buf + node->start;
+		const char *data_end = data_start + node->length;
+		if (data_end > end) {
+			RRR_BUG("Chunk end overrun in __rrr_http_session_receive_callback\n");
+		}
+
+		ret = receive_data->callback(receive_data->session, data_start, data_end, receive_data->callback_arg);
+		if (ret != 0) {
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
@@ -439,10 +455,12 @@ static int __rrr_http_session_receive_get_target_size (
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
 
+	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
 
 	ret = rrr_http_part_parse (
 			receive_data->session->response_part,
+			&target_size,
 			&parsed_bytes,
 			read_session->rx_buf_ptr,
 			receive_data->parse_complete_pos,
@@ -451,16 +469,8 @@ static int __rrr_http_session_receive_get_target_size (
 
 	receive_data->parse_complete_pos += parsed_bytes;
 
-//		printf ("Header complete at %i\n", receive_data->parse_complete_pos);
-
-	if (	receive_data->session->response_part->header_complete != 0 &&
-			receive_data->header_complete_pos == 0
-	) {
-		receive_data->header_complete_pos = receive_data->parse_complete_pos;
-	}
-
 	if (ret == RRR_HTTP_PARSE_OK) {
-		read_session->target_size = receive_data->header_complete_pos + receive_data->session->response_part->data_length;
+		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
 		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
@@ -494,7 +504,6 @@ int rrr_http_session_receive (
 
 	struct rrr_http_session_receive_data callback_data = {
 			session,
-			0,
 			0,
 			callback,
 			callback_arg

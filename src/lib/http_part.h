@@ -81,6 +81,8 @@ struct rrr_http_part {
 	int header_complete;
 	int is_chunked;
 	const void *data_ptr;
+	ssize_t response_code_length;
+	ssize_t header_length;
 	ssize_t data_length;
 };
 
@@ -92,6 +94,7 @@ const struct rrr_http_header_field *rrr_http_part_get_header_field (
 );
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
+		ssize_t *target_size,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t start_pos,
