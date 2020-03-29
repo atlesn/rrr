@@ -239,7 +239,7 @@ int rrr_socket_accept (
 	}
 	pthread_mutex_unlock(&socket_lock);
 
-	if (fd_out != -1 && (options.type & SOCK_NONBLOCK) != 0) {
+	if (fd_out != -1 && (options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		int flags = fcntl(fd_out, F_GETFL, 0);
 		if (flags == -1) {
 			RRR_MSG_ERR("Error while getting flags with fcntl for socket in rrr_socket_accept: %s\n", rrr_strerror(errno));
@@ -626,10 +626,10 @@ int rrr_socket_sendto (
 	}
 
 	int flags = 0;
-	if ((options.type & SOCK_SEQPACKET) != 0) {
+	if ((options.type & SOCK_SEQPACKET) == SOCK_SEQPACKET) {
 		flags |= MSG_EOR;
 	}
-	if ((options.type & SOCK_NONBLOCK) != 0) {
+	if ((options.type & SOCK_NONBLOCK) == SOCK_NONBLOCK) {
 		flags |= MSG_DONTWAIT;
 	}
 
