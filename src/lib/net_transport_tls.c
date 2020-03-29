@@ -34,7 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_openssl.h"
 #include "rrr_strerror.h"
 #include "gnu.h"
-#include "read_session.h"
+#include "read.h"
+#include "read_constants.h"
 
 #define RRR_SSL_ERR(msg)								\
 	do {												\
@@ -273,7 +274,7 @@ struct rrr_net_transport_tls_read_session {
 static int __rrr_net_transport_tls_read_poll(int read_flags, void *private_arg) {
 	(void)(private_arg);
 	(void)(read_flags);
-	return RRR_SOCKET_OK;
+	return RRR_READ_OK;
 }
 
 static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_with_overshoot(void *private_arg) {
@@ -308,16 +309,13 @@ static int __rrr_net_transport_tls_read_complete_callback(struct rrr_read_sessio
 static int __rrr_net_transport_tls_read_read (
 		char *buf,
 		ssize_t *read_bytes,
-		int read_flags,
 		ssize_t read_step_max_size,
 		void *private_arg
 ) {
-	(void)(read_flags);
-
 	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
 	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->ssl_data;
 
-	int ret = RRR_SOCKET_OK;
+	int ret = RRR_READ_OK;
 
 	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
 	if (result <= 0) {
@@ -330,12 +328,12 @@ static int __rrr_net_transport_tls_read_read (
 		}
 		else {
 			// Retry later
-			return RRR_SOCKET_READ_INCOMPLETE;
+			return RRR_READ_INCOMPLETE;
 		}
 	}
 	else if (ERR_peek_error() != 0) {
 		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_read");
-		return RRR_SOCKET_HARD_ERROR;
+		return RRR_READ_HARD_ERROR;
 	}
 
 	out:
@@ -373,7 +371,7 @@ static int __rrr_net_transport_tls_read_message (
 	read_session.ssl_data = ssl_data;
 
 	while (1) {
-		ret = rrr_socket_read_message_using_callbacks (
+		ret = rrr_read_message_using_callbacks (
 				read_step_initial,
 				read_step_max_size,
 				0,
@@ -402,7 +400,7 @@ static int __rrr_net_transport_tls_read_message (
 	}
 
 	out:
-	rrr_socket_read_session_cleanup(&socket_read_session);
+	rrr_read_session_cleanup(&socket_read_session);
 	return ret;
 }
 

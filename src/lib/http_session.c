@@ -1,4 +1,5 @@
 /*
+#include <read.h>
 #include <http_part.h>
 
 Read Route Record
@@ -34,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 //#include "ip.h"
 #include "random.h"
-#include "read_session.h"
+#include "read.h"
 
 void rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->host);
@@ -473,11 +474,10 @@ static int __rrr_http_session_receive_get_target_size (
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
-		ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
-	}
-	else if (ret == RRR_HTTP_PARSE_UNTIL_CLOSE) {
-		read_session->target_size = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE;
-		ret = RRR_NET_TRANSPORT_READ_OK;
+		if (receive_data->session->response_part->data_length == -1) {
+			read_session->read_complete_method = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE;
+			ret = RRR_NET_TRANSPORT_READ_OK;
+		}
 	}
 	else {
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;

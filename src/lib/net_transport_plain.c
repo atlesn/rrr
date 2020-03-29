@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "net_transport_plain.h"
+#include "read.h"
 #include "ip.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport *transport, void *private_ptr, int handle) {
@@ -92,7 +93,7 @@ static int __rrr_net_transport_plain_connect (
 
 struct rrr_net_transport_plain_read_session {
 	RRR_NET_TRANSPORT_READ_SESSION_HEAD;
-	struct rrr_socket_read_session_collection *read_sessions;
+	struct rrr_read_session_collection *read_sessions;
 };
 
 static int __rrr_net_transport_plain_read_get_target_size_callback (
@@ -125,8 +126,8 @@ static int __rrr_net_transport_plain_read_message (
 
 	(void)(transport);
 
-	struct rrr_socket_read_session_collection read_sessions;
-	rrr_socket_read_session_collection_init(&read_sessions);
+	struct rrr_read_session_collection read_sessions;
+	rrr_read_session_collection_init(&read_sessions);
 
 	struct rrr_net_transport_plain_read_session callback_data = {
 			NULL,
@@ -143,6 +144,7 @@ static int __rrr_net_transport_plain_read_message (
 				transport_handle,
 				read_step_initial,
 				read_step_max_size,
+				0,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
@@ -163,7 +165,7 @@ static int __rrr_net_transport_plain_read_message (
 	}
 
 	out:
-	rrr_socket_read_session_collection_clear(&read_sessions);
+	rrr_read_session_collection_clear(&read_sessions);
 	return ret;
 }
 

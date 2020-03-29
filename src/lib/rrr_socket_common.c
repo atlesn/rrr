@@ -1,4 +1,5 @@
 /*
+#include <read.h>
 
 Read Route Record
 
@@ -26,171 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 #include "rrr_socket_common.h"
 #include "rrr_socket_read.h"
-#include "messages.h"
-#include "array.h"
-#include "read_session.h"
-
-int rrr_socket_common_receive_message_raw_callback (
-		void *data,
-		ssize_t data_size,
-		struct rrr_socket_common_receive_message_callback_data *callback_data
-) {
-	struct rrr_message *message = data;
-
-	int ret = 0;
-
-	// Header CRC32 is checked when reading the data from remote and getting size
-	if (rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, data_size) != 0) {
-		RRR_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out_free;
-	}
-
-	if (rrr_socket_msg_check_data_checksum_and_length((struct rrr_socket_msg *) message, data_size) != 0) {
-		RRR_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out_free;
-	}
-
-	if (rrr_message_to_host_and_verify(message, data_size) != 0) {
-		RRR_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
-				MSG_TOTAL_SIZE(message), message->msg_size);
-		ret = RRR_SOCKET_SOFT_ERROR;
-		goto out_free;
-	}
-
-	ret = callback_data->callback(message, callback_data->callback_arg);
-	data = NULL;
-
-	out_free:
-	RRR_FREE_IF_NOT_NULL(data);
-	return ret;
-
-}
-
-int rrr_socket_common_receive_message_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	int ret = 0;
-
-	// Memory is always taken care of or freed by this function
-	if ((ret = rrr_socket_common_receive_message_raw_callback(read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
-		// Returns soft error if message is invalid, might also return
-		// other errors from final callback function
-		goto out;
-	}
-
-	out:
-	read_session->rx_buf_ptr = NULL;
-	return ret;
-}
-
-int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
-		ssize_t *result,
-		void *data,
-		ssize_t data_size,
-		void *arg
-) {
-	if (arg != NULL) {
-		RRR_BUG("arg was not NULL in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
-	}
-
-	*result = 0;
-
-	ssize_t target_size = 0;
-	int ret = rrr_socket_msg_get_target_size_and_check_checksum(
-			&target_size,
-			(struct rrr_socket_msg *) data,
-			data_size
-	);
-
-	if (ret != 0) {
-		if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
-		}
-		goto out;
-	}
-
-	*result = target_size;
-
-	out:
-	return ret;
-}
-
-int rrr_socket_common_get_session_target_length_from_message_and_checksum (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	int ret = rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
-			&read_session->target_size,
-			read_session->rx_buf_ptr,
-			read_session->rx_buf_wpos,
-			arg
-	);
-
-	if (ret != 0) {
-		if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
-		}
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_socket_common_get_session_target_length_from_array (
-		struct rrr_read_session *read_session,
-		void *arg
-) {
-	struct rrr_socket_common_get_session_target_length_from_array_data *data = arg;
-
-	char *pos = read_session->rx_buf_ptr;
-	ssize_t wpos = read_session->rx_buf_wpos;
-
-	ssize_t import_length = 0;
-	ssize_t skipped_bytes = 0;
-
-	while (wpos > 0) {
-		int ret = rrr_array_get_packed_length_from_buffer (
-				&import_length,
-				data->definition,
-				pos,
-				wpos
-		);
-
-		if (ret == 0) {
-			break;
-		}
-		else {
-			if (ret == RRR_TYPE_PARSE_INCOMPLETE) {
-				return RRR_SOCKET_READ_INCOMPLETE;
-			}
-
-			if (data->do_byte_by_byte_sync != 0) {
-				skipped_bytes++;
-				pos++;
-				wpos--;
-			}
-			else {
-				return RRR_SOCKET_SOFT_ERROR;
-			}
-		}
-	}
-
-	if (wpos <= 0) {
-		return RRR_SOCKET_SOFT_ERROR;
-	}
-
-	// Raw size to read for socket framework
-	read_session->target_size = import_length;
-
-	// Read position for array framework
-	read_session->rx_buf_skip = skipped_bytes;
-
-	return RRR_SOCKET_OK;
-}
+#include "read.h"
 
 struct receive_callback_data {
 	int (*callback)(struct rrr_read_session *read_session, void *arg);
@@ -207,15 +44,16 @@ static int __rrr_socket_common_receive_callback (
 }
 
 int rrr_socket_common_receive_array (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
+		int socket_read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 ) {
-	struct rrr_socket_common_get_session_target_length_from_array_data callback_data_array = {
+	struct rrr_read_common_get_session_target_length_from_array_data callback_data_array = {
 			definition, do_sync_byte_by_byte
 	};
 
@@ -229,7 +67,8 @@ int rrr_socket_common_receive_array (
 			sizeof(struct rrr_socket_msg),
 			4096,
 			read_flags,
-			rrr_socket_common_get_session_target_length_from_array,
+			socket_read_flags,
+			rrr_read_common_get_session_target_length_from_array,
 			&callback_data_array,
 			__rrr_socket_common_receive_callback,
 			&callback_data
@@ -256,9 +95,10 @@ int rrr_socket_common_receive_array (
 }
 
 int rrr_socket_common_receive_socket_msg (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
+		int socket_read_flags,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 ) {
@@ -274,7 +114,8 @@ int rrr_socket_common_receive_socket_msg (
 			sizeof(struct rrr_socket_msg),
 			4096,
 			read_flags,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			socket_read_flags,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_socket_common_receive_callback,
 			&callback_data

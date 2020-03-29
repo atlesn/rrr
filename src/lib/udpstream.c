@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <read.h>
 
 #include "../global.h"
 #include "udpstream.h"
@@ -34,7 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "crc32.h"
 #include "random.h"
-#include "read_session.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -188,7 +188,7 @@ static void __rrr_udpstream_stream_collection_init(struct rrr_udpstream_stream_c
 void rrr_udpstream_clear (
 		struct rrr_udpstream *data
 ) {
-	rrr_socket_read_session_collection_clear(&data->read_sessions);
+	rrr_read_session_collection_clear(&data->read_sessions);
 	__rrr_udpstream_stream_collection_clear(&data->streams);
 	pthread_mutex_destroy(&data->lock);
 	RRR_FREE_IF_NOT_NULL(data->send_buffer);
@@ -205,7 +205,7 @@ int rrr_udpstream_init (
 		RRR_BUG("Invalid flags %u in rrr_udpstream_init\n", flags);
 	}
 	__rrr_udpstream_stream_collection_init(&data->streams);
-	rrr_socket_read_session_collection_init(&data->read_sessions);
+	rrr_read_session_collection_init(&data->read_sessions);
 	pthread_mutex_init(&data->lock, 0);
 	return 0;
 }
@@ -1420,7 +1420,8 @@ int rrr_udpstream_do_read_tasks (
 				data->ip.fd,
 				1024,
 				1024,
-				RRR_SOCKET_READ_NO_SLEEPING | RRR_SOCKET_READ_METHOD_RECVFROM,
+				RRR_READ_F_NO_SLEEPING,
+				RRR_SOCKET_READ_METHOD_RECVFROM,
 				__rrr_udpstream_read_get_target_size,
 				data,
 				__rrr_udpstream_read_callback,

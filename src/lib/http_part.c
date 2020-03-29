@@ -635,11 +635,13 @@ int rrr_http_part_parse (
 				// No content
 				result->data_length = 0;
 				*target_size = 0;
-
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {
-				ret = RRR_HTTP_PARSE_UNTIL_CLOSE;
+				// Unknown size, parse until connection closes
+				result->data_length = -1;
+				*target_size = 0;
+				ret = RRR_HTTP_PARSE_INCOMPLETE;
 			}
 			goto out;
 		}

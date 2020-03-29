@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_message;
 struct rrr_array;
-struct rrr_socket_read_session_collection;
+struct rrr_read_session_collection;
 struct rrr_read_session;
 
 struct ip_stats {
@@ -127,7 +127,7 @@ int rrr_ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
 int rrr_ip_receive_socket_msg (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
@@ -135,7 +135,7 @@ int rrr_ip_receive_socket_msg (
 		struct ip_stats *stats
 );
 int rrr_ip_receive_array (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
@@ -144,7 +144,7 @@ int rrr_ip_receive_array (
 		struct ip_stats *stats
 );
 int rrr_ip_receive_rrr_message (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),

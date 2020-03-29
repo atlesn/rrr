@@ -22,67 +22,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_READ_H
 #define RRR_SOCKET_READ_H
 
-#include <sys/socket.h>
 #include <stdio.h>
-#include <inttypes.h>
 
 #include "linked_list.h"
-#include "rrr_socket_constants.h"
 
 struct rrr_read_session;
-
-struct rrr_socket_read_session_collection {
-	RRR_LL_HEAD(struct rrr_read_session);
-};
-
-void rrr_socket_read_session_collection_init (
-		struct rrr_socket_read_session_collection *collection
-);
-void rrr_socket_read_session_collection_clear (
-		struct rrr_socket_read_session_collection *collection
-);
-int rrr_socket_read_message_using_callbacks (
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int									 (*function_get_target_size) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_complete_callback) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		int									 (*function_poll) (
-													int read_flags,
-													void *private_arg
-											 ),
-		int									 (*function_read) (
-													char *buf,
-													ssize_t *read_bytes,
-													int read_flags,
-													ssize_t read_step_max_size,
-													void *private_arg
-	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session		*(*function_get_read_session_with_overshoot) (
-													void *private_arg
-											 ),
-		struct rrr_read_session		*(*function_get_read_session) (
-													void *private_arg
-											 ),
-		void								 (*function_read_session_remove) (
-													struct rrr_read_session *read_session,
-													void *private_arg
-											 ),
-		void *functions_callback_arg
-);
+struct rrr_read_session_collection;
 
 int rrr_socket_read_message_default (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
+		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),

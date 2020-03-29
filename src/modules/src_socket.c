@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <fcntl.h>
 #include <src/lib/array.h>
+#include <src/lib/read.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
@@ -36,11 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/rrr_socket_client.h"
-#include "../lib/rrr_socket_common.h"
+#include "../lib/read.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/utf8.h"
-#include "../lib/read_session.h"
 #include "../global.h"
 
 struct socket_data {
@@ -214,22 +214,23 @@ int read_raw_data_callback(struct rrr_read_session *read_session, void *arg) {
 
 int read_data(struct socket_data *data) {
 	if (data->receive_rrr_message != 0) {
-		struct rrr_socket_common_receive_message_callback_data callback_data = {
+		struct rrr_read_common_receive_message_callback_data callback_data = {
 				read_data_receive_message_callback, data
 		};
 		return rrr_socket_client_collection_read (
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
+				0,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
-				rrr_socket_common_get_session_target_length_from_message_and_checksum,
+				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
-				rrr_socket_common_receive_message_callback,
+				rrr_read_common_receive_message_callback,
 				&callback_data
 		);
 	}
 	else {
-		struct rrr_socket_common_get_session_target_length_from_array_data callback_data = {
+		struct rrr_read_common_get_session_target_length_from_array_data callback_data = {
 				&data->definitions,
 				data->do_sync_byte_by_byte
 		};
@@ -237,8 +238,9 @@ int read_data(struct socket_data *data) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
+				0,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
-				rrr_socket_common_get_session_target_length_from_array,
+				rrr_read_common_get_session_target_length_from_array,
 				&callback_data,
 				read_raw_data_callback,
 				data

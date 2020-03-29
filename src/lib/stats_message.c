@@ -24,11 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 #include <endian.h>
+#include <read.h>
 
 #include "../global.h"
 #include "stats_message.h"
-#include "rrr_socket_read.h"
-#include "read_session.h"
+#include "read.h"
+#include "read_constants.h"
+
 
 int rrr_stats_message_unpack_callback (
 		struct rrr_read_session *read_session,
@@ -48,13 +50,13 @@ int rrr_stats_message_unpack_callback (
 
 	if (received_size < sizeof(*source) - sizeof(source->path_and_data)) {
 		RRR_MSG_ERR("Received statistics message which was too short in rrr_stats_message_unpack_callback\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (received_size > sizeof(*source)) {
 		RRR_MSG_ERR("Received statistics message which was too long in rrr_stats_message_unpack_callback\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -64,7 +66,7 @@ int rrr_stats_message_unpack_callback (
 
 	if ((flags & ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
 		RRR_MSG_ERR("Unknown flags %u in received statistics packet\n", flags);
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -74,14 +76,14 @@ int rrr_stats_message_unpack_callback (
 		case RRR_STATS_MESSAGE_TYPE_DOUBLE_TEXT:	break;
 		default:
 			RRR_MSG_ERR("Unknown type %u in received statistics packet\n", type);
-			ret = RRR_SOCKET_SOFT_ERROR;
+			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 	};
 
 	size_t actual_path_and_data_size = received_size - (sizeof(*source) - sizeof(source->path_and_data));
 	if (path_size > actual_path_and_data_size) {
 		RRR_MSG_ERR("Path size in received statistics packet exceeds packet size\n");
-		ret = RRR_SOCKET_SOFT_ERROR;
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
@@ -101,7 +103,7 @@ int rrr_stats_message_unpack_callback (
 	if (path_size > 0) {
 		if (source->path_and_data[path_size-1] != '\0') {
 			RRR_MSG_ERR("Path was not zero-terminated in received statistics packet\n");
-			ret = RRR_SOCKET_SOFT_ERROR;
+			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 		memcpy(target.path, source->path_and_data, path_size);

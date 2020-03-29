@@ -28,7 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "udpstream_asd.h"
 #include "buffer.h"
 #include "vl_time.h"
-#include "rrr_socket_common.h"
+#include "read.h"
+#include "rrr_socket_constants.h"
 #include "messages.h"
 
 static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
@@ -892,12 +893,12 @@ static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpst
 
 	callback_data->udpstream_receive_data = receive_data;
 
-	struct rrr_socket_common_receive_message_callback_data socket_callback_data = {
+	struct rrr_read_common_receive_message_callback_data socket_callback_data = {
 			__rrr_udpstream_asd_receive_messages_callback_final, callback_data
 	};
 
 	// This function will always free the data, also upon errors
-	if ((ret = rrr_socket_common_receive_message_raw_callback (
+	if ((ret = rrr_read_common_receive_message_raw_callback (
 			receive_data->data,
 			receive_data->data_size,
 			&socket_callback_data
@@ -929,7 +930,7 @@ static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_
 	if (__rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues) < RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
 		if ((ret = rrr_udpstream_do_process_receive_buffers (
 				&session->udpstream,
-				rrr_socket_common_get_session_target_length_from_message_and_checksum_raw,
+				rrr_read_common_get_session_target_length_from_message_and_checksum_raw,
 				NULL,
 				__rrr_udpstream_asd_receive_messages_callback,
 				&receive_callback_data

@@ -22,56 +22,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_COMMON_H
 #define RRR_SOCKET_COMMON_H
 
-struct rrr_read_session;
-struct rrr_message;
 struct rrr_array;
+struct rrr_read_session;
+struct rrr_read_session_collection;
 
-struct rrr_socket_common_receive_message_callback_data {
-	int (*callback)(struct rrr_message *message, void *arg);
-	void *callback_arg;
-};
-int rrr_socket_common_receive_message_raw_callback (
-		void *data,
-		ssize_t data_size,
-		struct rrr_socket_common_receive_message_callback_data *callback_data
-);
-int rrr_socket_common_receive_message_callback (
-		struct rrr_read_session *read_session,
-		void *arg
-);
-int rrr_socket_common_get_session_target_length_from_message_and_checksum_raw (
-		ssize_t *result,
-		void *data,
-		ssize_t data_size,
-		void *arg
-);
-int rrr_socket_common_get_session_target_length_from_message_and_checksum (
-		struct rrr_read_session *read_session,
-		void *arg
-);
-
-struct rrr_socket_common_get_session_target_length_from_array_data {
-	const struct rrr_array *definition;
-	int do_byte_by_byte_sync;
-};
-int rrr_socket_common_get_session_target_length_from_array (
-		struct rrr_read_session *read_session,
-		void *arg
-);
 int rrr_socket_common_receive_array (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
+		int socket_read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );
 int rrr_socket_common_receive_socket_msg (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
-		int read_method,
+		int read_flags,
+		int socket_read_flags,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );
+
 #endif /* RRR_SOCKET_COMMON_H */

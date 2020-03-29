@@ -28,7 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_client.h"
 #include "rrr_socket_read.h"
+#include "rrr_socket_constants.h"
 #include "rrr_strerror.h"
+#include "read.h"
 #include "vl_time.h"
 
 static int __rrr_socket_client_destroy (
@@ -37,7 +39,7 @@ static int __rrr_socket_client_destroy (
 	if (client->connected_fd > 0) {
 		rrr_socket_close(client->connected_fd);
 	}
-	rrr_socket_read_session_collection_clear(&client->read_sessions);
+	rrr_read_session_collection_clear(&client->read_sessions);
 	if (client->private_data != NULL) {
 		client->private_data_destroy(client->private_data);
 	}
@@ -198,6 +200,7 @@ int rrr_socket_client_collection_read (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
+		int read_flags_socket,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -207,7 +210,7 @@ int rrr_socket_client_collection_read (
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000);
 
-	if (RRR_LL_COUNT(collection) == 0 && (read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
+	if (RRR_LL_COUNT(collection) == 0 && (read_flags_socket & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
 		usleep(10 * 1000);
 	}
 
@@ -218,6 +221,7 @@ int rrr_socket_client_collection_read (
 				read_step_initial,
 				read_step_max_size,
 				read_flags,
+				read_flags_socket,
 				get_target_size,
 				get_target_size_arg,
 				complete_callback,

@@ -66,7 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_endian.h"
 #include "linked_list.h"
-#include "rrr_socket.h"
+#include "read.h"
 #include "ip.h"
 
 // Configuration
@@ -308,7 +308,7 @@ struct rrr_udpstream {
 	int flags;
 
 	struct rrr_udpstream_stream_collection streams;
-	struct rrr_socket_read_session_collection read_sessions;
+	struct rrr_read_session_collection read_sessions;
 
 	pthread_mutex_t lock;
 

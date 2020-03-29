@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/udpstream_asd.h"
 #include "../lib/rrr_socket.h"
-#include "../lib/rrr_socket_common.h"
 #include "../lib/gnu.h"
 #include "../lib/linked_list.h"
 #include "../global.h"

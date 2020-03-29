@@ -39,8 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/linked_list.h"
 #include "lib/rrr_socket.h"
 #include "lib/rrr_socket_msg.h"
-#include "lib/rrr_socket_common.h"
 #include "lib/rrr_socket_read.h"
+#include "lib/read.h"
+#include "lib/rrr_socket_constants.h"
 #include "lib/rrr_readdir.h"
 #include "lib/stats_message.h"
 #include "lib/stats_tree.h"
@@ -57,7 +58,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_CONNECTION_TIMEOUT_MS			RRR_STATS_FIRST_PACKET_WAIT_LIMIT_MS
 #define RRR_STATS_TICK_SLEEP_MS					100
 #define RRR_STATS_RECONNECT_SLEEP_MS			500
-#define RRR_STATS_KEEPALIVE_INTERVAL_MS			RRR_SOCKET_CLIENT_TIMEOUT_S / 2 * 1000
+#define RRR_STATS_KEEPALIVE_INTERVAL_MS			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000
 #define RRR_STATS_MESSAGE_LIFETIME_MS			1500
 
 static volatile int rrr_stats_abort = 0;
@@ -82,7 +83,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 };
 
 struct rrr_stats_data {
-	struct rrr_socket_read_session_collection read_sessions;
+	struct rrr_read_session_collection read_sessions;
 	struct rrr_linked_list socket_prefixes;
 	struct rrr_stats_tree message_tree;
 	char *socket_path_active;
@@ -114,12 +115,12 @@ static int __rrr_stats_data_init (struct rrr_stats_data *data) {
 		RRR_MSG_ERR("Could not initialize message tree in __rrr_stats_data_init\n");
 		return 1;
 	}
-	rrr_socket_read_session_collection_init(&data->read_sessions);
+	rrr_read_session_collection_init(&data->read_sessions);
 	return 0;
 }
 
 static void __rrr_stats_data_cleanup (struct rrr_stats_data *data) {
-	rrr_socket_read_session_collection_clear(&data->read_sessions);
+	rrr_read_session_collection_clear(&data->read_sessions);
 	rrr_linked_list_clear(&data->socket_prefixes);
 	rrr_stats_tree_clear(&data->message_tree);
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
@@ -172,7 +173,7 @@ static int __rrr_stats_read_message_callback_counter (const struct rrr_stats_mes
 }
 
 static int __rrr_stats_read_message (
-		struct rrr_socket_read_session_collection *read_sessions,
+		struct rrr_read_session_collection *read_sessions,
 		int fd,
 		int (*callback)(const struct rrr_stats_message *message, void *private_arg),
 		struct rrr_stats_read_message_callback_data *callback_data
@@ -188,8 +189,9 @@ static int __rrr_stats_read_message (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			1024,
-			RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH|RRR_SOCKET_READ_METHOD_RECV,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			0,
+			RRR_SOCKET_READ_METHOD_RECV,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			rrr_stats_message_unpack_callback,
 			&msg_callback_data // <-- CHECK THAT CALLBACK CORRECT STRUCT IS SENT
@@ -664,7 +666,7 @@ int main (int argc, const char *argv[]) {
 
 	while (rrr_stats_abort != 1) {
 		rrr_socket_close_all();
-		rrr_socket_read_session_collection_clear(&data.read_sessions);
+		rrr_read_session_collection_clear(&data.read_sessions);
 		data.socket_fd = 0;
 
 		if (__rrr_stats_attempt_connect(&data) != 0) {

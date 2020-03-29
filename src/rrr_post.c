@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <lib/read.h>
 #include <signal.h>
 
 #include "global.h"
@@ -40,9 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_socket_read.h"
 #include "lib/rrr_socket_common.h"
 #include "lib/rrr_strerror.h"
+#include "lib/read.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
-#include "lib/read_session.h"
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
@@ -427,8 +428,8 @@ static void __rrr_post_print_statistics (struct rrr_post_data *data) {
 static int __rrr_post_read (struct rrr_post_data *data) {
 	int ret = 0;
 
-	struct rrr_socket_read_session_collection read_sessions;
-	rrr_socket_read_session_collection_init(&read_sessions);
+	struct rrr_read_session_collection read_sessions;
+	rrr_read_session_collection_init(&read_sessions);
 
 	if (data->filename == NULL) {
 		goto out;
@@ -446,6 +447,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 		ret = rrr_socket_common_receive_array (
 				&read_sessions,
 				data->input_fd,
+				0,
 				read_flags,
 				&data->definition,
 				data->sync_byte_by_byte,
@@ -465,7 +467,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 	}
 
 	out:
-	rrr_socket_read_session_collection_clear(&read_sessions);
+	rrr_read_session_collection_clear(&read_sessions);
 	return ret;
 }
 

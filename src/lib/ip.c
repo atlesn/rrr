@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <src/lib/ip.h>
 #include <fcntl.h>
+#include <read.h>
 
 #include "ip.h"
 #include "../global.h"
@@ -46,7 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg.h"
 #include "rrr_socket_read.h"
 #include "rrr_strerror.h"
-#include "read_session.h"
+#include "read_constants.h"
+#include "rrr_socket_constants.h"
 
 void rrr_ip_buffer_entry_destroy (
 		struct rrr_ip_buffer_entry *entry
@@ -294,7 +296,7 @@ static int __ip_receive_callback (
 }
 
 int rrr_ip_receive_array (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
@@ -309,6 +311,7 @@ int rrr_ip_receive_array (
 	return rrr_socket_common_receive_array (
 			read_session_collection,
 			fd,
+			0,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			definition,
 			do_sync_byte_by_byte,
@@ -318,7 +321,7 @@ int rrr_ip_receive_array (
 }
 
 int rrr_receive_socket_msg (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
@@ -333,7 +336,8 @@ int rrr_receive_socket_msg (
 	return rrr_socket_common_receive_socket_msg (
 			read_session_collection,
 			fd,
-			RRR_SOCKET_READ_METHOD_RECVFROM|(no_sleeping != 0 ? RRR_SOCKET_READ_NO_SLEEPING : 0),
+			(no_sleeping != 0 ? RRR_READ_F_NO_SLEEPING : 0),
+			RRR_SOCKET_READ_METHOD_RECVFROM,
 			__ip_receive_callback,
 			&callback_data
 	);
@@ -382,7 +386,7 @@ static int __rrr_ip_receive_rrr_message_callback (
 
 /* Receive packets and parse vl_message struct or fail */
 int rrr_ip_receive_rrr_message (
-		struct rrr_socket_read_session_collection *read_session_collection,
+		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),

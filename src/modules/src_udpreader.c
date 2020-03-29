@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/utf8.h"
+#include "../lib/read.h"
 #include "../global.h"
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
@@ -48,7 +49,7 @@ struct udpreader_data {
 	unsigned int listen_port;
 	struct rrr_ip_data ip;
 	struct rrr_array definitions;
-	struct rrr_socket_read_session_collection read_sessions;
+	struct rrr_read_session_collection read_sessions;
 	int do_sync_byte_by_byte;
 	char *default_topic;
 	ssize_t default_topic_length;
@@ -59,7 +60,7 @@ void data_cleanup(void *arg) {
 	rrr_fifo_buffer_invalidate(&data->buffer);
 	rrr_fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
-	rrr_socket_read_session_collection_clear(&data->read_sessions);
+	rrr_read_session_collection_clear(&data->read_sessions);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 }
 

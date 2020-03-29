@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 #include <netdb.h>
+#include <read.h>
 
 #include "../global.h"
 #include "gnu.h"
@@ -34,11 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "rrr_socket_client.h"
-#include "rrr_socket_common.h"
+#include "read.h"
 #include "linked_list.h"
 #include "vl_time.h"
 #include "random.h"
-#include "read_session.h"
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
@@ -298,8 +298,9 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 			&stats->client_collection,
 			sizeof(struct rrr_socket_msg),
 			1024,
-			RRR_SOCKET_READ_COMPLETE_METHOD_TARGET_LENGTH|RRR_SOCKET_READ_METHOD_RECVFROM,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			0,
+			RRR_SOCKET_READ_METHOD_RECVFROM,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_stats_engine_read_callback,
 			&callback_data

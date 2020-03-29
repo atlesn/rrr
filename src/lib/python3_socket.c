@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 #include <Python.h>
+#include <read.h>
 
 #include "../global.h"
 #include "vl_time.h"
@@ -38,11 +39,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_socket.h"
 #include "python3_setting.h"
 #include "rrr_socket.h"
-#include "rrr_socket_common.h"
 #include "messages.h"
 #include "settings.h"
+#include "read.h"
 #include "../../config.h"
-#include "read_session.h"
 
 #define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 10
 #define RRR_PYTHON3_MAX_IN_FLIGHT 50
@@ -56,7 +56,7 @@ struct rrr_python3_socket_data {
 	uint64_t time_start;
 	pthread_mutex_t stats_lock;
 	pthread_mutex_t send_lock;
-	struct rrr_socket_read_session_collection read_sessions;
+	struct rrr_read_session_collection read_sessions;
 };
 
 static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
@@ -76,7 +76,7 @@ static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 		socket_data->filename = NULL;
 	}
 
-	rrr_socket_read_session_collection_clear(&socket_data->read_sessions);
+	rrr_read_session_collection_clear(&socket_data->read_sessions);
 }
 
 static void rrr_python3_socket_f_dealloc (PyObject *self) {
@@ -712,8 +712,9 @@ int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
 			socket_data->connected_fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
+			0,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
-			rrr_socket_common_get_session_target_length_from_message_and_checksum,
+			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,
 			__rrr_python3_socket_recv_callback,
 			&callback_data
