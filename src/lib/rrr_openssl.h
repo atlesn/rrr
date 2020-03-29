@@ -22,7 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_OPENSSL_H
 #define RRR_OPENSSL_H
 
+#include <openssl/ssl.h>
+
+#define RRR_SSL_ERR(msg)								\
+	do {												\
+		char buf[256];									\
+		ERR_error_string_n(ERR_get_error(), buf, 256); 	\
+		RRR_MSG_ERR(msg ": %s\n", buf);					\
+	} while(0)
+
 void rrr_openssl_global_register_user(void);
 void rrr_openssl_global_unregister_user(void);
+int rrr_openssl_load_verify_locations (SSL_CTX *ctx);
 
 #endif /* RRR_OPENSSL_H */

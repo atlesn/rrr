@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <openssl/ssl.h>
 #include <openssl/conf.h>
+#include <openssl/err.h>
 
 //#include <openssl/engine.h>
 //#include <openssl/evp.h>
@@ -65,3 +66,18 @@ void rrr_openssl_global_unregister_user(void) {
 	}
 	pthread_mutex_unlock(&rrr_openssl_global_lock);
 }
+
+int rrr_openssl_load_verify_locations (SSL_CTX *ctx) {
+	int ret = 0;
+
+	// TODO : Add user-configurable cerfificates and paths
+	if (SSL_CTX_load_verify_locations(ctx, NULL, "/etc/ssl/:/etc/ssl/certs/") != 1) {
+		RRR_SSL_ERR("Could not set certificate verification path\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+

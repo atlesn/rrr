@@ -37,13 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read.h"
 #include "read_constants.h"
 
-#define RRR_SSL_ERR(msg)								\
-	do {												\
-		char buf[256];									\
-		ERR_error_string_n(ERR_get_error(), buf, 256); 	\
-		RRR_MSG_ERR(msg ": %s\n", buf);					\
-	} while(0)
-
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;
 	BIO *web;
@@ -157,8 +150,7 @@ static int __rrr_net_transport_tls_connect (
 	}
 
 	// TODO : Add user-configurable cerfificates and paths
-	if (SSL_CTX_load_verify_locations(ssl_data->ctx, NULL, "/etc/ssl/certs/") != 1) {
-		RRR_SSL_ERR("Could not set certificate verification path\n");
+	if ((ret = rrr_openssl_load_verify_locations(ssl_data->ctx)) != 0) {
 		ret = 1;
 		goto out_unregister_handle;
 	}
