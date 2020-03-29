@@ -61,7 +61,8 @@ int rrr_http_session_new (
 		const char *host,
 		uint16_t port,
 		const char *endpoint,
-		const char *user_agent
+		const char *user_agent,
+		int tls_flags
 ) {
 	int ret = 0;
 
@@ -91,11 +92,11 @@ int rrr_http_session_new (
 	switch (transport) {
 		case RRR_HTTP_TRANSPORT_ANY:
 		case RRR_HTTP_TRANSPORT_HTTP:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN);
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN, 0);
 			default_port = 80;
 			break;
 		case RRR_HTTP_TRANSPORT_HTTPS:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS);
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS, tls_flags);
 			default_port = 443;
 			break;
 		default:

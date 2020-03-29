@@ -31,8 +31,9 @@ struct rrr_net_transport_tls {
 	RRR_NET_TRANSPORT_HEAD;
 
 	const SSL_METHOD *ssl_method;
+	int flags;
 };
 
-int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target);
+int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target, int flags);
 
 #endif /* RRR_NET_TRANSPORT_TLS_H */

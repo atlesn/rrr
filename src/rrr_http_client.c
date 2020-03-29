@@ -45,17 +45,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",				"[-e|--endpoint[=]HTTP ENDPOINT]"},
-		{0,							'P',	"plain-force",			"[-P|--plain-force]"},
-		{0,							'S',	"ssl-force",			"[-S|--ssl-force]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'q',	"query",				"[-q|--query[=]HTTP QUERY]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",		"{-s|--server[=]HTTP SERVER}"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",			"[-p|--port[=]HTTP PORT]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'e',	"endpoint",		"[-e|--endpoint[=]HTTP ENDPOINT]"},
+		{0,				'P',	"plain-force",		"[-P|--plain-force]"},
+		{0,				'S',	"ssl-force",		"[-S|--ssl-force]"},
+		{0,				'N',	"no-cert-verify",	"[-N|--no-cert-verify]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'q',	"query",		"[-q|--query[=]HTTP QUERY]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",		"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
-		{0,							'h',	"help",					"[-h|--help]"},
-		{0,							'v',	"version",				"[-v|--version]"},
-		{0,							'\0',	NULL,					NULL}
+		{0,				'h',	"help",					"[-h|--help]"},
+		{0,				'v',	"version",				"[-v|--version]"},
+		{0,				'\0',	NULL,					NULL}
 };
 
 struct rrr_http_client_data {
@@ -66,6 +67,7 @@ struct rrr_http_client_data {
 	uint16_t http_port;
 	int plain_force;
 	int ssl_force;
+	int ssl_no_cert_verify;
 	struct rrr_http_session *session;
 };
 
@@ -148,6 +150,11 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 			ret = 1;
 			goto out;
 		}
+	}
+
+	// No certificate verification
+	if (cmd_exists(cmd, "no-cert-verify", 0)) {
+		data->ssl_no_cert_verify = 1;
 	}
 
 	// Force SSL
@@ -382,6 +389,11 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	RRR_DBG_1("Using server %s port %u transport %i\n", data->hostname, data->http_port, transport);
 	RRR_DBG_1("Using endpoint and query: '%s'\n", endpoint_and_query);
 
+	int tls_flags = 0;
+	if (data->ssl_no_cert_verify != 0) {
+		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+	}
+
 	if ((ret = rrr_http_session_new (
 			&data->session,
 			transport,
@@ -390,7 +402,8 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 			data->hostname,
 			data->http_port,
 			endpoint_and_query,
-			RRR_HTTP_CLIENT_USER_AGENT
+			RRR_HTTP_CLIENT_USER_AGENT,
+			tls_flags
 	)) != 0) {
 		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
 		goto out;

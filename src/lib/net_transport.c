@@ -216,7 +216,7 @@ void rrr_net_transport_handle_collection_clear (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
 
-int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_transport_type transport) {
+int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_transport_type transport, int flags) {
 	int ret = 0;
 
 	*result = NULL;
@@ -224,10 +224,13 @@ int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_trans
 	struct rrr_net_transport *new_transport = NULL;
 	switch (transport) {
 		case RRR_NET_TRANSPORT_PLAIN:
+			if (flags != 0) {
+				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
+			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
 		case RRR_NET_TRANSPORT_TLS:
-			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport);
+			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport, flags);
 			break;
 		default:
 			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", transport);

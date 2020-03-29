@@ -29,6 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "linked_list.h"
 
+#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY (1<<0)
+
 // Use same numbering system as socket subsystem, saves us from translating
 // return values in many cases
 #define RRR_NET_TRANSPORT_READ_OK				RRR_READ_OK
@@ -130,7 +132,7 @@ void rrr_net_transport_handle_collection_clear (
 );
 #endif
 
-int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_transport_type transport);
+int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_transport_type transport, int flags);
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 int rrr_net_transport_close (
 		struct rrr_net_transport *transport,

@@ -100,6 +100,12 @@ static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
 	sk_SSL_CIPHER_free(sk);
 }
 
+static int __rrr_net_transport_tls_verify_always_ok (X509_STORE_CTX *x509, void *arg) {
+	(void)(x509);
+	(void)(arg);
+	return 1;
+}
+
 static int __rrr_net_transport_tls_connect (
 		int *handle,
 		struct rrr_net_transport *transport,
@@ -198,7 +204,13 @@ static int __rrr_net_transport_tls_connect (
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
+	// Disable verification if required
+	if ((tls->flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
+		SSL_CTX_set_cert_verify_callback (ssl_data->ctx, __rrr_net_transport_tls_verify_always_ok, NULL);
+	}
+
 	retry_connect:
+
 	if (BIO_do_connect(ssl_data->web) != 1) {
 		if (BIO_should_retry(ssl_data->web)) {
 			usleep(1000);
@@ -219,7 +231,7 @@ static int __rrr_net_transport_tls_connect (
 		ret = 1;
 		goto out_unregister_handle;
 	}
-
+	
 	X509 *cert = SSL_get_peer_certificate(ssl);
 	if (cert != NULL) {
 		X509_free(cert);
@@ -424,12 +436,22 @@ static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_tls_send
 };
 
-int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target) {
+int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target, int flags) {
 	struct rrr_net_transport_tls *result = NULL;
 
 	*target = NULL;
 
 	int ret = 0;
+
+	int flags_checked = 0;
+	if ((flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
+		flags_checked |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+		flags &= ~(RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY);
+	}
+
+	if (flags != 0) {
+		RRR_BUG("BUG: Unknown flags %i given to rrr_net_transport_tls_new\n", flags);
+	}
 
 	if ((result = malloc(sizeof(*result))) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_net_transport_tls_new\n");
@@ -443,6 +465,7 @@ int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target) {
 
 	result->methods = &tls_methods;
 	result->ssl_method = TLS_client_method();
+	result->flags = flags_checked;
 
 	*target = result;
 

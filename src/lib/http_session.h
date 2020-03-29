@@ -59,7 +59,8 @@ int rrr_http_session_new (
 		const char *host,
 		uint16_t port,
 		const char *endpoint,
-		const char *user_agent
+		const char *user_agent,
+		int tls_flags
 );
 int rrr_http_session_add_query_field (
 		struct rrr_http_session *session,
