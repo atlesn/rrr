@@ -345,7 +345,8 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 			data->server,
 			data->server_port,
 			uri,
-			INFLUXDB_USER_AGENT
+			INFLUXDB_USER_AGENT,
+			0
 	)) != 0) {
 		RRR_MSG_ERR("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
