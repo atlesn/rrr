@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define CMD_DBG_CMDLINE
 
 static const char *cmd_blank_argument = "";
-static const char *cmd_help = "help";
+//static const char *cmd_help = "help";
 
 static void __cmd_arg_value_destroy(struct cmd_arg_value *value) {
 	RRR_FREE_IF_NOT_NULL(value->value);
@@ -358,16 +358,27 @@ void cmd_destroy_argv_copy (struct cmd_argv_copy *target) {
 	free(target);
 }
 
-
 static const struct cmd_arg_rule *__cmd_get_rule_noflag (const struct cmd_arg_rule *rules, cmd_arg_count pos) {
 	cmd_arg_count i = 0;
 	const struct cmd_arg_rule *rule = &rules[i++];
 	while (rule->longname != NULL) {
-		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) > 0) {
+		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) != 0) {
 			if (pos == 0) {
 				return rule;
 			}
 			pos--;
+		}
+		rule = &rules[i++];
+	}
+	return NULL;
+}
+
+static const struct cmd_arg_rule *__cmd_get_rule_noflag_multi (const struct cmd_arg_rule *rules) {
+	cmd_arg_count i = 0;
+	const struct cmd_arg_rule *rule = &rules[i++];
+	while (rule->longname != NULL) {
+		if ((rule->flags & CMD_ARG_FLAG_NO_FLAG_MULTI) != 0) {
+			return rule;
 		}
 		rule = &rules[i++];
 	}
@@ -407,13 +418,13 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 	cmd_arg_count noflag_count = 0;
 
 	data->program = data->argv[0];
-	data->command = cmd_help;
+	data->command = cmd_blank_argument;
 
 	if (data->argc <= 1) {
 		return 0;
 	}
 
-	data->command = cmd_blank_argument;
+//	data->command = cmd_blank_argument;
 
 	if ((config & CMD_CONFIG_COMMAND) > 0) {
 		data->command = data->argv[1];
@@ -493,10 +504,11 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 			}
 		}
 		else {
-			rule = __cmd_get_rule_noflag(data->rules, noflag_count++);
-			if (rule == NULL) {
-				fprintf (stderr, "Error: too many arguments at '%s'\n", pos);
-				return 1;
+			if ((rule = __cmd_get_rule_noflag(data->rules, noflag_count++)) == NULL) {
+				if ((rule = __cmd_get_rule_noflag_multi(data->rules)) == NULL) {
+					fprintf (stderr, "Error: too many arguments at '%s'\n", pos);
+					return 1;
+				}
 			}
 		}
 
@@ -505,9 +517,9 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 		}
 
 		const char *value = NULL;
-		if ((rule->flags & (CMD_ARG_FLAG_HAS_ARGUMENT|CMD_ARG_FLAG_NO_FLAG)) != 0) {
+		if ((rule->flags & (CMD_ARG_FLAG_HAS_ARGUMENT|CMD_ARG_FLAG_NO_FLAG|CMD_ARG_FLAG_NO_FLAG_MULTI)) != 0) {
 			if (pos_equal == NULL) {
-				if ((rule->flags & CMD_ARG_FLAG_NO_FLAG) == 0) {
+				if ((rule->flags & (CMD_ARG_FLAG_NO_FLAG|CMD_ARG_FLAG_NO_FLAG_MULTI)) == 0) {
 					i++;
 					if (i == data->argc) {
 						fprintf (stderr, "Error: Required argument missing for '%s'\n", rule->longname);

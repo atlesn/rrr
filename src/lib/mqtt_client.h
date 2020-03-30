@@ -35,6 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection;
 
+struct rrr_mqtt_client_stats {
+	struct rrr_mqtt_session_collection_stats session_stats;
+};
+
 struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
@@ -43,8 +47,8 @@ struct rrr_mqtt_client_data {
 	ssize_t connection_count;
 	uint64_t last_pingreq_time;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
-	int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg);
-	void *suback_handler_arg;
+	int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg);
+	void *suback_unsuback_handler_arg;
 };
 
 int rrr_mqtt_client_connection_check_alive (
@@ -63,6 +67,11 @@ int rrr_mqtt_client_subscribe (
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_subscription_collection *subscriptions
 );
+int rrr_mqtt_client_unsubscribe (
+		struct rrr_mqtt_client_data *data,
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_subscription_collection *subscriptions
+);
 int rrr_mqtt_client_connect (
 		struct rrr_mqtt_conn **connection,
 		struct rrr_mqtt_client_data *data,
@@ -77,19 +86,28 @@ void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
 static inline void rrr_mqtt_client_destroy_void (void *client) {
 	rrr_mqtt_client_destroy(client);
 }
+void rrr_mqtt_client_notify_pthread_cancel (struct rrr_mqtt_client_data *client);
+static inline void rrr_mqtt_client_notify_pthread_cancel_void (void *client) {
+	rrr_mqtt_client_notify_pthread_cancel(client);
+}
 int rrr_mqtt_client_new (
 		struct rrr_mqtt_client_data **client,
 		const struct rrr_mqtt_common_init_data *init_data,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
-		int (*suback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *packet, void *private_arg),
-		void *suback_handler_arg
+		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
+		void *suback_unsuback_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
 int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),
 		void *callback_arg
+);
+
+void rrr_mqtt_client_get_stats (
+		struct rrr_mqtt_client_stats *target,
+		struct rrr_mqtt_client_data *data
 );
 
 #endif /* RRR_MQTT_CLIENT_H */

@@ -41,13 +41,13 @@ struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, con
 
 	char *name = malloc(name_length + 1);
 	if (name == NULL) {
-		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
+		RRR_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out;
 	}
 
 	ret = malloc(sizeof(*ret));
 	if (ret == NULL) {
-		VL_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
+		RRR_MSG_ERR("Could not allocate memory for name in __rrr_config_new_instance_config");
 		goto out_free_name;
 	}
 
@@ -57,7 +57,7 @@ struct rrr_instance_config *rrr_instance_config_new (const char *name_begin, con
 	ret->name = name;
 	ret->settings = rrr_settings_new(max_settings);
 	if (ret->settings == NULL) {
-		VL_MSG_ERR("Could not create settings structure in __rrr_config_new_instance_config");
+		RRR_MSG_ERR("Could not create settings structure in __rrr_config_new_instance_config");
 		goto out_free_config;
 	}
 
@@ -87,7 +87,7 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 			char *tmp_string;
 
 			ret = rrr_settings_read_string (&tmp_string, source->settings, name);
-			VL_MSG_ERR (
+			RRR_MSG_ERR (
 					"Syntax error in port setting %s. Could not parse '%s' as number.\n",
 					name, (tmp_string != NULL ? tmp_string : "")
 			);
@@ -102,7 +102,7 @@ int rrr_instance_config_read_port_number (rrr_setting_uint *target, struct rrr_i
 	}
 	else {
 		if (tmp_uint < 1 || tmp_uint > 65535) {
-			VL_MSG_ERR (
+			RRR_MSG_ERR (
 					"port setting %s out of range, must be 1-65535 but was %llu.\n",
 					name, tmp_uint
 			);
@@ -121,7 +121,7 @@ int rrr_instance_config_check_all_settings_used (struct rrr_instance_config *con
 	int ret = rrr_settings_check_all_used (config->settings);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
+		RRR_MSG_ERR("Warning: Not all settings of instance %s were used, possible typo in configuration file\n",
 				config->name);
 	}
 
@@ -152,7 +152,7 @@ int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 	}
 
 	if (callback_data.parse_ret != 0 || rrr_array_validate_definition(target) != 0) {
-		VL_MSG_ERR("Array definition in setting '%s' of '%s' was invalid\n",
+		RRR_MSG_ERR("Array definition in setting '%s' of '%s' was invalid\n",
 				cmd_key, config->name);
 		ret = 1;
 		goto out_destroy;
@@ -184,8 +184,6 @@ int rrr_instance_config_parse_comma_separated_associative_to_map (
 		const char *cmd_key,
 		const char *delimeter
 ) {
-	int ret = 0;
-
 	struct parse_associative_list_to_map_callback_data callback_data = {
 			target, delimeter
 	};
@@ -203,8 +201,6 @@ int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_instance_config *config,
 		const char *cmd_key
 ) {
-	int ret = 0;
-
 	struct parse_associative_list_to_map_callback_data callback_data = {
 			target, NULL
 	};

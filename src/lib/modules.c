@@ -30,24 +30,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../global.h"
 #include "modules.h"
+#include "rrr_strerror.h"
 
-#ifndef VL_MODULE_PATH
-#define VL_MODULE_PATH "./modules/"
+#ifndef RRR_MODULE_PATH
+#define RRR_MODULE_PATH "./modules/"
 #endif
 
-void module_unload (void *dl_ptr, void (*unload)(void)) {
+void rrr_module_unload (void *dl_ptr, void (*unload)(void)) {
 	unload();
 
-#ifndef VL_MODULE_NO_DL_CLOSE
+#ifndef RRR_MODULE_NO_DL_CLOSE
 	if (dlclose(dl_ptr) != 0) {
-		VL_MSG_ERR ("Warning: Error while unloading module: %s\n", dlerror());
+		RRR_MSG_ERR ("Warning: Error while unloading module: %s\n", dlerror());
 	}
 #else
-	VL_MSG_ERR ("Warning: Not unloading shared object due to configuration VL_MODULE_NO_DL_CLOSE\n");
+	RRR_MSG_ERR ("Warning: Not unloading shared object due to configuration RRR_MODULE_NO_DL_CLOSE\n");
 #endif
 }
 
-int module_load(struct module_load_data *target, const char *name, const char **library_paths) {
+int rrr_module_load(struct rrr_module_load_data *target, const char *name, const char **library_paths) {
 	int ret = 1; // NOT OK
 
 	memset (target, '\0', sizeof(*target));
@@ -61,24 +62,24 @@ int module_load(struct module_load_data *target, const char *name, const char **
 			if (errno == ENOENT) {
 				continue;
 			}
-			VL_MSG_ERR ("Could not stat %s while loading module: %s\n", path, strerror(errno));
+			RRR_MSG_ERR ("Could not stat %s while loading module: %s\n", path, rrr_strerror(errno));
 			continue;
 		}
 
 		void *handle = dlopen(path, RTLD_LAZY);
-		VL_DEBUG_MSG_1 ("dlopen handle for %s: %p\n", name, handle);
+		RRR_DBG_1 ("dlopen handle for %s: %p\n", name, handle);
 
 		if (handle == NULL) {
-			VL_MSG_ERR ("Error while opening module %s: %s\n", path, dlerror());
+			RRR_MSG_ERR ("Error while opening module %s: %s\n", path, dlerror());
 			continue;
 		}
 
-		void (*init)(struct instance_dynamic_data *data) = dlsym(handle, "init");
+		void (*init)(struct rrr_instance_dynamic_data *data) = dlsym(handle, "init");
 		void (*unload)(void) = dlsym(handle, "unload");
 
 		if (init == NULL || unload == NULL) {
 			dlclose(handle);
-			VL_MSG_ERR ("Module %s missing init/unload functions\n", path);
+			RRR_MSG_ERR ("Module %s missing init/unload functions\n", path);
 			continue;
 		}
 

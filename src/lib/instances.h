@@ -28,12 +28,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "senders.h"
 #include "threads.h"
 
+struct rrr_stats_engine;
+
 // TODO : Many pointers in different structs are probably redundant
 
 struct instance_metadata {
 	struct instance_metadata *next;
-	struct instance_dynamic_data *dynamic_data;
-	struct instance_thread_data *thread_data;
+	struct rrr_instance_dynamic_data *dynamic_data;
+	struct rrr_instance_thread_data *thread_data;
 	struct instance_sender_collection senders;
 	struct rrr_instance_config *config;
 	struct rrr_signal_handler *signal_handler;
@@ -49,12 +51,12 @@ struct instance_metadata_collection {
 	struct rrr_signal_functions *signal_functions;
 };
 
-struct instance_dynamic_data {
+struct rrr_instance_dynamic_data {
 	const char *instance_name;
 	const char *module_name;
 	unsigned int type;
 	int start_priority;
-	struct module_operations operations;
+	struct rrr_module_operations operations;
 	void *special_module_operations;
 	void *dl_ptr;
 	void *private_data;
@@ -64,57 +66,69 @@ struct instance_dynamic_data {
 };
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
-#define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->instance_name
+#define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->module_name
 
 struct instance_thread_init_data {
 	struct cmd_data *cmd_data;
 	struct rrr_instance_config *instance_config;
 	struct rrr_config *global_config;
-	struct instance_dynamic_data *module;
+	struct rrr_instance_dynamic_data *module;
 	struct instance_sender_collection *senders;
+	struct rrr_stats_engine *stats;
 };
 
-struct instance_thread_data {
+struct rrr_instance_thread_data {
 	struct instance_thread_init_data init_data;
 
 	int used_by_ghost;
 
-	struct vl_thread *thread;
+	struct rrr_thread *thread;
 	void *private_data;
 	void *preload_data;
-	char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE];
-	char preload_memory[VL_MODULE_PRELOAD_MEMORY_SIZE];
+	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
+	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
 };
+
+#define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
 
 #define RRR_INSTANCE_LOOP(target,collection) \
 	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
 
-int instance_check_threads_stopped(struct instance_metadata_collection *target);
-void instance_free_all_thread_data(struct instance_metadata_collection *target);
-int instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
-void instance_unload_all(struct instance_metadata_collection *target);
-void instance_metadata_collection_destroy (struct instance_metadata_collection *target);
-int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions);
+int rrr_instance_check_threads_stopped(struct instance_metadata_collection *target);
+void rrr_instance_free_all_thread_data(struct instance_metadata_collection *target);
+int rrr_instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
+void rrr_instance_unload_all(struct instance_metadata_collection *target);
+void rrr_instance_metadata_collection_destroy (struct instance_metadata_collection *target);
+int rrr_instance_metadata_collection_new (
+		struct instance_metadata_collection **target,
+		struct rrr_signal_functions *signal_functions
+);
 
-int instance_add_senders (
+int rrr_instance_add_senders (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *instance
 );
 
-int instance_load_and_save (
+int rrr_instance_load_and_save (
 		struct instance_metadata_collection *instances,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 );
 
-struct instance_metadata *instance_find (
+struct instance_metadata *rrr_instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
 );
-void instance_free_thread(struct instance_thread_data *data);
-struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data);
-int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data);
-int instance_start_thread (struct instance_thread_data *data);
-int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths);
+
+unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection);
+void rrr_instance_free_thread(struct rrr_instance_thread_data *data);
+struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data);
+int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);
+int rrr_instance_start_thread (struct rrr_instance_thread_data *data);
+int rrr_instance_process_from_config(
+		struct instance_metadata_collection *instances,
+		struct rrr_config *config,
+		const char **library_paths
+);
 
 #endif /* RRR_INSTANCES_H */

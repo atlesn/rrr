@@ -59,15 +59,16 @@ void rrr_init_global_config (
 }
 
 int rrr_print_help_and_version (
-		struct cmd_data *cmd
+		struct cmd_data *cmd,
+		int argc_minimum
 ) {
 	int help_or_version_printed = 0;
 	if (cmd_exists(cmd, "version", 0)) {
-		VL_MSG(PACKAGE_NAME " version " VL_CONFIG_VERSION " build timestamp %li\n", VL_BUILD_TIMESTAMP);
+		RRR_MSG(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
 	}
 
-	if ((cmd->argc == 1 || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
+	if ((cmd->argc < argc_minimum || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
 		cmd_print_usage(cmd);
 		help_or_version_printed = 1;
 	}

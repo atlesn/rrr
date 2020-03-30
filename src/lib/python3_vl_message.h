@@ -19,14 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_VL_MESSAGE_H
-#define RRR_PYTHON3_VL_MESSAGE_H
+#ifndef RRR_PYTHON3_RRR_MESSAGE_H
+#define RRR_PYTHON3_RRR_MESSAGE_H
 
 struct rrr_socket_msg;
-struct vl_message;
+struct rrr_message;
 struct PyObject;
 
-struct vl_message *rrr_python3_vl_message_get_message (PyObject *self);
-PyObject *rrr_python3_vl_message_new_from_message (struct rrr_socket_msg *msg);
+struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self);
+PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg);
 
-#endif /* RRR_PYTHON3_VL_MESSAGE_H */
+#endif /* RRR_PYTHON3_RRR_MESSAGE_H */

@@ -29,32 +29,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "senders.h"
 
-int instance_check_threads_stopped(struct instance_metadata_collection *instances) {
+int rrr_instance_check_threads_stopped(struct instance_metadata_collection *instances) {
 	int ret = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (
-				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPED ||
-				thread_get_state(instance->thread_data->thread) == VL_THREAD_STATE_STOPPING ||
-				thread_is_ghost(instance->thread_data->thread)
+				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPED ||
+				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
+				rrr_thread_is_ghost(instance->thread_data->thread)
 		) {
-			VL_DEBUG_MSG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
+			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
 			ret = 1;
 		}
 	}
 	return ret;
 }
 
-void instance_free_all_thread_data(struct instance_metadata_collection *instances) {
+void rrr_instance_free_all_thread_data(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		instance_free_thread(instance->thread_data);
+		rrr_instance_free_thread(instance->thread_data);
 		instance->thread_data = NULL;
 	}
 }
 
-int instance_count_library_users (struct instance_metadata_collection *instances, void *dl_ptr) {
+int rrr_instance_count_library_users (struct instance_metadata_collection *instances, void *dl_ptr) {
 	int users = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct instance_dynamic_data *data = instance->dynamic_data;
+		struct rrr_instance_dynamic_data *data = instance->dynamic_data;
 		if (data->dl_ptr == dl_ptr) {
 			users++;
 		}
@@ -62,23 +62,23 @@ int instance_count_library_users (struct instance_metadata_collection *instances
 	return users;
 }
 
-void instance_unload_all(struct instance_metadata_collection *instances) {
+void rrr_instance_unload_all(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct instance_dynamic_data *data = instance->dynamic_data;
-		int dl_users = instance_count_library_users(instances, data->dl_ptr);
+		struct rrr_instance_dynamic_data *data = instance->dynamic_data;
+		int dl_users = rrr_instance_count_library_users(instances, data->dl_ptr);
 		int no_dl_unload = (dl_users > 1 ? 1 : 0);
 
 		if (!no_dl_unload) {
-			module_unload(data->dl_ptr, data->unload);
+			rrr_module_unload(data->dl_ptr, data->unload);
 		}
 	}
 }
 
-void __instance_metadata_destroy (
+static void __rrr_instance_metadata_destroy (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *target
 ) {
-	instance_free_thread(target->thread_data);
+	rrr_instance_free_thread(target->thread_data);
 	senders_clear(&target->senders);
 
 	if (instances->signal_functions != NULL && target->signal_handler != NULL) {
@@ -89,17 +89,17 @@ void __instance_metadata_destroy (
 	free(target);
 }
 
-int __instance_metadata_new (
+static int __rrr_instance_metadata_new (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata **target,
-		struct instance_dynamic_data *data
+		struct rrr_instance_dynamic_data *data
 ) {
 	int ret = 0;
 
 	struct instance_metadata *meta = malloc(sizeof(*meta));
 
 	if (meta == NULL) {
-		VL_MSG_ERR("Could not allocate memory for instance_metadata\n");
+		RRR_MSG_ERR("Could not allocate memory for instance_metadata\n");
 		ret = 1;
 		goto out;
 	}
@@ -119,16 +119,16 @@ int __instance_metadata_new (
 	return ret;
 }
 
-struct instance_metadata *__instance_save (
+static struct instance_metadata *__rrr_instance_save (
 		struct instance_metadata_collection *instances,
-		struct instance_dynamic_data *module,
+		struct rrr_instance_dynamic_data *module,
 		struct rrr_instance_config *config
 ) {
-	VL_DEBUG_MSG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
+	RRR_DBG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct instance_metadata *target;
-	if (__instance_metadata_new (instances, &target, module) != 0) {
-		VL_MSG_ERR("Could not save instance %s\n", module->instance_name);
+	if (__rrr_instance_metadata_new (instances, &target, module) != 0) {
+		RRR_MSG_ERR("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
 
@@ -141,7 +141,7 @@ struct instance_metadata *__instance_save (
 	return target;
 }
 
-struct instance_metadata *__instance_load_module_and_save (
+static struct instance_metadata *__rrr_instance_load_module_and_save (
 		struct instance_metadata_collection *instances,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
@@ -150,31 +150,31 @@ struct instance_metadata *__instance_load_module_and_save (
 	char *module_name = NULL;
 
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct instance_dynamic_data *module = instance->dynamic_data;
+		struct rrr_instance_dynamic_data *module = instance->dynamic_data;
 		if (module != NULL && strcmp(module->instance_name, instance_config->name) == 0) {
-			VL_MSG_ERR("Instance '%s' can't be defined more than once\n", module->instance_name);
+			RRR_MSG_ERR("Instance '%s' can't be defined more than once\n", module->instance_name);
 			ret = NULL;
 			goto out;
 		}
 	}
 
 	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
-		VL_MSG_ERR("Could not find module= setting for instance %s\n", instance_config->name);
+		RRR_MSG_ERR("Could not find module= setting for instance %s\n", instance_config->name);
 		ret = NULL;
 		goto out;
 	}
 
-	VL_DEBUG_MSG_1("Creating dynamic_data for module '%s' instance '%s'\n", module_name, instance_config->name);
+	RRR_DBG_1("Creating dynamic_data for module '%s' instance '%s'\n", module_name, instance_config->name);
 
-	struct module_load_data start_data;
-	if (module_load(&start_data, module_name, library_paths) != 0) {
-		VL_MSG_ERR ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
+	struct rrr_module_load_data start_data;
+	if (rrr_module_load(&start_data, module_name, library_paths) != 0) {
+		RRR_MSG_ERR ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
 				module_name, instance_config->name);
 		ret = NULL;
 		goto out;
 	}
 
-	struct instance_dynamic_data *dynamic_data = malloc(sizeof(*dynamic_data));
+	struct rrr_instance_dynamic_data *dynamic_data = malloc(sizeof(*dynamic_data));
 	memset(dynamic_data, '\0', sizeof(*dynamic_data));
 
 	start_data.init(dynamic_data);
@@ -183,7 +183,7 @@ struct instance_metadata *__instance_load_module_and_save (
 	dynamic_data->unload = start_data.unload;
 	dynamic_data->all_instances = instances;
 
-	ret = __instance_save(instances, dynamic_data, instance_config);
+	ret = __rrr_instance_save(instances, dynamic_data, instance_config);
 
 	out:
 	if (module_name != NULL) {
@@ -193,12 +193,12 @@ struct instance_metadata *__instance_load_module_and_save (
 	return ret;
 }
 
-struct instance_metadata *instance_find (
+struct instance_metadata *rrr_instance_find (
 		struct instance_metadata_collection *instances,
 		const char *name
 ) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		struct instance_dynamic_data *module = instance->dynamic_data;
+		struct rrr_instance_dynamic_data *module = instance->dynamic_data;
 		if (module != NULL && strcmp(module->instance_name, name) == 0) {
 			return instance;
 		}
@@ -206,23 +206,23 @@ struct instance_metadata *instance_find (
 	return NULL;
 }
 
-int instance_load_and_save (
+int rrr_instance_load_and_save (
 		struct instance_metadata_collection *instances,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 ) {
-	struct instance_metadata *module = __instance_load_module_and_save(instances, instance_config, library_paths);
+	struct instance_metadata *module = __rrr_instance_load_module_and_save(instances, instance_config, library_paths);
 	if (module == NULL || module->dynamic_data == NULL) {
-		VL_MSG_ERR("Instance '%s' could not be loaded\n", instance_config->name);
+		RRR_MSG_ERR("Instance '%s' could not be loaded\n", instance_config->name);
 		return 1;
 	}
 
-	if ((module->dynamic_data->type == VL_MODULE_TYPE_DEADEND  || module->dynamic_data->type == VL_MODULE_TYPE_NETWORK) && (
+	if ((module->dynamic_data->type == RRR_MODULE_TYPE_DEADEND  || module->dynamic_data->type == RRR_MODULE_TYPE_NETWORK) && (
 			module->dynamic_data->operations.poll != NULL ||
 			module->dynamic_data->operations.poll_delete != NULL ||
 			module->dynamic_data->operations.poll_delete_ip != NULL
 	)) {
-		VL_BUG("Poll functions specified for module %s which is of deadend or network type\n",
+		RRR_BUG("Poll functions specified for module %s which is of deadend or network type\n",
 				module->dynamic_data->instance_name);
 	}
 
@@ -234,15 +234,15 @@ struct add_sender_data {
 	struct instance_sender_collection *senders;
 };
 
-int __add_sender_callback(const char *value, void *_data) {
+static int __rrr_add_sender_callback(const char *value, void *_data) {
 	struct add_sender_data *data = _data;
 
 	int ret = 0;
 
-	struct instance_metadata *sender = instance_find(data->instances, value);
+	struct instance_metadata *sender = rrr_instance_find(data->instances, value);
 
 	if (sender == NULL) {
-		VL_MSG_ERR("Could not find sender instance '%s'\n", value);
+		RRR_MSG_ERR("Could not find sender instance '%s'\n", value);
 		ret = 1;
 		goto out;
 	}
@@ -253,13 +253,13 @@ int __add_sender_callback(const char *value, void *_data) {
 	return ret;
 }
 
-int instance_add_senders (
+int rrr_instance_add_senders (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *instance
 ) {
 	int ret = 0;
 
-	VL_DEBUG_MSG_1("Adding senders for instance '%s' module '%s'\n",
+	RRR_DBG_1("Adding senders for instance '%s' module '%s'\n",
 			instance->dynamic_data->instance_name,
 			instance->dynamic_data->module_name
 	);
@@ -270,22 +270,25 @@ int instance_add_senders (
 	sender_data.instances = instances;
 	sender_data.senders = &instance->senders;
 
-	ret = rrr_settings_traverse_split_commas_silent_fail (
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail (
 			instance_config->settings, "senders",
-			&__add_sender_callback, &sender_data
-	);
+			&__rrr_add_sender_callback, &sender_data
+	))!= 0) {
+		RRR_MSG_ERR("Error while adding senders for instance %s\n", instance->dynamic_data->instance_name);
+		goto out;
+	}
 
-	if (instance->dynamic_data->type == VL_MODULE_TYPE_PROCESSOR ||
-		instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE ||
-		instance->dynamic_data->type == VL_MODULE_TYPE_DEADEND
+	if (instance->dynamic_data->type == RRR_MODULE_TYPE_PROCESSOR ||
+		instance->dynamic_data->type == RRR_MODULE_TYPE_FLEXIBLE ||
+		instance->dynamic_data->type == RRR_MODULE_TYPE_DEADEND
 	) {
 		if (senders_check_empty(&instance->senders)) {
-			if (instance->dynamic_data->type == VL_MODULE_TYPE_FLEXIBLE) {
-				VL_DEBUG_MSG_1("Module is flexible without senders specified\n");
+			if (instance->dynamic_data->type == RRR_MODULE_TYPE_FLEXIBLE) {
+				RRR_DBG_1("Module is flexible without senders specified\n");
 				ret = 0;
 				goto out;
 			}
-			VL_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
+			RRR_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
 					instance->dynamic_data->module_name, instance->dynamic_data->instance_name);
 			ret = 1;
 			goto out;
@@ -294,57 +297,57 @@ int instance_add_senders (
 		RRR_SENDER_LOOP(sender_entry,&instance->senders) {
 			struct instance_metadata *sender = sender_entry->sender;
 
-			VL_DEBUG_MSG_1("Checking sender instance '%s' module '%s'\n",
+			RRR_DBG_1("Checking sender instance '%s' module '%s'\n",
 					sender->dynamic_data->instance_name,
 					sender->dynamic_data->module_name
 			);
 
-			if (sender->dynamic_data->type == VL_MODULE_TYPE_DEADEND) {
-				VL_MSG_ERR("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
+			if (sender->dynamic_data->type == RRR_MODULE_TYPE_DEADEND) {
+				RRR_MSG_ERR("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
 						instance->dynamic_data->instance_name, sender->dynamic_data->instance_name);
 				ret = 1;
 				goto out;
 			}
 
 			if (sender == instance) {
-				VL_MSG_ERR("Instance %s set with itself as sender\n",
+				RRR_MSG_ERR("Instance %s set with itself as sender\n",
 						instance->dynamic_data->instance_name);
 				ret = 1;
 				goto out;
 			}
 		}
 	}
-	else if (instance->dynamic_data->type == VL_MODULE_TYPE_SOURCE ||
-			instance->dynamic_data->type == VL_MODULE_TYPE_NETWORK
+	else if (instance->dynamic_data->type == RRR_MODULE_TYPE_SOURCE ||
+			instance->dynamic_data->type == RRR_MODULE_TYPE_NETWORK
 	) {
 		if (!senders_check_empty(&instance->senders)) {
-			VL_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
+			RRR_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
 					instance->dynamic_data->instance_name, instance->dynamic_data->module_name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
-		VL_MSG_ERR ("Unknown module type for %s: %i\n",
+		RRR_MSG_ERR ("Unknown module type for %s: %i\n",
 				instance->dynamic_data->module_name, instance->dynamic_data->type
 		);
 		ret = 1;
 		goto out;
 	}
 
-	VL_DEBUG_MSG_1("Added %d senders\n", senders_count(&instance->senders));
+	RRR_DBG_1("Added %d senders\n", senders_count(&instance->senders));
 
 	out:
 	return ret;
 }
 
-void instance_metadata_collection_destroy (struct instance_metadata_collection *target) {
+void rrr_instance_metadata_collection_destroy (struct instance_metadata_collection *target) {
 	struct instance_metadata *meta = target->first_entry;
 
 	while (meta != NULL) {
 		struct instance_metadata *next = meta->next;
 
-		__instance_metadata_destroy(target, meta);
+		__rrr_instance_metadata_destroy(target, meta);
 
 		meta = next;
 	}
@@ -352,14 +355,17 @@ void instance_metadata_collection_destroy (struct instance_metadata_collection *
 	free(target);
 }
 
-int instance_metadata_collection_new (struct instance_metadata_collection **target, struct rrr_signal_functions *signal_functions) {
+int rrr_instance_metadata_collection_new (
+		struct instance_metadata_collection **target,
+		struct rrr_signal_functions *signal_functions
+) {
 	int ret = 0;
 
 	*target = malloc(sizeof(**target));
 	memset(*target, '\0', sizeof(**target));
 
 	if (*target == NULL) {
-		VL_MSG_ERR("Could not allocate memory for instance_metadata_collection\n");
+		RRR_MSG_ERR("Could not allocate memory for instance_metadata_collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -370,7 +376,18 @@ int instance_metadata_collection_new (struct instance_metadata_collection **targ
 	return ret;
 }
 
-void instance_free_thread(struct instance_thread_data *data) {
+unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection) {
+	unsigned int result = 0;
+
+	RRR_INSTANCE_LOOP(instance, collection) {
+		(void)(instance);
+		result++;
+	}
+
+	return result;
+}
+
+void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
 	if (data == NULL) {
 		return;
 	}
@@ -382,12 +399,12 @@ void instance_free_thread(struct instance_thread_data *data) {
 	free(data);
 }
 
-struct instance_thread_data *instance_init_thread(struct instance_thread_init_data *init_data) {
-	VL_DEBUG_MSG_1 ("Init thread %s\n", init_data->module->instance_name);
+struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data) {
+	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
-	struct instance_thread_data *data = malloc(sizeof(*data));
+	struct rrr_instance_thread_data *data = malloc(sizeof(*data));
 	if (data == NULL) {
-		VL_MSG_ERR("Could not allocate memory in rrr_init_thread\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_init_thread\n");
 		return NULL;
 	}
 
@@ -397,15 +414,15 @@ struct instance_thread_data *instance_init_thread(struct instance_thread_init_da
 	return data;
 }
 
-int instance_preload_thread(struct vl_thread_collection *collection, struct instance_thread_data *data) {
-	struct instance_dynamic_data *module = data->init_data.module;
+int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
+	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
-	VL_DEBUG_MSG_1 ("Preloading thread %s\n", module->instance_name);
+	RRR_DBG_1 ("Preloading thread %s\n", module->instance_name);
 	if (data->thread != NULL) {
-		VL_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
+		RRR_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
 		exit(EXIT_FAILURE);
 	}
-	data->thread = thread_preload_and_register (
+	data->thread = rrr_thread_preload_and_register (
 			collection,
 			module->operations.thread_entry,
 			module->operations.preload,
@@ -416,7 +433,7 @@ int instance_preload_thread(struct vl_thread_collection *collection, struct inst
 	);
 
 	if (data->thread == NULL) {
-		VL_MSG_ERR ("Error while preloading thread for instance %s\n", module->instance_name);
+		RRR_MSG_ERR ("Error while preloading thread for instance %s\n", module->instance_name);
 		free(data);
 		return 1;
 	}
@@ -424,27 +441,31 @@ int instance_preload_thread(struct vl_thread_collection *collection, struct inst
 	return 0;
 }
 
-int instance_start_thread (struct instance_thread_data *data) {
-	struct instance_dynamic_data *module = data->init_data.module;
+int rrr_instance_start_thread (struct rrr_instance_thread_data *data) {
+	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
-	VL_DEBUG_MSG_1 ("Starting thread %s\n", module->instance_name);
-	if (thread_start(data->thread) != 0) {
-		VL_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
+	RRR_DBG_1 ("Starting thread %s\n", module->instance_name);
+	if (rrr_thread_start(data->thread) != 0) {
+		RRR_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
 		return 1;
 	}
 
 	return 0;
 }
 
-int instance_process_from_config(struct instance_metadata_collection *instances, struct rrr_config *config, const char **library_paths) {
+int rrr_instance_process_from_config(
+		struct instance_metadata_collection *instances,
+		struct rrr_config *config,
+		const char **library_paths
+) {
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
-		ret = instance_load_and_save(instances, config->configs[i], library_paths);
+		ret = rrr_instance_load_and_save(instances, config->configs[i], library_paths);
 		if (ret != 0) {
-			VL_MSG_ERR("Loading of instance failed for %s. Library paths used:\n",
+			RRR_MSG_ERR("Loading of instance failed for %s. Library paths used:\n",
 					config->configs[i]->name);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {
-				VL_MSG_ERR("-> %s\n", library_paths[j]);
+				RRR_MSG_ERR("-> %s\n", library_paths[j]);
 			}
 			goto out;
 		}
@@ -452,9 +473,9 @@ int instance_process_from_config(struct instance_metadata_collection *instances,
 
 	RRR_INSTANCE_LOOP(instance, instances)
 	{
-		ret = instance_add_senders(instances, instance);
+		ret = rrr_instance_add_senders(instances, instance);
 		if (ret != 0) {
-			VL_MSG_ERR("Adding senders failed for %s\n",
+			RRR_MSG_ERR("Adding senders failed for %s\n",
 					instance->dynamic_data->instance_name);
 			goto out;
 		}

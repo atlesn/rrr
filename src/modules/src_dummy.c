@@ -32,10 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 struct dummy_data {
-	struct fifo_buffer buffer;
+	struct rrr_fifo_buffer buffer;
 	int no_generation;
 	int no_sleeping;
 	rrr_setting_uint max_generated;
@@ -43,36 +44,36 @@ struct dummy_data {
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return fifo_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct dummy_data *data = thread_data->private_data;
-	VL_DEBUG_MSG_2("dummy: writing data from inject function\n");
+	RRR_DBG_2("dummy: writing data from inject function\n");
 
-	fifo_buffer_write(&data->buffer, message->message, message->data_length);
+	rrr_fifo_buffer_write(&data->buffer, message->message, message->data_length);
 	message->message = NULL;
 
-	ip_buffer_entry_destroy(message);
+	rrr_ip_buffer_entry_destroy(message);
 
 	return 0;
 }
 
 int data_init(struct dummy_data *data) {
 	memset(data, '\0', sizeof(*data));
-	int ret = fifo_buffer_init(&data->buffer);
+	int ret = rrr_fifo_buffer_init(&data->buffer);
 	return ret;
 }
 
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct dummy_data *data = (struct dummy_data *) arg;
-	fifo_buffer_invalidate(&data->buffer);
+	rrr_fifo_buffer_invalidate(&data->buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }
@@ -87,7 +88,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			VL_MSG_ERR("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -101,7 +102,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			VL_MSG_ERR("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -113,7 +114,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			VL_MSG_ERR("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
+			RRR_MSG_ERR("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -127,26 +128,27 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-static void *thread_entry_dummy (struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_dummy (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
-		VL_MSG_ERR("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	VL_DEBUG_MSG_1 ("Dummy thread data is %p\n", thread_data);
+	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, thread);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		VL_MSG_ERR("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
 
@@ -154,34 +156,46 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 
 	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
 	if (data->no_sleeping == 1) {
-		VL_DEBUG_MSG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
-		fifo_buffer_set_do_ratelimit(&data->buffer, 1);
+		RRR_DBG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
+		rrr_fifo_buffer_set_do_ratelimit(&data->buffer, 1);
 	}
 
-	uint64_t time_start = time_get_64();
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
+	uint64_t time_start = rrr_time_get_64();
 	int generated_count = 0;
+	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
-	while (!thread_check_encourage_stop(thread_data->thread)) {
-		update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
+		rrr_update_watchdog_time(thread_data->thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
-			uint64_t time = time_get_64();
+			uint64_t time = rrr_time_get_64();
 
-			struct vl_message *reading = message_new_reading(time, time);
+			struct rrr_message *reading = rrr_message_new_reading(time, time);
 
-//			VL_DEBUG_MSG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
-			fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+//			RRR_DBG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
+			rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 			generated_count_total++;
+			generated_count_to_stats++;
 		}
 
-		uint64_t time_now = time_get_64();
+		uint64_t time_now = rrr_time_get_64();
+
+		if (generated_count_to_stats > 500) {
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
+		}
 
 		if (time_now - time_start > 1000000) {
-			VL_DEBUG_MSG_1("dummy instance %s messages per second %i total %llu of %llu\n",
+			RRR_DBG_1("dummy instance %s messages per second %i total %llu of %llu\n",
 					INSTANCE_D_NAME(thread_data), generated_count, generated_count_total, data->max_generated);
 			generated_count = 0;
 			time_start = time_now;
+
+			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			generated_count_to_stats = 0;
 		}
 
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
@@ -191,8 +205,9 @@ static void *thread_entry_dummy (struct vl_thread *thread) {
 	}
 
 	out_cleanup:
-	VL_DEBUG_MSG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
+	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
@@ -209,7 +224,7 @@ static int test_config (struct rrr_instance_config *config) {
 	return ret;
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
 	NULL,
@@ -227,9 +242,9 @@ static const char *module_name = "dummy";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 		data->module_name = module_name;
-		data->type = VL_MODULE_TYPE_SOURCE;
+		data->type = RRR_MODULE_TYPE_SOURCE;
 		data->operations = module_operations;
 		data->dl_ptr = NULL;
 		data->private_data = NULL;

@@ -8,4 +8,4 @@ WriteMakefile (
 	XSMULTI		=> 1
 );
 
-system ("echo \"\\n\ncheck :\n\ttrue\n\" >> Makefile");
+system ("echo \"\n\ncheck :\n\ttrue\n\" >> Makefile");

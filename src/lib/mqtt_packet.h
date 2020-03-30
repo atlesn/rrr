@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "mqtt_property.h"
+#include "linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
@@ -53,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL			0x04
 
 #define RRR_MQTT_P_5_REASON_NO_MATCHING_SUBSCRIBERS			0x10
+#define RRR_MQTT_P_5_REASON_NO_SUBSCRIPTION_EXISTED			0x11
 
 #define RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR				0x80
 #define RRR_MQTT_P_5_REASON_MALFORMED_PACKET				0x81
@@ -150,6 +152,7 @@ struct rrr_mqtt_p_reason {
 	uint8_t for_puback_pubrec;
 	uint8_t for_pubrel_pubcomp;
 	uint8_t for_suback;
+	uint8_t for_unsuback;
 
 	const char *description;
 };
@@ -185,8 +188,13 @@ struct rrr_mqtt_p_payload {
 // memory might however also be managed elsewhere for locally created packets. Packets
 // may share the same payload data.
 
+// Packets have parameters for being a linked list node. This must however be managed
+// locally, and the parameters are disregarded by the packet framework. In normal
+// operations, packets are stored in FIFO buffers in which these parameters are not used.
+
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
+	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
 	uint8_t dup;														\
@@ -267,7 +275,7 @@ struct rrr_mqtt_p {
 static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
 	if (p->users == 0) {
-		VL_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
+		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
 	}
 //	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
@@ -280,12 +288,12 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
-	VL_DEBUG_MSG_3("DECREF %p users %i\n", p, (p)->users);
+//	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
 	pthread_mutex_unlock(&(p)->refcount_lock);
 	if ((p)->users < 0) {
-		VL_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
+		RRR_BUG("Users was < 0 in rrr_mqtt_p_standardized_decref\n");
 	}
 	if (p->users == 0) {
 		pthread_mutex_destroy(&p->refcount_lock);
@@ -311,6 +319,14 @@ static inline int rrr_mqtt_p_standardized_get_refcount (void *arg) {
 #define RRR_MQTT_P_DECREF_IF_NOT_NULL(p)	\
 	if ((p) != NULL)						\
 		RRR_MQTT_P_DECREF(p)
+
+static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
+	// Cast away const is OK
+	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) arg;
+	if (pthread_mutex_trylock(&packet->data_lock) == 0) {
+		RRR_BUG("BUG: Packet not locked triggered in rrr_mqtt_p_bug_if_not_locked(), run in debugger to get call stack.\n");
+	}
+}
 
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
@@ -427,30 +443,52 @@ struct rrr_mqtt_p_publish {
 #define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
 	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
 
+struct rrr_mqtt_p_suback_unsuback;
+struct rrr_mqtt_p_suback;
+struct rrr_mqtt_p_unsuback;
+
+#define RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS					\
+		RRR_MQTT_P_PACKET_HEADER;								\
+		char *data_tmp;											\
+		int max_qos;											\
+		struct rrr_mqtt_property_collection properties;			\
+		struct rrr_mqtt_subscription_collection *subscriptions
+
+// These three must be --equal-- except for the last pointer name
+struct rrr_mqtt_p_sub_usub {
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
+	struct rrr_mqtt_p_suback_unsuback *sub_usuback;
+};
 struct rrr_mqtt_p_subscribe {
-	RRR_MQTT_P_PACKET_HEADER;
-	char *data_tmp;
-	int max_qos;
-	struct rrr_mqtt_property_collection properties;
-	struct rrr_mqtt_subscription_collection *subscriptions;
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
 	struct rrr_mqtt_p_suback *suback;
 };
+struct rrr_mqtt_p_unsubscribe {
+	RRR_MQTT_P_SUBSCRIBE_UNSUBSCRIBE_FIELDS;
+	struct rrr_mqtt_p_unsuback *unsuback;
+};
 
+#define RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS											\
+	RRR_MQTT_P_PACKET_HEADER;														\
+	struct rrr_mqtt_property_collection properties;									\
+	/* Used only when assembling */													\
+	struct rrr_mqtt_subscription_collection *subscriptions_;						\
+	/* Used only when parsing/handling */											\
+	const uint8_t *acknowledgements;												\
+	ssize_t acknowledgements_size
+
+// These three must be --equal-- except for the last pointer name
+struct rrr_mqtt_p_suback_unsuback {
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
+	const struct rrr_mqtt_p_sub_usub *orig_sub_usub;
+};
 struct rrr_mqtt_p_suback {
-	RRR_MQTT_P_PACKET_HEADER;
-	struct rrr_mqtt_property_collection properties;
-
-	// Used only when assembling
-	struct rrr_mqtt_subscription_collection *subscriptions_;
-
-	// Used only when parsing/handling
-	const uint8_t *acknowledgements;
-	ssize_t acknowledgements_size;
-
-	// We do not make any reference counting on this parameter because
-	// when set, the memory of the SUBACK packet is managed by the pointed
-	// to SUBSCRIBE packet, thus both will always be valid.
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
 	const struct rrr_mqtt_p_subscribe *orig_subscribe;
+};
+struct rrr_mqtt_p_unsuback {
+	RRR_MQTT_P_SUBACK_UNSUBACK_FIELDS;
+	const struct rrr_mqtt_p_unsubscribe *orig_unsubscribe;
 };
 
 #define RRR_MQTT_SUBACK_GET_FLAGS_QOS(suback,idx) \
@@ -465,12 +503,6 @@ struct rrr_mqtt_p_suback {
 #define RRR_MQTT_SUBACK_GET_FLAGS_ALL(suback,idx) \
 	((suback)->acknowledgements[(idx)])
 
-struct rrr_mqtt_p_unsubscribe {
-	RRR_MQTT_P_PACKET_HEADER;
-};
-struct rrr_mqtt_p_unsuback {
-	RRR_MQTT_P_PACKET_HEADER;
-};
 struct rrr_mqtt_p_pingreq {
 	RRR_MQTT_P_PACKET_HEADER;
 	int pingresp_received;
@@ -487,7 +519,7 @@ struct rrr_mqtt_p_auth {
 };
 
 struct rrr_mqtt_p_queue {
-	struct fifo_buffer buffer;
+	struct rrr_fifo_buffer buffer;
 };
 
 #define RRR_MQTT_P_TYPE_RESERVED	0
@@ -512,7 +544,7 @@ const struct rrr_mqtt_p_protocol_version *rrr_mqtt_p_get_protocol_version (uint8
 extern const struct rrr_mqtt_p_type_properties rrr_mqtt_p_type_properties[];
 static inline const struct rrr_mqtt_p_type_properties *rrr_mqtt_p_get_type_properties (uint8_t id) {
 	if (id > 15 || id == 0) {
-		VL_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
+		RRR_BUG("Invalid ID in rrr_mqtt_p_get_type_properties\n");
 	}
 	return &rrr_mqtt_p_type_properties[id];
 }
@@ -548,7 +580,7 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
 ) {
 	const struct rrr_mqtt_p_type_properties *properties = source->type_properties;
 	if (properties->clone == NULL) {
-		VL_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
+		RRR_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
 	}
 	return properties->clone(source);
 }

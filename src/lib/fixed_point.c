@@ -156,7 +156,7 @@ static long double __rrr_fixp_convert_char (char c) {
 		c += 10;
 	}
 	else {
-		VL_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
+		RRR_BUG("Unknown character %c while parsing decimals in rrr_str_to_fixp\n", c);
 	}
 
 	return c;
@@ -343,7 +343,7 @@ int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length,
 	no_decimals:
 	start = integer_pos;
 	factor = 1.0;
-	for (const char *pos = dot - 1; pos >= start; pos--) {
+	for (const char *pos = (dot != NULL ? dot - 1 : end - 1); pos >= start; pos--) {
 		char c = *pos;
 		result_integer += __rrr_fixp_convert_char(c) * factor;
 		factor *= base;

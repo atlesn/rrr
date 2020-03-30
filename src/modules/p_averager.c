@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 struct averager_data {
-	struct fifo_buffer input_buffer;
-	struct fifo_buffer output_buffer;
+	struct rrr_fifo_buffer input_buffer;
+	struct rrr_fifo_buffer output_buffer;
 
 	// Set this to 1 when others may read from our buffer
 	int preserve_point_measurements;
@@ -51,55 +51,56 @@ struct averager_data {
 };
 
 // In seconds, keep x seconds of readings in the buffer
-#define VL_DEFAULT_AVERAGER_TIMESPAN 15
+#define RRR_DEFAULT_AVERAGER_TIMESPAN 15
 
 // Create an average/max/min-reading every x seconds
-#define VL_DEFAULT_AVERAGER_INTERVAL 10
+#define RRR_DEFAULT_AVERAGER_INTERVAL 10
 
 // Poll of our output buffer from other modules
 int averager_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct averager_data *avg_data = data->private_data;
 
-	return fifo_read_clear_forward(&avg_data ->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_read_clear_forward(&avg_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 // Poll of our output buffer from other modules
 int averager_poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct averager_data *avg_data = data->private_data;
 
-	return fifo_search(&avg_data->output_buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_search(&avg_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
 // Messages when polling from sender comes in here
-int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct vl_message *message = (struct vl_message *) data;
+int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
+	struct rrr_message *message = (struct rrr_message *) data;
 
-	struct averager_data *averager_data = poll_data->private_data;
+	struct rrr_instance_thread_data *thread_data = poll_data->private_data;
+	struct averager_data *averager_data = thread_data->private_data;
 
 	// TODO : If we get an info message, the average measurements may get lost due to them having lower timestamps
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
-		VL_DEBUG_MSG_2 ("Averager: size %lu measurement %" PRIu64 "\n", size, message->data_numeric);
-		fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
+		RRR_DBG_2 ("Averager: size %lu measurement %" PRIu64 "\n", size, message->data_numeric);
+		rrr_fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
 		if (averager_data->preserve_point_measurements == 1) {
-			struct vl_message *dup_message = message_duplicate(message);
-			fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from,
+			struct rrr_message *dup_message = rrr_message_duplicate(message);
+			rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from,
 				(char*) dup_message, sizeof(*dup_message)
 			);
 		}
 	}
 	else if (MSG_IS_MSG_INFO(message)) {
-		VL_DEBUG_MSG_2 ("Averager: size %lu information message\n", size);
-		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
+		RRR_DBG_2 ("Averager: size %lu information message\n", size);
+		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 	else if (averager_data->discard_unknown_messages) {
-		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, disarding according to configuration\n", size);
+		RRR_DBG_2 ("Averager: size %lu unknown message, disarding according to configuration\n", size);
 		free(data);
 	}
 	else {
-		VL_DEBUG_MSG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size);
-		fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
+		RRR_DBG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size);
+		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 
 	return 0;
@@ -107,9 +108,9 @@ int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned lon
 
 void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t timespan_useconds = data->timespan * 1000000;
-	uint64_t time_now = time_get_64();
+	uint64_t time_now = rrr_time_get_64();
 
-	fifo_clear_order_lt(&data->input_buffer, time_now - timespan_useconds);
+	rrr_fifo_clear_order_lt(&data->input_buffer, time_now - timespan_useconds);
 }
 
 struct averager_calculation {
@@ -125,16 +126,16 @@ struct averager_calculation {
 	uint64_t timestamp_min;
 };
 
-int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
+int averager_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
 	struct averager_calculation *calculation = poll_data->private_data;
-	struct vl_message *message = (struct vl_message *) data;
+	struct rrr_message *message = (struct rrr_message *) data;
 
 
-	VL_DEBUG_MSG_4("averager callbackgot packet from buffer of size %lu\n", size);
+	RRR_DBG_4("averager callbackgot packet from buffer of size %lu\n", size);
 
 	if (!MSG_IS_MSG_POINT(message)) {
-		VL_DEBUG_MSG_2 ("Averager: Ignoring a message which is not point measurement\n");
-		return FIFO_SEARCH_KEEP;
+		RRR_DBG_2 ("Averager: Ignoring a message which is not point measurement\n");
+		return RRR_FIFO_SEARCH_KEEP;
 	}
 
 	calculation->entries++;
@@ -154,7 +155,7 @@ int averager_callback(struct fifo_callback_args *poll_data, char *data, unsigned
 		calculation->timestamp_to = message->timestamp_to;
 	}
 
-	return FIFO_SEARCH_KEEP;
+	return RRR_FIFO_SEARCH_KEEP;
 }
 
 int averager_spawn_message (
@@ -164,9 +165,9 @@ int averager_spawn_message (
 	uint64_t time_to,
 	uint64_t measurement
 ) {
-	struct vl_message *message = NULL;
+	struct rrr_message *message = NULL;
 
-	if (message_new_empty (
+	if (rrr_message_new_empty (
 			&message,
 			MSG_TYPE_MSG,
 			0,
@@ -177,30 +178,30 @@ int averager_spawn_message (
 			0,
 			0
 	) != 0) {
-		VL_MSG_ERR ("Could not create message in averager_spawn_message\n");
+		RRR_MSG_ERR ("Could not create message in averager_spawn_message\n");
 		return 1;
 	}
 
-	fifo_buffer_write_ordered(&data->output_buffer, time_to, (char*) message, sizeof(*message));
+	rrr_fifo_buffer_write_ordered(&data->output_buffer, time_to, (char*) message, sizeof(*message));
 
 	return 0;
 }
 
 int averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
-	struct fifo_callback_args poll_data = {NULL, &calculation, 0};
+	struct rrr_fifo_callback_args poll_data = {NULL, &calculation, 0};
 
 	int ret = 0;
 
-	fifo_search(&data->input_buffer, averager_callback, &poll_data, 50);
+	rrr_fifo_search(&data->input_buffer, averager_callback, &poll_data, 50);
 
 	if (calculation.entries == 0) {
-		VL_DEBUG_MSG_2 ("Averager: No entries, not averaging\n");
+		RRR_DBG_2 ("Averager: No entries, not averaging\n");
 		return ret;
 	}
 
 	unsigned long int average = calculation.sum/calculation.entries;
-	VL_DEBUG_MSG_2 ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
+	RRR_DBG_2 ("Average: %lu, Max: %lu, Min: %lu, Entries: %lu\n", average, calculation.max, calculation.min, calculation.entries);
 
 	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
 	// without newer timestamps getting written before older ones.
@@ -209,7 +210,7 @@ int averager_calculate_average(struct averager_data *data) {
 	ret |= averager_spawn_message(data, MSG_CLASS_MIN, calculation.timestamp_min, calculation.timestamp_to+2, calculation.min);
 
 	if (ret != 0) {
-		VL_MSG_ERR("Error when spawning messages in averager_calculate_average\n");
+		RRR_MSG_ERR("Error when spawning messages in averager_calculate_average\n");
 		return ret;
 	}
 
@@ -219,8 +220,8 @@ int averager_calculate_average(struct averager_data *data) {
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct averager_data *data = (struct averager_data *) arg;
-	fifo_buffer_invalidate(&data->input_buffer);
-	fifo_buffer_invalidate(&data->output_buffer);
+	rrr_fifo_buffer_invalidate(&data->input_buffer);
+	rrr_fifo_buffer_invalidate(&data->output_buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }
@@ -228,18 +229,17 @@ void data_cleanup(void *arg) {
 int data_init(struct averager_data *data) {
 	memset(data, '\0', sizeof(*data));
 	int ret = 0;
-	ret |= fifo_buffer_init(&data->input_buffer) << 0;
-	ret |= fifo_buffer_init(&data->output_buffer) << 1;
+	ret |= rrr_fifo_buffer_init(&data->input_buffer) << 0;
+	ret |= rrr_fifo_buffer_init(&data->output_buffer) << 1;
 	if (ret != 0) {
 		data_cleanup(data);
 	}
+
 	return ret;
 }
 
 int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-
-	memset(data, '\0', sizeof(*data));
 
 	rrr_setting_uint timespan = 0;
 	rrr_setting_uint interval = 0;
@@ -249,38 +249,42 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&timespan, config, "avg_timespan")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
+			RRR_MSG_ERR("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
 			ret = 1;
 			goto out;
 		}
-		timespan = VL_DEFAULT_AVERAGER_TIMESPAN;
+		timespan = RRR_DEFAULT_AVERAGER_TIMESPAN;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
+			RRR_MSG_ERR("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
 			ret = 1;
 			goto out;
 		}
-		interval = VL_DEFAULT_AVERAGER_INTERVAL;
+		interval = RRR_DEFAULT_AVERAGER_INTERVAL;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
+			RRR_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		preserve_points = 0;
+		ret = 0;
 	}
 
 	if ((ret = rrr_instance_config_check_yesno(&discard_unknowns, config, "avg_discard_unknowns")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			VL_MSG_ERR("Syntax error in avg_discard_unknowns for instance %s, specify yes or no\n", config->name);
+			RRR_MSG_ERR("Syntax error in avg_discard_unknowns for instance %s, specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		discard_unknowns = 0;
+		ret = 0;
 	}
 
 	data->discard_unknown_messages = discard_unknowns;
@@ -294,52 +298,54 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 }
 
 
-static void *thread_entry_averager(struct vl_thread *thread) {
-	struct instance_thread_data *thread_data = thread->private_data;
+static void *thread_entry_averager(struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
 
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data)) != 0) {
-		VL_MSG_ERR("Could not initalize data in averager instance %s flags %i\n",
+		RRR_MSG_ERR("Could not initalize data in averager instance %s flags %i\n",
 				INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
 
 	struct poll_collection poll;
 
-	VL_DEBUG_MSG_1 ("Averager thread data is %p\n", thread_data);
+	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
-	thread_set_state(thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(thread, VL_THREAD_STATE_RUNNING);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		RRR_MSG_ERR("Could parse configuration in averager instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	VL_DEBUG_MSG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
+	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
 	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
-		VL_MSG_ERR("Averager requires poll_delete from senders\n");
+		RRR_MSG_ERR("Averager requires poll_delete from senders\n");
 		goto out_message;
 	}
 
-	VL_DEBUG_MSG_1 ("Averager started thread %p\n", thread_data);
+	RRR_DBG_1 ("Averager started thread %p\n", thread_data);
 
-	uint64_t previous_average_time = time_get_64();
+	uint64_t previous_average_time = rrr_time_get_64();
 	uint64_t average_interval_useconds = data->interval * 1000000;
 
-	while (thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
+	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
+		rrr_update_watchdog_time(thread_data->thread);
 
 		averager_maintain_buffer(data);
 
@@ -347,7 +353,7 @@ static void *thread_entry_averager(struct vl_thread *thread) {
 			break;
 		}
 
-		uint64_t current_time = time_get_64();
+		uint64_t current_time = rrr_time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
 			if (averager_calculate_average(data) != 0) {
 				goto out_message;
@@ -358,7 +364,7 @@ static void *thread_entry_averager(struct vl_thread *thread) {
 
 	out_message:
 
-	VL_DEBUG_MSG_1 ("Thread averager %p exiting\n", thread_data->thread);
+	RRR_DBG_1 ("Thread averager %p exiting\n", thread_data->thread);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -374,7 +380,7 @@ static int test_config (struct rrr_instance_config *config) {
 	return ret;
 }
 
-static struct module_operations module_operations = {
+static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
 		NULL,
@@ -392,15 +398,15 @@ static const char *module_name = "averager";
 __attribute__((constructor)) void load(void) {
 }
 
-void init(struct instance_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = VL_MODULE_TYPE_PROCESSOR;
+	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
 void unload(void) {
-	VL_DEBUG_MSG_1 ("Destroy averager module\n");
+	RRR_DBG_1 ("Destroy averager module\n");
 }
 

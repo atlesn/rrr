@@ -1,4 +1,4 @@
-.Dd 2019-10-04
+.Dd 2020-01-22
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -9,6 +9,7 @@ for collecting, buffering, processing and storing messages and measurements.
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-W|--no_watchdog_timers]
 .Dl [-T|--no_thread_restart]
+.Dl [-s|--stats]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -76,6 +77,10 @@ Do not monitor threads for becoming unresponsive. If not set and a thread is fou
 When a thread for some reason exits, close the other threads and exit as opposed to restarting all the threads which is the default behaviour.
 .B rrr
 restarts them.
+.IP -s|--stats
+Enable statistics engine which
+.Xr rrr_stats(1),
+can connect to.
 .SH SIGNALS
 .IP SIGINT|Ctrl+C
 Encourage threads and forks to stop in a polite matter before exiting the program. A second SIGINT causes immediate exit.

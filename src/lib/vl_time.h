@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef VL_TIME_H
-#define VL_TIME_H
+#ifndef RRR_TIME_H
+#define RRR_TIME_H
 
 #include <stdio.h>
 #include <stdint.h>
@@ -29,11 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/time.h>
 
-static inline uint64_t time_get_64(void) {
+#include "../global.h"
+#include "rrr_strerror.h"
+
+static inline uint64_t rrr_time_get_64(void) {
 	struct timeval tv;
 
 	if (gettimeofday(&tv, NULL) != 0) {
-		fprintf (stderr, "Error while getting time, cannot recover from this: %s\n", strerror(errno));
+		RRR_MSG_ERR("Error while getting time, cannot recover from this: %s\n", rrr_strerror(errno));
 		exit (EXIT_FAILURE);
 	}
 
@@ -44,4 +47,4 @@ static inline uint64_t time_get_64(void) {
 	return (tv_sec * tv_factor) + (tv_usec);
 }
 
-#endif
+#endif /* RRR_TIME_H */

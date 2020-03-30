@@ -1,11 +1,13 @@
-AC_INIT([Read Route Record], 0.14)
-AC_DEFINE([VL_CONFIG_VERSION], "0.14", [Full version])
-AC_DEFINE([VL_CONFIG_VERSION_MAJOR], 0, [Major version])
-AC_DEFINE([VL_CONFIG_VERSION_MINOR], 14, [Minor version])
+AC_INIT([Read Route Record], 0.16-8)
+AC_DEFINE([RRR_CONFIG_VERSION], "0.16-8", [Full version])
+AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 0, [Major version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 8, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
 AC_DEFINE([RRR_MESSAGE_MIME_TYPE], "application/rrr-message", [MIME type of RRR message])
+AC_DEFINE([RRR_STATS_SOCKET_PREFIX], "rrr_stats", [Socket name prefix for RRR stats socket])
 
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -22,16 +24,14 @@ AC_PROG_INSTALL
 #AM_PROG_LEX
 AM_SILENT_RULES([yes])
 
-echo "#define VL_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
+echo "#define RRR_BUILD_TIMESTAMP " `date +%Y%m%d%H%M%S` > build_timestamp.h
 echo "#define RRR_BUILD_DIR \""`pwd`"\"" > build_directory.h
-
-AM_CFLAGS="$AM_CFLAGS -include $srcdir/config.h -include $srcdir/build_timestamp.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
-AC_SUBST(AM_CFLAGS)
 
 AC_CHECK_HEADERS([pthread.h sys/un.h linux/un.h endian.h])
 AC_CHECK_FUNCS(vsnprintf vasprintf strcasestr strlcpy)
 
-AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable encryption support in network modules])], [enable_encryption=no], [enable_encryption=yes])
+AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable code coverage compilation])], [enable_codecov=yes], [enable_codecov=no])
+AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable OpenSSL/TLS support in network modules])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB bindings])],[enable_usb=no],[enable_usb=yes])
@@ -49,14 +49,46 @@ AS_IF([test "x$enable_gnu_debug" = xno], [
 	AC_MSG_RESULT([yes])
 ])
 
-AM_CONDITIONAL([VL_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
+CFLAGS_CODECOV=""
+AC_MSG_CHECKING([for code coverage compilation])
+AS_IF([test "x$enable_codecov" = xyes], [
+	CFLAGS_CODECOV="-ftest-coverage -fprofile-arcs"
+	AC_MSG_RESULT([$CFLAGS_CODECOV])
+], [
+	AC_MSG_RESULT([no])
+])
+AC_SUBST([CFLAGS_CODECOV])
+
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AC_SUBST(AM_CFLAGS)
+
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$with_encryption" != xno])
+AC_MSG_CHECKING([for OpenSSL usage])
+AS_IF([test "x$with_encryption" = xno], [
+       AC_MSG_RESULT([Not compiling with OpenSSL])
+], [
+       AC_MSG_RESULT([yes])
+       AC_DEFINE([RRR_WITH_OPENSSL], [1], [Enable encryption in network modules])
+       AX_CHECK_OPENSSL([], [
+               AC_MSG_ERROR([Cannot compile with encryption, OpenSSL missing])
+       ])
+       AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
+# Only version >=1.1 supported
+#       AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([RRR_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
+       AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([RRR_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
+       OPENSSL_CFLAGS_COMPAT="-DOPENSSL_API_COMPAT=0x10100000L"
+       AC_SUBST([OPENSSL_CFLAGS_COMPAT])
+       AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
+])
+
+AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
 ], [
 	AC_MSG_RESULT([yes])
 
-	AC_DEFINE([VL_WITH_PERL5], [1], [Enable perl5 extensions])
+	AC_DEFINE([RRR_WITH_PERL5], [1], [Enable perl5 extensions])
 
 	if test x"${enable_perl5_debug}" = x"yes"; then
 		AC_CHECK_PROG(PERL5_INTERPRETER,debugperl,debugperl)
@@ -84,7 +116,8 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([$PERL5_CFLAGS])
 
 	AC_MSG_CHECKING([Perl5 LDFLAGS])
-	PERL5_LDFLAGS=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	perl5_ldflags_auto=`${PERL5_INTERPRETER} -MExtUtils::Embed -e ldopts`
+	PERL5_LDFLAGS="$perl5_ldflags_auto"
 	AC_MSG_RESULT([$PERL5_LDFLAGS])
 
 	AC_MSG_CHECKING([perl5 compilation and linking])
@@ -116,19 +149,16 @@ AS_IF([test "x$enable_perl5" = xno], [
 		AC_MSG_ERROR([Test of perl5 compilation failed, make sure libperl-dev is installed.])
 	fi
 
-	AC_MSG_CHECKING([Perl5 XSI source])
+	AC_MSG_CHECKING([Generating Perl5 XSI source])
 	perl5_xsi_source="$srcdir/src/lib/perl5_xsi.c"
 	${PERL5_INTERPRETER} -MExtUtils::Embed -e xsinit -- -o ${perl5_xsi_source}
 	perl5_result=$?
 
 	if test x"${perl5_result}" = x"0"; then
-		AC_MSG_RESULT([$perl5_xsi_file])
+		AC_MSG_RESULT([$perl5_xsi_source])
 	else
 		AC_MSG_ERROR([Error while generating Perl5 XSI source file, result was "$perl5_result"])
 	fi
-
-	enable_perl5_xsi=yes
-	AM_CONDITIONAL([VL_WITH_PERL5_XSI], [test "x$enable_perl5_xsi" = "xyes"])
 
 	AC_SUBST([PERL5_CFLAGS])
 	AC_SUBST([PERL5_LDFLAGS])
@@ -140,29 +170,32 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_SUBST([PERL5_INTERPRETER])
 ])
 
-AM_CONDITIONAL([VL_WITH_PYTHON3], [test "x$enable_python3" = "xyes"])
+AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" = "xyes"])
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
 	AC_MSG_RESULT([Not compiling with python3])
 ], [
 	AC_MSG_RESULT([yes])
 
-	AC_DEFINE([VL_WITH_PYTHON3], [1], [Enable python3 extensions])
+	AC_DEFINE([RRR_WITH_PYTHON3], [1], [Enable python3 extensions])
 
-	python3=""
+	python3_version=""
 
 	if test x"${PYTHON3_FORCE_VERSION}" != "x"; then
 		python3="python${PYTHON3_FORCE_VERSION}"
 		AC_CHECK_PROG(PYTHON3_INTERPRETER,"python${PYTHON3_FORCE_VERSION}",yes)
 	else
-		for python_interpreter_test in python3.8 python3.7; do
-			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python_interpreter_test},yes)
+		for version_tmp in 3.8 3.7; do
+			python3_tmp="python$version_tmp"
+			AC_CHECK_PROG(PYTHON3_INTERPRETER,${python3_tmp},yes)
 			if test x"${PYTHON3_INTERPRETER}" = "xyes"; then
-				python3=${python_interpreter_test}
+				python3_version=${version_tmp}
 				break
 			fi
 		done
 	fi
+
+	python3="python${python3_version}"
 
 	AC_MSG_CHECKING([python version >= 3.7 or forced version])
 	if test "x${python3}" = "x"; then
@@ -179,16 +212,32 @@ AS_IF([test "x$enable_python3" = xno], [
 		AC_MSG_RESULT([no])
 	fi
 
+	python3_libs_from_pkg=""
+	python3_cflags_from_pkg=""
+
+	python3_embed_pkg_path="python-$python3_version-embed"
+
+	python3_libs_from_pkg=`pkg-config $python3_embed_pkg_path --silence-errors --libs`
+	python3_cflags_from_pkg=`pkg-config $python3_embed_pkg_path --silence-errors --cflags`
+
 	AC_CHECK_PROG(PYTHON3_CONFIG,"$python3_config_bin",yes)
 	if test x"${PYTHON3_CONFIG}" = x"yes"; then
-		AC_DEFINE([VL_WITH_PYTHON3], [1], [Build with python3 support], [])
+		AC_DEFINE([RRR_WITH_PYTHON3], [1], [Build with python3 support], [])
 	else
 		AC_MSG_ERROR("Could not find python3-config for ${python3}")
 	fi
 
-	PYTHON3_CFLAGS="`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'` ${AM_CFLAGS}"
+	PYTHON3_CFLAGS=`$python3_config_bin --cflags | sed 's/-O3/ /g' | sed 's/-Wall/ /g'`
+	PYTHON3_CFLAGS="${python3_cflags_from_pkg} ${AM_CFLAGS} ${PYTHON3_CFLAGS}"
+
+	PYTHON3_LDFLAGS=`$python3_config_bin --ldflags`
+	PYTHON3_LDFLAGS="${PYTHON3_LDFLAGS} $python3_libs_from_pkg"
+
+	echo "Python3 CFLAGS: $PYTHON3_CFLAGS"
+	echo "Python3 LDFLAGS: $PYTHON3_LDFLAGS"
+
 	AC_SUBST([PYTHON3_CFLAGS])
-	AC_SUBST([PYTHON3_LDFLAGS], `$python3_config_bin --ldflags`)
+	AC_SUBST([PYTHON3_LDFLAGS])
 
 	chmod +x test_python3.sh
 	./test_python3.sh "$python3_config_bin"
@@ -203,21 +252,6 @@ AS_IF([test "x$enable_python3" = xno], [
 		$python3_config_bin --includes
 		AC_MSG_ERROR("Python3 test failed")
 	fi
-])
-
-AM_CONDITIONAL([VL_WITH_OPENSSL], [test "x$with_encryption" != xno])
-AC_MSG_CHECKING([for encryption usage])
-AS_IF([test "x$with_encryption" = xno], [
-	AC_MSG_RESULT([Not compiling with encryption])
-], [
-	AC_MSG_RESULT([yes])
-	AC_DEFINE([VL_WITH_OPENSSL], [1], [Enable encryption in network modules])
-	AX_CHECK_OPENSSL([], [
-		AC_MSG_ERROR([Cannot compile with encrypion, missing OpenSSL])
-	])
-	AC_CHECK_HEADERS([openssl/crypto.h openssl/evp.h openssl/err.h openssl/sha.h openssl/rand.h])
-	AC_CHECK_LIB(crypto, CRYPTO_get_new_dynlockid, [AC_DEFINE([VL_HAVE_OLD_OPENSSL_LOCK], [1], [Have old style lock])], [])
-	AC_CHECK_LIB(crypto, CRYPTO_THREAD_lock_new, [AC_DEFINE([VL_HAVE_NEW_OPENSSL_LOCK], [1], [Have new style thread lock])], [])
 ])
 
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$with_usb" != xno])
@@ -250,13 +284,13 @@ AS_IF([test "x$with_usb" = xno], [
 	])
 ])
 
-AM_CONDITIONAL([VL_WITH_MYSQL], [test "x$with_mysql" != xno])
+AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$with_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$with_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
 ], [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE([VL_WITH_MYSQL], [1], [Compile with MySQL module])
+	AC_DEFINE([RRR_WITH_MYSQL], [1], [Compile with MySQL module])
 	AX_LIB_MYSQL([5.0.0])
 	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
 	AC_MSG_CHECKING([integer sizes for MySQL])
@@ -293,8 +327,11 @@ AS_IF([test "x$with_mysql" = xno], [
 	])
 ])
 
+AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
+AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
+
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				src/python/Makefile src/perl5/xsub/Makefile.PL misc/Makefile
+				misc/Makefile
 )
 AC_OUTPUT

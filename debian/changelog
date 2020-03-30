@@ -1,3 +1,68 @@
+rrr (0.16-8) unstable; urgency=medium
+
+  * New preliminary statistics engine, works with MQTT, raw and dummy
+  * Safety fixes for rand() and strerror()
+  * Misc. other fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 21 Mar 2020 18:21:52 +0100
+
+rrr (0.16-7) unstable; urgency=medium
+
+  * MQTT: Implement UNSUBSCRIBE and UNSUBACK
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 19 Mar 2020 11:46:23 +0100
+
+rrr (0.16-6) unstable; urgency=medium
+
+  * Misc. bugfixes in MQTT and MySQL
+  * Better handling of session cleaning in MQTT client
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 18 Mar 2020 08:37:47 +0100
+
+rrr (0.16-5) unstable; urgency=medium
+
+  * Fixes in ASD and UDP-stream to correctly handle multiple clients
+  * Misc. code cleanup and minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 16 Mar 2020 17:30:23 +0100
+
+rrr (0.16-3) unstable; urgency=medium
+
+  * Misc. fixes for Python
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 14 Mar 2020 06:01:07 +0100
+
+rrr (0.16-2) unstable; urgency=medium
+
+  * Remove OpenSSL-code
+  * Fixes for word length on arm64
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 12 Mar 2020 16:22:22 +0100
+
+rrr (0.16-1) unstable; urgency=medium
+
+  * Fixed problems when using mysql_special_columns including segfault
+  * Update documentation for this which also was wrong
+  * Add new revision number to use for bugfixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 11 Mar 2020 00:01:45 +0100
+
+rrr (0.16) unstable; urgency=medium
+
+  * New framework for assured single delivery ASD and udpstream
+  * Removed old ipclient/ipserver, new ipclient uses ASD framework
+  * Other fixes/improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 16 Feb 2020 18:00:22 +0100
+
+rrr (0.15) unstable; urgency=medium
+
+  * Bugfixes in array definition parsing
+  * Fix passing of arrays to and manipulation in python3. Improved test suite.
+  * Fix minor bugs in MQTT and add ability to re-connect indefinitely upon failure
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 17 Jan 2020 00:08:26 +0100
+
 rrr (0.14) unstable; urgency=medium
 
   * New fixed pointer and string types for use in arrays

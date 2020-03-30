@@ -1,14 +1,21 @@
 # README FOR READ ROUTE RECORD (triple R)
 ## ABOUT
 
-RRR is designed to read data from sensors and logging it in a threaded and
-buffered fashion, ensuring that no measurement is lost due to IO problems. Data is
-routed between custom modules by having "senders" specified for some of them, instructing
-them who to read from. Source modules should have a buffer which they write to
-independently from their readers.
+RRR is designed to process, transmit and save all kinds of measurements or messages. RRR has a variety
+of different modules which can be chained together to retrieve, transmit and save messages.
 
 RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
-piping or files. MQTT is also supported, both subscribing and publishing.
+piping or files.
+
+- Acquire messages using piping, UNIX sockets, UDP-packets
+- Transfer messages using MQTT or UDP
+- Saving messages using InfluxDB and MySQL
+
+RRR can also be extended by writing custom Perl or Python modules, and can function as a stand-alone MQTT broker.
+
+## DEVELOPMENT
+
+Please create an issue on the RRR GitHub page if you would like to see more functionallity.
 
 ## QUICK START
 
@@ -122,6 +129,14 @@ below on how to specifiy different data types.
 	
 Please note that RRR does not provide a stand-alone MQTT client.
 
+### ipclient (send messages between RRR instances over UDP)
+This module is useful when messages need to be transferred over lossy connections where TCP doesn't work very well.
+
+The `ipclient` module keeps track of all messages and makes sure that they are delivered excactly once (like MQTT QOS2).
+
+The module may function both as a server which accepts connections and a client (also simultaneously).
+
+
 ### udpreader (read data records from UDP)
 Listens on a port and parses data records it receives before forwarding them
 as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`.
@@ -167,32 +182,52 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
        from rrr_helper import *
        import time
+       
+       my_global_variable = ""   
 
-       def process(socket : rrr_socket, message: vl_message):
+       def config(socket : rrr_socket, rrr_setting : setting):
+            global my_global_variable
+
+            # retrieve some custom settings from configuration file. The get()
+            # will update the "was-used" flag in the setting.
+            print ("Received a setting: " + setting.name + "=" + setting.get())
+
+            # set a global variable
+            if setting.name == "my_setting":
+                 my_global_variable = setting.get()
+
+            # send settings back to update which have been read (optional)
+            socket.send(setting)
+
+            return True
+
+       def process(socket : rrr_socket, message: rrr_message):
+            # Return False if something is wrong
+            if my_global_variable == "":
+                 print("Error: configuration failure")
+                 return False
+
             # modify the retrieved message as needed
             message.timestamp_from = message.timestamp_from + 1
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             return True
 
        def source(socket : rrr_socket):
             # create a new message
-            message = vl_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+            message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
+
             # queue the message to be sent back (optional) for python to give to readers
-            if not socket.send(message):
-	         return False
+            socket.send(message)
+
             # sleep to limit output rate
             time.sleep(1)
+
             return True
 
-       def config(socket : rrr_socket, settings : rrr_instance_settings):
-            # retrieve some custom settings from configuration file
-            print ("1: " + settings['custom_config_argument_1'])
-            print ("2: " + settings['custom_config_argument_2'])
-            # send settings back to update which have been read (optional)
-            socket.send(settings)
-            return True
+
 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
@@ -369,8 +404,8 @@ about which types the return:
 	struct module_operations {
         	void *(*thread_entry)(...) // Main function for starting the thread
         	int (*poll)(...)           // Return messages without deleting them from the buffer
-        	int (*poll_delete)(...)    // Return vl_message structs 
-        	int (*poll_delete_ip)(...) // Return ip_buffer_entry structs (same as vl_message but with IP information at the end)
+        	int (*poll_delete)(...)    // Return rrr_message structs 
+        	int (*poll_delete_ip)(...) // Return ip_buffer_entry structs (same as rrr_message but with IP information at the end)
 	};
 
 If you specify `_delete`-functions, you should remove entries from the buffer after passing them on (but not free the actual data pointer). 
@@ -397,9 +432,9 @@ functions in other modules which are not ready when we start the program.
 
 Threads which create forks should be started prior to network modules. Module priorities are:
 
-0. `VL_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
-1. `VL_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
-2. `VL_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
+0. `RRR_THREAD_START_PRIORITY_NORMAL` - No particular priority, started immediately.
+1. `RRR_THREAD_START_PRIORITY_FORK` - Threads using this must set `RUNNING_FORKED` state after forks have been made
+2. `RRR_THREAD_START_PRIORITY_NETWORK` - Uses sockets and should start after forking threads. Will receive start signal last.
 
 The basic state flow of a module/thread is like this (see `threads.h` for internal names):
 
@@ -420,12 +455,12 @@ If one or more threads exit, all threads are stopped and restarted automatically
 
 ### Thread data
 
-When a thread/instance starts with the specified entry function, it receives a `vl_thread_start_data` struct. It contains a pointer to the
+When a thread/instance starts with the specified entry function, it receives a `rrr_thread_start_data` struct. It contains a pointer to the
 command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 
 thread to `instance_thread_data` struct. 
 
 There is a slot of 8kB freely available in `instance_thread_data` for a thread to use which does not have to be de-allocated on exit,
-it is called `char private_memory[VL_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
+it is called `char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE]`. To use this, create a custom struct and point it to the `private_memory`
 address.
 
 If your module uses locks and buffers, these should be placed in this memory. DO NOT destroy locks when exiting the module if they are used

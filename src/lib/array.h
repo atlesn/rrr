@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARRAY_PARSE_SOFT_ERR	RRR_TYPE_PARSE_SOFT_ERR
 #define RRR_ARRAY_PARSE_INCOMPLETE	RRR_TYPE_PARSE_INCOMPLETE
 
-struct vl_message;
+struct rrr_message;
 
 struct rrr_array_value_packed {
 	rrr_type type;
@@ -102,7 +102,7 @@ int rrr_array_get_packed_length_from_buffer (
 		ssize_t buf_length
 );
 int rrr_array_new_message_from_buffer (
-		struct vl_message **target,
+		struct rrr_message **target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -116,7 +116,7 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const char *topic,
 		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct vl_message *message, void *arg),
+		int (*callback)(struct rrr_message *message, void *arg),
 		void *callback_arg
 );
 int rrr_array_selected_tags_to_raw (
@@ -126,7 +126,7 @@ int rrr_array_selected_tags_to_raw (
 		const struct rrr_linked_list *tags
 );
 int rrr_array_new_message_from_collection (
-		struct vl_message **final_message,
+		struct rrr_message **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
@@ -134,7 +134,7 @@ int rrr_array_new_message_from_collection (
 );
 int rrr_array_message_to_collection (
 		struct rrr_array *target,
-		const struct vl_message *message_orig
+		const struct rrr_message *message_orig
 );
 
 #endif /* RRR_ARRAY_H */
