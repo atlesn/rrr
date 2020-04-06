@@ -303,6 +303,7 @@ int rrr_array_validate_definition (
 		if (prev != NULL) {
 			if (prev->definition->max_length == 0 &&
 				prev->definition->type != RRR_TYPE_STR &&
+				prev->definition->type != RRR_TYPE_NSEP &&
 				node->definition->max_length == 0 &&
 				node->definition->type != RRR_TYPE_STR
 			) {

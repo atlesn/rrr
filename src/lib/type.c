@@ -850,6 +850,67 @@ static int __get_import_length_str (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	return ret;
 }
 
+static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	const char *start = buf;
+	const char *end = buf + buf_size;
+
+	(void)(node);
+
+	int ret = RRR_TYPE_PARSE_INCOMPLETE;
+
+	ssize_t length = 0;
+
+	// Parse any number of bytes untill a separator is found.
+	for (const char *pos = start; pos < end; pos++) {
+		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)) {
+			ret = RRR_TYPE_PARSE_OK;
+			break;
+		}
+
+		length++;
+	}
+
+	*import_length = length;
+
+	out:
+	return ret;
+}
+
+static int __rrr_type_import_nsep (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+
+	if (node->data != NULL) {
+		RRR_BUG("data was not NULL in __rrr_type_import_nsep\n");
+	}
+	if (node->element_count != 1) {
+		RRR_BUG("array size was not 1 in __rrr_type_import_nsep\n");
+	}
+	if (node->import_length != 0) {
+		RRR_BUG("length was not 0 in __rrr_type_import_nsep\n");
+	}
+
+	ssize_t import_length = 0;
+	if ((ret = __get_import_length_nsep(&import_length, node, start, end - start)) != 0) {
+		goto out;
+	}
+
+	node->import_length = import_length;
+	ssize_t parsed_bytes_tmp = 0;
+	if ((ret = __rrr_type_import_blob(node, &parsed_bytes_tmp, start, end)) != 0) {
+		return ret;
+	}
+
+	if (parsed_bytes_tmp != import_length) {
+		RRR_BUG("Parsed bytes vs import length mismatch in __rrr_type_import_nsep\n");
+	}
+
+	node->import_length = import_length;
+	*parsed_bytes = parsed_bytes_tmp;
+
+	out:
+	return ret;
+}
+
 static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 
@@ -899,6 +960,7 @@ static const struct rrr_type_definition type_templates[] = {
 		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
 		{RRR_TYPE_FIXP,		RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	RRR_TYPE_NAME_FIXP},
 		{RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_STR},
+		{RRR_TYPE_NSEP,		RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_NSEP},
 		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
 };
 

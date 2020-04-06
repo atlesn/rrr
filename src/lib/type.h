@@ -52,7 +52,8 @@ static const union type_system_endian {
 #define RRR_TYPE_MSG		9 // Type which holds an RRR message
 #define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
-#define RRR_TYPE_MAX		11
+#define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
+#define RRR_TYPE_MAX		12
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -64,6 +65,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_MSG	"msg"
 #define RRR_TYPE_NAME_FIXP	"fixp"
 #define RRR_TYPE_NAME_STR	"str"
+#define RRR_TYPE_NAME_NSEP	"nsep"
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
@@ -75,16 +77,18 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_MSG	0
 #define RRR_TYPE_MAX_FIXP	0
 #define RRR_TYPE_MAX_STR	0
+#define RRR_TYPE_MAX_NSEP	0
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR)
+#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP)
 #define RRR_TYPE_IS_FIXP(type)		((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)		((type) == RRR_TYPE_MSG)
 #define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP)
 #define RRR_TYPE_IS_SEP(type)		((type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_NSEP(type)		((type) == RRR_TYPE_SEP)
 #define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 

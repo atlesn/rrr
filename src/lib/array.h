@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "type.h"
 
-#define RRR_ARRAY_VERSION 6
+#define RRR_ARRAY_VERSION 7
 
 #define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
 #define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
