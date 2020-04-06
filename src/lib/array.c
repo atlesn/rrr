@@ -165,7 +165,12 @@ static int __rrr_array_parse_identifier_and_size (
 					type->identifier);
 			goto out_err;
 		}
-		if (item_count > 1 && type->max_length == 0 && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG) {
+		/*
+		 *  XXX  : It is not possible to allow multiple values for these types as multiple values
+		 *         in a node must have equal lengths
+		 *         && type->type != RRR_TYPE_STR && type->type != RRR_TYPE_MSG
+		 */
+		if (item_count > 1 && type->max_length == 0) {
 			RRR_MSG_ERR("Item count definition @ found after type '%s' which cannot have multiple values\n",
 					type->identifier);
 			goto out_err;
@@ -292,7 +297,8 @@ int rrr_array_validate_definition (
 
 	if (node->definition->max_length == 0 &&
 		node->definition->type != RRR_TYPE_MSG &&
-		node->definition->type != RRR_TYPE_STR
+		node->definition->type != RRR_TYPE_STR &&
+		node->definition->type != RRR_TYPE_NSEP
 	) {
 		RRR_MSG_ERR("Type %s has dynamic size and cannot be at the end of a definition\n",
 				node->definition->identifier);
@@ -514,6 +520,114 @@ static ssize_t __rrr_array_get_packed_length (
 	return result;
 }
 
+static int __rrr_array_parse_from_buffer (
+		struct rrr_array *target,
+		ssize_t *parsed_bytes,
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition
+) {
+	int ret = 0;
+
+	if (rrr_array_validate_definition(definition) != 0) {
+		RRR_BUG("Definition was not valid in __rrr_array_parse_from_buffer\n");
+	}
+
+	if (rrr_array_definition_collection_clone(target, definition) != 0) {
+		RRR_MSG_ERR("Could not clone definitions in __rrr_array_parse_from_buffer\n");
+		ret = RRR_ARRAY_PARSE_HARD_ERR;
+		goto out;
+	}
+
+	if ((ret = rrr_array_parse_data_from_definition(target, parsed_bytes, buf, buf_len)) != 0) {
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			RRR_MSG_ERR("Invalid packet in __rrr_array_parse_from_buffer\n");
+			ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		}
+		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
+			// OK
+		}
+		else {
+			ret = RRR_ARRAY_PARSE_HARD_ERR;
+		}
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_array_parse_and_unpack_from_buffer (
+		struct rrr_array *target,
+		ssize_t *parsed_bytes,
+		const char *buf,
+		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
+		const struct rrr_array *definition
+) {
+	int ret = 0;
+
+	if ((ret = __rrr_array_parse_from_buffer(target, parsed_bytes, buf, buf_len, definition)) != 0) {
+		goto out;
+	}
+
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(target, struct rrr_type_value);
+		if (node->definition->unpack == NULL) {
+			RRR_MSG_ERR("Illegal type in array %u/%s index %i\n",
+					node->definition->type, node->definition->identifier, i);
+			ret = 1;
+			goto out;
+		}
+		if (node->definition->unpack(node) != 0) {
+			RRR_MSG_ERR("Error while converting endianess for type %u index %i of array message\n",
+					node->definition->type, i);
+			ret = 1;
+			goto out;
+		}
+		i++;
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+int rrr_array_parse_and_unpack_from_buffer_with_callback (
+		const char *buf,
+		ssize_t buf_len,
+		const char *topic,
+		ssize_t topic_length,
+		const struct rrr_array *definition,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+	struct rrr_array array = {0};
+
+	ssize_t parsed_bytes = 0;
+	if ((ret = rrr_array_parse_and_unpack_from_buffer (
+			&array,
+			&parsed_bytes,
+			buf,
+			buf_len,
+			topic,
+			topic_length,
+			definition
+	)) != 0) {
+		RRR_MSG_ERR("Could not parse array in rrr_array_parse_from_buffer_with_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	ret = callback(&array, callback_arg);
+
+	out:
+	rrr_array_clear(&array);
+
+	return ret;
+}
+
 int rrr_array_new_message_from_buffer (
 		struct rrr_message **target,
 		ssize_t *parsed_bytes,
@@ -527,26 +641,7 @@ int rrr_array_new_message_from_buffer (
 	struct rrr_array definitions;
 	int ret = 0;
 
-	if (rrr_array_validate_definition(definition) != 0) {
-		RRR_BUG("Definition was not valid in rrr_array_definition_collection_clone\n");
-	}
-
-	if (rrr_array_definition_collection_clone(&definitions, definition) != 0) {
-		RRR_MSG_ERR("Could not clone definitions in rrr_array_new_message_from_buffer\n");
-		return RRR_ARRAY_PARSE_HARD_ERR;
-	}
-
-	if ((ret = rrr_array_parse_data_from_definition(&definitions, parsed_bytes, buf, buf_len)) != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			RRR_MSG_ERR("Invalid packet in rrr_array_new_message_from_buffer\n");
-			ret = RRR_ARRAY_PARSE_SOFT_ERR;
-		}
-		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
-			// OK
-		}
-		else {
-			ret = RRR_ARRAY_PARSE_HARD_ERR;
-		}
+	if ((ret = __rrr_array_parse_from_buffer(target, parsed_bytes, buf, buf_len, definition)) != 0) {
 		goto out_destroy;
 	}
 

@@ -128,22 +128,48 @@ Don't sleep between creating messages, but create as many messages as the reader
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
 .El
-.SS udpreader (SA)
-Listen to an UDP port and read messages of number arrays. The udpreader creates a message for each received packet
-and adds a timestamp. If the received data does not match the specified data array, the packet is dropped.
+.SS udp (PAI)
+This module is capable of listening on an UDP port and read messages or arrays, as well as sending data to remote hosts.
+A message is created for each received packet and a timestamp is added.
+If the received data does not match the specified data array, the packet is dropped.
+.PP
 .PP
 .Bl -tag -width -indent
-.It udpr_port=LISTEN PORT
-Port to listen on, range is 1-65535
-.It udpr_input_types=ARRAY DEFINITION
+.It udp_port=LISTEN PORT
+Port to listen on and also source port for outbound messages, range is 1-65535.
+If left unspecified, no listening takes place.
+.It udp_input_types=ARRAY DEFINITION
 Specification of expected data to receive in a network packet. See
 .Xr rrr_post(1)
-for the syntax.
-.It udpr_default_topic=MQTT-TOPIC
+for the syntax. No listening takes places unless this is specified.
+To receive RRR messages, simply set the definition to
+.B msg
+and set
+.B udp_extract_rrr_messages
+to
+.B yes.
+.It udp_extract_rrr_messages={yes|no}
+Extract any RRR messages from the received data (if specified in udp_input_types) and save them in the buffer for other modules to pick up.
+Causes any other data in the received arrays to be dropped.
+If set to yes and no message field is specified in the array definition, an error will be produced.
+Defaults to no.
+.It udp_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
-.It udpr_sync_byte_by_byte={yes|no}
+.It udp_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
+.It udp_send_rrr_message={yes|no}
+If set to yes, UDP will send complete RRR messages encoded for network. If set to no or left unset,
+messages with arrays will have their array packed and sent, and messages with other data will simply have their
+contents sent as is.
+.It udp_target_host=HOST
+.It udp_target_port=PORT
+Default target host and port for messages from other modules which do not contain address information.
+If left unset and UDP recevies messages which do not contain address information, the messages are dropped
+and warning messages are produced.
+.It udp_force_target={yes|no}
+Use the specified target host and port even if messages contain other address information. Default is no.
+.It 
 .El
 .PP
 .SS voltmonitor (SV)
