@@ -580,7 +580,7 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 }
 
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
-		struct rrr_ip_data *data,
+		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
 		void *data,
@@ -612,7 +612,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	int did_send = 0;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		if (rrr_ip_send_raw(data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+		if (rrr_ip_send_raw(ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
 			did_send = 1;
 			break;
 		}

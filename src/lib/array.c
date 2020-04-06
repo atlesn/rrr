@@ -562,8 +562,6 @@ int rrr_array_parse_and_unpack_from_buffer (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
 		const struct rrr_array *definition
 ) {
 	int ret = 0;
@@ -596,8 +594,6 @@ int rrr_array_parse_and_unpack_from_buffer (
 int rrr_array_parse_and_unpack_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
 		const struct rrr_array *definition,
 		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
@@ -611,8 +607,6 @@ int rrr_array_parse_and_unpack_from_buffer_with_callback (
 			&parsed_bytes,
 			buf,
 			buf_len,
-			topic,
-			topic_length,
 			definition
 	)) != 0) {
 		RRR_MSG_ERR("Could not parse array in rrr_array_parse_from_buffer_with_callback\n");
@@ -641,7 +635,7 @@ int rrr_array_new_message_from_buffer (
 	struct rrr_array definitions;
 	int ret = 0;
 
-	if ((ret = __rrr_array_parse_from_buffer(target, parsed_bytes, buf, buf_len, definition)) != 0) {
+	if ((ret = __rrr_array_parse_from_buffer(&definitions, parsed_bytes, buf, buf_len, definition)) != 0) {
 		goto out_destroy;
 	}
 

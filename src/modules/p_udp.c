@@ -113,15 +113,18 @@ int config_parse_port (struct udp_data *data, struct rrr_instance_config *config
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_ERR("Could not parse udp_port for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// Listening not being done
+			ret = 0;
 		}
 		else {
 			RRR_MSG_ERR("Error while parsing udp_port setting for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
-		ret = 1;
-		goto out;
 	}
 	data->source_port = tmp_uint;
 
@@ -129,15 +132,18 @@ int config_parse_port (struct udp_data *data, struct rrr_instance_config *config
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
 			RRR_MSG_ERR("Could not parse udp_remote_port for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
 		else if (ret == RRR_SETTING_NOT_FOUND) {
 			// No remote port specified
+			ret = 0;
 		}
 		else {
 			RRR_MSG_ERR("Error while parsing udp_remote_port setting for instance %s\n", config->name);
+			ret = 1;
+			goto out;
 		}
-		ret = 1;
-		goto out;
 	}
 	data->target_port = tmp_uint;
 
@@ -221,10 +227,12 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 		}
 		ret = 0;
 	}
-	data->do_sync_byte_by_byte = yesno;
+	else {
+		data->do_sync_byte_by_byte = yesno;
+	}
 
 	// Send complete RRR message
-	int yesno = 0;
+	yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "udp_send_rrr_message")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_ERR("Error while parsing udp_send_rrr_message for udp instance %s, please use yes or no\n", config->name);
@@ -233,10 +241,12 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 		}
 		ret = 0;
 	}
-	data->do_send_rrr_message = yesno;
+	else {
+		data->do_send_rrr_message = yesno;
+	}
 
 	// Force target
-	int yesno = 0;
+	yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "udp_force_target")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_ERR("Error while parsing udp_force_target for udp instance %s, please use yes or no\n", config->name);
@@ -245,16 +255,19 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 		}
 		ret = 0;
 	}
-	data->do_force_target = yesno;
+	else {
+		data->do_force_target = yesno;
+	}
 
 	if (data->do_force_target != 0 && data->target_port == 0) {
-		RRR_MSG_ERR("udp_force_target was set to yes but no target was specified in udp_target_host and udp_target_port in udp instance %s\n", config->name);
+		RRR_MSG_ERR("udp_force_target was set to yes but no target was specified in udp_target_host and udp_target_port in udp instance %s\n",
+				config->name);
 		ret = 1;
 		goto out;
 	}
 
 	// Extract RRR messages from arrays
-	int yesno = 0;
+	yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "udp_extract_rrr_messages")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_ERR("Error while parsing udp_extract_rrr_messages for udp instance %s, please use yes or no\n", config->name);
@@ -263,7 +276,9 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 		}
 		ret = 0;
 	}
-	data->do_extract_rrr_messages = yesno;
+	else {
+		data->do_extract_rrr_messages = yesno;
+	}
 
 	out:
 	return ret;
@@ -273,7 +288,7 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	struct udp_data *data = arg;
 
 	rrr_fifo_buffer_write(&data->delivery_buffer, (char*)message, MSG_TOTAL_SIZE(message));
-	RRR_DBG_3("udp instance % created a message with timestamp %llu size %lu\n",
+	RRR_DBG_3("udp instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 	data->messages_count_read++;
@@ -289,15 +304,15 @@ int read_data_receive_array_callback (const struct rrr_array *array, void *arg) 
 	int found_messages = 0;
 	RRR_LL_ITERATE_BEGIN(array, const struct rrr_type_value);
 		if (RRR_TYPE_IS_MSG(node->definition->type)) {
-			const struct rrr_message *message = node->data;
-			struct rrr_message_new *message_new = rrr_message_duplicate(message);
+			const struct rrr_message *message = (struct rrr_message *) node->data;
+			struct rrr_message *message_new = rrr_message_duplicate(message);
 			if (message_new == NULL) {
 				RRR_MSG_ERR("Could not allocate new message in udp read_data_receive_array_callback\n");
 				ret = 1;
 				goto out;
 			}
 
-			if ((ret = read_data_receive_message_callback(message, arg)) != 0) {
+			if ((ret = read_data_receive_message_callback(message_new, arg)) != 0) {
 				goto out;
 			}
 
@@ -327,8 +342,6 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		ret = rrr_array_parse_and_unpack_from_buffer_with_callback (
 			entry->message,
 			entry->data_length,
-			data->default_topic,
-			data->default_topic_length,
 			&data->definitions,
 			read_data_receive_array_callback,
 			data
@@ -509,7 +522,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	RRR_DBG_1 ("UDPreader thread data is %p\n", thread_data);
+	RRR_DBG_1 ("UDP thread data is %p\n", thread_data);
 
 	poll_collection_init(&poll_ip);
 	poll_collection_init(&poll);
@@ -595,7 +608,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 
 	out_message:
 
-	RRR_DBG_1 ("udp %s received encourage stop\n", thread_data->init_data.instance_config->name);
+	RRR_DBG_1 ("udp instance %s stopping\n", thread_data->init_data.instance_config->name);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

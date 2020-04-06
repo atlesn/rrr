@@ -167,7 +167,7 @@ void rrr_ip_network_cleanup (void *arg);
 int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data);
 int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data);
 int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
-		struct rrr_ip_data *data,
+		struct rrr_ip_data *ip_data,
 		unsigned int port,
 		const char *host,
 		void *data,

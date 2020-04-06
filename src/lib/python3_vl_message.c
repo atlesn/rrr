@@ -1230,7 +1230,7 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 		 *        handle them.
 		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
-		if (node->total_stored_length * node->element_count != element_size) {
+		if (node->total_stored_length != element_size * node->element_count) {
 			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message\n");
 			goto out_err;
 		}

@@ -860,7 +860,7 @@ static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	ssize_t length = 0;
 
-	// Parse any number of bytes untill a separator is found.
+	// Parse any number of bytes until a separator is found.
 	for (const char *pos = start; pos < end; pos++) {
 		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)) {
 			ret = RRR_TYPE_PARSE_OK;
@@ -872,7 +872,6 @@ static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	*import_length = length;
 
-	out:
 	return ret;
 }
 

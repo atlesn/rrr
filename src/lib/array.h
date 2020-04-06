@@ -102,21 +102,17 @@ int rrr_array_get_packed_length_from_buffer (
 		ssize_t buf_length
 );
 int rrr_array_parse_and_unpack_from_buffer (
-		struct rrr_array **target,
+		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
 		const struct rrr_array *definition
 );
 int rrr_array_parse_and_unpack_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
-		const char *topic,
-		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct rrr_array *array, void *arg),
+		int (*callback)(const struct rrr_array *array, void *arg),
 		void *callback_arg
 );
 int rrr_array_new_message_from_buffer (

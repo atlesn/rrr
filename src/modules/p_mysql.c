@@ -430,9 +430,9 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 		goto out_cleanup;
 	}
 
-	if (collection.version != 6) {
+	if (collection.version != 7) {
 		RRR_BUG("Array version mismatch in MySQL colplan_array_bind_execute (%u vs %i), module must be updated\n",
-				collection.version, 6);
+				collection.version, 7);
 	}
 
 	int column_count =	RRR_MAP_COUNT(&data->columns) +
