@@ -521,12 +521,30 @@ void rrr_ip_network_cleanup (void *arg) {
 	}
 }
 
+int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
+	int fd = rrr_socket (
+			AF_INET,
+			SOCK_DGRAM|SOCK_NONBLOCK,
+			IPPROTO_UDP,
+			"ip_network_start_udp_ipv4_nobind",
+			NULL
+	);
+	if (fd == -1) {
+		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
+		return 1;
+	}
+
+	data->fd = fd;
+
+	return 0;
+}
+
 int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
 			IPPROTO_UDP,
-			"ip_network_start",
+			"ip_network_start_udp_ipv4",
 			NULL
 	);
 	if (fd == -1) {
@@ -561,13 +579,64 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 	return 1;
 }
 
+int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+		struct rrr_ip_data *data,
+		unsigned int port,
+		const char *host,
+		void *data,
+		ssize_t size
+) {
+	int ret = 0;
+
+	if (port < 1 || port > 65535) {
+		RRR_BUG ("rrr_ip_network_udp_sendto: port was not in the range 1-65535 (got '%d')\n", port);
+	}
+
+	char port_str[16];
+	sprintf(port_str, "%u", port);
+
+	struct addrinfo hints;
+	struct addrinfo *result;
+
+	memset (&hints, '\0', sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	int s = getaddrinfo(host, port_str, &hints, &result);
+	if (s != 0) {
+		RRR_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+		ret = 1;
+		goto out;
+	}
+
+	struct addrinfo *rp;
+	int did_send = 0;
+	for (rp = result; rp != NULL; rp = rp->ai_next) {
+		if (rrr_ip_send_raw(data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+			did_send = 1;
+			break;
+		}
+	}
+
+	freeaddrinfo(result);
+
+	if (did_send == 0) {
+		RRR_MSG_ERR("Could not send UDP data to host %s port %u\n", host, port);
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host) {
 	int fd = 0;
 
 	*accept_data = NULL;
 
 	if (port < 1 || port > 65535) {
-		RRR_BUG ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", port);
+		RRR_BUG ("rrr_ip_network_connect_tcp_ipv4_or_ipv6: port was not in the range 1-65535 (got '%d')\n", port);
 	}
 
 	char port_str[16];

@@ -164,7 +164,15 @@ int rrr_ip_send_message (
 		struct ip_stats *stats
 );
 void rrr_ip_network_cleanup (void *arg);
+int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data);
 int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data);
+int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+		struct rrr_ip_data *data,
+		unsigned int port,
+		const char *host,
+		void *data,
+		ssize_t size
+);
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host);
 int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections);
 int rrr_ip_close (struct rrr_ip_data *data);
