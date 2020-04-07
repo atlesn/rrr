@@ -273,7 +273,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 			continue;
 		}
 #endif
-		if ((ret = rrr_ip_send_raw(udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
+		if ((ret = rrr_ip_send(udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
 			RRR_MSG_ERR("Could not send packed frame header in __rrr_udpstream_send_packed_frame\n");
 			ret = 1;
 			goto out;
@@ -324,7 +324,7 @@ static uint16_t __rrr_udpstream_allocate_stream_id (
 				collission = 1;
 				RRR_LL_ITERATE_BREAK();
 			}
-		RRR_LL_ITERATE_END(&data->streams);
+		RRR_LL_ITERATE_END();
 		if (collission == 0) {
 			ret = stream_id;
 			break;
@@ -410,7 +410,7 @@ static uint32_t __rrr_udpstream_allocate_connect_handle (
 				collission = 1;
 				RRR_LL_ITERATE_BREAK();
 			}
-		RRR_LL_ITERATE_END(&data->streams);
+		RRR_LL_ITERATE_END();
 		if (collission == 0) {
 			return ret;
 		}
@@ -562,7 +562,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handl
 		if (node->connect_handle == connect_handle && node->invalidated == 0) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(&data->streams);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 
@@ -580,7 +580,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_connect_handl
 		) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(&data->streams);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 
@@ -592,7 +592,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_find_stream_by_stream_id (
 		if (node->stream_id == stream_id && node->invalidated == 0) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(&data->streams);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 
@@ -976,11 +976,11 @@ static int __rrr_udpstream_handle_received_frame (
 			RRR_LL_ITERATE_BEGIN(&stream->receive_buffer, struct rrr_udpstream_frame);
 				RRR_MSG_ERR("udpstream stream-id %u frame id %u dump recv buffer\n",
 						stream->stream_id, node->frame_id);
-			RRR_LL_ITERATE_END(&stream->receive_buffer);
+			RRR_LL_ITERATE_END();
 			RRR_BUG("Order error in receive buffer in __rrr_udpstream_handle_received_frame\n");
 		}
 		frame_id_max = node->frame_id;
-	RRR_LL_ITERATE_END(&stream->receive_buffer);
+	RRR_LL_ITERATE_END();
 
 	out_append:
 //		VL_DEBUG_MSG_2("udpstream stream-id %u frame id %u append to receive buffer\n",
@@ -1159,7 +1159,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			ack_node = NULL;
 		no_add_ack:
 			last_ack_id = node->frame_id;
-	RRR_LL_ITERATE_END(&stream->receive_buffer);
+	RRR_LL_ITERATE_END();
 
 	/*
 	 * Send ACKs pushed to list in previous loop
@@ -1189,7 +1189,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			ret = 1;
 			goto out;
 		}
-	RRR_LL_ITERATE_END(&ack_list);
+	RRR_LL_ITERATE_END();
 
 	/*
 	 * Iterate receive buffer, deliver messages in sequence and destroy delivered frames
@@ -1531,7 +1531,7 @@ static int __rrr_udpstream_send_loop (
 				RRR_LL_ITERATE_LAST();
 			}
 		}
-	RRR_LL_ITERATE_END(&stream->send_buffer);
+	RRR_LL_ITERATE_END();
 
 //	VL_DEBUG_MSG_2("udpstream stream-id %u missing ACK count %i window size %i\n",
 //			stream->stream_id, missing_ack_count, stream->window_size);
@@ -1559,7 +1559,7 @@ int rrr_udpstream_do_send_tasks (
 			goto out;
 		}
 		*send_count += count;
-	RRR_LL_ITERATE_END(&data->streams);
+	RRR_LL_ITERATE_END();
 
 	out:
 	pthread_mutex_unlock(&data->lock);
@@ -1890,7 +1890,7 @@ void rrr_udpstream_dump_stats (
 				node->window_size_to_remote,
 				node->invalidated
 		);
-	RRR_LL_ITERATE_END(&data->streams);
+	RRR_LL_ITERATE_END();
 
 	pthread_mutex_unlock(&data->lock);
 }

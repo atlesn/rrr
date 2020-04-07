@@ -1279,7 +1279,7 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 
 		node_tag = NULL;
 		node_list = NULL;
-	RRR_LL_ITERATE_END(&array_tmp);
+	RRR_LL_ITERATE_END();
 
 	no_array:
 

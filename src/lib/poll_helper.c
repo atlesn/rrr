@@ -68,7 +68,7 @@ int poll_collection_has (struct poll_collection *collection, struct rrr_instance
 			RRR_LL_ITERATE_LAST();
 			ret = 1;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -225,7 +225,7 @@ int poll_do_poll (
 				RRR_LL_ITERATE_BREAK();
 			}
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -267,7 +267,7 @@ int poll_do_poll_delete (
 			RRR_BUG("BUG: Unknown return value %i when polling from module %s\n",
 					ret_tmp, INSTANCE_D_MODULE_NAME(entry->thread_data));
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -347,5 +347,5 @@ void poll_remove_senders_also_in (
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY(target, __poll_collection_entry_destroy(node));
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 }

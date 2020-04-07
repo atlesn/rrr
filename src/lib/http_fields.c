@@ -111,7 +111,7 @@ int rrr_http_fields_get_total_length (
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
 		ret += (node->name != NULL ? strlen(node->name) : 0);
 		ret += (node->value != NULL ? strlen(node->value) : 0);
-	RRR_LL_ITERATE_END(fields);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -124,7 +124,7 @@ const struct rrr_http_field *rrr_http_fields_get_field (
 		if (strcmp(node->name, name) == 0) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(fields);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 
@@ -205,7 +205,7 @@ static char *__rrr_http_fields_to_form_data (
 				wpos += strlen(node->value);
 			}
 		}
-	RRR_LL_ITERATE_END(fields);
+	RRR_LL_ITERATE_END();
 
 	if (wpos > wpos_max) {
 		RRR_BUG("Result buffer write out of bounds in __rrr_http_fields_to_form_data\n");

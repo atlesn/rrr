@@ -140,7 +140,7 @@ static struct rrr_http_header_field *__rrr_http_header_field_collection_get_fiel
 		if (strcmp(name_lowercase, node->name) == 0) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 

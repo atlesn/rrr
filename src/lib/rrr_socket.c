@@ -154,7 +154,7 @@ int rrr_socket_get_options_from_fd (
 			ret = 0;
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END(&socket_list);
+	RRR_LL_ITERATE_END();
 
 	pthread_mutex_unlock(&socket_lock);
 
@@ -175,7 +175,7 @@ int rrr_socket_with_lock_do (
 static void __rrr_socket_dump_unlocked (void) {
 	RRR_LL_ITERATE_BEGIN(&socket_list,struct rrr_socket_holder);
 		RRR_DBG_7 ("fd %i pid %i creator %s filename %s\n", node->options.fd, getpid(), node->creator, node->filename);
-	RRR_LL_ITERATE_END(&socket_list);
+	RRR_LL_ITERATE_END();
 	RRR_DBG_7("---\n");
 }
 

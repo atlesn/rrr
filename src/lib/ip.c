@@ -63,7 +63,7 @@ void rrr_ip_buffer_entry_destroy_void (
 	rrr_ip_buffer_entry_destroy(entry);
 }
 
-void rrr_ip_buffer_entry_set_message (
+void rrr_ip_buffer_entry_set_message_dangerous (
 		struct rrr_ip_buffer_entry *entry,
 		void *message,
 		ssize_t data_length
@@ -408,7 +408,7 @@ int rrr_ip_receive_rrr_message (
 	);
 }
 
-int rrr_ip_send_raw (
+int rrr_ip_send (
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
@@ -487,7 +487,7 @@ int rrr_ip_send_message (
 			(struct rrr_socket_msg *) final_message
 	);
 
-	if ((ret = rrr_ip_send_raw(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
+	if ((ret = rrr_ip_send(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
 		RRR_MSG_ERR("Data could not be sent in ip_send_message\n");
 		goto out;
 	}
@@ -612,7 +612,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	int did_send = 0;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		if (rrr_ip_send_raw(ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+		if (rrr_ip_send(ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
 			did_send = 1;
 			break;
 		}

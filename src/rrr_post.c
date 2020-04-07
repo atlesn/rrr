@@ -367,7 +367,7 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 		if ((ret = __rrr_post_send_reading(data, node)) != 0) {
 			goto out;
 		}
-	RRR_LL_ITERATE_END(&data->readings);
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;

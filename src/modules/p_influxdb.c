@@ -147,8 +147,8 @@ static int __query_append_values_from_array (
 				array->version, 6);
 	}
 
-	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
-		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->tag);
+	RRR_MAP_ITERATE_BEGIN(columns);
+		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node_tag);
 		if (value == NULL) {
 			RRR_MSG_ERR("Warning: Could not find value with tag %s in incoming message, discarding message\n",
 					node->tag);
@@ -166,11 +166,11 @@ static int __query_append_values_from_array (
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (*(node->value) != '\0') {
-			ret = __escape_field(&name_tmp, node->value, strlen(node->value), 0);
+		if (*node_value != '\0') {
+			ret = __escape_field(&name_tmp, node_value, strlen(node_value), 0);
 		}
 		else {
-			ret = __escape_field(&name_tmp, node->tag, strlen(node->tag), 0);
+			ret = __escape_field(&name_tmp, node->tag, strlen(node_tag), 0);
 		}
 		if (ret != 0) {
 			RRR_MSG_ERR("Could not escape field in influxdb __query_append_values_from_array\n");
@@ -221,7 +221,7 @@ static int __query_append_values_from_array (
 		}
 
 		first = 0;
-	RRR_LL_ITERATE_END(columns);
+	RRR_MAP_ITERATE_END();
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);
@@ -241,11 +241,11 @@ static int __query_append_values (
 
 	int first = 1;
 
-	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
+	RRR_MAP_ITERATE_BEGIN(columns);
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (__escape_field(&name_tmp, node->tag, strlen(node->tag), 0) != 0) {
+		if (__escape_field(&name_tmp, node_tag, strlen(node_tag), 0) != 0) {
 			RRR_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 			ret = INFLUXDB_HARD_ERR;
 			goto out;
@@ -256,10 +256,10 @@ static int __query_append_values (
 		}
 		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values\n");
 
-		if (*(node->value) != '\0') {
+		if (*node_value != '\0') {
 			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
 
-			if (__escape_field(&value_tmp, node->value, strlen(node->value), 0) != 0) {
+			if (__escape_field(&value_tmp, node_value, strlen(node_value), 0) != 0) {
 				RRR_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
@@ -269,7 +269,7 @@ static int __query_append_values (
 		}
 
 		first = 0;
-	RRR_LL_ITERATE_END(columns);
+	RRR_MAP_ITERATE_END();
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);

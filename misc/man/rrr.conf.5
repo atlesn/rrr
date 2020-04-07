@@ -1,4 +1,4 @@
-.Dd 2020-03-14
+.Dd 2020-04-07
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -169,7 +169,11 @@ If left unset and UDP recevies messages which do not contain address information
 and warning messages are produced.
 .It udp_force_target={yes|no}
 Use the specified target host and port even if messages contain other address information. Default is no.
-.It 
+.It udp_array_send_tags=tag1[,tag2[,...]]
+Look for the defined tags in array messages from other modules, and send these concatenated together to remote.
+If this option is specified and a received message is not an array or does not have all of the tags defined,
+the message is dropped and an error message is produced.
+If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any. 
 .El
 .PP
 .SS voltmonitor (SV)

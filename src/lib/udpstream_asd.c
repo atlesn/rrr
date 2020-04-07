@@ -128,7 +128,7 @@ static struct rrr_udpstream_asd_queue_entry *__rrr_udpstream_asd_queue_find_entr
 		if (node->message_id == message_id) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(queue);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }

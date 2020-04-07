@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/utf8.h"
 #include "../lib/read.h"
 #include "../lib/poll_helper.h"
+#include "../lib/map.h"
 #include "../global.h"
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
@@ -47,8 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct udp_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_fifo_buffer send_buffer;
-	struct rrr_fifo_buffer delivery_buffer;
 	struct rrr_fifo_buffer inject_buffer;
+	struct rrr_fifo_buffer delivery_buffer_;
 	unsigned int source_port;
 	unsigned int target_port;
 	struct rrr_ip_data ip;
@@ -61,6 +62,7 @@ struct udp_data {
 	char *default_topic;
 	char *target_host;
 	ssize_t default_topic_length;
+	struct rrr_map array_send_tags;
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
 };
@@ -68,12 +70,13 @@ struct udp_data {
 void data_cleanup(void *arg) {
 	struct udp_data *data = (struct udp_data *) arg;
 	rrr_fifo_buffer_invalidate(&data->send_buffer);
-	rrr_fifo_buffer_invalidate(&data->delivery_buffer);
 	rrr_fifo_buffer_invalidate(&data->inject_buffer);
+	rrr_fifo_buffer_invalidate(&data->delivery_buffer_);
 	rrr_array_clear(&data->definitions);
 	rrr_read_session_collection_clear(&data->read_sessions);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
 	RRR_FREE_IF_NOT_NULL(data->target_host);
+	rrr_map_clear(&data->array_send_tags);
 }
 
 int data_init(struct udp_data *data, struct rrr_instance_thread_data *thread_data) {
@@ -83,9 +86,9 @@ int data_init(struct udp_data *data, struct rrr_instance_thread_data *thread_dat
 
 	int ret = 0;
 
-	ret |= rrr_fifo_buffer_init(&data->send_buffer);
-	ret |= rrr_fifo_buffer_init(&data->delivery_buffer);
-	ret |= rrr_fifo_buffer_init(&data->inject_buffer);
+	ret |= rrr_fifo_buffer_init_custom_free(&data->send_buffer, rrr_ip_buffer_entry_destroy_void);
+	ret |= rrr_fifo_buffer_init_custom_free(&data->inject_buffer, rrr_ip_buffer_entry_destroy_void);
+	ret |= rrr_fifo_buffer_init_custom_free(&data->delivery_buffer_, rrr_ip_buffer_entry_destroy_void);
 
 	if (ret != 0) {
 		data_cleanup(data);
@@ -94,14 +97,106 @@ int data_init(struct udp_data *data, struct rrr_instance_thread_data *thread_dat
 	return ret;
 }
 
+struct udp_poll_delete_callback_data {
+	struct udp_data *udp_data;
+	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+	struct rrr_fifo_callback_args *poll_data;
+};
+
+static int __poll_delete_extract_msg_callback (RRR_FIFO_CALLBACK_ARGS) {
+	struct udp_poll_delete_callback_data *udp_callback_data = callback_data->private_data;
+//	struct udp_data *udp_data = udp_callback_data->udp_data;
+
+	(void)(size);
+
+	int ret = 0;
+
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+
+	ret = udp_callback_data->callback (
+			udp_callback_data->poll_data,
+			entry->message,
+			entry->data_length
+	);
+
+	// Ownership of message pointer is handed over to callback
+	entry->message = NULL;
+	rrr_ip_buffer_entry_destroy(entry);
+
+	return ret;
+}
+
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct udp_data *udp_data = data->private_data;
-	return rrr_fifo_read_clear_forward(&udp_data->delivery_buffer, NULL, callback, poll_data, wait_milliseconds);
+
+	struct udp_poll_delete_callback_data callback_data = {
+			udp_data,
+			callback,
+			poll_data
+	};
+
+	struct rrr_fifo_callback_args fifo_args = {
+			udp_data->thread_data,
+			&callback_data,
+			0
+	};
+
+	return rrr_fifo_read_clear_forward (
+			&udp_data->delivery_buffer_,
+			NULL,
+			__poll_delete_extract_msg_callback,
+			&fifo_args,
+			wait_milliseconds
+	);
+}
+
+static int __poll_extract_msg_callback (RRR_FIFO_CALLBACK_ARGS) {
+	struct udp_poll_delete_callback_data *udp_callback_data = callback_data->private_data;
+//	struct udp_data *udp_data = udp_callback_data->udp_data;
+
+	(void)(size);
+
+	int ret = 0;
+
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+
+	ret = udp_callback_data->callback (
+			udp_callback_data->poll_data,
+			entry->message,
+			entry->data_length
+	);
+
+	return ret;
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct udp_data *udp_data = data->private_data;
-	return rrr_fifo_search(&udp_data->delivery_buffer, callback, poll_data, wait_milliseconds);
+
+	struct udp_poll_delete_callback_data callback_data = {
+			udp_data,
+			callback,
+			poll_data
+	};
+
+	struct rrr_fifo_callback_args fifo_args = {
+			udp_data->thread_data,
+			&callback_data,
+			0
+	};
+
+	return rrr_fifo_search(&udp_data->delivery_buffer_, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
+}
+
+static int poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
+	struct udp_data *udp_data = data->private_data;
+
+	return rrr_fifo_read_clear_forward (
+			&udp_data->delivery_buffer_,
+			NULL,
+			callback,
+			poll_data,
+			wait_milliseconds
+	);
 }
 
 int config_parse_port (struct udp_data *data, struct rrr_instance_config *config) {
@@ -280,24 +375,69 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 		data->do_extract_rrr_messages = yesno;
 	}
 
+	// Array columns to send if we receive array messages from other modules
+	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "udp_array_send_tags");
+	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
+		RRR_MSG_ERR("Error while parsing udp_array_send_tags of instance %s\n", config->name);
+		goto out;
+	}
+	RRR_DBG_1("%i blob write columns specified for udp instance %s\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
+
 	out:
 	return ret;
 }
 
-int read_data_receive_message_callback (struct rrr_message *message, void *arg) {
-	struct udp_data *data = arg;
+struct udp_read_callback_data {
+	struct udp_data *udp_data;
+	const struct rrr_ip_buffer_entry *entry_orig;
+};
 
-	rrr_fifo_buffer_write(&data->delivery_buffer, (char*)message, MSG_TOTAL_SIZE(message));
+int read_data_receive_message_callback (struct rrr_message *message, void *arg) {
+	struct udp_read_callback_data *callback_data = arg;
+	struct udp_data *data = callback_data->udp_data;
+
+	int ret = 0;
+
+	struct rrr_ip_buffer_entry *new_entry = NULL;
+
+	if (rrr_ip_buffer_entry_new (
+			&new_entry,
+			MSG_TOTAL_SIZE(message),
+			&callback_data->entry_orig->addr,
+			callback_data->entry_orig->addr_len,
+			message
+	) != 0) {
+		RRR_MSG_ERR("Could not create new ip buffer entry in read_data_receive_message_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Now managed by ip buffer entry
+	message = NULL;
+
+	rrr_fifo_buffer_write(&data->delivery_buffer_, (char*)new_entry, sizeof(*new_entry));
+
+	// Now managed by fifo buffer
+	new_entry = NULL;
+
 	RRR_DBG_3("udp instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 	data->messages_count_read++;
 
-	return 0;
+	out:
+	if (new_entry != NULL) {
+		rrr_ip_buffer_entry_destroy(new_entry);
+	}
+	if (message != NULL) {
+		free(message);
+	}
+	return ret;
 }
 
 int read_data_receive_array_callback (const struct rrr_array *array, void *arg) {
-	struct udp_data *data = arg;
+	struct udp_read_callback_data *callback_data = arg;
+	struct udp_data *data = callback_data->udp_data;
 
 	int ret = 0;
 
@@ -338,13 +478,17 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct udp_data *data = arg;
 	int ret = 0;
 
+	struct udp_read_callback_data callback_data = {
+			data, entry
+	};
+
 	if (data->do_extract_rrr_messages) {
-		ret = rrr_array_parse_and_unpack_from_buffer_with_callback (
+		ret = rrr_array_parse_from_buffer_with_callback (
 			entry->message,
 			entry->data_length,
 			&data->definitions,
 			read_data_receive_array_callback,
-			data
+			&callback_data
 		);
 	}
 	else {
@@ -355,13 +499,20 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 			data->default_topic_length,
 			&data->definitions,
 			read_data_receive_message_callback,
-			data
+			&callback_data
 		);
 	}
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not create message in udp instance %s read_data_callback\n",
-				INSTANCE_D_NAME(data->thread_data));
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			RRR_MSG_ERR("Could not create message in udp instance %s read_data_callback, soft error probably caused by invalid input data\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Could not create message in udp instance %s read_data_callback\n",
+					INSTANCE_D_NAME(data->thread_data));
+		}
 		goto out;
 	}
 
@@ -465,13 +616,113 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 	struct udp_data *udp_data = poll_data->private_data;
 	int ret = RRR_FIFO_OK;
 
-	void *send_data = data;
-	ssize_t send_size = size;
+	(void)(size);
 
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 
-	if ((udp_data->target_port != 0 && (udp_data->target_host != NULL && *(udp_data->target_host) != '\0')) ||
-	    (udp_data->target_port == 0 && (udp_data->target_host == NULL || *(udp_data->target_host) == '\0'))
+	char *tmp_data = NULL;
+	void *send_data = NULL;
+	ssize_t send_size = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_message *message = entry->message;
+
+	// We modify the data in the buffer here, no need to copy as the memory is always
+	// freed after this function.
+	if (udp_data->do_send_rrr_message != 0) {
+		if (entry->data_length < (long int) sizeof(*message) - 1) {
+			RRR_MSG_ERR("udp instance %s had send_rrr_message set but received a message which was too short (%li<%li), dropping it\n",
+					INSTANCE_D_NAME(thread_data), entry->data_length, (long int) sizeof(*message));
+			ret = 0; // Non-critical error
+			goto out;
+		}
+
+		ssize_t final_size = MSG_TOTAL_SIZE(message);
+
+		if (entry->data_length != final_size) {
+			RRR_BUG("message size mismatch in udp input_callback %li vs %li\n", entry->data_length, final_size);
+		}
+
+		RRR_DBG_3 ("udp instance %s sends packet with rrr message timestamp from %" PRIu64 " size %li\n",
+				INSTANCE_D_NAME(thread_data), message->timestamp_from, final_size);
+
+		rrr_message_prepare_for_network(message);
+
+		rrr_socket_msg_populate_head (
+				(struct rrr_socket_msg *) message,
+				RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
+				final_size,
+				0
+		);
+
+		rrr_socket_msg_checksum_and_to_network_endian (
+				(struct rrr_socket_msg *) message
+		);
+
+		send_data = message;
+		send_size = final_size;
+	}
+	else {
+		if (!MSG_IS_ARRAY(message)) {
+			if (RRR_MAP_COUNT(&udp_data->array_send_tags) > 0) {
+				RRR_MSG_ERR("udp instance %s received a non-array message while setting udp_array_send_tags was defined, dropping it\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 0; // Non-critical error
+				goto out;
+			}
+
+			send_data = message->data;
+			send_size = MSG_DATA_LENGTH(message);
+
+			if (send_size == 0) {
+				ret = 0; // Nothing to send
+				goto out;
+			}
+
+			RRR_DBG_3 ("udp instance %s sends packet with raw data from message with timestamp from %" PRIu64 " %li bytes\n",
+					INSTANCE_D_NAME(thread_data), message->timestamp_from, send_size);
+		}
+		else {
+			int tag_count = RRR_MAP_COUNT(&udp_data->array_send_tags);
+
+			if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+				RRR_MSG_ERR("Could not convert array message to collection in udp instance %s\n", INSTANCE_D_NAME(thread_data));
+				ret = 1; // Probably bug in some other module or with array parsing
+				goto out;
+			}
+
+			ssize_t target_size = 0;
+			int found_tags = 0;
+			struct rrr_map *tag_map = (tag_count > 0 ? &udp_data->array_send_tags : NULL);
+			if (rrr_array_selected_tags_to_raw (
+					&tmp_data,
+					&target_size,
+					&found_tags,
+					&array_tmp,
+					tag_map
+			) != 0) {
+				RRR_MSG_ERR("Error while converting array to raw in udp instance %s\n", INSTANCE_D_NAME(thread_data));
+				ret = 1; // Probably bug in some other module or with array parsing
+				goto out;
+			}
+
+			if (found_tags != tag_count) {
+				RRR_MSG_ERR("Array message to send in udp instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\b",
+						INSTANCE_D_NAME(thread_data), tag_count - found_tags);
+				ret = 0; // Non-critical
+				goto out;
+			}
+
+			RRR_DBG_3 ("udp instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags\n",
+					INSTANCE_D_NAME(thread_data), message->timestamp_from, found_tags);
+
+			send_data = tmp_data;
+			send_size = target_size;
+		}
+	}
+
+	if ((udp_data->target_port != 0 && (udp_data->target_host == NULL || *(udp_data->target_host) == '\0')) ||
+	    (udp_data->target_port == 0 && (udp_data->target_host != NULL && *(udp_data->target_host) != '\0'))
 	) {
 		RRR_BUG("Invalid target_port/target_host configuration in udp input_callback\n");
 	}
@@ -492,7 +743,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 		);
 	}
 	else {
-		ret = rrr_ip_send_raw (
+		ret = rrr_ip_send (
 			udp_data->ip.fd,
 			&entry->addr,
 			entry->addr_len,
@@ -508,6 +759,8 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(tmp_data);
+	rrr_array_clear(&array_tmp);
 	return ret | RRR_FIFO_SEARCH_FREE;
 }
 
@@ -635,7 +888,7 @@ static struct rrr_module_operations module_operations = {
 	poll,
 	NULL,
 	poll_delete,
-	NULL,
+	poll_delete_ip,
 	test_config,
 	inject,
 	NULL

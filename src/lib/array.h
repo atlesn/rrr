@@ -101,14 +101,14 @@ int rrr_array_get_packed_length_from_buffer (
 		const char *buf,
 		ssize_t buf_length
 );
-int rrr_array_parse_and_unpack_from_buffer (
+int rrr_array_parse_from_buffer (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition
 );
-int rrr_array_parse_and_unpack_from_buffer_with_callback (
+int rrr_array_parse_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition,
@@ -136,8 +136,9 @@ int rrr_array_new_message_from_buffer_with_callback (
 int rrr_array_selected_tags_to_raw (
 		char **target,
 		ssize_t *target_size,
+		int *found_tags,
 		const struct rrr_array *definition,
-		const struct rrr_linked_list *tags
+		const struct rrr_map *tags
 );
 int rrr_array_new_message_from_collection (
 		struct rrr_message **final_message,

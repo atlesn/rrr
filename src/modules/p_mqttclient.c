@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
+#include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/stats_instance.h"
 #include "../global.h"
@@ -83,7 +84,7 @@ struct mqtt_client_data {
 	char *version_str;
 	char *client_identifier;
 	char *publish_values_from_array;
-	struct rrr_linked_list publish_values_from_array_list;
+	struct rrr_map publish_values_from_array_list;
 	struct rrr_array array_definition;
 	uint8_t qos;
 	uint8_t version;
@@ -107,7 +108,7 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
-	rrr_linked_list_clear(&data->publish_values_from_array_list);
+	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
@@ -170,7 +171,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	int ret = 0;
 
-	struct rrr_linked_list_node *node = malloc(sizeof(*node));
+	struct rrr_map_item *node = malloc(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in parse_publish_value_tag\n");
 		ret = 1;
@@ -178,8 +179,8 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 	}
 	memset(node, '\0', sizeof(*node));
 
-	node->data = strdup(value);
-	if (node->data == NULL) {
+	node->tag = strdup(value);
+	if (node->tag == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for data in parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
@@ -190,7 +191,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	out:
 	if (node != NULL) {
-		rrr_linked_list_destroy_node(node);
+		rrr_map_item_destroy(node);
 	}
 	return ret;
 }
@@ -751,9 +752,11 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 				goto out_free;
 			}
 
+			int found_tags = 0;
 			if ((ret = rrr_array_selected_tags_to_raw (
 					&payload,
 					&payload_size,
+					&found_tags,
 					&array_tmp,
 					&private_data->publish_values_from_array_list)
 			) != 0) {

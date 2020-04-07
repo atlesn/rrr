@@ -389,7 +389,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 			result = node;
 		}
 		SESSION_RAM_UNLOCK(node);
-	RRR_LL_ITERATE_END(data);
+	RRR_LL_ITERATE_END();
 
 
 	return result;
@@ -469,7 +469,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 			found = node;
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END(data);
+	RRR_LL_ITERATE_END();
 
 	SESSION_COLLECTION_RAM_UNLOCK(data);
 

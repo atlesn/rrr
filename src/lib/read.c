@@ -87,7 +87,7 @@ struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot 
 		if (node->rx_overshoot != NULL) {
 			return node;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 

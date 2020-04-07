@@ -145,7 +145,7 @@ static int __rrr_mqtt_broker_listen_fds_accept_connections (
 		} while (connection != NULL);
 
 		ret_preserved |= ret;
-	RRR_LL_ITERATE_END(fds);
+	RRR_LL_ITERATE_END();
 
 	if (count > 0) {
 		RRR_DBG_1 ("rrr_mqtt_broker_accept_connections: accepted %i connections\n", count);

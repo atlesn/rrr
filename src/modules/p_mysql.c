@@ -342,7 +342,7 @@ int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct
 		APPEND_UNCHECKED(column_name);
 		APPEND_UNCHECKED("`");
 		columns_count++;
-	RRR_MAP_ITERATE_END(&data->column_tags);
+	RRR_MAP_ITERATE_END();
 
 	RRR_MAP_ITERATE_BEGIN(&data->special_columns);
 		RESERVE_AND_CHECK(strlen(node_tag) + 3);
@@ -350,7 +350,7 @@ int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct
 		APPEND_UNCHECKED(node_tag);
 		APPEND_UNCHECKED("`");
 		columns_count++;
-	RRR_MAP_ITERATE_END(&data->special_columns);
+	RRR_MAP_ITERATE_END();
 
 	if (data->add_timestamp_col != 0) {
 		APPEND_AND_CHECK(",`timestamp`");
@@ -465,7 +465,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 			}
 
 			bind_pos++;
-		RRR_MAP_ITERATE_END(&data->column_tags);
+		RRR_MAP_ITERATE_END();
 	}
 	else {
 		RRR_MAP_ITERATOR_CREATE(column_iterator, &data->columns);
@@ -495,7 +495,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 			}
 
 			bind_pos++;
-		RRR_LL_ITERATE_END(&collection);
+		RRR_LL_ITERATE_END();
 	}
 
 	RRR_MAP_ITERATE_BEGIN(&data->special_columns);
@@ -505,7 +505,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 		bind[bind_pos].buffer_type = MYSQL_TYPE_STRING;
 
 		bind_pos++;
-	RRR_MAP_ITERATE_END(&data->special_columns);
+	RRR_MAP_ITERATE_END();
 
 	unsigned long long int timestamp = rrr_time_get_64();
 	if (data->add_timestamp_col) {
@@ -611,7 +611,7 @@ int mysql_verify_blob_write_colums (struct mysql_data *data) {
 				ret = 1;
 			}
 		}
-	RRR_MAP_ITERATE_END(&data->blob_write_columns);
+	RRR_MAP_ITERATE_END();
 
 	return ret;
 }

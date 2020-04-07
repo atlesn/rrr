@@ -92,7 +92,7 @@ void rrr_ip_buffer_entry_destroy (
 void rrr_ip_buffer_entry_destroy_void (
 		void *entry
 );
-void rrr_ip_buffer_entry_set_message (
+void rrr_ip_buffer_entry_set_message_dangerous (
 		struct rrr_ip_buffer_entry *entry,
 		void *message,
 		ssize_t data_length
@@ -151,7 +151,7 @@ int rrr_ip_receive_rrr_message (
 		void *arg,
 		struct ip_stats *stats
 );
-int rrr_ip_send_raw (
+int rrr_ip_send (
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,

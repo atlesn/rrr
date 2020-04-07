@@ -210,7 +210,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		linked_list_immediate_break = 1; break
 
 
-#define RRR_LL_ITERATE_END(head)																\
+#define RRR_LL_ITERATE_END()																\
 		} while (0);																			\
 		if (linked_list_immediate_break != 0) {													\
 			break;																				\
@@ -253,54 +253,5 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
 
-#define RRR_LL_ITERATOR_INIT(list) \
-	{ 0, list, NULL }
-
-#define RRR_LL_ITERATOR_CREATE(name,list) \
-	struct rrr_linked_list_iterator name = RRR_LL_ITERATOR_INIT((struct rrr_linked_list *) list)
-
-#define RRR_LL_ITERATOR_NEXT(iterator) \
-	rrr_linked_list_iterator_next(iterator)
-
-struct rrr_linked_list_node {
-	RRR_LL_NODE(struct rrr_linked_list_node);
-	void *data;
-	ssize_t size;
-};
-
-struct rrr_linked_list {
-	RRR_LL_HEAD(struct rrr_linked_list_node);
-};
-
-struct rrr_linked_list_iterator {
-	ssize_t rpos;
-	struct rrr_linked_list *source;
-	struct rrr_linked_list_node *cur;
-};
-
-static inline struct rrr_linked_list_node *rrr_linked_list_iterator_next (struct rrr_linked_list_iterator *iterator) {
-	if (iterator->cur == NULL) {
-		if (iterator->rpos == 0) {
-			iterator->cur = iterator->source->ptr_first;
-		}
-	}
-	else {
-		iterator->cur = iterator->cur->ptr_next;
-		iterator->rpos++;
-	}
-
-	return iterator->cur;
-}
-
-static inline void rrr_linked_list_destroy_node (struct rrr_linked_list_node *node) {
-	if (node->data != NULL) {
-		free(node->data);
-	}
-	free(node);
-}
-
-static inline void rrr_linked_list_clear (struct rrr_linked_list *list) {
-	RRR_LL_DESTROY(list, struct rrr_linked_list_node, rrr_linked_list_destroy_node(node));
-}
 
 #endif /* RRR_LINKED_LIST_H */

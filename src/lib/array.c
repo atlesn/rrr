@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "type.h"
 #include "vl_time.h"
+#include "map.h"
 
 static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -319,7 +320,7 @@ int rrr_array_validate_definition (
 			}
 		}
 		prev = node;
-	RRR_LL_ITERATE_END(target);
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
@@ -386,7 +387,7 @@ int rrr_array_parse_data_from_definition (
 
 		pos += parsed_bytes;
 		i++;
-	RRR_LL_ITERATE_END(definitions);
+	RRR_LL_ITERATE_END();
 
 	*parsed_bytes_final = pos - data;
 
@@ -423,7 +424,7 @@ int rrr_array_definition_collection_clone (
 		}
 
 		RRR_LL_APPEND(target,template);
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 
 	target->version = source->version;
 
@@ -450,7 +451,7 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 			return node;
 		}
 		i++;
-	RRR_LL_ITERATE_END(definition);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }
@@ -466,7 +467,7 @@ struct rrr_type_value *rrr_array_value_get_by_tag (
 				return node;
 			}
 		}
-	RRR_LL_ITERATE_END(definition);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }
@@ -502,7 +503,7 @@ int rrr_array_get_packed_length_from_buffer (
 		pos += result;
 		remaining_buf_length -= result;
 		result_final += result;
-	RRR_LL_ITERATE_END(definition);
+	RRR_LL_ITERATE_END();
 
 	*import_length = result_final;
 
@@ -516,7 +517,7 @@ static ssize_t __rrr_array_get_packed_length (
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		result += node->total_stored_length + sizeof(struct rrr_array_value_packed) - 1;
 		result += node->tag_length;
-	RRR_LL_ITERATE_END(definition);
+	RRR_LL_ITERATE_END();
 	return result;
 }
 
@@ -557,7 +558,7 @@ static int __rrr_array_parse_from_buffer (
 	return ret;
 }
 
-int rrr_array_parse_and_unpack_from_buffer (
+int rrr_array_parse_from_buffer (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *buf,
@@ -570,28 +571,11 @@ int rrr_array_parse_and_unpack_from_buffer (
 		goto out;
 	}
 
-	int i = 0;
-	RRR_LL_ITERATE_BEGIN(target, struct rrr_type_value);
-		if (node->definition->unpack == NULL) {
-			RRR_MSG_ERR("Illegal type in array %u/%s index %i\n",
-					node->definition->type, node->definition->identifier, i);
-			ret = 1;
-			goto out;
-		}
-		if (node->definition->unpack(node) != 0) {
-			RRR_MSG_ERR("Error while converting endianess for type %u index %i of array message\n",
-					node->definition->type, i);
-			ret = 1;
-			goto out;
-		}
-		i++;
-	RRR_LL_ITERATE_END();
-
 	out:
 	return ret;
 }
 
-int rrr_array_parse_and_unpack_from_buffer_with_callback (
+int rrr_array_parse_from_buffer_with_callback (
 		const char *buf,
 		ssize_t buf_len,
 		const struct rrr_array *definition,
@@ -602,7 +586,7 @@ int rrr_array_parse_and_unpack_from_buffer_with_callback (
 	struct rrr_array array = {0};
 
 	ssize_t parsed_bytes = 0;
-	if ((ret = rrr_array_parse_and_unpack_from_buffer (
+	if ((ret = rrr_array_parse_from_buffer (
 			&array,
 			&parsed_bytes,
 			buf,
@@ -610,7 +594,9 @@ int rrr_array_parse_and_unpack_from_buffer_with_callback (
 			definition
 	)) != 0) {
 		RRR_MSG_ERR("Could not parse array in rrr_array_parse_from_buffer_with_callback\n");
-		ret = 1;
+		// Usually errors are caused by senders sending wrong data,
+		// don't let them make the program crash
+		ret = RRR_ARRAY_PARSE_SOFT_ERR;
 		goto out;
 	}
 
@@ -646,8 +632,7 @@ int rrr_array_new_message_from_buffer (
 			topic,
 			topic_length
 	)) != 0) {
-		RRR_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer\n");
-		return RRR_ARRAY_PARSE_HARD_ERR;
+		RRR_MSG_ERR("Could not create message in rrr_array_new_message_from_buffer return was %i\n", ret);
 		goto out_destroy;
 	}
 
@@ -691,10 +676,11 @@ int rrr_array_new_message_from_buffer_with_callback (
 
 static int __rrr_array_collection_to_raw (
 		char *target,
-		ssize_t target_size,
+		int *found_tags,
 		ssize_t *written_bytes_final,
+		ssize_t target_size,
 		const struct rrr_array *definition,
-		const struct rrr_linked_list *tags,
+		const struct rrr_map *tags,
 		int data_only
 ) {
 	ssize_t written_bytes_total = 0;
@@ -703,6 +689,8 @@ static int __rrr_array_collection_to_raw (
 
 	char *max = target + target_size;
 	char *pos = target;
+
+	*found_tags = 0;
 	*written_bytes_final = 0;
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
@@ -717,13 +705,14 @@ static int __rrr_array_collection_to_raw (
 			int found = 0;
 			if (node->tag != NULL) {
 				const char *tag = node->tag;
-				RRR_LL_ITERATE_BEGIN(tags, const struct rrr_linked_list_node);
-					printf ("Match tag %s vs %s\n", tag, (char *) node->data);
-					if (strcmp (tag, node->data) == 0) {
+				RRR_MAP_ITERATE_BEGIN_CONST(tags);
+//					printf ("Match tag %s vs %s\n", tag, (char *) node->value_primary_);
+					if (strcmp (tag, node_tag) == 0) {
 						found = 1;
+						(*found_tags)++;
 						RRR_LL_ITERATE_LAST();
 					}
-				RRR_LL_ITERATE_END(tags);
+				RRR_MAP_ITERATE_END();
 			}
 			if (found == 0) {
 				RRR_LL_ITERATE_NEXT();
@@ -760,7 +749,7 @@ static int __rrr_array_collection_to_raw (
 
 		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
 			RRR_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
-			ret = 1;
+			ret = RRR_ARRAY_PARSE_SOFT_ERR;
 			goto out;
 		}
 
@@ -776,7 +765,7 @@ static int __rrr_array_collection_to_raw (
 
 		pos += written_bytes;
 		written_bytes_total += written_bytes;
-	RRR_LL_ITERATE_END(definition);
+	RRR_LL_ITERATE_END();
 
 	*written_bytes_final = written_bytes_total;
 
@@ -787,8 +776,9 @@ static int __rrr_array_collection_to_raw (
 int rrr_array_selected_tags_to_raw (
 		char **target,
 		ssize_t *target_size,
+		int *found_tags,
 		const struct rrr_array *definition,
-		const struct rrr_linked_list *tags
+		const struct rrr_map *tags
 ) {
 	int ret = 0;
 
@@ -807,13 +797,14 @@ int rrr_array_selected_tags_to_raw (
 
 	if ((ret = __rrr_array_collection_to_raw (
 			result,
-			total_data_length,
+			found_tags,
 			target_size,
+			total_data_length,
 			definition,
 			tags,
 			1
 	)) != 0) {
-		RRR_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw\n");
+		RRR_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw return was %i\n", ret);
 		goto out;
 	}
 
@@ -841,7 +832,7 @@ int rrr_array_new_message_from_collection (
 	struct rrr_message *message = rrr_message_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
 		RRR_MSG_ERR("Could not create message for data collection\n");
-		ret = 1;
+		ret = RRR_ARRAY_PARSE_HARD_ERR;
 		goto out;
 	}
 
@@ -853,16 +844,18 @@ int rrr_array_new_message_from_collection (
 	}
 
 	ssize_t written_bytes_total = 0;
+	int found_tags = 0;
 
 	if ((ret = __rrr_array_collection_to_raw (
 			MSG_DATA_PTR(message),
-			MSG_DATA_LENGTH(message),
+			&found_tags,
 			&written_bytes_total,
+			MSG_DATA_LENGTH(message),
 			definition,
 			NULL,
 			0
 	)) != 0) {
-		RRR_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection\n");
+		RRR_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection return was %i\n", ret);
 		goto out;
 	}
 

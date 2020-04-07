@@ -1,5 +1,6 @@
 #include <stdint.h>
-//#include <stdio.h>
+//#include <inttypes.h>
+#include <stdio.h>
 
 #include "crc32.h"
 
@@ -107,7 +108,7 @@ uint32_t crc32buf (const char *buf, int len) {
 
       for (int i = 0; i < len; i++) {
     	  crc32 = UPDC32(*(buf + i), crc32);
-//    	  printf ("CRC: %lu\n", crc32);
+//    	  printf ("CRC: %" PRIu32 "\n", crc32);
       }
 
       return ~crc32;
@@ -115,6 +116,7 @@ uint32_t crc32buf (const char *buf, int len) {
 
 // Returns 0 if checksum is valid
 int crc32cmp (const char *buf, int len, uint32_t crc32) {
+//	printf ("CRC32CMP length %i\n", len);
 	uint32_t test = crc32buf(buf, len);
 	return test - crc32;
 }
