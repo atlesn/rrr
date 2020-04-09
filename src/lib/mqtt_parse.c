@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 
 #include "../global.h"
+#include "../macro_utils.h"
 #include "rrr_endian.h"
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
@@ -54,8 +55,6 @@ struct parse_state {
 #define PARSE_CHECK_END_AND_RETURN(end,session)									\
 	PARSE_CHECK_END_AND_RETURN_RAW((end),(session)->buf+(session)->buf_size)
 
-#define PASTE(x, y) x ## y
-
 #define PARSE_INIT(type)																\
 	struct parse_state parse_state_static = {											\
 			RRR_MQTT_PARSE_OK,															\
@@ -66,7 +65,7 @@ struct parse_state {
 			0																			\
 	};																					\
 	struct parse_state *parse_state = &parse_state_static;								\
-	struct PASTE(rrr_mqtt_p_,type) *type = NULL
+	struct RRR_PASTE(rrr_mqtt_p_,type) *type = NULL
 
 #define PARSE_BEGIN(type)																\
 	if (RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {								\
@@ -94,7 +93,7 @@ struct parse_state {
 			return RRR_MQTT_PARSE_INTERNAL_ERROR;										\
 		}																				\
 	}																					\
-	type = (struct PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type)
+	type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet; (void)(type)
 
 #define PARSE_PACKET_ID(target) 											\
 	do {parse_state->start = parse_state->end;								\
@@ -166,7 +165,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 	) != RRR_MQTT_PARSE_OK) {													\
 		return RRR_MQTT_PARSE_PARAMETER_ERROR;									\
 	}																			\
-	if (packet->reason->PASTE(for_,class) == 0) {								\
+	if (packet->reason->RRR_PASTE(for_,class) == 0) {								\
 			RRR_MSG_ERR("Reason %u->%u '%s' is invalid for %s message\n",		\
 					reason_v31_or_v5, packet->reason->v5_reason,				\
 					packet->reason->description,								\
@@ -295,7 +294,7 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 	session->payload_pos = parse_state->end - session->buf;										\
 	goto parse_payload;																			\
 	parse_payload:																				\
-	type = (struct PASTE(rrr_mqtt_p_,type) *) session->packet;									\
+	type = (struct RRR_PASTE(rrr_mqtt_p_,type) *) session->packet;									\
 	parse_state->end = session->buf + session->payload_checkpoint
 
 #define PARSE_END_PAYLOAD()																		\

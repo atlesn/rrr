@@ -44,7 +44,7 @@ endif
 
 if RRR_WITH_PERL5
 libadd_perl5 = librrrperl5.la
-librrrperl5_la_SOURCES = perl5.c perl5_xsi.c
+librrrperl5_la_SOURCES = perl5.c perl5_xsi.c perl5_types.c
 librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 endif

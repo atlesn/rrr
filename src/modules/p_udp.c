@@ -412,6 +412,9 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 		goto out;
 	}
 
+	RRR_DBG_3("udp instance %s created a message with timestamp %llu size %lu\n",
+			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+
 	// Now managed by ip buffer entry
 	message = NULL;
 
@@ -419,9 +422,6 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 
 	// Now managed by fifo buffer
 	new_entry = NULL;
-
-	RRR_DBG_3("udp instance %s created a message with timestamp %llu size %lu\n",
-			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
 
 	data->messages_count_read++;
 
@@ -620,8 +620,9 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 
-	char *tmp_data = NULL;
-	void *send_data = NULL;
+	char *tmp_data = NULL; // Freed upon function return
+
+	const void *send_data = NULL; // Just a pointer to data managed elsewhere, not freed
 	ssize_t send_size = 0;
 
 	struct rrr_array array_tmp = {0};
@@ -706,15 +707,15 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 				goto out;
 			}
 
-			if (found_tags != tag_count) {
+			if (tag_count != 0 && found_tags != tag_count) {
 				RRR_MSG_ERR("Array message to send in udp instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\b",
 						INSTANCE_D_NAME(thread_data), tag_count - found_tags);
 				ret = 0; // Non-critical
 				goto out;
 			}
 
-			RRR_DBG_3 ("udp instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags\n",
-					INSTANCE_D_NAME(thread_data), message->timestamp_from, found_tags);
+			RRR_DBG_3 ("udp instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %li\n",
+					INSTANCE_D_NAME(thread_data), message->timestamp_from, found_tags, target_size);
 
 			send_data = tmp_data;
 			send_size = target_size;
@@ -738,7 +739,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			&udp_data->ip,
 			udp_data->target_port,
 			udp_data->target_host,
-			send_data,
+			(void *) send_data, // Cast away const OK
 			send_size
 		);
 	}
@@ -747,7 +748,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			udp_data->ip.fd,
 			&entry->addr,
 			entry->addr_len,
-			send_data,
+			(void *) send_data, // Cast away const OK
 			send_size
 		);
 	}

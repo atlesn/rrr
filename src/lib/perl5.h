@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PERL5_H
 #define RRR_PERL5_H
 
+typedef struct av AV;
 typedef struct hv HV;
 typedef struct sv SV;
 typedef struct interpreter PerlInterpreter;
@@ -41,7 +42,7 @@ struct rrr_perl5_ctx {
 
 struct rrr_perl5_message_hv {
 	HV *hv;
-    SV *type;
+/*    SV *type;
     SV *class;
     SV *timestamp_from;
     SV *timestamp_to;
@@ -49,6 +50,9 @@ struct rrr_perl5_message_hv {
     SV *topic;
     SV *data_length;
     SV *data;
+    AV *array_values;
+    AV *array_tags;
+    AV *array_types;*/
 };
 
 struct rrr_perl5_settings_hv {

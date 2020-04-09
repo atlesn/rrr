@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "linked_list.h"
+#include "../macro_utils.h"
 
 static const union type_system_endian {
 	uint16_t two;
@@ -39,7 +40,7 @@ static const union type_system_endian {
 #define RRR_TYPE_PARSE_SOFT_ERR		2
 #define RRR_TYPE_PARSE_INCOMPLETE	3
 
-// Remember to update convert function pointers in types.c
+// Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
 #define RRR_TYPE_MIN		2
 #define RRR_TYPE_LE			2 // Little endian number
@@ -177,6 +178,25 @@ struct rrr_type_value {
 	char *data;
 };
 
+#define RRR_TYPE_DEFINE_EXTERN(name) \
+	extern const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name)
+
+RRR_TYPE_DEFINE_EXTERN(be);
+RRR_TYPE_DEFINE_EXTERN(h);
+RRR_TYPE_DEFINE_EXTERN(le);
+RRR_TYPE_DEFINE_EXTERN(blob);
+RRR_TYPE_DEFINE_EXTERN(ustr);
+RRR_TYPE_DEFINE_EXTERN(istr);
+RRR_TYPE_DEFINE_EXTERN(sep);
+RRR_TYPE_DEFINE_EXTERN(msg);
+RRR_TYPE_DEFINE_EXTERN(fixp);
+RRR_TYPE_DEFINE_EXTERN(str);
+RRR_TYPE_DEFINE_EXTERN(nsep);
+RRR_TYPE_DEFINE_EXTERN(null);
+
+int rrr_type_import_ustr_raw (uint64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_istr_raw (int64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
+
 const struct rrr_type_definition *rrr_type_parse_from_string (
 		ssize_t *parsed_bytes,
 		const char *start,
@@ -187,6 +207,11 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 );
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
+);
+int rrr_type_value_set_tag (
+		struct rrr_type_value *value,
+		const char *tag,
+		ssize_t tag_length
 );
 int rrr_type_value_new (
 		struct rrr_type_value **result,

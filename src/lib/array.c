@@ -701,7 +701,10 @@ static int __rrr_array_collection_to_raw (
 			RRR_BUG("pos was > max in __rrr_array_collection_to_raw\n");
 		}
 
-		if (tags != NULL) {
+		if (tags == NULL) {
+			(*found_tags)++;
+		}
+		else {
 			int found = 0;
 			if (node->tag != NULL) {
 				const char *tag = node->tag;
