@@ -40,6 +40,10 @@ struct rrr_socket_options {
 };
 
 struct rrr_read_session;
+int rrr_socket_get_filename_from_fd (
+		char **result,
+		int fd
+);
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
 		int fd
@@ -78,15 +82,18 @@ int rrr_socket (
 		const char *filename
 );
 int rrr_socket_close (int fd);
+int rrr_socket_close_no_unlink (int fd);
 int rrr_socket_close_ignore_unregistered (int fd);
 int rrr_socket_close_all_except (int fd);
+int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,
-		const char *filename,
+		const char *filename_orig,
 		int num_clients,
-		int nonblock
+		int nonblock,
+		int do_mkstemp
 );
 int rrr_socket_connect_nonblock (
 		int fd,

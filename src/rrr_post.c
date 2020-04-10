@@ -329,12 +329,7 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_message *message) {
 	int ret = 0;
 
-	ssize_t msg_size = MSG_TOTAL_SIZE(message);
-
-	rrr_message_prepare_for_network((struct rrr_message *) message);
-	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
-
-	if ((ret = rrr_socket_sendto(data->output_fd, message, msg_size, NULL, 0)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_rrr_message (message, data->output_fd)) != 0) {
 		RRR_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}

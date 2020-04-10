@@ -97,7 +97,7 @@ int rrr_perl5_init3(int argc, char **argv, char **env) {
 	__rrr_perl5_init_lock();
 
 	if (++perl5_users == 1 && perl5_initialized == 0) {
-		// We do not cart PERL_SYS_TERM untill RRR actually exits
+		// We do not call PERL_SYS_TERM untill RRR actually exits
 		rrr_exit_cleanup_method_push(rrr_perl5_program_exit_sys_term, NULL);
 		PERL_SYS_INIT3(&argc, &argv, &env);
 		perl5_initialized = 1;

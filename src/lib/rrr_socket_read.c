@@ -173,7 +173,7 @@ static int __rrr_socket_read_message_default_read (
 		);
 	}
 	else {
-		RRR_BUG("Unknown read method %i in rrr_socket_read_message\n", callback_data->socket_read_flags);
+		RRR_BUG("Unknown read method %i in __rrr_socket_read_message_default_read\n", callback_data->socket_read_flags);
 	}
 
 	if (bytes == -1) {
@@ -186,7 +186,7 @@ static int __rrr_socket_read_message_default_read (
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", rrr_strerror(errno));
+		RRR_MSG_ERR("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}

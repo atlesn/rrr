@@ -320,7 +320,8 @@ int rrr_ip_receive_array (
 	);
 }
 
-int rrr_receive_socket_msg (
+/* XXX : Disabled, not currently used
+int rrr_ip_receive_socket_msg (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int no_sleeping,
@@ -344,6 +345,11 @@ int rrr_receive_socket_msg (
 
 }
 
+*/
+
+/* Not currently used
+ * TODO : Convert to use read_common message endian flip and verification
+ *
 struct ip_receive_messages_callback_data {
 	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *arg;
@@ -383,8 +389,6 @@ static int __rrr_ip_receive_rrr_message_callback (
 	out_free: rrr_ip_buffer_entry_destroy(entry);
 	return ret;
 }
-
-/* Receive packets and parse vl_message struct or fail */
 int rrr_ip_receive_rrr_message (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
@@ -398,7 +402,7 @@ int rrr_ip_receive_rrr_message (
 	data.callback = callback;
 	data.arg = arg;
 
-	return rrr_receive_socket_msg (
+	return rrr_ip_receive_socket_msg (
 		read_session_collection,
 		fd,
 		no_sleeping,
@@ -407,6 +411,7 @@ int rrr_ip_receive_rrr_message (
 		stats
 	);
 }
+*/
 
 int rrr_ip_send (
 	int fd,

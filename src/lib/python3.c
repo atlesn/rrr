@@ -625,7 +625,7 @@ static int __fork_main_tstate_callback(void *arg, PyThreadState *tstate_orig) {
 	}
 
 	if (ret > 0) {
-		printf ("=== FORK PID %i ========================================================================================\n", ret);
+		RRR_DBG_1 ("=== FORK PID %i ========================================================================================\n", ret);
 	}
 
 	return ret;
@@ -984,7 +984,7 @@ int rrr_py_get_rrr_objects (
 		goto out;
 	}
 
-	printf ("RRR helper module: %p refcount %li\n", rrr_helper_module, rrr_helper_module->ob_refcnt);
+	//printf ("RRR helper module: %p refcount %li\n", rrr_helper_module, rrr_helper_module->ob_refcnt);
 //	Py_XDECREF(rrr_helper_module);
 
 	// RUN STARTUP CODE

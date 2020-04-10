@@ -126,27 +126,11 @@ int rrr_ip_stats_update (
 int rrr_ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
-int rrr_ip_receive_socket_msg (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-);
 int rrr_ip_receive_array (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-);
-int rrr_ip_receive_rrr_message (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats

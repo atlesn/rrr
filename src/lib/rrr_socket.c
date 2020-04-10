@@ -64,7 +64,7 @@ struct rrr_socket_holder_collection {
 struct rrr_socket_holder_collection socket_list = {0};
 static pthread_mutex_t socket_lock = PTHREAD_MUTEX_INITIALIZER;
 
-int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder) {
+int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int no_unlink) {
 	int ret = 0;
 	if (holder->options.fd > 0) {
 		ret = close(holder->options.fd);
@@ -76,7 +76,7 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder) {
 			}
 		}
 	}
-	if (holder->filename != NULL) {
+	if (no_unlink == 0 && holder->filename != NULL) {
 		unlink(holder->filename);
 	}
 	RRR_FREE_IF_NOT_NULL(holder->filename);
@@ -137,6 +137,38 @@ int __rrr_socket_holder_new (
 	RRR_FREE_IF_NOT_NULL(result);
 	return ret;
 }
+
+int rrr_socket_get_filename_from_fd (
+		char **result,
+		int fd
+) {
+	*result = NULL;
+
+	pthread_mutex_lock(&socket_lock);
+
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&socket_list, struct rrr_socket_holder);
+		if (node->options.fd == fd) {
+			if (node->filename != NULL && *(node->filename) != '\0') {
+				char *filename = strdup(node->filename);
+				if (filename == NULL) {
+					RRR_MSG_ERR("Could not allocate memory in rrr_socket_get_filename_from_fd\n");
+					ret = 1;
+					goto out;
+				}
+				*result = filename;
+			}
+			ret = 0;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	pthread_mutex_unlock(&socket_lock);
+	return ret;
+}
+
 
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
@@ -335,12 +367,12 @@ int rrr_socket (
 	return fd;
 }
 
-static int __rrr_socket_close (int fd, int ignore_unregistered) {
+static int __rrr_socket_close (int fd, int ignore_unregistered, int no_unlink) {
 	if (fd <= 0) {
 		RRR_BUG("rrr_socket_close called with fd <= 0: %i\n", fd);
 	}
 
-	RRR_DBG_7("rrr_socket_close fd %i pid %i\n", fd, getpid());
+	RRR_DBG_7("rrr_socket_close fd %i pid %i no unlink %i\n", fd, getpid(), no_unlink);
 
 	pthread_mutex_lock(&socket_lock);
 
@@ -354,7 +386,7 @@ static int __rrr_socket_close (int fd, int ignore_unregistered) {
 			RRR_LL_ITERATE_LAST();
 			did_destroy = 1;
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
 
 	__rrr_socket_dump_unlocked();
 
@@ -375,21 +407,25 @@ static int __rrr_socket_close (int fd, int ignore_unregistered) {
 }
 
 int rrr_socket_close (int fd) {
-	return __rrr_socket_close (fd, 0);
+	return __rrr_socket_close (fd, 0, 0);
+}
+
+int rrr_socket_close_no_unlink (int fd) {
+	return __rrr_socket_close (fd, 0, 1);
 }
 
 int rrr_socket_close_ignore_unregistered (int fd) {
-	return __rrr_socket_close (fd, 1);
+	return __rrr_socket_close (fd, 1, 0);
 }
 
-int rrr_socket_close_all_except (int fd) {
+static int __rrr_socket_close_all_except (int fd, int no_unlink) {
 	int ret = 0;
 
 	if (fd < 0) {
 		RRR_BUG("rrr_socket_close_all_except called with fd < 0: %i\n", fd);
 	}
 
-	RRR_DBG_7("rrr_socket_close_all_except fd %i pid %i\n", fd, getpid());
+	RRR_DBG_7("rrr_socket_close_all_except fd %i pid %i no_unlink %i\n", fd, getpid(), no_unlink);
 
 	int count = 0;
 	int found = 0;
@@ -407,7 +443,7 @@ int rrr_socket_close_all_except (int fd) {
 			}
 			found = 1;
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&socket_list,__rrr_socket_holder_close_and_destroy(node, no_unlink));
 
 	if (found != 1 && fd != 0) {
 		RRR_MSG_ERR("Warning: rrr_socket_close_all_except called with unregistered FD %i. All sockets are now closed.\n", fd);
@@ -424,6 +460,14 @@ int rrr_socket_close_all_except (int fd) {
 	return ret;
 }
 
+int rrr_socket_close_all_except (int fd) {
+	return __rrr_socket_close_all_except(fd, 0);
+}
+
+int rrr_socket_close_all_except_no_unlink (int fd) {
+	return __rrr_socket_close_all_except(fd, 1);
+}
+
 int rrr_socket_close_all (void) {
 	return rrr_socket_close_all_except(0);
 }
@@ -431,36 +475,51 @@ int rrr_socket_close_all (void) {
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,
-		const char *filename,
+		const char *filename_orig,
 		int num_clients,
-		int nonblock
+		int nonblock,
+		int do_mkstemp
 ) {
 	int ret = 0;
 
 	*fd_result = 0;
 
+	char filename_tmp[strlen(filename_orig) + 1];
+	strcpy(filename_tmp, filename_orig);
+
 	struct sockaddr_un addr = {0};
 	socklen_t addr_len = sizeof(addr);
 	int fd = 0;
 
-	if (strlen(filename) > sizeof(addr.sun_path) - 1) {
+	if (strlen(filename_orig) > sizeof(addr.sun_path) - 1) {
 		RRR_MSG_ERR("Filename was too long in rrr_socket_unix_create_bind_and_listen, max is %li\n",
 				sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
 	}
 
-	if (access (filename, F_OK) == 0) {
-		RRR_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
-				filename);
-		ret = 1;
-		goto out;
+	if (do_mkstemp != 0) {
+		fd = rrr_socket_mkstemp(filename_tmp, creator);
+		if (fd < 0) {
+			RRR_MSG_ERR("mkstemp failed in rrr_socket_unix_create_bind_and_listen: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		rrr_socket_close(fd);
+	}
+	else {
+		if (access (filename_tmp, F_OK) == 0) {
+			RRR_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
+					filename_tmp);
+			ret = 1;
+			goto out;
+		}
 	}
 
-	strcpy(addr.sun_path, filename);
+	strcpy(addr.sun_path, filename_tmp);
 	addr.sun_family = AF_UNIX;
 
-	fd = rrr_socket(AF_UNIX, SOCK_STREAM | (nonblock != 0 ? SOCK_NONBLOCK : 0), 0, creator, filename);
+	fd = rrr_socket(AF_UNIX, SOCK_STREAM | (nonblock != 0 ? SOCK_NONBLOCK : 0), 0, creator, filename_tmp);
 
 	if (fd < 0) {
 		RRR_MSG_ERR("Could not create socket in rrr_socket_unix_create_bind_and_listen\n");

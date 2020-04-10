@@ -12,10 +12,15 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-	# Do some modifications to the message
-	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
+	print "process: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
 
-	# print "process: new timestamp of message is: " . $message->{'timestamp_from'} . "\n";
+	print "control array array_values: " . $message->{'array_values'} . "\n";
+	print "control array array_values: " . $message->{'array_tags'} . "\n";
+	print "control array array_values: " . $message->{'array_types'} . "\n";
+
+	push @{$message->{'array_values'}}, "test value";
+	push @{$message->{'array_tags'}}, "test_tag";
+	push @{$message->{'array_types'}}, "str";
 
 	# This can be used to duplicate a message, no need if we are not duplicating
 	# $message->send();

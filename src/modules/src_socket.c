@@ -256,7 +256,7 @@ static int socket_start (struct socket_data *data) {
 	socket_name[64] = '\0';
 
 	int fd = 0;
-	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1) != 0) {
+	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1, 0) != 0) {
 		RRR_MSG_ERR("Could not create socket in socket_start of instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
