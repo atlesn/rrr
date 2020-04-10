@@ -592,11 +592,11 @@ void *__thread_watchdog_entry (void *arg) {
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
 				RRR_MSG_ERR ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
+				usleep(1000000); // 1 s
 			}
 			else {
 				pthread_cancel(thread->thread);
 			}
-			usleep(1000000); // 1 s
 			break;
 		}
 
@@ -611,14 +611,18 @@ void *__thread_watchdog_entry (void *arg) {
 		uint64_t nowtime = rrr_time_get_64();
 		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR< nowtime) {
 			RRR_MSG_ERR ("Thread %s/%p not responding to cancellation, try again .\n", thread->name, thread);
+
+
+			/* DISABLED : program crashes if thread has exited : pthread_cancel(thread->thread);
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
 				RRR_MSG_ERR ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
+				usleep(1000000);
 			}
 			else {
-				pthread_cancel(thread->thread);
 			}
-			usleep(1000000);
+			*/
+
 			if (rrr_thread_get_state(thread) == RRR_THREAD_STATE_STOPPING) {
 				RRR_MSG_ERR ("Thread %s/%p is stuck in STOPPING, not finished with it's cleanup.\n", thread->name, thread);
 			}
