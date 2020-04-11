@@ -355,7 +355,9 @@ static int __rrr_perl5_type_to_value_blob_populate_intermediate_list (
 	ssize_t total_length = 0;
 	ssize_t previous_length = 0;
 
-	for (int i = 0; i >= av_len(values); i++) {
+	// Note: av_len returns index of last element
+	ssize_t array_length = av_len(values);
+	for (int i = 0; i <= array_length; i++) {
 		SV **tmp = av_fetch(values, i, 1);
 		if (tmp == NULL || *tmp == NULL) {
 			RRR_MSG_ERR("Could not fetch from AV in __rrr_perl5_type_to_value_blob_populate_intermediate_list\n");

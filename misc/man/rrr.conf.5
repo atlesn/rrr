@@ -139,7 +139,7 @@ If the received data does not match the specified data array, the packet is drop
 Port to listen on and also source port for outbound messages, range is 1-65535.
 If left unspecified, no listening takes place.
 .It udp_input_types=ARRAY DEFINITION
-Specification of expected data to receive in a network packet. See
+Specification of expected data to receive from remote. See
 .Xr rrr_post(1)
 for the syntax. No listening takes places unless this is specified.
 To receive RRR messages, simply set the definition to

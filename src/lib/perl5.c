@@ -662,6 +662,7 @@ static int __rrr_perl5_hv_to_message_array_store_field (
     PERL_SET_CONTEXT(my_perl);
 
     struct rrr_type_value *new_value = NULL;
+    AV *temporary_av = NULL;
 
     int ret = 0;
 
@@ -681,13 +682,14 @@ static int __rrr_perl5_hv_to_message_array_store_field (
     }
 
     if (SvTYPE(values) != SVt_PVAV) {
-    	char *tmp = SvPV_force_nolen(values);
-    	RRR_MSG_ERR("Control array array_values from perl5 was not of type array, value was %s\n", tmp);
-    	ret = 1;
-    	goto out;
+    	// Some value has probably been pushed directly onto the control array. We assume that we want to
+    	// have only one value set. Create a temporary AV and put the value in it.
+    	temporary_av = newAV();
+    	av_push(temporary_av, values);
+    	SvREFCNT_inc(values);
     }
 
-    if ((ret = type_def->to_value (&new_value, ctx, type_def->definition, (AV *) values)) != 0) {
+    if ((ret = type_def->to_value (&new_value, ctx, type_def->definition, (temporary_av != NULL ? temporary_av : (AV *) values))) != 0) {
     	RRR_MSG_ERR("Could not convert perl5 array item, result was %i\n", ret);
     	ret = 1;
     	goto out;
@@ -703,7 +705,13 @@ static int __rrr_perl5_hv_to_message_array_store_field (
 		}
     }
 
+    RRR_LL_APPEND(target, new_value);
+    new_value = NULL;
+
     out:
+	if (temporary_av != NULL) {
+		SvREFCNT_dec(temporary_av);
+	}
 	if (new_value != NULL) {
 		rrr_type_value_destroy(new_value);
 	}

@@ -109,6 +109,23 @@ void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 	pthread_mutex_unlock(&signal_lock);
 }
 
+// Done in child forks
+void rrr_signal_handler_remove_all(void) {
+	pthread_mutex_lock(&signal_lock);
+
+	struct rrr_signal_handler *test = first_handler;
+
+	while (test) {
+		struct rrr_signal_handler *next = test->next;
+		free(test);
+		test = next;
+	}
+
+	first_handler = NULL;
+
+	pthread_mutex_unlock(&signal_lock);
+}
+
 void rrr_signal (int s) {
     RRR_DBG_1("Received signal %i\n", s);
 

@@ -47,6 +47,7 @@ void rrr_exit_cleanup_methods_run_and_free(void);
 void rrr_signal_handler_set_active (int active);
 struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg);
 void rrr_signal_handler_remove(struct rrr_signal_handler *handler);
+void rrr_signal_handler_remove_all(void);
 void rrr_signal (int s);
 
 

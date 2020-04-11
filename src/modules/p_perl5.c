@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_socket.h"
 #include "../lib/rrr_socket_common.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/common.h"
 #include "../lib/read.h"
 #include "../global.h"
 
@@ -66,8 +67,8 @@ struct perl5_data {
 
 struct perl5_child_data {
 	struct perl5_data *parent_data;
-
 	int child_fd;
+	int received_sigterm;
 	struct rrr_perl5_ctx *ctx;
 };
 
@@ -221,7 +222,7 @@ void data_cleanup(void *arg) {
 				INSTANCE_D_NAME(data->thread_data), data->child_pid);
 		kill(data->child_pid, SIGTERM);
 
-		usleep(50000); // 50 ms
+		usleep(100000); // 100 ms
 
 		RRR_DBG_1("perl5 instance %s SIGKILL to child process %i\n",
 				INSTANCE_D_NAME(data->thread_data), data->child_pid);
@@ -501,7 +502,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			&callback_data
 	};
 
-	while (1) {
+	while (child_data->received_sigterm == 0) {
 		callback_data.count = 0;
 
 		if ((ret = rrr_socket_common_receive_socket_msg (
@@ -516,7 +517,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
 					ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
 			ret = 1;
-			goto out_destroy_collection;
+			break;
 		}
 
 		if (no_spawning == 0) {
@@ -529,14 +530,28 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		}
 	}
 
-	out_destroy_collection:
-		rrr_read_session_collection_clear(&read_sessions);
+	RRR_DBG_1("perl5 instance %s child worker loop complete, received_sigterm is %i ret is %i\n",
+			INSTANCE_D_NAME(child_data->parent_data->thread_data), child_data->received_sigterm, ret);
+
+	rrr_read_session_collection_clear(&read_sessions);
+
 	out_destroy_ctx:
 		rrr_perl5_destroy_ctx(child_data->ctx);
 	out_sys_term:
 		rrr_perl5_sys_term();
 	out_final:
 		return ret;
+}
+
+int worker_fork_signal_handler (int signal, void *private_arg) {
+	struct perl5_child_data *child_data = private_arg;
+
+	if (signal == SIGTERM) {
+		RRR_DBG_1("perl5 child of instance %s received SIGTERM\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		child_data->received_sigterm = 1;
+	}
+
+	return 0;
 }
 
 int start_worker_fork (struct perl5_data *data) {
@@ -603,8 +618,12 @@ int start_worker_fork (struct perl5_data *data) {
 	struct perl5_child_data child_data = {
 			data,
 			child_fd,
+			0,
 			NULL
 	};
+
+	rrr_signal_handler_remove_all();
+	rrr_signal_handler_push(worker_fork_signal_handler, &child_data);
 
 	RRR_DBG_1("perl5 instance %s forked, starting child worker loop\n", INSTANCE_D_NAME(data->thread_data));
 

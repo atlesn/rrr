@@ -802,6 +802,12 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 
 	int has_senders = (poll_collection_count(&poll) + poll_collection_count(&poll_ip) > 0 ? 1 : 0);
 
+	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
+		RRR_MSG_ERR("Error: udp instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
 	if (data->source_port == 0) {
 		if (rrr_ip_network_start_udp_ipv4_nobind(&data->ip) != 0) {
 			RRR_MSG_ERR("Could not initialize network in udp instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -843,7 +849,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 			break;
 		}
 
-		if (data->source_port > 0) {
+		if (data->source_port > 0 && RRR_LL_COUNT(&data->definitions) > 0) {
 			if (read_data(data) != 0) {
 				break;
 			}

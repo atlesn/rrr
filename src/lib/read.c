@@ -478,6 +478,10 @@ int rrr_read_common_get_session_target_length_from_array (
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_data *data = arg;
 
+	if (data->definition == NULL || RRR_LL_COUNT(data->definition) == 0) {
+		RRR_BUG("NULL or empty array definition given to rrr_read_common_get_session_target_length_from_array\n");
+	}
+
 	char *pos = read_session->rx_buf_ptr;
 	ssize_t wpos = read_session->rx_buf_wpos;
 
