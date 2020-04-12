@@ -806,6 +806,9 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	data->write_pos += written_bytes;
 	data->written_bytes_total += written_bytes;
 
+	RRR_DBG_3("array export type %s size %li total size %li\n",
+			node->definition->identifier, written_bytes, data->written_bytes_total);
+
 	if (written_bytes < node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_export_callback, too few bytes written\n");
 	}

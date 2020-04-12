@@ -435,7 +435,7 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	return ret;
 }
 
-int read_data_receive_array_callback (const struct rrr_array *array, void *arg) {
+int read_data_receive_extract_messages_callback (const struct rrr_array *array, void *arg) {
 	struct udp_read_callback_data *callback_data = arg;
 	struct udp_data *data = callback_data->udp_data;
 
@@ -487,7 +487,7 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 			entry->message,
 			entry->data_length,
 			&data->definitions,
-			read_data_receive_array_callback,
+			read_data_receive_extract_messages_callback,
 			&callback_data
 		);
 	}
@@ -788,7 +788,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	// Don't set running here, wait until listening has started
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_ERR("Configuration parsing failed for udp instance %s\n", thread_data->init_data.module->instance_name);
@@ -824,6 +824,8 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 		}
 		RRR_DBG_1("udp instance %s listening on and/or sending from port %d\n", INSTANCE_D_NAME(thread_data), data->source_port);
 	}
+
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip);
 

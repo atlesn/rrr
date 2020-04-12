@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "../global.h"
 
-//#define VL_THREAD_NO_WATCHDOGS
+// #define VL_THREAD_NO_WATCHDOGS
 
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
@@ -344,7 +344,11 @@ void rrr_thread_destroy_collection (struct rrr_thread_collection *collection) {
 	free(collection);
 }
 
-int rrr_thread_start_all_after_initialized (struct rrr_thread_collection *collection) {
+int rrr_thread_start_all_after_initialized (
+		struct rrr_thread_collection *collection,
+		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
+		void *callback_arg
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&collection->threads_mutex);
@@ -391,17 +395,41 @@ int rrr_thread_start_all_after_initialized (struct rrr_thread_collection *collec
 	}
 
 	/* Signal priority 0 and fork threads to proceed */
-	RRR_THREADS_LOOP(thread,collection) {
-		if (	thread->is_watchdog != 1 && (
-					thread->start_priority == RRR_THREAD_START_PRIORITY_NORMAL ||
-					thread->start_priority == RRR_THREAD_START_PRIORITY_FORK
-				) &&
-				rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED
-		) {
-				RRR_DBG_1 ("Start signal to thread %p name %s with priority NORMAL or FORK\n", thread, thread->name);
-				rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_START);
+	int must_retry = 0;
+	do {
+		if (must_retry == 1) {
+			usleep(5000); // 5 ms
+		}
+		must_retry = 0;
+
+		RRR_THREADS_LOOP(thread,collection) {
+			if (	thread->is_watchdog != 1 && (
+						thread->start_priority == RRR_THREAD_START_PRIORITY_NORMAL ||
+						thread->start_priority == RRR_THREAD_START_PRIORITY_FORK
+					) &&
+					rrr_thread_get_state(thread) == RRR_THREAD_STATE_INITIALIZED
+			) {
+				if (thread->wait_for_complete == 0) {
+					int do_start = 1;
+					if (start_check_callback != NULL && start_check_callback(&do_start, thread, callback_arg) != 0) {
+						RRR_MSG_ERR("Error from start check callback in rrr_thread_start_all_after_initialized\n");
+						ret = 1;
+						goto out_unlock;
+					}
+
+					if (do_start == 1) {
+						RRR_DBG_1 ("Start signal to thread %p name %s with priority NORMAL or FORK\n", thread, thread->name);
+						rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_START);
+						thread->wait_for_complete = 1;
+					}
+					else {
+						must_retry = 1;
+					}
+				}
+			}
 		}
 	}
+	while (must_retry == 1);
 
 	RRR_DBG_1 ("Wait for %i fork threads to set RUNNNIG_FORKED\n", fork_priority_threads_count);
 
@@ -430,14 +458,37 @@ int rrr_thread_start_all_after_initialized (struct rrr_thread_collection *collec
 	}
 
 	/* Finally, start network priority threads */
-	RRR_THREADS_LOOP(thread,collection) {
-		if (	thread->is_watchdog != 1 &&
-				thread->start_priority == RRR_THREAD_START_PRIORITY_NETWORK
-		) {
-			rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_START);
-			RRR_DBG_1 ("Start signal to thread %p name %s with priority NETWORK\n", thread, thread->name);
+	must_retry = 0;
+	do {
+		if (must_retry == 1) {
+			usleep(5000); // 5 ms
 		}
-	}
+		must_retry = 0;
+
+		RRR_THREADS_LOOP(thread,collection) {
+			if (	thread->is_watchdog != 1 &&
+					thread->start_priority == RRR_THREAD_START_PRIORITY_NETWORK
+			) {
+				if (thread->wait_for_complete == 0) {
+					int do_start = 1;
+					if (start_check_callback != NULL && start_check_callback(&do_start, thread, callback_arg) != 0) {
+						RRR_MSG_ERR("Error from start check callback in rrr_thread_start_all_after_initialized\n");
+						ret = 1;
+						goto out_unlock;
+					}
+
+					if (do_start == 1) {
+						RRR_DBG_1 ("Start signal to thread %p name %s with priority NETWORK\n", thread, thread->name);
+						rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_START);
+						thread->wait_for_complete = 1;
+					}
+					else {
+						must_retry = 1;
+					}
+				}
+			}
+		}
+	} while (must_retry == 1);
 
 	/* Double check that everything was started */
 	RRR_THREADS_LOOP(thread,collection) {

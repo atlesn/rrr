@@ -175,14 +175,14 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 		}
 
 		unsigned int j = 0;
-		RRR_SENDER_LOOP(sender, &instance->senders) {
+		RRR_LL_ITERATE_BEGIN(&instance->senders, struct rrr_instance_collection_entry);
 			sprintf(path, "instance_metadata/%u/senders/%u", i, j);
-			if (main_stats_post_sticky_text_message(stats_data, path, sender->sender->dynamic_data->instance_name) != 0) {
+			if (main_stats_post_sticky_text_message(stats_data, path, node->instance->dynamic_data->instance_name) != 0) {
 				ret = EXIT_FAILURE;
 				goto out;
 			}
 			j++;
-		}
+		RRR_LL_ITERATE_END();
 
 		i++;
 	}

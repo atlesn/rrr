@@ -121,6 +121,7 @@ struct rrr_thread {
 	pthread_mutex_t mutex;
 	int signal;
 	int state;
+	int wait_for_complete;
 	int is_watchdog;
 	int start_priority;
 	char name[RRR_THREAD_NAME_MAX_LENGTH];
@@ -157,7 +158,11 @@ int rrr_thread_run_ghost_cleanup(int *count);
 void rrr_thread_set_state(struct rrr_thread *thread, int state);
 int rrr_thread_new_collection (struct rrr_thread_collection **target);
 void rrr_thread_destroy_collection (struct rrr_thread_collection *collection);
-int rrr_thread_start_all_after_initialized (struct rrr_thread_collection *collection);
+int rrr_thread_start_all_after_initialized (
+		struct rrr_thread_collection *collection,
+		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
+		void *callback_arg
+);
 void rrr_threads_stop_and_join (
 		struct rrr_thread_collection *collection,
 		void (*upstream_ghost_handler)(struct rrr_thread *thread)

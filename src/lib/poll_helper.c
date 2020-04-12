@@ -168,7 +168,7 @@ int __poll_collection_add_from_senders_callback (struct instance_metadata *insta
 int poll_collection_add_from_senders (
 		struct poll_collection *poll_collection,
 		struct instance_metadata **faulty_instance,
-		struct instance_sender_collection *senders,
+		struct rrr_instance_collection *senders,
 		unsigned int flags
 ) {
 	*faulty_instance = NULL;
@@ -178,7 +178,7 @@ int poll_collection_add_from_senders (
 	callback_data.flags = flags;
 	callback_data.faulty_instance = NULL;
 
-	int ret = senders_iterate(senders, &__poll_collection_add_from_senders_callback, &callback_data);
+	int ret = rrr_instance_collection_iterate(senders, &__poll_collection_add_from_senders_callback, &callback_data);
 
 	if (ret != 0) {
 		*faulty_instance = callback_data.faulty_instance;

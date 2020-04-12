@@ -664,6 +664,27 @@ static int __rrr_type_blob_export (RRR_TYPE_EXPORT_ARGS) {
 	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
 }
 
+static int __rrr_type_msg_export (RRR_TYPE_EXPORT_ARGS) {
+	memcpy(target, node->data, node->total_stored_length);
+	struct rrr_message *msg = (struct rrr_message *) target;
+
+	if (msg->msg_size != node->total_stored_length) {
+		RRR_MSG_ERR("Invalid size of message in __rrr_type_msg_export\n");
+		return 1;
+	}
+	if (msg->msg_size < sizeof(struct rrr_message) - 1) {
+		RRR_MSG_ERR("Message too short in __rrr_type_msg_export\n");
+		return 1;
+	}
+
+	rrr_message_prepare_for_network(msg);
+	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) msg);
+
+	*written_bytes = node->total_stored_length;
+
+	return 0;
+}
+
 static void __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
 	ssize_t escape_count = 0;
 	const char *end = node->data + node->total_stored_length;
@@ -1074,7 +1095,7 @@ RRR_TYPE_DEFINE(blob, RRR_TYPE_BLOB,	RRR_TYPE_MAX_BLOB,	__get_import_length_defa
 RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_USTR);
 RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR,	RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_ISTR);
 RRR_TYPE_DEFINE(sep, RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_SEP);
-RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	NULL,								__rrr_type_blob_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_MSG);
+RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	NULL,								__rrr_type_msg_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_MSG);
 RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_FIXP);
 RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_STR);
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_NSEP);

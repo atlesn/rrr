@@ -613,7 +613,7 @@ static int threads_start(struct python3_data *data) {
 		exit(EXIT_FAILURE);
 	}
 
-	if (rrr_thread_start_all_after_initialized(data->thread_collection) != 0) {
+	if (rrr_thread_start_all_after_initialized(data->thread_collection, NULL, NULL) != 0) {
 		RRR_MSG_ERR("Error while waiting for threads to initialize in python3 instance %s, can't continue.\n",
 				INSTANCE_D_NAME(data->thread_data));
 		return (EXIT_FAILURE);

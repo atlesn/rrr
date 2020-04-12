@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_HELPER_H
 
 #include "../global.h"
-#include "senders.h"
+#include "instance_collection.h"
 #include "modules.h"
 #include "linked_list.h"
 
@@ -69,7 +69,7 @@ int poll_collection_add (
 int poll_collection_add_from_senders (
 		struct poll_collection *poll_collection,
 		struct instance_metadata **faulty_instance,
-		struct instance_sender_collection *senders,
+		struct rrr_instance_collection *senders,
 		unsigned int flags
 );
 

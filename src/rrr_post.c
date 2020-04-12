@@ -450,6 +450,11 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				data
 		);
 
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			RRR_MSG_ERR("Warning: Invalid or unexpected data received\n");
+			ret = 0;
+		}
+
 		if (rrr_post_print_stats != 0) {
 			__rrr_post_print_statistics(data);
 			rrr_post_print_stats = 0;
