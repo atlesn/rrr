@@ -8,12 +8,18 @@ use rrr::rrr_helper::rrr_settings;
 
 my $global_settings = undef;
 
+my $prev_addr_len = 0;
+my $prev_addr = "";
+
 sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
 	print "perl5 process: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
 	print "perl 5 process address length: " . $message->{'originating_addr_len'} . "\n";
+
+	$prev_addr_len = $message->{'originating_addr_len'};
+	$prev_addr = $message->{'originating_addr'};
 
 #	print "control array array_values: " . $message->{'array_values'} . "\n";
 #	print "control array array_values: " . $message->{'array_tags'} . "\n";
@@ -37,10 +43,7 @@ sub process {
 	push @{$message->{'array_tags'}}, "test_tag_blob";
 	push @{$message->{'array_types'}}, "blob";
 
-	# This can be used to duplicate a message, no need if we are not duplicating
 	$message->send();
-	#$message->send();
-	#$message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;
@@ -64,6 +67,9 @@ sub source {
 	push @{$message->{'array_values'}}, "A";
 	push @{$message->{'array_tags'}}, "test_tag_blob";
 	push @{$message->{'array_types'}}, "blob";
+
+	$message->{'originating_addr_len'} = $prev_addr_len;
+	$message->{'originating_addr'} = $prev_addr;
 
 	$message->send();
 

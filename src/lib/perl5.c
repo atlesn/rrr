@@ -1228,6 +1228,10 @@ int rrr_perl5_message_send (HV *hv) {
 		goto out;
 	}
 
+	if (addr_msg.addr_len > 0) {
+		ctx->send_message_addr(&addr_msg, ctx->private_data);
+	}
+
 	// Takes ownership of memory
 	ctx->send_message(message_new, ctx->private_data);
 

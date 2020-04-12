@@ -512,13 +512,14 @@ int poll_callback_ip(struct rrr_fifo_callback_args *caller_data, char *data, uns
 
 	int ret = 0;
 
-	RRR_DBG_3 ("perl5 instance %s Result from buffer ip: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
+	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: measurement %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), entry->addr_len, message->data_numeric, size);
 
 	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
 
 	rrr_message_addr_init(&addr_msg);
 	memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
+	addr_msg.addr_len = entry->addr_len;
 
 	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) &addr_msg, perl5_data->child_fd) != 0) {
 		RRR_MSG_ERR("Could not send address message to child in poll_callback_ip of perl5 instance %s\n",
@@ -586,6 +587,8 @@ int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
 
 	int ret = RRR_SOCKET_OK;
 
+//	printf ("worker_socket_read_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
+
 	if ((ret = process_message(data, message, &data->latest_message_addr)) != 0) {
 		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
@@ -601,6 +604,9 @@ int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
 int worker_socket_read_callback_addr_msg (struct rrr_message_addr *message, void *arg) {
 	struct child_read_callback_data *callback_data = arg;
 	struct perl5_child_data *data = callback_data->data;
+
+
+//	printf ("worker_socket_read_callback_addr_msg addr len: %" PRIu64 "\n", message->addr_len);
 
 	int ret = RRR_SOCKET_OK;
 	data->latest_message_addr = *message;
@@ -817,6 +823,8 @@ int read_from_child_callback_msg (struct rrr_message *message, void *arg) {
 
 	struct rrr_ip_buffer_entry *entry = NULL;
 
+//	printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
+
 	// TODO : Look into warning "taking address of packed member of blabla latest_message_addr.addr"
 	if (rrr_ip_buffer_entry_new (
 			&entry,
@@ -846,6 +854,8 @@ int read_from_child_callback_msg (struct rrr_message *message, void *arg) {
 int read_from_child_callback_msg_addr (struct rrr_message_addr *message, void *arg) {
 	struct read_callback_data *callback_data = arg;
 	struct perl5_data *data = callback_data->data;
+
+//	printf ("read_from_child_callback_msg_addr addr len: %" PRIu64 "\n", message->addr_len);
 
 	memcpy(&data->latest_message_addr, message, sizeof(*message));
 

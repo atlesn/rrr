@@ -403,7 +403,7 @@ def source(socket : rrr_socket):
 More details about Python in 
 .Xr rrr_python3(5)
 .PP
-.SS perl5 (P)
+.SS perl5 (PAI)
 The perl5 module makes it possible to process and generate messages in a custom 
 perl script. The first and only argument to the source- and generate-functions
 is the RRR message in the form of a hash with different parameters which may be
@@ -475,6 +475,22 @@ Any modified settings will currently not be visible in the perl5 RRR module, onl
 .PP
 There must always be either a source- or process subroutine specified, or both. If a process subroutine
 is specified, there must also be at least one sender specified.
+.PP
+If a Perl instance receives messages from an IP-capable module, like
+.B udp,
+the address information of the original sender of a message is retained. Other IP-capable modules may
+then use this information if they read data from the Perl instance, for example if you wish to use
+a Perl script to generate a reply message to some remote host. There is no high-level method for modifying
+the address information inside the Perl script, but the values
+.B originating_addr
+and
+.B originating_addr_len
+is to be found in the message hash. The values are filled with data from a
+.B struct sockaddr
+and
+.B socklen_t
+which is provided by the operating system. These two values may be saved and re-used in later messages,
+or they may be modified if you know how to do that (not documented here).
 .PP
 Below follows an example perl script.
 .PP

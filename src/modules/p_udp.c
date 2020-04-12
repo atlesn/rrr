@@ -286,7 +286,7 @@ int parse_config (struct udp_data *data, struct rrr_instance_config *config) {
 	}
 
 	if (data->definitions.node_count > 0 && data->source_port == 0) {
-		RRR_MSG_ERR("udp_input_types was set but udp_target_host and udp_target_port was not, this is an invalid configuraton in udp instance %s\n", config->name);
+		RRR_MSG_ERR("udp_input_types was set but udp_port was not, this is an invalid configuraton in udp instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -872,6 +872,10 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	out_message:
 
 	RRR_DBG_1 ("udp instance %s stopping\n", thread_data->init_data.instance_config->name);
+	// Set running in case we failed before getting around to do that
+	if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING)) {
+		rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	}
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
