@@ -485,7 +485,7 @@ the address information inside the Perl script, but the values
 .B originating_addr
 and
 .B originating_addr_len
-is to be found in the message hash. The values are filled with data from a
+are to be found in the message hash. The values are filled with data from
 .B struct sockaddr
 and
 .B socklen_t
@@ -574,7 +574,7 @@ can read from both IP modules and non-IP.
 
 .Bl -tag -width -indent
 .It raw_print_data={yes|no}
-Print the timestamp of each received message.
+Print the timestamp of each received message and dump any arrays present in the messages.
 .El
 .SS socket (SA)
 The socket module listens on a UNIX socket for RRR messages or custom data records.
