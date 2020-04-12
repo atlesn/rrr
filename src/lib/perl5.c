@@ -383,9 +383,23 @@ int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, co
 	    	goto out_error;																			\
 		}} while (0)
 
-struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
+// TODO : Consider removing this struct, it only has one field
+struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv_with_hv (struct rrr_perl5_ctx *ctx, HV *hv) {
+    struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
+    if (message_hv == NULL) {
+    	RRR_MSG_ERR("Could not allocate memory in rrr_perl5_message_allocate_hv\n");
+    	return NULL;
+    }
+    memset(message_hv, '\0', sizeof(*message_hv));
+    message_hv->hv = hv;
+    return message_hv;
+}
+
+struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
+
+    HV *hv = NULL;
 
     struct rrr_perl5_message_hv *message_hv = malloc(sizeof(*message_hv));
     if (message_hv == NULL) {
@@ -393,15 +407,7 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
     	goto out;
     }
 
-    int use_old_data;
-    if (hv != NULL) {
-    	use_old_data = 1;
-    }
-    else {
-    	hv = newHV();
-    	use_old_data = 0;
-    }
-
+    hv = newHV();
 	message_hv->hv = hv;
 
     SV **tmp;
@@ -413,29 +419,23 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
     DEFINE_SCALAR_FIELD(data_numeric);
     DEFINE_SCALAR_FIELD(data_length);
 
-    if (use_old_data) {
-        DEFINE_SCALAR_FIELD(data);
-        DEFINE_SCALAR_FIELD(topic);
-    }
-    else {
-    	SV *data = newSV(0);
-        SvUTF8_off(data);
-    	sv_setpvn(data, "0", 1);
-        tmp = hv_store(message_hv->hv, "data", strlen("data"), data, 0);
-        if (tmp == NULL || *tmp != data) {
-        	RRR_MSG_ERR("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
-        	goto out_error;
-        }
+	SV *data = newSV(0);
+	SvUTF8_off(data);
+	sv_setpvn(data, "0", 1);
+	tmp = hv_store(message_hv->hv, "data", strlen("data"), data, 0);
+	if (tmp == NULL || *tmp != data) {
+		RRR_MSG_ERR("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
+		goto out_error;
+	}
 
-    	SV *topic = newSV(0);
-        SvUTF8_on(topic);
-    	sv_setpvn(topic, "0", 1);
-        tmp = hv_store(message_hv->hv, "topic", strlen("topic"), topic, 0);
-        if (tmp == NULL || *tmp != topic) {
-        	RRR_MSG_ERR("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
-        	goto out_error;
-        }
-    }
+	SV *topic = newSV(0);
+	SvUTF8_on(topic);
+	sv_setpvn(topic, "0", 1);
+	tmp = hv_store(message_hv->hv, "topic", strlen("topic"), topic, 0);
+	if (tmp == NULL || *tmp != topic) {
+		RRR_MSG_ERR("Could not allocate field 'data' in hv in __rrr_perl5_allocate_message_hv\n");
+		goto out_error;
+	}
 
     // Don't define the array types here
 
@@ -448,7 +448,7 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 }
 
 struct rrr_perl5_message_hv *rrr_perl5_allocate_message_hv (struct rrr_perl5_ctx *ctx) {
-	return __rrr_perl5_allocate_message_hv(ctx, NULL);
+	return __rrr_perl5_allocate_message_hv(ctx);
 }
 
 void rrr_perl5_destruct_settings_hv (
@@ -1171,25 +1171,31 @@ int rrr_perl5_message_to_new_hv (
 int rrr_perl5_message_send (HV *hv) {
 	PerlInterpreter *my_perl = PERL_GET_CONTEXT;
 	struct rrr_perl5_ctx *ctx = __rrr_perl5_find_ctx (my_perl);
+	struct rrr_perl5_message_hv *message_new_hv = NULL;
+
+	int ret = TRUE;
 
 	SvREFCNT_inc(hv);
-
-	struct rrr_perl5_message_hv *message_new_hv = __rrr_perl5_allocate_message_hv (ctx, hv);
+	message_new_hv = __rrr_perl5_allocate_message_hv_with_hv (ctx, hv);
 	if (message_new_hv == NULL) {
 		RRR_MSG_ERR("Could not allocate message hv in rrr_perl5_message_send\n");
-		return FALSE;
+		ret = FALSE;
+		goto out;
 	}
 
 	struct rrr_message *message_new = rrr_message_new_reading(0, 0);
 	if (rrr_perl5_hv_to_message(&message_new, ctx, message_new_hv) != 0) {
-		return FALSE;
+		ret = FALSE;
+		goto out;
 	}
 
 	// Takes ownership of memory
 	ctx->send_message(message_new, ctx->private_data);
 
-	rrr_perl5_destruct_message_hv(ctx, message_new_hv);
-
+	out:
+	if (message_new_hv != NULL) {
+		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
+	}
 	return TRUE;
 }
 

@@ -40,19 +40,9 @@ struct rrr_perl5_ctx {
 	int (*set_setting)(const char *key, const char *value, void *private_data);
 };
 
+// TODO : Consider removing this struct, it only has one field
 struct rrr_perl5_message_hv {
 	HV *hv;
-/*    SV *type;
-    SV *class;
-    SV *timestamp_from;
-    SV *timestamp_to;
-    SV *data_numeric;
-    SV *topic;
-    SV *data_length;
-    SV *data;
-    AV *array_values;
-    AV *array_tags;
-    AV *array_types;*/
 };
 
 struct rrr_perl5_settings_hv {

@@ -33,9 +33,16 @@ sub process {
 	push @{$message->{'array_types'}}, "h";
 
 	# This can be used to duplicate a message, no need if we are not duplicating
-	# $message->send();
+	$message->send();
+	#$message->send();
+	#$message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;
 }
 
+sub source {
+	my $message = shift;
+	$message->send();
+	return 1;
+}
