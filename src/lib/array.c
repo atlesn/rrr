@@ -521,6 +521,25 @@ static ssize_t __rrr_array_get_packed_length (
 	return result;
 }
 
+static ssize_t __rrr_array_get_exported_length (
+		const struct rrr_array *definition
+) {
+	ssize_t result = 0;
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+		ssize_t exported_length = 0;
+
+		if (node->definition->get_export_length != NULL) {
+			node->definition->get_export_length(&exported_length, node);
+		}
+		else {
+			exported_length = node->total_stored_length;
+		}
+
+		result += exported_length;
+	RRR_LL_ITERATE_END();
+	return result;
+}
+
 static int __rrr_array_parse_from_buffer (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
@@ -674,109 +693,167 @@ int rrr_array_new_message_from_buffer_with_callback (
 	return callback(message, callback_arg);
 }
 
-static int __rrr_array_collection_to_raw (
-		char *target,
+static int __rrr_array_collection_iterate_chosen_tags (
 		int *found_tags,
-		ssize_t *written_bytes_final,
-		ssize_t target_size,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags,
-		int data_only
+		int (*callback)(const struct rrr_type_value *node, void *arg),
+		void *callback_arg
 ) {
-	ssize_t written_bytes_total = 0;
-
 	int ret = 0;
 
-	char *max = target + target_size;
-	char *pos = target;
-
 	*found_tags = 0;
-	*written_bytes_final = 0;
 
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		if (node->data == NULL) {
-			RRR_BUG("Data not set for node in rrr_array_new_message\n");
-		}
-		if (pos > max) {
-			RRR_BUG("pos was > max in __rrr_array_collection_to_raw\n");
-		}
+		int found = 0;
 
 		if (tags == NULL) {
-			(*found_tags)++;
+			found = 1;
 		}
 		else {
-			int found = 0;
 			if (node->tag != NULL) {
 				const char *tag = node->tag;
 				RRR_MAP_ITERATE_BEGIN_CONST(tags);
 //					printf ("Match tag %s vs %s\n", tag, (char *) node->value_primary_);
 					if (strcmp (tag, node_tag) == 0) {
 						found = 1;
-						(*found_tags)++;
 						RRR_LL_ITERATE_LAST();
 					}
 				RRR_MAP_ITERATE_END();
 			}
-			if (found == 0) {
-				RRR_LL_ITERATE_NEXT();
+		}
+
+		if (found == 1) {
+			(*found_tags)++;
+			if ((ret = callback(node, callback_arg)) != 0) {
+				RRR_MSG_ERR("Error from callback in __rrr_array_collection_iterate_chosen_tags\n");
+				ret = 1;
+				goto out;
 			}
 		}
-
-		uint8_t type = node->definition->type;
-
-		if (node->definition->pack == NULL) {
-			RRR_BUG("No pack function defined for type %u\n", type);
-		}
-
-		struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) pos;
-
-		if (data_only == 0) {
-			head->type = type;
-			head->flags = node->flags;
-			head->tag_length = htobe32(node->tag_length);
-			head->elements = htobe32(node->element_count);
-			head->total_length = htobe32(node->total_stored_length);
-
-			pos += sizeof(*head) - 1;
-			written_bytes_total += sizeof(*head) - 1;
-
-			if (node->tag_length > 0) {
-				memcpy(pos, node->tag, node->tag_length);
-				pos += node->tag_length;
-				written_bytes_total += node->tag_length;
-			}
-		}
-
-		uint8_t new_type = 0;
-		ssize_t written_bytes = 0;
-
-		if (node->definition->pack(pos, &written_bytes, &new_type, node) != 0) {
-			RRR_MSG_ERR("Error while packing data of type %u in rrr_array_new_message\n", node->definition->type);
-			ret = RRR_ARRAY_PARSE_SOFT_ERR;
-			goto out;
-		}
-
-		if (data_only == 0) {
-			if (new_type != head->type) {
-				head->type = new_type;
-			}
-		}
-
-		if (written_bytes != node->total_stored_length) {
-			RRR_BUG("Size mismatch in rrr_array_new_message\n");
-		}
-
-		pos += written_bytes;
-		written_bytes_total += written_bytes;
 	RRR_LL_ITERATE_END();
-
-	*written_bytes_final = written_bytes_total;
 
 	out:
 	return ret;
 }
 
-int rrr_array_selected_tags_to_raw (
+struct pack_callback_data {
+	ssize_t written_bytes_total;
+	char *write_pos;
+};
+
+static int __rrr_array_collection_pack_callback (const struct rrr_type_value *node, void *arg) {
+	int ret = 0;
+
+	struct pack_callback_data *data = arg;
+
+	uint8_t type = node->definition->type;
+
+	if (node->definition->pack == NULL) {
+		RRR_BUG("No pack function defined for type %u in __rrr_array_collection_pack_callback\n", type);
+	}
+
+	struct rrr_array_value_packed *head = (struct rrr_array_value_packed *) data->write_pos;
+
+	data->write_pos += sizeof(*head) - 1;
+	data->written_bytes_total += sizeof(*head) - 1;
+
+	if (node->tag_length > 0) {
+		memcpy(data->write_pos, node->tag, node->tag_length);
+		data->write_pos += node->tag_length;
+		data->written_bytes_total += node->tag_length;
+	}
+
+	uint8_t new_type = 0;
+	ssize_t written_bytes = 0;
+	if (node->definition->pack(data->write_pos, &written_bytes, &new_type, node) != 0) {
+		RRR_MSG_ERR("Error while packing data of type %u in __rrr_array_collection_pack_callback\n", node->definition->type);
+		ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		goto out;
+	}
+	data->write_pos += written_bytes;
+	data->written_bytes_total += written_bytes;
+
+	head->type = new_type;
+	head->flags = node->flags;
+	head->tag_length = htobe32(node->tag_length);
+	head->elements = htobe32(node->element_count);
+	head->total_length = htobe32(written_bytes);
+
+	if (written_bytes < node->total_stored_length) {
+		RRR_BUG("Size mismatch in __rrr_array_collection_pack_callback, too few bytes written\n");
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_array_collection_export_callback (const struct rrr_type_value *node, void *arg) {
+	int ret = 0;
+
+	struct pack_callback_data *data = arg;
+
+	if (node->definition->export == NULL) {
+		RRR_BUG("No export function defined for type %u in __rrr_array_collection_export_callback\n", node->definition->type);
+	}
+
+	ssize_t written_bytes = 0;
+	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
+		RRR_MSG_ERR("Error while exporting data of type %u in __rrr_array_collection_export_callback\n", node->definition->type);
+		ret = RRR_ARRAY_PARSE_SOFT_ERR;
+		goto out;
+	}
+	data->write_pos += written_bytes;
+	data->written_bytes_total += written_bytes;
+
+	if (written_bytes < node->total_stored_length) {
+		RRR_BUG("Size mismatch in __rrr_array_collection_export_callback, too few bytes written\n");
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_array_collection_pack_or_export (
+		char *target,
+		int *found_tags,
+		ssize_t *written_bytes_final,
+		ssize_t target_size,
+		const struct rrr_array *definition,
+		const struct rrr_map *tags,
+		int (*method)(const struct rrr_type_value *node, void *arg)
+) {
+	int ret = 0;
+
+	*found_tags = 0;
+	*written_bytes_final = 0;
+
+	struct pack_callback_data callback_data = {0};
+
+	callback_data.write_pos = target;
+
+	if ((ret = __rrr_array_collection_iterate_chosen_tags (
+			found_tags,
+			definition,
+			tags,
+			method,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_ERR("Error %i from iterator in __rrr_array_collection_pack_or_export\n", ret);
+		goto out;
+	}
+
+	*written_bytes_final = callback_data.written_bytes_total;
+
+	if (callback_data.write_pos > target + target_size) {
+		RRR_BUG("Buffer write outside bounds in __rrr_array_collection_pack_or_export\n");
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
 		int *found_tags,
@@ -786,7 +863,7 @@ int rrr_array_selected_tags_to_raw (
 	int ret = 0;
 
 	// We over-allocate here if not all tags are used
-	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+	rrr_type_length total_data_length = __rrr_array_get_exported_length(definition);
 
 	*target = NULL;
 	*target_size = 0;
@@ -798,16 +875,17 @@ int rrr_array_selected_tags_to_raw (
 		goto out;
 	}
 
-	if ((ret = __rrr_array_collection_to_raw (
+	ssize_t written_bytes_total = 0;
+	if ((ret = __rrr_array_collection_pack_or_export (
 			result,
 			found_tags,
-			target_size,
+			&written_bytes_total,
 			total_data_length,
 			definition,
 			tags,
-			1
+			__rrr_array_collection_export_callback
 	)) != 0) {
-		RRR_MSG_ERR("Error while converting array in rrr_array_selected_tags_to_raw return was %i\n", ret);
+		RRR_MSG_ERR("Error while converting array in rrr_array_selected_tags_export return was %i\n", ret);
 		goto out;
 	}
 
@@ -849,14 +927,14 @@ int rrr_array_new_message_from_collection (
 	ssize_t written_bytes_total = 0;
 	int found_tags = 0;
 
-	if ((ret = __rrr_array_collection_to_raw (
+	if ((ret = __rrr_array_collection_pack_or_export (
 			MSG_DATA_PTR(message),
 			&found_tags,
 			&written_bytes_total,
 			MSG_DATA_LENGTH(message),
 			definition,
-			NULL,
-			0
+			NULL, // Process all elements
+			__rrr_array_collection_pack_callback
 	)) != 0) {
 		RRR_MSG_ERR("Error while converting array in rrr_array_new_message_from_collection return was %i\n", ret);
 		goto out;
@@ -991,4 +1069,51 @@ int rrr_array_message_to_collection (
 	out_free_data:
 		rrr_array_clear(target);
 		return 1;
+}
+
+int rrr_array_dump (
+		const struct rrr_array *definition
+) {
+	int ret = 0;
+	char *tmp = NULL;
+
+	printf ("== ARRAY DUMP ========================================================\n");
+
+	int i = 0;
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
+
+		printf("%i - %s - ", i, node->definition->identifier);
+
+		if (node->tag != NULL && *(node->tag) != '\0') {
+			printf ("%s", node->tag);
+		}
+		else {
+			printf ("-");
+		}
+
+		printf (" - (%i/%i = %i) - ", node->total_stored_length, node->element_count, node->total_stored_length / node->element_count);
+
+		if (node->definition->to_str != NULL) {
+			RRR_FREE_IF_NOT_NULL(tmp);
+			if (node->definition->to_str(&tmp, node) != 0) {
+				RRR_MSG_ERR("Error when stringifying value in rrr_array_dump\n");
+				ret = 1;
+				goto out;
+			}
+			printf ("%s", tmp);
+		}
+		else {
+			printf ("-");
+		}
+
+		printf ("\n");
+		i++;
+	RRR_LL_ITERATE_END();
+
+
+	printf ("== ARRAY DUMP END ====================================================\n");
+
+	out:
+	RRR_FREE_IF_NOT_NULL(tmp);
+	return ret;
 }

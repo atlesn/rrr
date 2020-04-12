@@ -192,7 +192,7 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	// If one or more values were signed, we save all values as signed
 	int some_values_were_signed = 0;
 
-	for (int i = 0; i >= av_len(values); i++) {
+	for (int i = 0; i <= av_len(values); i++) {
 		SV **tmp = av_fetch(values, i, 1);
 		if (tmp == NULL || *tmp == NULL) {
 			RRR_MSG_ERR("Could not fetch from AV in __rrr_perl5_type_to_value_h\n");
@@ -321,11 +321,6 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 	}
 
 	memcpy(result->data, value, str_len);
-
-	if (do_binary == 0) {
-		result->data[str_len] = '\0';
-		str_len++;
-	}
 
 	result->data_size = str_len;
 
@@ -474,6 +469,71 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	return ret;
 }
 
+static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
+	PerlInterpreter *my_perl = ctx->interpreter;
+    PERL_SET_CONTEXT(my_perl);
+
+    struct rrr_type_value *result = NULL;
+
+	int ret = 0;
+
+	*target = NULL;
+
+	struct type_to_value_blob_intermediate_result_collection intermediate_values = {0};
+
+	ssize_t total_length = 0;
+	if ((ret = __rrr_perl5_type_to_value_blob_populate_intermediate_list (
+			&intermediate_values,
+			&total_length,
+			ctx,
+			values,
+			0,			// Lengths may be different
+			0			// Non-binary
+	)) != 0) {
+		goto out;
+	}
+
+	if (RRR_LL_COUNT(&intermediate_values) > 1) {
+		RRR_MSG_ERR("Array items of type str cannot have more than one value, %i was found\n", RRR_LL_COUNT(&intermediate_values));
+		ret = 1;
+		goto out;
+	}
+
+	ssize_t data_size = RRR_LL_FIRST(&intermediate_values)->data_size;
+	const char *data = RRR_LL_FIRST(&intermediate_values)->data;
+
+	if (rrr_type_value_new (
+			&result,
+			&rrr_type_definition_str,
+			0,
+			0,
+			NULL,
+			0,
+			1,
+			data_size
+	) != 0) {
+		RRR_MSG_ERR("Could not create new value in __rrr_perl5_type_to_value_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(result->data, data, data_size);
+
+	*target = result;
+	result = NULL;
+
+	out:
+	if (result != NULL) {
+		rrr_type_value_destroy(result);
+	}
+	RRR_LL_DESTROY (
+			&intermediate_values,
+			struct type_to_value_blob_intermediate_result,
+			__rrr_perl5_type_to_value_blob_intermediate_result_destroy(node)
+	);
+	return ret;
+}
+
 static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -580,7 +640,7 @@ static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
 	DEFINE_PERL5_TYPE(SEP,	sep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
 	DEFINE_PERL5_TYPE(MSG,	msg,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
 	DEFINE_PERL5_TYPE(FIXP,	fixp,	__rrr_perl5_type_to_sv_h,		__rrr_perl5_type_to_value_h),
-	DEFINE_PERL5_TYPE(STR,	str,	__rrr_perl5_type_to_sv_str,		__rrr_perl5_type_to_value_blob),
+	DEFINE_PERL5_TYPE(STR,	str,	__rrr_perl5_type_to_sv_str,		__rrr_perl5_type_to_value_str),
 	DEFINE_PERL5_TYPE(NSEP,	nsep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
 	{ 0, NULL, NULL, NULL }
 };

@@ -692,10 +692,11 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 				goto out;
 			}
 
+			RRR_FREE_IF_NOT_NULL(tmp_data);
 			ssize_t target_size = 0;
 			int found_tags = 0;
 			struct rrr_map *tag_map = (tag_count > 0 ? &udp_data->array_send_tags : NULL);
-			if (rrr_array_selected_tags_to_raw (
+			if (rrr_array_selected_tags_export (
 					&tmp_data,
 					&target_size,
 					&found_tags,

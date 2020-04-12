@@ -753,7 +753,7 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 			}
 
 			int found_tags = 0;
-			if ((ret = rrr_array_selected_tags_to_raw (
+			if ((ret = rrr_array_selected_tags_export (
 					&payload,
 					&payload_size,
 					&found_tags,

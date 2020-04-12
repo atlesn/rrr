@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/stats_instance.h"
+#include "../lib/array.h"
 #include "../global.h"
 
 struct raw_data {
@@ -45,6 +46,9 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 	struct rrr_instance_thread_data *thread_data = poll_data->private_data;
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_message *reading = NULL;
+	struct rrr_array array_tmp = {0};
+
+	int ret = 0;
 
 	if (poll_data->flags & RRR_POLL_POLL_DELETE_IP) {
 		struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
@@ -70,12 +74,29 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 
 		RRR_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
 				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);
+
+		if (MSG_IS_ARRAY(reading)) {
+			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
+				RRR_MSG_ERR("Could not get array from message in poll_callback of raw instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out;
+			}
+			if (rrr_array_dump(&array_tmp) != 0) {
+				RRR_MSG_ERR("Error while dumping array in poll_callback of raw instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out;
+			}
+		}
 	}
 
 	raw_data->message_count++;
 
+	out:
+	rrr_array_clear(&array_tmp);
 	free(reading);
-	return 0;
+	return ret;
 }
 
 void data_init(struct raw_data *data) {

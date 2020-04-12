@@ -163,6 +163,7 @@ int rrr_read_message_using_callbacks (
 ) {
 	int ret = RRR_READ_OK;
 
+	ssize_t bytes = 0;
 	char buf[read_step_max_size];
 	struct rrr_read_session *read_session = NULL;
 
@@ -182,8 +183,6 @@ int rrr_read_message_using_callbacks (
 		}
 		goto out;
 	}
-
-	ssize_t bytes;
 
 	/* Read */
 	ret = function_read (buf, &bytes, read_step_max_size, functions_callback_arg);

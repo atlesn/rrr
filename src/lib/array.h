@@ -133,7 +133,7 @@ int rrr_array_new_message_from_buffer_with_callback (
 		int (*callback)(struct rrr_message *message, void *arg),
 		void *callback_arg
 );
-int rrr_array_selected_tags_to_raw (
+int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
 		int *found_tags,
@@ -150,6 +150,9 @@ int rrr_array_new_message_from_collection (
 int rrr_array_message_to_collection (
 		struct rrr_array *target,
 		const struct rrr_message *message_orig
+);
+int rrr_array_dump (
+		const struct rrr_array *definition
 );
 
 #endif /* RRR_ARRAY_H */

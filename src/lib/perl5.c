@@ -681,6 +681,18 @@ static int __rrr_perl5_hv_to_message_array_store_field (
     	goto out;
     }
 
+    if (type_def->to_value == NULL) {
+    	RRR_MSG_ERR("Type %s cannot be used in arrays in perl5 scripts, no conversion method available.\n", type_str);
+    	ret = 1;
+    	goto out;
+    }
+
+    if ((values = __rrr_perl5_deep_dereference(values)) == NULL) {
+    	RRR_MSG_ERR("Could not dereference value in __rrr_perl5_hv_to_message_array_store_field\n");
+    	ret = 1;
+    	goto out;
+    }
+
     if (SvTYPE(values) != SVt_PVAV) {
     	// Some value has probably been pushed directly onto the control array. We assume that we want to
     	// have only one value set. Create a temporary AV and put the value in it.

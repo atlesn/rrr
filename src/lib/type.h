@@ -132,6 +132,15 @@ static const union type_system_endian {
 		const char *start,					\
 		const char *end
 
+#define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
+		ssize_t *bytes,						\
+		const struct rrr_type_value *node
+
+#define RRR_TYPE_EXPORT_ARGS				\
+		char *target,						\
+		ssize_t *written_bytes,				\
+		const struct rrr_type_value *node
+
 #define RRR_TYPE_UNPACK_ARGS				\
 		struct rrr_type_value *node
 
@@ -139,6 +148,10 @@ static const union type_system_endian {
 		char *target,						\
 		ssize_t *written_bytes,				\
 		uint8_t *new_type_id,				\
+		const struct rrr_type_value *node
+
+#define RRR_TYPE_TO_STR_ARGS				\
+		char **target,						\
 		const struct rrr_type_value *node
 
 typedef uint8_t rrr_type;
@@ -160,8 +173,11 @@ struct rrr_type_definition {
 	rrr_type_length max_length;
 	int (*get_import_length)(RRR_TYPE_GET_IMPORT_LENGTH_ARGS);
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
+	void (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
+	int (*export)(RRR_TYPE_EXPORT_ARGS);
 	int (*unpack)(RRR_TYPE_UNPACK_ARGS);
 	int (*pack)(RRR_TYPE_PACK_ARGS);
+	int (*to_str)(RRR_TYPE_TO_STR_ARGS);
 	const char *identifier;
 };
 
