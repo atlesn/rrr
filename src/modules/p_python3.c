@@ -639,7 +639,7 @@ void threads_cleanup(void *arg) {
 	struct python3_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		rrr_threads_stop_and_join(data->thread_collection, python3_ghost_handler);
+		rrr_thread_stop_and_join_all(data->thread_collection, python3_ghost_handler);
 		rrr_thread_destroy_collection(data->thread_collection);
 		data->thread_collection = NULL;
 	}

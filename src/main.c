@@ -169,7 +169,7 @@ void main_ghost_handler (struct rrr_thread *thread) {
 }
 
 void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
-	rrr_threads_stop_and_join(collection, main_ghost_handler);
+	rrr_thread_stop_and_join_all(collection, main_ghost_handler);
 	rrr_instance_free_all_thread_data(instances);
 /*
 #ifdef VL_WITH_OPENSSL
