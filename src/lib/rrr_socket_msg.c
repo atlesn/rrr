@@ -117,7 +117,7 @@ static int __rrr_socket_msg_head_validate (
 			goto out;
 		}
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
+	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
 		// OK
 	}
 	else {

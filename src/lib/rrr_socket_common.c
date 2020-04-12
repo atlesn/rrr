@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_common.h"
 #include "rrr_socket_read.h"
 #include "messages.h"
+#include "message_addr.h"
 #include "read.h"
 
 struct receive_callback_data {
@@ -139,17 +140,38 @@ int rrr_socket_common_receive_socket_msg (
 	return ret;
 }
 
-int rrr_socket_common_prepare_and_send_rrr_message (struct rrr_message *message, int fd) {
+int rrr_socket_common_prepare_and_send_socket_msg (
+		struct rrr_socket_msg *socket_msg,
+		int fd
+) {
 	int ret = 0;
 
-	ssize_t msg_size = MSG_TOTAL_SIZE(message);
+	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(socket_msg)) {
+		struct rrr_message *message = (struct rrr_message *) socket_msg;
 
-	rrr_message_prepare_for_network((struct rrr_message *) message);
-	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
+		ssize_t msg_size = MSG_TOTAL_SIZE(message);
 
-	if ((ret = rrr_socket_sendto(fd, message, msg_size, NULL, 0)) != 0) {
-		RRR_MSG_ERR("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
-		goto out;
+		rrr_message_prepare_for_network((struct rrr_message *) message);
+		rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
+
+		if ((ret = rrr_socket_sendto(fd, message, msg_size, NULL, 0)) != 0) {
+			RRR_MSG_ERR("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
+			goto out;
+		}
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(socket_msg)) {
+		struct rrr_message_addr *message = (struct rrr_message_addr *) socket_msg;
+
+		rrr_message_addr_prepare_for_network(message);
+		rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
+
+		if ((ret = rrr_socket_sendto(fd, message, sizeof(struct rrr_message_addr), NULL, 0)) != 0) {
+			RRR_MSG_ERR("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
+			goto out;
+		}
+	}
+	else {
+		RRR_BUG("Unknown socket msg in rrr_socket_common_prepare_and_socket_msg");
 	}
 
 	out:

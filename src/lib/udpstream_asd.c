@@ -894,7 +894,9 @@ static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpst
 	callback_data->udpstream_receive_data = receive_data;
 
 	struct rrr_read_common_receive_message_callback_data socket_callback_data = {
-			__rrr_udpstream_asd_receive_messages_callback_final, callback_data
+			__rrr_udpstream_asd_receive_messages_callback_final,
+			NULL,
+			callback_data
 	};
 
 	// This function will always free the data, also upon errors

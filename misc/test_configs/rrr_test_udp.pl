@@ -13,6 +13,7 @@ sub process {
 	my $message = shift;
 
 	print "perl5 process: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
+	print "perl 5 process address length: " . $message->{'originating_addr_len'} . "\n";
 
 #	print "control array array_values: " . $message->{'array_values'} . "\n";
 #	print "control array array_values: " . $message->{'array_tags'} . "\n";

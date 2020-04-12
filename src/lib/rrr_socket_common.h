@@ -45,8 +45,8 @@ int rrr_socket_common_receive_socket_msg (
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );
-int rrr_socket_common_prepare_and_send_rrr_message (
-		struct rrr_message *message,
+int rrr_socket_common_prepare_and_send_socket_msg (
+		struct rrr_socket_msg *socket_msg,
 		int fd
 );
 

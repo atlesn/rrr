@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "perl5.h"
 #include "perl5_types.h"
 #include "messages.h"
+#include "message_addr.h"
 #include "settings.h"
 #include "rrr_socket_msg.h"
 #include "rrr_strerror.h"
@@ -215,6 +216,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
+		int (*send_message_addr) (const struct rrr_message_addr *message, void *private_data),
 		int (*send_message) (struct rrr_message *message, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
@@ -238,6 +240,7 @@ int rrr_perl5_new_ctx (
 	}
 
 	ctx->private_data = private_data;
+	ctx->send_message_addr = send_message_addr;
 	ctx->send_message = send_message;
 	ctx->get_setting = get_setting;
 	ctx->set_setting = set_setting;
@@ -863,6 +866,7 @@ static int __rrr_perl5_hv_to_message_extract_array (
 
 int rrr_perl5_hv_to_message (
 		struct rrr_message **target_final,
+		struct rrr_message_addr *target_addr,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
@@ -899,6 +903,25 @@ int rrr_perl5_hv_to_message (
 			new_data_len +
 			new_topic_len;
     target->network_size = target->msg_size;
+
+    rrr_message_addr_init(target_addr);
+
+	DEFINE_AND_FETCH_FROM_HV(originating_addr_len, hv);
+
+	target_addr->addr_len = SvUV(originating_addr_len);
+	if (target_addr->addr_len > 0) {
+		if (target_addr->addr_len > sizeof(target_addr->addr)) {
+			RRR_MSG_ERR("Address length field from message hash was too big (%" PRIu64 " > %lu)\n",
+					target_addr->addr_len, sizeof(target_addr->addr));
+			ret = 1;
+			goto out;
+		}
+
+		DEFINE_AND_FETCH_FROM_HV(originating_addr, hv);
+		SvUTF8_off(originating_addr);
+		char *data_str = SvPVbyte_force(originating_addr, target_addr->addr_len);
+		memcpy(&target_addr->addr, data_str, target_addr->addr_len);
+	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
 		struct rrr_message *new_message = realloc(target, MSG_TOTAL_SIZE(target));
@@ -1094,7 +1117,8 @@ static int __rrr_perl5_message_hv_arrays_populate (
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message
+		struct rrr_message *message,
+		struct rrr_message_addr *message_addr
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -1116,6 +1140,10 @@ int rrr_perl5_message_to_hv (
 	DEFINE_AND_FETCH_FROM_HV(data_length, hv);
 	DEFINE_AND_FETCH_FROM_HV(topic, hv);
 
+	DEFINE_AND_FETCH_FROM_HV(originating_addr, hv);
+	DEFINE_AND_FETCH_FROM_HV(originating_addr_len, hv);
+
+    SvUTF8_off(originating_addr);
     SvUTF8_off(data);
     SvUTF8_on(topic);
 
@@ -1137,6 +1165,15 @@ int rrr_perl5_message_to_hv (
 		goto out;
 	}
 
+	if (message_addr != NULL && message_addr->addr_len > 0) {
+		sv_setpvn(originating_addr, (char *) &message_addr->addr, (STRLEN) sizeof(message_addr->addr));
+		sv_setuv(originating_addr_len, message_addr->addr_len);
+	}
+	else {
+		sv_setpv(originating_addr, "");
+		sv_setuv(originating_addr_len, 0);
+	}
+
     out:
 	return ret;
 }
@@ -1144,7 +1181,8 @@ int rrr_perl5_message_to_hv (
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message
+		struct rrr_message *message,
+		struct rrr_message_addr *message_addr
 ) {
     int ret = 0;
 
@@ -1154,7 +1192,7 @@ int rrr_perl5_message_to_new_hv (
     	goto out;
     }
 
-    if ((ret = rrr_perl5_message_to_hv(message_hv, ctx, message)) != 0) {
+    if ((ret = rrr_perl5_message_to_hv(message_hv, ctx, message, message_addr)) != 0) {
     	RRR_MSG_ERR("Error in rrr_perl5_message_to_new_hv\n");
     	goto out;
     }
@@ -1183,8 +1221,9 @@ int rrr_perl5_message_send (HV *hv) {
 		goto out;
 	}
 
+	struct rrr_message_addr addr_msg;
 	struct rrr_message *message_new = rrr_message_new_reading(0, 0);
-	if (rrr_perl5_hv_to_message(&message_new, ctx, message_new_hv) != 0) {
+	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
 		ret = FALSE;
 		goto out;
 	}

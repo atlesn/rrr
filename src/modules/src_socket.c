@@ -215,7 +215,9 @@ int read_raw_data_callback(struct rrr_read_session *read_session, void *arg) {
 int read_data(struct socket_data *data) {
 	if (data->receive_rrr_message != 0) {
 		struct rrr_read_common_receive_message_callback_data callback_data = {
-				read_data_receive_message_callback, data
+				read_data_receive_message_callback,
+				NULL,
+				data
 		};
 		return rrr_socket_client_collection_read (
 				&data->clients,
