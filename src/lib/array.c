@@ -875,11 +875,10 @@ int rrr_array_selected_tags_export (
 		goto out;
 	}
 
-	ssize_t written_bytes_total = 0;
 	if ((ret = __rrr_array_collection_pack_or_export (
 			result,
 			found_tags,
-			&written_bytes_total,
+			target_size,
 			total_data_length,
 			definition,
 			tags,

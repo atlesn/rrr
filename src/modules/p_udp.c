@@ -709,7 +709,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			}
 
 			if (tag_count != 0 && found_tags != tag_count) {
-				RRR_MSG_ERR("Array message to send in udp instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\b",
+				RRR_MSG_ERR("Array message to send in udp instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
 						INSTANCE_D_NAME(thread_data), tag_count - found_tags);
 				ret = 0; // Non-critical
 				goto out;

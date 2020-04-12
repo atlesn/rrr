@@ -651,8 +651,9 @@ static int __rrr_python3_socket_recv_callback (struct rrr_read_session *read_ses
 */
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(tmp_head)) {
 		struct rrr_message *message = (struct rrr_message *) read_session->rx_buf_ptr;
-		if (tmp_head->msg_size - sizeof(struct rrr_socket_msg) < sizeof(*message)) {
-			RRR_MSG_ERR("Received an rrr_message in python3 socket receive function which was too short\n");
+		if (tmp_head->msg_size < sizeof(*message) - 1) {
+			RRR_MSG_ERR("Received an rrr_message in python3 socket receive function which was too short (%u < %lu)\n",
+					tmp_head->msg_size, sizeof(*message) - 1);
 			ret = 1;
 			goto out;
 		}

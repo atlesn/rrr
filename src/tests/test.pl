@@ -19,6 +19,8 @@ sub source {
 
 	$message->{'timestamp_from'} = $message->{'timestamp_from'};
 
+	$message->send();
+
 	return 1;
 }
 
@@ -30,5 +32,7 @@ sub process {
 	$message->{'topic'} .= "/perl5";
 	print "perl5 new topic: " . $message->{'topic'} . "\n";
 
+	$message->send();
 
+	return 1;
 }

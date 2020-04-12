@@ -78,14 +78,14 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 			err = 1;
 			goto out;
 		}
-		printf ("python3 setting type flags 1: %lu", rrr_python3_setting_type.tp_flags);
+		//printf ("python3 setting type flags 1: %lu", rrr_python3_setting_type.tp_flags);
 		if (PyType_Ready(&rrr_python3_setting_type) < 0) {
 			RRR_MSG_ERR("PyType_Ready for python3 setting type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
-		printf ("python3 setting type flags 2: %lu", rrr_python3_setting_type.tp_flags);
+		//printf ("python3 setting type flags 2: %lu", rrr_python3_setting_type.tp_flags);
 
 		if ((rrr_python3_module = PyModule_Create(&module_definition)) == NULL) {
 			RRR_MSG_ERR("Could create python3 module from definition:\n");

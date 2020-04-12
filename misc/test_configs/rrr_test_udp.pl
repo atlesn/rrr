@@ -12,7 +12,7 @@ sub process {
 	# Get a message from senders of the perl5 instance
 	my $message = shift;
 
-#	print "process: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
+	print "perl5 process: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
 
 #	print "control array array_values: " . $message->{'array_values'} . "\n";
 #	print "control array array_values: " . $message->{'array_tags'} . "\n";
@@ -32,6 +32,10 @@ sub process {
 	push @{$message->{'array_tags'}}, "test_tag_3";
 	push @{$message->{'array_types'}}, "h";
 
+	push @{$message->{'array_values'}}, "A";
+	push @{$message->{'array_tags'}}, "test_tag_blob";
+	push @{$message->{'array_types'}}, "blob";
+
 	# This can be used to duplicate a message, no need if we are not duplicating
 	$message->send();
 	#$message->send();
@@ -43,6 +47,24 @@ sub process {
 
 sub source {
 	my $message = shift;
+
+	print "perl5 source: timestamp of message is: " . $message->{'timestamp_from'} . "\n";
+
+	push @{$message->{'array_values'}}, "test value";
+	push @{$message->{'array_tags'}}, "test_tag_str";
+	push @{$message->{'array_types'}}, "str";
+
+	my @values = (1, 2, 3, 4);
+
+	push @{$message->{'array_values'}}, \@values;
+	push @{$message->{'array_tags'}}, "test_tag_h";
+	push @{$message->{'array_types'}}, "h";
+
+	push @{$message->{'array_values'}}, "A";
+	push @{$message->{'array_tags'}}, "test_tag_blob";
+	push @{$message->{'array_types'}}, "blob";
+
 	$message->send();
+
 	return 1;
 }
