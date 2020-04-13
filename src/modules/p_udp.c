@@ -835,7 +835,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	rrr_fifo_buffer_set_do_ratelimit(&data->delivery_buffer, 1);
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	uint64_t prev_read_error_count = 0;
 	uint64_t prev_read_count = 0;
@@ -895,6 +895,11 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 			data->messages_count_read = 0;
 			data->messages_count_polled = 0;
 			next_stats_time = time_now + 1000000;
+
+			if (rrr_fifo_buffer_get_entry_count(&data->delivery_buffer) > 10000) {
+				RRR_DBG_1("Enabling ratelimit on buffer in udp instance %s due to slow reader\n", INSTANCE_D_NAME(thread_data));
+				rrr_fifo_buffer_set_do_ratelimit(&data->delivery_buffer, 1);
+			}
 		}
 
 		prev_read_error_count = data->read_error_count;

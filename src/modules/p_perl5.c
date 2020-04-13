@@ -819,8 +819,8 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		sleep_interval_us = spawn_interval_us;
 	}
 
-	int usleep_hits_a = 0;
-	int usleep_hits_b = 0;
+//	int usleep_hits_a = 0;
+//	int usleep_hits_b = 0;
 
 	int consecutive_nothing_happend = 0;
 
@@ -831,7 +831,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
-			usleep_hits_a++;
+//			usleep_hits_a++;
 			usleep(5000); // 5 ms
 			// Stop other sleep from running
 			consecutive_nothing_happend = 0;
@@ -910,20 +910,19 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		if (prev_unack != child_data->in_flight_to_parent.not_acknowledged_count) {
 			consecutive_nothing_happend = 0;
 		}
-		else if (++consecutive_nothing_happend > 100) {
-			usleep_hits_b++;
+
+		if (++consecutive_nothing_happend > 100) {
+//			usleep_hits_b++;
 			usleep(sleep_interval_us);
-			if (usleep_hits_b % 100 == 0) {
+/*			if (usleep_hits_b % 100 == 0) {
 				printf("usleep hits child: %i/%i, in flight %i\n",
 						usleep_hits_a, usleep_hits_b, child_data->in_flight_to_parent.in_flight_to_remote_count);
-			}
+			}*/
 		}
 	}
 
-	RRR_DBG_1("perl5 instance %s child worker loop complete sleep hits %i/%i, received_sigterm is %i ret is %i\n",
+	RRR_DBG_1("perl5 instance %s child worker loop complete, received_sigterm is %i ret is %i\n",
 			INSTANCE_D_NAME(child_data->parent_data->thread_data),
-			usleep_hits_a,
-			usleep_hits_b,
 			child_data->received_sigterm,
 			ret
 	);
@@ -1209,6 +1208,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	}
 
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
+
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	struct rrr_fifo_callback_args fifo_callback_args = {
 		thread_data,
