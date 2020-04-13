@@ -65,6 +65,7 @@ struct udp_data {
 	struct rrr_map array_send_tags;
 	uint64_t messages_count_read;
 	uint64_t messages_count_polled;
+	uint64_t read_error_count;
 };
 
 void data_cleanup(void *arg) {
@@ -533,6 +534,7 @@ int read_data(struct udp_data *data) {
 	if ((ret = rrr_ip_receive_array (
 		&data->read_sessions,
 		data->ip.fd,
+		RRR_READ_F_NO_SLEEPING,
 		&data->definitions,
 		data->do_sync_byte_by_byte,
 		read_raw_data_callback,
@@ -544,6 +546,7 @@ int read_data(struct udp_data *data) {
 					INSTANCE_D_NAME(data->thread_data));
 			// Don't allow invalid data to stop processing
 			ret = 0;
+			data->read_error_count++;
 		}
 		else {
 			RRR_MSG_ERR("Error from ip_receive_packets in udp instance %s return was %i\n",
@@ -554,7 +557,7 @@ int read_data(struct udp_data *data) {
 	}
 
 	struct rrr_fifo_callback_args callback_data = {NULL, data, 0};
-	if ((ret = rrr_fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 50)) != 0) {
+	if ((ret = rrr_fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 0)) != 0) {
 		RRR_MSG_ERR("Error from inject buffer in udp instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -829,6 +832,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip);
 
+	uint64_t prev_read_error_count = 0;
 	uint64_t prev_read_count = 0;
 	uint64_t prev_polled_count = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
@@ -859,10 +863,14 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 		}
 
 		// Sleep if nothing happened
-		if (prev_read_count == data->messages_count_read && prev_polled_count == data->messages_count_polled) {
+		if (prev_read_count == data->messages_count_read &&
+			prev_polled_count == data->messages_count_polled &&
+			prev_read_error_count == data->read_error_count
+		) {
 			usleep(25000);
 		}
 
+		prev_read_error_count = data->read_error_count;
 		prev_read_count = data->messages_count_read;
 		prev_polled_count = data->messages_count_polled;
 	}

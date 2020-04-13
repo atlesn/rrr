@@ -676,11 +676,11 @@ int rrr_socket_sendto (
 ) {
 	struct rrr_socket_options options;
 
-	int ret = 0;
+	int ret = RRR_SOCKET_OK;
 
 	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
 		RRR_MSG_ERR("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
-		ret = 1;
+		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
 
@@ -692,7 +692,7 @@ int rrr_socket_sendto (
 		flags |= MSG_DONTWAIT;
 	}
 
-	int max_retries = 10000;
+	int max_retries = 10;
 
 	retry:
 	if (addr == NULL) {
@@ -704,8 +704,8 @@ int rrr_socket_sendto (
 	if (ret != size) {
 		if (ret == -1) {
 			if (--max_retries == 0) {
-				RRR_MSG_ERR("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
-				ret = 1;
+				RRR_DBG_3("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+				ret = RRR_SOCKET_SOFT_ERROR;
 				goto out;
 			}
 			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -731,12 +731,12 @@ int rrr_socket_sendto (
 		else {
 			RRR_MSG_ERR("Error while sending message in rrr_socket_sendto, sent %i of %li bytes\n",
 					ret, size);
-			ret = 1;
+			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
 	}
 	else {
-		ret = 0;
+		ret = RRR_SOCKET_OK;
 	}
 
 	out:

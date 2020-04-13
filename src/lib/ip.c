@@ -298,6 +298,7 @@ static int __ip_receive_callback (
 int rrr_ip_receive_array (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
+		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
@@ -311,7 +312,7 @@ int rrr_ip_receive_array (
 	return rrr_socket_common_receive_array (
 			read_session_collection,
 			fd,
-			0,
+			read_flags,
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			definition,
 			do_sync_byte_by_byte,

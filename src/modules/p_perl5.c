@@ -50,9 +50,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
 
-//	struct rrr_fifo_buffer storage;
 	struct rrr_fifo_buffer output_buffer_ip;
-//	struct rrr_fifo_buffer input_buffer;
+	struct rrr_fifo_buffer input_buffer_ip;
 
 	struct rrr_read_session_collection read_sessions;
 
@@ -70,7 +69,36 @@ struct perl5_data {
 	char *config_sub;
 
 	struct rrr_message_addr latest_message_addr;
+
+	uint64_t sent_to_child_count;
 };
+
+struct perl5_child_deferred_message {
+	RRR_LL_NODE(struct perl5_child_deferred_message);
+	struct rrr_socket_msg *socket_msg;
+};
+
+struct perl5_child_deferred_message_collection {
+	RRR_LL_HEAD(struct perl5_child_deferred_message);
+};
+
+int deferred_message_destroy (struct perl5_child_deferred_message *msg) {
+	RRR_FREE_IF_NOT_NULL(msg->socket_msg);
+	free(msg);
+	return 0;
+}
+
+int deferred_message_push (struct perl5_child_deferred_message_collection *collection, struct rrr_socket_msg *msg) {
+	struct perl5_child_deferred_message *node = NULL;
+	if ((node = malloc(sizeof(*node))) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in perl5 deferred_message_push\n");
+		return 1;
+	}
+	memset(node, '\0', sizeof(*node));
+	node->socket_msg = msg;
+	RRR_LL_APPEND(collection, node);
+	return 0;
+}
 
 struct perl5_child_data {
 	struct perl5_data *parent_data;
@@ -78,6 +106,7 @@ struct perl5_child_data {
 	int received_sigterm;
 	struct rrr_perl5_ctx *ctx;
 	struct rrr_message_addr latest_message_addr;
+	struct perl5_child_deferred_message_collection deferred_messages;
 };
 
 struct extract_message_callback_data {
@@ -136,18 +165,45 @@ int poll_delete_ip(RRR_MODULE_POLL_SIGNATURE) {
 	return 0;
 }
 
+static int send_socket_msg (struct perl5_child_data *child_data, struct rrr_socket_msg *msg) {
+	return rrr_socket_common_prepare_and_send_socket_msg (msg, child_data->child_fd);
+}
+
 static int xsub_send_message_addr(const struct rrr_message_addr *message, void *private_data) {
 	struct perl5_child_data *child_data = private_data;
 	int ret = 0;
 
-	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, child_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send address message on socket in process_message of perl5 instance %s\n",
-				INSTANCE_D_NAME(child_data->parent_data->thread_data));
-		ret = 1;
-		goto out;
+	struct rrr_message_addr *msg_tmp_dynamic = NULL;
+	struct rrr_message_addr msg_tmp = *message;
+
+	if (send_socket_msg (child_data, (struct rrr_socket_msg *) &msg_tmp) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			if ((msg_tmp_dynamic = malloc(sizeof(*msg_tmp_dynamic))) == NULL) {
+				RRR_MSG_ERR("Could not allocate memory in xsub_send_message_addr\n");
+				ret = 1;
+				goto out;
+			}
+
+			*msg_tmp_dynamic = msg_tmp;
+
+			if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) msg_tmp_dynamic) != 0) {
+				RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
+				ret = 1;
+				goto out;
+			}
+
+			msg_tmp_dynamic = NULL;
+		}
+		else {
+			RRR_MSG_ERR("Could not send address message on socket in xsub_send_message_addr of perl5 instance %s\n",
+					INSTANCE_D_NAME(child_data->parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(msg_tmp_dynamic);
 	return ret;
 }
 
@@ -155,15 +211,25 @@ static int xsub_send_message(struct rrr_message *message, void *private_data) {
 	struct perl5_child_data *child_data = private_data;
 	int ret = 0;
 
-	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, child_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send message on socket in process_message of perl5 instance %s\n",
-				INSTANCE_D_NAME(child_data->parent_data->thread_data));
-		ret = 1;
-		goto out;
+	if (send_socket_msg (child_data, (struct rrr_socket_msg *) message) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) message) != 0) {
+				RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
+				ret = 1;
+				goto out;
+			}
+			message = NULL;
+		}
+		else {
+			RRR_MSG_ERR("Could not send message on socket in xsub_send_message of perl5 instance %s\n",
+					INSTANCE_D_NAME(child_data->parent_data->thread_data));
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
-	free(message);
+	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
@@ -222,7 +288,7 @@ int data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_d
 	data->thread_data = thread_data;
 
 	ret |= rrr_fifo_buffer_init_custom_free(&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void);
-//	ret |= rrr_fifo_buffer_init(&data->input_buffer);
+	ret |= rrr_fifo_buffer_init_custom_free(&data->input_buffer_ip, rrr_ip_buffer_entry_destroy_void);
 
 	cmd_get_argv_copy(&data->cmdline, thread_data->init_data.cmd_data);
 
@@ -275,7 +341,7 @@ void data_cleanup(void *arg) {
 	struct perl5_data *data = arg;
 
 	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
-//	rrr_fifo_buffer_invalidate(&data->input_buffer);
+	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
 
 	RRR_FREE_IF_NOT_NULL(data->perl5_file);
 	RRR_FREE_IF_NOT_NULL(data->source_sub);
@@ -418,17 +484,6 @@ int spawn_message(struct perl5_child_data *child_data) {
 	rrr_perl5_message_to_hv(hv_message, ctx, message, NULL);
 	rrr_perl5_call_blessed_hvref(ctx, data->source_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
 
-
-	/* XXX : Force user to use send()-method
-	 * rrr_perl5_hv_to_message(&message, ctx, hv_message);
-	if (rrr_socket_common_prepare_and_send_rrr_message(message, child_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send message on socket in spawn_messages of perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-	*/
-
 	out:
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	RRR_FREE_IF_NOT_NULL(message);
@@ -460,25 +515,71 @@ int process_message (
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
-/* XXX : User is with this disabled forced to pass on messages using send()-method
-	ret |= rrr_perl5_hv_to_message(&message, ctx, hv_message);
-	if (ret != 0) {
-		RRR_MSG_ERR("Could not convertrrr_perl5_message_hv struct to message in process_message of perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
 
-	if (rrr_socket_common_prepare_and_send_rrr_message(message, child_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send message on socket in process_message of perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-*/
 	out:
 	free(message);
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
+}
+
+int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
+	struct rrr_instance_thread_data *thread_data = callback_data->source;
+	struct perl5_data *perl5_data = thread_data->private_data;
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_message_addr addr_msg;
+
+	int ret = 0;
+
+	(void)(size);
+
+	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
+
+//	printf ("input_callback: message %p\n", message);
+
+	if (entry->addr_len > 0) {
+		rrr_message_addr_init(&addr_msg);
+		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
+		addr_msg.addr_len = entry->addr_len;
+
+		if ((ret = rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) &addr_msg, perl5_data->child_fd)) != 0) {
+			if (ret == RRR_SOCKET_SOFT_ERROR) {
+				goto out_put_back;
+			}
+			RRR_MSG_ERR("Could not send address message to child in poll_callback_ip of perl5 instance %s\n",
+					INSTANCE_D_NAME(perl5_data->thread_data));
+			ret = RRR_FIFO_GLOBAL_ERR;
+			goto out;
+		}
+	}
+
+	if ((ret = rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, perl5_data->child_fd)) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			goto out_put_back;
+		}
+		RRR_MSG_ERR("Could not send message to child in poll_callback_ip of perl5 instance %s\n",
+				INSTANCE_D_NAME(perl5_data->thread_data));
+		ret = RRR_FIFO_GLOBAL_ERR;
+		goto out;
+	}
+
+	perl5_data->sent_to_child_count++;
+
+	goto out;
+	out_put_back:
+		// Since we are in read_clear_forward-context, the whole buffer is empty at this point. The
+		// current message will be written at the beginning at the buffer, and any remaining messages
+		// will be joined in after it.
+//		printf ("input_callback: putback message %p\n", entry->message);
+		rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, data, size);
+		entry = NULL;
+		data = NULL;
+		ret = RRR_FIFO_SEARCH_STOP;
+	out:
+		if (entry != NULL) {
+			rrr_ip_buffer_entry_destroy(entry);
+		}
+		return ret;
 }
 
 int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
@@ -486,20 +587,33 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 	struct perl5_data *perl5_data = thread_data->private_data;
 	struct rrr_message *message = (struct rrr_message *) data;
 
+	struct rrr_ip_buffer_entry *entry = NULL;
+
 	int ret = 0;
 
 	RRR_DBG_3 ("perl5 instance %s Result from buffer: measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
 
-	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, perl5_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send message to child in poll_callback of perl5 instance %s\n",
-				INSTANCE_D_NAME(perl5_data->thread_data));
-		ret = RRR_FIFO_GLOBAL_ERR;
+	if (rrr_ip_buffer_entry_new (
+			&entry,
+			MSG_TOTAL_SIZE(message),
+			NULL,
+			0,
+			message
+	) != 0) {
+		RRR_MSG_ERR("Could not create ip buffer entry in poll_callback of perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+		ret = 1;
 		goto out;
 	}
 
+	message = NULL;
+
+//	printf ("poll_callback: put message %p\n", entry->message);
+
+	rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, (char *) entry, sizeof(*entry));
+
 	out:
-	free(data);
+	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
@@ -508,36 +622,15 @@ int poll_callback_ip(struct rrr_fifo_callback_args *caller_data, char *data, uns
 	struct perl5_data *perl5_data = thread_data->private_data;
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 	struct rrr_message *message = (struct rrr_message *) entry->message;
-	struct rrr_message_addr addr_msg;
-
-	int ret = 0;
 
 	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: measurement %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), entry->addr_len, message->data_numeric, size);
 
-	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
+//	printf ("poll_callback_ip: put message %p\n", entry->message);
 
-	rrr_message_addr_init(&addr_msg);
-	memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
-	addr_msg.addr_len = entry->addr_len;
+	rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, (char *) entry, sizeof(*entry));
 
-	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) &addr_msg, perl5_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send address message to child in poll_callback_ip of perl5 instance %s\n",
-				INSTANCE_D_NAME(perl5_data->thread_data));
-		ret = RRR_FIFO_GLOBAL_ERR;
-		goto out;
-	}
-
-	if (rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, perl5_data->child_fd) != 0) {
-		RRR_MSG_ERR("Could not send message to child in poll_callback_ip of perl5 instance %s\n",
-				INSTANCE_D_NAME(perl5_data->thread_data));
-		ret = RRR_FIFO_GLOBAL_ERR;
-		goto out;
-	}
-
-	out:
-	rrr_ip_buffer_entry_destroy(entry);
-	return ret;
+	return 0;
 }
 
 int send_config(struct perl5_child_data *child_data) {
@@ -612,6 +705,8 @@ int worker_socket_read_callback_addr_msg (struct rrr_message_addr *message, void
 	data->latest_message_addr = *message;
 	free(message);
 
+	callback_data->count++;
+
 	return ret;
 }
 
@@ -663,36 +758,60 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 	while (child_data->received_sigterm == 0) {
 		callback_data.count = 0;
 
-		time_now = rrr_time_get_64();
+		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
+		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
+			usleep(5000); // 5 ms
+			RRR_LL_ITERATE_BEGIN(&child_data->deferred_messages, struct perl5_child_deferred_message);
+				if ((ret = send_socket_msg(child_data, node->socket_msg)) == 0) {
+					RRR_LL_ITERATE_SET_DESTROY();
+				}
+				else if (ret == 1) {
+					RRR_MSG_ERR("Error from send_socket_msg in perl5 child for of instance %s\n",
+							INSTANCE_D_NAME(child_data->parent_data->thread_data));
+					RRR_LL_ITERATE_LAST();
+				}
+				else {
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&child_data->deferred_messages, deferred_message_destroy(node));
 
-		if (next_spawn_time == 0) {
-			next_spawn_time = time_now + spawn_interval_us;
-		}
-
-		if ((ret = rrr_socket_common_receive_socket_msg (
-				&read_sessions,
-				child_data->child_fd,
-				RRR_READ_F_NO_SLEEPING,
-				RRR_SOCKET_READ_METHOD_RECV,
-				rrr_read_common_receive_message_callback,
-				&read_callback_data
-		)) != 0) {
-			// Stop on both soft and hard errors
-			RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
-					ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
-			ret = 1;
-			break;
-		}
-
-		if (no_spawning == 0 && time_now >= next_spawn_time) {
-			if (spawn_message(child_data) != 0) {
+			if (ret == 1) {
 				break;
 			}
-			next_spawn_time = 0;
+			ret = 0;
 		}
+		else {
+			time_now = rrr_time_get_64();
 
-		if (callback_data.count == 0) {
-			usleep(sleep_interval_us);
+			if (next_spawn_time == 0) {
+				next_spawn_time = time_now + spawn_interval_us;
+			}
+
+			if ((ret = rrr_socket_common_receive_socket_msg (
+					&read_sessions,
+					child_data->child_fd,
+					RRR_READ_F_NO_SLEEPING,
+					RRR_SOCKET_READ_METHOD_RECV,
+					rrr_read_common_receive_message_callback,
+					&read_callback_data
+			)) != 0) {
+				// Stop on both soft and hard errors
+				RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
+						ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
+				ret = 1;
+				break;
+			}
+
+			if (no_spawning == 0 && time_now >= next_spawn_time) {
+				if (spawn_message(child_data) != 0) {
+					break;
+				}
+				next_spawn_time = 0;
+			}
+
+			if (callback_data.count == 0) {
+				usleep(sleep_interval_us);
+			}
 		}
 	}
 
@@ -706,6 +825,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 	out_sys_term:
 		rrr_perl5_sys_term();
 	out_final:
+		RRR_LL_DESTROY(&child_data->deferred_messages, struct perl5_child_deferred_message, deferred_message_destroy(node));
 		return ret;
 }
 
@@ -786,6 +906,7 @@ int start_worker_fork (struct perl5_data *data) {
 			child_fd,
 			0,
 			NULL,
+			{0},
 			{0}
 	};
 
@@ -967,6 +1088,13 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
+	struct rrr_fifo_callback_args fifo_callback_args = {
+		thread_data,
+		data,
+		0
+	};
+
+	uint64_t prev_sent_to_child_count = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_update_watchdog_time(thread_data->thread);
 
@@ -977,17 +1105,32 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		// No polling before child is connected
-		if (no_polling == 0 && data->child_fd > 0) {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 25) != 0) {
-				break;
-			}
-			if (poll_do_poll_delete_ip_simple(&poll_ip, thread_data, poll_callback_ip, 25) != 0) {
+		if (rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip) > 0) {
+			if (rrr_fifo_read_clear_forward (
+					&data->input_buffer_ip,
+					NULL,
+					input_callback,
+					&fifo_callback_args,
+					0
+			) != 0) {
 				break;
 			}
 		}
-		else if (read_count == 0) {
+		else if (no_polling == 0 && data->child_fd > 0) {
+			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 0) != 0) {
+				break;
+			}
+			if (poll_do_poll_delete_ip_simple(&poll_ip, thread_data, poll_callback_ip, 0) != 0) {
+				break;
+			}
+		}
+		else if (read_count == 0 &&
+				prev_sent_to_child_count == data->sent_to_child_count
+		) {
 			usleep (50000);
 		}
+
+		prev_sent_to_child_count = data->sent_to_child_count;
 	}
 
 	out_message:

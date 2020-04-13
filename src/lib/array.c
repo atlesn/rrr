@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -355,7 +355,7 @@ int rrr_array_parse_data_from_definition (
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(target,struct rrr_type_value);
-		RRR_DBG_3("Parsing type index %u of type %d, %d copies\n", i, node->definition->type, node->element_count);
+		RRR_DBG_3("Parsing type index %u of type %s, %d copies\n", i, node->definition->identifier, node->element_count);
 
 		if (node->definition->import == NULL) {
 			RRR_BUG("BUG: No convert function found for type %d\n", node->definition->type);
