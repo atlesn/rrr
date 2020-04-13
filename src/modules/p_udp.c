@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read.h"
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 #define RRR_UDPREADER_DEFAULT_PORT 2222
@@ -49,7 +50,7 @@ struct udp_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_fifo_buffer send_buffer;
 	struct rrr_fifo_buffer inject_buffer;
-	struct rrr_fifo_buffer delivery_buffer_;
+	struct rrr_fifo_buffer delivery_buffer;
 	unsigned int source_port;
 	unsigned int target_port;
 	struct rrr_ip_data ip;
@@ -72,7 +73,7 @@ void data_cleanup(void *arg) {
 	struct udp_data *data = (struct udp_data *) arg;
 	rrr_fifo_buffer_invalidate(&data->send_buffer);
 	rrr_fifo_buffer_invalidate(&data->inject_buffer);
-	rrr_fifo_buffer_invalidate(&data->delivery_buffer_);
+	rrr_fifo_buffer_invalidate(&data->delivery_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_read_session_collection_clear(&data->read_sessions);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
@@ -89,7 +90,7 @@ int data_init(struct udp_data *data, struct rrr_instance_thread_data *thread_dat
 
 	ret |= rrr_fifo_buffer_init_custom_free(&data->send_buffer, rrr_ip_buffer_entry_destroy_void);
 	ret |= rrr_fifo_buffer_init_custom_free(&data->inject_buffer, rrr_ip_buffer_entry_destroy_void);
-	ret |= rrr_fifo_buffer_init_custom_free(&data->delivery_buffer_, rrr_ip_buffer_entry_destroy_void);
+	ret |= rrr_fifo_buffer_init_custom_free(&data->delivery_buffer, rrr_ip_buffer_entry_destroy_void);
 
 	if (ret != 0) {
 		data_cleanup(data);
@@ -143,7 +144,7 @@ static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	};
 
 	return rrr_fifo_read_clear_forward (
-			&udp_data->delivery_buffer_,
+			&udp_data->delivery_buffer,
 			NULL,
 			__poll_delete_extract_msg_callback,
 			&fifo_args,
@@ -185,14 +186,14 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 			0
 	};
 
-	return rrr_fifo_search(&udp_data->delivery_buffer_, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
+	return rrr_fifo_search(&udp_data->delivery_buffer, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
 }
 
 static int poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	struct udp_data *udp_data = data->private_data;
 
 	return rrr_fifo_read_clear_forward (
-			&udp_data->delivery_buffer_,
+			&udp_data->delivery_buffer,
 			NULL,
 			callback,
 			poll_data,
@@ -419,7 +420,7 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	// Now managed by ip buffer entry
 	message = NULL;
 
-	rrr_fifo_buffer_write(&data->delivery_buffer_, (char*)new_entry, sizeof(*new_entry));
+	rrr_fifo_buffer_write(&data->delivery_buffer, (char*)new_entry, sizeof(*new_entry));
 
 	// Now managed by fifo buffer
 	new_entry = NULL;
@@ -531,28 +532,30 @@ int inject_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsign
 int read_data(struct udp_data *data) {
 	int ret = 0;
 
-	if ((ret = rrr_ip_receive_array (
-		&data->read_sessions,
-		data->ip.fd,
-		RRR_READ_F_NO_SLEEPING,
-		&data->definitions,
-		data->do_sync_byte_by_byte,
-		read_raw_data_callback,
-		data,
-		NULL
-	)) != 0) {
-		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			RRR_MSG_ERR("Received invalid data in ip_receive_packets in udp instance %s\n",
-					INSTANCE_D_NAME(data->thread_data));
-			// Don't allow invalid data to stop processing
-			ret = 0;
-			data->read_error_count++;
-		}
-		else {
-			RRR_MSG_ERR("Error from ip_receive_packets in udp instance %s return was %i\n",
-					INSTANCE_D_NAME(data->thread_data), ret);
-			ret = 1;
-			goto out;
+	for (int i = 0; i < 10; i++) {
+		if ((ret = rrr_ip_receive_array (
+			&data->read_sessions,
+			data->ip.fd,
+			RRR_READ_F_NO_SLEEPING,
+			&data->definitions,
+			data->do_sync_byte_by_byte,
+			read_raw_data_callback,
+			data,
+			NULL
+		)) != 0) {
+			if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+				RRR_MSG_ERR("Received invalid data in ip_receive_packets in udp instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				// Don't allow invalid data to stop processing
+				ret = 0;
+				data->read_error_count++;
+			}
+			else {
+				RRR_MSG_ERR("Error from ip_receive_packets in udp instance %s return was %i\n",
+						INSTANCE_D_NAME(data->thread_data), ret);
+				ret = 1;
+				goto out;
+			}
 		}
 	}
 
@@ -784,6 +787,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 
 	poll_collection_init(&poll_ip);
 	poll_collection_init(&poll);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
@@ -828,13 +832,16 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 		RRR_DBG_1("udp instance %s listening on and/or sending from port %d\n", INSTANCE_D_NAME(thread_data), data->source_port);
 	}
 
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip);
+	rrr_fifo_buffer_set_do_ratelimit(&data->delivery_buffer, 1);
 
 	uint64_t prev_read_error_count = 0;
 	uint64_t prev_read_count = 0;
 	uint64_t prev_polled_count = 0;
+
+	unsigned int tick = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_update_watchdog_time(thread_data->thread);
 
@@ -870,6 +877,22 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 			usleep(25000);
 		}
 
+		if (stats != NULL && ++tick > 50) {
+			rrr_stats_instance_update_rate(stats, 1, "read_error_count", data->read_error_count);
+			rrr_stats_instance_update_rate(stats, 2, "read_count", data->messages_count_read);
+			rrr_stats_instance_update_rate(stats, 3, "polled_count", data->messages_count_polled);
+			rrr_stats_instance_post_unsigned_base10_text (
+					stats,
+					"delivery_buffer_count",
+					0,
+					rrr_fifo_buffer_get_entry_count(&data->delivery_buffer)
+			);
+			tick = 0;
+			data->read_error_count = 0;
+			data->messages_count_read = 0;
+			data->messages_count_polled = 0;
+		}
+
 		prev_read_error_count = data->read_error_count;
 		prev_read_count = data->messages_count_read;
 		prev_polled_count = data->messages_count_polled;
@@ -888,6 +911,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

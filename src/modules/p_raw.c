@@ -165,6 +165,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	uint64_t total_counter = 0;
 	uint64_t timer_start = rrr_time_get_64();
+	int ticks = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_update_watchdog_time(thread_data->thread);
 
@@ -182,9 +183,13 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 					INSTANCE_D_NAME(thread_data), raw_data->message_count, total_counter);
 
 			rrr_stats_instance_update_rate (stats, 0, "received", raw_data->message_count);
+			rrr_stats_instance_update_rate (stats, 1, "ticks", ticks);
 
 			raw_data->message_count = 0;
+			ticks = 0;
 		}
+
+		ticks++;
 	}
 
 	out_message:

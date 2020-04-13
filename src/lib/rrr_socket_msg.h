@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ struct rrr_socket_msg {
 
 // This bit is reserved for holding the type=control number
 #define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)
+#define RRR_SOCKET_MSG_CTRL_F_ACK			(1<<1)
 
 // These bits are used by higher level structures. If more flags are needed,
 // reserve more USR-bits here to avoid collisions and only refer to them by
@@ -57,13 +58,16 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_CTRL_F_USR_C			(1<<13)
 #define RRR_SOCKET_MSG_CTRL_F_USR_D			(1<<12)
 
-#define RRR_SOCKET_MSG_CTRL_F_ALL			(RRR_SOCKET_MSG_CTRL_F_RESERVED|0xF000)
-#define RRR_SOCKET_MSG_CTRL_F_HAS(msg,flag)	(((msg)->msg_type & (flag)) == (flag))
-#define RRR_SOCKET_MSG_CTRL_FLAGS(msg)		((msg)->msg_type & RRR_SOCKET_MSG_CTRL_F_ALL)
+#define RRR_SOCKET_MSG_CTRL_F_ALL				(RRR_SOCKET_MSG_CTRL_F_RESERVED|RRR_SOCKET_MSG_CTRL_F_ACK|0xF000)
+#define RRR_SOCKET_MSG_CTRL_F_HAS(msg,flag)		(((msg)->msg_type & (flag)) == (flag))
+#define RRR_SOCKET_MSG_CTRL_F_CLEAR(msg,flag)	((msg)->msg_type &= ~(flag))
+#define RRR_SOCKET_MSG_CTRL_FLAGS(msg)			((msg)->msg_type & RRR_SOCKET_MSG_CTRL_F_ALL)
 
 // The control messages contain flags in the type field
 #define RRR_SOCKET_MSG_IS_CTRL(msg) \
 	(((msg)->msg_type & RRR_SOCKET_MSG_TYPE_CTRL) == RRR_SOCKET_MSG_TYPE_CTRL)
+#define RRR_SOCKET_MSG_IS_CTRL_NETWORK_ENDIAN(msg) \
+	((be16toh((msg)->msg_type) & RRR_SOCKET_MSG_TYPE_CTRL) == RRR_SOCKET_MSG_TYPE_CTRL)
 #define RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_RRR_MESSAGE)
 #define RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(msg) \

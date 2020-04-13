@@ -40,12 +40,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/common.h"
 #include "../lib/read.h"
+#include "../lib/stats_instance.h"
 #include "../global.h"
 
 #include <EXTERN.h>
 #include <perl.h>
 
 #define PERL5_DEFAULT_SOURCE_INTERVAL_MS 1000
+#define PERL5_CHILD_MAX_IN_FLIGHT 100
+#define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -70,6 +73,7 @@ struct perl5_data {
 
 	struct rrr_message_addr latest_message_addr;
 
+	struct rrr_socket_common_in_flight_counter in_flight_to_child;
 	uint64_t sent_to_child_count;
 };
 
@@ -107,7 +111,18 @@ struct perl5_child_data {
 	struct rrr_perl5_ctx *ctx;
 	struct rrr_message_addr latest_message_addr;
 	struct perl5_child_deferred_message_collection deferred_messages;
+	struct rrr_socket_common_in_flight_counter in_flight_to_parent;
+	struct rrr_fifo_buffer from_parent_buffer;
 };
+
+int perl5_child_data_init (struct perl5_child_data *data) {
+	memset(data, '\0', sizeof(*data));
+	return rrr_fifo_buffer_init_custom_free(&data->from_parent_buffer, rrr_ip_buffer_entry_destroy_void);
+}
+
+void perl5_child_data_cleanup (struct perl5_child_data *data) {
+	rrr_fifo_buffer_invalidate(&data->from_parent_buffer);
+}
 
 struct extract_message_callback_data {
 	int (*callback_orig)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
@@ -166,7 +181,7 @@ int poll_delete_ip(RRR_MODULE_POLL_SIGNATURE) {
 }
 
 static int send_socket_msg (struct perl5_child_data *child_data, struct rrr_socket_msg *msg) {
-	return rrr_socket_common_prepare_and_send_socket_msg (msg, child_data->child_fd);
+	return rrr_socket_common_prepare_and_send_socket_msg (msg, child_data->child_fd, &child_data->in_flight_to_parent);
 }
 
 static int xsub_send_message_addr(const struct rrr_message_addr *message, void *private_data) {
@@ -522,6 +537,30 @@ int process_message (
 	return ret;
 }
 
+int worker_from_parent_buffer_callback (struct rrr_fifo_callback_args *fifo_args, char *data, unsigned long int size) {
+	struct perl5_child_data *child_data = fifo_args->private_data;
+	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+	struct rrr_message *message = entry->message;
+
+	(void)(size);
+
+	int ret = 0;
+
+	struct rrr_message_addr message_addr = {0};
+	message_addr.addr_len = entry->addr_len;
+	message_addr.addr = entry->addr;
+
+	if ((ret = process_message(child_data, message, &message_addr)) != 0) {
+		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
+				INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		ret = RRR_FIFO_GLOBAL_ERR;
+	}
+
+	entry->message = NULL;
+
+	return ret | RRR_FIFO_SEARCH_FREE;
+}
+
 int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct rrr_instance_thread_data *thread_data = callback_data->source;
 	struct perl5_data *perl5_data = thread_data->private_data;
@@ -535,6 +574,10 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 
 	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
 
+	if (perl5_data->in_flight_to_child.in_flight_to_remote_count > PERL5_CHILD_MAX_IN_FLIGHT) {
+		goto out_put_back;
+	}
+
 //	printf ("input_callback: message %p\n", message);
 
 	if (entry->addr_len > 0) {
@@ -542,7 +585,11 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
 		addr_msg.addr_len = entry->addr_len;
 
-		if ((ret = rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) &addr_msg, perl5_data->child_fd)) != 0) {
+		if ((ret = rrr_socket_common_prepare_and_send_socket_msg (
+				(struct rrr_socket_msg *) &addr_msg,
+				perl5_data->child_fd,
+				&perl5_data->in_flight_to_child
+		)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
 				goto out_put_back;
 			}
@@ -553,7 +600,11 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 		}
 	}
 
-	if ((ret = rrr_socket_common_prepare_and_send_socket_msg ((struct rrr_socket_msg *) message, perl5_data->child_fd)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_socket_msg (
+			(struct rrr_socket_msg *) message,
+			perl5_data->child_fd,
+			&perl5_data->in_flight_to_child
+	)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			goto out_put_back;
 		}
@@ -671,7 +722,6 @@ int send_config(struct perl5_child_data *child_data) {
 
 struct child_read_callback_data {
 	struct perl5_child_data *data;
-	int count;
 };
 
 int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
@@ -682,15 +732,23 @@ int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
 
 //	printf ("worker_socket_read_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
 
-	if ((ret = process_message(data, message, &data->latest_message_addr)) != 0) {
-		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
-				INSTANCE_D_NAME(data->parent_data->thread_data));
+	struct rrr_ip_buffer_entry *entry = NULL;
+	if (rrr_ip_buffer_entry_new (
+			&entry,
+			MSG_TOTAL_SIZE(message),
+			&data->latest_message_addr.addr,
+			data->latest_message_addr.addr_len,
+			message
+	) != 0) {
+		RRR_MSG_ERR("Could not create ip buffer entry in worker_socket_read_callback_msg\n");
 		ret = 1;
+		goto out;
 	}
+
+	rrr_fifo_buffer_write(&data->from_parent_buffer, (char*) entry, sizeof(*entry));
+
+	out:
 	memset(&data->latest_message_addr, '\0', sizeof(data->latest_message_addr));
-
-	callback_data->count++;
-
 	return ret;
 }
 
@@ -704,8 +762,6 @@ int worker_socket_read_callback_addr_msg (struct rrr_message_addr *message, void
 	int ret = RRR_SOCKET_OK;
 	data->latest_message_addr = *message;
 	free(message);
-
-	callback_data->count++;
 
 	return ret;
 }
@@ -734,11 +790,18 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		goto out_destroy_ctx;
 	}
 
+	// Process stuff
+	struct rrr_fifo_callback_args fifo_args = {
+			NULL,
+			child_data,
+			0
+	};
+
+	// Read stuff
 	int no_spawning = (child_data->parent_data->source_sub == NULL || *(child_data->parent_data->source_sub) == '\0' ? 1 : 0);
 	struct rrr_read_session_collection read_sessions = {0};
 	struct child_read_callback_data callback_data = {
-			child_data,
-			0
+			child_data
 	};
 	struct rrr_read_common_receive_message_callback_data read_callback_data = {
 			worker_socket_read_callback_msg,
@@ -746,6 +809,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			&callback_data
 	};
 
+	// Control stuff
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t next_spawn_time = 0;
 	uint64_t spawn_interval_us = child_data->parent_data->spawn_interval_ms * 1000;
@@ -755,12 +819,22 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		sleep_interval_us = spawn_interval_us;
 	}
 
+	int usleep_hits_a = 0;
+	int usleep_hits_b = 0;
+
+	int consecutive_nothing_happend = 0;
+
 	while (child_data->received_sigterm == 0) {
-		callback_data.count = 0;
+		// We don't check the in flight counter. Parent does that. If both were
+		// to check, it would cause a dead lock as we have no output buffer from
+		// processing and spawning functions.
 
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
+			usleep_hits_a++;
 			usleep(5000); // 5 ms
+			// Stop other sleep from running
+			consecutive_nothing_happend = 0;
 			RRR_LL_ITERATE_BEGIN(&child_data->deferred_messages, struct perl5_child_deferred_message);
 				if ((ret = send_socket_msg(child_data, node->socket_msg)) == 0) {
 					RRR_LL_ITERATE_SET_DESTROY();
@@ -778,45 +852,81 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			if (ret == 1) {
 				break;
 			}
+
 			ret = 0;
+			continue;
 		}
-		else {
-			time_now = rrr_time_get_64();
 
-			if (next_spawn_time == 0) {
-				next_spawn_time = time_now + spawn_interval_us;
-			}
+		time_now = rrr_time_get_64();
 
-			if ((ret = rrr_socket_common_receive_socket_msg (
-					&read_sessions,
-					child_data->child_fd,
-					RRR_READ_F_NO_SLEEPING,
-					RRR_SOCKET_READ_METHOD_RECV,
-					rrr_read_common_receive_message_callback,
-					&read_callback_data
-			)) != 0) {
-				// Stop on both soft and hard errors
-				RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
-						ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
-				ret = 1;
-				break;
-			}
+		if (next_spawn_time == 0) {
+			next_spawn_time = time_now + spawn_interval_us;
+		}
 
-			if (no_spawning == 0 && time_now >= next_spawn_time) {
-				if (spawn_message(child_data) != 0) {
+		int prev_unack = child_data->in_flight_to_parent.not_acknowledged_count;
+		if (rrr_fifo_buffer_get_entry_count(&child_data->from_parent_buffer) < PERL5_CHILD_MAX_IN_BUFFER) {
+			for (int i = 0; i < 50; i++) {
+				if ((ret = rrr_socket_common_receive_socket_msg (
+						&read_sessions,
+						child_data->child_fd,
+						RRR_READ_F_NO_SLEEPING,
+						RRR_SOCKET_READ_METHOD_RECV,
+						&child_data->in_flight_to_parent,
+						rrr_read_common_receive_message_callback,
+						&read_callback_data
+				)) != 0) {
+					// Stop on both soft and hard errors
+					RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
+							ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
+					ret = 1;
 					break;
 				}
-				next_spawn_time = 0;
 			}
+			if (ret != 0) {
+				break;
+			}
+		}
 
-			if (callback_data.count == 0) {
-				usleep(sleep_interval_us);
+		if (rrr_fifo_read_clear_forward (
+				&child_data->from_parent_buffer,
+				NULL,
+				worker_from_parent_buffer_callback,
+				&fifo_args,
+				0
+		) != 0) {
+			RRR_MSG_ERR("Error while processing in perl5 child fork of instance %s\n",
+					INSTANCE_D_NAME(child_data->parent_data->thread_data));
+			ret = 1;
+			break;
+		}
+
+		if (no_spawning == 0 && time_now >= next_spawn_time) {
+			if (spawn_message(child_data) != 0) {
+				break;
+			}
+			next_spawn_time = 0;
+		}
+
+		if (prev_unack != child_data->in_flight_to_parent.not_acknowledged_count) {
+			consecutive_nothing_happend = 0;
+		}
+		else if (++consecutive_nothing_happend > 100) {
+			usleep_hits_b++;
+			usleep(sleep_interval_us);
+			if (usleep_hits_b % 100 == 0) {
+				printf("usleep hits child: %i/%i, in flight %i\n",
+						usleep_hits_a, usleep_hits_b, child_data->in_flight_to_parent.in_flight_to_remote_count);
 			}
 		}
 	}
 
-	RRR_DBG_1("perl5 instance %s child worker loop complete, received_sigterm is %i ret is %i\n",
-			INSTANCE_D_NAME(child_data->parent_data->thread_data), child_data->received_sigterm, ret);
+	RRR_DBG_1("perl5 instance %s child worker loop complete sleep hits %i/%i, received_sigterm is %i ret is %i\n",
+			INSTANCE_D_NAME(child_data->parent_data->thread_data),
+			usleep_hits_a,
+			usleep_hits_b,
+			child_data->received_sigterm,
+			ret
+	);
 
 	rrr_read_session_collection_clear(&read_sessions);
 
@@ -901,14 +1011,16 @@ int start_worker_fork (struct perl5_data *data) {
 	// CHILD PROCESS CODE
 	rrr_socket_close_all_except_no_unlink(child_fd);
 
-	struct perl5_child_data child_data = {
-			data,
-			child_fd,
-			0,
-			NULL,
-			{0},
-			{0}
-	};
+	struct perl5_child_data child_data;
+
+	if (perl5_child_data_init(&child_data) != 0) {
+		RRR_MSG_ERR("Could not initialize child data in start_worker_fork\n");
+		ret = 1;
+		goto out_child_error;
+	}
+
+	child_data.parent_data = data;
+	child_data.child_fd = child_fd;
 
 	rrr_signal_handler_remove_all();
 	rrr_signal_handler_push(worker_fork_signal_handler, &child_data);
@@ -917,6 +1029,9 @@ int start_worker_fork (struct perl5_data *data) {
 
 	ret = worker_fork_loop(&child_data);
 
+	perl5_child_data_cleanup(&child_data);
+
+	out_child_error:
 	RRR_DBG_1("perl5 instance %s child worker loop returned %i\n", INSTANCE_D_NAME(data->thread_data), ret);
 
 	rrr_socket_close_all();
@@ -1016,12 +1131,14 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 		data->child_fd = child_fd;
 	}
 
+	int not_acked_orig = data->in_flight_to_child.not_acknowledged_count;
 	for (int i = 0; i < 50; i++) {
 		if ((ret = rrr_socket_common_receive_socket_msg (
 				&data->read_sessions,
 				data->child_fd,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECV,
+				&data->in_flight_to_child,
 				rrr_read_common_receive_message_callback,
 				&read_callback_data
 		)) != 0) {
@@ -1030,6 +1147,10 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 					ret, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
+		}
+
+		if (i > 5 && not_acked_orig == data->in_flight_to_child.not_acknowledged_count) {
+			break;
 		}
 	}
 
@@ -1051,6 +1172,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	poll_collection_init(&poll);
 	poll_collection_init(&poll_ip);
+	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
@@ -1094,6 +1216,11 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		0
 	};
 
+	int usleep_hits_a = 0;
+	int usleep_hits_b = 0;
+
+	int tick = 0;
+	int consecutive_nothing_happend = 0;
 	uint64_t prev_sent_to_child_count = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_update_watchdog_time(thread_data->thread);
@@ -1104,19 +1231,28 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			break;
 		}
 
-		// No polling before child is connected
 		if (rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip) > 0) {
-			if (rrr_fifo_read_clear_forward (
-					&data->input_buffer_ip,
-					NULL,
-					input_callback,
-					&fifo_callback_args,
-					0
-			) != 0) {
-				break;
+			if (data->in_flight_to_child.in_flight_to_remote_count < PERL5_CHILD_MAX_IN_FLIGHT) {
+				if (rrr_fifo_read_clear_forward (
+						&data->input_buffer_ip,
+						NULL,
+						input_callback,
+						&fifo_callback_args,
+						0
+				) != 0) {
+					break;
+				}
+			}
+			else {
+//				printf ("Send to child deferred in flight count %i\n", data->in_flight_to_child.in_flight_to_remote_count);
+//				usleep(10);
+				usleep(1500);
+				++usleep_hits_a;
+				// Stop other usleep from running
+				consecutive_nothing_happend = 0;
 			}
 		}
-		else if (no_polling == 0 && data->child_fd > 0) {
+		else if (no_polling == 0 && data->child_fd > 0) { // No polling before child is connected
 			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 0) != 0) {
 				break;
 			}
@@ -1124,10 +1260,24 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 				break;
 			}
 		}
-		else if (read_count == 0 &&
-				prev_sent_to_child_count == data->sent_to_child_count
+
+		if (	read_count != 0 &&
+				prev_sent_to_child_count != data->sent_to_child_count
 		) {
+			consecutive_nothing_happend = 0;
+		}
+
+		if (++consecutive_nothing_happend > 100) {
 			usleep (50000);
+			usleep_hits_b++;
+			consecutive_nothing_happend = 0;
+		}
+
+		if (++tick > 25 && stats != NULL) {
+			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
+			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
+
+			usleep_hits_a = usleep_hits_b = tick = 0;
 		}
 
 		prev_sent_to_child_count = data->sent_to_child_count;
@@ -1140,6 +1290,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 
