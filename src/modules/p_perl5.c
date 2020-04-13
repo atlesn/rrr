@@ -1246,7 +1246,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			else {
 //				printf ("Send to child deferred in flight count %i\n", data->in_flight_to_child.in_flight_to_remote_count);
 //				usleep(10);
-				usleep(1500);
+				usleep(150);
 				++usleep_hits_a;
 				// Stop other usleep from running
 				consecutive_nothing_happend = 0;
@@ -1276,6 +1276,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		if (++tick > 25 && stats != NULL) {
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
+			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->output_buffer_ip));
+			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip));
 
 			usleep_hits_a = usleep_hits_b = tick = 0;
 		}

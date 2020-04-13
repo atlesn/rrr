@@ -149,6 +149,7 @@ struct read_minimum_data {
 	int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size);
 	struct rrr_fifo_callback_args *poll_data;
 	uint64_t result_timestamp;
+	int delivered_count;
 };
 
 /* Callback must free or take care of memory even in case of an error */
@@ -174,6 +175,7 @@ int read_minimum_callback (struct rrr_fifo_callback_args *args, char *data, unsi
 		if (timestamp > minimum_callback_data->result_timestamp) {
 			minimum_callback_data->result_timestamp = timestamp;
 		}
+		minimum_callback_data->delivered_count++;
 	}
 	else {
 		ret = 1;
@@ -198,17 +200,23 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 		}
 	}
 
-	struct read_minimum_data minimum_callback_data = {callback, poll_data, 0};
+	struct read_minimum_data minimum_callback_data = {callback, poll_data, 0, 0};
 	struct rrr_fifo_callback_args fifo_callback_data = {NULL, &minimum_callback_data, 0};
 
+	// Sleeping in the buffer does not work because it is never empty. Sleep
+	// if we don't actually send anything to the callback.
 	int res = rrr_fifo_read_minimum (
 			&duplicator_data->input_buffer,
 			NULL,
 			read_minimum_callback,
 			&fifo_callback_data,
 			reader->read_position,
-			wait_milliseconds
+			0
 	);
+
+	if (minimum_callback_data.delivered_count == 0) {
+		usleep(wait_milliseconds * 1000);
+	}
 
 	if (minimum_callback_data.result_timestamp > 0) {
 		RRR_DBG_3("Duplicator %s New read position for reader %s: %lu\n",
