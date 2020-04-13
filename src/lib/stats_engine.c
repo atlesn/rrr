@@ -40,6 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "random.h"
 
+#define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
+
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
 };
@@ -310,11 +312,16 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 		goto out_unlock;
 	}
 
-	// Send data to clients
-	if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
-		RRR_MSG_ERR("Error while sending messages in rrr_stats_engine_tick\n");
-		ret = 1;
-		goto out_unlock;
+	uint64_t time_now = rrr_time_get_64();
+
+	if (time_now > stats->next_send_time) {
+		// Send data to clients
+		if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
+			RRR_MSG_ERR("Error while sending messages in rrr_stats_engine_tick\n");
+			ret = 1;
+			goto out_unlock;
+		}
+		stats->next_send_time = time_now + RRR_STATS_ENGINE_SEND_INTERVAL_MS * 1000;
 	}
 
 	out_unlock:

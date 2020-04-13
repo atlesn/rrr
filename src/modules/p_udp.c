@@ -841,6 +841,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	uint64_t prev_read_count = 0;
 	uint64_t prev_polled_count = 0;
 
+	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_update_watchdog_time(thread_data->thread);
@@ -877,7 +878,9 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 			usleep(25000);
 		}
 
-		if (stats != NULL && ++tick > 50) {
+		uint64_t time_now = rrr_time_get_64();
+
+		if (stats != NULL && time_now > next_stats_time) {
 			rrr_stats_instance_update_rate(stats, 1, "read_error_count", data->read_error_count);
 			rrr_stats_instance_update_rate(stats, 2, "read_count", data->messages_count_read);
 			rrr_stats_instance_update_rate(stats, 3, "polled_count", data->messages_count_polled);
@@ -891,11 +894,14 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 			data->read_error_count = 0;
 			data->messages_count_read = 0;
 			data->messages_count_polled = 0;
+			next_stats_time = time_now + 1000000;
 		}
 
 		prev_read_error_count = data->read_error_count;
 		prev_read_count = data->messages_count_read;
 		prev_polled_count = data->messages_count_polled;
+
+		tick++;
 	}
 
 	pthread_cleanup_pop(1);

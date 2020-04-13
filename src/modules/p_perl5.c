@@ -1222,6 +1222,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	int tick = 0;
 	int consecutive_nothing_happend = 0;
 	uint64_t prev_sent_to_child_count = 0;
+	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_update_watchdog_time(thread_data->thread);
 
@@ -1261,7 +1262,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			}
 		}
 
-		if (	read_count != 0 &&
+		if (	read_count != 0 ||
 				prev_sent_to_child_count != data->sent_to_child_count
 		) {
 			consecutive_nothing_happend = 0;
@@ -1270,18 +1271,22 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		if (++consecutive_nothing_happend > 100) {
 			usleep (50000);
 			usleep_hits_b++;
-			consecutive_nothing_happend = 0;
 		}
 
-		if (++tick > 25 && stats != NULL) {
+		uint64_t time_now = rrr_time_get_64();
+		if (time_now > next_stats_time) {
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
+			rrr_stats_instance_update_rate(stats, 3, "ticks", tick);
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->output_buffer_ip));
 			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip));
 
 			usleep_hits_a = usleep_hits_b = tick = 0;
+
+			next_stats_time = time_now + 1000000;
 		}
 
+		tick++;
 		prev_sent_to_child_count = data->sent_to_child_count;
 	}
 

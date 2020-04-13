@@ -186,9 +186,11 @@ int rrr_socket_client_collection_multicast_send (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		RRR_DBG_3("TX to fd %i\n", node->connected_fd);
 		if ((ret = rrr_socket_send(node->connected_fd, data, size)) != 0) {
-			RRR_DBG_1("Disconnecting client in client collection following send error\n");
-			RRR_LL_ITERATE_SET_DESTROY();
-			ret = 0;
+			if (ret != RRR_SOCKET_SOFT_ERROR) {
+				RRR_DBG_1("Disconnecting client in client collection following send error\n");
+				RRR_LL_ITERATE_SET_DESTROY();
+				ret = 0;
+			}
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_socket_client_destroy(node));
 
