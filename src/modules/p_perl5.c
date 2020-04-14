@@ -41,6 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/common.h"
 #include "../lib/read.h"
 #include "../lib/stats_instance.h"
+#include "../lib/mmap_channel.h"
+#include "../lib/rrr_mmap.h"
 #include "../global.h"
 
 #include <EXTERN.h>
@@ -49,6 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_DEFAULT_SOURCE_INTERVAL_MS 1000
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
+#define PERL5_MMAP_SIZE (1024*1024)
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -74,7 +77,11 @@ struct perl5_data {
 	struct rrr_message_addr latest_message_addr;
 
 	struct rrr_socket_common_in_flight_counter in_flight_to_child;
-	uint64_t sent_to_child_count;
+	int mmap_full_counter;
+
+	struct rrr_mmap *mmap;
+	struct rrr_mmap_channel *channel_to_child;
+	struct rrr_mmap_channel *channel_from_child;
 };
 
 struct perl5_child_deferred_message {
@@ -112,16 +119,19 @@ struct perl5_child_data {
 	struct rrr_message_addr latest_message_addr;
 	struct perl5_child_deferred_message_collection deferred_messages;
 	struct rrr_socket_common_in_flight_counter in_flight_to_parent;
-	struct rrr_fifo_buffer from_parent_buffer;
+//	struct rrr_fifo_buffer from_parent_buffer;
+	uint64_t total_msg_mmap_from_parent;
+	uint64_t total_msg_processed;
 };
 
 int perl5_child_data_init (struct perl5_child_data *data) {
 	memset(data, '\0', sizeof(*data));
-	return rrr_fifo_buffer_init_custom_free(&data->from_parent_buffer, rrr_ip_buffer_entry_destroy_void);
+//	return rrr_fifo_buffer_init_custom_free(&data->from_parent_buffer, rrr_ip_buffer_entry_destroy_void);
+	return 0;
 }
 
 void perl5_child_data_cleanup (struct perl5_child_data *data) {
-	rrr_fifo_buffer_invalidate(&data->from_parent_buffer);
+	//rrr_fifo_buffer_invalidate(&data->ent_buffer);
 }
 
 struct extract_message_callback_data {
@@ -150,6 +160,7 @@ int poll_delete(RRR_MODULE_POLL_SIGNATURE) {
 			callback,
 			poll_data
 	};
+
 
 	struct rrr_fifo_callback_args callback_args = {
 			data->private_data,
@@ -184,30 +195,58 @@ static int send_socket_msg (struct perl5_child_data *child_data, struct rrr_sock
 	return rrr_socket_common_prepare_and_send_socket_msg (msg, child_data->child_fd, &child_data->in_flight_to_parent);
 }
 
-static int xsub_send_message_addr(const struct rrr_message_addr *message, void *private_data) {
+struct mmap_channel_callback_data {
+	struct rrr_message_addr *addr_msg;
+	struct rrr_message *msg;
+};
+
+int mmap_channel_write_callback (void *target, void *arg) {
+	struct mmap_channel_callback_data *data = arg;
+
+	void *msg_pos = target;
+	void *msg_addr_pos = target + MSG_TOTAL_SIZE(data->msg);
+
+	memcpy(msg_pos, data->msg, MSG_TOTAL_SIZE(data->msg));
+	memcpy(msg_addr_pos, data->addr_msg, sizeof(*(data->addr_msg)));
+
+	return 0;
+}
+
+static int xsub_send_message(
+		struct rrr_message *message,
+		const struct rrr_message_addr *message_addr,
+		void *private_data
+) {
 	struct perl5_child_data *child_data = private_data;
 	int ret = 0;
 
-	struct rrr_message_addr *msg_tmp_dynamic = NULL;
-	struct rrr_message_addr msg_tmp = *message;
+	struct rrr_message_addr *msg_addr_tmp_dynamic = NULL;
+	struct rrr_message_addr msg_addr_tmp = *message_addr;
 
-	if (send_socket_msg (child_data, (struct rrr_socket_msg *) &msg_tmp) != 0) {
+	struct mmap_channel_callback_data callback_data = {
+		&msg_addr_tmp,
+		message
+	};
+
+	if ((ret = rrr_mmap_channel_write_using_callback (
+			child_data->parent_data->channel_from_child,
+			MSG_TOTAL_SIZE(message) + sizeof(msg_addr_tmp),
+			mmap_channel_write_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == RRR_MMAP_CHANNEL_FULL) {
+			goto out_defer_addr_msg;
+		}
+		RRR_MSG_ERR("Warning: Could not send address message on memory map channel in xsub_send_message_addr of perl5 instance %s, message possibly too large. Consider increasing heap size of memory map.\n",
+				INSTANCE_D_NAME(child_data->parent_data->thread_data));
+	}
+	else {
+		goto no_socket_send;
+	}
+
+	if (send_socket_msg (child_data, (struct rrr_socket_msg *) &msg_addr_tmp) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			if ((msg_tmp_dynamic = malloc(sizeof(*msg_tmp_dynamic))) == NULL) {
-				RRR_MSG_ERR("Could not allocate memory in xsub_send_message_addr\n");
-				ret = 1;
-				goto out;
-			}
-
-			*msg_tmp_dynamic = msg_tmp;
-
-			if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) msg_tmp_dynamic) != 0) {
-				RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
-				ret = 1;
-				goto out;
-			}
-
-			msg_tmp_dynamic = NULL;
+			goto out_defer_addr_msg;
 		}
 		else {
 			RRR_MSG_ERR("Could not send address message on socket in xsub_send_message_addr of perl5 instance %s\n",
@@ -217,35 +256,49 @@ static int xsub_send_message_addr(const struct rrr_message_addr *message, void *
 		}
 	}
 
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_tmp_dynamic);
-	return ret;
-}
-
-static int xsub_send_message(struct rrr_message *message, void *private_data) {
-	struct perl5_child_data *child_data = private_data;
-	int ret = 0;
-
 	if (send_socket_msg (child_data, (struct rrr_socket_msg *) message) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) message) != 0) {
-				RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
-				ret = 1;
-				goto out;
-			}
-			message = NULL;
+			goto out_defer_msg;
 		}
 		else {
-			RRR_MSG_ERR("Could not send message on socket in xsub_send_message of perl5 instance %s\n",
+			RRR_MSG_ERR("Could not address message on socket in xsub_send_message_addr of perl5 instance %s\n",
 					INSTANCE_D_NAME(child_data->parent_data->thread_data));
 			ret = 1;
 			goto out;
 		}
 	}
 
+	no_socket_send:
+	goto out;
+
+	out_defer_addr_msg:
+		if ((msg_addr_tmp_dynamic = malloc(sizeof(*msg_addr_tmp_dynamic))) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory in xsub_send_message_addr\n");
+			ret = 1;
+			goto out;
+		}
+
+		*msg_addr_tmp_dynamic = msg_addr_tmp;
+
+		if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) msg_addr_tmp_dynamic) != 0) {
+			RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
+			ret = 1;
+			goto out;
+		}
+		msg_addr_tmp_dynamic = NULL;
+
+	out_defer_msg:
+		if (deferred_message_push(&child_data->deferred_messages, (struct rrr_socket_msg *) message) != 0) {
+			RRR_MSG_ERR("Error while pushing deferred message in perl5 xsub_send_message\n");
+			ret = 1;
+			goto out;
+		}
+		message = NULL;
+
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
-	return ret;
+		RRR_FREE_IF_NOT_NULL(msg_addr_tmp_dynamic);
+		RRR_FREE_IF_NOT_NULL(message);
+		return ret;
 }
 
 static char *xsub_get_setting(const char *key, void *private_data) {
@@ -302,12 +355,50 @@ int data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_d
 
 	data->thread_data = thread_data;
 
-	ret |= rrr_fifo_buffer_init_custom_free(&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void);
-	ret |= rrr_fifo_buffer_init_custom_free(&data->input_buffer_ip, rrr_ip_buffer_entry_destroy_void);
+	if (rrr_mmap_new(&data->mmap, PERL5_MMAP_SIZE) != 0) {
+		RRR_MSG_ERR("Could not allocate mmap in perl5\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_mmap_channel_new(&data->channel_from_child, data->mmap) != 0) {
+		RRR_MSG_ERR("Could not allocate mmap channel in perl5\n");
+		ret = 1;
+		goto out_destroy_mmap;
+	}
+
+	if (rrr_mmap_channel_new(&data->channel_to_child, data->mmap) != 0) {
+		RRR_MSG_ERR("Could not allocate mmap channel in perl5\n");
+		ret = 1;
+		goto out_destroy_channel_from_child;
+	}
+
+	if (rrr_fifo_buffer_init_custom_free(&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void) != 0) {
+		RRR_MSG_ERR("Could not initialize fifo buffer in perl5\n");
+		ret = 1;
+		goto out_destroy_channel_to_child;
+	}
+
+	if (rrr_fifo_buffer_init_custom_free(&data->input_buffer_ip, rrr_ip_buffer_entry_destroy_void) != 0) {
+		RRR_MSG_ERR("Could not initialize fifo buffer in perl5\n");
+		ret = 1;
+		goto out_destroy_output_buffer;
+	}
 
 	cmd_get_argv_copy(&data->cmdline, thread_data->init_data.cmd_data);
 
-	return ret;
+	goto out;
+
+	out_destroy_output_buffer:
+		rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
+	out_destroy_channel_to_child:
+		rrr_mmap_channel_destroy(data->channel_to_child);
+	out_destroy_channel_from_child:
+		rrr_mmap_channel_destroy(data->channel_from_child);
+	out_destroy_mmap:
+		rrr_mmap_destroy(data->mmap);
+	out:
+		return ret;
 }
 
 int perl5_start(struct perl5_child_data *data) {
@@ -316,7 +407,6 @@ int perl5_start(struct perl5_child_data *data) {
 	ret |= rrr_perl5_new_ctx (
 			&data->ctx,
 			data,
-			xsub_send_message_addr,
 			xsub_send_message,
 			xsub_get_setting,
 			xsub_set_setting
@@ -354,6 +444,16 @@ int perl5_start(struct perl5_child_data *data) {
 
 void data_cleanup(void *arg) {
 	struct perl5_data *data = arg;
+
+	if (data->channel_from_child != NULL) {
+		rrr_mmap_channel_destroy(data->channel_from_child);
+	}
+	if (data->channel_to_child != NULL) {
+		rrr_mmap_channel_destroy(data->channel_to_child);
+	}
+	if (data->mmap != NULL) {
+		rrr_mmap_destroy(data->mmap);
+	}
 
 	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
 	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
@@ -535,8 +635,9 @@ int process_message (
 	free(message);
 	rrr_perl5_destruct_message_hv (ctx, hv_message);
 	return ret;
-}
 
+}
+/*
 int worker_from_parent_buffer_callback (struct rrr_fifo_callback_args *fifo_args, char *data, unsigned long int size) {
 	struct perl5_child_data *child_data = fifo_args->private_data;
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
@@ -558,27 +659,66 @@ int worker_from_parent_buffer_callback (struct rrr_fifo_callback_args *fifo_args
 
 	entry->message = NULL;
 
+	child_data->total_msg_processed++;
+
 	return ret | RRR_FIFO_SEARCH_FREE;
 }
+*/
+
+struct input_callback_data {
+	int count;
+};
 
 int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
 	struct rrr_instance_thread_data *thread_data = callback_data->source;
 	struct perl5_data *perl5_data = thread_data->private_data;
+	struct input_callback_data *input_callback_data = callback_data->private_data;
+
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 	struct rrr_message_addr addr_msg;
-
 	int ret = 0;
 
 	(void)(size);
 
 	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
 
-	if (perl5_data->in_flight_to_child.in_flight_to_remote_count > PERL5_CHILD_MAX_IN_FLIGHT) {
+	if (input_callback_data->count > 10 ||
+		perl5_data->in_flight_to_child.in_flight_to_remote_count > PERL5_CHILD_MAX_IN_FLIGHT
+	) {
 		goto out_put_back;
 	}
 
 //	printf ("input_callback: message %p\n", message);
+
+	rrr_message_addr_init(&addr_msg);
+	if (entry->addr_len > 0) {
+		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
+		addr_msg.addr_len = entry->addr_len;
+	}
+
+	struct mmap_channel_callback_data channel_callback_data = {
+			&addr_msg,
+			message
+	};
+
+	if ((ret = rrr_mmap_channel_write_using_callback (
+			perl5_data->channel_to_child,
+			sizeof(addr_msg) + MSG_TOTAL_SIZE(message),
+			mmap_channel_write_callback,
+			&channel_callback_data
+	)) != 0) {
+		if (ret == RRR_MMAP_CHANNEL_FULL) {
+			perl5_data->mmap_full_counter++;
+			goto out_put_back;
+		}
+		RRR_MSG_ERR("Warning: Passing message to perl5 instance %s fork using memory map failed. Message might be too large, consider increasing size of memory map in configuration. Fallback to socket transmission.",
+				INSTANCE_D_NAME(thread_data));
+	}
+	else {
+//		printf("perl5 wrote %lu bytes to mmap channel\n", sizeof(addr_msg) + MSG_TOTAL_SIZE(message));
+		goto no_socket_send;
+	}
 
 	if (entry->addr_len > 0) {
 		rrr_message_addr_init(&addr_msg);
@@ -614,7 +754,9 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 		goto out;
 	}
 
-	perl5_data->sent_to_child_count++;
+	no_socket_send:
+
+	input_callback_data->count++;
 
 	goto out;
 	out_put_back:
@@ -731,7 +873,7 @@ int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
 	int ret = RRR_SOCKET_OK;
 
 //	printf ("worker_socket_read_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
-
+/*
 	struct rrr_ip_buffer_entry *entry = NULL;
 	if (rrr_ip_buffer_entry_new (
 			&entry,
@@ -745,9 +887,20 @@ int worker_socket_read_callback_msg (struct rrr_message *message, void *arg) {
 		goto out;
 	}
 
+	message = NULL;
+
 	rrr_fifo_buffer_write(&data->from_parent_buffer, (char*) entry, sizeof(*entry));
+*/
+
+	if ((ret = process_message(data, message, &data->latest_message_addr)) != 0) {
+		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
+				INSTANCE_D_NAME(data->parent_data->thread_data));
+		ret = 1;
+		goto out;
+	}
 
 	out:
+//	RRR_FREE_IF_NOT_NULL(message);
 	memset(&data->latest_message_addr, '\0', sizeof(data->latest_message_addr));
 	return ret;
 }
@@ -756,7 +909,6 @@ int worker_socket_read_callback_addr_msg (struct rrr_message_addr *message, void
 	struct child_read_callback_data *callback_data = arg;
 	struct perl5_child_data *data = callback_data->data;
 
-
 //	printf ("worker_socket_read_callback_addr_msg addr len: %" PRIu64 "\n", message->addr_len);
 
 	int ret = RRR_SOCKET_OK;
@@ -764,6 +916,24 @@ int worker_socket_read_callback_addr_msg (struct rrr_message_addr *message, void
 	free(message);
 
 	return ret;
+}
+
+int worker_fork_mmap_channel_read_callback (void *data, size_t data_size, void *arg) {
+	struct child_read_callback_data *callback_data = arg;
+
+	struct rrr_message *msg = data;
+	struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+
+//	printf ("worker fork mmap read ptr %p data size %li\n", msg, data_size);
+
+	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
+		RRR_BUG("BUG: Size mismatch in worker_fork_mmap_channel_read_callback\n");
+	}
+
+	callback_data->data->latest_message_addr = *msg_addr;
+	callback_data->data->total_msg_mmap_from_parent++;
+
+	return worker_socket_read_callback_msg(msg, arg);
 }
 
 int worker_fork_loop (struct perl5_child_data *child_data) {
@@ -791,11 +961,11 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 	}
 
 	// Process stuff
-	struct rrr_fifo_callback_args fifo_args = {
+/*	struct rrr_fifo_callback_args fifo_args = {
 			NULL,
 			child_data,
 			0
-	};
+	};*/
 
 	// Read stuff
 	int no_spawning = (child_data->parent_data->source_sub == NULL || *(child_data->parent_data->source_sub) == '\0' ? 1 : 0);
@@ -819,9 +989,11 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		sleep_interval_us = spawn_interval_us;
 	}
 
-//	int usleep_hits_a = 0;
-//	int usleep_hits_b = 0;
+	int usleep_hits_a = 0;
+	int usleep_hits_b = 0;
 
+	uint64_t prev_total_processed_msg = 0;
+	uint64_t prev_total_msg_mmap_from_parent = 0;
 	int consecutive_nothing_happend = 0;
 
 	while (child_data->received_sigterm == 0) {
@@ -831,7 +1003,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
-//			usleep_hits_a++;
+			usleep_hits_a++;
 			usleep(5000); // 5 ms
 			// Stop other sleep from running
 			consecutive_nothing_happend = 0;
@@ -864,30 +1036,50 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		}
 
 		int prev_unack = child_data->in_flight_to_parent.not_acknowledged_count;
-		if (rrr_fifo_buffer_get_entry_count(&child_data->from_parent_buffer) < PERL5_CHILD_MAX_IN_BUFFER) {
-			for (int i = 0; i < 50; i++) {
-				if ((ret = rrr_socket_common_receive_socket_msg (
-						&read_sessions,
-						child_data->child_fd,
-						RRR_READ_F_NO_SLEEPING,
-						RRR_SOCKET_READ_METHOD_RECV,
-						&child_data->in_flight_to_parent,
-						rrr_read_common_receive_message_callback,
-						&read_callback_data
-				)) != 0) {
-					// Stop on both soft and hard errors
-					RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
-							ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
-					ret = 1;
-					break;
-				}
+//		if (rrr_fifo_buffer_get_entry_count(&child_data->from_parent_buffer) < PERL5_CHILD_MAX_IN_BUFFER) {
+
+		for (int i = 0; i < 10; i++) {
+			if (rrr_mmap_channel_read_all (
+					child_data->parent_data->channel_to_child,
+					worker_fork_mmap_channel_read_callback,
+					&callback_data
+			) != 0) {
+				RRR_MSG_ERR("Error from mmap read function in child fork of perl5 instance %s\n",
+						INSTANCE_D_NAME(child_data->parent_data->thread_data));
+				ret = 1;
+				break;
 			}
-			if (ret != 0) {
+			if (prev_total_msg_mmap_from_parent == child_data->total_msg_mmap_from_parent) {
 				break;
 			}
 		}
 
-		if (rrr_fifo_read_clear_forward (
+		for (int i = 0; i < 50; i++) {
+			if ((ret = rrr_socket_common_receive_socket_msg (
+					&read_sessions,
+					child_data->child_fd,
+					RRR_READ_F_NO_SLEEPING,
+					RRR_SOCKET_READ_METHOD_RECV,
+					&child_data->in_flight_to_parent,
+					rrr_read_common_receive_message_callback,
+					&read_callback_data
+			)) != 0) {
+				// Stop on both soft and hard errors
+				RRR_MSG_ERR("Error %i while reading messages form socket in perl5 child fork of instance %s\n",
+						ret, INSTANCE_D_NAME(child_data->parent_data->thread_data));
+				ret = 1;
+				break;
+			}
+			if (prev_unack == child_data->in_flight_to_parent.not_acknowledged_count) {
+				break;
+			}
+		}
+		if (ret != 0) {
+			break;
+		}
+//		}
+
+/*		if (rrr_fifo_read_clear_forward (
 				&child_data->from_parent_buffer,
 				NULL,
 				worker_from_parent_buffer_callback,
@@ -898,7 +1090,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 					INSTANCE_D_NAME(child_data->parent_data->thread_data));
 			ret = 1;
 			break;
-		}
+		}*/
 
 		if (no_spawning == 0 && time_now >= next_spawn_time) {
 			if (spawn_message(child_data) != 0) {
@@ -907,18 +1099,24 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			next_spawn_time = 0;
 		}
 
-		if (prev_unack != child_data->in_flight_to_parent.not_acknowledged_count) {
+		if (	prev_unack != child_data->in_flight_to_parent.not_acknowledged_count ||
+				prev_total_msg_mmap_from_parent != child_data->total_msg_mmap_from_parent ||
+				prev_total_processed_msg != child_data->total_msg_processed
+		) {
 			consecutive_nothing_happend = 0;
 		}
 
-		if (++consecutive_nothing_happend > 100) {
-//			usleep_hits_b++;
+		if (++consecutive_nothing_happend > 250) {
+			usleep_hits_b++;
 			usleep(sleep_interval_us);
-/*			if (usleep_hits_b % 100 == 0) {
+			if (usleep_hits_b % 10 == 0) {
 				printf("usleep hits child: %i/%i, in flight %i\n",
 						usleep_hits_a, usleep_hits_b, child_data->in_flight_to_parent.in_flight_to_remote_count);
-			}*/
+			}
 		}
+
+		prev_total_processed_msg = child_data->total_msg_processed;
+		prev_total_msg_mmap_from_parent = child_data->total_msg_mmap_from_parent;
 	}
 
 	RRR_DBG_1("perl5 instance %s child worker loop complete, received_sigterm is %i ret is %i\n",
@@ -1098,6 +1296,22 @@ int read_from_child_callback_msg_addr (struct rrr_message_addr *message, void *a
 	return 0;
 }
 
+int read_from_child_mmap_channel_callback (void *data, size_t data_size, void *arg) {
+	struct read_callback_data *callback_data = arg;
+
+	struct rrr_message *msg = data;
+	struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+
+	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
+		RRR_BUG("BUG: Size mismatch in read_from_child_mmap_channel_callback\n");
+	}
+
+	callback_data->data->latest_message_addr = *msg_addr;
+	callback_data->count++;
+
+	return read_from_child_callback_msg(msg, arg);
+}
+
 int read_from_child_fork(int *read_count, struct perl5_data *data) {
 	int ret = 0;
 
@@ -1130,8 +1344,8 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 		data->child_fd = child_fd;
 	}
 
-	int not_acked_orig = data->in_flight_to_child.not_acknowledged_count;
 	for (int i = 0; i < 50; i++) {
+		int prev_count = callback_data.count;
 		if ((ret = rrr_socket_common_receive_socket_msg (
 				&data->read_sessions,
 				data->child_fd,
@@ -1148,7 +1362,30 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 			goto out;
 		}
 
-		if (i > 5 && not_acked_orig == data->in_flight_to_child.not_acknowledged_count) {
+		if (callback_data.count == prev_count) {
+			break;
+		}
+	}
+
+	for (int i = 0; i < 10; i++) {
+		int prev_count = callback_data.count;
+		if ((ret = rrr_mmap_channel_read_all (
+				data->channel_from_child,
+				read_from_child_mmap_channel_callback,
+				&callback_data
+		)) != 0) {
+			if (ret == RRR_MMAP_CHANNEL_EMPTY) {
+				break;
+			}
+			else {
+				RRR_MSG_ERR("Error while reading from child mmap channel in perl5 instance %s\n",
+						INSTANCE_D_NAME(data->thread_data));
+				ret = 1;
+				goto out;
+			}
+		}
+
+		if (callback_data.count == prev_count) {
 			break;
 		}
 	}
@@ -1211,9 +1448,13 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
+	struct input_callback_data input_callback_data = {
+		0
+	};
+
 	struct rrr_fifo_callback_args fifo_callback_args = {
 		thread_data,
-		data,
+		&input_callback_data,
 		0
 	};
 
@@ -1222,7 +1463,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	int tick = 0;
 	int consecutive_nothing_happend = 0;
-	uint64_t prev_sent_to_child_count = 0;
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_update_watchdog_time(thread_data->thread);
@@ -1233,25 +1473,21 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			break;
 		}
 
+		input_callback_data.count = 0;
 		if (rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip) > 0) {
-			if (data->in_flight_to_child.in_flight_to_remote_count < PERL5_CHILD_MAX_IN_FLIGHT) {
-				if (rrr_fifo_read_clear_forward (
-						&data->input_buffer_ip,
-						NULL,
-						input_callback,
-						&fifo_callback_args,
-						0
-				) != 0) {
-					break;
-				}
+			int prev_mmap_full_counter = data->mmap_full_counter;
+			if (rrr_fifo_read_clear_forward (
+					&data->input_buffer_ip,
+					NULL,
+					input_callback,
+					&fifo_callback_args,
+					0
+			) != 0) {
+				break;
 			}
-			else {
-//				printf ("Send to child deferred in flight count %i\n", data->in_flight_to_child.in_flight_to_remote_count);
-//				usleep(10);
-				usleep(150);
-				++usleep_hits_a;
-				// Stop other usleep from running
+			if (prev_mmap_full_counter != data->mmap_full_counter) {
 				consecutive_nothing_happend = 0;
+				usleep_hits_a++;
 			}
 		}
 		else if (no_polling == 0 && data->child_fd > 0) { // No polling before child is connected
@@ -1264,7 +1500,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		if (	read_count != 0 ||
-				prev_sent_to_child_count != data->sent_to_child_count
+				input_callback_data.count == 0
 		) {
 			consecutive_nothing_happend = 0;
 		}
@@ -1279,16 +1515,16 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
 			rrr_stats_instance_update_rate(stats, 3, "ticks", tick);
+			rrr_stats_instance_update_rate(stats, 4, "mmap_to_child_full_hits", data->mmap_full_counter);
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->output_buffer_ip));
 			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip));
 
-			usleep_hits_a = usleep_hits_b = tick = 0;
+			usleep_hits_a = usleep_hits_b = tick = data->mmap_full_counter = 0;
 
 			next_stats_time = time_now + 1000000;
 		}
 
 		tick++;
-		prev_sent_to_child_count = data->sent_to_child_count;
 	}
 
 	out_message:

@@ -216,8 +216,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message_addr) (const struct rrr_message_addr *message, void *private_data),
-		int (*send_message) (struct rrr_message *message, void *private_data),
+		int (*send_message) (struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 ) {
@@ -240,7 +239,6 @@ int rrr_perl5_new_ctx (
 	}
 
 	ctx->private_data = private_data;
-	ctx->send_message_addr = send_message_addr;
 	ctx->send_message = send_message;
 	ctx->get_setting = get_setting;
 	ctx->set_setting = set_setting;
@@ -1228,12 +1226,8 @@ int rrr_perl5_message_send (HV *hv) {
 		goto out;
 	}
 
-	if (addr_msg.addr_len > 0) {
-		ctx->send_message_addr(&addr_msg, ctx->private_data);
-	}
-
-	// Takes ownership of memory
-	ctx->send_message(message_new, ctx->private_data);
+	// Takes ownership of memory of message (but not address message)
+	ctx->send_message(message_new, &addr_msg, ctx->private_data);
 
 	out:
 	if (message_new_hv != NULL) {
