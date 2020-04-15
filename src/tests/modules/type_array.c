@@ -471,7 +471,7 @@ int test_type_array (
 
 	data->msg.network_size = sizeof(struct rrr_message) - 1;
 	data->msg.msg_size = sizeof(struct rrr_message) - 1;
-	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_RRR_MESSAGE;
+	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
 	data->msg.topic_length = 0;
 	data->msg.data_numeric = 33;
 	data->msg.type = MSG_TYPE_MSG;

@@ -87,6 +87,7 @@ int rrr_socket_close_ignore_unregistered (int fd);
 int rrr_socket_close_all_except (int fd);
 int rrr_socket_close_all_except_no_unlink (int fd);
 int rrr_socket_close_all (void);
+int rrr_socket_close_all_no_unlink (void);
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,

@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 #define RRR_MMAP_CHANNEL_SLOTS 1024
 
@@ -35,9 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap;
 
 struct rrr_mmap_channel_block {
+	pthread_mutex_t block_lock;
 	size_t size_capacity;
 	size_t size_data; // If set to 0, block is free
-	void *ptr;
+	int is_shm;
+	void *ptr_shm_or_mmap;
 };
 
 struct rrr_mmap_channel {
@@ -46,6 +49,8 @@ struct rrr_mmap_channel {
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+	char *tmpfile;
+	int tmp_fd;
 };
 
 int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target);
@@ -65,12 +70,18 @@ int rrr_mmap_channel_read (
 		size_t *target_size,
 		struct rrr_mmap_channel *source
 );
+int rrr_mmap_channel_read_with_callback (
+		struct rrr_mmap_channel *source,
+		int (*callback)(const void *data, size_t data_size, void *arg),
+		void *callback_arg
+);
 int rrr_mmap_channel_read_all (
 		struct rrr_mmap_channel *source,
-		int (*callback)(void *data, size_t data_size, void *arg),
+		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target);
+void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target);
 int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap);
 
 #endif /* RRR_MMAP_CHANNEL_H */

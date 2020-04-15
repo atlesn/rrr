@@ -44,7 +44,7 @@ void rrr_message_addr_init (struct rrr_message_addr *target) {
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) target,
-			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE_ADDR,
+			RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR,
 			sizeof(struct rrr_message_addr),
 			0
 	);

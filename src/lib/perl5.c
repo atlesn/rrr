@@ -1024,7 +1024,7 @@ static int __rrr_perl5_message_hv_arrays_populate_store_element_callback(RRR_PER
 static int __rrr_perl5_message_hv_arrays_populate (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message
+		const struct rrr_message *message
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -1115,7 +1115,7 @@ static int __rrr_perl5_message_hv_arrays_populate (
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message,
+		const struct rrr_message *message,
 		struct rrr_message_addr *message_addr
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
@@ -1179,7 +1179,7 @@ int rrr_perl5_message_to_hv (
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message,
+		const struct rrr_message *message,
 		struct rrr_message_addr *message_addr
 ) {
     int ret = 0;

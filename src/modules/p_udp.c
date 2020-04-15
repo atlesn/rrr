@@ -657,7 +657,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 
 		rrr_socket_msg_populate_head (
 				(struct rrr_socket_msg *) message,
-				RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
+				RRR_SOCKET_MSG_TYPE_MESSAGE,
 				final_size,
 				0
 		);

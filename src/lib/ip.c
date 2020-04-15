@@ -484,7 +484,7 @@ int rrr_ip_send_message (
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) final_message,
-			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
+			RRR_SOCKET_MSG_TYPE_MESSAGE,
 			final_size,
 			0
 	);

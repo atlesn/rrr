@@ -95,13 +95,13 @@ int rrr_perl5_hv_to_message (
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message,
+		const struct rrr_message *message,
 		struct rrr_message_addr *message_addr
 );
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		struct rrr_message *message,
+		const struct rrr_message *message,
 		struct rrr_message_addr *message_addr
 );
 

@@ -515,7 +515,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 			RRR_BUG("Received an rrr_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
 
-		msg_type = RRR_SOCKET_MSG_TYPE_RRR_MESSAGE;
+		msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
 		msg_size = MSG_TOTAL_SIZE((struct rrr_message *) message);
 
 		rrr_message_prepare_for_network((struct rrr_message *) message);

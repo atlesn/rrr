@@ -469,7 +469,11 @@ int rrr_socket_close_all_except_no_unlink (int fd) {
 }
 
 int rrr_socket_close_all (void) {
-	return rrr_socket_close_all_except(0);
+	return __rrr_socket_close_all_except(0, 0);
+}
+
+int rrr_socket_close_all_no_unlink (void) {
+	return __rrr_socket_close_all_except(0, 1);
 }
 
 int rrr_socket_unix_create_bind_and_listen (

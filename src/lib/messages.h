@@ -89,7 +89,7 @@ struct rrr_message {
 
 static inline struct rrr_socket_msg *rrr_message_safe_cast (struct rrr_message *message) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_RRR_MESSAGE;
+	ret->msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
 	ret->msg_size = MSG_TOTAL_SIZE(message);
 	ret->msg_value = 0;
 	return ret;

@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/python3.h"
 #include "../global.h"
 
+// TODO : This should NOT be here, allocate inside python3_data
 static sig_atomic_t sigchld_pending = 0;
 
 struct python3_preload_data {
@@ -807,8 +808,7 @@ int signal_handler(int signal, void *private_arg) {
 	RRR_DBG_1("Python got signal %i\n", signal);
 	if (signal == SIGCHLD) {
 		sigchld_pending = 1;
-		ret = 0;
-		RRR_DBG_1("Python took SIGCHLD signal\n");
+		RRR_DBG_1("Python SIGCHLD check pending\n");
 	}
 	else {
 		RRR_DBG_1("Python did not take signal\n");

@@ -40,11 +40,11 @@ struct rrr_socket_msg {
 } __attribute((packed));
 
 // All odd numbers are reserved for the control type where bits 1-15 are flags
-#define RRR_SOCKET_MSG_TYPE_CTRL				1
-#define RRR_SOCKET_MSG_TYPE_RRR_MESSAGE			2
-#define RRR_SOCKET_MSG_TYPE_SETTING				4
-#define RRR_SOCKET_MSG_TYPE_TREE_DATA			6
-#define RRR_SOCKET_MSG_TYPE_RRR_MESSAGE_ADDR	8
+#define RRR_SOCKET_MSG_TYPE_CTRL			1
+#define RRR_SOCKET_MSG_TYPE_MESSAGE			2
+#define RRR_SOCKET_MSG_TYPE_SETTING			4
+#define RRR_SOCKET_MSG_TYPE_TREE_DATA		6
+#define RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR	8
 
 // This bit is reserved for holding the type=control number
 #define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)
@@ -69,9 +69,9 @@ struct rrr_socket_msg {
 #define RRR_SOCKET_MSG_IS_CTRL_NETWORK_ENDIAN(msg) \
 	((be16toh((msg)->msg_type) & RRR_SOCKET_MSG_TYPE_CTRL) == RRR_SOCKET_MSG_TYPE_CTRL)
 #define RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg) \
-	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_RRR_MESSAGE)
+	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_MESSAGE)
 #define RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(msg) \
-	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_RRR_MESSAGE_ADDR)
+	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR)
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
 

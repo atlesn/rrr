@@ -160,6 +160,7 @@ void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callbac
 			goto remove_and_next;
 		}
 		else {
+			// TODO : Maybe SIGCHLD is for a child of another instance
 			RRR_MSG_ERR("Warning: python3 waitpid error for fork %i: %s\n", zombie->pid, rrr_strerror(errno));
 		}
 

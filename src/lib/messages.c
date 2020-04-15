@@ -103,7 +103,7 @@ int rrr_message_new_empty (
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
+			RRR_SOCKET_MSG_TYPE_MESSAGE,
 			total_size,
 			0
 	);
