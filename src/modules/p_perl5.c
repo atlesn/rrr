@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_DEFAULT_SOURCE_INTERVAL_MS 1000
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
-#define PERL5_MMAP_SIZE (1024*1024)
+#define PERL5_MMAP_SIZE (1024*1024*2)
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -131,7 +131,15 @@ int perl5_child_data_init (struct perl5_child_data *data) {
 void perl5_child_data_cleanup (struct perl5_child_data *data) {
 	// Since we are the writer, we must free the SHM blocks. Parent process
 	// calls destroy()
+//	printf("CHILD DATA BEFORE CLEANUP ========================\n");
+//	rrr_mmap_dump_indexes(data->parent_data->channel_from_child->mmap);
+//	printf("=================================================\n");
+
 	rrr_mmap_channel_writer_free_blocks(data->parent_data->channel_from_child);
+
+//	printf("CHILD DATA AFTER CLEANUP ========================\n");
+//	rrr_mmap_dump_indexes(data->parent_data->channel_from_child->mmap);
+//	printf("=================================================\n");
 }
 
 struct extract_message_callback_data {
@@ -481,7 +489,16 @@ void data_cleanup(void *arg) {
 	}
 	if (data->channel_to_child != NULL) {
 		// Since we are the writer, we must free the SHM blocks
+//		printf("PARENT DATA BEFORE CLEANUP =======================\n");
+//		rrr_mmap_dump_indexes(data->channel_to_child->mmap);
+//		printf("=================================================\n");
+
 		rrr_mmap_channel_writer_free_blocks(data->channel_to_child);
+
+//		printf("PARENT DATA AFTER CLEANUP =======================\n");
+//		rrr_mmap_dump_indexes(data->channel_to_child->mmap);
+//		printf("=================================================\n");
+
 		rrr_mmap_channel_destroy(data->channel_to_child);
 	}
 	if (data->mmap != NULL) {
@@ -945,14 +962,14 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		if (++consecutive_nothing_happend > 250) {
 			usleep_hits_b++;
 			usleep(sleep_interval_us);
-			if (usleep_hits_b % 10 == 0) {
-				printf("usleep hits child: %i/%i\n", usleep_hits_a, usleep_hits_b);
-			}
+//			if (usleep_hits_b % 10 == 0) {
+//				printf("usleep hits child: %i/%i\n", usleep_hits_a, usleep_hits_b);
+//			}
 		}
 
 		if (time_now - prev_stats_time > 1000000) {
-			printf ("child total processed %" PRIu64 " total from parent %" PRIu64 " total deferred %" PRIu64 "\n",
-					child_data->total_msg_processed, child_data->total_msg_mmap_from_parent, child_data->total_msg_deferred);
+//			printf("child total processed %" PRIu64 " total from parent %" PRIu64 " total deferred %" PRIu64 "\n",
+//					child_data->total_msg_processed, child_data->total_msg_mmap_from_parent, child_data->total_msg_deferred);
 			prev_stats_time = time_now;
 		}
 

@@ -36,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mmap;
 
 struct rrr_mmap_channel_block {
-	pthread_mutex_t block_lock;
 	size_t size_capacity;
 	size_t size_data; // If set to 0, block is free
 	int shmid;
@@ -54,6 +53,7 @@ struct rrr_mmap_channel {
 };
 
 int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target);
+void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *target);
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,

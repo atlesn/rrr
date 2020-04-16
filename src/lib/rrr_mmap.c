@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 128
+#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 64
 
 #include <sys/mman.h>
 #include <stdio.h>
@@ -81,6 +81,11 @@ void rrr_mmap_free(struct rrr_mmap *mmap, void *ptr) {
 		for (uint64_t j = 0; j < 64; j++) {
 			uint64_t used_mask = (uint64_t) 1 << j;
 
+			if (index->block_sizes[j] == 0 && (index->block_used_map & used_mask) == used_mask) {
+				// Unusable merged chunk
+				continue;
+			}
+
 			if (block_pos == pos) {
 				if ((index->block_used_map & used_mask) == 0) {
 					RRR_BUG("BUG: Double free of %" PRIu64 " in rrr_mmap_free\n", pos);
@@ -100,15 +105,74 @@ void rrr_mmap_free(struct rrr_mmap *mmap, void *ptr) {
 	RRR_BUG("BUG: Invalid data position %" PRIu64 " in rrr_mmap_free\n", pos);
 
 	out_unlock:
+
+//	printf("free ptr: %p\n", ptr);
 	pthread_mutex_unlock(&mmap->mutex);
 }
 
+void rrr_mmap_dump_indexes (struct rrr_mmap *mmap) {
+	pthread_mutex_lock(&mmap->mutex);
+	uint64_t block_pos = 0;
+	uint64_t total_free_bytes = 0;
+	while (block_pos < mmap->heap_size) {
+		struct rrr_mmap_heap_block_index *index = (struct rrr_mmap_heap_block_index *) (mmap->heap + block_pos);
+
+		block_pos += sizeof(struct rrr_mmap_heap_block_index);
+
+		uint64_t free_bytes_in_block = 0;
+
+		for (uint64_t j = 0; j < 64; j++) {
+			uint64_t used_mask = (uint64_t) 1 << j;
+
+			if (index->block_used_map & used_mask) {
+				if (index->block_sizes[j] == 0) {
+					// Unusable chunk due to merging
+					printf("/");
+				}
+				else {
+					printf("X");
+				}
+			}
+			else {
+				printf ("-");
+				free_bytes_in_block += index->block_sizes[j];
+			}
+
+			if (index->block_sizes[j] == 0 && (index->block_used_map & used_mask) == 0) {
+				// Last block
+				block_pos = mmap->heap_size;
+			}
+
+			block_pos += index->block_sizes[j];
+			total_free_bytes += free_bytes_in_block;
+		}
+
+		printf (" - %" PRIu64 " free\n", free_bytes_in_block);
+	}
+	printf ("Total free: %" PRIu64 "\n", total_free_bytes);
+	pthread_mutex_unlock(&mmap->mutex);
+}
+
+void __dump_bin (uint64_t n) {
+	for (int i = 0; i < 64; i++) {
+		printf ("%i", ((n & 1) == 1) ? 1 : 0);
+		n >>= 1;
+	}
+	printf ("\n");
+}
+
 void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
+	if (req_size == 0) {
+		RRR_BUG("request size was 0 in rrr_mmap_allocate\n");
+	}
 #ifdef RRR_MMAP_SENTINEL_DEBUG
 	req_size += sizeof(rrr_mmap_sentinel_template);
 #endif
 
-	uint64_t req_size_padded = req_size + (RRR_MMAP_HEAP_CHUNK_MIN_SIZE - (req_size % RRR_MMAP_HEAP_CHUNK_MIN_SIZE));
+	uint64_t req_size_padded = req_size - (req_size % RRR_MMAP_HEAP_CHUNK_MIN_SIZE) +
+			RRR_MMAP_HEAP_CHUNK_MIN_SIZE;
+
+//	printf ("mmap allocate request %" PRIu64 "\n", req_size);
 
 	void *result = NULL;
 
@@ -126,10 +190,20 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 			goto out_unlock;
 		}
 
+		uint64_t merge_j = 0;
+		uint64_t merge_block_pos = 0;
+		uint64_t consecutive_unused_count = 0;
+		uint64_t consecutive_unused_size = 0;
+
 		for (uint64_t j = 0; j < 64; j++) {
 			uint64_t used_mask = (uint64_t) 1 << j;
 
 			if (index->block_sizes[j] == 0) {
+				if ((index->block_used_map & used_mask) == used_mask) {
+					// Unusable merged chunk
+					continue;
+				}
+
 				// Allocate new block
 				if ((block_pos + req_size_padded) > mmap->heap_size) {
 					// Out of memory, allocation would overrun end
@@ -139,6 +213,7 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 				index->block_sizes[j] = req_size_padded;
 				index->block_used_map |= used_mask;
 				result = mmap->heap + block_pos;
+//				printf("new ptr: %p\n", result);
 #ifdef RRR_MMAP_SENTINEL_DEBUG
 				*((uint64_t*)(mmap->heap + block_pos + req_size_padded - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
 #endif
@@ -151,12 +226,47 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 					RRR_BUG("Sentinel overwritten at end of block at position %" PRIu64 "\n", block_pos);
 				}
 #endif
-				if (index->block_sizes[j] >= req_size_padded && (index->block_used_map & used_mask) == 0) {
-					// Re-use previously allocated and freed block
-					index->block_used_map |= used_mask;
-					result = mmap->heap + block_pos;
-//					printf ("mmap allocate old block at %" PRIu64 " size %" PRIu64 " used mask %" PRIu64 "\n", block_pos, req_size_padded, index->block_used_map);
-					goto out_unlock;
+
+
+//				printf ("block size %" PRIu64 " - %" PRIu64 "\n", j, index->block_sizes[j]);
+
+				if ((index->block_used_map & used_mask) != used_mask) {
+					if (consecutive_unused_count == 0) {
+						merge_block_pos = block_pos;
+						merge_j = j;
+					}
+					consecutive_unused_count++;
+					consecutive_unused_size += index->block_sizes[j];
+
+					if (index->block_sizes[j] >= req_size_padded) {
+						// Re-use previously allocated and freed block
+						index->block_used_map |= used_mask;
+						result = mmap->heap + block_pos;
+//						printf("re-use ptr: %p\n", result);
+	//					printf ("mmap allocate old block at %" PRIu64 " size %" PRIu64 " used mask %" PRIu64 "\n", block_pos, req_size_padded, index->block_used_map);
+						goto out_unlock;
+					}
+					else if (consecutive_unused_size >= req_size_padded) {
+						// Merge blocks if multiple after each other are free
+						for (uint64_t k = merge_j; k <= j; k++) {
+							index->block_used_map |= (uint64_t) 1 << k;
+							index->block_sizes[k] = 0;
+						}
+						index->block_sizes[merge_j] = consecutive_unused_size;
+						result = mmap->heap + merge_block_pos;
+
+//						printf("merge ptr: %p\n", result);
+
+#ifdef RRR_MMAP_SENTINEL_DEBUG
+// Sentinel should be preserved from previous last block
+//				*((uint64_t*)(mmap->heap + merge_block_pos +  consecutive_unused_size - sizeof(rrr_mmap_sentinel_template))) = rrr_mmap_sentinel_template;
+#endif
+						goto out_unlock;
+					}
+				}
+				else {
+					consecutive_unused_count = 0;
+					consecutive_unused_size = 0;
 				}
 			}
 
@@ -169,6 +279,10 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 
 	out_unlock:
 	pthread_mutex_unlock(&mmap->mutex);
+
+	if (result == NULL) {
+		rrr_mmap_dump_indexes(mmap);
+	}
 
 	return result;
 }
