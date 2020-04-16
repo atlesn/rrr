@@ -107,8 +107,7 @@ void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *t
 static int __rrr_mmap_channel_allocate (
 		struct rrr_mmap_channel *target,
 		struct rrr_mmap_channel_block *block,
-		size_t data_size,
-		int block_pos
+		size_t data_size
 ) {
 	int ret = 0;
 
@@ -187,7 +186,7 @@ int rrr_mmap_channel_write_using_callback (
 		goto out_unlock;
 	}
 
-	if (__rrr_mmap_channel_allocate(target, block, data_size, target->wpos) != 0) {
+	if (__rrr_mmap_channel_allocate(target, block, data_size) != 0) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_mmap_channel_write\n");
 		ret = 1;
 		goto out_unlock;
