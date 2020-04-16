@@ -39,7 +39,7 @@ struct rrr_mmap_channel_block {
 	pthread_mutex_t block_lock;
 	size_t size_capacity;
 	size_t size_data; // If set to 0, block is free
-	int is_shm;
+	int shmid;
 	void *ptr_shm_or_mmap;
 };
 
@@ -49,8 +49,8 @@ struct rrr_mmap_channel {
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
-	char *tmpfile;
-	int tmp_fd;
+//	char *tmpfile;
+//	int tmp_fd;
 };
 
 int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target);

@@ -21,13 +21,24 @@ sub get_from_tag {
 	return undef;
 }
 
+sub push_tag {
+	my $message = shift;
+	my $tag = shift;
+	my $value = shift;
+
+	push @{$message->{'array_values'}}, "$value";
+	push @{$message->{'array_tags'}}, $tag;
+	push @{$message->{'array_types'}}, "str";
+}
+
 sub process {
 	my $message = shift;
 
 	my $code = get_from_tag($message, "code");
 	if (!defined($code)) {
-		printf "perl5: Could not find tag 'code' in message\n";
-		return 1;
+		push_tag($message, "code", $message->{'timestamp_from'});
+#		printf "perl5: Could not find tag 'code' in message\n";
+#		return 1;
 	}
 
 	push @{$message->{'array_values'}}, "A\r";

@@ -32,9 +32,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
+#include "random.h"
 
 // Messages larger than this limit are transferred using SHM
-#define RRR_MMAP_CHANNEL_SHM_LIMIT 100
+#define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
+#define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
 
 int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target) {
 	int possible = 1;
@@ -53,26 +55,13 @@ int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target) {
 
 static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel *target,
-		struct rrr_mmap_channel_block *block,
-		int block_pos
+		struct rrr_mmap_channel_block *block
 ) {
-	if (block->is_shm != 0) {
+	if (block->shmid != 0) {
 		if (block->ptr_shm_or_mmap == NULL) {
 			// Attempt to recover from previously failed allocation
-			int key = 0;
-			if ((key = ftok(target->tmpfile, block_pos)) <= 0) {
-				RRR_MSG_ERR("ftok failed in __rrr_mmap_channel_allocate for file %s: %s\n", target->tmpfile, rrr_strerror(errno));
-				return 1;
-			}
-
-			int shmid = shmget(key, block->size_capacity, 0600);
-			if (shmid <= 0) {
-				RRR_MSG_ERR("Error from shmget in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
-				return 1;
-			}
-
 			struct shmid_ds ds;
-			if (shmctl(shmid, IPC_STAT, &ds) != shmid) {
+			if (shmctl(block->shmid, IPC_STAT, &ds) != block->shmid) {
 				RRR_MSG_ERR("Warning: shmctl IPC_STAT failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
 			}
 			else {
@@ -80,7 +69,7 @@ static int __rrr_mmap_channel_block_free (
 					RRR_BUG("Dangling shared memory key in __rrr_mmap_channel_block_free, cannot continue\n");
 				}
 
-				if (shmctl(shmid, IPC_RMID, NULL) != 0) {
+				if (shmctl(block->shmid, IPC_RMID, NULL) != 0) {
 					RRR_MSG_ERR("shmctl IPC_RMID failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
 					return 1;
 				}
@@ -90,9 +79,6 @@ static int __rrr_mmap_channel_block_free (
 			RRR_MSG_ERR("shmdt failed in rrr_mmap_channel_write_using_callback: %s\n", rrr_strerror(errno));
 			return 1;
 		}
-
-		block->is_shm = 0;
-		block->ptr_shm_or_mmap = 0;
 	}
 	else if (block->ptr_shm_or_mmap != NULL) {
 		rrr_mmap_free(target->mmap, block->ptr_shm_or_mmap);
@@ -101,7 +87,7 @@ static int __rrr_mmap_channel_block_free (
 	block->ptr_shm_or_mmap = NULL;
 	block->size_data = 0;
 	block->size_capacity = 0;
-	block->is_shm = 0;
+	block->shmid = 0;
 
 	return 0;
 }
@@ -117,22 +103,20 @@ static int __rrr_mmap_channel_allocate (
 	if (block->size_capacity >= data_size) {
 		goto out;
 	}
-	if ((ret = __rrr_mmap_channel_block_free(target, block, block_pos)) != 0) {
+	if ((ret = __rrr_mmap_channel_block_free(target, block)) != 0) {
 		goto out;
 	}
 
 	if (data_size > RRR_MMAP_CHANNEL_SHM_LIMIT) {
 		key_t new_key;
 
+		data_size = data_size - (data_size % RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE) +
+				RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE;
+
 		int shmid = 0;
 		do {
-			if ((new_key = ftok(target->tmpfile, block_pos)) <= 0) {
-				RRR_MSG_ERR("ftok failed in __rrr_mmap_channel_allocate for file %s: %s\n", target->tmpfile, rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
-
-			printf("allocate shmget key %i file %s pos %i\n", new_key, target->tmpfile, block_pos);
+			new_key = rrr_rand();
+			printf("allocate shmget key %i pos %i size %lu\n", new_key, block_pos, data_size);
 			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) <= 0) {
 				if (errno == EEXIST) {
 					// OK, try another key
@@ -145,7 +129,7 @@ static int __rrr_mmap_channel_allocate (
 			}
 		} while (shmid <= 0);
 
-		block->is_shm = 1;
+		block->shmid = shmid;
 		block->size_capacity = data_size;
 
 		if ((block->ptr_shm_or_mmap = shmat(shmid, NULL, 0)) == NULL) {
@@ -162,12 +146,12 @@ static int __rrr_mmap_channel_allocate (
 	}
 	else {
 		if ((block->ptr_shm_or_mmap = rrr_mmap_allocate(target->mmap, data_size)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_mmap_channel_allocate \n");
+			RRR_MSG_ERR("Could not allocate mmap memory in __rrr_mmap_channel_allocate \n");
 			ret = 1;
 			goto out;
 		}
 		block->size_capacity = data_size;
-		block->is_shm = 0;
+		block->shmid = 0;
 	}
 
 	out:
@@ -182,8 +166,10 @@ int rrr_mmap_channel_write_using_callback (
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 	pthread_mutex_lock(&target->index_lock);
-
 	struct rrr_mmap_channel_block *block = &(target->blocks[target->wpos]);
+	pthread_mutex_unlock(&target->index_lock);
+
+	pthread_mutex_lock(&block->block_lock);
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
@@ -197,7 +183,9 @@ int rrr_mmap_channel_write_using_callback (
 		goto out_unlock;
 	}
 
-	if (callback(block->ptr_shm_or_mmap, callback_arg) != 0) {
+	ret = callback(block->ptr_shm_or_mmap, callback_arg);
+
+	if (ret != 0) {
 		RRR_MSG_ERR("Error from callback in rrr_mmap_channel_write_using_callback\n");
 		ret = 1;
 		goto out_unlock;
@@ -207,13 +195,15 @@ int rrr_mmap_channel_write_using_callback (
 
 //	printf ("mmap channel write to %p size %li\n", block->ptr, data_size);
 
+	pthread_mutex_lock(&target->index_lock);
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
 		target->wpos = 0;
 	}
+	pthread_mutex_unlock(&target->index_lock);
 
 	out_unlock:
-	pthread_mutex_unlock(&target->index_lock);
+	pthread_mutex_unlock(&block->block_lock);
 	return ret;
 }
 
@@ -250,8 +240,8 @@ int rrr_mmap_channel_read_with_callback (
 	int do_rpos_increment = 1;
 
 	pthread_mutex_lock(&source->index_lock);
-
 	struct rrr_mmap_channel_block *block = &(source->blocks[source->rpos]);
+	pthread_mutex_unlock(&source->index_lock);
 
 	pthread_mutex_lock(&block->block_lock);
 
@@ -260,36 +250,20 @@ int rrr_mmap_channel_read_with_callback (
 		goto out_unlock;
 	}
 
-	if (block->is_shm != 0) {
+	if (block->shmid != 0) {
 		const char *data_pointer = NULL;
 
-		int key = 0;
-		if ((key = ftok(source->tmpfile, source->rpos)) <= 0) {
-			RRR_MSG_ERR("ftok failed in rrr_mmap_channel_read_with_callback for file %s: %s\n", source->tmpfile, rrr_strerror(errno));
-			return 1;
-		}
-
-		int shmid = shmget(key, block->size_capacity, 0);
-		printf("read shmget key %i file %s pos %i\n", key, source->tmpfile, source->rpos);
-		if (shmid <= 0) {
-			RRR_MSG_ERR("Error from shmget in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out_unlock;
-		}
-
-		if ((data_pointer = shmat(shmid, NULL, 0)) == NULL) {
+		if ((data_pointer = shmat(block->shmid, NULL, 0)) == NULL) {
 			RRR_MSG_ERR("Could not get shm pointer in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_unlock;
 		}
 
-		pthread_mutex_unlock(&source->index_lock);
 		if ((ret = callback(data_pointer, block->size_data, callback_arg)) != 0) {
 			RRR_MSG_ERR("Error from callback in rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
-		pthread_mutex_lock(&source->index_lock);
 
 		if (shmdt(data_pointer) != 0) {
 			RRR_MSG_ERR("shmdt failed in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
@@ -298,30 +272,29 @@ int rrr_mmap_channel_read_with_callback (
 		}
 	}
 	else {
-		pthread_mutex_unlock(&source->index_lock);
 		if ((ret = callback(block->ptr_shm_or_mmap, block->size_data, callback_arg)) != 0) {
 			RRR_MSG_ERR("Error from callback in rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
-		pthread_mutex_lock(&source->index_lock);
 	}
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
 		block->size_data = 0;
 
+		pthread_mutex_lock(&source->index_lock);
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
 			source->rpos = 0;
 		}
+		pthread_mutex_unlock(&source->index_lock);
 	}
 
 //	printf ("mmap channel read from mmap %p to local %p size_data %lu\n", block->ptr, result, *target_size);
 
 	out_unlock:
 	pthread_mutex_unlock(&block->block_lock);
-	pthread_mutex_unlock(&source->index_lock);
 	return ret;
 }
 
@@ -350,13 +323,6 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 		pthread_mutex_destroy(&target->blocks[i].block_lock);
 	}
 	rrr_mmap_free(target->mmap, target);
-	if (target->tmp_fd != 0) {
-		close(target->tmp_fd);
-	}
-	if (target->tmpfile != NULL && *(target->tmpfile) != '\0') {
-		unlink(target->tmpfile);
-	}
-	RRR_FREE_IF_NOT_NULL(target->tmpfile);
 }
 
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
@@ -364,7 +330,7 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		pthread_mutex_lock(&target->blocks[i].block_lock);
-		__rrr_mmap_channel_block_free(target, &target->blocks[i], i);
+		__rrr_mmap_channel_block_free(target, &target->blocks[i]);
 		pthread_mutex_unlock(&target->blocks[i].block_lock);
 	}
 
@@ -381,7 +347,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	int mutex_i = 0;
 	pthread_mutexattr_t attr;
-	char template[128];
 
 	if ((ret = pthread_mutexattr_init(&attr)) != 0) {
 		RRR_MSG_ERR("Could not initialize mutexattr inrrr_mmap_channel_new (%i)\n", ret);
@@ -397,30 +362,12 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	memset(result, '\0', sizeof(*result));
 
-	sprintf(template, RRR_TMP_PATH "/rrr-perl5-shmem-XXXXXX");
-
-	int tmp_fd = 0;
-	if ((tmp_fd = mkstemp(template)) < 0) {
-		RRR_MSG_ERR("Could not create temporary file %s in rrr_mmap_channel_new: %s\n",
-		template, rrr_strerror(errno));
-		ret = 1;
-		goto out_free;
-	}
-
-	result->tmp_fd = tmp_fd;
-
-	if ((result->tmpfile = strdup(template)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for tmpfile name in rrr_mmap_channel_new\n");
-		ret = 1;
-		goto out_close_unlink;
-	}
-
 	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
 	if ((ret = pthread_mutex_init(&result->index_lock, &attr)) != 0) {
 		RRR_MSG_ERR("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
 		ret = 1;
-		goto out_free_tmpfile;
+		goto out_free;
 	}
 
 	for (mutex_i = 0; mutex_i != RRR_MMAP_CHANNEL_SLOTS; mutex_i++) {
@@ -443,11 +390,6 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 			pthread_mutex_destroy(&result->blocks[mutex_i].block_lock);
 		}
 		pthread_mutex_destroy(&result->index_lock);
-	out_free_tmpfile:
-		free(result->tmpfile);
-	out_close_unlink:
-		close(result->tmp_fd);
-		unlink(template); // Use the variable on the stack memory here
 	out_free:
 		rrr_mmap_free(mmap, result);
 	out_destroy_mutexattr:

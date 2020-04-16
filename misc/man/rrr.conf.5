@@ -1,4 +1,4 @@
-.Dd 2020-04-07
+.Dd 2020-04-16
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -127,6 +127,8 @@ No messages are generated, defaults to yes.
 Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
 .It dummy_max_generated={unsigned number}
 Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
+.It dummy_random_payload_max_size={BYTES}
+When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
 .El
 .SS udp (PAI)
 This module is capable of listening on an UDP port and read messages or arrays, as well as sending data to remote hosts.

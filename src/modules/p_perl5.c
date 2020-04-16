@@ -120,6 +120,7 @@ struct perl5_child_data {
 //	struct rrr_fifo_buffer from_parent_buffer;
 	uint64_t total_msg_mmap_from_parent;
 	uint64_t total_msg_processed;
+	uint64_t total_msg_deferred;
 };
 
 int perl5_child_data_init (struct perl5_child_data *data) {
@@ -223,6 +224,8 @@ static int xsub_send_message (
 		message
 	};
 
+	child_data->total_msg_processed++;
+
 	if ((ret = rrr_mmap_channel_write_using_callback (
 			child_data->parent_data->channel_from_child,
 			MSG_TOTAL_SIZE(message) + sizeof(msg_addr_tmp),
@@ -232,8 +235,10 @@ static int xsub_send_message (
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			goto out_defer;
 		}
-		RRR_MSG_ERR("Warning: Could not send address message on memory map channel in xsub_send_message_addr of perl5 instance %s, message possibly too large. Consider increasing heap size of memory map.\n",
+		RRR_MSG_ERR("Could not send address message on memory map channel in xsub_send_message_addr of perl5 instance %s.\n",
 				INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		ret = 1;
+		goto out;
 	}
 
 	goto out;
@@ -254,6 +259,7 @@ static int xsub_send_message (
 		}
 		msg_addr_tmp_dynamic = NULL;
 		message = NULL;
+		child_data->total_msg_deferred++;
 
 	out:
 		RRR_FREE_IF_NOT_NULL(msg_addr_tmp_dynamic);
@@ -411,7 +417,7 @@ int parent_signal_handler (int signal, void *private_arg) {
 		perl5_data->sigchld_pending = 1;
 	}
 
-	return 0;
+	return 1;
 }
 
 void data_cleanup(void *arg) {
@@ -602,33 +608,6 @@ int process_message (
 	return ret;
 
 }
-/*
-int worker_from_parent_buffer_callback (struct rrr_fifo_callback_args *fifo_args, char *data, unsigned long int size) {
-	struct perl5_child_data *child_data = fifo_args->private_data;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-	struct rrr_message *message = entry->message;
-
-	(void)(size);
-
-	int ret = 0;
-
-	struct rrr_message_addr message_addr = {0};
-	message_addr.addr_len = entry->addr_len;
-	message_addr.addr = entry->addr;
-
-	if ((ret = process_message(child_data, message, &message_addr)) != 0) {
-		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
-				INSTANCE_D_NAME(child_data->parent_data->thread_data));
-		ret = RRR_FIFO_GLOBAL_ERR;
-	}
-
-	entry->message = NULL;
-
-	child_data->total_msg_processed++;
-
-	return ret | RRR_FIFO_SEARCH_FREE;
-}
-*/
 
 struct input_callback_data {
 	int count;
@@ -675,8 +654,10 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 			perl5_data->mmap_full_counter++;
 			goto out_put_back;
 		}
-		RRR_MSG_ERR("Warning: Passing message to perl5 instance %s fork using memory map failed. Message might be too large, consider increasing size of memory map in configuration. Fallback to socket transmission.",
+		RRR_MSG_ERR("Passing message to perl5 instance %s fork using memory map failed.\n",
 				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
 	}
 
 	input_callback_data->count++;
@@ -886,11 +867,9 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 	uint64_t prev_total_msg_mmap_from_parent = 0;
 	int consecutive_nothing_happend = 0;
 
-	while (child_data->received_sigterm == 0) {
-		// We don't check the in flight counter. Parent does that. If both were
-		// to check, it would cause a dead lock as we have no output buffer from
-		// processing and spawning functions.
+	uint64_t prev_stats_time = 0;
 
+	while (child_data->received_sigterm == 0) {
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
 			usleep_hits_a++;
@@ -969,6 +948,12 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 			if (usleep_hits_b % 10 == 0) {
 				printf("usleep hits child: %i/%i\n", usleep_hits_a, usleep_hits_b);
 			}
+		}
+
+		if (time_now - prev_stats_time > 1000000) {
+			printf ("child total processed %" PRIu64 " total from parent %" PRIu64 " total deferred %" PRIu64 "\n",
+					child_data->total_msg_processed, child_data->total_msg_mmap_from_parent, child_data->total_msg_deferred);
+			prev_stats_time = time_now;
 		}
 
 		prev_total_processed_msg = child_data->total_msg_processed;
@@ -1111,7 +1096,6 @@ int read_from_child_mmap_channel_callback (const void *data, size_t data_size, v
 	}
 
 	callback_data->data->latest_message_addr = *msg_addr;
-	callback_data->count++;
 
 	return read_from_child_callback_msg(msg, arg);
 }
@@ -1220,6 +1204,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	int usleep_hits_a = 0;
 	int usleep_hits_b = 0;
+	int input_counter = 0;
+	int from_child_counter = 0;
 
 	int tick = 0;
 	int consecutive_nothing_happend = 0;
@@ -1247,6 +1233,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			}
 			if (prev_mmap_full_counter != data->mmap_full_counter) {
 				consecutive_nothing_happend = 0;
+				usleep(5000); // 5 ms
 				usleep_hits_a++;
 			}
 		}
@@ -1270,16 +1257,25 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			usleep_hits_b++;
 		}
 
+		from_child_counter += read_count;
+		input_counter += input_callback_data.count;
+
 		uint64_t time_now = rrr_time_get_64();
 		if (time_now > next_stats_time) {
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
 			rrr_stats_instance_update_rate(stats, 3, "ticks", tick);
 			rrr_stats_instance_update_rate(stats, 4, "mmap_to_child_full_hits", data->mmap_full_counter);
+			rrr_stats_instance_update_rate(stats, 5, "input_counter", input_counter);
+			rrr_stats_instance_update_rate(stats, 6, "from_child_counter", from_child_counter);
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->output_buffer_ip));
 			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip));
 
-			usleep_hits_a = usleep_hits_b = tick = data->mmap_full_counter = 0;
+			struct rrr_fifo_buffer_stats fifo_stats;
+			rrr_fifo_buffer_get_stats(&fifo_stats, &data->output_buffer_ip);
+			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_total", 0, fifo_stats.total_entries_written);
+
+			usleep_hits_a = usleep_hits_b = tick = input_counter = data->mmap_full_counter = from_child_counter = 0;
 
 			next_stats_time = time_now + 1000000;
 		}

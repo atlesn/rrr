@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,12 +34,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/stats_instance.h"
 #include "../global.h"
+#include "../lib/random.h"
 
 struct dummy_data {
 	struct rrr_fifo_buffer buffer;
 	int no_generation;
 	int no_sleeping;
 	rrr_setting_uint max_generated;
+	rrr_setting_uint random_payload_max_size;
 };
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
@@ -108,6 +110,8 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 		}
 	}
 
+	data->no_sleeping = yesno;
+
 	if ((ret = rrr_instance_config_read_unsigned_integer(&data->max_generated, config, "dummy_max_generated")) != 0) {
 		if (ret == RRR_SETTING_NOT_FOUND) {
 			data->max_generated = 0;
@@ -120,7 +124,17 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 		}
 	}
 
-	data->no_sleeping = yesno;
+	if ((ret = rrr_instance_config_read_unsigned_integer(&data->random_payload_max_size, config, "dummy_random_payload_max_size")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			data->random_payload_max_size = 0;
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Error while parsing dummy_random_payload_max_size setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -172,7 +186,26 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			uint64_t time = rrr_time_get_64();
 
-			struct rrr_message *reading = rrr_message_new_reading(time, time);
+			struct rrr_message *reading = NULL;
+
+			size_t payload_size = 0;
+			if (data->random_payload_max_size > 0) {
+				payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
+			}
+
+			if (rrr_message_new_empty (
+					&reading,
+					MSG_TYPE_MSG,
+					0,
+					MSG_CLASS_POINT,
+					time,
+					time,
+					time,
+					0,
+					payload_size
+			) != 0) {
+				return NULL;
+			}
 
 //			RRR_DBG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
 			rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
