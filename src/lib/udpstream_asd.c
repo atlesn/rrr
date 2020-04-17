@@ -864,7 +864,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 	}
 
 	RRR_DBG_3("ASD %u RECV timestamp %" PRIu64 "\n",
-			session->connect_handle, message->timestamp_from);
+			session->connect_handle, message->timestamp);
 
 	if ((ret = __rrr_udpstream_asd_queue_collection_insert_entry (
 			&session->release_queues,

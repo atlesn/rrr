@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 64
+#define RRR_MMAP_HEAP_CHUNK_MIN_SIZE 16
 
 #include <sys/mman.h>
 #include <stdio.h>

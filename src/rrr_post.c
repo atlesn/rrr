@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/read.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
+#include "lib/gnu.h"
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
@@ -341,16 +342,26 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_messag
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
-	struct rrr_message *message = rrr_message_new_reading(reading->value, rrr_time_get_64());
-	if (message == NULL) {
+	char *text = NULL;
+	if (rrr_asprintf(&text, "%" PRIu64, reading->value) <= 0) {
+		RRR_MSG_ERR("Could not create reading text in __rrr_post_send_reading\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_message *message = NULL;
+	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_POINT, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
 
+	memcpy(MSG_DATA_PTR(message), text, strlen(text) + 1);
+
 	ret = __rrr_post_send_message(data, message);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(text);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }

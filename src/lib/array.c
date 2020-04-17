@@ -973,7 +973,7 @@ int rrr_array_message_to_collection (
 ) {
 	memset(target, '\0', sizeof(*target));
 
-	if (message_orig->class != MSG_CLASS_ARRAY) {
+	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
 		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");
 	}
 

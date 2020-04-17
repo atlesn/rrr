@@ -177,8 +177,17 @@ int rrr_mmap_channel_write_using_callback (
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 
+	int do_unlock_block = 0;
+
 	pthread_mutex_lock(&target->index_lock);
 	struct rrr_mmap_channel_block *block = &(target->blocks[target->wpos]);
+	pthread_mutex_unlock(&target->index_lock);
+
+	if (pthread_mutex_trylock(&block->block_lock) != 0) {
+		ret = RRR_MMAP_CHANNEL_FULL;
+		goto out_unlock;
+	}
+	do_unlock_block = 1;
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
@@ -204,13 +213,20 @@ int rrr_mmap_channel_write_using_callback (
 
 //	printf ("mmap channel write to %p size %li\n", block->ptr, data_size);
 
+	pthread_mutex_unlock(&block->block_lock);
+	do_unlock_block = 0;
+
+	pthread_mutex_lock(&target->index_lock);
 	target->wpos++;
 	if (target->wpos == RRR_MMAP_CHANNEL_SLOTS) {
 		target->wpos = 0;
 	}
+	pthread_mutex_unlock(&target->index_lock);
 
 	out_unlock:
-	pthread_mutex_unlock(&target->index_lock);
+	if (do_unlock_block) {
+		pthread_mutex_unlock(&block->block_lock);
+	}
 
 	return ret;
 }
@@ -247,8 +263,17 @@ int rrr_mmap_channel_read_with_callback (
 
 	int do_rpos_increment = 1;
 
+	int do_unlock_block = 0;
+
 	pthread_mutex_lock(&source->index_lock);
 	struct rrr_mmap_channel_block *block = &(source->blocks[source->rpos]);
+	pthread_mutex_unlock(&source->index_lock);
+
+	if (pthread_mutex_trylock(&block->block_lock) != 0) {
+		ret = RRR_MMAP_CHANNEL_EMPTY;
+		goto out_unlock;
+	}
+	do_unlock_block = 1;
 
 	if (block->size_data == 0) {
 		ret = RRR_MMAP_CHANNEL_EMPTY;
@@ -287,17 +312,23 @@ int rrr_mmap_channel_read_with_callback (
 	out_rpos_increment:
 	if (do_rpos_increment) {
 		block->size_data = 0;
+		pthread_mutex_unlock(&block->block_lock);
+		do_unlock_block = 0;
 
+		pthread_mutex_lock(&source->index_lock);
 		source->rpos++;
 		if (source->rpos == RRR_MMAP_CHANNEL_SLOTS) {
 			source->rpos = 0;
 		}
+		pthread_mutex_unlock(&source->index_lock);
 	}
 
 //	printf ("mmap channel read from mmap %p to local %p size_data %lu\n", block->ptr, result, *target_size);
 
 	out_unlock:
-	pthread_mutex_unlock(&source->index_lock);
+	if (do_unlock_block) {
+		pthread_mutex_unlock(&block->block_lock);
+	}
 	return ret;
 }
 
@@ -317,13 +348,69 @@ int rrr_mmap_channel_read_all (
 	return ret;
 }
 
+void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted) {
+	*was_sorted = 1;
+
+	for (int i = 0; i < RRR_MMAP_CHANNEL_SLOTS - 1; i++) {
+		int j = i + 1;
+
+		struct rrr_mmap_channel_block *block_i = &target->blocks[i];
+		struct rrr_mmap_channel_block *block_j = &target->blocks[j];
+
+		if (pthread_mutex_trylock(&block_i->block_lock) == 0) {
+			if (block_i->size_data == 0 &&
+				block_i->ptr_shm_or_mmap != NULL &&
+				pthread_mutex_trylock(&block_j->block_lock
+			) == 0) {
+				// Swap blocks if pointer of i is larger than pointer of j. Don't re-order
+				// filled data blocks.
+				if (block_j->size_data == 0 &&
+					block_j->ptr_shm_or_mmap != NULL &&
+					block_i->ptr_shm_or_mmap > block_j->ptr_shm_or_mmap
+				) {
+//					printf ("swap i and j (%p > %p)\n", block_i->ptr_shm_or_mmap, block_j->ptr_shm_or_mmap);
+					// The data structure here makes sure we don't forget to update
+					// this function when the struct changes.
+					struct rrr_mmap_channel_block tmp = {
+							PTHREAD_MUTEX_INITIALIZER, // Not used
+							block_i->size_capacity,
+							block_i->size_data,
+							block_i->shmid,
+							block_i->ptr_shm_or_mmap
+					};
+
+					block_i->size_capacity = block_j->size_capacity;
+					block_i->size_data = block_j->size_data;
+					block_i->shmid = block_j->shmid;
+					block_i->ptr_shm_or_mmap = block_j->ptr_shm_or_mmap;
+
+					block_j->size_capacity = tmp.size_capacity;
+					block_j->size_data = tmp.size_data;
+					block_j->shmid = tmp.shmid;
+					block_j->ptr_shm_or_mmap = tmp.ptr_shm_or_mmap;
+
+					*was_sorted = 0;
+				}
+				pthread_mutex_unlock(&block_j->block_lock);
+			}
+			pthread_mutex_unlock(&block_i->block_lock);
+		}
+	}
+}
+
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 	pthread_mutex_destroy(&target->index_lock);
+	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
-			RRR_MSG_ERR("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
+			if (++msg_count == 1) {
+				RRR_MSG_ERR("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
+			}
 		}
-//		pthread_mutex_destroy(&target->blocks[i].block_lock);
+		pthread_mutex_destroy(&target->blocks[i].block_lock);
+	}
+	if (msg_count > 1) {
+		RRR_MSG_ERR("Last message duplicated %i times\n", msg_count - 1);
 	}
 
 	rrr_mmap_free(target->mmap, target);
@@ -332,6 +419,8 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 	pthread_mutex_lock(&target->index_lock);
 
+	// This function does not lock the blocks in case the reader has crashed
+	// while holding the mutex
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		__rrr_mmap_channel_block_free(target, &target->blocks[i]);
 	}
@@ -347,7 +436,7 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	struct rrr_mmap_channel *result = NULL;
 
-//	int mutex_i = 0;
+	int mutex_i = 0;
 	pthread_mutexattr_t attr;
 
 	if ((ret = pthread_mutexattr_init(&attr)) != 0) {
@@ -371,7 +460,7 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		ret = 1;
 		goto out_free;
 	}
-/*
+
 	for (mutex_i = 0; mutex_i != RRR_MMAP_CHANNEL_SLOTS; mutex_i++) {
 		if ((ret = pthread_mutex_init(&result->blocks[mutex_i].block_lock, &attr)) != 0) {
 			RRR_MSG_ERR("Could not initialize mutex in rrr_mmap_new %i\n", ret);
@@ -379,7 +468,7 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 			goto out_destroy_mutexes;
 		}
 	}
-*/
+
 	result->mmap = mmap;
 
 	*target = result;
@@ -387,11 +476,11 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	goto out;
 
-//	out_destroy_mutexes:
-/*		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
+	out_destroy_mutexes:
+		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
 			pthread_mutex_destroy(&result->blocks[mutex_i].block_lock);
-		}*/
-//		pthread_mutex_destroy(&result->index_lock);
+		}
+		pthread_mutex_destroy(&result->index_lock);
 	out_free:
 		rrr_mmap_free(mmap, result);
 	out_destroy_mutexattr:

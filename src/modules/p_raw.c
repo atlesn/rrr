@@ -60,8 +60,8 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 		reading = (struct rrr_message *) data;
 	}
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
+	RRR_DBG_3 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp, size);
 
 	if (raw_data->print_data != 0) {
 		ssize_t print_length = MSG_DATA_LENGTH(reading);
@@ -73,7 +73,7 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 		buf[print_length] = '\0';
 
 		RRR_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
-				INSTANCE_D_NAME(thread_data), reading->timestamp_from, buf);
+				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {

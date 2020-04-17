@@ -668,7 +668,7 @@ int test_type_array_mysql_and_network (
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 	struct rrr_message *new_message = NULL;
 	struct rrr_ip_buffer_entry *entry = NULL;
-	uint64_t expected_ack_timestamp = message->timestamp_from;
+	uint64_t expected_ack_timestamp = message->timestamp;
 
 	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
@@ -755,9 +755,9 @@ int test_type_array_mysql_and_network (
 		goto out;
 	};
 
-	if (result_message->timestamp_from != expected_ack_timestamp) {
+	if (result_message->timestamp != expected_ack_timestamp) {
 		RRR_MSG_ERR("Timestamp of TAG message_1 from MySQL did not match original message_1 (%" PRIu64 " vs %" PRIu64 ")\n",
-				result_message->timestamp_from, expected_ack_timestamp);
+				result_message->timestamp, expected_ack_timestamp);
 		ret = 1;
 		goto out;
 	}

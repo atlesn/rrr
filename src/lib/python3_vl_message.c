@@ -40,10 +40,6 @@ struct rrr_python3_rrr_message_constants {
 		unsigned int TYPE_MSG;
 		unsigned int TYPE_TAG;
 		unsigned int CLASS_POINT;
-		unsigned int CLASS_AVG;
-		unsigned int CLASS_MAX;
-		unsigned int CLASS_MIN;
-		unsigned int CLASS_INFO;
 		unsigned int CLASS_ARRAY;
 };
 
@@ -51,10 +47,6 @@ static const struct rrr_python3_rrr_message_constants message_constants = {
 		MSG_TYPE_MSG,
 		MSG_TYPE_TAG,
 		MSG_CLASS_POINT,
-		MSG_CLASS_AVG,
-		MSG_CLASS_MAX,
-		MSG_CLASS_MIN,
-		MSG_CLASS_INFO,
 		MSG_CLASS_ARRAY
 };
 
@@ -165,21 +157,15 @@ static PyObject *rrr_python3_rrr_message_f_set (PyObject *self, PyObject **args,
 		goto out;
 	}
 
-	RRR_PY_DECLARE_GET_TEST_32(0,type);
-	RRR_PY_DECLARE_GET_TEST_32(1,class);
-	RRR_PY_DECLARE_GET_TEST_64(2,timestamp_from);
-	RRR_PY_DECLARE_GET_TEST_64(3,timestamp_to);
-	RRR_PY_DECLARE_GET_TEST_64(4,data_numeric);
+	RRR_PY_DECLARE_GET_TEST_32(0,type_and_class);
+	RRR_PY_DECLARE_GET_TEST_64(1,timestamp);
 
 	if (ret != 0) {
 		goto out;
 	}
 
-	data->message_dynamic->type = type;
-	data->message_dynamic->class = class;
-	data->message_dynamic->timestamp_from = timestamp_from;
-	data->message_dynamic->timestamp_to = timestamp_to;
-	data->message_dynamic->data_numeric = data_numeric;
+	data->message_dynamic->type_and_class = type_and_class;
+	data->message_dynamic->timestamp = timestamp;
 
 	memcpy(&data->message_static, data->message_dynamic, sizeof(data->message_static) - 1);
 
@@ -410,19 +396,12 @@ struct rrr_python3_rrr_message_data dummy;
 	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
 
 static PyMemberDef rrr_message_members[] = {
-		{"type",			RRR_PY_32,	RRR_PY_RRR_MESSAGE_OFFSET(type),				0, "Type"},
-		{"class",			RRR_PY_32,	RRR_PY_RRR_MESSAGE_OFFSET(class),			0, "Class"},
-		{"timestamp_from",	RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp_from),	0, "From timestamp"},
-		{"timestamp_to",	RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp_to),		0, "To timestamp"},
-		{"data_numeric",	RRR_PY_64, 	RRR_PY_RRR_MESSAGE_OFFSET(data_numeric),		0, "Numeric data"},
+		{"type_and_class",	RRR_PY_32,	RRR_PY_RRR_MESSAGE_OFFSET(type_and_class),	0, "Type and class"},
+		{"timestamp_from",	RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp),		0, "From timestamp"},
 
 		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),	READONLY,	"Type is MSG (default)"},
 		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),	READONLY,	"Type is TAG"},
 		{"CLASS_POINT",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_POINT),	READONLY,	"Class is POINT (default)"},
-		{"CLASS_AVG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_AVG),	READONLY,	"Class is AVG"},
-		{"CLASS_MAX",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_MAX),	READONLY,	"Class is MAX"},
-		{"CLASS_MIN",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_MIN),	READONLY,	"Class is MIN"},
-		{"CLASS_INFO",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_INFO),	READONLY,	"Class is INFO"},
 		{"CLASS_ARRAY",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_ARRAY),	READONLY,	"Class is ARRAY"},
 		{ NULL, 0, 0, 0, NULL}
 };
@@ -1111,7 +1090,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 	struct rrr_message *new_msg = NULL;
 
 	if (data->rrr_array != NULL && MSG_IS_ARRAY(&data->message_static)) {
-		data->message_static.type = MSG_CLASS_POINT;
+		MSG_SET_TYPE(&data->message_static, MSG_CLASS_POINT);
 	}
 
 	// Overwrite header fields
@@ -1131,7 +1110,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 		if (rrr_array_new_message_from_collection (
 				&new_msg,
 				&array_tmp,
-				ret->timestamp_from,
+				ret->timestamp,
 				MSG_TOPIC_PTR(ret),
 				MSG_TOPIC_LENGTH(ret)
 		) != 0) {

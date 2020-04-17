@@ -483,7 +483,7 @@ static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 			goto out;
 		}
 
-		pos += msg->network_size;
+		pos += msg->msg_size;
 		count++;
 	}
 
@@ -731,16 +731,16 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 		struct rrr_socket_msg *head = rpos;
 		struct rrr_message *msg = rpos;
 
-		if (pos + msg->network_size > node->total_stored_length) {
+		if (pos + msg->msg_size > node->total_stored_length) {
 			RRR_BUG("Size mismatch in __rrr_type_msg_pack A\n");
 		}
 
-		memcpy(wpos, rpos, msg->network_size);
+		memcpy(wpos, rpos, msg->msg_size);
 
 		head = wpos;
 		msg = wpos;
 
-		pos += msg->network_size;
+		pos += msg->msg_size;
 
 		rrr_message_prepare_for_network(msg);
 		rrr_socket_msg_checksum_and_to_network_endian(head);

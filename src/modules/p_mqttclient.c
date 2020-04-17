@@ -653,8 +653,8 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 
 	struct rrr_array array_tmp = {0};
 
-	RRR_DBG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
-			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
+	RRR_DBG_2 ("mqtt client %s: Result from buffer: timestamp %" PRIu64 " size %lu, creating PUBLISH\n",
+			INSTANCE_D_NAME(thread_data), reading->timestamp, size);
 
 	if (private_data->mqtt_client_data->protocol_version == NULL) {
 		RRR_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
@@ -706,9 +706,9 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 	publish->qos = private_data->qos;
 
 	if (private_data->publish_rrr_message != 0) {
-		ssize_t network_size = MSG_TOTAL_SIZE(reading);
+		ssize_t msg_size = MSG_TOTAL_SIZE(reading);
 
-		reading->network_size = network_size;
+		reading->msg_size = msg_size;
 
 		rrr_message_prepare_for_network(reading);
 
@@ -726,7 +726,7 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 			goto out_free;
 		}
 		payload = data;
-		payload_size = network_size;
+		payload_size = msg_size;
 		data = NULL;
 	}
 	else if (private_data->publish_values_from_array != NULL) {
@@ -838,11 +838,8 @@ static int __try_create_rrr_message_with_publish_data (
 	if (rrr_message_new_empty (
 			result,
 			MSG_TYPE_MSG,
-			0,
 			MSG_CLASS_POINT,
 			publish->create_time,
-			publish->create_time,
-			0,
 			topic_len,
 			publish->payload->length
 	) != 0) {
@@ -1117,11 +1114,8 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	if (rrr_message_new_with_data (
 			&message_final,
 			MSG_TYPE_MSG,
-			0,
 			MSG_CLASS_POINT,
 			publish->create_time,
-			publish->create_time,
-			0,
 			publish->topic,
 			strlen(publish->topic) + 1,
 			publish->topic,

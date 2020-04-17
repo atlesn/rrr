@@ -135,7 +135,7 @@ extern struct rrr_global_config rrr_global_config;
 
 /* Common structures */
 #if UCHAR_MAX == 0xff
-typedef unsigned char vl_u8;
+typedef unsigned char rrr_u8;
 #endif
 
 #if USHRT_MAX == 0xffff

@@ -340,7 +340,7 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_update_watchdog_time(python3_data->thread_data->thread);
 
 	RRR_DBG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
-			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp_from);
+			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp);
 
 	ret = rrr_py_persistent_process_message (
 			python3_data->processing_fork,
@@ -433,7 +433,7 @@ int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void
 		struct rrr_message *rrr_message = (struct rrr_message *) message;
 
 		RRR_DBG_3("python3 instance %s writing message with timestamp %" PRIu64 " to output buffer\n",
-				INSTANCE_D_NAME(python3_data->thread_data), rrr_message->timestamp_from);
+				INSTANCE_D_NAME(python3_data->thread_data), rrr_message->timestamp);
 
 		callback_data->message_count++;
 		rrr_fifo_buffer_write(callback_data->output_buffer, (char*) rrr_message, sizeof(*rrr_message));

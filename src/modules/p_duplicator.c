@@ -167,7 +167,7 @@ int read_minimum_callback (struct rrr_fifo_callback_args *args, char *data, unsi
 		return 1;
 	}
 
-	uint64_t timestamp = message_new->timestamp_from;
+	uint64_t timestamp = message_new->timestamp;
 
 	int res = minimum_callback_data->callback(fifo_callback_data_orig, (char*) message_new, MSG_TOTAL_SIZE(message_new));
 
@@ -244,11 +244,11 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 
 	int ret = 0;
 
-	RRR_DBG_3 ("duplicator %s: Result from duplicator: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
+	RRR_DBG_3 ("duplicator %s: Result from duplicator: timestamp %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, size);
 
 	rrr_update_watchdog_time(thread_data->thread);
-	rrr_fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp_from, data, size);
+	rrr_fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp, data, size);
 
 	return ret;
 }

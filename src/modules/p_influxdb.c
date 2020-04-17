@@ -427,8 +427,8 @@ static int common_callback(struct influxdb_data *influxdb_data, char *data, unsi
 
 	struct rrr_array array = {0};
 
-	RRR_DBG_2 ("InfluxDB %s: Result from buffer: length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(influxdb_data->thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
+	RRR_DBG_2 ("InfluxDB %s: Result from buffer: length %u timestamp from %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(influxdb_data->thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp, size);
 
 	if (!MSG_IS_ARRAY(reading)) {
 		RRR_MSG_ERR("Warning: Non-array message received in influxdb instance %s, discarding\n",

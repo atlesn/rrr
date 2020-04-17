@@ -15,11 +15,11 @@ python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_LDFLAGS = ${module_ldflags}
 endif
 
-if RRR_WITH_USB
-voltmonitor = voltmonitor.la
-voltmonitor_la_SOURCES = src_voltmonitor.c
-voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
-endif
+#if RRR_WITH_USB
+#voltmonitor = voltmonitor.la
+#voltmonitor_la_SOURCES = src_voltmonitor.c
+#voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
+#endif
 
 if RRR_WITH_PERL5
 perl5 = perl5.la
@@ -29,11 +29,13 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
+lib_LTLIBRARIES = dummy.la raw.la buffer.la \
 	ipclient.la udp.la \
 	duplicator.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
+
+#averager.la
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
@@ -49,8 +51,8 @@ dummy_la_SOURCES = src_dummy.c
 raw_la_LDFLAGS = ${module_ldflags}
 raw_la_SOURCES = p_raw.c
 
-averager_la_LDFLAGS = ${module_ldflags}
-averager_la_SOURCES = p_averager.c
+# averager_la_LDFLAGS = ${module_ldflags}
+# averager_la_SOURCES = p_averager.c
 
 ipclient_la_LDFLAGS = ${module_ldflags} 
 ipclient_la_SOURCES = p_ipclient.c

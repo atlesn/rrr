@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,40 +28,36 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define MSG_TYPE_ACK 2
 #define MSG_TYPE_TAG 2
 
-#define MSG_TYPE_OK(msg) \
-	((msg)->type >= MSG_TYPE_MSG && (msg)->type <= MSG_TYPE_TAG)
-
 #define MSG_CLASS_POINT 1
-#define MSG_CLASS_AVG 2
-#define MSG_CLASS_MAX 3
-#define MSG_CLASS_MIN 4
-#define MSG_CLASS_INFO 10
 #define MSG_CLASS_ARRAY 11
-
-#define MSG_CLASS_OK(msg) \
-	(((msg)->class >= MSG_CLASS_POINT && (msg)->class <= MSG_CLASS_MIN) || ((msg)->class >= MSG_CLASS_INFO && (msg)->class <= MSG_CLASS_ARRAY))
 
 #define MSG_TYPE_MSG_STRING "MSG"
 //#define MSG_TYPE_ACK_STRING "ACK"
 #define MSG_TYPE_TAG_STRING "TAG"
 
 #define MSG_CLASS_POINT_STRING "POINT"
-#define MSG_CLASS_AVG_STRING "AVG"
-#define MSG_CLASS_MAX_STRING "MAX"
-#define MSG_CLASS_MIN_STRING "MIN"
-#define MSG_CLASS_INFO_STRING "INFO"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
-#define MSG_IS_MSG(message)			((message)->type == MSG_TYPE_MSG)
-//#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
-#define MSG_IS_TAG(message)			((message)->type == MSG_TYPE_TAG)
+#define MSG_TYPE(message)			((message)->type_and_class & 0x0f)
+#define MSG_CLASS(message)			(((message)->type_and_class & 0xf0) >> 4)
 
-#define MSG_IS_POINT(message)		((message)->class == MSG_CLASS_POINT)
-#define MSG_IS_INFO(message)		((message)->class == MSG_CLASS_INFO)
-#define MSG_IS_ARRAY(message)		((message)->class == MSG_CLASS_ARRAY)
+#define MSG_SET_TYPE(message,n)		((message)->type_and_class = MSG_CLASS(message) | (n & 0x0f))
+#define MSG_SET_CLASS(message,n)	((message)->type_and_class = MSG_TYPE(message) | (n << 4))
+
+#define MSG_CLASS_OK(msg) \
+	((MSG_CLASS(message) == MSG_CLASS_POINT || MSG_CLASS(message) == MSG_CLASS_ARRAY))
+
+#define MSG_TYPE_OK(msg) \
+	(MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_TAG)
+
+#define MSG_IS_MSG(message)			(MSG_TYPE(message) == MSG_TYPE_MSG)
+//#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
+#define MSG_IS_TAG(message)			(MSG_TYPE(message) == MSG_TYPE_TAG)
+
+#define MSG_IS_POINT(message)		(MSG_CLASS(message) == MSG_CLASS_POINT)
+#define MSG_IS_ARRAY(message)		(MSG_CLASS(message) == MSG_CLASS_ARRAY)
 
 #define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
-#define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
 #define MSG_TOTAL_SIZE(message)		((message)->msg_size)
@@ -71,15 +67,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
 
 #define RRR_MESSAGE_HEAD 	\
-	rrr_u16 type;			\
-	rrr_u16 type_flags;		\
-	rrr_u16 class;			\
-	rrr_u16 version;			\
-	rrr_u64 timestamp_from;	\
-	rrr_u64 timestamp_to;	\
-	rrr_u64 data_numeric;	\
-	rrr_u16 topic_length;	\
-	rrr_u16 reserved
+	rrr_u64 timestamp;		\
+	rrr_u8 type_and_class;	\
+	rrr_u8 version;			\
+	rrr_u16 topic_length
 
 struct rrr_message {
 	RRR_SOCKET_MSG_HEAD;
@@ -94,10 +85,6 @@ static inline struct rrr_socket_msg *rrr_message_safe_cast (struct rrr_message *
 	ret->msg_value = 0;
 	return ret;
 }
-struct rrr_message *rrr_message_new_reading (
-	rrr_u64 reading_millis,
-	rrr_u64 time
-);
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
@@ -105,23 +92,17 @@ struct rrr_message *rrr_message_new_array (
 );
 int rrr_message_new_empty (
 		struct rrr_message **final_result,
-		rrr_u16 type,
-		rrr_u16 type_flags,
-		rrr_u32 class,
-		rrr_u64 timestamp_from,
-		rrr_u64 timestamp_to,
-		rrr_u64 data_numeric,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 );
 int rrr_message_new_with_data (
 		struct rrr_message **final_result,
-		rrr_u16 type,
-		rrr_u16 type_flags,
-		rrr_u32 class,
-		rrr_u64 timestamp_from,
-		rrr_u64 timestamp_to,
-		rrr_u64 data_numeric,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,
 		const char *data,

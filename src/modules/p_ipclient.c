@@ -272,8 +272,8 @@ static int poll_callback (struct rrr_fifo_callback_args *poll_data, char *data, 
 	struct rrr_message *message = (struct rrr_message *) data;
 	struct rrr_ip_buffer_entry *entry = NULL;
 
-	RRR_DBG_3 ("ipclient instance %s: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp_from, message->data_numeric, size);
+	RRR_DBG_3 ("ipclient instance %s: Result from buffer: timestamp %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, size);
 
 	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
 		RRR_MSG_ERR("Could not create ip buffer entry in ipclient poll_callback\n");

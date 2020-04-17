@@ -189,7 +189,7 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 
 	rrr_fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_SIZE(message));
 	RRR_DBG_3("socket created a message with timestamp %llu size %lu\n",
-			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+			(long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
 
 	return 0;
 

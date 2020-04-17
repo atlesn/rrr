@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "settings.h"
 #include "rrr_socket_msg.h"
 #include "rrr_strerror.h"
+#include "vl_time.h"
 #include "array.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
@@ -415,7 +416,7 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
     DEFINE_SCALAR_FIELD(type);
     DEFINE_SCALAR_FIELD(class);
-    DEFINE_SCALAR_FIELD(timestamp_from);
+    DEFINE_SCALAR_FIELD(timestamp);
     DEFINE_SCALAR_FIELD(timestamp_to);
     DEFINE_SCALAR_FIELD(data_numeric);
     DEFINE_SCALAR_FIELD(data_length);
@@ -846,9 +847,7 @@ static int __rrr_perl5_hv_to_message_extract_array (
 		goto out;
 	}
 
-	message_tmp->data_numeric = (*target)->data_numeric;
-	message_tmp->timestamp_from = (*target)->timestamp_from;
-	message_tmp->timestamp_to = (*target)->timestamp_to;
+	message_tmp->timestamp = (*target)->timestamp;
 
 	free (*target);
 	*target = message_tmp;
@@ -900,7 +899,6 @@ int rrr_perl5_hv_to_message (
 			MSG_TOPIC_LENGTH(target) +
 			new_data_len +
 			new_topic_len;
-    target->network_size = target->msg_size;
 
     rrr_message_addr_init(target_addr);
 
@@ -931,17 +929,11 @@ int rrr_perl5_hv_to_message (
 		target = new_message;
 	}
 
-	DEFINE_AND_FETCH_FROM_HV(type, hv);
-	DEFINE_AND_FETCH_FROM_HV(class, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp_from, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp_to, hv);
-	DEFINE_AND_FETCH_FROM_HV(data_numeric, hv);
+	DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
+	DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
 
-	target->type = SvUV(type);
-	target->class = SvUV(class);
-	target->timestamp_from = SvUV(timestamp_from);
-	target->timestamp_to = SvUV(timestamp_to);
-	target->data_numeric = SvUV(data_numeric);
+	target->type_and_class = SvUV(type_and_class);
+	target->timestamp = SvUV(timestamp);
 
 	memcpy (MSG_TOPIC_PTR(target), topic_str, new_topic_len);
 	memcpy (MSG_DATA_PTR(target), data_str, new_data_len);
@@ -1129,11 +1121,8 @@ int rrr_perl5_message_to_hv (
 
     HV *hv = message_hv->hv;
 
-	DEFINE_AND_FETCH_FROM_HV(type, hv);
-	DEFINE_AND_FETCH_FROM_HV(class, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp_from, hv);
-	DEFINE_AND_FETCH_FROM_HV(timestamp_to, hv);
-	DEFINE_AND_FETCH_FROM_HV(data_numeric, hv);
+	DEFINE_AND_FETCH_FROM_HV(type_and_class, hv);
+	DEFINE_AND_FETCH_FROM_HV(timestamp, hv);
 	DEFINE_AND_FETCH_FROM_HV(data, hv);
 	DEFINE_AND_FETCH_FROM_HV(data_length, hv);
 	DEFINE_AND_FETCH_FROM_HV(topic, hv);
@@ -1147,11 +1136,8 @@ int rrr_perl5_message_to_hv (
 
     // Make sure that every single field is overwritten to avoid that data from any
     // older message is retained
-    sv_setuv(type, message->type);
-    sv_setuv(class, message->class);
-    sv_setuv(timestamp_from, message->timestamp_from);
-    sv_setuv(timestamp_to, message->timestamp_to);
-    sv_setuv(data_numeric, message->data_numeric);
+    sv_setuv(type_and_class, message->type_and_class);
+    sv_setuv(timestamp, message->timestamp);
     sv_setpvn(topic, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
     sv_setuv(data_length, MSG_DATA_LENGTH(message));
     sv_setpvn(data, MSG_DATA_PTR(message), MSG_DATA_LENGTH(message));
@@ -1220,7 +1206,12 @@ int rrr_perl5_message_send (HV *hv) {
 	}
 
 	struct rrr_message_addr addr_msg;
-	struct rrr_message *message_new = rrr_message_new_reading(0, 0);
+	struct rrr_message *message_new = NULL;
+	if (rrr_message_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_POINT, rrr_time_get_64(), 0, 0) != 0) {
+		RRR_MSG_ERR("Could not allocate new message in rrr_perl5_message_send\n");
+		ret = FALSE;
+		goto out;
+	}
 	if (rrr_perl5_hv_to_message(&message_new, &addr_msg, ctx, message_new_hv) != 0) {
 		ret = FALSE;
 		goto out;
@@ -1228,8 +1219,10 @@ int rrr_perl5_message_send (HV *hv) {
 
 	// Takes ownership of memory of message (but not address message)
 	ctx->send_message(message_new, &addr_msg, ctx->private_data);
+	message_new = NULL;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(message_new);
 	if (message_new_hv != NULL) {
 		rrr_perl5_destruct_message_hv(ctx, message_new_hv);
 	}

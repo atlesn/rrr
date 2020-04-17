@@ -36,14 +36,12 @@ sub process {
 
 	my $code = get_from_tag($message, "code");
 	if (!defined($code)) {
-		push_tag($message, "code", $message->{'timestamp_from'});
+		push_tag($message, "code", $message->{'timestamp'});
 #		printf "perl5: Could not find tag 'code' in message\n";
 #		return 1;
 	}
 
-	push @{$message->{'array_values'}}, "A\r";
-	push @{$message->{'array_tags'}}, "reply";
-	push @{$message->{'array_types'}}, "str";
+	push_tag("A\r", "reply", "str");
 
 	$message->send();
 

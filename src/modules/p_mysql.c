@@ -221,7 +221,7 @@ static const char *append_error_string = "Error while appending to mysql query s
 
 #define APPEND_UNCHECKED(str) \
 	RRR_STRING_BUILDER_UNCHECKED_APPEND(&string_builder,str)
-
+/*
 int colplan_voltage_create_sql(char **target, ssize_t *column_count, struct mysql_data *data) {
 	struct rrr_string_builder string_builder = {0};
 
@@ -258,14 +258,14 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_i
 
 	struct rrr_message *message = entry->message;
 
-	RRR_DBG_2 ("mysql: Saving message type %" PRIu32 " with timestamp %" PRIu64 "\n",
-			message->type, message->timestamp_to);
+	RRR_DBG_2 ("mysql: Saving message type/class %" PRIu32 " with timestamp %" PRIu64 "\n",
+			message->type_and_class, message->timestamp);
 
 	// TODO : Check that message length fits in unsigned long
 	// TODO : We are not very careful with int sizes here
 
 	// Timestamp
-	bind[0].buffer = &message->timestamp_to;
+	bind[0].buffer = &message->timestamp;
 	bind[0].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[0].is_unsigned = 1;
 
@@ -275,13 +275,13 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_i
 	bind[1].length = &source_length;
 	bind[1].buffer_type = MYSQL_TYPE_STRING;
 
-	// Class
-	bind[2].buffer = &message->class;
+	// Type and class
+	bind[2].buffer = &message->type_and_class;
 	bind[2].buffer_type = MYSQL_TYPE_LONG;
 	bind[2].is_unsigned = 1;
 
-	// Time from
-	bind[3].buffer = &message->timestamp_from;
+	// Time
+	bind[3].buffer = &message->timestamp;
 	bind[3].buffer_type = MYSQL_TYPE_LONGLONG;
 	bind[3].is_unsigned = 1;
 
@@ -309,7 +309,7 @@ int colplan_voltage_bind_execute(struct process_entries_data *data, struct rrr_i
 
 	return mysql_bind_and_execute(data);
 }
-
+*/
 int colplan_array_create_sql(char **target, ssize_t *column_count_result, struct mysql_data *data) {
 	struct rrr_string_builder string_builder = {0};
 
@@ -536,7 +536,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 /* Check index numbers with defines above */
 struct column_configurator column_configurators[] = {
 		{ .create_sql = NULL,							.bind_and_execute = NULL },
-		{ .create_sql = &colplan_voltage_create_sql,	.bind_and_execute = &colplan_voltage_bind_execute },
+		//{ .create_sql = &colplan_voltage_create_sql,	.bind_and_execute = &colplan_voltage_bind_execute },
 		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
 };
 
@@ -620,9 +620,11 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	int ret = 0;
 
 	int yesno = 0;
-	int strip_separators_was_defined = 0;
+//	int strip_separators_was_defined = 0;
 
-	char *mysql_colplan = NULL;
+	char *mysql_colplan = strdup("array");
+	/*
+
 	rrr_instance_config_get_string_noconvert_silent (&mysql_colplan, config, "mysql_colplan");
 
 	if (mysql_colplan == NULL) {
@@ -636,6 +638,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		RRR_MSG_ERR("Warning: No mysql_colplan set for instance %s, defaulting to voltage\n", config->name);
 	}
 
+*/
 	// BLOB WRITE COLUMNS
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->blob_write_columns, config, "mysql_blob_write_columns");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
@@ -663,7 +666,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 	}
 	else {
 		data->strip_array_separators = yesno;
-		strip_separators_was_defined = 1;
+		//strip_separators_was_defined = 1;
 	}
 
 	// TABLE COLUMNS
@@ -703,7 +706,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 			goto out;
 		}
 	}
-	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
+/*	else if (COLUMN_PLAN_MATCH(mysql_colplan,VOLTAGE)) {
 		data->colplan = COLUMN_PLAN_INDEX(VOLTAGE);
 
 		if (strip_separators_was_defined != 0) {
@@ -736,7 +739,7 @@ int mysql_parse_column_plan (struct mysql_data *data, struct rrr_instance_config
 		}
 
 		RRR_DBG_2("Using voltage column plan for mysql for instance %s\n", config->name);
-	}
+	}*/
 	else {
 		RRR_MSG_ERR("BUG: Reached end of colplan name tests in mysql for instance %s\n", config->name);
 		exit(EXIT_FAILURE);
@@ -906,8 +909,6 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 	struct mysql_data *mysql_data = data->data;
 	struct rrr_message *message = entry->message;
 
-	// TODO : Don't default to old voltage/info-message, should have it's own class
-
 	int is_unknown = 0;
 	int colplan_index = COLUMN_PLAN_VOLTAGE;
 	if (MSG_IS_MSG_ARRAY(message)) {
@@ -920,14 +921,14 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 	}
 	else if (MSG_IS_MSG(message)) {
 		if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
-			RRR_MSG_ERR("Received a voltage message in mysql but voltage column plan is not being used. Class was %" PRIu32 ".\n", message->class);
+			RRR_MSG_ERR("Received a non-array message in mysql, dropping. Class was %" PRIu32 ".\n", MSG_CLASS(message));
 			is_unknown = 1;
 			goto out;
 		}
 		colplan_index = COLUMN_PLAN_VOLTAGE;
 	}
 	else {
-		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", message->class, message->type);
+		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", MSG_CLASS(message), MSG_TYPE(message));
 		is_unknown = 1;
 		goto out;
 	}
@@ -951,7 +952,7 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 
 	int err = RRR_FIFO_OK;
 
-	RRR_DBG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp_from);
+	RRR_DBG_3 ("mysql: processing message with timestamp %" PRIu64 "\n", message->timestamp);
 
 	int mysql_save_res = mysql_save (process_data, entry);
 
@@ -963,17 +964,16 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 		}
 		else {
 			// Put back in buffer
-			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp_from);
+			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
 			rrr_fifo_buffer_write(&mysql_data->input_buffer, (char *) entry, size);
 			entry = NULL;
 		}
 	}
 	else if (mysql_data->generate_tag_messages != 0) {
 		// Tag message as saved to sender
-		RRR_DBG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp_from);
-		message->type = MSG_TYPE_TAG;
+		RRR_DBG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp);
+		MSG_SET_TYPE(message, MSG_TYPE_TAG);
 		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
-		message->network_size = message->msg_size;
 		entry->data_length = MSG_TOTAL_SIZE(message);
 		if (entry->addr_len == 0) {
 			// Message does not contain IP information which means it originated locally

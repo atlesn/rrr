@@ -428,17 +428,7 @@ int parent_signal_handler (int signal, void *private_arg) {
 	return 1;
 }
 
-void data_cleanup(void *arg) {
-	struct perl5_data *data = arg;
-
-	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
-	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
-
-	RRR_FREE_IF_NOT_NULL(data->perl5_file);
-	RRR_FREE_IF_NOT_NULL(data->source_sub);
-	RRR_FREE_IF_NOT_NULL(data->process_sub);
-	RRR_FREE_IF_NOT_NULL(data->config_sub);
-
+void terminate_child (struct perl5_data *data) {
 	if (data->child_pid != 0) {
 		// Just do our ting disregarding return values
 		int status = 0;
@@ -482,6 +472,20 @@ void data_cleanup(void *arg) {
 			);
         }
 	}
+}
+
+void data_cleanup(void *arg) {
+	struct perl5_data *data = arg;
+
+	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
+	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
+
+	RRR_FREE_IF_NOT_NULL(data->perl5_file);
+	RRR_FREE_IF_NOT_NULL(data->source_sub);
+	RRR_FREE_IF_NOT_NULL(data->process_sub);
+	RRR_FREE_IF_NOT_NULL(data->config_sub);
+
+	terminate_child(data);
 
 	if (data->channel_from_child != NULL) {
 		// Don't free blocks SHM blocks, child as the writer does that
@@ -571,11 +575,8 @@ int spawn_message(struct perl5_child_data *child_data) {
 	if (rrr_message_new_empty (
 			&message,
 			MSG_TYPE_MSG,
-			0,
 			MSG_CLASS_POINT,
 			now_time,
-			now_time,
-			0,
 			0,
 			0
 	) != 0) {
@@ -705,8 +706,8 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 
 	int ret = 0;
 
-	RRR_DBG_3 ("perl5 instance %s Result from buffer: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
+	RRR_DBG_3 ("perl5 instance %s Result from buffer: timestamp %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, size);
 
 	if (rrr_ip_buffer_entry_new (
 			&entry,
@@ -737,8 +738,8 @@ int poll_callback_ip(struct rrr_fifo_callback_args *caller_data, char *data, uns
 	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 
-	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), entry->addr_len, message->data_numeric, size);
+	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: timestamp %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), entry->addr_len, message->timestamp, size);
 
 //	printf ("poll_callback_ip: put message %p\n", entry->message);
 
@@ -904,8 +905,8 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 						mmap_channel_write_callback,
 						&channel_callback_data
 				)) != 0) {
-					RRR_MSG_ERR("Write to mmap channel failed int perl5 child fork of instance %s\n",
-							INSTANCE_D_NAME(child_data->parent_data->thread_data));
+//					RRR_DBG_1("Note: Write to mmap channel failed in perl5 child fork of instance %s\n",
+//							INSTANCE_D_NAME(child_data->parent_data->thread_data));
 					RRR_LL_ITERATE_LAST();
 				}
 				else {
@@ -1227,6 +1228,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	int tick = 0;
 	int consecutive_nothing_happend = 0;
 	uint64_t next_stats_time = 0;
+	uint64_t next_bubblesort_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && data->child_pid != 0) {
 		rrr_update_watchdog_time(thread_data->thread);
 
@@ -1264,13 +1266,18 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		if (	read_count != 0 ||
-				input_callback_data.count == 0
+				input_callback_data.count != 0
 		) {
 			consecutive_nothing_happend = 0;
 		}
 
-		if (++consecutive_nothing_happend > 100) {
-			usleep (50000);
+		if (++consecutive_nothing_happend > 1000) {
+//			printf ("Nothing happened  1 000: %i\n", consecutive_nothing_happend);
+			usleep(250); // 250 us
+		}
+		if (++consecutive_nothing_happend > 10000) {
+			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
+			usleep (50000); // 50 ms
 			usleep_hits_b++;
 		}
 
@@ -1278,6 +1285,19 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		input_counter += input_callback_data.count;
 
 		uint64_t time_now = rrr_time_get_64();
+
+		if (time_now > next_bubblesort_time) {
+			// Speed up memory access. Sorting is usually only performed
+			// when the first few thousand messages are received, after that
+			// no sorting is needed.
+			int was_sorted = 0;
+			int max_rounds = 100;
+			do {
+				rrr_mmap_channel_bubblesort_pointers (data->channel_to_child, &was_sorted);
+			} while (was_sorted == 0 && --max_rounds > 0);
+			next_bubblesort_time = time_now + 500000; // 500ms
+		}
+
 		if (time_now > next_stats_time) {
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
@@ -1326,6 +1346,16 @@ static int test_config(struct rrr_instance_config *config) {
 	return 0;
 }
 
+int perl5_cancel (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
+	RRR_MSG_ERR("Perl5 instance %s terminating child pid %i (if any) in cancel function\n",
+			INSTANCE_D_NAME(thread_data), data->child_pid);
+	terminate_child(data);
+	pthread_cancel(thread->thread);
+	return 0;
+}
+
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_perl5,
@@ -1336,7 +1366,7 @@ static struct rrr_module_operations module_operations = {
 		poll_delete_ip,
 		test_config,
 		NULL,
-		NULL
+		perl5_cancel
 };
 
 static const char *module_name = "perl5";

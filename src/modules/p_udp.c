@@ -415,7 +415,7 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	}
 
 	RRR_DBG_3("udp instance %s created a message with timestamp %llu size %lu\n",
-			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
 
 	// Now managed by ip buffer entry
 	message = NULL;
@@ -594,8 +594,8 @@ static int poll_callback (struct rrr_fifo_callback_args *poll_data, char *data, 
 	struct rrr_message *message = (struct rrr_message *) data;
 	struct rrr_ip_buffer_entry *entry = NULL;
 
-	RRR_DBG_3 ("udp instance %s: Result from buffer: timestamp %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp_from, message->data_numeric, size);
+	RRR_DBG_3 ("udp instance %s: Result from buffer: timestamp %" PRIu64 " size %lu\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp, size);
 
 	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
 		RRR_MSG_ERR("Could not create ip buffer entry in udp poll_callback\n");
@@ -651,7 +651,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 		}
 
 		RRR_DBG_3 ("udp instance %s sends packet with rrr message timestamp from %" PRIu64 " size %li\n",
-				INSTANCE_D_NAME(thread_data), message->timestamp_from, final_size);
+				INSTANCE_D_NAME(thread_data), message->timestamp, final_size);
 
 		rrr_message_prepare_for_network(message);
 
@@ -687,7 +687,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			}
 
 			RRR_DBG_3 ("udp instance %s sends packet with raw data from message with timestamp from %" PRIu64 " %li bytes\n",
-					INSTANCE_D_NAME(thread_data), message->timestamp_from, send_size);
+					INSTANCE_D_NAME(thread_data), message->timestamp, send_size);
 		}
 		else {
 			int tag_count = RRR_MAP_COUNT(&udp_data->array_send_tags);
@@ -722,7 +722,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			}
 
 			RRR_DBG_3 ("udp instance %s sends packet with array data from message with timestamp from %" PRIu64 " %i array tags size %li\n",
-					INSTANCE_D_NAME(thread_data), message->timestamp_from, found_tags, target_size);
+					INSTANCE_D_NAME(thread_data), message->timestamp, found_tags, target_size);
 
 			send_data = tmp_data;
 			send_size = target_size;

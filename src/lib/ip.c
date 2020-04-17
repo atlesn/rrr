@@ -475,12 +475,11 @@ int rrr_ip_send_message (
 
 	memcpy(final_message, input_message, final_size);
 
-	final_message->network_size = final_size;
 	final_message->msg_size = final_size;
 
 	rrr_message_prepare_for_network(final_message);
 
-	RRR_DBG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp_from);
+	RRR_DBG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp);
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) final_message,

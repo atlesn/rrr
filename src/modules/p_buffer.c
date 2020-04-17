@@ -53,10 +53,7 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
 	struct rrr_instance_thread_data *thread_data = caller_data->private_data;
 	struct buffer_data *buffer_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
-
-	RRR_DBG_3 ("buffer instance %s: Result from buffer: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(buffer_data->data), message->data_numeric, size);
+//	struct rrr_message *message = (struct rrr_message *) data;
 
 	rrr_fifo_buffer_write(&buffer_data->storage, data, size);
 

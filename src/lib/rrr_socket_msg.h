@@ -29,10 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_SOCKET_MSG_HEAD		\
 	rrr_u32 header_crc32;		\
-	rrr_u32 network_size;		\
-	rrr_u16 msg_type;			\
 	rrr_u32 msg_size;			\
-	rrr_u64 msg_value;			\
+	rrr_u16 msg_type;			\
+	rrr_u32 msg_value;			\
 	rrr_u32 data_crc32;
 
 struct rrr_socket_msg {

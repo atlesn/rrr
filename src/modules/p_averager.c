@@ -81,18 +81,13 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 
 	// We route info messages directly to output and store point measurements in input buffer
 	if (MSG_IS_MSG_POINT(message)) {
-		RRR_DBG_2 ("Averager: size %lu measurement %" PRIu64 "\n", size, message->data_numeric);
-		rrr_fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp_from, data, size);
+		rrr_fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp, data, size);
 		if (averager_data->preserve_point_measurements == 1) {
 			struct rrr_message *dup_message = rrr_message_duplicate(message);
-			rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from,
+			rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp,
 				(char*) dup_message, sizeof(*dup_message)
 			);
 		}
-	}
-	else if (MSG_IS_MSG_INFO(message)) {
-		RRR_DBG_2 ("Averager: size %lu information message\n", size);
-		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
 	}
 	else if (averager_data->discard_unknown_messages) {
 		RRR_DBG_2 ("Averager: size %lu unknown message, disarding according to configuration\n", size);
@@ -100,7 +95,7 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 	}
 	else {
 		RRR_DBG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size);
-		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp_from, data, size);
+		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp, data, size);
 	}
 
 	return 0;
@@ -142,14 +137,14 @@ int averager_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsi
 	calculation->sum += message->data_numeric;
 	if (message->data_numeric >= calculation->max) {
 		calculation->max = message->data_numeric;
-		calculation->timestamp_max = message->timestamp_from;
+		calculation->timestamp_max = message->timestamp;
 	}
 	if (message->data_numeric < calculation->min) {
 		calculation->min = message->data_numeric;
-		calculation->timestamp_min = message->timestamp_from;
+		calculation->timestamp_min = message->timestamp;
 	}
-	if (message->timestamp_from < calculation->timestamp_from) {
-		calculation->timestamp_from = message->timestamp_from;
+	if (message->timestamp < calculation->timestamp_from) {
+		calculation->timestamp_from = message->timestamp;
 	}
 	if (message->timestamp_to > calculation->timestamp_to) {
 		calculation->timestamp_to = message->timestamp_to;

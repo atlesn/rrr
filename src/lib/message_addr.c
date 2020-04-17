@@ -30,8 +30,7 @@ int rrr_message_addr_to_host (struct rrr_message_addr *msg) {
 	msg->addr_len = be64toh(msg->addr_len);
 
 	if (	msg->addr_len > sizeof(msg->addr) ||
-			msg->msg_size != sizeof(struct rrr_message_addr) ||
-			msg->msg_size - msg->network_size != 0
+			msg->msg_size != sizeof(struct rrr_message_addr)
 	) {
 		return 1;
 	}
