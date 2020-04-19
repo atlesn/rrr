@@ -838,7 +838,7 @@ static int __try_create_rrr_message_with_publish_data (
 	if (rrr_message_new_empty (
 			result,
 			MSG_TYPE_MSG,
-			MSG_CLASS_POINT,
+			MSG_CLASS_DATA,
 			publish->create_time,
 			topic_len,
 			publish->payload->length
@@ -1114,7 +1114,7 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	if (rrr_message_new_with_data (
 			&message_final,
 			MSG_TYPE_MSG,
-			MSG_CLASS_POINT,
+			MSG_CLASS_DATA,
 			publish->create_time,
 			publish->topic,
 			strlen(publish->topic) + 1,

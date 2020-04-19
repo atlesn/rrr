@@ -1207,7 +1207,7 @@ int rrr_perl5_message_send (HV *hv) {
 
 	struct rrr_message_addr addr_msg;
 	struct rrr_message *message_new = NULL;
-	if (rrr_message_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_POINT, rrr_time_get_64(), 0, 0) != 0) {
+	if (rrr_message_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
 		RRR_MSG_ERR("Could not allocate new message in rrr_perl5_message_send\n");
 		ret = FALSE;
 		goto out;

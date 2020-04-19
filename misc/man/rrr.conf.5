@@ -16,11 +16,16 @@ modules or read them externally. Some also save messages externally or
 send them over the network.
 .PP
 Instances are linked to each other using the 
-.B senders=sender1,sender2,...
-argument, which tells the instance which other modules to get messages from. A
+.B senders=instance1,...
+configuration parameter, which tells the instance which other modules to get messages from. A
 .B source
 module is a module which cannot read from other modules, and this argument should
 not be specified.
+.PP
+At program startup, the order of module start can be controlled using the
+.B wait_for=instance_1,...
+configuration parameter. The instance with this argument will not be started until the
+other specified instances have started.
 .PP
 .B rrr
 may be extended with custom modules. Custom functionality may also be achieved by
@@ -44,28 +49,23 @@ or when we reach the end of the file.
 .PP
 .nf
 # Comment begins with #, the rest of the line is ignored
-[INSTANCE NAME]             # User chosen name of the instance
+[INSTANCE_1_NAME]             # User chosen name of the instance
 module={MODULE NAME}        # Which module to use for the instance
 senders=INSTANCE NAME,...   # Which other instances to read from (not for source modules)
+wait_for=WAIT FOR,...       # On program startup, wait for these instances to start before starting
 argument1=value1            # Module-specific arguments
-argument2=value2
-...
-.BR
-[INSTANCE NAME]
-module={MODULE NAME}
-...
-.fi	
+
+[INSTANCE_2_NAME]
+module=...
 .PP
 If an instance is specified as sender in more than one other instance, these will compete
 about messages from it. Instances may not use themselves as senders.
 .SH MESSAGES
-A message consists of at least a timestamp (in milliseconds) which is used to identify the message. 
-It may also contain one of the following types of data:
-.SS VOLTAGE MESSAGES
-The voltage message are an implementation used to get voltage readings (or other readings) with
-max, min and average values and save them to a database. In the future, this
-should be generalized.
-.SS DATA ARRAY MESSAGES
+A message consists of at least a timestamp (in microseconds) and either arbitary data or
+and array of values.
+.SS DATA MESSAGES
+A data message is a message which arbitary data in it.
+.SS ARRAY MESSAGES
 Some modules support parsing data arrays from externally or from other modules. They might require a
 list of expected data types to be specified in their configuration. If the total size of the input
 does not match the received input, parsing of the message will fail.
@@ -82,9 +82,8 @@ for the complete specification of all the types.
 .SS IP MESSAGES
 Some modules support parsing of IP messages. These are simply normal messages apart from that they also contain information
 about the originating IP addresses. They are used for instance when sending replies back to a sender over network to know
-where to send them. Some modules require that readers are IP capable when reading from them and vice versa.
-.SS ACK MESSAGES
-An ACK message is sent over network to inform senders that a packet was successfully received.
+where to send them. Some modules require that readers are IP capable when reading from them and vice versa. Some modules
+are also flexible and may accept or give out either.
 .SH MODULES
 .PP
 Modules have different special capabilites, denoted by the following letters. The actual implementation may
@@ -105,15 +104,10 @@ Network-oriented module, cannot be used as sender nor have senders specified its
 Module supports data arrays (see above)
 .It I
 Module supports IP messages
-.It V
-Module supports voltage reading messages
 .El
-If neither
+If
 .B A
-nor
-.B V
-.PP
-is specified for a module, it doesn't care about the contents of messages but simply forwards them. 
+is not specified for a module, it doesn't care about the contents of messages but simply forwards them. 
 .PP
 The following modules and module-specific arguments are available and can be used
 .PP
@@ -135,7 +129,8 @@ This module is capable of listening on an UDP port and read messages or arrays, 
 A message is created for each received packet and a timestamp is added.
 If the received data does not match the specified data array, the packet is dropped.
 .PP
-.PP
+If an instance is configured to wait for and udp module before starting, the udp module set up any listening sockets before the
+waiting instance is started.
 .Bl -tag -width -indent
 .It udp_port=LISTEN PORT
 Port to listen on and also source port for outbound messages, range is 1-65535.
@@ -178,20 +173,40 @@ the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any. 
 .El
 .PP
-.SS voltmonitor (SV)
-Read voltage readings from a USB device.
+.SS voltmonitor (SA)
+Read voltage readings from a USB device. For every reading, an array message is generated with the timestamp of the measurement
+and the measurement itself as an unsigned 64-bit integer with the tag
+.B measurement.
 .PP
 .Bl -tag -width -indent
 .It vm_calibration=FLOAT
 Factor to calibrate the readings, defaults to 1.124.
 .It vm_channel={1|2}
 Which channel to use on two-channel devices.
+.It vm_message_topic=TOPIC
+MQTT topic to apply to generated messages.
 .El
 .PP
-.SS averager (PV)
-The averager reads point measurements from it's senders and produces average measurments over a given timespan and
-at a given rate. Information messages are passed through, these might for instance contain status messages from
-measurement devices.
+.SS averager (PA)
+The averager module reads point measurements from it's senders and produces average measurments over a given timespan and
+at a given rate. Other messages are simply passed through.
+.PP
+The averager module expects to find the tag
+.B measurement
+in array messages from it's senders. It will generate average measurements with the following values as unsigned 64-bit integers:
+
+.Bl -tag -width -indent
+.It average
+The average of the measurements received in the timespan.
+.It max
+The maximum value of all the measurements received in the timespan.
+.It min
+The minimum value of all the measurements received in the timespan.
+.It timestamp_from
+The lowest timestamp of all the measurements received in the timespan.
+.It timestamp_to
+The highest timestamp of all the measurements received in the timespan.
+.El
 .PP
 .Bl -tag -width -indent
 .It avg_timespan=SECONDS
@@ -202,6 +217,8 @@ How often to produce average calculations. Defaults to 10 seconds.
 Preserve individual measurements and put them in output buffer. Defaults to no.
 .It avg_discard_unknowns={yes|no}
 Delete messages which are not point measurements and information messages. Defaults to no, which means to simply forward them.
+.It avg_message_topic=TOPIC
+MQTT topic to apply to generated messages and any forwarded point messages.
 .El
 .SS buffer (P)
 The buffer collects all messages from all senders and wait for them to be collected by another instance.
@@ -243,16 +260,14 @@ Accept incoming connections if set to yes. Default is no.
 .It ipclient_disallow_remote_ip_swap={yes|no}
 If yes and a remote changes its IP-address, RRR must restart before the new address can be accepted. Default is no. 
 .El
-.SS mysql (DAIV)
+.SS mysql (DAI)
 This module will read in messages from other modules, possibly IP-capable, and save them to a myqsl or MariaDB 
-database. Tag messages are
-generated for each saved message. Tag messages for messages originating locally (from non-IP modules) can only be picked
-up by non-IP modules and vice versa.
+database.
 .PP
 A column plan must be used to describe the table we are saving to. The received data must match this column plan. If
-data save for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
+the data saving for any reason fails, like if the database is down or the table is misconfigured, we cache the failed messages
 and try again later. It is not possible for the mysql module to know wether it's settings are at fault or if the database
-is at fault. Messages which fails can however be set to be dropped instead.
+is at fault. Messages which fails can regardless of this be set to be dropped instead upon errors.
 .Bl -tag -width -indent
 .It mysql_server=SERVER NAME
 The server name of the MySQL or MariaDB server to use
@@ -268,34 +283,6 @@ The name of the database to use
 The table name to use for storing data
 .It mysql_drop_unknown_messages={yes|no}
 If a message fails to be saved into the specified table for any reason, simply delete it instead of trying again later. Defaults to no.
-.It mysql_colplan={array|voltage}
-Specifiy wether a table with arbitary columns should be used, or a fixed voltage-style table.
-.B timestamp
-.  
-.El
-.PP
-If the
-.B voltage
-column plan is used, we expect to receive voltage messages and the target table must contain at least these columns:
-.PP
-.nf
-CREATE TABLE `entries` (
-	`timestamp` bigint(20) UNSIGNED NOT NULL,
-	`source` varchar(50) NOT NULL,
-	`class` tinyint(3) UNSIGNED NOT NULL,
-	`time_from` bigint(20) UNSIGNED NOT NULL,
-	`time_to` bigint(20) UNSIGNED NOT NULL,
-	`value` bigint(20) NOT NULL,
-	`message` varchar(255) NOT NULL,
-	`message_length` int(10) UNSIGNED NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-.fi
-.PP
-If the
-.B array
-column plan is used, the following options can be used to describe the target table:
-.PP
-.Bl -tag -width -indent
 .It mysql_columns={column name 1,column name 2,...}
 Specify the columns in the table to write data to. The column count must match the number of values received in array
 messages from other modules. The data types only matters to some extent, the columns should be able to hold the data
@@ -382,7 +369,7 @@ def process(socket : rrr_socket, message: rrr_message):
 		return False
 		
 	# modify the retrieved message as needed
-	message.timestamp_from = message.timestamp_from + 1
+	message.timestamp = message.timestamp + 1
 	
 	# queue the message to be sent back (optional) for python to give to readers
 	socket.send(message)
@@ -529,9 +516,9 @@ sub source {
 	my $message = shift;
 
 	# Do some modifications
-	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
+	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
-	# print "source:  new timestamp of message is: " . $message->{'timestamp_from'} . "\\n";
+	# print "source:  new timestamp of message is: " . $message->{'timestamp'} . "\\n";
 
 	# Pass on the new message
 	$message->send();
@@ -545,9 +532,9 @@ sub process {
 	my $message = shift;
 
 	# Do some modifications to the message
-	$message->{'timestamp_from'} = $message->{'timestamp_from'} - $global_settings->get("my_custom_setting");
+	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
-	# print "process: new timestamp of message is: " . $message->{'timestamp_from'} . "\\n";
+	# print "process: new timestamp of message is: " . $message->{'timestamp'} . "\\n";
 
 	# Push an array value to the message array
 	push @{$message->{'array_values'}}, "My array string value";
@@ -569,7 +556,7 @@ sub process {
 	return 1;
 }
 .fi
-.SS raw (P)
+.SS raw (PI)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.
 .PP

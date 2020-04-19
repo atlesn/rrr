@@ -108,7 +108,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_message *message = (struct rrr_message *) data;
 	struct rrr_array collection = {0};
 
-	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", message->class);
+	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
 	if (RRR_DEBUGLEVEL_3) {
 		RRR_DBG("dump message: 0x");
@@ -290,13 +290,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free_final_data;
 	}
 
-	if (final_data_raw->msg.data_numeric != 33) {
-		TEST_MSG("Received wrong value %" PRIu64 " in message of array in test_type_array_callback\n",
-				final_data_raw->msg.data_numeric);
-		ret = 1;
-		goto out_free_final_data;
-	}
-
 	result->result = 2;
 
 	out_free_final_data:
@@ -390,6 +383,156 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 	return ret;
 }
 
+int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct test_result *result = poll_data->private_data;
+	struct rrr_message *message = (struct rrr_message *) data;
+
+	(void)(size);
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	if (MSG_IS_ARRAY(message)) {
+		if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+			TEST_MSG("Could not create array collection in test_averager_callback\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (rrr_array_value_get_by_tag(&array_tmp, "measurement") != NULL) {
+			// Copies of the original four point measurements should arrive first
+			result->result++;
+		}
+		else {
+			// Average message arrives later
+			if (result->result != 4) {
+				TEST_MSG("Received average result in test_averager_callback but not all four point measurements were received prior to that\n");
+				ret = 1;
+				goto out;
+			}
+
+			uint64_t value_average;
+			uint64_t value_max;
+			uint64_t value_min;
+
+			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_average, &array_tmp, "average", 0);
+			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_max, &array_tmp, "max", 0);
+			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_min, &array_tmp, "min", 0);
+
+			if (ret != 0) {
+				TEST_MSG("Could not retrieve 64-values from array in test_averager_callback\n");
+				ret = 1;
+				goto out;
+			}
+
+			if (value_average != 5 || value_min != 2 || value_max != 8) {
+				TEST_MSG("Received wrong values %" PRIu64 ", %" PRIu64 ", %" PRIu64 " in test_averager_callback\n",
+						value_average, value_max, value_min	);
+				ret = 1;
+				goto out;
+			}
+
+			result->message = message;
+			result->result = 2;
+			message = NULL;
+		}
+	}
+	else {
+		TEST_MSG("Unknown non-array message received in test_averager_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
+int test_averager (
+		struct rrr_message **result_message,
+		struct instance_metadata_collection *instances,
+		const char *input_name_voltmonitor,
+		const char *output_name_averager
+) {
+	struct instance_metadata *input = rrr_instance_find(instances, input_name_voltmonitor);
+	struct instance_metadata *output = rrr_instance_find(instances, output_name_averager);
+	struct rrr_message *message = NULL;
+	struct rrr_ip_buffer_entry *entry = NULL;
+	struct rrr_array array_tmp = {0};
+
+	int ret = 0;
+
+	if (input == NULL || output == NULL) {
+		TEST_MSG("Could not find input and output instances %s and %s in test_averager\n",
+				input_name_voltmonitor, output_name_averager);
+		ret = 1;
+		goto out;
+	}
+
+	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
+	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
+
+	inject = input->dynamic_data->operations.inject;
+	poll_delete = output->dynamic_data->operations.poll_delete;
+
+	// Inject four messages to be averaged
+	for (int i = 2; i <= 8; i += 2) {
+		if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", i) != 0) {
+			TEST_MSG("Could not push value to array in test_averager\n");
+			ret = 1;
+			goto out;
+		}
+
+
+		RRR_FREE_IF_NOT_NULL(message);
+		if (rrr_array_new_message_from_collection(
+				&message,
+				&array_tmp,
+				rrr_time_get_64(),
+				"test/measurement",
+				strlen("test/measurement"
+		)) != 0) {
+			TEST_MSG("Could not create message in test_averager\n");
+			ret = 1;
+			goto out;
+		}
+
+		if (entry != NULL) {
+			rrr_ip_buffer_entry_destroy(entry);
+		}
+		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
+			TEST_MSG("Could not create ip buffer entry in test_averager\n");
+			ret = 1;
+			goto out;
+		}
+		message = NULL;
+
+		if (inject(input->thread_data, entry)) {
+			TEST_MSG("Error from inject function in test_averager\n");
+			ret = 1;
+			goto out;
+		}
+		entry = NULL;
+	}
+
+	// Poll from first output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
+	struct test_result test_result = {0, NULL};
+	ret |= test_do_poll_loop(&test_result, output->thread_data, poll_delete, test_averager_callback);
+	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
+	*result_message = test_result.message;
+
+	out:
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_destroy(entry);
+	}
+	rrr_array_clear(&array_tmp);
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
 int test_type_array (
 		struct rrr_message **result_message_1,
 		struct rrr_message **result_message_2,
@@ -469,13 +612,11 @@ int test_type_array (
 	sprintf(data->blob_a, "abcdefg");
 	sprintf(data->blob_b, "gfedcba");
 
-	data->msg.network_size = sizeof(struct rrr_message) - 1;
 	data->msg.msg_size = sizeof(struct rrr_message) - 1;
 	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
 	data->msg.topic_length = 0;
-	data->msg.data_numeric = 33;
-	data->msg.type = MSG_TYPE_MSG;
-	data->msg.class = MSG_CLASS_POINT;
+	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);
+	MSG_SET_CLASS(&data->msg, MSG_CLASS_DATA);
 
 	rrr_message_prepare_for_network(&data->msg);
 	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);

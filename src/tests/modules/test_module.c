@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -60,11 +60,13 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	struct rrr_message *array_message_perl5 = NULL;
 	struct rrr_message *array_message_python3 = NULL;
 	struct rrr_message *array_message_mqtt_raw = NULL;
+	struct rrr_message *average_message = NULL;
 
 	data_init(data);
 
 	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
+	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,average_message);
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
@@ -95,9 +97,19 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 			"instance_buffer_from_mqtt_raw"
 	);
 	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
-
 	rrr_update_watchdog_time(thread_data->thread);
+	if (ret != 0) {
+		goto configtest_done;
+	}
 
+	ret = test_averager (
+			&average_message,
+			thread_data->init_data.module->all_instances,
+			"instance_voltmonitor",
+			"instance_averager"
+	);
+	TEST_MSG("Result from averager test: %i\n", ret);
+	rrr_update_watchdog_time(thread_data->thread);
 	if (ret != 0) {
 		goto configtest_done;
 	}
@@ -111,13 +123,13 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);
 
-
 	configtest_done:
 	set_test_module_result(ret);
 
 	/* We exit without looping which also makes the other loaded modules exit */
 
 	RRR_DBG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

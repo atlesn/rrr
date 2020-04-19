@@ -350,7 +350,7 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 	}
 
 	struct rrr_message *message = NULL;
-	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_POINT, rrr_time_get_64(), 0, strlen(text) + 1)) {
+	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;

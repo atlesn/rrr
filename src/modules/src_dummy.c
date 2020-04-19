@@ -196,7 +196,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 			if (rrr_message_new_empty (
 					&reading,
 					MSG_TYPE_MSG,
-					MSG_CLASS_POINT,
+					MSG_CLASS_DATA,
 					time,
 					0,
 					payload_size

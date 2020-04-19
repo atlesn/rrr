@@ -29,12 +29,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "array.h"
 #include "fixed_point.h"
+#include "vl_time.h"
 #include "../global.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;
-static const unsigned long int max_32 = 0xffffffff;
-static const unsigned long int max_64 = 0xffffffffffffffff;
+//static const unsigned long int max_32 = 0xffffffff;
+//static const unsigned long int max_64 = 0xffffffffffffffff;
 
 struct rrr_python3_rrr_message_constants {
 		unsigned int TYPE_MSG;
@@ -46,7 +47,7 @@ struct rrr_python3_rrr_message_constants {
 static const struct rrr_python3_rrr_message_constants message_constants = {
 		MSG_TYPE_MSG,
 		MSG_TYPE_TAG,
-		MSG_CLASS_POINT,
+		MSG_CLASS_DATA,
 		MSG_CLASS_ARRAY
 };
 
@@ -147,25 +148,31 @@ static PyObject *rrr_python3_rrr_message_f_set_topic (PyObject *self, PyObject *
 	Py_RETURN_TRUE;
 }
 
-static PyObject *rrr_python3_rrr_message_f_set (PyObject *self, PyObject **args, Py_ssize_t arg_length) {
+/* Disabled, this is currently not useful
+static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *arg) {
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 	int ret = 0;
 
-	if (arg_length != 5) {
-		RRR_MSG_ERR("Wrong number of parameters to rrr_python3_rrr_message_f_set. Got %li but expected 5.\n", arg_length);
+	if (!PyLong_Check(arg)) {
+		RRR_MSG_ERR("Argument to rrr_python3_rrr_message_f_set_type was not a number.\n");
 		ret = 1;
 		goto out;
 	}
 
-	RRR_PY_DECLARE_GET_TEST_32(0,type_and_class);
-	RRR_PY_DECLARE_GET_TEST_64(1,timestamp);
+	unsigned long int new_type = PyLong_AsUnsignedLong(arg);
 
-	if (ret != 0) {
-		goto out;
+	switch (new_type) {
+		case data->constants.TYPE_MSG:
+		case data->constants.TYPE_TAG:
+			ret = 0;
+			break;
+		default:
+			RRR_MSG_ERR("Unknown type %lu to rrr_python3_rrr_message_f_set_type\n");
+			ret = 1;
+			goto out;
 	}
 
-	data->message_dynamic->type_and_class = type_and_class;
-	data->message_dynamic->timestamp = timestamp;
+	MSG_SET_TYPE(data->message_dynamic, new_type);
 
 	memcpy(&data->message_static, data->message_dynamic, sizeof(data->message_static) - 1);
 
@@ -175,6 +182,7 @@ static PyObject *rrr_python3_rrr_message_f_set (PyObject *self, PyObject **args,
 	}
 	Py_RETURN_TRUE;
 }
+*/
 
 static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
 	PyObject *self = PyType_GenericNew(type, args, kwds);
@@ -198,7 +206,6 @@ static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *ar
 	return self;
 }
 
-// TODO : Check that args/kwds are empty
 static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 
@@ -210,29 +217,27 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 		return 1;
 	}
 
+	uint64_t new_timestamp = rrr_time_get_64();
+
 	Py_ssize_t argc = PyTuple_Size(args);
 	if (argc != 0) {
-		if (argc != 5) {
-			RRR_MSG_ERR("Wrong number of parameters to rrr_messag init. Got %li but expected 5 or 0.\n", argc);
+		if (argc != 1) {
+			RRR_MSG_ERR("Wrong number of parameters to rrr_messag init. Got %li but expected 1 or 0.\n", argc);
 			return 1;
 		}
 
-		PyObject *args_new[5] = {
-				PyTuple_GetItem(args, 0),
-				PyTuple_GetItem(args, 1),
-				PyTuple_GetItem(args, 2),
-				PyTuple_GetItem(args, 3),
-				PyTuple_GetItem(args, 4)
-		};
-
-		PyObject *res = rrr_python3_rrr_message_f_set(self, args_new, 5);
-		if (res == NULL || !PyObject_IsTrue(res)) {
-			RRR_MSG_ERR("Error from set function in rrr_message init\n");
-			Py_XDECREF(res);
+		PyObject *args_timestamp = PyTuple_GetItem(args, 0);
+		if (!PyLong_Check(args_timestamp)) {
+			RRR_MSG_ERR("Timestamp argument to rrr_message init was not a number.\n");
 			return 1;
 		}
-		Py_XDECREF(res);
+
+		new_timestamp = RRR_PY_LONG_AS_64(args_timestamp);
 	}
+
+	data->message_static.timestamp = new_timestamp;
+	MSG_SET_TYPE(&data->message_static, MSG_TYPE_MSG);
+	MSG_SET_CLASS(&data->message_static, MSG_CLASS_DATA);
 
 	return 0;
 }
@@ -333,12 +338,6 @@ static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *a
 
 static PyMethodDef rrr_message_methods[] = {
 		{
-				.ml_name	= "set",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set,
-				.ml_flags	= METH_FASTCALL,
-				.ml_doc		= "Set all parameters"
-		},
-		{
 				.ml_name	= "set_data",
 				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_data,
 				.ml_flags	= METH_O,
@@ -396,11 +395,11 @@ struct rrr_python3_rrr_message_data dummy;
 	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
 
 static PyMemberDef rrr_message_members[] = {
-		{"type_and_class",	RRR_PY_32,	RRR_PY_RRR_MESSAGE_OFFSET(type_and_class),	0, "Type and class"},
-		{"timestamp_from",	RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp),		0, "From timestamp"},
+		{"type_and_class",	RRR_PY_16,	RRR_PY_RRR_MESSAGE_OFFSET(type_and_class),	0, "Type and class"},
+		{"timestamp",		RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp),		0, "Timestamp"},
 
-		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),	READONLY,	"Type is MSG (default)"},
-		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),	READONLY,	"Type is TAG"},
+		{"TYPE_MSG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_MSG),		READONLY,	"Type is MSG (default)"},
+		{"TYPE_TAG",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(TYPE_TAG),		READONLY,	"Type is TAG"},
 		{"CLASS_POINT",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_POINT),	READONLY,	"Class is POINT (default)"},
 		{"CLASS_ARRAY",		RRR_PY_32,	RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(CLASS_ARRAY),	READONLY,	"Class is ARRAY"},
 		{ NULL, 0, 0, 0, NULL}
@@ -1089,12 +1088,14 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 	struct rrr_message *ret = data->message_dynamic;
 	struct rrr_message *new_msg = NULL;
 
-	if (data->rrr_array != NULL && MSG_IS_ARRAY(&data->message_static)) {
-		MSG_SET_TYPE(&data->message_static, MSG_CLASS_POINT);
+	if (MSG_CLASS(ret) != MSG_TYPE(&data->message_static)) {
+		RRR_MSG_ERR("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed.\n");
 	}
 
 	// Overwrite header fields
 	memcpy (ret, &data->message_static, sizeof(data->message_static) - 1);
+
+	uint8_t type_orig = MSG_TYPE(ret);
 
 	// If array is present, also overwrite the body
 	if (data->rrr_array != NULL) {
@@ -1122,6 +1123,18 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 		ret = new_msg;
 		data->message_dynamic = new_msg;
 		new_msg = NULL;
+	}
+	else {
+		MSG_SET_CLASS(ret, MSG_CLASS_DATA);
+	}
+
+	// Make shure the message type is preserver in case the user has changed it. The user is however
+	// not able to choose the class, this is always set to to either ARRAY or DATA.
+	MSG_SET_TYPE(ret, type_orig);
+
+	if (!MSG_TYPE_OK(ret)) {
+		RRR_MSG_ERR("Warning: Detected unknown message type %u while converting python3 RRR message, this might cause problems in other modules.\n",
+				MSG_TYPE(ret));
 	}
 
 	goto out;

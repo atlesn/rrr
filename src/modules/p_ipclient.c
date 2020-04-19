@@ -306,6 +306,10 @@ static int receive_messages_callback_final(struct rrr_ip_buffer_entry *entry, vo
 
 	int ret = 0;
 
+	struct rrr_message *message = entry->message;
+
+//	printf ("type and class: %u\n", message->type_and_class);
+
 	rrr_fifo_buffer_write(&data->local_output_buffer, (char*) entry, sizeof(*entry));
 	callback_data->count++;
 
@@ -379,6 +383,10 @@ int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, uns
 	int ret = RRR_FIFO_OK;
 
 	(void)(size);
+
+	struct rrr_message *message = entry->message;
+
+//	printf ("Message type and class: %u\n", message->type_and_class);
 
 	// ASD sets entry pointer to NULL if it takes over memory
 	if ((ret = rrr_udpstream_asd_queue_message(ipclient_data->udpstream_asd, &entry)) != 0) {

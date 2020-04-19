@@ -575,7 +575,7 @@ int spawn_message(struct perl5_child_data *child_data) {
 	if (rrr_message_new_empty (
 			&message,
 			MSG_TYPE_MSG,
-			MSG_CLASS_POINT,
+			MSG_CLASS_DATA,
 			now_time,
 			0,
 			0

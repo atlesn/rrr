@@ -28,36 +28,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define MSG_TYPE_ACK 2
 #define MSG_TYPE_TAG 2
 
-#define MSG_CLASS_POINT 1
+#define MSG_CLASS_DATA 1
 #define MSG_CLASS_ARRAY 11
 
 #define MSG_TYPE_MSG_STRING "MSG"
-//#define MSG_TYPE_ACK_STRING "ACK"
 #define MSG_TYPE_TAG_STRING "TAG"
 
-#define MSG_CLASS_POINT_STRING "POINT"
+#define MSG_CLASS_DATA_STRING "DATA"
 #define MSG_CLASS_ARRAY_STRING "ARRAY"
 
 #define MSG_TYPE(message)			((message)->type_and_class & 0x0f)
 #define MSG_CLASS(message)			(((message)->type_and_class & 0xf0) >> 4)
 
-#define MSG_SET_TYPE(message,n)		((message)->type_and_class = MSG_CLASS(message) | (n & 0x0f))
-#define MSG_SET_CLASS(message,n)	((message)->type_and_class = MSG_TYPE(message) | (n << 4))
+#define MSG_SET_TYPE(message,n)		(message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
+#define MSG_SET_CLASS(message,n)	(message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
 
-#define MSG_CLASS_OK(msg) \
-	((MSG_CLASS(message) == MSG_CLASS_POINT || MSG_CLASS(message) == MSG_CLASS_ARRAY))
+#define MSG_CLASS_OK(message) \
+	((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
 
-#define MSG_TYPE_OK(msg) \
+#define MSG_TYPE_OK(message) \
 	(MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_TAG)
 
 #define MSG_IS_MSG(message)			(MSG_TYPE(message) == MSG_TYPE_MSG)
 //#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
 #define MSG_IS_TAG(message)			(MSG_TYPE(message) == MSG_TYPE_TAG)
 
-#define MSG_IS_POINT(message)		(MSG_CLASS(message) == MSG_CLASS_POINT)
+#define MSG_IS_DATA(message)		(MSG_CLASS(message) == MSG_CLASS_DATA)
 #define MSG_IS_ARRAY(message)		(MSG_CLASS(message) == MSG_CLASS_ARRAY)
 
-#define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
+#define MSG_IS_MSG_DATA(message)	(MSG_IS_MSG(message) && MSG_IS_DATA(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
 #define MSG_TOTAL_SIZE(message)		((message)->msg_size)

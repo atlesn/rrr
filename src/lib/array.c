@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "vl_time.h"
 #include "map.h"
+#include "gnu.h"
 
 static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -434,6 +435,110 @@ int rrr_array_definition_collection_clone (
 		RRR_LL_DESTROY(target, struct rrr_type_value, free(node));
 		memset(target, '\0', sizeof(*target));
 		return 1;
+}
+
+int rrr_array_push_value_64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		uint64_t value
+) {
+	struct rrr_type_value *new_value = NULL;
+
+	if (rrr_type_value_new (
+			&new_value,
+			&rrr_type_definition_h,
+			0, // unsigned
+			strlen(tag),
+			tag,
+			sizeof(uint64_t),
+			1,
+			0
+	) != 0) {
+		RRR_MSG_ERR("Could not create value in rrr_array_push_value_64_with_tag\n");
+		return 1;
+	}
+
+	RRR_LL_PUSH(collection, new_value);
+
+	ssize_t parsed_bytes = 0;
+	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
+		RRR_MSG_ERR("Error while importing in rrr_array_push_value_64_with_tag\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+int rrr_array_push_value_str_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value
+) {
+	int ret = 0;
+
+	size_t str_size = strlen(value) + 1;
+
+	struct rrr_type_value *new_value = NULL;
+	if (rrr_type_value_new (
+			&new_value,
+			&rrr_type_definition_str,
+			0,
+			strlen(tag),
+			tag,
+			str_size,
+			1,
+			str_size
+	) != 0) {
+		RRR_MSG_ERR("Could not create value in rrr_array_push_value_64_with_tag\n");
+		return 1;
+	}
+
+	RRR_LL_PUSH(collection, new_value);
+
+	// Don't use the import function, it reads strings with quotes around it
+	memcpy(new_value->data, value, str_size);
+
+	out:
+	return ret;
+}
+
+int rrr_array_get_value_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		int index
+) {
+	int ret = 0;
+
+	struct rrr_type_value *value = NULL;
+
+	if ((value = rrr_array_value_get_by_tag(array, tag)) == NULL) {
+		RRR_MSG_ERR("Could not find value '%s' in array while getting 64-value\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
+		RRR_MSG_ERR("Value '%s' in array was signed but unsigned value was expected\n", tag);
+		ret = 1;
+		goto out;
+	}
+
+	if (index < 0) {
+		RRR_BUG("Negative index given to rrr_array_get_value_unsigned_64_by_tag\n");
+	}
+
+	if (index - 1 > (int) value->element_count) {
+		RRR_MSG_ERR("Array value '%s' index %i was requested but there are only %i elements in the value",
+				tag, index, value->element_count);
+		ret = 1;
+		goto out;
+	}
+
+	*result = *((uint64_t*) value->data + (sizeof(uint64_t) * index));
+
+	out:
+	return ret;
 }
 
 void rrr_array_clear (struct rrr_array *collection) {

@@ -609,6 +609,9 @@ int rrr_udpstream_asd_queue_message (
 
 	RRR_DBG_3("ASD %u QUEUE\n", session->connect_handle);
 
+//	struct rrr_message *message = (*ip_message)->message;
+//	printf ("type and class: %u\n", message->type_and_class);
+
 	if (RRR_LL_COUNT(&session->send_queue) >= RRR_UDPSTREAM_ASD_BUFFER_MAX) {
 		ret = RRR_UDPSTREAM_ASD_BUFFER_FULL;
 		goto out;

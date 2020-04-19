@@ -144,8 +144,8 @@ int rrr_message_to_string (
 
 	const char *class;
 	switch (MSG_CLASS(message)) {
-	case MSG_CLASS_POINT:
-		class = MSG_CLASS_POINT_STRING;
+	case MSG_CLASS_DATA:
+		class = MSG_CLASS_DATA_STRING;
 		break;
 	case MSG_CLASS_ARRAY:
 		class = MSG_CLASS_ARRAY_STRING;

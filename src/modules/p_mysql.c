@@ -536,6 +536,7 @@ int colplan_array_bind_execute(struct process_entries_data *p_data, struct rrr_i
 /* Check index numbers with defines above */
 struct column_configurator column_configurators[] = {
 		{ .create_sql = NULL,							.bind_and_execute = NULL },
+		{ .create_sql = NULL,							.bind_and_execute = NULL },
 		//{ .create_sql = &colplan_voltage_create_sql,	.bind_and_execute = &colplan_voltage_bind_execute },
 		{ .create_sql = &colplan_array_create_sql,		.bind_and_execute = &colplan_array_bind_execute }
 };
@@ -919,14 +920,14 @@ int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *en
 		}
 		colplan_index = COLUMN_PLAN_ARRAY;
 	}
-	else if (MSG_IS_MSG(message)) {
+/*	else if (MSG_IS_MSG(message)) {
 		if (!IS_COLPLAN_VOLTAGE(mysql_data)) {
 			RRR_MSG_ERR("Received a non-array message in mysql, dropping. Class was %" PRIu32 ".\n", MSG_CLASS(message));
 			is_unknown = 1;
 			goto out;
 		}
 		colplan_index = COLUMN_PLAN_VOLTAGE;
-	}
+	}*/
 	else {
 		RRR_MSG_ERR("Unknown message class/type %u/%u received in mysql_save\n", MSG_CLASS(message), MSG_TYPE(message));
 		is_unknown = 1;
@@ -973,6 +974,7 @@ int process_callback (struct rrr_fifo_callback_args *callback_data, char *data, 
 		// Tag message as saved to sender
 		RRR_DBG_3 ("mysql: generate tag message for entry with timestamp %" PRIu64 "\n", message->timestamp);
 		MSG_SET_TYPE(message, MSG_TYPE_TAG);
+		MSG_SET_CLASS(message, MSG_CLASS_ARRAY);
 		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
 		entry->data_length = MSG_TOTAL_SIZE(message);
 		if (entry->addr_len == 0) {

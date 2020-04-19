@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,15 +48,22 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
+#include "../lib/array.h"
+#include "../lib/ip.h"
+#include "../lib/array.h"
 #include "../global.h"
 
 struct voltmonitor_data {
+	struct rrr_instance_thread_data *thread_data;
+
 	struct rrr_fifo_buffer buffer;
 	usb_dev_handle *usb_handle;
 	struct usb_device *usb_device;
 
 	float usb_calibration;
 	int usb_channel;
+
+	char *msg_topic;
 
 	pthread_mutex_t cleanup_lock;
 };
@@ -287,7 +294,8 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	return rrr_fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
-int data_init(struct voltmonitor_data *data) {
+int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {
+	data->thread_data = thread_data;
 	memset(data, '\0', sizeof(*data));
 	return rrr_fifo_buffer_init(&data->buffer);
 }
@@ -295,6 +303,7 @@ int data_init(struct voltmonitor_data *data) {
 void data_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
 	rrr_fifo_buffer_invalidate(&data->buffer);
+	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
 int convert_float(const char *value, float *result) {
@@ -308,7 +317,7 @@ int convert_float(const char *value, float *result) {
 	return 0;
 }
 
-int averager_convert_integer_10(const char *value, int *result) {
+int convert_integer_10(const char *value, int *result) {
 	char *err;
 	*result = strtol(value, &err, 10);
 
@@ -325,6 +334,14 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	char *vm_calibration = NULL;
 	char *vm_channel = NULL;
 
+	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->msg_topic, config, "vm_message_topic")) != 0) {
+		if (ret != RRR_SETTING_NOT_FOUND) {
+			RRR_MSG_ERR("Syntax error in vm_message_topic for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
 	rrr_instance_config_get_string_noconvert_silent (&vm_calibration, config, "vm_calibration");
 	rrr_instance_config_get_string_noconvert_silent (&vm_channel, config, "vm_channel");
 
@@ -339,7 +356,7 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 		}
 	}
 	if (vm_channel != NULL) {
-		if (averager_convert_integer_10(vm_channel, &channel) != 0) {
+		if (convert_integer_10(vm_channel, &channel) != 0) {
 			RRR_MSG_ERR ("Syntax error in vm_channel parameter, could not understand the number '%s'\n", vm_channel);
 			ret = 1;
 			goto out;
@@ -366,13 +383,91 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	return ret;
 }
 
+static int spawn_message (struct voltmonitor_data *data, uint64_t value) {
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+	struct rrr_message *message = NULL;
+
+	uint64_t time_now = rrr_time_get_64();
+
+	if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", value) != 0) {
+		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
+		ret = 1;
+		goto out;
+	}
+	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", rrr_time_get_64()) != 0) {
+		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
+		ret = 1;
+		goto out;
+	}
+	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", rrr_time_get_64()) != 0) {
+		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_array_new_message_from_collection (
+			&message,
+			&array_tmp,
+			time_now,
+			data->msg_topic,
+			(data->msg_topic != 0 ? strlen(data->msg_topic) : 0)
+	) != 0) {
+		RRR_MSG_ERR("Could not create message in spawn_message of voltmonitor\n");
+		ret = 1;
+		goto out;
+	}
+
+	rrr_fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
+	message = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
+int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_entry *entry) {
+	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+	struct rrr_message *message = entry->message;
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	if (!MSG_IS_ARRAY(message)) {
+		RRR_BUG("Message to voltmonitor inject was not an array\n");
+	}
+
+	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
+	}
+
+	uint64_t value = 0;
+	if (rrr_array_get_value_unsigned_64_by_tag(&value, &array_tmp, "measurement", 0)) {
+		RRR_BUG("Could not get value from array in voltmonitor inject\n");
+	}
+
+	RRR_DBG_1("voltmonitor instance %s inject value %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), value);
+
+	if (spawn_message(data, value) != 0) {
+		RRR_BUG("Error while spawning message in voltmonitor inject\n");
+	}
+
+	rrr_array_clear(&array_tmp);
+	rrr_ip_buffer_entry_destroy(entry);
+	return ret;
+}
+
 static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
 	thread_data->thread = thread;
 
-	if (data_init(data) != 0) {
+	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
@@ -400,7 +495,6 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_update_watchdog_time(thread_data->thread);
 
-		uint64_t time = rrr_time_get_64();
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
 			RRR_MSG_ERR ("voltmonitor: Voltage reading failed\n");
@@ -408,8 +502,11 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 			continue;
 		}
 
-		struct rrr_message *reading = rrr_message_new_reading(abs(millivolts), time);
-		rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
+		if (spawn_message(data, abs(millivolts)) != 0) {
+			RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
+		}
 
 		usleep (250000); // 250 ms
 
@@ -427,7 +524,7 @@ static int test_config (struct rrr_instance_config *config) {
 	struct voltmonitor_data data;
 	int ret = 0;
 
-	if ((ret = data_init(&data)) != 0) {
+	if ((ret = data_init(&data, NULL)) != 0) {
 		goto err;
 	}
 
@@ -447,7 +544,7 @@ static struct rrr_module_operations module_operations = {
 		poll_delete,
 		NULL,
 		test_config,
-		NULL,
+		inject,
 		NULL
 };
 
