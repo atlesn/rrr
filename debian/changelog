@@ -1,3 +1,17 @@
+rrr (0.17-1) unstable; urgency=medium
+
+  * rrr messages simplifed. Header has now no values and voltage type is removed.
+  * voltmonitor and avarager use data array messages
+  * perl5 no longer use socket to communicate with child fork, but a mmap channel
+  * perl5 supports IP-data
+  * perl5 supports data arrays
+  * New udp module can both send and receive data
+  * New NSEP data type in arrays
+  * Support HTTP TLS
+  * Other fixes and internal housekeeping
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Apr 2020 20:29:32 +0200
+
 rrr (0.16-8) unstable; urgency=medium
 
   * New preliminary statistics engine, works with MQTT, raw and dummy
