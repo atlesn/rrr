@@ -229,9 +229,11 @@ int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_trans
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
+#ifdef RRR_WITH_OPENSSL
 		case RRR_NET_TRANSPORT_TLS:
 			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport, flags);
 			break;
+#endif
 		default:
 			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", transport);
 			break;
