@@ -62,9 +62,9 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
-AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$with_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
 AC_MSG_CHECKING([for OpenSSL usage])
-AS_IF([test "x$with_encryption" = xno], [
+AS_IF([test "x$enable_encryption" = xno], [
        AC_MSG_RESULT([Not compiling with OpenSSL])
 ], [
        AC_MSG_RESULT([yes])
@@ -254,9 +254,9 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 ])
 
-AM_CONDITIONAL([RRR_WITH_USB], [test "x$with_usb" != xno])
+AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AC_MSG_CHECKING([for USB enabled])
-AS_IF([test "x$with_usb" = xno], [
+AS_IF([test "x$enable_usb" = xno], [
 	AC_MSG_RESULT([Not compiling with USB])
 ], [
 	AC_MSG_RESULT([yes])
@@ -284,9 +284,9 @@ AS_IF([test "x$with_usb" = xno], [
 	])
 ])
 
-AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$with_mysql" != xno])
+AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])
-AS_IF([test "x$with_mysql" = xno], [
+AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
 ], [
 	AC_MSG_RESULT([yes])
