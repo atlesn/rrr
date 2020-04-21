@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -36,18 +37,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "gnu.h"
 #include "read.h"
 #include "read_constants.h"
+#include "ip.h"
 
-struct rrr_net_transport_tls_ssl_data {
-	SSL_CTX *ctx;
-	BIO *web;
+enum rrr_net_transport_ssl_data_type {
+	RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN,
+	RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION
 };
 
-static int __rrr_net_transport_tls_close (struct rrr_net_transport *transport, void *private_ptr, int handle) {
-	(void)(handle);
-	(void)(transport);
+struct rrr_net_transport_tls_ssl_data {
+	enum rrr_net_transport_ssl_data_type type;
+	SSL_CTX *ctx;
+	BIO *web;
+	struct rrr_ip_data ip_data;
+	struct sockaddr sockaddr;
+	socklen_t socklen;
+	int handshake_complete;
+};
 
-	struct rrr_net_transport_tls_ssl_data *ssl_data = private_ptr;
-
+static void __rrr_net_transport_tls_ssl_data_cleanup (struct rrr_net_transport_tls_ssl_data *ssl_data) {
 	if (ssl_data != NULL) {
 /*		if (ssl_data->out != NULL) {
 			BIO_free(ssl_data->out);
@@ -58,21 +65,25 @@ static int __rrr_net_transport_tls_close (struct rrr_net_transport *transport, v
 		if (ssl_data->ctx != NULL) {
 			SSL_CTX_free(ssl_data->ctx);
 		}
+		if (ssl_data->ip_data.fd != 0) {
+			rrr_ip_close(&ssl_data->ip_data);
+		}
 
 		free(ssl_data);
 	}
-
-	return 0;
 }
 
-static int __rrr_net_transport_tls_handle_destroy_callback (int handle, void *private_ptr, void *arg) {
-	return __rrr_net_transport_tls_close ((struct rrr_net_transport *) arg, private_ptr, handle);
+static int __rrr_net_transport_tls_ssl_data_close (struct rrr_net_transport_handle *handle) {
+	__rrr_net_transport_tls_ssl_data_cleanup (handle->private_ptr);
+
+	return 0;
 }
 
 static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport) {
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 
-	rrr_net_transport_handle_collection_clear(&transport->handles, __rrr_net_transport_tls_handle_destroy_callback, transport);
+	// This will call back into our close() function for each handle
+	rrr_net_transport_common_cleanup(transport);
 
 	free(tls);
 
@@ -106,6 +117,103 @@ static int __rrr_net_transport_tls_verify_always_ok (X509_STORE_CTX *x509, void 
 	return 1;
 }
 
+struct rrr_net_transport_tls_ssl_data *__rrr_net_transport_tls_ssl_data_new (
+		enum rrr_net_transport_ssl_data_type type
+) {
+	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
+
+	if ((ssl_data = malloc(sizeof(*ssl_data))) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_ssl_data_new \n");
+		return NULL;
+	}
+	memset (ssl_data, '\0', sizeof(*ssl_data));
+
+	ssl_data->type = type;
+
+	return ssl_data;
+}
+
+static int __rrr_net_transport_tls_new_ctx (
+		SSL_CTX **target,
+		const SSL_METHOD *method,
+		int flags,
+		const char *certificate_file,
+		const char *private_key_file
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	SSL_CTX *ctx = NULL;
+
+	if (((certificate_file == NULL || *certificate_file == '\0') && (private_key_file != NULL && *private_key_file != '\0')) ||
+		((private_key_file == NULL || *private_key_file == '\0') && (certificate_file != NULL && *certificate_file != '\0'))
+	) {
+		RRR_BUG("BUG: Certificate file and private key file must both be either set or unset in __rrr_net_transport_tls_new_ctx\n");
+	}
+
+	if ((ctx = SSL_CTX_new(method)) == NULL) {
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_new_ctx ");
+		ret = 1;
+		goto out;
+	}
+
+	// NULL callback causes verification failure to cancel further processing
+	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+	SSL_CTX_set_verify_depth(ctx, 4);
+
+	// Unused flag: SSL_OP_NO_TLSv1_2, we need to support 1.2
+	// TODO : Apparently the version restrictions with set_options are deprecated
+	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_COMPRESSION);
+
+	if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) != 1) {
+		RRR_SSL_ERR("Could not set minimum protocol version to TLSv1.2");
+		ret = 1;
+		goto out_destroy;
+	}
+
+	// TODO : Add user-configurable cerfificates and paths
+	if ((ret = rrr_openssl_load_verify_locations(ctx)) != 0) {
+		ret = 1;
+		goto out_destroy;
+	}
+
+	// Disable verification if required
+	if ((flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
+		SSL_CTX_set_cert_verify_callback (ctx, __rrr_net_transport_tls_verify_always_ok, NULL);
+	}
+
+	if (certificate_file != NULL && *certificate_file != '\0') {
+		if (SSL_CTX_use_certificate_file(ctx, certificate_file, SSL_FILETYPE_PEM) <= 0) {
+			RRR_SSL_ERR("Could not set certificate file while starting TLS");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+
+	if (private_key_file != NULL && *private_key_file != '\0') {
+		if (SSL_CTX_use_PrivateKey_file(ctx, private_key_file, SSL_FILETYPE_PEM) <= 0 ) {
+			RRR_SSL_ERR("Could not set private key file while starting TLS");
+			ret = 1;
+			goto out_destroy;
+		}
+
+		if (SSL_CTX_check_private_key(ctx) != 1) {
+			RRR_SSL_ERR("Error encoutered while checking private key while starting TLS");
+			ret = 1;
+			goto out_destroy;
+		}
+	}
+
+	*target = ctx;
+
+	goto out;
+	out_destroy:
+		SSL_CTX_free(ctx);
+	out:
+		return ret;
+}
+
 static int __rrr_net_transport_tls_connect (
 		int *handle,
 		struct rrr_net_transport *transport,
@@ -117,46 +225,30 @@ static int __rrr_net_transport_tls_connect (
 	int ret = 0;
 	char *host_and_port = NULL;
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
+	struct rrr_net_transport_handle *new_handle = NULL;
 
 	*handle = 0;
 
-	if ((ssl_data = malloc(sizeof(*ssl_data))) == NULL) {
+	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_connect\n");
 		ret = 1;
 		goto out;
 	}
-	memset (ssl_data, '\0', sizeof(*ssl_data));
 
-	int new_handle = 0;
-	if ((ret = rrr_net_transport_handle_collection_allocate_and_add_handle(&new_handle, &transport->handles, ssl_data)) != 0) {
+	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, transport, ssl_data)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_connect\n");
 		ret = 1;
 		goto out_free_ssl_data;
 	}
 
-	if ((ssl_data->ctx = SSL_CTX_new(tls->ssl_method)) == NULL) {
+	if (__rrr_net_transport_tls_new_ctx (
+			&ssl_data->ctx,
+			tls->ssl_client_method,
+			tls->flags,
+			tls->certificate_file,
+			tls->private_key_file
+	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
-		ret = 1;
-		goto out_unregister_handle;
-	}
-
-	// NULL callback causes verification failure to cancel further processing
-	SSL_CTX_set_verify(ssl_data->ctx, SSL_VERIFY_PEER, NULL);
-	SSL_CTX_set_verify_depth(ssl_data->ctx, 4);
-
-	// Unused flag: SSL_OP_NO_TLSv1_2, we need to support 1.2
-	// TODO : Apparently the version restrictions with set_options are deprecated
-	const long flags = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_COMPRESSION;
-	SSL_CTX_set_options(ssl_data->ctx, flags);
-
-	if (SSL_CTX_set_min_proto_version(ssl_data->ctx, TLS1_2_VERSION) != 1) {
-		RRR_SSL_ERR("Could not set minimum protocol version to TLSv1.2");
-		ret = 1;
-		goto out_unregister_handle;
-	}
-
-	// TODO : Add user-configurable cerfificates and paths
-	if ((ret = rrr_openssl_load_verify_locations(ssl_data->ctx)) != 0) {
 		ret = 1;
 		goto out_unregister_handle;
 	}
@@ -204,11 +296,6 @@ static int __rrr_net_transport_tls_connect (
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
-	// Disable verification if required
-	if ((tls->flags & RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY) != 0) {
-		SSL_CTX_set_cert_verify_callback (ssl_data->ctx, __rrr_net_transport_tls_verify_always_ok, NULL);
-	}
-
 	retry_connect:
 
 	if (BIO_do_connect(ssl_data->web) != 1) {
@@ -232,6 +319,8 @@ static int __rrr_net_transport_tls_connect (
 		goto out_unregister_handle;
 	}
 	
+	ssl_data->handshake_complete = 1;
+
 	X509 *cert = SSL_get_peer_certificate(ssl);
 	if (cert != NULL) {
 		X509_free(cert);
@@ -251,17 +340,12 @@ static int __rrr_net_transport_tls_connect (
 
 	// TODO : Hostname verification
 
-	*handle = new_handle;
+	*handle = new_handle->handle;
 
 	goto out;
 	out_unregister_handle:
 		// This will also clean up any SSL stuff
-		rrr_net_transport_handle_collection_handle_remove(
-				&transport->handles,
-				new_handle,
-				__rrr_net_transport_tls_handle_destroy_callback,
-				NULL
-		);
+		rrr_net_transport_handle_remove(transport, new_handle);
 		ssl_data = NULL; // Freed when handle is unregistered, don't double-free
 	out_free_ssl_data:
 		RRR_FREE_IF_NOT_NULL(ssl_data);
@@ -270,10 +354,156 @@ static int __rrr_net_transport_tls_connect (
 		return ret;
 }
 
-struct rrr_net_transport_tls_read_session {
-	RRR_NET_TRANSPORT_READ_SESSION_HEAD;
-	struct rrr_net_transport_tls_ssl_data *ssl_data;
-};
+static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_transport *transport, unsigned int port) {
+	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
+	struct rrr_net_transport_handle *new_handle = NULL;
+
+	int ret = 0;
+
+	*handle = 0;
+
+	if (tls->certificate_file == NULL || tls->private_key_file == NULL) {
+		RRR_MSG_ERR("Certificate file and/or private key file not set while attempting to start TLS listening server\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_bind_and_listen\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, transport, ssl_data)) != 0) {
+		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_bind_and_listen\n");
+		ret = 1;
+		goto out_free_ssl_data;
+	}
+
+	ssl_data->ip_data.port = port;
+
+	if (rrr_ip_network_start_tcp_ipv4_and_ipv6 (&ssl_data->ip_data, 10) != 0) {
+		RRR_MSG_ERR("Could not start IP listening in __rrr_net_transport_tls_bind_and_listen\n");
+		ret = 1;
+		goto out_unregister_handle;
+	}
+
+	if (__rrr_net_transport_tls_new_ctx (
+			&ssl_data->ctx,
+			tls->ssl_server_method,
+			tls->flags,
+			tls->certificate_file,
+			tls->private_key_file
+	) != 0) {
+		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_bind_and_listen");
+		ret = 1;
+		goto out_destroy_ip;
+	}
+
+	*handle = new_handle->handle;
+
+	goto out;
+//	out_destroy_ctx:
+//		SSL_CTX_free(ssl_data->ctx);
+	out_destroy_ip:
+		rrr_ip_close(&ssl_data->ip_data);
+	out_unregister_handle:
+		// This will also clean up any SSL stuff
+		rrr_net_transport_handle_remove(transport, new_handle);
+		ssl_data = NULL; // Freed when handle is unregistered, don't double-free
+	out_free_ssl_data:
+		RRR_FREE_IF_NOT_NULL(ssl_data);
+	out:
+		return ret;
+}
+
+int __rrr_net_transport_tls_accept (
+		int *handle,
+		struct sockaddr *sockaddr,
+		socklen_t *socklen,
+		struct rrr_net_transport_handle *listen_handle
+) {
+	struct rrr_ip_accept_data *accept_data = NULL;
+	struct rrr_net_transport_tls_ssl_data *new_ssl_data = NULL;
+	struct rrr_net_transport_handle *new_handle = NULL;
+
+	int ret = 0;
+
+	*handle = 0;
+
+	struct rrr_net_transport_tls_ssl_data *listen_ssl_data = listen_handle->private_ptr;
+	if (listen_ssl_data->type != RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN) {
+		RRR_BUG("BUG: FD to __rrr_net_transport_tls_accept was not a listening FD\n");
+	}
+
+	if ((ret = rrr_ip_accept(&accept_data, &listen_ssl_data->ip_data, "net_transport_tls", 0)) != 0) {
+		RRR_MSG_ERR("Error while accepting connection in TLS server\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (accept_data == NULL) {
+		goto out;
+	}
+
+	if (accept_data->len > *socklen) {
+		RRR_BUG("Given sockaddr was too short in __rrr_net_transport_tls_accept\n");
+	}
+
+	memset(sockaddr, '\0', sizeof(*sockaddr));
+	memcpy(sockaddr, &accept_data->addr, accept_data->len);
+	*socklen = accept_data->len;
+
+	if ((new_ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_accept\n");
+		ret = 1;
+		goto out_destroy_ip;
+	}
+
+	new_ssl_data->sockaddr = accept_data->addr;
+	new_ssl_data->socklen = accept_data->len;
+	new_ssl_data->ip_data = accept_data->ip_data;
+
+	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, listen_handle->transport, new_ssl_data)) != 0) {
+		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_accept\n");
+		ret = 1;
+		goto out_destroy_ssl_data;
+	}
+	new_ssl_data = NULL;
+
+	if ((new_ssl_data->web = BIO_new_ssl(new_ssl_data->ctx, 0)) == NULL) {
+		RRR_SSL_ERR("Could not allocate BIO in __rrr_net_transport_tls_accept\n");
+		ret = 1;
+		goto out_unregister_handle;
+	}
+
+	SSL *ssl;
+	BIO_get_ssl(new_ssl_data->web, &ssl);
+
+	if (SSL_set_fd(ssl, new_ssl_data->ip_data.fd) != 1) {
+		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept\n");
+		ret = 1;
+		goto out_unregister_handle;
+	}
+
+	// Handshake is done in read function
+
+	*handle = new_handle->handle;
+
+	goto out;
+	out_unregister_handle:
+		rrr_net_transport_handle_remove (new_handle->transport, new_handle);
+		goto out; // will also destroy ssl_data (which in turn destroys ip)
+	out_destroy_ssl_data:
+		__rrr_net_transport_tls_ssl_data_cleanup(new_ssl_data);
+		goto out; // ssl_data_cleanup will call rrr_ip_close
+	out_destroy_ip:
+		rrr_ip_close(&accept_data->ip_data);
+	out:
+		RRR_FREE_IF_NOT_NULL(accept_data);
+		return ret;
+}
 
 static int __rrr_net_transport_tls_read_poll(int read_flags, void *private_arg) {
 	(void)(private_arg);
@@ -282,31 +512,37 @@ static int __rrr_net_transport_tls_read_poll(int read_flags, void *private_arg) 
 }
 
 static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_with_overshoot(void *private_arg) {
-	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
-	if (callback_data->read_session->rx_overshoot != NULL) {
-		return callback_data->read_session;
-	}
-	return NULL;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+
+	return rrr_read_session_collection_get_session_with_overshoot (
+			&callback_data->handle->read_sessions
+	);
 }
 
 static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(void *private_arg) {
-	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
-	return callback_data->read_session;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->private_ptr;
+
+	return rrr_read_session_collection_maintain_and_find_or_create (
+			&callback_data->handle->read_sessions,
+			&ssl_data->sockaddr,
+			ssl_data->socklen
+	);
 }
 
 static void __rrr_net_transport_tls_read_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
-	(void)(read_session);
-	(void)(private_arg);
-	return;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+
+	rrr_read_session_collection_remove_session(&callback_data->handle->read_sessions, read_session);
 }
 
 static int __rrr_net_transport_tls_read_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
-	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	return callback_data->get_target_size(read_session, callback_data->get_target_size_arg);
 }
 
 static int __rrr_net_transport_tls_read_complete_callback(struct rrr_read_session *read_session, void *private_arg) {
-	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
 	return callback_data->complete_callback(read_session, callback_data->complete_callback_arg);
 }
 
@@ -316,8 +552,8 @@ static int __rrr_net_transport_tls_read_read (
 		ssize_t read_step_max_size,
 		void *private_arg
 ) {
-	struct rrr_net_transport_tls_read_session *callback_data = private_arg;
-	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->ssl_data;
+	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->private_ptr;
 
 	int ret = RRR_READ_OK;
 
@@ -347,34 +583,46 @@ static int __rrr_net_transport_tls_read_read (
 }
 
 static int __rrr_net_transport_tls_read_message (
-	struct rrr_net_transport *transport,
-	int transport_handle,
+	struct rrr_net_transport_handle *handle,
+	int read_attempts,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
-	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+	int (*get_target_size)(struct rrr_read_session *read_callback_data, void *arg),
 	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+	int (*complete_callback)(struct rrr_read_session *read_callback_data, void *arg),
 	void *complete_callback_arg
 ) {
 	int ret = 0;
 
-	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
-	if ((ssl_data = rrr_net_transport_handle_collection_handle_get_private_ptr(&transport->handles, transport_handle)) == NULL) {
-		RRR_MSG_ERR("Handle %i not found in __rrr_net_transport_tls_send\n", transport_handle);
-		return 1;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->private_ptr;
+
+	// Try only once to avoid blocking on bad clients
+	while (ssl_data->handshake_complete == 0) {
+		if (BIO_do_handshake(ssl_data->web) != 1) {
+			if (BIO_should_retry(ssl_data->web) != 1) {
+				RRR_SSL_ERR("Could not do handshake with client in TLS server\n");
+				ret = 1;
+				goto out;
+			}
+			else if (--read_attempts == 0) {
+				ret = RRR_NET_TRANSPORT_READ_INCOMPLETE;
+				goto out;
+			}
+		}
+		else {
+			ssl_data->handshake_complete = 1;
+		}
 	}
 
-	struct rrr_read_session socket_read_session = {0};
-	struct rrr_net_transport_tls_read_session read_session = {0};
+	struct rrr_net_transport_read_callback_data read_callback_data = {
+		handle,
+		get_target_size,
+		get_target_size_arg,
+		complete_callback,
+		complete_callback_arg
+	};
 
-	read_session.get_target_size = get_target_size;
-	read_session.get_target_size_arg = get_target_size_arg;
-	read_session.complete_callback = complete_callback;
-	read_session.complete_callback_arg = complete_callback_arg;
-	read_session.read_session = &socket_read_session;
-	read_session.ssl_data = ssl_data;
-
-	while (1) {
+	while (--read_attempts > 0) {
 		ret = rrr_read_message_using_callbacks (
 				read_step_initial,
 				read_step_max_size,
@@ -386,7 +634,7 @@ static int __rrr_net_transport_tls_read_message (
 				__rrr_net_transport_tls_read_get_read_session_with_overshoot,
 				__rrr_net_transport_tls_read_get_read_session,
 				__rrr_net_transport_tls_read_remove_read_session,
-				&read_session
+				&read_callback_data
 		);
 
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
@@ -404,20 +652,18 @@ static int __rrr_net_transport_tls_read_message (
 	}
 
 	out:
-	rrr_read_session_cleanup(&socket_read_session);
 	return ret;
 }
 
 static int __rrr_net_transport_tls_send (
-	struct rrr_net_transport *transport,
-	int transport_handle,
+	struct rrr_net_transport_handle *handle,
 	void *data,
 	ssize_t size
 ) {
-	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
-	if ((ssl_data = rrr_net_transport_handle_collection_handle_get_private_ptr(&transport->handles, transport_handle)) == NULL) {
-		RRR_MSG_ERR("Handle %i not found in __rrr_net_transport_tls_send\n", transport_handle);
-		return 1;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->private_ptr;
+
+	if (ssl_data->type != RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION) {
+		RRR_BUG("BUG: Handle to __rrr_net_transport_tls_send  was not of CONNECTION type\n");
 	}
 
 	if (BIO_write(ssl_data->web, data, size) != size) {
@@ -431,12 +677,19 @@ static int __rrr_net_transport_tls_send (
 static const struct rrr_net_transport_methods tls_methods = {
 	__rrr_net_transport_tls_destroy,
 	__rrr_net_transport_tls_connect,
-	__rrr_net_transport_tls_close,
+	__rrr_net_transport_tls_bind_and_listen,
+	__rrr_net_transport_tls_accept,
+	__rrr_net_transport_tls_ssl_data_close,
 	__rrr_net_transport_tls_read_message,
 	__rrr_net_transport_tls_send
 };
 
-int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target, int flags) {
+int rrr_net_transport_tls_new (
+		struct rrr_net_transport_tls **target,
+		int flags,
+		const char *certificate_file,
+		const char *private_key_file
+) {
 	struct rrr_net_transport_tls *result = NULL;
 
 	*target = NULL;
@@ -463,12 +716,34 @@ int rrr_net_transport_tls_new (struct rrr_net_transport_tls **target, int flags)
 
 	memset(result, '\0', sizeof(*result));
 
+	if (certificate_file != NULL && *certificate_file != '\0') {
+		if ((result->certificate_file = strdup(certificate_file)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for certificate file in rrr_net_transport_tls_new\n");
+			ret = 1;
+			goto out_free;
+		}
+	}
+
+	if (private_key_file != NULL && *private_key_file != '\0') {
+		if ((result->private_key_file = strdup(private_key_file)) == NULL) {
+			RRR_MSG_ERR("Could not allocate memory for private key file in rrr_net_transport_tls_new\n");
+			ret = 1;
+			goto out_free;
+		}
+	}
+
 	result->methods = &tls_methods;
-	result->ssl_method = TLS_client_method();
+	result->ssl_client_method = TLS_client_method();
+	result->ssl_server_method = TLS_server_method();
 	result->flags = flags_checked;
 
 	*target = result;
 
+	goto out;
+	out_free:
+		RRR_FREE_IF_NOT_NULL(result->certificate_file);
+		RRR_FREE_IF_NOT_NULL(result->private_key_file);
+		free(result);
 	out:
-	return ret;
+		return ret;
 }

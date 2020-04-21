@@ -306,7 +306,7 @@ static int receive_messages_callback_final(struct rrr_ip_buffer_entry *entry, vo
 
 	int ret = 0;
 
-	struct rrr_message *message = entry->message;
+//	struct rrr_message *message = entry->message;
 
 //	printf ("type and class: %u\n", message->type_and_class);
 
@@ -384,7 +384,7 @@ int queue_message_callback (struct rrr_fifo_callback_args *args, char *data, uns
 
 	(void)(size);
 
-	struct rrr_message *message = entry->message;
+//	struct rrr_message *message = entry->message;
 
 //	printf ("Message type and class: %u\n", message->type_and_class);
 

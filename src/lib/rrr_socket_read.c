@@ -108,12 +108,7 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 
 static void __rrr_socket_read_message_default_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	RRR_LL_REMOVE_NODE(
-			callback_data->read_sessions,
-			struct rrr_read_session,
-			read_session,
-			rrr_read_session_destroy(node)
-	);
+	rrr_read_session_collection_remove_session(callback_data->read_sessions, read_session);
 }
 
 static int __rrr_socket_read_message_default_get_target_size(struct rrr_read_session *read_session, void *private_arg) {

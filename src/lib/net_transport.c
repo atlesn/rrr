@@ -38,17 +38,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		pthread_mutex_unlock(&collection->lock)
 
 // TODO : Consider refcounting returned object
-void *rrr_net_transport_handle_collection_handle_get_private_ptr (
-		struct rrr_net_transport_handle_collection *collection,
+struct rrr_net_transport_handle *rrr_net_transport_handle_get (
+		struct rrr_net_transport *transport,
 		int handle
 ) {
-	void *result = NULL;
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	struct rrr_net_transport_handle *result = NULL;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		if (node->handle == handle) {
-			result = node->private_ptr;
+			result = node;
 			RRR_LL_ITERATE_LAST();
 		}
 	RRR_LL_ITERATE_END();
@@ -58,12 +60,17 @@ void *rrr_net_transport_handle_collection_handle_get_private_ptr (
 	return result;
 }
 
-static int __rrr_net_transport_handle_collection_handle_add_unlocked (
-		struct rrr_net_transport_handle_collection *collection,
+static int __rrr_net_transport_handle_create_and_push_unlocked (
+		struct rrr_net_transport_handle **handle_final,
+		struct rrr_net_transport *transport,
 		int handle,
 		void *private_ptr
 ) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
 	int ret = 0;
+
+	*handle_final = NULL;
 
 	struct rrr_net_transport_handle *new_handle = NULL;
 
@@ -75,24 +82,32 @@ static int __rrr_net_transport_handle_collection_handle_add_unlocked (
 
 	memset(new_handle, '\0', sizeof(*new_handle));
 
+	new_handle->transport = transport;
 	new_handle->handle = handle;
 	new_handle->private_ptr = private_ptr;
 
 	RRR_LL_APPEND(collection, new_handle);
 
+	*handle_final = new_handle;
+
 	out:
 	return ret;
 }
 
-int rrr_net_transport_handle_collection_handle_add (
-		struct rrr_net_transport_handle_collection *collection,
+int rrr_net_transport_handle_add (
+		struct rrr_net_transport_handle **handle_final,
+		struct rrr_net_transport *transport,
 		int handle,
 		void *private_ptr
 ) {
 	int ret = 0;
 
+	*handle_final = NULL;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
-	ret = __rrr_net_transport_handle_collection_handle_add_unlocked(collection, handle, private_ptr);
+	ret = __rrr_net_transport_handle_create_and_push_unlocked(handle_final, transport, handle, private_ptr);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	return ret;
@@ -101,16 +116,18 @@ int rrr_net_transport_handle_collection_handle_add (
 /* Allocate an unused handle. The strategy is to begin with 1, check if it is available,
  * and if not continue incrementing to find the first available. This should be efficient
  * considering the lifetime of connections is usually short thus handles may be re-used. */
-int rrr_net_transport_handle_collection_allocate_and_add_handle (
-		int *final_handle,
-		struct rrr_net_transport_handle_collection *collection,
+int rrr_net_transport_handle_allocate_and_add (
+		struct rrr_net_transport_handle **handle_final,
+		struct rrr_net_transport *transport,
 		void *private_ptr
 ) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
 	int ret = 0;
 
-	*final_handle = 0;
+	*handle_final = NULL;
 
-	int new_handle = 0;
+	int new_handle_id = 0;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
@@ -125,40 +142,34 @@ int rrr_net_transport_handle_collection_allocate_and_add_handle (
 		RRR_LL_ITERATE_END();
 
 		if (was_taken == 0) {
-			new_handle = i;
+			new_handle_id = i;
 			break;
 		}
 	}
 
-	if (new_handle == 0) {
+	if (new_handle_id == 0) {
 		RRR_MSG_ERR("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_handle_collection_handle_add_unlocked(collection, new_handle, private_ptr)) != 0) {
+	if ((ret = __rrr_net_transport_handle_create_and_push_unlocked(handle_final, transport, new_handle_id, private_ptr)) != 0) {
 		ret = 1;
 		goto out;
 	}
-
-	*final_handle = new_handle;
 
 	out:
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }
 
-static int __rrr_net_transport_handle_destroy_with_callback (
-		struct rrr_net_transport_handle *handle,
-		int (*callback)(int handle, void *private_ptr, void *arg),
-		void *callback_arg
+static int __rrr_net_transport_handle_destroy (
+		struct rrr_net_transport_handle *handle
 ) {
-	int ret = 0;
+	rrr_read_session_collection_clear(&handle->read_sessions);
 
-	if ((ret = callback(handle->handle, handle->private_ptr, callback_arg)) != 0) {
-		RRR_MSG_ERR("Warning: Error %i from callback in __rrr_net_transport_handle_destroy_with_callback\n", ret);
-	}
+	handle->transport->methods->close(handle);
 
 	free(handle);
 
@@ -166,30 +177,22 @@ static int __rrr_net_transport_handle_destroy_with_callback (
 	return RRR_LL_DID_DESTROY;
 }
 
-int rrr_net_transport_handle_collection_handle_remove (
-		struct rrr_net_transport_handle_collection *collection,
-		int handle,
-		int (*destroy_func)(int handle, void *private_ptr, void *arg),
-		void *destroy_func_arg
+int rrr_net_transport_handle_remove (
+		struct rrr_net_transport *transport,
+		struct rrr_net_transport_handle *handle
 ) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
 	int ret = 0;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
-	int did_destroy = 0;
-	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
-		if (node->handle == handle) {
-			RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_LAST();
-			did_destroy = 1;
-		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(
-			collection,
-			__rrr_net_transport_handle_destroy_with_callback(node, destroy_func, destroy_func_arg)
-	);
+	int ll_count = RRR_LL_COUNT(collection);
 
-	if (did_destroy == 0) {
-		RRR_MSG_ERR("Warning: Handle %i not found while destroying in rrr_net_transport_handle_collection_handle_remove\n", handle);
+	RRR_LL_REMOVE_NODE(collection, struct rrr_net_transport_handle, handle, __rrr_net_transport_handle_destroy(node));
+
+	if (ll_count == RRR_LL_COUNT(collection)) {
+		RRR_MSG_ERR("Warning: Handle %i not found while destroying in rrr_net_transport_handle_collection_handle_remove\n", handle->handle);
 		ret = 1;
 	}
 
@@ -198,25 +201,27 @@ int rrr_net_transport_handle_collection_handle_remove (
 	return ret;
 }
 
-void rrr_net_transport_handle_collection_clear (
-		struct rrr_net_transport_handle_collection *collection,
-		int (*destroy_func)(int handle, void *private_ptr, void *arg),
-		void *destroy_func_arg
+void rrr_net_transport_common_cleanup (
+		struct rrr_net_transport *transport
 ) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 	RRR_LL_DESTROY(
 			collection,
 			struct rrr_net_transport_handle,
-			__rrr_net_transport_handle_destroy_with_callback(
-					node,
-					destroy_func,
-					destroy_func_arg
-			)
+			__rrr_net_transport_handle_destroy (node)
 	);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 }
 
-int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_transport_type transport, int flags) {
+int rrr_net_transport_new (
+		struct rrr_net_transport **result,
+		enum rrr_net_transport_type transport,
+		int flags,
+		const char *certificate_file,
+		const char *private_key_file
+) {
 	int ret = 0;
 
 	*result = NULL;
@@ -227,11 +232,14 @@ int rrr_net_transport_new (struct rrr_net_transport **result, enum rrr_net_trans
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
 			}
+			if (certificate_file != NULL || private_key_file != NULL) {
+				RRR_BUG("BUG: Plain method does not support certificate file and key file in rrr_net_transport_new but they were given\n");
+			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
 #ifdef RRR_WITH_OPENSSL
 		case RRR_NET_TRANSPORT_TLS:
-			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport, flags);
+			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport, flags, certificate_file, private_key_file);
 			break;
 #endif
 		default:
@@ -267,10 +275,86 @@ void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 
 int rrr_net_transport_close (
 		struct rrr_net_transport *transport,
-		int handle
+		int transport_handle
 ) {
-	void *private_ptr = rrr_net_transport_handle_collection_handle_get_private_ptr(&transport->handles, handle);
+	struct rrr_net_transport_handle *handle = rrr_net_transport_handle_get(transport, transport_handle);
 
-	// Method must be able to handle any NULL private_ptr
-	return transport->methods->close(transport, private_ptr, handle);
+	if (handle == NULL) {
+		RRR_MSG_ERR("Handle %i not found in rrr_net_transport_close\n", transport_handle);
+		return 1;
+	}
+
+	return transport->methods->close(handle);
+}
+
+#define RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET(error_source) 										\
+	struct rrr_net_transport_handle *handle = NULL;													\
+	do {if ((handle = rrr_net_transport_handle_get(transport, transport_handle)) == NULL) {			\
+		RRR_MSG_ERR("Could not find transport handle %i in " error_source "\n", transport_handle);	\
+		return 1;																					\
+	}} while(0)
+
+int rrr_net_transport_connect (
+		int *handle,
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		const char *host
+) {
+	return transport->methods->connect(handle, transport, port, host);
+}
+
+int rrr_net_transport_read_message (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		int read_attempts,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+		void *complete_callback_arg
+) {
+	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_read_message");
+
+	return transport->methods->read_message (
+			handle,
+			read_attempts,
+			read_step_initial,
+			read_step_max_size,
+			get_target_size,
+			get_target_size_arg,
+			complete_callback,
+			complete_callback_arg
+	);
+}
+
+int rrr_net_transport_send (
+	struct rrr_net_transport *transport,
+	int transport_handle,
+	void *data,
+	ssize_t size
+) {
+	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_send");
+
+	return transport->methods->send(handle, data, size);
+}
+
+int rrr_net_transport_bind_and_listen (
+		int *new_handle,
+		struct rrr_net_transport *transport,
+		unsigned int port
+) {
+	return transport->methods->bind_and_listen(new_handle, transport, port);
+}
+
+int rrr_net_transport_accept (
+		int *new_handle,
+		struct sockaddr *sockaddr,
+		socklen_t *socklen,
+		struct rrr_net_transport *transport,
+		int transport_handle
+) {
+	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_accept");
+
+	return transport->methods->accept(new_handle, sockaddr, socklen, handle);
 }

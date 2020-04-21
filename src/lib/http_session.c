@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "../global.h"
 #include "gnu.h"
@@ -92,11 +93,11 @@ int rrr_http_session_new (
 	switch (transport) {
 		case RRR_HTTP_TRANSPORT_ANY:
 		case RRR_HTTP_TRANSPORT_HTTP:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN, 0);
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL);
 			default_port = 80;
 			break;
 		case RRR_HTTP_TRANSPORT_HTTPS:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS, tls_flags);
+			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL);
 			default_port = 443;
 			break;
 		default:
@@ -510,16 +511,19 @@ int rrr_http_session_receive (
 			callback_arg
 	};
 
-	ret = rrr_net_transport_read_message (
+	while ((ret = rrr_net_transport_read_message (
 			session->transport,
 			session->transport_handle,
+			100,
 			4096,
 			65535,
 			__rrr_http_session_receive_get_target_size,
 			&callback_data,
 			__rrr_http_session_receive_callback,
 			&callback_data
-	);
+	)) == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+		usleep(500);
+	}
 
 	if (ret != 0) {
 		RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");

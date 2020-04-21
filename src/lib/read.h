@@ -86,6 +86,10 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot (
 		struct rrr_read_session_collection *collection
 );
+void rrr_read_session_collection_remove_session (
+		struct rrr_read_session_collection *collection,
+		struct rrr_read_session *read_session
+);
 int rrr_read_session_cleanup (
 		struct rrr_read_session *read_session
 );
@@ -114,10 +118,10 @@ int rrr_read_message_using_callbacks (
 													ssize_t read_step_max_size,
 													void *private_arg
 	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session		*(*function_get_read_session_with_overshoot) (
+		struct rrr_read_session				*(*function_get_read_session_with_overshoot) (
 													void *private_arg
 											 ),
-		struct rrr_read_session		*(*function_get_read_session) (
+		struct rrr_read_session				*(*function_get_read_session) (
 													void *private_arg
 											 ),
 		void								 (*function_read_session_remove) (

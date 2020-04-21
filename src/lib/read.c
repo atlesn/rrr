@@ -128,6 +128,18 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 	return res;
 }
 
+void rrr_read_session_collection_remove_session (
+		struct rrr_read_session_collection *collection,
+		struct rrr_read_session *read_session
+) {
+	RRR_LL_REMOVE_NODE(
+			collection,
+			struct rrr_read_session,
+			read_session,
+			rrr_read_session_destroy(node)
+	);
+}
+
 int rrr_read_message_using_callbacks (
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
