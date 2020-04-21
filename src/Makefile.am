@@ -21,6 +21,8 @@ rrr_stats_CFLAGS = ${AM_CFLAGS}
 if RRR_WITH_PERL5
 all-local:
 	echo "Generating Perl Makefile"; cd ${top_srcdir}/src/perl5/xsub; rm -f Makefile; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Making perl xsub"; make
+install-data-local:
+	echo "Generating Perl Makefile"; cd ${top_srcdir}/src/perl5/xsub; rm -f Makefile; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Making perl xsub"; make install
 clean-local:
 	echo "Generating Perl Makefile"; cd ${top_srcdir}/src/perl5/xsub; rm -f Makefile; ${PERL5_INTERPRETER} ./Makefile.PL; echo "Cleaning perl xsub"; make clean
 endif
