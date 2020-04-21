@@ -54,7 +54,7 @@ struct rrr_net_transport_tls_ssl_data {
 	int handshake_complete;
 };
 
-static void __rrr_net_transport_tls_ssl_data_cleanup (struct rrr_net_transport_tls_ssl_data *ssl_data) {
+static void __rrr_net_transport_tls_ssl_data_destroy (struct rrr_net_transport_tls_ssl_data *ssl_data) {
 	if (ssl_data != NULL) {
 /*		if (ssl_data->out != NULL) {
 			BIO_free(ssl_data->out);
@@ -74,7 +74,7 @@ static void __rrr_net_transport_tls_ssl_data_cleanup (struct rrr_net_transport_t
 }
 
 static int __rrr_net_transport_tls_ssl_data_close (struct rrr_net_transport_handle *handle) {
-	__rrr_net_transport_tls_ssl_data_cleanup (handle->private_ptr);
+	__rrr_net_transport_tls_ssl_data_destroy (handle->private_ptr);
 
 	return 0;
 }
@@ -221,24 +221,32 @@ static int __rrr_net_transport_tls_connect (
 		const char *host
 ) {
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
+	struct rrr_ip_accept_data *accept_data = NULL;
 
 	int ret = 0;
-	char *host_and_port = NULL;
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	*handle = 0;
 
-	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_connect\n");
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
+		RRR_MSG_ERR("Could not create TLS connection to %s:%u\n", host, port);
 		ret = 1;
 		goto out;
 	}
 
+	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_connect\n");
+		ret = 1;
+		goto out_destroy_ip;
+	}
+
+	ssl_data->ip_data = accept_data->ip_data;
+
 	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, transport, ssl_data)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_connect\n");
 		ret = 1;
-		goto out_free_ssl_data;
+		goto out_destroy_ssl_data;
 	}
 
 	if (__rrr_net_transport_tls_new_ctx (
@@ -250,31 +258,20 @@ static int __rrr_net_transport_tls_connect (
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
 		ret = 1;
-		goto out_unregister_handle;
+		goto out_destroy_ip;
 	}
 
-	if ((ssl_data->web = BIO_new_ssl_connect(ssl_data->ctx)) == NULL) {
+	if ((ssl_data->web = BIO_new_ssl(ssl_data->ctx, 1)) == NULL) {
 		RRR_SSL_ERR("Could not get BIO in __rrr_net_transport_tls_connect");
-		ret = 1;
-		goto out_unregister_handle;
-	}
-
-	if (rrr_asprintf(&host_and_port, "%s:%u", host, port) <= 0) {
-		RRR_MSG_ERR("Could not create host/port-string in __rrr_net_transport_tls_connect\n");
-		ret = 1;
-		goto out_unregister_handle;
-	}
-
-	if (BIO_set_conn_hostname(ssl_data->web, host_and_port) != 1) {
-		RRR_SSL_ERR("Could not set TLS BIO hostname");
 		ret = 1;
 		goto out_unregister_handle;
 	}
 
 	SSL *ssl = NULL;
 	BIO_get_ssl(ssl_data->web, &ssl);
-	if (ssl == NULL) {
-		RRR_SSL_ERR("Could not get SSL pointer from BIO");
+
+	if (SSL_set_fd(ssl, ssl_data->ip_data.fd) != 1) {
+		RRR_SSL_ERR("Could not set FD for SSL in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_unregister_handle;
 	}
@@ -296,18 +293,6 @@ static int __rrr_net_transport_tls_connect (
 	// Set non-blocking I/O
 	BIO_set_nbio(ssl_data->web, 1); // Always returns 1
 
-	retry_connect:
-
-	if (BIO_do_connect(ssl_data->web) != 1) {
-		if (BIO_should_retry(ssl_data->web)) {
-			usleep(1000);
-			goto retry_connect;
-		}
-		RRR_SSL_ERR("Could not do TLS connect");
-		ret = 1;
-		goto out_unregister_handle;
-	}
-
 	retry_handshake:
 	if (BIO_do_handshake(ssl_data->web) != 1) {
 		if (BIO_should_retry(ssl_data->web)) {
@@ -326,14 +311,14 @@ static int __rrr_net_transport_tls_connect (
 		X509_free(cert);
 	}
 	else {
-		RRR_MSG_ERR("No certificate received in TLS handshake with %s\n", host_and_port);
+		RRR_MSG_ERR("No certificate received in TLS handshake with %s:%u\n", host, port);
 		ret = 1;
 		goto out_unregister_handle;
 	}
 
 	long verify_result = 0;
 	if ((verify_result = SSL_get_verify_result(ssl)) != X509_V_OK) {
-		RRR_MSG_ERR("Certificate verification failed for %s with reason %li\n", host_and_port, verify_result);
+		RRR_MSG_ERR("Certificate verification failed for %s:%u with reason %li\n", host, port, verify_result);
 		ret = 1;
 		goto out_unregister_handle;
 	}
@@ -343,14 +328,17 @@ static int __rrr_net_transport_tls_connect (
 	*handle = new_handle->handle;
 
 	goto out;
+
 	out_unregister_handle:
-		// This will also clean up any SSL stuff
 		rrr_net_transport_handle_remove(transport, new_handle);
-		ssl_data = NULL; // Freed when handle is unregistered, don't double-free
-	out_free_ssl_data:
-		RRR_FREE_IF_NOT_NULL(ssl_data);
+		goto out; // transport_handle_remove calls ssl_data_destroy
+	out_destroy_ssl_data:
+		__rrr_net_transport_tls_ssl_data_destroy(ssl_data);
+		goto out; // ssl_data_destroy calls ip_close
+	out_destroy_ip:
+		rrr_ip_close(&accept_data->ip_data);
 	out:
-		RRR_FREE_IF_NOT_NULL(host_and_port);
+		RRR_FREE_IF_NOT_NULL(accept_data);
 		return ret;
 }
 
@@ -487,6 +475,8 @@ int __rrr_net_transport_tls_accept (
 		goto out_unregister_handle;
 	}
 
+	BIO_set_nbio(new_ssl_data->web, 1);
+
 	// Handshake is done in read function
 
 	*handle = new_handle->handle;
@@ -496,7 +486,7 @@ int __rrr_net_transport_tls_accept (
 		rrr_net_transport_handle_remove (new_handle->transport, new_handle);
 		goto out; // will also destroy ssl_data (which in turn destroys ip)
 	out_destroy_ssl_data:
-		__rrr_net_transport_tls_ssl_data_cleanup(new_ssl_data);
+		__rrr_net_transport_tls_ssl_data_destroy(new_ssl_data);
 		goto out; // ssl_data_cleanup will call rrr_ip_close
 	out_destroy_ip:
 		rrr_ip_close(&accept_data->ip_data);
