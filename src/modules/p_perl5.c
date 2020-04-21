@@ -1276,7 +1276,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			usleep(250); // 250 us
 		}
 		if (++consecutive_nothing_happend > 10000) {
-			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
+//			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
 			usleep (50000); // 50 ms
 			usleep_hits_b++;
 		}
