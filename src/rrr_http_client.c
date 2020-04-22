@@ -176,14 +176,14 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// HTTP port
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 0;
-	if (cmd_get_value (cmd, "count", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'count' argument may be specified\n");
+	if (cmd_get_value (cmd, "port", 1) != NULL) {
+		RRR_MSG_ERR("Error: Only one 'port' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
+			RRR_MSG_ERR("Could not understand argument 'port', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
