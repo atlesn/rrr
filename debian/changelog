@@ -1,3 +1,15 @@
+rrr (0.17-3) unstable; urgency=medium
+
+  * Remove noisy printf from perl5 module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 21 Apr 2020 22:47:46 +0200
+
+rrr (0.17-2) unstable; urgency=medium
+
+  * Fix misc. build problems
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 21 Apr 2020 22:33:39 +0200
+
 rrr (0.17-1) unstable; urgency=medium
 
   * rrr messages simplifed. Header has now no values and voltage type is removed.
