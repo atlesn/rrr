@@ -417,9 +417,13 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 
 	struct rrr_http_server_worker_thread_data worker_data;
 
+	// There is not more communication with main thread over this struct.
+	// Make a copy and invalidate the lock. Pointer to transport will always
+	// be valid, main thread will not destroy it before threads have shut down.
 	pthread_mutex_lock(&worker_data_preliminary->lock);
 	worker_data = *worker_data_preliminary;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
+	memset (&worker_data.lock, '\0', sizeof(worker_data.lock));
 
 	// This might happen upon server shutdown
 	if (worker_data.transport_handle == 0) {
