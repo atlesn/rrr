@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "random.h"
 #include "read.h"
 
-void rrr_http_session_destroy (struct rrr_http_session *session) {
+static void __rrr_http_session_destroy (struct rrr_http_session *session, int in_net_transport_ctx) {
 	RRR_FREE_IF_NOT_NULL(session->host);
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
 	RRR_FREE_IF_NOT_NULL(session->user_agent);
@@ -49,15 +49,25 @@ void rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
-	if (session->transport_handle != 0) {
-		rrr_net_transport_close(session->transport, session->transport_handle);
+	if (in_net_transport_ctx == 1) {
+		// We are called by the net transport cleanup functions, and we should
+		// not close the handle here. Net transport does that. Calling back
+		// into net transport causes deadlock
+	}
+	else {
+		if (session->transport_handle != 0) {
+			rrr_net_transport_close(session->transport, session->transport_handle);
+		}
 	}
 	free(session);
 }
 
+void rrr_http_session_destroy (struct rrr_http_session *session) {
+	__rrr_http_session_destroy(session, 0);
+}
 
-static void __rrr_http_session_destroy_void (void *ptr) {
-	rrr_http_session_destroy(ptr);
+static void __rrr_http_session_destroy_net_transport_ctx_void (void *ptr) {
+	__rrr_http_session_destroy(ptr, 1);
 }
 
 static int __rrr_http_session_allocate (struct rrr_http_session **target) {
@@ -78,9 +88,6 @@ static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 
 	*target = session;
 
-	goto out;
-	out_free_session:
-		free(session);
 	out:
 		return ret;
 }
@@ -107,12 +114,14 @@ int rrr_http_session_server_new_and_register_with_transport (
 			transport,
 			connected_transport_handle,
 			session,
-			__rrr_http_session_destroy_void
+			__rrr_http_session_destroy_net_transport_ctx_void
 	) != 0) {
 		RRR_MSG_ERR("Could not bind application data in rrr_http_session_server_new_and_register_with_transport\n");
 		ret = 1;
 		goto out;
 	}
+
+	session->transport = transport;
 
 	session = NULL;
 
@@ -626,7 +635,7 @@ int rrr_http_session_send_response (struct rrr_http_session *session) {
 			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
 			break;
 		default:
-			RRR_BUG("BUG: Respone code %i not implemented in rrr_http_session_send_response\n");
+			RRR_BUG("BUG: Respone code %i not implemented in rrr_http_session_send_response\n", session->response_part->response_code);
 	}
 
 	ret |= rrr_net_transport_send_blocking(session->transport, session->transport_handle, response_str, strlen(response_str));

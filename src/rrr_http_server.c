@@ -219,19 +219,34 @@ static int __rrr_http_server_bind_and_listen (int *handle, struct rrr_net_transp
 	return ret;
 }
 
-static int __rrr_http_server_accept(struct rrr_net_transport *transport, int handle, struct rrr_thread *free_thread) {
-	int ret = 0;
+struct rrr_http_server_worker_thread_data {
+	pthread_mutex_t lock;
+	struct rrr_net_transport *transport;
+	int transport_handle;
+};
 
+static int __rrr_http_server_accept (
+		int *did_accept,
+		struct rrr_net_transport *transport,
+		int handle,
+		struct rrr_http_server_worker_thread_data *worker_data
+) {
+	int ret = 0;
 	int new_handle = 0;
-	struct sockaddr sockaddr;
+	struct rrr_sockaddr sockaddr;
 	socklen_t socklen = sizeof(sockaddr);
 
-	if ((ret = rrr_net_transport_accept(&new_handle, &sockaddr, &socklen, transport, handle)) != 0) {
+	*did_accept = 0;
+
+	if ((ret = rrr_net_transport_accept(&new_handle, (struct sockaddr *) &sockaddr, &socklen, transport, handle)) != 0) {
 		RRR_MSG_ERR("Error from accept() in __rrr_http_server_accept_read_write\n");
 		ret = 1;
 		goto out;
 	}
 	else if (new_handle != 0) {
+		// HTTP session data must be protected by lock to provide memory fence
+		pthread_mutex_lock(&worker_data->lock);
+
 		RRR_DBG_1("Accepted a connection\n");
 		if (rrr_http_session_server_new_and_register_with_transport (
 				transport,
@@ -239,6 +254,17 @@ static int __rrr_http_server_accept(struct rrr_net_transport *transport, int han
 		) != 0) {
 			RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
 			ret = 1;
+		}
+		else {
+			worker_data->transport = transport;
+			worker_data->transport_handle = new_handle;
+		}
+
+		*did_accept = 1;
+
+		pthread_mutex_unlock(&worker_data->lock);
+
+		if (ret != 0) {
 			goto out;
 		}
 	}
@@ -251,9 +277,86 @@ static int __rrr_http_server_accept(struct rrr_net_transport *transport, int han
 	return ret;
 }
 
-struct rrr_http_server_worker_thread_data {
-	pthread_mutex_t lock;
+struct rrr_http_server_accept_if_free_thread_callback_data {
+	struct rrr_net_transport *transport;
+	int transport_handle;
+	struct rrr_thread *result_thread_to_start;
 };
+
+static int __rrr_http_server_accept_if_free_thread_callback (
+		struct rrr_thread *locked_thread,
+		void *arg
+) {
+	int ret = 0;
+
+	struct rrr_http_server_accept_if_free_thread_callback_data *callback_data = arg;
+
+	int did_accept = 0;
+
+	if (callback_data->result_thread_to_start != NULL) {
+		RRR_BUG("BUG: thread to start pointer was not NULL in __rrr_http_server_accept_if_free_thread_callback\n");
+	}
+
+	if ((ret = __rrr_http_server_accept (
+			&did_accept,
+			callback_data->transport,
+			callback_data->transport_handle,
+			locked_thread->private_data
+	)) != 0) {
+		RRR_MSG_ERR("Error from accept() in __rrr_http_server_accept_if_free_thread_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (did_accept) {
+		callback_data->result_thread_to_start = locked_thread;
+		ret = 2; // IMPORTANT, MUST SKIP OUT OF ITERATION TO START THREAD IN CALLER
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_server_accept_if_free_thread (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		struct rrr_thread_collection *threads
+) {
+	int ret = 0;
+
+	struct rrr_http_server_accept_if_free_thread_callback_data callback_data = {
+			transport,
+			transport_handle,
+			NULL
+	};
+
+	if ((ret = rrr_thread_iterate_by_state (
+			threads,
+			RRR_THREAD_STATE_INITIALIZED,
+			__rrr_http_server_accept_if_free_thread_callback,
+			&callback_data
+	)) != 0) {
+		if (ret == 2) {
+			if (callback_data.result_thread_to_start == NULL) {
+				RRR_BUG("BUG: Broke out of iteration but result thread was still NULL in __rrr_http_server_accept_if_free_thread\n");
+			}
+			ret = 0;
+		}
+		else {
+			RRR_MSG_ERR("Error while accepting connections\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	// Thread is locked in callback so we must start it here outside the iteration
+	if (callback_data.result_thread_to_start != NULL) {
+		rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START);
+	}
+
+	out:
+	return ret;
+}
 
 int __rrr_http_server_worker_thread_data_new (struct rrr_http_server_worker_thread_data **result) {
 	int ret = 0;
@@ -461,7 +564,7 @@ int main (int argc, const char *argv[]) {
 	rrr_signal_default_signal_actions_register();
 
 	while (main_running) {
-		rrr_thread_destroy_stopped_threads(&count, threads, 1);
+		rrr_thread_join_and_destroy_stopped_threads(&count, threads, 1);
 		if (count > 0) {
 			RRR_DBG_1("Destroyed %i threads which was complete\n", count);
 		}
@@ -474,6 +577,17 @@ int main (int argc, const char *argv[]) {
 		if ((ret = __rrr_http_server_allocate_threads(threads)) != 0) {
 			RRR_MSG_ERR("Could not allocate threads\n");
 			break;
+		}
+
+		if (transport_http != NULL) {
+			if (__rrr_http_server_accept_if_free_thread(transport_http, http_handle, threads) != 0) {
+				break;
+			}
+		}
+		if (transport_https != NULL) {
+			if (__rrr_http_server_accept_if_free_thread(transport_https, https_handle, threads) != 0) {
+				break;
+			}
 		}
 
 		usleep(500);

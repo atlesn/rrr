@@ -138,7 +138,7 @@ struct rrr_net_transport_methods {
 	int (*send)(
 			ssize_t *sent_bytes,
 			struct rrr_net_transport_handle *handle,
-			void *data,
+			const void *data,
 			ssize_t size
 	);
 };
@@ -212,7 +212,7 @@ int rrr_net_transport_read_message_all_handles (
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,
 		int transport_handle,
-		void *data,
+		const void *data,
 		ssize_t size
 );
 int rrr_net_transport_bind_and_listen (

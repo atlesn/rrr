@@ -69,8 +69,12 @@ static int __rrr_socket_client_new (
 
 	memset(client, '\0', sizeof(*client));
 
+	if (addr_len > sizeof(client->addr)) {
+		RRR_BUG("Address length too long in __rrr_socket_client_new\n");
+	}
+
 	client->connected_fd = fd;
-	client->addr = *addr;
+	memcpy (&client->addr, addr, addr_len);
 	client->addr_len = addr_len;
 	client->last_seen = rrr_time_get_64();
 
@@ -153,7 +157,7 @@ int rrr_socket_client_collection_accept (
 	if (__rrr_socket_client_new (
 			&client_new,
 			temp.connected_fd,
-			&temp.addr,
+			(struct sockaddr *) &temp.addr,
 			temp.addr_len,
 			private_data_new,
 			private_arg,

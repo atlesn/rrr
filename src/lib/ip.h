@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
+#include "rrr_socket.h"
+
 #define RRR_IP_DEFAULT_PORT 5555
 
 #define RRR_IP_RECEIVE_OK 0
@@ -77,7 +79,7 @@ struct rrr_ip_data {
 };
 
 struct rrr_ip_accept_data {
-	struct sockaddr addr;
+	struct rrr_sockaddr addr;
 	socklen_t len;
 	struct rrr_ip_data ip_data;
 };

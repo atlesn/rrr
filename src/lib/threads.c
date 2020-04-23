@@ -905,7 +905,7 @@ int rrr_thread_check_any_stopped (
 	return ret;
 }
 
-void rrr_thread_destroy_stopped_threads (
+void rrr_thread_join_and_destroy_stopped_threads (
 		int *count,
 		struct rrr_thread_collection *collection,
 		int do_destroy_private_data
@@ -956,14 +956,48 @@ void rrr_thread_destroy_stopped_threads (
 	// THIRD LOOP - Destroy tagged threads
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
+
 		if (node->ready_to_destroy) {
 			(*count)++;
+			void *thread_ret;
+			printf ("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			if (node->is_watchdog) {
+//				pthread_detach(node->thread);
+				// Non-watchdogs are already detatched
+				pthread_join(node->thread, &thread_ret);
+			}
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
+
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node, do_destroy_private_data));
 
 	pthread_mutex_unlock(&collection->threads_mutex);
+}
+
+int rrr_thread_iterate_by_state (
+		struct rrr_thread_collection *collection,
+		int state,
+		int (*callback)(struct rrr_thread *locked_thread, void *arg),
+		void *callback_data
+) {
+	int ret = 0;
+
+	pthread_mutex_lock(&collection->threads_mutex);
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
+		rrr_thread_lock(node);
+		if (node->state == state) {
+			ret = callback(node, callback_data);
+		}
+		if (ret != 0) {
+			RRR_LL_ITERATE_LAST();
+		}
+		rrr_thread_unlock(node);
+	RRR_LL_ITERATE_END();
+
+	pthread_mutex_unlock(&collection->threads_mutex);
+	return ret;
 }
 
 void rrr_thread_free_double_pointer(void *arg) {

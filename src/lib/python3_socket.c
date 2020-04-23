@@ -112,7 +112,7 @@ static PyObject *rrr_python3_socket_f_accept (PyObject *self, PyObject *args) {
 		goto out;
 	}
 
-	struct sockaddr addr;
+	struct rrr_sockaddr addr;
 	socklen_t len = sizeof(addr);
 	int new_fd = rrr_socket_accept(socket_data->socket_fd, &addr, &len, "rrr_python3_socket_f_accept");
 

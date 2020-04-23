@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "net_transport.h"
 #include "net_transport_tls.h"
+#include "rrr_socket.h"
 #include "rrr_openssl.h"
 #include "rrr_strerror.h"
 #include "gnu.h"
@@ -44,7 +45,7 @@ struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;
 	BIO *web;
 	struct rrr_ip_data ip_data;
-	struct sockaddr sockaddr;
+	struct rrr_sockaddr sockaddr;
 	socklen_t socklen;
 	int handshake_complete;
 };
@@ -80,9 +81,9 @@ static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport
 	// This will call back into our close() function for each handle
 	rrr_net_transport_common_cleanup(transport);
 
-	free(tls);
-
 	rrr_openssl_global_unregister_user();
+
+	// Do not free here, upstream does that after destroying lock
 }
 
 static void __rrr_net_transport_tls_dump_enabled_ciphers(SSL *ssl) {
@@ -518,7 +519,7 @@ static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(vo
 
 	return rrr_read_session_collection_maintain_and_find_or_create (
 			&callback_data->handle->read_sessions,
-			&ssl_data->sockaddr,
+			(struct sockaddr *) &ssl_data->sockaddr,
 			ssl_data->socklen
 	);
 }
@@ -651,7 +652,7 @@ static int __rrr_net_transport_tls_read_message (
 static int __rrr_net_transport_tls_send (
 	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
-	void *data,
+	const void *data,
 	ssize_t size
 ) {
 	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;

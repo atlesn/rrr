@@ -648,20 +648,20 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
 	sprintf(port_str, "%u", port);
 
     struct addrinfo hints;
-    struct addrinfo *result;
+    struct addrinfo *addrinfo_result;
 
     memset (&hints, '\0', sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    int s = getaddrinfo(host, port_str, &hints, &result);
+    int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
     if (s != 0) {
     	RRR_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
     	goto out_error;
     }
 
     struct addrinfo *rp;
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
+    for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
     	fd = rrr_socket (
     			rp->ai_family,
 				rp->ai_socktype|SOCK_NONBLOCK,
@@ -681,14 +681,14 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     	rrr_socket_close(fd);
     }
 
-    freeaddrinfo(result);
+    freeaddrinfo(addrinfo_result);
 
     if (fd < 0 || rp == NULL) {
 		RRR_MSG_ERR ("Could not create socket for host '%s'\n", host);
 		goto out_error;
     }
 
-    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*result));
+    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
     if (accept_result == NULL) {
     	RRR_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
     	goto out_close_socket;
@@ -699,7 +699,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     accept_result->ip_data.fd = fd;
     accept_result->ip_data.port = port;
     accept_result->len = sizeof(accept_result->addr);
-    if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
+    if (getsockname(fd, (struct sockaddr *) &accept_result->addr, &accept_result->len) != 0) {
     	RRR_MSG_ERR("getsockname failed: %s\n", rrr_strerror(errno));
     	goto out_free_accept;
     }
@@ -770,7 +770,7 @@ int rrr_ip_close (struct rrr_ip_data *data) {
 int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay) {
 	int ret = 0;
 
-	struct sockaddr sockaddr_tmp = {0};
+	struct rrr_sockaddr sockaddr_tmp = {0};
 	socklen_t socklen_tmp = sizeof(sockaddr_tmp);
 	struct rrr_ip_accept_data *res = NULL;
 
@@ -824,7 +824,9 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 	}
 	memset (res, '\0', sizeof(*res));
 
-	if (sockaddr_tmp.sa_family != AF_INET && sockaddr_tmp.sa_family != AF_INET6) {
+	if (	((struct sockaddr *) &sockaddr_tmp)->sa_family != AF_INET &&
+			((struct sockaddr *) &sockaddr_tmp)->sa_family != AF_INET6
+	) {
 		RRR_BUG("Non AF_INET/AF_INET6 from accept() in ip_accept\n");
 	}
 

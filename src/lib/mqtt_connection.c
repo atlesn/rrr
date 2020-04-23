@@ -518,7 +518,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 	if ((ret = __rrr_mqtt_connection_new (
 			&res,
 			&accept_data->ip_data,
-			&accept_data->addr,
+			(struct sockaddr *) &accept_data->addr,
 			connections->close_wait_time_usec,
 			connections
 	)) != RRR_MQTT_CONN_OK) {

@@ -46,7 +46,7 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 	// This will call back into our close() function for each handle
 	rrr_net_transport_common_cleanup(transport);
 
-	free(plain);
+	// Do not free here, upstream does that after destroying lock
 }
 
 static int __rrr_net_transport_plain_connect (
@@ -165,7 +165,7 @@ static int __rrr_net_transport_plain_read_message (
 static int __rrr_net_transport_plain_send (
 	ssize_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
-	void *data,
+	const void *data,
 	ssize_t size
 ) {
 	int ret = RRR_NET_TRANSPORT_SEND_OK;
@@ -188,7 +188,9 @@ int __rrr_net_transport_plain_bind_and_listen (
 		struct rrr_net_transport *transport,
 		unsigned int port
 ) {
-	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+//	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+
+	*listen_handle = 0;
 
 	int ret = 0;
 
@@ -196,8 +198,28 @@ int __rrr_net_transport_plain_bind_and_listen (
 
 	ip_data.port = port;
 
-	rrr_ip_network_start_tcp_ipv4_and_ipv6(&ip_data, 10);
+	if ((ret = rrr_ip_network_start_tcp_ipv4_and_ipv6(&ip_data, 10)) != 0) {
+		goto out;
+	}
 
+	struct rrr_net_transport_handle *handle;
+	if ((ret = rrr_net_transport_handle_add (
+			&handle,
+			transport,
+			ip_data.fd,
+			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			NULL
+	)) != 0) {
+		RRR_MSG_ERR("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
+		goto out_destroy_ip;
+	}
+
+	*listen_handle = ip_data.fd;
+
+	goto out;
+	out_destroy_ip:
+		rrr_ip_close(&ip_data);
+	out:
 	return ret;
 }
 
@@ -207,9 +229,54 @@ int __rrr_net_transport_plain_accept (
 		socklen_t *socklen,
 		struct rrr_net_transport_handle *listen_handle
 ) {
-	int ret = 1;
-	RRR_BUG("__rrr_net_transport_plain_accept not implemented\n");
-	return ret;
+	struct rrr_ip_accept_data *accept_data = NULL;
+	struct rrr_net_transport_handle *new_handle = NULL;
+
+	int ret = 0;
+
+	*handle = 0;
+
+	struct rrr_ip_data ip_data = {0};
+
+	ip_data.fd = listen_handle->handle;
+
+	if ((ret = rrr_ip_accept(&accept_data, &ip_data, "net_transport_plain", 0)) != 0) {
+		RRR_MSG_ERR("Error while accepting connection in plain server\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (accept_data == NULL) {
+		goto out;
+	}
+
+	if (accept_data->len > *socklen) {
+		RRR_BUG("Given sockaddr was too short in __rrr_net_transport_plain_accept\n");
+	}
+
+	memset(sockaddr, '\0', sizeof(*sockaddr));
+	memcpy(sockaddr, &accept_data->addr, accept_data->len);
+	*socklen = accept_data->len;
+
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
+			&new_handle,
+			listen_handle->transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL
+	)) != 0) {
+		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_plain_accept\n");
+		ret = 1;
+		goto out_destroy_ip;
+	}
+
+	*handle = new_handle->handle;
+
+	goto out;
+	out_destroy_ip:
+		rrr_ip_close(&accept_data->ip_data);
+	out:
+		RRR_FREE_IF_NOT_NULL(accept_data);
+		return ret;
 }
 
 static const struct rrr_net_transport_methods plain_methods = {

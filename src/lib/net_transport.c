@@ -296,13 +296,15 @@ int rrr_net_transport_new (
 	goto out;
 	out_destroy:
 		new_transport->methods->destroy(new_transport);
+		free(new_transport); // Must also free, destroy does not do that
 	out:
 		return ret;
 }
 
 void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
-	pthread_mutex_destroy(&transport->handles.lock);
 	transport->methods->destroy(transport);
+	pthread_mutex_destroy(&transport->handles.lock);
+	free(transport);
 }
 
 #define RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET(error_source) 										\
@@ -422,10 +424,10 @@ int rrr_net_transport_read_message_all_handles (
 }
 
 int rrr_net_transport_send_blocking (
-	struct rrr_net_transport *transport,
-	int transport_handle,
-	void *data,
-	ssize_t size
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		const void *data,
+		ssize_t size
 ) {
 	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_send");
 

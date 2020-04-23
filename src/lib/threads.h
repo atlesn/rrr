@@ -327,10 +327,16 @@ struct rrr_thread *rrr_thread_preload_and_register (
 int rrr_thread_check_any_stopped (
 		struct rrr_thread_collection *collection
 );
-void rrr_thread_destroy_stopped_threads (
+void rrr_thread_join_and_destroy_stopped_threads (
 		int *count,
 		struct rrr_thread_collection *collection,
 		int do_destroy_private_data
+);
+int rrr_thread_iterate_by_state (
+		struct rrr_thread_collection *collection,
+		int state,
+		int (*callback)(struct rrr_thread *locked_thread, void *arg),
+		void *callback_data
 );
 void rrr_thread_free_double_pointer(void *arg);
 

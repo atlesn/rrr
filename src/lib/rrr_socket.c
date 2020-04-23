@@ -35,10 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "rrr_endian.h"
 #include "../global.h"
-#include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
 #include "rrr_strerror.h"
+#include "rrr_socket.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -250,7 +250,7 @@ static int __rrr_socket_add_unlocked_basic (
 
 int rrr_socket_accept (
 		int fd_in,
-		struct sockaddr *addr,
+		struct rrr_sockaddr *addr,
 		socklen_t *__restrict addr_len,
 		const char *creator
 ) {
@@ -265,9 +265,14 @@ int rrr_socket_accept (
 	}
 
 	pthread_mutex_lock(&socket_lock);
-	fd_out = accept(fd_in, addr, addr_len);
+
+	socklen_t addr_len_orig = *addr_len;
+	fd_out = accept(fd_in, (struct sockaddr *) addr, addr_len);
 	if (fd_out != -1) {
 		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL);
+	}
+	if (*addr_len > addr_len_orig) {
+		RRR_BUG("BUG: Given addr_len was to short in rrr_socket_accept\n");
 	}
 	pthread_mutex_unlock(&socket_lock);
 
@@ -674,7 +679,7 @@ int rrr_socket_unix_create_and_connect (
 int rrr_socket_sendto_nonblock (
 		ssize_t *written_bytes,
 		int fd,
-		void *data,
+		const void *data,
 		ssize_t size,
 		struct sockaddr *addr,
 		socklen_t addr_len
@@ -759,7 +764,7 @@ int rrr_socket_sendto_nonblock (
 
 int rrr_socket_sendto_blocking (
 		int fd,
-		void *data,
+		const void *data,
 		ssize_t size,
 		struct sockaddr *addr,
 		socklen_t addr_len

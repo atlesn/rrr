@@ -498,7 +498,6 @@ int rrr_array_push_value_str_with_tag (
 	// Don't use the import function, it reads strings with quotes around it
 	memcpy(new_value->data, value, str_size);
 
-	out:
 	return ret;
 }
 
