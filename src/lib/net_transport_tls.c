@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "../global.h"
+#include "net_transport.h"
 #include "net_transport_tls.h"
 #include "rrr_openssl.h"
 #include "rrr_strerror.h"
@@ -39,13 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "ip.h"
 
-enum rrr_net_transport_ssl_data_type {
-	RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN,
-	RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION
-};
-
 struct rrr_net_transport_tls_ssl_data {
-	enum rrr_net_transport_ssl_data_type type;
 	SSL_CTX *ctx;
 	BIO *web;
 	struct rrr_ip_data ip_data;
@@ -74,7 +69,7 @@ static void __rrr_net_transport_tls_ssl_data_destroy (struct rrr_net_transport_t
 }
 
 static int __rrr_net_transport_tls_ssl_data_close (struct rrr_net_transport_handle *handle) {
-	__rrr_net_transport_tls_ssl_data_destroy (handle->private_ptr);
+	__rrr_net_transport_tls_ssl_data_destroy (handle->submodule_private_ptr);
 
 	return 0;
 }
@@ -117,9 +112,7 @@ static int __rrr_net_transport_tls_verify_always_ok (X509_STORE_CTX *x509, void 
 	return 1;
 }
 
-struct rrr_net_transport_tls_ssl_data *__rrr_net_transport_tls_ssl_data_new (
-		enum rrr_net_transport_ssl_data_type type
-) {
+struct rrr_net_transport_tls_ssl_data *__rrr_net_transport_tls_ssl_data_new (void) {
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
 
 	if ((ssl_data = malloc(sizeof(*ssl_data))) == NULL) {
@@ -127,8 +120,6 @@ struct rrr_net_transport_tls_ssl_data *__rrr_net_transport_tls_ssl_data_new (
 		return NULL;
 	}
 	memset (ssl_data, '\0', sizeof(*ssl_data));
-
-	ssl_data->type = type;
 
 	return ssl_data;
 }
@@ -235,7 +226,7 @@ static int __rrr_net_transport_tls_connect (
 		goto out;
 	}
 
-	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
+	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new()) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_connect\n");
 		ret = 1;
 		goto out_destroy_ip;
@@ -243,7 +234,12 @@ static int __rrr_net_transport_tls_connect (
 
 	ssl_data->ip_data = accept_data->ip_data;
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, transport, ssl_data)) != 0) {
+	if ((ret = rrr_net_transport_handle_allocate_and_add(
+			&new_handle,
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			ssl_data
+	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_connect\n");
 		ret = 1;
 		goto out_destroy_ssl_data;
@@ -357,13 +353,18 @@ static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_
 		goto out;
 	}
 
-	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN)) == NULL) {
+	if ((ssl_data = __rrr_net_transport_tls_ssl_data_new()) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_bind_and_listen\n");
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, transport, ssl_data)) != 0) {
+	if ((ret = rrr_net_transport_handle_allocate_and_add(
+			&new_handle,
+			transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+			ssl_data
+	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_bind_and_listen\n");
 		ret = 1;
 		goto out_free_ssl_data;
@@ -420,10 +421,7 @@ int __rrr_net_transport_tls_accept (
 
 	*handle = 0;
 
-	struct rrr_net_transport_tls_ssl_data *listen_ssl_data = listen_handle->private_ptr;
-	if (listen_ssl_data->type != RRR_NET_TRANSPORT_SSL_DATA_TYPE_LISTEN) {
-		RRR_BUG("BUG: FD to __rrr_net_transport_tls_accept was not a listening FD\n");
-	}
+	struct rrr_net_transport_tls_ssl_data *listen_ssl_data = listen_handle->submodule_private_ptr;
 
 	if ((ret = rrr_ip_accept(&accept_data, &listen_ssl_data->ip_data, "net_transport_tls", 0)) != 0) {
 		RRR_MSG_ERR("Error while accepting connection in TLS server\n");
@@ -443,7 +441,7 @@ int __rrr_net_transport_tls_accept (
 	memcpy(sockaddr, &accept_data->addr, accept_data->len);
 	*socklen = accept_data->len;
 
-	if ((new_ssl_data = __rrr_net_transport_tls_ssl_data_new(RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION)) == NULL) {
+	if ((new_ssl_data = __rrr_net_transport_tls_ssl_data_new()) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_destroy_ip;
@@ -453,7 +451,12 @@ int __rrr_net_transport_tls_accept (
 	new_ssl_data->socklen = accept_data->len;
 	new_ssl_data->ip_data = accept_data->ip_data;
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add(&new_handle, listen_handle->transport, new_ssl_data)) != 0) {
+	if ((ret = rrr_net_transport_handle_allocate_and_add(
+			&new_handle,
+			listen_handle->transport,
+			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			new_ssl_data
+	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_destroy_ssl_data;
@@ -511,7 +514,7 @@ static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session_wi
 
 static struct rrr_read_session *__rrr_net_transport_tls_read_get_read_session(void *private_arg) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->private_ptr;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->submodule_private_ptr;
 
 	return rrr_read_session_collection_maintain_and_find_or_create (
 			&callback_data->handle->read_sessions,
@@ -543,7 +546,7 @@ static int __rrr_net_transport_tls_read_read (
 		void *private_arg
 ) {
 	struct rrr_net_transport_read_callback_data *callback_data = private_arg;
-	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->private_ptr;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = callback_data->handle->submodule_private_ptr;
 
 	int ret = RRR_READ_OK;
 
@@ -584,7 +587,7 @@ static int __rrr_net_transport_tls_read_message (
 ) {
 	int ret = 0;
 
-	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->private_ptr;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
 
 	// Try only once to avoid blocking on bad clients
 	while (ssl_data->handshake_complete == 0) {
@@ -646,19 +649,24 @@ static int __rrr_net_transport_tls_read_message (
 }
 
 static int __rrr_net_transport_tls_send (
+	ssize_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	void *data,
 	ssize_t size
 ) {
-	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->private_ptr;
+	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
 
-	if (ssl_data->type != RRR_NET_TRANSPORT_SSL_DATA_TYPE_CONNECTION) {
-		RRR_BUG("BUG: Handle to __rrr_net_transport_tls_send  was not of CONNECTION type\n");
-	}
+	*sent_bytes = 0;
 
-	if (BIO_write(ssl_data->web, data, size) != size) {
+	if (BIO_write(ssl_data->web, data, size) <= 0) {
+		if (BIO_should_retry(ssl_data->web)) {
+			return 0;
+		}
 		RRR_MSG_ERR("Write failure in __rrr_net_transport_tls_send\n");
 		return 1;
+	}
+	else {
+		*sent_bytes = size;
 	}
 
 	return 0;

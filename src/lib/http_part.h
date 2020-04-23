@@ -35,6 +35,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_HTTP_PARSE_UNTIL_CLOSE	RRR_SOCKET_READ_COMPLETE_METHOD_CONN_CLOSE
 //#define RRR_HTTP_PARSE_CHUNKED		RRR_SOCKET_READ_COMPLETE_METHOD_CHUNKED
 
+#define RRR_HTTP_PART_PROTOCOL_VERSION_1_1 1
+
+enum rrr_http_parse_type {
+	RRR_HTTP_PARSE_REQUEST,
+	RRR_HTTP_PARSE_RESPONSE
+};
+
 struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
@@ -77,11 +84,14 @@ struct rrr_http_part {
 	struct rrr_http_chunks chunks;
 	int response_code;
 	char *response_str;
+	char *request_method;
+	char *request_uri;
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
+	int parsed_protocol_version;
 	const void *data_ptr;
-	ssize_t response_code_length;
+	ssize_t request_length;
 	ssize_t header_length;
 	ssize_t data_length;
 };
@@ -98,6 +108,7 @@ int rrr_http_part_parse (
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t start_pos,
-		const char *end
+		const char *end,
+		enum rrr_http_parse_type parse_type
 );
 #endif /* RRR_HTTP_PART_H */

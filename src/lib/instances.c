@@ -46,7 +46,7 @@ int rrr_instance_check_threads_stopped(struct instance_metadata_collection *inst
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (
 				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPED ||
-				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
+//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
 				rrr_thread_is_ghost(instance->thread_data->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
@@ -443,6 +443,14 @@ void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
 	free(data);
 }
 
+void rrr_instance_free_thread_by_ghost (void *private_data) {
+	struct rrr_instance_thread_data *data = private_data;
+	if (private_data == NULL) {
+		return;
+	}
+	free(data);
+}
+
 struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
@@ -472,6 +480,7 @@ int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,
+			rrr_instance_free_thread_by_ghost,
 			module->start_priority,
 			data, module->instance_name
 	);

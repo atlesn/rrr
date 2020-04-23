@@ -44,6 +44,7 @@ static int __rrr_socket_common_receive_callback_basic (
 	return data->callback(read_session, data->arg);
 }
 
+/*
 static int __rrr_socket_common_receive_callback_and_check_ctrl (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -98,7 +99,7 @@ static int __rrr_socket_common_receive_callback_and_check_ctrl (
 	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 	return ret;
 }
-
+*/
 int rrr_socket_common_receive_array (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
@@ -152,6 +153,8 @@ int rrr_socket_common_receive_array (
 	return 0;
 }
 
+/*
+ * Apparently not used
 int rrr_socket_common_receive_socket_msg (
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
@@ -198,7 +201,7 @@ int rrr_socket_common_receive_socket_msg (
 				);
 				rrr_socket_msg_checksum_and_to_network_endian (&ack_msg);
 
-				if ((ret = rrr_socket_sendto(fd, &ack_msg, sizeof(ack_msg), NULL, 0)) != 0) {
+				if ((ret = rrr_socket_sendto_nonblock(fd, &ack_msg, sizeof(ack_msg), NULL, 0)) != 0) {
 					if (ret == RRR_SOCKET_SOFT_ERROR) {
 						goto out;
 					}
@@ -228,8 +231,9 @@ int rrr_socket_common_receive_socket_msg (
 	out:
 	return ret;
 }
+*/
 
-int rrr_socket_common_prepare_and_send_socket_msg (
+int rrr_socket_common_prepare_and_send_socket_msg_blocking (
 		struct rrr_socket_msg *socket_msg,
 		int fd,
 		struct rrr_socket_common_in_flight_counter *in_flight
@@ -244,13 +248,11 @@ int rrr_socket_common_prepare_and_send_socket_msg (
 		rrr_message_prepare_for_network((struct rrr_message *) message);
 		rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
 
-		if ((ret = rrr_socket_sendto(fd, message, msg_size, NULL, 0)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				// Revert endian conversion
-				rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, msg_size);
-				rrr_message_to_host_and_verify(message, msg_size);
-				goto out;
-			}
+		if ((ret = rrr_socket_send_blocking (
+				fd,
+				message ,
+				msg_size
+		)) != 0) {
 			RRR_MSG_ERR("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}
@@ -261,13 +263,11 @@ int rrr_socket_common_prepare_and_send_socket_msg (
 		rrr_message_addr_prepare_for_network(message);
 		rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
 
-		if ((ret = rrr_socket_sendto(fd, message, sizeof(struct rrr_message_addr), NULL, 0)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				// Revert endian conversion
-				rrr_socket_msg_head_to_host_and_verify((struct rrr_socket_msg *) message, sizeof(*message));
-				rrr_message_addr_to_host(message);
-				goto out;
-			}
+		if ((ret = rrr_socket_send_blocking (
+				fd,
+				message,
+				sizeof(struct rrr_message_addr)
+		)) != 0) {
 			RRR_MSG_ERR("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}
@@ -275,11 +275,11 @@ int rrr_socket_common_prepare_and_send_socket_msg (
 	else if (RRR_SOCKET_MSG_IS_CTRL(socket_msg)) {
 		rrr_socket_msg_checksum_and_to_network_endian (socket_msg);
 
-		if ((ret = rrr_socket_sendto(fd, socket_msg, sizeof(*socket_msg), NULL, 0)) != 0) {
-			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				rrr_socket_msg_head_to_host_and_verify(socket_msg, sizeof(*socket_msg));
-				goto out;
-			}
+		if ((ret = rrr_socket_send_blocking (
+				fd,
+				socket_msg,
+				sizeof(*socket_msg)
+		)) != 0) {
 			RRR_MSG_ERR("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}

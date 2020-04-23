@@ -71,7 +71,6 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
 	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -82,7 +81,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		usleep (20000); // 20 ms
 	}*/
 
-	rrr_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread_data->thread);
 
 	/* Test array type and data endian conversion */
 	ret = test_type_array (
@@ -97,7 +96,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 			"instance_buffer_from_mqtt_raw"
 	);
 	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
-	rrr_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread_data->thread);
 	if (ret != 0) {
 		goto configtest_done;
 	}
@@ -109,7 +108,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 			"instance_averager"
 	);
 	TEST_MSG("Result from averager test: %i\n", ret);
-	rrr_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread_data->thread);
 	if (ret != 0) {
 		goto configtest_done;
 	}
@@ -129,7 +128,6 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	/* We exit without looping which also makes the other loaded modules exit */
 
 	RRR_DBG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

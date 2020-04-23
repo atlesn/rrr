@@ -40,6 +40,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_READ_INCOMPLETE		RRR_READ_INCOMPLETE
 #define RRR_NET_TRANSPORT_READ_READ_EOF			RRR_READ_EOF
 
+#define RRR_NET_TRANSPORT_SEND_OK				RRR_NET_TRANSPORT_READ_OK
+#define RRR_NET_TRANSPORT_SEND_HARD_ERROR		RRR_NET_TRANSPORT_READ_HARD_ERROR
+#define RRR_NET_TRANSPORT_SEND_SOFT_ERROR		RRR_NET_TRANSPORT_READ_SOFT_ERROR
+
+
 #define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH \
 	RRR_READ_COMPLETE_METHOD_TARGET_LENGTH
 
@@ -51,6 +56,11 @@ enum rrr_net_transport_type {
 	RRR_NET_TRANSPORT_TLS // TODO : Consider wrapping in RRR_WITH_OPENSSL
 };
 
+enum rrr_net_transport_socket_mode {
+	RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
+	RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION
+};
+
 struct rrr_read_session;
 struct rrr_net_transport;
 
@@ -58,12 +68,16 @@ struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
 	struct rrr_net_transport *transport;
 	int handle;
+	enum rrr_net_transport_socket_mode mode;
 	struct rrr_read_session_collection read_sessions;
-	void *private_ptr;
+	void *submodule_private_ptr;
+	void *application_private_ptr;
+	void (*application_ptr_destroy)(void *ptr);
 };
 
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
+	int next_handle_position;
 	pthread_mutex_t lock;
 };
 
@@ -122,6 +136,7 @@ struct rrr_net_transport_methods {
 			void *complete_callback_arg
 	);
 	int (*send)(
+			ssize_t *sent_bytes,
 			struct rrr_net_transport_handle *handle,
 			void *data,
 			ssize_t size
@@ -137,11 +152,13 @@ int rrr_net_transport_handle_add (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
 		int handle,
+		enum rrr_net_transport_socket_mode mode,
 		void *private_ptr
 );
 int rrr_net_transport_handle_allocate_and_add (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
 		void *private_ptr
 );
 int rrr_net_transport_handle_remove (
@@ -182,7 +199,17 @@ int rrr_net_transport_read_message (
 		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 		void *complete_callback_arg
 );
-int rrr_net_transport_send (
+int rrr_net_transport_read_message_all_handles (
+		struct rrr_net_transport *transport,
+		int read_attempts,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+		void *complete_callback_arg
+);
+int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,
 		int transport_handle,
 		void *data,
@@ -199,6 +226,12 @@ int rrr_net_transport_accept (
 		socklen_t *socklen,
 		struct rrr_net_transport *transport,
 		int transport_handle
+);
+int rrr_net_transport_handle_bind_application_data (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
 );
 
 #endif /* RRR_NET_TRANSPORT_H */

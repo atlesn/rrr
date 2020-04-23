@@ -791,7 +791,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -844,7 +844,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (has_senders != 0) {
 			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 0) != 0) {
@@ -918,7 +918,7 @@ static void *thread_entry_udp (struct rrr_thread *thread) {
 	if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING)) {
 		rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 	}
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

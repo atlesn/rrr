@@ -297,7 +297,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 	pthread_cleanup_push(socket_stop, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -322,7 +322,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
 			break;
@@ -349,7 +349,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

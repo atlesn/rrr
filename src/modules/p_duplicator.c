@@ -247,7 +247,7 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 	RRR_DBG_3 ("duplicator %s: Result from duplicator: timestamp %" PRIu64 " size %lu\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp, size);
 
-	rrr_update_watchdog_time(thread_data->thread);
+	rrr_thread_update_watchdog_time(thread_data->thread);
 	rrr_fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp, data, size);
 
 	return ret;
@@ -337,7 +337,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -361,7 +361,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), data->readers_count);
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int input_buffer_size = rrr_fifo_buffer_get_entry_count(&data->input_buffer);
 
@@ -383,7 +383,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread duplicator %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

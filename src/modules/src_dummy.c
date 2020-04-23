@@ -155,7 +155,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -181,7 +181,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	int generated_count_to_stats = 0;
 	rrr_setting_uint generated_count_total = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
 			uint64_t time = rrr_time_get_64();
@@ -236,7 +236,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 	out_cleanup:
 	RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

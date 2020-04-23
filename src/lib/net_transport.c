@@ -64,6 +64,7 @@ static int __rrr_net_transport_handle_create_and_push_unlocked (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
 		int handle,
+		enum rrr_net_transport_socket_mode mode,
 		void *private_ptr
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -84,7 +85,8 @@ static int __rrr_net_transport_handle_create_and_push_unlocked (
 
 	new_handle->transport = transport;
 	new_handle->handle = handle;
-	new_handle->private_ptr = private_ptr;
+	new_handle->mode = mode;
+	new_handle->submodule_private_ptr = private_ptr;
 
 	RRR_LL_APPEND(collection, new_handle);
 
@@ -98,6 +100,7 @@ int rrr_net_transport_handle_add (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
 		int handle,
+		enum rrr_net_transport_socket_mode mode,
 		void *private_ptr
 ) {
 	int ret = 0;
@@ -107,7 +110,7 @@ int rrr_net_transport_handle_add (
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
-	ret = __rrr_net_transport_handle_create_and_push_unlocked(handle_final, transport, handle, private_ptr);
+	ret = __rrr_net_transport_handle_create_and_push_unlocked(handle_final, transport, handle, mode, private_ptr);
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	return ret;
@@ -119,6 +122,7 @@ int rrr_net_transport_handle_add (
 int rrr_net_transport_handle_allocate_and_add (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
+		enum rrr_net_transport_socket_mode mode,
 		void *private_ptr
 ) {
 	struct rrr_net_transport_handle_collection *collection = &transport->handles;
@@ -131,9 +135,20 @@ int rrr_net_transport_handle_allocate_and_add (
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
-	for (int i = 1; i <= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX; i++) {
-		int was_taken = 0;
+	if (RRR_LL_COUNT(collection) >= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX) {
+		RRR_MSG_ERR("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
+				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
+		ret = 1;
+		goto out;
+	}
 
+	int max_attempts = 100000;
+	for (int i = collection->next_handle_position; --max_attempts > 0; i++) {
+		if (i <= 0 || i > 99999999) {
+			i = 1;
+		}
+
+		int was_taken = 0;
 		RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 			if (node->handle == i) {
 				was_taken = 1;
@@ -148,13 +163,27 @@ int rrr_net_transport_handle_allocate_and_add (
 	}
 
 	if (new_handle_id == 0) {
+		RRR_MSG_ERR("Max attempts reached while allocating handle in rrr_net_transport_handle_allocate_and_add\n");
+		ret = 1;
+		goto out;
+	}
+
+	collection->next_handle_position = new_handle_id + 1;
+
+	if (new_handle_id == 0) {
 		RRR_MSG_ERR("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = 1;
 		goto out;
 	}
 
-	if ((ret = __rrr_net_transport_handle_create_and_push_unlocked(handle_final, transport, new_handle_id, private_ptr)) != 0) {
+	if ((ret = __rrr_net_transport_handle_create_and_push_unlocked(
+			handle_final,
+			transport,
+			new_handle_id,
+			mode,
+			private_ptr
+	)) != 0) {
 		ret = 1;
 		goto out;
 	}
@@ -171,8 +200,11 @@ static int __rrr_net_transport_handle_destroy (
 
 	handle->transport->methods->close(handle);
 
-	free(handle);
+	if (handle->application_private_ptr != NULL && handle->application_ptr_destroy != NULL) {
+		handle->application_ptr_destroy(handle->application_private_ptr);
+	}
 
+	free(handle);
 	// Always return success because we always free() regardless of callback result
 	return RRR_LL_DID_DESTROY;
 }
@@ -273,20 +305,6 @@ void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	transport->methods->destroy(transport);
 }
 
-int rrr_net_transport_close (
-		struct rrr_net_transport *transport,
-		int transport_handle
-) {
-	struct rrr_net_transport_handle *handle = rrr_net_transport_handle_get(transport, transport_handle);
-
-	if (handle == NULL) {
-		RRR_MSG_ERR("Handle %i not found in rrr_net_transport_close\n", transport_handle);
-		return 1;
-	}
-
-	return transport->methods->close(handle);
-}
-
 #define RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET(error_source) 										\
 	struct rrr_net_transport_handle *handle = NULL;													\
 	do {if ((handle = rrr_net_transport_handle_get(transport, transport_handle)) == NULL) {			\
@@ -294,12 +312,35 @@ int rrr_net_transport_close (
 		return 1;																					\
 	}} while(0)
 
+int rrr_net_transport_close (
+		struct rrr_net_transport *transport,
+		int transport_handle
+) {
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_close");
+
+	int ret = 0;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+	RRR_LL_REMOVE_NODE(collection, struct rrr_net_transport_handle, handle, ret = __rrr_net_transport_handle_destroy(node));
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+
+	return ret;
+}
+
 int rrr_net_transport_connect (
 		int *handle,
 		struct rrr_net_transport *transport,
 		unsigned int port,
 		const char *host
 ) {
+	if (host == NULL) {
+		RRR_BUG("host was NULL in rrr_net_transport_connect\n");
+	}
+	if (port == 0) {
+		RRR_BUG("port was 0 in rrr_net_transport_connect\n");
+	}
 	return transport->methods->connect(handle, transport, port, host);
 }
 
@@ -316,6 +357,10 @@ int rrr_net_transport_read_message (
 ) {
 	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_read_message");
 
+	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
+		RRR_BUG("BUG: Handle to rrr_net_transport_read_message was not of CONNECTION type\n");
+	}
+
 	return transport->methods->read_message (
 			handle,
 			read_attempts,
@@ -328,7 +373,55 @@ int rrr_net_transport_read_message (
 	);
 }
 
-int rrr_net_transport_send (
+int rrr_net_transport_read_message_all_handles (
+		struct rrr_net_transport *transport,
+		int read_attempts,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+		void *complete_callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_net_transport_handle_collection *collection = &transport->handles;
+
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
+		if ((ret = transport->methods->read_message (
+				node,
+				read_attempts,
+				read_step_initial,
+				read_step_max_size,
+				get_target_size,
+				get_target_size_arg,
+				complete_callback,
+				complete_callback_arg
+		)) != 0) {
+			if (ret == RRR_READ_INCOMPLETE) {
+				ret = 0;
+				RRR_LL_ITERATE_NEXT();
+			}
+			else if (ret == RRR_READ_SOFT_ERROR) {
+				ret = 0;
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+			else {
+				RRR_MSG_ERR("Error %i from read function in rrr_net_transport_read_message_all_handles\n", ret);
+				ret = 1;
+				goto out;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_net_transport_handle_destroy(node));
+
+	out:
+	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
+	return ret;
+}
+
+int rrr_net_transport_send_blocking (
 	struct rrr_net_transport *transport,
 	int transport_handle,
 	void *data,
@@ -336,7 +429,32 @@ int rrr_net_transport_send (
 ) {
 	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_send");
 
-	return transport->methods->send(handle, data, size);
+	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
+		RRR_BUG("BUG: Handle to rrr_net_transport_send_blocking was not of CONNECTION type\n");
+	}
+
+	int ret = 0;
+
+	ssize_t written_bytes = 0;
+	ssize_t written_bytes_total = 0;
+
+	while (ret != 0) {
+		if ((ret = transport->methods->send (
+				&written_bytes,
+				handle,
+				data + written_bytes_total,
+				size - written_bytes_total
+		)) != 0) {
+			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
+				RRR_MSG_ERR("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				goto out;
+			}
+		}
+		written_bytes_total += written_bytes;
+	}
+
+	out:
+	return ret;
 }
 
 int rrr_net_transport_bind_and_listen (
@@ -356,5 +474,27 @@ int rrr_net_transport_accept (
 ) {
 	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_accept");
 
+	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN) {
+		RRR_BUG("BUG: Handle to rrr_net_transport_accept was not a listening FD\n");
+	}
+
 	return transport->methods->accept(new_handle, sockaddr, socklen, handle);
+}
+
+int rrr_net_transport_handle_bind_application_data (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+) {
+	RRR_NET_TRANSPORT_HANDLE_DECLARE_AND_GET("rrr_net_transport_handle_bind_application_data");
+
+	if (handle->application_private_ptr != NULL) {
+		RRR_BUG("rrr_net_transport_handle_bind_application_data called twice, pointer was already set\n");
+	}
+
+	handle->application_private_ptr = application_data;
+	handle->application_ptr_destroy = application_data_destroy;
+
+	return 0;
 }

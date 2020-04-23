@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http_session.h"
 #include "lib/http_part.h"
 #include "lib/http_util.h"
+#include "lib/net_transport.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
 #include "lib/rrr_strerror.h"
@@ -69,6 +70,7 @@ struct rrr_http_client_data {
 	int ssl_force;
 	int ssl_no_cert_verify;
 	struct rrr_http_session *session;
+	struct rrr_net_transport *transport;
 };
 
 struct rrr_http_client_response {
@@ -92,6 +94,9 @@ static void __rrr_http_client_data_cleanup (struct rrr_http_client_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->query);
 	if (data->session != NULL) {
 		rrr_http_session_destroy(data->session);
+	}
+	if (data->transport != NULL) {
+		rrr_net_transport_destroy(data->transport);
 	}
 }
 
@@ -317,6 +322,10 @@ static int __rrr_http_client_receive_callback (
 	return ret;
 }
 
+#define RRR_HTTP_CLIENT_TRANSPORT_ANY 0
+#define RRR_HTTP_CLIENT_TRANSPORT_HTTP 1
+#define RRR_HTTP_CLIENT_TRANSPORT_HTTPS 2
+
 static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	int ret = 0;
 
@@ -351,14 +360,14 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 		}
 	}
 
-	int transport = RRR_HTTP_TRANSPORT_ANY;
+	int transport = RRR_HTTP_CLIENT_TRANSPORT_ANY;
 
 	if (data->protocol != NULL) {
 		if (strcasecmp(data->protocol, "http") == 0) {
-			transport = RRR_HTTP_TRANSPORT_HTTP;
+			transport = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
 		}
 		else if (strcasecmp(data->protocol, "https") == 0) {
-			transport = RRR_HTTP_TRANSPORT_HTTPS;
+			transport = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
 		}
 		else {
 			RRR_MSG_ERR("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
@@ -369,21 +378,21 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 	if (data->ssl_force != 0) {
 		RRR_DBG_1("Forcing SSL/TLS\n");
-		if (transport != RRR_HTTP_TRANSPORT_HTTPS && transport != RRR_HTTP_TRANSPORT_ANY) {
+		if (transport != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
 			RRR_MSG_ERR("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
 			ret = 1;
 			goto out;
 		}
-		transport = RRR_HTTP_TRANSPORT_HTTPS;
+		transport = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
 	}
 	if (data->plain_force != 0) {
 		RRR_DBG_1("Forcing plaintext non-SSL/TLS\n");
-		if (transport != RRR_HTTP_TRANSPORT_HTTPS && transport != RRR_HTTP_TRANSPORT_ANY) {
+		if (transport != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
 			RRR_MSG_ERR("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
 			ret = 1;
 			goto out;
 		}
-		transport = RRR_HTTP_TRANSPORT_HTTP;
+		transport = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
 	}
 
 	RRR_DBG_1("Using server %s port %u transport %i\n", data->hostname, data->http_port, transport);
@@ -394,16 +403,31 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
 	}
 
-	if ((ret = rrr_http_session_new (
+	if (data->transport != NULL) {
+		rrr_net_transport_destroy(data->transport);
+	}
+
+	if (transport == RRR_HTTP_CLIENT_TRANSPORT_HTTPS) {
+		ret = rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL);
+	}
+	else {
+		ret = rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Could not create transport in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	if ((ret = rrr_http_session_client_new (
 			&data->session,
-			transport,
+			data->transport,
 //			RRR_HTTP_METHOD_POST_URLENCODED,
 			RRR_HTTP_METHOD_GET,
 			data->hostname,
 			data->http_port,
 			endpoint_and_query,
-			RRR_HTTP_CLIENT_USER_AGENT,
-			tls_flags
+			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
 		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
 		goto out;

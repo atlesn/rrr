@@ -43,6 +43,10 @@ const char *rrr_http_util_find_crlf (
 		const char *start,
 		const char *end
 );
+const char *rrr_http_util_find_whsp (
+		const char *start,
+		const char *end
+);
 int rrr_http_util_strtoull (
 		unsigned long long int *result,
 		ssize_t *result_len,
@@ -67,6 +71,7 @@ ssize_t rrr_http_util_count_whsp (
 		const char *end
 );
 void rrr_http_util_strtolower (char *str);
+void rrr_http_util_strtoupper (char *str);
 void rrr_http_util_uri_destroy (struct rrr_http_uri *uri);
 int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri);
 

@@ -69,7 +69,7 @@ int rrr_socket_client_collection_accept (
 int rrr_socket_client_collection_accept_simple (
 		struct rrr_socket_client_collection *collection
 );
-int rrr_socket_client_collection_multicast_send (
+int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		struct rrr_socket_client_collection *collection,
 		void *data,
 		size_t size

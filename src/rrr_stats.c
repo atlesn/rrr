@@ -503,7 +503,7 @@ static int __rrr_stats_send_message (int fd, const struct rrr_stats_message *mes
 			message->path
 	);
 
-	return rrr_socket_send(fd, &message_packed, total_size);
+	return rrr_socket_send_blocking(fd, &message_packed, total_size);
 }
 
 static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {

@@ -211,7 +211,7 @@ static int __rrr_stats_engine_send_message_to_clients (struct rrr_stats_engine *
 			message->path
 	);
 
-	return rrr_socket_client_collection_multicast_send (
+	return rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 			&stats->client_collection,
 			(struct rrr_socket_msg *) &message_packed,
 			total_size

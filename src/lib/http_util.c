@@ -315,6 +315,19 @@ const char *rrr_http_util_find_crlf (
 	return NULL;
 }
 
+const char *rrr_http_util_find_whsp (
+		const char *start,
+		const char *end
+) {
+	// Remember end minus 1
+	for (const char *pos = start; pos < end - 1; pos++) {
+		if (*pos == ' ' && *(pos + 1) == '\t') {
+			return pos;
+		}
+	}
+	return NULL;
+}
+
 int rrr_http_util_strtoull (
 		unsigned long long int *result,
 		ssize_t *result_len,
@@ -458,6 +471,13 @@ void rrr_http_util_strtolower (char *str) {
 	ssize_t len = strlen(str);
 	for (int i = 0; i < len; i++) {
 		str[i] = tolower(str[i]);
+	}
+}
+
+void rrr_http_util_strtoupper (char *str) {
+	ssize_t len = strlen(str);
+	for (int i = 0; i < len; i++) {
+		str[i] = toupper(str[i]);
 	}
 }
 

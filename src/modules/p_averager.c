@@ -421,7 +421,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -449,7 +449,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	uint64_t average_interval_useconds = data->interval * 1000000;
 
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		averager_maintain_buffer(data);
 
@@ -470,7 +470,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);

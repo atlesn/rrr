@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/gnu.h"
 #include "../lib/map.h"
 #include "../lib/string_builder.h"
+#include "../lib/net_transport.h"
 #include "../global.h"
 
 #define INFLUXDB_DEFAULT_PORT 8086
@@ -61,20 +62,39 @@ struct influxdb_data {
 	struct rrr_map fixed_tags;
 	struct rrr_map fixed_fields;
 	struct rrr_fifo_buffer error_buf;
+	struct rrr_net_transport *transport;
 };
 
 int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
+	int ret = 0;
+
 	memset (data, '\0', sizeof(*data));
-	data->thread_data = thread_data;
+
 	if (rrr_fifo_buffer_init(&data->error_buf) != 0) {
 		RRR_MSG_ERR("Could not initialize buffer in influxdb data_init\n");
-		return 1;
+		ret = 1;
+		goto out;
 	}
+
+	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL) != 0) {
+		RRR_MSG_ERR("Could not create transport in influxdb data_init\n");
+		ret = 1;
+		goto out_destroy_buffer;
+	}
+
+	data->thread_data = thread_data;
+
 	rrr_map_init(&data->tags);
 	rrr_map_init(&data->fields);
 	rrr_map_init(&data->fixed_tags);
 	rrr_map_init(&data->fixed_fields);
-	return 0;
+
+	goto out;
+	out_destroy_buffer:
+// TODO : implement destroy
+//		rrr_fifo_buffer_destroy(&data->error_buf);
+	out:
+		return ret;
 }
 
 void data_destroy (void *arg) {
@@ -86,8 +106,11 @@ void data_destroy (void *arg) {
 	rrr_map_clear(&data->fields);
 	rrr_map_clear(&data->fixed_tags);
 	rrr_map_clear(&data->fixed_fields);
-	rrr_fifo_buffer_clear(&data->error_buf);
 	// TODO : Destroy buffer locks
+	rrr_fifo_buffer_clear(&data->error_buf);
+	if (data->transport != NULL) {
+		rrr_net_transport_destroy(data->transport);
+	}
 }
 
 static int __escape_field (char **target, const char *source, ssize_t length, int add_double_quotes) {
@@ -338,15 +361,14 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_new (
+	if ((ret = rrr_http_session_client_new (
 			&session,
-			RRR_HTTP_TRANSPORT_HTTP,
+			data->transport,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
 			data->server,
 			data->server_port,
 			uri,
-			INFLUXDB_USER_AGENT,
-			0
+			INFLUXDB_USER_AGENT
 	)) != 0) {
 		RRR_MSG_ERR("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -584,7 +606,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 	pthread_cleanup_push(data_destroy, influxdb_data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -610,7 +632,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	uint64_t timer_start = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
 			break;
@@ -640,7 +662,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:

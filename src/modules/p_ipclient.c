@@ -482,7 +482,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -523,7 +523,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	int send_total = 0;
 	int delivered_total = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int err = 0;
 
@@ -548,7 +548,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 //				INSTANCE_D_NAME(thread_data));
 
 		int queue_count = 0;
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 		if (queue_or_delete_messages(&queue_count, data) != 0) {
 			usleep (10000); // 10 ms
 			goto network_restart;
@@ -635,7 +635,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

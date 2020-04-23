@@ -33,18 +33,13 @@ enum rrr_http_method {
 	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING
 };
 
-enum rrr_http_transport {
-	RRR_HTTP_TRANSPORT_ANY,
-	RRR_HTTP_TRANSPORT_HTTP,
-	RRR_HTTP_TRANSPORT_HTTPS
-};
-
 struct rrr_http_session {
 	struct rrr_net_transport *transport;
 	int transport_handle;
+	int is_client;
 	enum rrr_http_method method;
 	char *host;
-	char *endpoint;
+	char *uri_str;
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
@@ -52,15 +47,18 @@ struct rrr_http_session {
 };
 
 void rrr_http_session_destroy (struct rrr_http_session *session);
-int rrr_http_session_new (
+int rrr_http_session_server_new_and_register_with_transport (
+		struct rrr_net_transport *transport,
+		int connected_transport_handle
+);
+int rrr_http_session_client_new (
 		struct rrr_http_session **target,
-		enum rrr_http_transport transport,
+		struct rrr_net_transport *transport,
 		enum rrr_http_method method,
 		const char *host,
 		uint16_t port,
 		const char *endpoint,
-		const char *user_agent,
-		int tls_flags
+		const char *user_agent
 );
 int rrr_http_session_add_query_field (
 		struct rrr_http_session *session,

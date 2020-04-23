@@ -337,7 +337,7 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct python3_data *python3_data = thread_data->private_data;
 	struct rrr_message *message = (struct rrr_message *) data;
 
-	rrr_update_watchdog_time(python3_data->thread_data->thread);
+	rrr_thread_update_watchdog_time(python3_data->thread_data->thread);
 
 	RRR_DBG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp);
@@ -488,7 +488,7 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 	struct python3_reader_data *data = thread->private_data;
 	struct python3_data *python3_data = data->data;
 
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(data->thread, RRR_THREAD_SIGNAL_START);
@@ -496,7 +496,7 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 
 	uint64_t start_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(data->thread) == 0) {
-		rrr_update_watchdog_time(data->thread);
+		rrr_thread_update_watchdog_time(data->thread);
 
 		if (read_from_source_or_processor(data) != 0) {
 			RRR_MSG_ERR("Error while reading in python3 instance %s thread '%s'\n",
@@ -515,7 +515,7 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 
 	usleep(50000);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 
@@ -540,6 +540,7 @@ int preload_reader_thread (
 			NULL,
 			NULL,
 			NULL,
+			NULL, // We don't call cleanup_ghost_data, so this can be NULL
 			RRR_THREAD_START_PRIORITY_NORMAL,
 			reader_data,
 			name
@@ -622,7 +623,7 @@ static int threads_start(struct python3_data *data) {
 
 	goto out;
 	out_destroy_collection:
-		rrr_thread_destroy_collection(data->thread_collection);
+		rrr_thread_destroy_collection(data->thread_collection, 0);
 
 	out:
 	return ret;
@@ -641,7 +642,7 @@ void threads_cleanup(void *arg) {
 
 	if (data->thread_collection != NULL) {
 		rrr_thread_stop_and_join_all(data->thread_collection, python3_ghost_handler);
-		rrr_thread_destroy_collection(data->thread_collection);
+		rrr_thread_destroy_collection(data->thread_collection, 0);
 		data->thread_collection = NULL;
 	}
 
@@ -668,7 +669,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	pthread_cleanup_push(python3_stop, data);
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(threads_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	if (data_init(data, preload_data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -723,7 +724,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	uint64_t check_settings_used_time = rrr_time_get_64() + 1000000;
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (check_settings_used_time != 0 && check_settings_used_time > rrr_time_get_64()) {
 			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -769,7 +770,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
 

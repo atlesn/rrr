@@ -56,8 +56,8 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 
 		if (	rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
-				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED ||
-				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
+				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED
+//				|| rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
 		) {
 			// OK
 		}

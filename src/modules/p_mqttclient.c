@@ -1285,7 +1285,7 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 	reconnect:
 
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(data->thread_data->thread) != 1; i--) {
-		rrr_update_watchdog_time(data->thread_data->thread);
+		rrr_thread_update_watchdog_time(data->thread_data->thread);
 
 		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data), data->server, data->server_port, i, i_first);
@@ -1362,7 +1362,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -1450,7 +1450,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
 		int send_allowed = 0;
@@ -1498,7 +1498,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
-		pthread_cleanup_pop(1);
+//		pthread_cleanup_pop(1);
 		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);

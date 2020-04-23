@@ -70,7 +70,13 @@ static int __rrr_net_transport_plain_connect (
 	}
 
 	struct rrr_net_transport_handle *new_handle = NULL;
-	if ((ret = rrr_net_transport_handle_add(&new_handle, transport, accept_data->ip_data.fd, NULL)) != 0) {
+	if ((ret = rrr_net_transport_handle_add (
+			&new_handle,
+			transport,
+			accept_data->ip_data.fd,
+			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
+			NULL
+	)) != 0) {
 		RRR_MSG_ERR("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
 		goto out_disconnect;
@@ -157,15 +163,19 @@ static int __rrr_net_transport_plain_read_message (
 }
 
 static int __rrr_net_transport_plain_send (
+	ssize_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	void *data,
 	ssize_t size
 ) {
-	int ret = 0;
+	int ret = RRR_NET_TRANSPORT_SEND_OK;
 
-	if ((ret = rrr_socket_sendto(handle->handle, data, size, NULL, 0)) != 0) {
-		RRR_MSG_ERR("Could not send data in  __rrr_net_transport_plain_send\n");
-		ret = 1;
+	if ((ret = rrr_socket_sendto_nonblock(written_bytes, handle->handle, data, size, NULL, 0)) != 0) {
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			goto out;
+		}
+		RRR_MSG_ERR("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
+		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
 
@@ -178,8 +188,16 @@ int __rrr_net_transport_plain_bind_and_listen (
 		struct rrr_net_transport *transport,
 		unsigned int port
 ) {
-	int ret = 1;
-	RRR_BUG("__rrr_net_transport_plain_bind_and_listen not implemented\n");
+	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+
+	int ret = 0;
+
+	struct rrr_ip_data ip_data = {0};
+
+	ip_data.port = port;
+
+	rrr_ip_network_start_tcp_ipv4_and_ipv6(&ip_data, 10);
+
 	return ret;
 }
 

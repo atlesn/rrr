@@ -343,7 +343,7 @@ int main (int argc, const char **argv) {
 
 	} TEST_RESULT(ret == 0);
 
-	rrr_thread_destroy_collection(collection);
+	rrr_thread_destroy_collection(collection, 0);
 
 	out_cleanup_instances:
 	rrr_instance_metadata_collection_destroy(instances);
