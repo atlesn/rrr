@@ -56,7 +56,7 @@ static void __rrr_http_session_destroy (struct rrr_http_session *session, int in
 	}
 	else {
 		if (session->transport_handle != 0) {
-			rrr_net_transport_close(session->transport, session->transport_handle);
+			rrr_net_transport_close_handle(session->transport, session->transport_handle);
 		}
 	}
 	free(session);
@@ -92,9 +92,9 @@ static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 		return ret;
 }
 
-int rrr_http_session_server_new_and_register_with_transport (
-		struct rrr_net_transport *transport,
-		int connected_transport_handle
+// DO NOT CALL EXCEPT FOR FROM LOCKED NET TRANSPORT CTX
+int rrr_http_session_transport_ctx_server_new_and_register_with_transport (
+		struct rrr_net_transport_handle *handle
 ) {
 	int ret = 0;
 
@@ -106,22 +106,18 @@ int rrr_http_session_server_new_and_register_with_transport (
 		goto out;
 	}
 
-	session->transport_handle = connected_transport_handle;
+	// DO NOT STORE HANDLE POINTER
+	session->transport_handle = handle->handle;
 	session->is_client = 0;
 
 	// Transport framework responsible for cleaning up
-	if (rrr_net_transport_handle_bind_application_data (
-			transport,
-			connected_transport_handle,
+	rrr_net_transport_handle_application_data_bind_unlocked (
+			handle,
 			session,
 			__rrr_http_session_destroy_net_transport_ctx_void
-	) != 0) {
-		RRR_MSG_ERR("Could not bind application data in rrr_http_session_server_new_and_register_with_transport\n");
-		ret = 1;
-		goto out;
-	}
+	);
 
-	session->transport = transport;
+	session->transport = handle->transport;
 
 	session = NULL;
 
@@ -645,7 +641,7 @@ int rrr_http_session_send_response (struct rrr_http_session *session) {
 
 void rrr_http_session_close (struct rrr_http_session *session) {
 	if (session->transport_handle > 0) {
-		if (rrr_net_transport_close(session->transport, session->transport_handle) != 0) {
+		if (rrr_net_transport_close_handle(session->transport, session->transport_handle) != 0) {
 			RRR_MSG_ERR("Warning: Error while closing transport handle in rrr_http_session_close\n");
 		}
 		session->transport_handle = 0;

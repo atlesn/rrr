@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/gnu.h"
 #include "lib/random.h"
+#include "lib/net_transport.h"
 
 #define RRR_HTTP_SERVER_USER_AGENT "RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_WORKER_THREADS 10
@@ -221,10 +222,40 @@ static int __rrr_http_server_bind_and_listen (int *handle, struct rrr_net_transp
 }
 
 struct rrr_http_server_worker_thread_data {
+	// This lock only protects our data members, not what theypoint to.
 	pthread_mutex_t lock;
+
 	struct rrr_net_transport *transport;
 	int transport_handle;
 };
+
+static int __rrr_http_server_accept_create_http_session_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_server_accept_create_http_session_callback_data *callback_data = arg;
+	struct rrr_http_server_worker_thread_data *worker_data = arg;
+
+	int ret = 0;
+
+	if (rrr_http_session_transport_ctx_server_new_and_register_with_transport (
+			handle
+	) != 0) {
+		RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
+		ret = 1;
+	}
+	else {
+		pthread_mutex_lock(&worker_data->lock);
+
+		// DO NOT STORE HANDLE POINTER
+		worker_data->transport = handle->transport;
+		worker_data->transport_handle = handle->handle;
+
+		pthread_mutex_unlock(&worker_data->lock);
+	}
+
+	return ret;
+}
 
 static int __rrr_http_server_accept (
 		int *did_accept,
@@ -245,25 +276,21 @@ static int __rrr_http_server_accept (
 		goto out;
 	}
 	else if (new_handle != 0) {
-		// HTTP session data must be protected by lock to provide memory fence
-		pthread_mutex_lock(&worker_data->lock);
 
 		RRR_DBG_1("Accepted a connection\n");
-		if (rrr_http_session_server_new_and_register_with_transport (
+
+		// HTTP session is protected by net transport handle lock to provide memory fence
+		if (rrr_net_transport_handle_with_lock_do (
 				transport,
-				new_handle
+				handle,
+				__rrr_http_server_accept_create_http_session_callback,
+				worker_data
 		) != 0) {
 			RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
 			ret = 1;
 		}
-		else {
-			worker_data->transport = transport;
-			worker_data->transport_handle = new_handle;
-		}
 
 		*did_accept = 1;
-
-		pthread_mutex_unlock(&worker_data->lock);
 
 		if (ret != 0) {
 			goto out;
@@ -402,10 +429,21 @@ void __rrr_http_server_worker_thread_data_destroy_void (void *private_data) {
 	__rrr_http_server_worker_thread_data_destroy(worker_data);
 }
 
-void __rrr_net_server_worker_close_transport (void *arg) {
+void __rrr_net_http_server_worker_close_transport (void *arg) {
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
 
-	rrr_net_transport_close(worker_data->transport, worker_data->transport_handle);
+	rrr_net_transport_close_handle(worker_data->transport, worker_data->transport_handle);
+}
+
+int __rrr_net_http_server_net_transport_ctx_worker_do_work (struct rrr_net_transport_handle *handle, void *arg) {
+	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct http_session_data *session = handle->application_private_ptr;
+
+	int ret = 0;
+
+	// TODO : All http_session methods must be converted to use transport ctx methods
+
+	return ret;
 }
 
 static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
@@ -420,6 +458,8 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 	// There is not more communication with main thread over this struct.
 	// Make a copy and invalidate the lock. Pointer to transport will always
 	// be valid, main thread will not destroy it before threads have shut down.
+	// This lock only protects the data members of the worker data struct, not
+	// what they point to.
 	pthread_mutex_lock(&worker_data_preliminary->lock);
 	worker_data = *worker_data_preliminary;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
@@ -430,19 +470,33 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 		goto out;
 	}
 
-	pthread_cleanup_push(__rrr_net_server_worker_close_transport, &worker_data);
+	// All usage of private data pointer (http_session) of work_data must be done
+	// with net transport handle lock held. The transport handle integer is always
+	// usable, even if the handle it points to has been freed. The lock wrapper
+	// function in net transport will fail if the handle has been freed, this means
+	// that the HTTP session has also been freed.
 
-	int loops = rrr_rand() % 5;
+	pthread_cleanup_push(__rrr_net_http_server_worker_close_transport, &worker_data);
 
-	while (--loops > 0) {
+	while (rrr_thread_check_encourage_stop(thread) == 0) {
 		rrr_thread_update_watchdog_time(thread);
 
-		usleep (2000000);
-		printf ("Worker thread %p in loop\n", thread);
+		if (rrr_net_transport_handle_with_lock_do (
+				worker_data.transport,
+				worker_data.transport_handle,
+				__rrr_net_http_server_net_transport_ctx_worker_do_work,
+				&worker_data
+		) != 0) {
+			RRR_MSG_ERR("Failed while working with client in thread %p\n", thread);
+			break;
+		}
+
+		usleep(1000);
 	}
 
 	printf ("Worker thread %p exiting\n", thread);
 
+	// This cleans up HTTP data
 	pthread_cleanup_pop(1);
 
 	out:

@@ -66,6 +66,7 @@ struct rrr_net_transport;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
+	pthread_mutex_t lock;
 	struct rrr_net_transport *transport;
 	int handle;
 	enum rrr_net_transport_socket_mode mode;
@@ -144,9 +145,12 @@ struct rrr_net_transport_methods {
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
-struct rrr_net_transport_handle *rrr_net_transport_handle_get (
+struct rrr_net_transport_handle *rrr_net_transport_handle_get_and_lock (
 		struct rrr_net_transport *transport,
 		int handle
+);
+void rrr_net_transport_handle_unlock (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_add (
 		struct rrr_net_transport_handle **handle_final,
@@ -178,9 +182,9 @@ int rrr_net_transport_new (
 		const char *private_key_file
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
-int rrr_net_transport_close (
+int rrr_net_transport_close_handle (
 		struct rrr_net_transport *transport,
-		int handle
+		int transport_handle
 );
 int rrr_net_transport_connect (
 		int *handle,
@@ -227,11 +231,26 @@ int rrr_net_transport_accept (
 		struct rrr_net_transport *transport,
 		int transport_handle
 );
-int rrr_net_transport_handle_bind_application_data (
+void rrr_net_transport_handle_application_data_bind_unlocked (
+		struct rrr_net_transport_handle *handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+);
+int rrr_net_transport_handle_application_data_bind (
 		struct rrr_net_transport *transport,
 		int transport_handle,
 		void *application_data,
 		void (*application_data_destroy)(void *ptr)
+);
+void *rrr_net_transport_handle_application_data_get (
+		struct rrr_net_transport *transport,
+		int transport_handle
+);
+int rrr_net_transport_handle_with_lock_do (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
 );
 
 #endif /* RRR_NET_TRANSPORT_H */

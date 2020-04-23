@@ -24,7 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "http_fields.h"
 #include "http_part.h"
-#include "net_transport.h"
 
 enum rrr_http_method {
 	RRR_HTTP_METHOD_GET,
@@ -46,10 +45,12 @@ struct rrr_http_session {
 	uint16_t port;
 };
 
+struct rrr_net_transport;
+struct rrr_net_transport_handle;
+
 void rrr_http_session_destroy (struct rrr_http_session *session);
-int rrr_http_session_server_new_and_register_with_transport (
-		struct rrr_net_transport *transport,
-		int connected_transport_handle
+int rrr_http_session_transport_ctx_server_new_and_register_with_transport (
+		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_client_new (
 		struct rrr_http_session **target,
