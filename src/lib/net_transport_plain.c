@@ -258,9 +258,10 @@ int __rrr_net_transport_plain_accept (
 	memcpy(sockaddr, &accept_data->addr, accept_data->len);
 	*socklen = accept_data->len;
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add (
+	if ((ret = rrr_net_transport_handle_add(
 			&new_handle,
 			listen_handle->transport,
+			accept_data->ip_data.fd,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
 			NULL
 	)) != 0) {

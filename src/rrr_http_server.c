@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include "global.h"
 #include "main.h"
@@ -401,12 +402,31 @@ void __rrr_http_server_worker_thread_data_destroy_void (void *private_data) {
 	__rrr_http_server_worker_thread_data_destroy(worker_data);
 }
 
+void __rrr_net_server_worker_close_transport (void *arg) {
+	struct rrr_http_server_worker_thread_data *worker_data = arg;
+
+	rrr_net_transport_close(worker_data->transport, worker_data->transport_handle);
+}
+
 static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
-	struct rrr_http_server_worker_thread_data *worker_data = thread->private_data;
+	struct rrr_http_server_worker_thread_data *worker_data_preliminary = thread->private_data;
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+
+	struct rrr_http_server_worker_thread_data worker_data;
+
+	pthread_mutex_lock(&worker_data_preliminary->lock);
+	worker_data = *worker_data_preliminary;
+	pthread_mutex_unlock(&worker_data_preliminary->lock);
+
+	// This might happen upon server shutdown
+	if (worker_data.transport_handle == 0) {
+		goto out;
+	}
+
+	pthread_cleanup_push(__rrr_net_server_worker_close_transport, &worker_data);
 
 	int loops = rrr_rand() % 5;
 
@@ -419,6 +439,9 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 
 	printf ("Worker thread %p exiting\n", thread);
 
+	pthread_cleanup_pop(1);
+
+	out:
 	pthread_exit(0);
 }
 

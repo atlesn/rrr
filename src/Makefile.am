@@ -14,7 +14,7 @@ rrr_http_client_LDFLAGS = -lrrr -L./lib
 rrr_http_client_SOURCES = rrr_http_client.c global.c main.c
 rrr_http_client_CFLAGS = ${AM_CFLAGS}
 
-rrr_http_server_LDFLAGS = -lrrr -L./lib
+rrr_http_server_LDFLAGS = -lrrr -L./lib -lpthread
 rrr_http_server_SOURCES = rrr_http_server.c global.c main.c
 rrr_http_server_CFLAGS = ${AM_CFLAGS}
 

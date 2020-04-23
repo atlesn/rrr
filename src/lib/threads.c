@@ -962,8 +962,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 			void *thread_ret;
 			printf ("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
 			if (node->is_watchdog) {
-//				pthread_detach(node->thread);
-				// Non-watchdogs are already detatched
+				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);
 			}
 			RRR_LL_ITERATE_SET_DESTROY();
