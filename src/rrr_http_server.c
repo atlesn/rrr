@@ -72,7 +72,6 @@ struct rrr_http_server_data {
 	uint16_t https_port;
 	int ssl_no_cert_verify;
 	int plain_disable;
-	struct rrr_http_session *session;
 };
 
 /*
@@ -94,9 +93,6 @@ static void __rrr_http_server_data_init (struct rrr_http_server_data *data) {
 static void __rrr_http_server_data_cleanup (struct rrr_http_server_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->certificate_file);
 	RRR_FREE_IF_NOT_NULL(data->private_key_file);
-	if (data->session != NULL) {
-		rrr_http_session_destroy(data->session);
-	}
 }
 
 static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, struct cmd_data *cmd) {
@@ -211,14 +207,9 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	return ret;
 }
 
-static int __rrr_http_server_bind_and_listen (int *handle, struct rrr_net_transport *transport, uint16_t port) {
-	int ret = 0;
-	if ((ret = rrr_net_transport_bind_and_listen(handle, transport, port)) != 0) {
-		RRR_MSG_ERR("Could not listen on port %u\n", port);
-		goto out;
-	}
-	out:
-	return ret;
+void __rrr_http_server_bind_and_listen_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	int *transport_handle = arg;
+	*transport_handle = handle->handle;
 }
 
 struct rrr_http_server_worker_thread_data {
@@ -227,34 +218,35 @@ struct rrr_http_server_worker_thread_data {
 
 	struct rrr_net_transport *transport;
 	int transport_handle;
+	int error;
 };
 
-static int __rrr_http_server_accept_create_http_session_callback (
+static void __rrr_http_server_accept_create_http_session_callback (
 		struct rrr_net_transport_handle *handle,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen,
 		void *arg
 ) {
-	struct rrr_http_server_accept_create_http_session_callback_data *callback_data = arg;
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
 
-	int ret = 0;
+	(void)(sockaddr);
+	(void)(socklen);
 
-	if (rrr_http_session_transport_ctx_server_new_and_register_with_transport (
+	worker_data->error = 0;
+
+	if (rrr_http_session_transport_ctx_server_new (
 			handle
 	) != 0) {
 		RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
-		ret = 1;
+		worker_data->error = 1;
 	}
 	else {
 		pthread_mutex_lock(&worker_data->lock);
-
 		// DO NOT STORE HANDLE POINTER
 		worker_data->transport = handle->transport;
 		worker_data->transport_handle = handle->handle;
-
 		pthread_mutex_unlock(&worker_data->lock);
 	}
-
-	return ret;
 }
 
 static int __rrr_http_server_accept (
@@ -264,45 +256,28 @@ static int __rrr_http_server_accept (
 		struct rrr_http_server_worker_thread_data *worker_data
 ) {
 	int ret = 0;
-	int new_handle = 0;
-	struct rrr_sockaddr sockaddr;
-	socklen_t socklen = sizeof(sockaddr);
 
 	*did_accept = 0;
 
-	if ((ret = rrr_net_transport_accept(&new_handle, (struct sockaddr *) &sockaddr, &socklen, transport, handle)) != 0) {
+	if ((ret = rrr_net_transport_accept (
+			transport,
+			handle,
+			__rrr_http_server_accept_create_http_session_callback,
+			worker_data
+	)) != 0) {
 		RRR_MSG_ERR("Error from accept() in __rrr_http_server_accept_read_write\n");
 		ret = 1;
 		goto out;
 	}
-	else if (new_handle != 0) {
 
-		RRR_DBG_1("Accepted a connection\n");
-
-		// HTTP session is protected by net transport handle lock to provide memory fence
-		if (rrr_net_transport_handle_with_lock_do (
-				transport,
-				handle,
-				__rrr_http_server_accept_create_http_session_callback,
-				worker_data
-		) != 0) {
-			RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
-			ret = 1;
-		}
-
+	pthread_mutex_lock(&worker_data->lock);
+	if (worker_data->transport_handle != 0) {
 		*did_accept = 1;
-
-		if (ret != 0) {
-			goto out;
-		}
 	}
-	else {
-		goto out;
-	}
-
+	pthread_mutex_unlock(&worker_data->lock);
 
 	out:
-	return ret;
+	return ret | worker_data->error;
 }
 
 struct rrr_http_server_accept_if_free_thread_callback_data {
@@ -432,7 +407,7 @@ void __rrr_http_server_worker_thread_data_destroy_void (void *private_data) {
 void __rrr_net_http_server_worker_close_transport (void *arg) {
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
 
-	rrr_net_transport_close_handle(worker_data->transport, worker_data->transport_handle);
+	rrr_net_transport_handle_close(worker_data->transport, worker_data->transport_handle);
 }
 
 int __rrr_net_http_server_net_transport_ctx_worker_do_work (struct rrr_net_transport_handle *handle, void *arg) {
@@ -440,8 +415,6 @@ int __rrr_net_http_server_net_transport_ctx_worker_do_work (struct rrr_net_trans
 	struct http_session_data *session = handle->application_private_ptr;
 
 	int ret = 0;
-
-	// TODO : All http_session methods must be converted to use transport ctx methods
 
 	return ret;
 }
@@ -481,7 +454,7 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread) == 0) {
 		rrr_thread_update_watchdog_time(thread);
 
-		if (rrr_net_transport_handle_with_lock_do (
+		if (rrr_net_transport_handle_with_transport_ctx_do (
 				worker_data.transport,
 				worker_data.transport_handle,
 				__rrr_net_http_server_net_transport_ctx_worker_do_work,
@@ -490,6 +463,8 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 			RRR_MSG_ERR("Failed while working with client in thread %p\n", thread);
 			break;
 		}
+
+		break;
 
 		usleep(1000);
 	}
@@ -613,7 +588,12 @@ int main (int argc, const char *argv[]) {
 			goto out;
 		}
 
-		if ((ret = __rrr_http_server_bind_and_listen (&http_handle, transport_http, data.http_port)) != 0) {
+		if ((ret = rrr_net_transport_bind_and_listen (
+				transport_http,
+				data.http_port,
+				__rrr_http_server_bind_and_listen_callback,
+				&http_handle)
+		) != 0) {
 			goto out;
 		}
 	}
@@ -630,7 +610,13 @@ int main (int argc, const char *argv[]) {
 			goto out;
 		}
 
-		if ((ret = __rrr_http_server_bind_and_listen (&https_handle, transport_https, data.https_port)) != 0) {
+
+		if ((ret = rrr_net_transport_bind_and_listen (
+				transport_https,
+				data.https_port,
+				__rrr_http_server_bind_and_listen_callback,
+				&https_handle)
+		) != 0) {
 			goto out;
 		}
 	}

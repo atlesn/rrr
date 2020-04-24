@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,54 +33,42 @@ enum rrr_http_method {
 };
 
 struct rrr_http_session {
-	struct rrr_net_transport *transport;
-	int transport_handle;
 	int is_client;
 	enum rrr_http_method method;
-	char *host;
 	char *uri_str;
 	char *user_agent;
 	struct rrr_http_part *request_part;
 	struct rrr_http_part *response_part;
-	uint16_t port;
 };
 
 struct rrr_net_transport;
 struct rrr_net_transport_handle;
 
-void rrr_http_session_destroy (struct rrr_http_session *session);
-int rrr_http_session_transport_ctx_server_new_and_register_with_transport (
+int rrr_http_session_transport_ctx_server_new (
 		struct rrr_net_transport_handle *handle
 );
-int rrr_http_session_client_new (
-		struct rrr_http_session **target,
-		struct rrr_net_transport *transport,
+int rrr_http_session_transport_ctx_client_new (
+		struct rrr_net_transport_handle *handle,
 		enum rrr_http_method method,
-		const char *host,
-		uint16_t port,
 		const char *endpoint,
 		const char *user_agent
 );
-int rrr_http_session_add_query_field (
-		struct rrr_http_session *session,
+int rrr_http_session_transport_ctx_add_query_field (
+		struct rrr_net_transport_handle *handle,
 		const char *name,
 		const char *value
 );
-int rrr_http_session_add_query_field_binary (
-		struct rrr_http_session *session,
-		const char *name,
-		void *value,
-		ssize_t size
+int rrr_http_session_transport_ctx_send_request (
+		struct rrr_net_transport_handle *handle,
+		const char *host
 );
-int rrr_http_session_send_request (
-		struct rrr_http_session *session
-);
-int rrr_http_session_receive (
-		struct rrr_http_session *session,
+int rrr_http_session_transport_ctx_receive (
+		struct rrr_net_transport_handle *handle,
 		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
 		void *callback_arg
 );
-int rrr_http_session_connect (struct rrr_http_session *session);
-void rrr_http_session_close (struct rrr_http_session *session);
+int rrr_http_session_transport_ctx_send_response (
+		struct rrr_net_transport_handle *handle
+);
 
 #endif /* RRR_HTTP_SESSION_H */

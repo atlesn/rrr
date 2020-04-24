@@ -71,7 +71,12 @@ struct rrr_net_transport_handle {
 	int handle;
 	enum rrr_net_transport_socket_mode mode;
 	struct rrr_read_session_collection read_sessions;
+
+	// Like SSL data or plain FD
 	void *submodule_private_ptr;
+	int submodule_private_fd;
+
+	// Like HTTP session
 	void *application_private_ptr;
 	void (*application_ptr_destroy)(void *ptr);
 };
@@ -107,22 +112,23 @@ struct rrr_net_transport_methods {
 			struct rrr_net_transport *transport
 	);
 	int (*connect)(
-			int *handle,
+			struct rrr_net_transport_handle **handle,
 			struct rrr_net_transport *transport,
 			unsigned int port,
 			const char *host
 	);
 	int (*bind_and_listen)(
-			int *listen_handle,
 			struct rrr_net_transport *transport,
-			unsigned int port
+			unsigned int port,
+			void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+			void *callback_arg
 	);
 	int (*accept)(
-			int *handle,
-			struct sockaddr *sockaddr,
-			socklen_t *socklen,
-			struct rrr_net_transport_handle *listen_handle
+			struct rrr_net_transport_handle *listen_handle,
+			void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
+			void *callback_arg
 	);
+	// Only call close() from parent mode destroy function
 	int (*close)(
 			struct rrr_net_transport_handle *handle
 	);
@@ -145,29 +151,12 @@ struct rrr_net_transport_methods {
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
-struct rrr_net_transport_handle *rrr_net_transport_handle_get_and_lock (
-		struct rrr_net_transport *transport,
-		int handle
-);
-void rrr_net_transport_handle_unlock (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_net_transport_handle_add (
-		struct rrr_net_transport_handle **handle_final,
-		struct rrr_net_transport *transport,
-		int handle,
-		enum rrr_net_transport_socket_mode mode,
-		void *private_ptr
-);
-int rrr_net_transport_handle_allocate_and_add (
+int rrr_net_transport_handle_allocate_and_add_return_locked (
 		struct rrr_net_transport_handle **handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
-		void *private_ptr
-);
-int rrr_net_transport_handle_remove (
-		struct rrr_net_transport *transport,
-		struct rrr_net_transport_handle *handle
+		void *submodule_private_ptr,
+		int submodule_private_fd
 );
 void rrr_net_transport_common_cleanup (
 		struct rrr_net_transport *transport
@@ -182,15 +171,52 @@ int rrr_net_transport_new (
 		const char *private_key_file
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
-int rrr_net_transport_close_handle (
+void rrr_net_transport_ctx_handle_close (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_net_transport_handle_close (
 		struct rrr_net_transport *transport,
 		int transport_handle
 );
-int rrr_net_transport_connect (
-		int *handle,
+int rrr_net_transport_connect_and_close_after_callback (
 		struct rrr_net_transport *transport,
 		unsigned int port,
-		const char *host
+		const char *host,
+		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *callback_arg
+);
+int rrr_net_transport_connect (
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		const char *host,
+		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *callback_arg
+);
+int rrr_net_transport_ctx_read_message (
+		struct rrr_net_transport_handle *handle,
+		int read_attempts,
+		ssize_t read_step_initial,
+		ssize_t read_step_max_size,
+		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
+		void *get_target_size_arg,
+		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
+		void *complete_callback_arg
+);
+int rrr_net_transport_ctx_send_blocking (
+		struct rrr_net_transport_handle *handle,
+		const void *data,
+		ssize_t size
+);
+void rrr_net_transport_ctx_handle_application_data_bind (
+		struct rrr_net_transport_handle *handle,
+		void *application_data,
+		void (*application_data_destroy)(void *ptr)
+);
+int rrr_net_transport_handle_with_transport_ctx_do (
+		struct rrr_net_transport *transport,
+		int transport_handle,
+		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
 );
 int rrr_net_transport_read_message (
 		struct rrr_net_transport *transport,
@@ -220,37 +246,16 @@ int rrr_net_transport_send_blocking (
 		ssize_t size
 );
 int rrr_net_transport_bind_and_listen (
-		int *new_handle,
 		struct rrr_net_transport *transport,
-		unsigned int port
+		unsigned int port,
+		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
 );
 int rrr_net_transport_accept (
-		int *new_handle,
-		struct sockaddr *sockaddr,
-		socklen_t *socklen,
-		struct rrr_net_transport *transport,
-		int transport_handle
-);
-void rrr_net_transport_handle_application_data_bind_unlocked (
-		struct rrr_net_transport_handle *handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-);
-int rrr_net_transport_handle_application_data_bind (
 		struct rrr_net_transport *transport,
 		int transport_handle,
-		void *application_data,
-		void (*application_data_destroy)(void *ptr)
-);
-void *rrr_net_transport_handle_application_data_get (
-		struct rrr_net_transport *transport,
-		int transport_handle
-);
-int rrr_net_transport_handle_with_lock_do (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *arg
+		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
+		void *callback_arg
 );
 
 #endif /* RRR_NET_TRANSPORT_H */

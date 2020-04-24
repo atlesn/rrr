@@ -346,11 +346,21 @@ static int __receive_http_response (struct rrr_http_session *session, const char
 	return ret;
 }
 
-static int send_data (struct influxdb_data *data, struct rrr_array *array) {
-	struct rrr_http_session *session = NULL;
+struct send_data_callback_data {
+	struct influxdb_data *data;
+	struct rrr_array *array;
+	int ret;
+};
+
+static void __send_data_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	struct send_data_callback_data *callback_data = arg;
+
+	struct influxdb_data *data = callback_data->data;
+	struct rrr_array *array = callback_data->array;
 
 	int ret = INFLUXDB_OK;
 
+	struct rrr_http_session *session = NULL;
 	struct rrr_string_builder string_builder = {0};
 
 	char *uri = NULL;
@@ -361,12 +371,9 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_client_new (
-			&session,
-			data->transport,
+	if ((ret = rrr_http_session_transport_ctx_client_new (
+			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
-			data->server,
-			data->server_port,
 			uri,
 			INFLUXDB_USER_AGENT
 	)) != 0) {
@@ -398,34 +405,28 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 
 	// TODO : Better distingushing of soft/hard errors from HTTP layer
 
-	if ((ret = rrr_http_session_connect(session)) != 0) {
-		RRR_MSG_ERR("Could not connect to influxdb server in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = INFLUXDB_SOFT_ERR;
-		goto out;
-	}
-
-	if ((ret = rrr_http_session_add_query_field(session, NULL, string_builder.buf)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_add_query_field(handle, NULL, string_builder.buf)) != 0) {
 		RRR_MSG_ERR("Could not add data to HTTP query in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_send_request(session)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_send_request(handle, data->server)) != 0) {
 		RRR_MSG_ERR("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	struct response_callback_data callback_data = {
+	struct response_callback_data response_callback_data = {
 			data, 0
 	};
 
-	if (rrr_http_session_receive(session, __receive_http_response, &callback_data) != 0) {
+	if (rrr_http_session_transport_ctx_receive(handle, __receive_http_response, &response_callback_data) != 0) {
 		RRR_MSG_ERR("Could not receive HTTP response in influxdb instance %sd\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = INFLUXDB_HARD_ERR;
 		goto out;
 	}
 
-	if (callback_data.save_ok != 1) {
+	if (response_callback_data.save_ok != 1) {
 		RRR_MSG_ERR("Warning: Error in HTTP response in influxdb instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = INFLUXDB_SOFT_ERR;
@@ -433,12 +434,29 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	}
 
 	out:
-	if (session != NULL) {
-		rrr_http_session_destroy(session);
-	}
-
 	rrr_string_builder_clear(&string_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
+	callback_data->ret = ret;
+}
+
+static int send_data (struct influxdb_data *data, struct rrr_array *array) {
+	struct send_data_callback_data callback_data = {
+			data,
+			array,
+			0
+	};
+
+	int ret = 0;
+
+	ret |= rrr_net_transport_connect_and_close_after_callback (
+			data->transport,
+			data->server_port,
+			data->server,
+			__send_data_callback,
+			&callback_data
+	);
+	ret |= callback_data.ret;
+
 	return ret;
 }
 

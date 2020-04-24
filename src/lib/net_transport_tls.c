@@ -76,8 +76,6 @@ static int __rrr_net_transport_tls_ssl_data_close (struct rrr_net_transport_hand
 }
 
 static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport) {
-	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
-
 	// This will call back into our close() function for each handle
 	rrr_net_transport_common_cleanup(transport);
 
@@ -207,7 +205,7 @@ static int __rrr_net_transport_tls_new_ctx (
 }
 
 static int __rrr_net_transport_tls_connect (
-		int *handle,
+		struct rrr_net_transport_handle **handle,
 		struct rrr_net_transport *transport,
 		unsigned int port,
 		const char *host
@@ -215,11 +213,12 @@ static int __rrr_net_transport_tls_connect (
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 	struct rrr_ip_accept_data *accept_data = NULL;
 
+	*handle = NULL;
+
 	int ret = 0;
+
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
 	struct rrr_net_transport_handle *new_handle = NULL;
-
-	*handle = 0;
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
 		RRR_MSG_ERR("Could not create TLS connection to %s:%u\n", host, port);
@@ -235,11 +234,12 @@ static int __rrr_net_transport_tls_connect (
 
 	ssl_data->ip_data = accept_data->ip_data;
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add(
+	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			ssl_data
+			ssl_data,
+			0
 	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_connect\n");
 		ret = 1;
@@ -322,13 +322,17 @@ static int __rrr_net_transport_tls_connect (
 
 	// TODO : Hostname verification
 
-	*handle = new_handle->handle;
+	// Return locked handle
+	*handle = new_handle;
 
 	goto out;
 
 	out_unregister_handle:
-		rrr_net_transport_handle_remove(transport, new_handle);
-		goto out; // transport_handle_remove calls ssl_data_destroy
+		// Will also destroy ssl_data (which in turn destroys ip)
+		// Will unlock and destroy
+		rrr_net_transport_ctx_handle_close(new_handle);
+		// Freed when handle is unregistered, don't double-free
+		goto out;
 	out_destroy_ssl_data:
 		__rrr_net_transport_tls_ssl_data_destroy(ssl_data);
 		goto out; // ssl_data_destroy calls ip_close
@@ -339,14 +343,17 @@ static int __rrr_net_transport_tls_connect (
 		return ret;
 }
 
-static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_transport *transport, unsigned int port) {
+static int __rrr_net_transport_tls_bind_and_listen (
+		struct rrr_net_transport *transport,
+		unsigned int port,
+		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
+		void *arg
+) {
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 	struct rrr_net_transport_tls_ssl_data *ssl_data = NULL;
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	int ret = 0;
-
-	*handle = 0;
 
 	if (tls->certificate_file == NULL || tls->private_key_file == NULL) {
 		RRR_MSG_ERR("Certificate file and/or private key file not set while attempting to start TLS listening server\n");
@@ -360,16 +367,20 @@ static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add(
+	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
-			ssl_data
+			ssl_data,
+			0
 	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_bind_and_listen\n");
 		ret = 1;
 		goto out_free_ssl_data;
 	}
+
+	// Do all initialization inside memory fence
+	memset(ssl_data, '\0', sizeof(*ssl_data));
 
 	ssl_data->ip_data.port = port;
 
@@ -391,7 +402,9 @@ static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_
 		goto out_destroy_ip;
 	}
 
-	*handle = new_handle->handle;
+	callback(new_handle, arg);
+
+	pthread_mutex_unlock(&new_handle->lock);
 
 	goto out;
 //	out_destroy_ctx:
@@ -399,9 +412,11 @@ static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_
 	out_destroy_ip:
 		rrr_ip_close(&ssl_data->ip_data);
 	out_unregister_handle:
-		// This will also clean up any SSL stuff
-		rrr_net_transport_handle_remove(transport, new_handle);
-		ssl_data = NULL; // Freed when handle is unregistered, don't double-free
+		// Will also destroy ssl_data (which in turn destroys ip)
+		// Will unlock and destroy
+		rrr_net_transport_ctx_handle_close (new_handle);
+		// Freed when handle is unregistered, don't double-free
+		ssl_data = NULL;
 	out_free_ssl_data:
 		RRR_FREE_IF_NOT_NULL(ssl_data);
 	out:
@@ -409,18 +424,15 @@ static int __rrr_net_transport_tls_bind_and_listen (int *handle, struct rrr_net_
 }
 
 int __rrr_net_transport_tls_accept (
-		int *handle,
-		struct sockaddr *sockaddr,
-		socklen_t *socklen,
-		struct rrr_net_transport_handle *listen_handle
+		struct rrr_net_transport_handle *listen_handle,
+		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
+		void *arg
 ) {
 	struct rrr_ip_accept_data *accept_data = NULL;
 	struct rrr_net_transport_tls_ssl_data *new_ssl_data = NULL;
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	int ret = 0;
-
-	*handle = 0;
 
 	struct rrr_net_transport_tls_ssl_data *listen_ssl_data = listen_handle->submodule_private_ptr;
 
@@ -434,34 +446,31 @@ int __rrr_net_transport_tls_accept (
 		goto out;
 	}
 
-	if (accept_data->len > *socklen) {
-		RRR_BUG("Given sockaddr was too short in __rrr_net_transport_tls_accept\n");
-	}
-
-	memset(sockaddr, '\0', sizeof(*sockaddr));
-	memcpy(sockaddr, &accept_data->addr, accept_data->len);
-	*socklen = accept_data->len;
-
 	if ((new_ssl_data = __rrr_net_transport_tls_ssl_data_new()) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for SSL data in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_destroy_ip;
 	}
 
-	new_ssl_data->sockaddr = accept_data->addr;
-	new_ssl_data->socklen = accept_data->len;
-	new_ssl_data->ip_data = accept_data->ip_data;
-
-	if ((ret = rrr_net_transport_handle_allocate_and_add(
+	// Run this before populating SSL data to provide memory fence
+	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked(
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
-			new_ssl_data
+			new_ssl_data,
+			0
 	)) != 0) {
 		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_tls_accept\n");
 		ret = 1;
 		goto out_destroy_ssl_data;
 	}
+
+	// Do all initialization inside memory fence
+	memset (new_ssl_data, '\0', sizeof(*new_ssl_data));
+
+	new_ssl_data->sockaddr = accept_data->addr;
+	new_ssl_data->socklen = accept_data->len;
+	new_ssl_data->ip_data = accept_data->ip_data;
 	new_ssl_data = NULL;
 
 	if ((new_ssl_data->web = BIO_new_ssl(new_ssl_data->ctx, 0)) == NULL) {
@@ -481,14 +490,18 @@ int __rrr_net_transport_tls_accept (
 
 	BIO_set_nbio(new_ssl_data->web, 1);
 
-	// Handshake is done in read function
+	// SSL handshake is done in read function
 
-	*handle = new_handle->handle;
+	callback(new_handle, &accept_data->addr, accept_data->len, arg);
+
+	pthread_mutex_unlock(&new_handle->lock);
 
 	goto out;
 	out_unregister_handle:
-		rrr_net_transport_handle_remove (new_handle->transport, new_handle);
-		goto out; // will also destroy ssl_data (which in turn destroys ip)
+		// Will also destroy ssl_data (which in turn destroys ip)
+		// Will unlock and destroy
+		rrr_net_transport_ctx_handle_close (new_handle);
+		goto out;
 	out_destroy_ssl_data:
 		__rrr_net_transport_tls_ssl_data_destroy(new_ssl_data);
 		goto out; // ssl_data_cleanup will call rrr_ip_close
