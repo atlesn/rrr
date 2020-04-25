@@ -492,7 +492,7 @@ int __rrr_net_transport_tls_accept (
 
 	// SSL handshake is done in read function
 
-	callback(new_handle, &accept_data->addr, accept_data->len, arg);
+	callback(new_handle, (struct sockaddr *) &accept_data->addr, accept_data->len, arg);
 
 	pthread_mutex_unlock(&new_handle->lock);
 

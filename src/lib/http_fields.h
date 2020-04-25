@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,7 +35,22 @@ struct rrr_http_field_collection {
 	RRR_LL_HEAD(struct rrr_http_field);
 };
 
-void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields);
+void rrr_http_field_destroy (
+		struct rrr_http_field *field
+);
+int rrr_http_field_new_no_value (
+		struct rrr_http_field **target,
+		const char *name,
+		ssize_t name_length
+);
+int rrr_http_field_set_value (
+		struct rrr_http_field *target,
+		const char *value,
+		ssize_t value_length
+);
+void rrr_http_fields_collection_clear (
+		struct rrr_http_field_collection *fields
+);
 int rrr_http_fields_collection_add_field (
 		struct rrr_http_field_collection *fields,
 		const char *name,

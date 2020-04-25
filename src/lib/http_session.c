@@ -483,7 +483,7 @@ struct rrr_http_session_receive_data {
 	void *callback_arg;
 };
 
-static int __rrr_http_session_receive_callback (
+static int __rrr_http_session_receive_response_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
@@ -498,6 +498,10 @@ static int __rrr_http_session_receive_callback (
 
 	receive_data->session->response_part->data_ptr = start;
 	receive_data->session->response_part->data_length = end - start;
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_part_dump_header(part);
+	}
 
 	RRR_DBG_3("HTTP reading complete, total session length is %li response length is %li header length is %li\n",
 			(ssize_t) (end - start),  part->request_length, part->header_length);
@@ -530,6 +534,28 @@ static int __rrr_http_session_receive_callback (
 	return ret;
 }
 
+static int __rrr_http_session_receive_request_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_http_session_receive_data *receive_data = arg;
+	struct rrr_http_part *part = receive_data->session->request_part;
+
+	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
+
+	if (content_type != NULL) {
+		printf ("Request content-type: %s\n", content_type->value);
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_part_dump_header(part);
+	}
+
+	int ret = 0;
+
+	return ret;
+}
+
 static int __rrr_http_session_receive_get_target_size (
 		struct rrr_read_session *read_session,
 		void *arg
@@ -543,21 +569,32 @@ static int __rrr_http_session_receive_get_target_size (
 	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
 
-	ret = rrr_http_part_parse (
-			receive_data->session->is_client == 1
-				? receive_data->session->response_part
-				: receive_data->session->request_part,
-			&target_size,
-			&parsed_bytes,
-			read_session->rx_buf_ptr,
-			receive_data->parse_complete_pos,
-			end,
-			receive_data->session->is_client == 1
-				? RRR_HTTP_PARSE_RESPONSE
-				: RRR_HTTP_PARSE_REQUEST
-	);
+	if (receive_data->session->is_client == 1) {
+		ret = rrr_http_part_parse (
+				receive_data->session->response_part,
+				&target_size,
+				&parsed_bytes,
+				read_session->rx_buf_ptr,
+				receive_data->parse_complete_pos,
+				end,
+				RRR_HTTP_PARSE_RESPONSE
+		);
+	}
+	else {
+		ret = rrr_http_part_parse (
+				receive_data->session->request_part,
+				&target_size,
+				&parsed_bytes,
+				read_session->rx_buf_ptr,
+				receive_data->parse_complete_pos,
+				end,
+				RRR_HTTP_PARSE_REQUEST
+		);
+	}
 
 	receive_data->parse_complete_pos += parsed_bytes;
+
+//	if (receive_data->session->is_client == 1 && receive_data->session->method == 0)
 
 	if (ret == RRR_HTTP_PARSE_OK) {
 		read_session->target_size = target_size;
@@ -575,15 +612,23 @@ static int __rrr_http_session_receive_get_target_size (
 	return ret;
 }
 
-static int __rrr_http_session_receive (
+int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
-		void *arg
+		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
+		void *callback_arg
 ) {
-	struct rrr_http_session_receive_data *callback_data = arg;
+	struct rrr_http_session *session = handle->application_private_ptr;
 
 	int ret = 0;
 
-	if ((ret = __rrr_http_session_prepare_parts(callback_data->session)) != 0) {
+	struct rrr_http_session_receive_data callback_data = {
+			session,
+			0,
+			callback,
+			callback_arg
+	};
+
+	if ((ret = __rrr_http_session_prepare_parts(callback_data.session)) != 0) {
 		goto out;
 	}
 
@@ -593,38 +638,23 @@ static int __rrr_http_session_receive (
 			4096,
 			65535,
 			__rrr_http_session_receive_get_target_size,
-			callback_data,
-			__rrr_http_session_receive_callback,
-			callback_data
+			&callback_data,
+			session->is_client
+				? __rrr_http_session_receive_response_callback
+				: __rrr_http_session_receive_request_callback,
+			&callback_data
 	)) == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 		usleep(500);
 	}
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
+		RRR_MSG_ERR("Error while reading from server in rrr_http_session_transport_ctx_receive\n");
 		ret = 1;
 		goto out;
 	}
 
 	out:
 	return ret;
-}
-
-int rrr_http_session_transport_ctx_receive (
-		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
-		void *callback_arg
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-
-	struct rrr_http_session_receive_data callback_data = {
-			session,
-			0,
-			callback,
-			callback_arg
-	};
-
-	return __rrr_http_session_receive(handle, &callback_data);
 }
 
 int rrr_http_session_transport_ctx_send_response (

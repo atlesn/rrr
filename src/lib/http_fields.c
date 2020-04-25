@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,14 +27,77 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_util.h"
 
-static void __rrr_http_field_destroy(struct rrr_http_field *field) {
+void rrr_http_field_destroy(struct rrr_http_field *field) {
 	RRR_FREE_IF_NOT_NULL(field->name);
 	RRR_FREE_IF_NOT_NULL(field->value);
 	free(field);
 }
 
+int rrr_http_field_new_no_value (
+		struct rrr_http_field **target,
+		const char *name,
+		ssize_t name_length
+) {
+	int ret = 0;
+
+	*target = NULL;
+
+	struct rrr_http_field *field = malloc(sizeof(*field));
+	if (field == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_new_no_value\n");
+		ret = 1;
+		goto out;
+	}
+	memset (field, '\0', sizeof(*field));
+
+	if ((field->name = malloc(name_length + 1)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_new_no_value\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy (field->name, name, name_length);
+	field->name[name_length] = '\0';
+
+	*target = field;
+	field = NULL;
+
+	out:
+	if (field != NULL) {
+		rrr_http_field_destroy(field);
+	}
+	return ret;
+}
+
+int rrr_http_field_set_value (
+		struct rrr_http_field *target,
+		const char *value,
+		ssize_t value_length
+) {
+	int ret = 0;
+
+	char *value_tmp = malloc(value_length + 1);
+	if (value_tmp == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_set_value\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(value_tmp, value, value_length);
+	value_tmp[value_length] = '\0';
+
+	RRR_FREE_IF_NOT_NULL(target->value);
+	target->value = value_tmp;
+
+	value_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(value_tmp);
+	return ret;
+}
+
 void rrr_http_fields_collection_clear (struct rrr_http_field_collection *fields) {
-	RRR_LL_DESTROY(fields, struct rrr_http_field, __rrr_http_field_destroy(node));
+	RRR_LL_DESTROY(fields, struct rrr_http_field, rrr_http_field_destroy(node));
 }
 
 static int __rrr_http_fields_collection_add_field_raw (
@@ -80,7 +143,7 @@ static int __rrr_http_fields_collection_add_field_raw (
 
 	out:
 	if (field != NULL) {
-		__rrr_http_field_destroy(field);
+		rrr_http_field_destroy(field);
 	}
 
 	return ret;

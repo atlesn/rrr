@@ -22,15 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_SESSION_H
 #define RRR_HTTP_SESSION_H
 
+#include "http_common.h"
 #include "http_fields.h"
 #include "http_part.h"
-
-enum rrr_http_method {
-	RRR_HTTP_METHOD_GET,
-	RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA,
-	RRR_HTTP_METHOD_POST_URLENCODED,
-	RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING
-};
 
 struct rrr_http_session {
 	int is_client;

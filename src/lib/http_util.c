@@ -23,9 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 
 #include "../global.h"
 #include "http_util.h"
+#include "gnu.h"
 
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||
@@ -658,4 +660,26 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 		rrr_http_util_uri_destroy(uri_new);
 	out:
 		return ret;
+}
+
+void rrr_http_util_nprintf (size_t length, const char *format, ...) {
+	va_list args;
+	va_start (args, format);
+
+	char *tmp = NULL;
+	int res = 0;
+
+	if ((res = rrr_vasprintf(&tmp, format, args)) <= 0) {
+		RRR_MSG_ERR("Warning: Could not allocate memory in rrr_http_util_nprintf\n");
+	}
+	else {
+		if (res > (int) length) {
+			tmp[length] = '\0';
+		}
+		printf("%s", tmp);
+	}
+
+	va_end(args);
+
+	RRR_FREE_IF_NOT_NULL(tmp);
 }

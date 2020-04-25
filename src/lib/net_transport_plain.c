@@ -261,7 +261,7 @@ int __rrr_net_transport_plain_accept (
 		goto out_destroy_ip;
 	}
 
-	callback(new_handle, &accept_data->addr, accept_data->len, callback_arg);
+	callback(new_handle, (struct sockaddr *) &accept_data->addr, accept_data->len, callback_arg);
 
 	pthread_mutex_unlock(&new_handle->lock);
 

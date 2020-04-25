@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 #include "http_fields.h"
+#include "http_common.h"
 #include "read_constants.h"
 
 #define RRR_HTTP_PARSE_OK			RRR_READ_OK
@@ -42,6 +43,9 @@ enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_RESPONSE
 };
 
+#define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
+#define RRR_HTTP_HEADER_FIELD_NO_PAIRS		(1<<1)
+
 struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
@@ -50,8 +54,8 @@ struct rrr_http_header_field {
 	const struct rrr_http_header_field_definition *definition;
 	long long int value_signed;
 	long long unsigned int value_unsigned;
-	char *name;
 	char *value;
+	char *name;
 };
 
 struct rrr_http_header_field_collection {
@@ -63,6 +67,7 @@ struct rrr_http_header_field_collection {
 
 struct rrr_http_header_field_definition {
 	const char *name_lowercase;
+	int flags;
 	int (*parse)(RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION);
 };
 
@@ -79,18 +84,25 @@ struct rrr_http_chunks {
 struct rrr_http_part {
 	RRR_LL_NODE(struct rrr_http_part);
 	RRR_LL_HEAD(struct rrr_http_part);
+
 	struct rrr_http_header_field_collection headers;
 	struct rrr_http_field_collection fields;
 	struct rrr_http_chunks chunks;
+
 	int response_code;
 	char *response_str;
-	char *request_method;
+
+	char *request_method_str;
+	enum rrr_http_method request_method;
 	char *request_uri;
+
 	int parse_complete;
 	int header_complete;
 	int is_chunked;
 	int parsed_protocol_version;
+
 	const void *data_ptr;
+
 	ssize_t request_length;
 	ssize_t header_length;
 	ssize_t data_length;
@@ -111,4 +123,5 @@ int rrr_http_part_parse (
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
+void rrr_http_part_dump_header (struct rrr_http_part *part);
 #endif /* RRR_HTTP_PART_H */

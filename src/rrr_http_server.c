@@ -410,12 +410,33 @@ void __rrr_net_http_server_worker_close_transport (void *arg) {
 	rrr_net_transport_handle_close(worker_data->transport, worker_data->transport_handle);
 }
 
-int __rrr_net_http_server_net_transport_ctx_worker_do_work (struct rrr_net_transport_handle *handle, void *arg) {
+
+int __rrr_net_http_server_worker_http_session_receive_callback (
+		struct rrr_http_session *session,
+		const char *start,
+		const char *end,
+		void *arg
+) {
+	return 0;
+}
+
+int __rrr_net_http_server_worker_net_transport_ctx_do_work (struct rrr_net_transport_handle *handle, void *arg) {
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
 	struct http_session_data *session = handle->application_private_ptr;
 
 	int ret = 0;
 
+	if ((ret = rrr_http_session_transport_ctx_receive (
+			handle,
+			__rrr_net_http_server_worker_http_session_receive_callback,
+			worker_data
+	)) != 0) {
+		RRR_MSG_ERR("Error while reading from client\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
 	return ret;
 }
 
@@ -457,7 +478,7 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 		if (rrr_net_transport_handle_with_transport_ctx_do (
 				worker_data.transport,
 				worker_data.transport_handle,
-				__rrr_net_http_server_net_transport_ctx_worker_do_work,
+				__rrr_net_http_server_worker_net_transport_ctx_do_work,
 				&worker_data
 		) != 0) {
 			RRR_MSG_ERR("Failed while working with client in thread %p\n", thread);

@@ -29,16 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "gnu.h"
 
-int rrr_asprintf (char **resultp, const char *format, ...) {
+int rrr_vasprintf (char **resultp, const char *format, va_list args) {
 	int ret = 0;
-	va_list args;
-	va_start (args, format);
+
 #if defined HAVE_VASPRINTF && !defined RRR_WITH_GNU_DEBUG
-
 	ret = vasprintf(resultp, format, args);
-
 #else
-
 	ssize_t size = strlen(format) * 2;
 	char *buf = NULL;
 	int retry_count = 0;
@@ -72,8 +68,18 @@ int rrr_asprintf (char **resultp, const char *format, ...) {
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf);
-
 #endif
+
+	return ret;
+}
+
+int rrr_asprintf (char **resultp, const char *format, ...) {
+	int ret = 0;
+	va_list args;
+	va_start (args, format);
+
+	ret = rrr_vasprintf(resultp, format, args);
+
 	va_end (args);
 
 	return ret;

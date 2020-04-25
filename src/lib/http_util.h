@@ -74,5 +74,6 @@ void rrr_http_util_strtolower (char *str);
 void rrr_http_util_strtoupper (char *str);
 void rrr_http_util_uri_destroy (struct rrr_http_uri *uri);
 int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri);
+void rrr_http_util_nprintf (size_t length, const char *format, ...);
 
 #endif /* RRR_HTTP_UTIL_H */
