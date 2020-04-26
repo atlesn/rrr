@@ -323,7 +323,7 @@ const char *rrr_http_util_find_whsp (
 ) {
 	// Remember end minus 1
 	for (const char *pos = start; pos < end - 1; pos++) {
-		if (*pos == ' ' && *(pos + 1) == '\t') {
+		if (*pos == ' ' || *pos == '\t') {
 			return pos;
 		}
 	}
@@ -414,6 +414,8 @@ int rrr_http_util_strcasestr (
 		return 1;
 	}
 
+	const char *revert_position = NULL;
+
 	const char *needle_pos = needle;
 	for (const char *pos = start; pos < end; pos++) {
 		char a = tolower(*pos);
@@ -422,6 +424,9 @@ int rrr_http_util_strcasestr (
 		if (a == b) {
 			needle_pos++;
 			len++;
+			if (revert_position == NULL) {
+				revert_position = pos + 1;
+			}
 			if (result == NULL) {
 				result = pos;
 			}
@@ -430,6 +435,10 @@ int rrr_http_util_strcasestr (
 			}
 		}
 		else {
+			if (revert_position != NULL) {
+				pos = revert_position;
+				revert_position = NULL;
+			}
 			needle_pos = needle;
 			result = NULL;
 			len = 0;

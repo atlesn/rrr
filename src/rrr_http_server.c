@@ -485,8 +485,6 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 			break;
 		}
 
-		break;
-
 		usleep(1000);
 	}
 

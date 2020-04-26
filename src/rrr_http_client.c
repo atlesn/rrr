@@ -246,23 +246,56 @@ static int __rrr_http_client_update_target_if_not_null (
 }
 
 static int __rrr_http_client_receive_callback (
-		struct rrr_http_session *session,
-		const char *start,
-		const char *end,
+		int chunk_idx,
+		int chunk_total,
+		const char *data_start,
+		ssize_t data_size,
 		void *arg
 ) {
 	struct rrr_http_client_response *response = arg;
-	struct rrr_http_part *part = session->response_part;
 
 	int ret = 0;
 
-	// If transfer encoding is chunked, we get called multiple times
-	if (response->code != 0 || response->argument != NULL) {
-		if (part->response_code < 200 || part->response_code > 299) {
-			RRR_BUG("Multiple calls to __rrr_http_client_receive_callback with non-200 response code\n");
+	(void)(response);
+
+	if (data_start != NULL && data_size > 0) {
+//		const char *separator_line = "=============================";
+//		size_t separator_line_length = strlen(separator_line);
+
+		int bytes;
+
+//		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
+
+		retry:
+
+		bytes = write (STDOUT_FILENO, data_start, data_size);
+		if (bytes < data_size) {
+			if (bytes > 0) {
+				data_start += bytes;
+				data_size -= bytes;
+				goto retry;
+			}
+			else {
+				RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
 		}
-		goto print_data;
+
+		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_receive_callback_intermediate (
+		struct rrr_http_part *part,
+		void *arg
+) {
+	struct rrr_http_client_response *response = arg;
+
+	int ret = 0;
 
 	response->code = part->response_code;
 
@@ -294,23 +327,13 @@ static int __rrr_http_client_receive_callback (
 		goto out;
 	}
 
-	print_data:
-	if (start != NULL && end != NULL) {
-//		const char *separator_line = "=============================";
-//		size_t separator_line_length = strlen(separator_line);
-
-		int bytes;
-
-//		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
-
-		bytes = write (STDOUT_FILENO, start, end - start);
-		if (bytes != end - start) {
-			RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
-			ret = 1;
-			goto out;
-		}
-
-		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
+	if ((ret = rrr_http_part_iterate_chunks (
+			part,
+			__rrr_http_client_receive_callback,
+			response
+	) != 0)) {
+		RRR_MSG_ERR("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
+		goto out;
 	}
 
 	out:
@@ -371,7 +394,11 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_transport_ctx_receive(handle, __rrr_http_client_receive_callback, &response)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_receive(
+			handle,
+			__rrr_http_client_receive_callback_intermediate,
+			&response
+	)) != 0) {
 		goto out;
 	}
 

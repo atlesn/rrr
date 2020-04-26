@@ -40,7 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 enum rrr_http_parse_type {
 	RRR_HTTP_PARSE_REQUEST,
-	RRR_HTTP_PARSE_RESPONSE
+	RRR_HTTP_PARSE_RESPONSE,
+	RRR_HTTP_PARSE_MULTIPART
 };
 
 #define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
@@ -103,7 +104,7 @@ struct rrr_http_part {
 
 	const void *data_ptr;
 
-	ssize_t request_length;
+	ssize_t request_or_response_length;
 	ssize_t header_length;
 	ssize_t data_length;
 };
@@ -113,6 +114,14 @@ int rrr_http_part_new (struct rrr_http_part **result);
 const struct rrr_http_header_field *rrr_http_part_get_header_field (
 		struct rrr_http_part *part,
 		const char *name_lowercase
+);
+int rrr_http_part_iterate_chunks (
+		struct rrr_http_part *part,
+		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
+		void *callback_arg
+);
+int rrr_http_part_process_multipart (
+		struct rrr_http_part *part
 );
 int rrr_http_part_parse (
 		struct rrr_http_part *result,

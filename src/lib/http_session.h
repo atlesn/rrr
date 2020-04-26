@@ -58,7 +58,7 @@ int rrr_http_session_transport_ctx_send_request (
 );
 int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
+		int (*callback)(struct rrr_http_part *part, void *arg),
 		void *callback_arg
 );
 int rrr_http_session_transport_ctx_send_response (
