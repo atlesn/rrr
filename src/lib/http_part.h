@@ -110,9 +110,11 @@ struct rrr_http_part {
 };
 
 void rrr_http_part_destroy (struct rrr_http_part *part);
+void rrr_http_part_destroy_void (void *part);
+void rrr_http_part_destroy_void_double_ptr (void *arg);
 int rrr_http_part_new (struct rrr_http_part **result);
 const struct rrr_http_header_field *rrr_http_part_get_header_field (
-		struct rrr_http_part *part,
+		const struct rrr_http_part *part,
 		const char *name_lowercase
 );
 int rrr_http_part_iterate_chunks (
@@ -131,6 +133,9 @@ int rrr_http_part_parse (
 		ssize_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
+);
+int rrr_http_part_extract_post_and_query_fields (
+		struct rrr_http_part *target
 );
 void rrr_http_part_dump_header (struct rrr_http_part *part);
 #endif /* RRR_HTTP_PART_H */

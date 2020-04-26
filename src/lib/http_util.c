@@ -176,6 +176,65 @@ static int __rrr_http_util_is_ascii_non_ctl (unsigned char c) {
 	return (c > 31 && c < 127);
 }
 
+void rrr_http_util_print_where_message (
+		const char *start
+) {
+	char buf[21];
+	strncpy(buf, start, 20);
+	buf[20] = '\0';
+	RRR_MSG("Where: %s\n", buf);
+	RRR_MSG("       /\\ <-- HERE\n");
+}
+
+int rrr_http_util_decode_urlencoded_string (
+		char *target
+) {
+	int ret = 0;
+
+	const char *start = target;
+	const char *end = start + strlen(start);
+
+	size_t wpos = 0;
+
+	while (start < end) {
+		unsigned char c = *start;
+
+		if (c == '%') {
+			if (start + 3 > end) {
+				RRR_MSG_ERR("Not enough characters after %% in urlencoded string\n");
+				ret = 1;
+				goto out;
+			}
+
+			unsigned long long int result = 0;
+			ssize_t result_len = 0;
+
+			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
+				RRR_MSG("Invalid %%-sequence in urlencoded string\n");
+				rrr_http_util_print_where_message(start);
+				ret = 1;
+				goto out;
+			}
+
+			if (result > 0xff) {
+				RRR_BUG("Result after converting %%-sequence too big in __rrr_http_part_decode_urlencoded_string\n");
+			}
+
+			c = result;
+			start += 2; // One more ++ at the end of the loop
+		}
+
+		target[wpos++] = c;
+
+		start++;
+	}
+
+	target[wpos] = '\0';
+
+	out:
+	return ret;
+}
+
 // We allow non-ASCII here
 char *rrr_http_util_encode_uri (
 		const char *input
@@ -219,6 +278,78 @@ char *rrr_http_util_encode_uri (
 		result = NULL;
 	}
 	return result;
+}
+
+const char *rrr_http_util_find_quoted_string_end (
+		const char *start,
+		const char *end,
+		char endchr
+) {
+	int escape_next = 0;
+	while (start < end) {
+		if (*start == '\\') {
+			escape_next = 1;
+		}
+		else if (escape_next) {
+			escape_next = 0;
+		}
+		else if (*start == endchr) {
+			return start;
+		}
+		start++;
+	}
+	return NULL;
+}
+
+int rrr_http_util_unquote_string (char *target) {
+	size_t length = strlen(target);
+
+	char *start = target;
+	char *end = target + length;
+
+	size_t wpos = 0;
+
+	while (start < end) {
+		if (*start == '"' || *start == '(') {
+			char endquote = (*start == '"' ? '"' : ')');
+
+			// Skip past begin quote
+			start++;
+
+			if (start >= end) {
+				break;
+			}
+
+			for (; start < end; start++) {
+				if (*start == '\\') {
+					if (start + 1 < end) {
+						char next = *(start + 1);
+						if (next == endquote) {
+							// Write only the quote character
+							start++;
+						}
+						else {
+							// Write only the escape character
+						}
+					}
+				}
+				else if (*start == endquote) {
+					break;
+				}
+
+				target[wpos++] = *start;
+			}
+		}
+		else {
+			target[wpos++] = *start;
+		}
+
+		start++;
+	}
+
+	target[wpos] = '\0';
+
+	return 0;
 }
 
 // TODO : Support RFC8187. This function is less forgiving than the standard.

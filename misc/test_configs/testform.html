@@ -7,9 +7,16 @@
 </head>
 
 <body>
+<h2>multipart/form-data</h2>
 <form method="POST" enctype="multipart/form-data" action="http://127.0.0.1:8000/">
+<p><b>field1:</b>&nbsp;<input type="text" name="field1&quot;&quot;\\" value="value1&quot;&quot;\\\&quot;" /></p>
+<p><b>field2:</b>&nbsp;<input type="text" name="f\ie\&quot;&quot;ld2&quot;&quot;" value="&quot;value2" /></p>
+<p><input type="submit" /></p>
+</form>
+<h2>urlencoded</h2>
+<form method="POST" action="http://127.0.0.1:8000/">
 <p><b>field1:</b>&nbsp;<input type="text" name="field1" value="value1" /></p>
-<p><b>field2:</b>&nbsp;<input type="text" name="field2" value="value2" /></p>
+<p><b>field2:</b>&nbsp;<input type="text" name="field2&quot;&quot;\\\¤¤" value="value2" /></p>
 <p><input type="submit" /></p>
 </form>
 </body>

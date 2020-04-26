@@ -48,31 +48,34 @@ int rrr_http_field_set_value (
 		const char *value,
 		ssize_t value_length
 );
-void rrr_http_fields_collection_clear (
+void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
 );
-int rrr_http_fields_collection_add_field (
+void rrr_http_field_collection_clear (
+		struct rrr_http_field_collection *fields
+);
+int rrr_http_field_collection_add_field (
 		struct rrr_http_field_collection *fields,
 		const char *name,
 		const char *value
 );
-int rrr_http_fields_collection_add_field_binary (
+int rrr_http_field_collection_add_field_binary (
 		struct rrr_http_field_collection *fields,
 		const char *name,
 		void *value,
 		ssize_t size
 );
-int rrr_http_fields_get_total_length (
+int rrr_http_field_collection_get_total_length (
 		struct rrr_http_field_collection *fields
 );
-const struct rrr_http_field *rrr_http_fields_get_field (
+const struct rrr_http_field *rrr_http_field_collection_get_field (
 		struct rrr_http_field_collection *fields,
 		const char *name
 );
-char *rrr_http_fields_to_urlencoded_form_data (
+char *rrr_http_field_collection_to_urlencoded_form_data (
 		struct rrr_http_field_collection *fields
 );
-char *rrr_http_fields_to_raw_form_data (
+char *rrr_http_field_collection_to_raw_form_data (
 		struct rrr_http_field_collection *fields
 );
 

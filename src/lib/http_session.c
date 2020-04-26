@@ -204,7 +204,7 @@ int rrr_http_session_transport_ctx_add_query_field (
 		return 1;
 	}
 
-	return rrr_http_fields_collection_add_field(&session->request_part->fields, name, value);
+	return rrr_http_field_collection_add_field(&session->request_part->fields, name, value);
 }
 
 int rrr_http_session_transport_ctx_add_query_field_binary (
@@ -223,7 +223,7 @@ int rrr_http_session_transport_ctx_add_query_field_binary (
 		return 1;
 	}
 
-	return rrr_http_fields_collection_add_field_binary(&session->request_part->fields, name, value, size);
+	return rrr_http_field_collection_add_field_binary(&session->request_part->fields, name, value, size);
 }
 
 static int __rrr_http_session_send_multipart_form_data_body (
@@ -338,10 +338,10 @@ static int __rrr_http_session_send_post_x_www_form_body (
 	char *final_buf = NULL;
 
 	if (no_urlencoding == 0) {
-		body_buf = rrr_http_fields_to_urlencoded_form_data(&session->request_part->fields);
+		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&session->request_part->fields);
 	}
 	else {
-		body_buf = rrr_http_fields_to_raw_form_data(&session->request_part->fields);
+		body_buf = rrr_http_field_collection_to_raw_form_data(&session->request_part->fields);
 	}
 
 	if (body_buf == NULL) {
@@ -490,8 +490,6 @@ static int __rrr_http_session_receive_response_callback (
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_part *part = receive_data->session->response_part;
 
-	part->data_ptr = read_session->rx_buf_ptr;
-
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_dump_header(part);
 	}
@@ -509,8 +507,6 @@ static int __rrr_http_session_receive_request_callback (
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_part *part = receive_data->session->request_part;
 
-	part->data_ptr = read_session->rx_buf_ptr;
-
 	int ret = 0;
 
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
@@ -524,6 +520,14 @@ static int __rrr_http_session_receive_request_callback (
 
 	if ((ret = rrr_http_part_process_multipart(part)) != 0) {
 		goto out;
+	}
+
+	if ((ret = rrr_http_part_extract_post_and_query_fields(part)) != 0) {
+		goto out;
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_field_collection_dump (&part->fields);
 	}
 
 	ret = receive_data->callback(part, receive_data->callback_arg);

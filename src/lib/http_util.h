@@ -31,8 +31,22 @@ struct rrr_http_uri {
 	char *endpoint;
 };
 
+void rrr_http_util_print_where_message (
+		const char *start
+);
+int rrr_http_util_decode_urlencoded_string (
+		char *target
+);
 char *rrr_http_util_encode_uri (
 		const char *input
+);
+const char *rrr_http_util_find_quoted_string_end (
+		const char *start,
+		const char *end,
+		char endchr
+);
+int rrr_http_util_unquote_string (
+		char *target
 );
 char *rrr_http_util_quote_header_value (
 		const char *input,
