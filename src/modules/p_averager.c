@@ -314,8 +314,8 @@ int averager_calculate_average(struct averager_data *data) {
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct averager_data *data = (struct averager_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->input_buffer);
-	rrr_fifo_buffer_invalidate(&data->output_buffer);
+	rrr_fifo_buffer_clear(&data->input_buffer);
+	rrr_fifo_buffer_clear(&data->output_buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);

@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/fixed_point.h"
 #include "../lib/stats_engine.h"
+#include "../lib/message_broker.h"
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -218,6 +219,8 @@ int main (int argc, const char **argv) {
 
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
+	struct rrr_message_broker message_broker = {0};
+	struct rrr_config *config;
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -230,10 +233,15 @@ int main (int argc, const char **argv) {
 
 	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
 
+	if (rrr_message_broker_init(&message_broker) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		RRR_MSG_ERR("Library build version mismatch.\n");
 		ret = 1;
-		goto out;
+		goto out_cleanup_message_broker;
 	}
 
 	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
@@ -242,7 +250,7 @@ int main (int argc, const char **argv) {
 	if (chdir(RRR_TEST_PATH) != 0) {
 		TEST_MSG("Error while changing directory\n");
 		ret = 1;
-		goto out;
+		goto out_cleanup_message_broker;
 	}
 
 	TEST_BEGIN("PARSE CMD") {
@@ -254,17 +262,16 @@ int main (int argc, const char **argv) {
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	if (ret == 1) {
-		goto out;
+		// Some data might have been stored also upon error
+		goto out_cleanup_cmd;
 	}
-
-	struct rrr_config *config;
 
 	TEST_BEGIN("fixed point type") {
 		ret = test_fixp();
 	} TEST_RESULT(ret == 0);
 
 	if (ret != 0) {
-		goto out;
+		goto out_cleanup_cmd;
 	}
 
 	TEST_BEGIN("non-existent config file") {
@@ -281,7 +288,7 @@ int main (int argc, const char **argv) {
 
 	if (config == NULL) {
 		ret = 1;
-		goto out;
+		goto out_cleanup_cmd;
 	}
 
 	struct instance_metadata_collection *instances;
@@ -307,7 +314,14 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (main_start_threads(&collection, instances, config, &cmd, &stats_engine) != 0) {
+		if (main_start_threads (
+				&collection,
+				instances,
+				config,
+				&cmd,
+				&stats_engine,
+				&message_broker
+		) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -346,20 +360,25 @@ int main (int argc, const char **argv) {
 	rrr_thread_destroy_collection(collection, 0);
 
 	out_cleanup_instances:
-	rrr_instance_metadata_collection_destroy(instances);
+		rrr_instance_metadata_collection_destroy(instances);
 
-	// Don't unload modules in the test suite
-	//rrr_instance_unload_all(instances);
+		// Don't unload modules in the test suite
+		//rrr_instance_unload_all(instances);
 
 	out_cleanup_config:
-	if (config != NULL) {
-		rrr_config_destroy(config);
-	}
+		if (config != NULL) {
+			rrr_config_destroy(config);
+		}
 
-	out:
-	rrr_signal_handler_remove(signal_handler);
-	rrr_exit_cleanup_methods_run_and_free();
-	cmd_destroy(&cmd);
-	rrr_strerror_cleanup();
-	return ret;
+	out_cleanup_cmd:
+		cmd_destroy(&cmd);
+
+	out_cleanup_message_broker:
+		rrr_message_broker_cleanup(&message_broker);
+
+	out_cleanup_signal:
+		rrr_signal_handler_remove(signal_handler);
+		rrr_exit_cleanup_methods_run_and_free();
+		rrr_strerror_cleanup();
+		return ret;
 }

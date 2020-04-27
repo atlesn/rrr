@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "instances.h"
 #include "instance_config.h"
+#include "message_broker.h"
 
 struct instance_metadata *rrr_instance_find_by_thread (
 		struct instance_metadata_collection *collection,
@@ -58,7 +59,7 @@ int rrr_instance_check_threads_stopped(struct instance_metadata_collection *inst
 
 void rrr_instance_free_all_thread_data(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		rrr_instance_free_thread(instance->thread_data);
+		rrr_instance_destroy_thread(instance->thread_data);
 		instance->thread_data = NULL;
 	}
 }
@@ -90,7 +91,7 @@ static void __rrr_instance_metadata_destroy (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *target
 ) {
-	rrr_instance_free_thread(target->thread_data);
+	rrr_instance_destroy_thread(target->thread_data);
 	rrr_instance_collection_clear(&target->senders);
 	rrr_instance_collection_clear(&target->wait_for);
 
@@ -431,7 +432,12 @@ unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_co
 	return result;
 }
 
-void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
+static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data) {
+	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
+	free(data);
+}
+
+void rrr_instance_destroy_thread (struct rrr_instance_thread_data *data) {
 	if (data == NULL) {
 		return;
 	}
@@ -440,18 +446,19 @@ void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
 		return;
 	}
 
-	free(data);
+	__rrr_instace_destroy_thread(data);
 }
 
-void rrr_instance_free_thread_by_ghost (void *private_data) {
+void rrr_instance_destroy_thread_by_ghost (void *private_data) {
 	struct rrr_instance_thread_data *data = private_data;
 	if (private_data == NULL) {
 		return;
 	}
-	free(data);
+
+	__rrr_instace_destroy_thread(data);
 }
 
-struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data) {
+struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread_init_data *init_data) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
 	struct rrr_instance_thread_data *data = malloc(sizeof(*data));
@@ -463,10 +470,24 @@ struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
 
-	return data;
+	if (rrr_message_broker_costumer_register (
+			&data->message_broker_handle,
+			init_data->message_broker,
+			init_data->module->instance_name
+	) != 0) {
+		RRR_MSG_ERR("Could not register with message broker in rrr_instance_new_thread\n");
+		goto out_free;
+	}
+
+	goto out;
+	out_free:
+		free(data);
+		data = NULL;
+	out:
+		return data;
 }
 
-int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
+int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
 	RRR_DBG_1 ("Preloading thread %s\n", module->instance_name);
@@ -480,7 +501,7 @@ int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,
-			rrr_instance_free_thread_by_ghost,
+			rrr_instance_destroy_thread_by_ghost,
 			module->start_priority,
 			data, module->instance_name
 	);

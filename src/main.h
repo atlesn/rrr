@@ -28,13 +28,15 @@ struct rrr_thread_collection;
 struct instance_metadata_collection;
 struct rrr_config;
 struct rrr_stats_engine;
+struct rrr_message_broker;
 
 int main_start_threads (
 		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
-		struct rrr_stats_engine *stats
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker
 );
 
 void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances);

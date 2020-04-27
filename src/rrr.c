@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/stats_engine.h"
 #include "lib/stats_message.h"
 #include "lib/rrr_strerror.h"
+#include "lib/message_broker.h"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -181,6 +182,7 @@ int main (int argc, const char *argv[]) {
 	int count = 0;
 
 	struct stats_data stats_data = {0};
+	struct rrr_message_broker message_broker = {0};
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -193,9 +195,14 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
 
-	if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+	if (rrr_message_broker_init(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
+	}
+
+	if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_message_broker;
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
@@ -253,7 +260,14 @@ int main (int argc, const char *argv[]) {
 	rrr_signal_default_signal_actions_register();
 
 	rrr_set_debuglevel_orig();
-	if ((ret = main_start_threads(&collection, instances, config, &cmd, &stats_data.engine)) != 0) {
+	if ((ret = main_start_threads (
+			&collection,
+			instances,
+			config,
+			&cmd,
+			&stats_data.engine,
+			&message_broker
+	)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -327,6 +341,9 @@ int main (int argc, const char *argv[]) {
 
 	out_destroy_metadata_collection:
 		rrr_instance_metadata_collection_destroy(instances);
+
+	out_cleanup_message_broker:
+		rrr_message_broker_cleanup(&message_broker);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);

@@ -71,9 +71,9 @@ struct udp_data {
 
 void data_cleanup(void *arg) {
 	struct udp_data *data = (struct udp_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->send_buffer);
-	rrr_fifo_buffer_invalidate(&data->inject_buffer);
-	rrr_fifo_buffer_invalidate(&data->delivery_buffer);
+	rrr_fifo_buffer_clear(&data->send_buffer);
+	rrr_fifo_buffer_clear(&data->inject_buffer);
+	rrr_fifo_buffer_clear(&data->delivery_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_read_session_collection_clear(&data->read_sessions);
 	RRR_FREE_IF_NOT_NULL(data->default_topic);
@@ -105,7 +105,7 @@ struct udp_poll_delete_callback_data {
 	struct rrr_fifo_callback_args *poll_data;
 };
 
-static int __poll_delete_extract_msg_callback (RRR_FIFO_CALLBACK_ARGS) {
+static int __poll_delete_extract_msg_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct udp_poll_delete_callback_data *udp_callback_data = callback_data->private_data;
 //	struct udp_data *udp_data = udp_callback_data->udp_data;
 
@@ -152,7 +152,7 @@ static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	);
 }
 
-static int __poll_extract_msg_callback (RRR_FIFO_CALLBACK_ARGS) {
+static int __poll_extract_msg_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct udp_poll_delete_callback_data *udp_callback_data = callback_data->private_data;
 //	struct udp_data *udp_data = udp_callback_data->udp_data;
 
@@ -572,10 +572,6 @@ int read_data(struct udp_data *data) {
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct udp_data *data = thread_data->private_data;
 	RRR_DBG_2("udp: writing data from inject function\n");
-
-	if (data->inject_buffer.invalid) {
-		return 1;
-	}
 
 	rrr_fifo_buffer_write(&data->inject_buffer, (char *) message, sizeof(*message));
 

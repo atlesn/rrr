@@ -296,13 +296,13 @@ int maintain_input_buffer(struct duplicator_data *data) {
 
 void data_cleanup(void *arg) {
 	struct duplicator_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->input_buffer);
+	rrr_fifo_buffer_clear(&data->input_buffer);
 	pthread_mutex_lock(&data->readers_lock);
 	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
 		for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
 			struct duplicator_reader *test = &data->readers[i];
 			if (test != NULL) {
-				rrr_fifo_buffer_invalidate(&test->buffer);
+				rrr_fifo_buffer_clear(&test->buffer);
 			}
 		}
 	}

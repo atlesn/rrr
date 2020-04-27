@@ -87,8 +87,8 @@ void data_cleanup(void *arg) {
 
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote_port);
 	RRR_FREE_IF_NOT_NULL(data->ip_default_remote);
-	rrr_fifo_buffer_invalidate(&data->local_output_buffer);
-	rrr_fifo_buffer_invalidate(&data->send_queue_intermediate);
+	rrr_fifo_buffer_clear(&data->local_output_buffer);
+	rrr_fifo_buffer_clear(&data->send_queue_intermediate);
 
 }
 
@@ -215,7 +215,7 @@ struct strip_ip_buffer_callback_args {
 	struct rrr_fifo_callback_args *final_poll_data;
 };
 
-int ipclient_poll_delete_strip_ip_buffer (RRR_FIFO_CALLBACK_ARGS) {
+int ipclient_poll_delete_strip_ip_buffer (RRR_FIFO_READ_CALLBACK_ARGS) {
 	int ret = 0;
 
 	(void)(size);

@@ -585,7 +585,7 @@ void __rrr_py_persistent_thread_process (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
-	rrr_fifo_buffer_invalidate(&receive_buffer);
+	rrr_fifo_buffer_clear(&receive_buffer);
 
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
 		RRR_DBG("Pytohn3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);

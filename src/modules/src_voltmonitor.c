@@ -302,7 +302,7 @@ int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *th
 
 void data_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->buffer);
+	rrr_fifo_buffer_clear(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 

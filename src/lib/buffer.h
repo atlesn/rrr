@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -52,8 +52,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_SEARCH_GIVE	(1<<4)
 #define RRR_FIFO_SEARCH_FREE	(1<<5)
 
-#define RRR_FIFO_CALLBACK_ARGS \
+#define RRR_FIFO_WRITE_AGAIN	(1<<10)
+#define RRR_FIFO_WRITE_ABORT	(1<<11)
+#define RRR_FIFO_WRITE_ORDERED	(1<<12)
+
+#define RRR_FIFO_READ_CALLBACK_ARGS \
 	struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size
+
+#define RRR_FIFO_WRITE_CALLBACK_ARGS \
+	char **data, unsigned long int *size, uint64_t *order, void *arg
 
 struct rrr_fifo_callback_args {
 	void *source;
@@ -66,6 +73,7 @@ struct rrr_fifo_buffer_entry {
 	unsigned long int size;
 	uint64_t order;
 	struct rrr_fifo_buffer_entry *next;
+	pthread_mutex_t lock;
 };
 
 struct rrr_fifo_buffer_ratelimit {
@@ -104,16 +112,10 @@ struct rrr_fifo_buffer {
 	struct rrr_fifo_buffer_entry *gptr_write_queue_first;
 	struct rrr_fifo_buffer_entry *gptr_write_queue_last;
 
-	pthread_mutex_t mutex;
+	pthread_rwlock_t rwlock;
 	pthread_mutex_t write_queue_mutex;
 	pthread_mutex_t ratelimit_mutex;
 	pthread_mutex_t stats_mutex;
-
-	int readers;
-	int writers;
-	int writer_waiting;
-	int readers_waiting;
-	int invalid;
 
 	int buffer_do_ratelimit;
 	int entry_count;
@@ -145,109 +147,26 @@ static inline void rrr_fifo_buffer_set_do_ratelimit(struct rrr_fifo_buffer *buff
 
 // TODO : These locking methods are unfair, fix if it matters
 static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
-	int ok = 0;
-	while (ok != 2) {
-		if (ok == 0) {
-			RRR_DBG_4("Buffer %p write lock wait for write mutex\n", buffer);
-			pthread_mutex_lock(&buffer->mutex);
-			RRR_DBG_4("Buffer %p write lock wait for writer waiting %i\n", buffer, buffer->writer_waiting);
-			if (buffer->writer_waiting == 0) {
-				buffer->writer_waiting = 1;
-				ok = 1;
-			}
-			RRR_DBG_4("Buffer %p write lock unlock write mutex\n", buffer);
-			pthread_mutex_unlock(&buffer->mutex);
-		}
-
-		if (ok == 1) {
-			pthread_mutex_lock(&buffer->mutex);
-			RRR_DBG_4("Buffer %p write lock wait for %i readers %i writers\n", buffer, buffer->readers, buffer->writers);
-			if (buffer->readers == 0 && buffer->writers == 0) {
-				RRR_DBG_4("Buffer %p write lock obtained\n", buffer);
-				buffer->writers = 1;
-				ok = 2;
-				pthread_mutex_unlock(&buffer->mutex);
-			}
-			else {
-				pthread_mutex_unlock(&buffer->mutex);
-//				usleep(FIFO_SPIN_DELAY);
-			}
-		}
-		else {
-//			usleep(FIFO_SPIN_DELAY);
-		}
-	}
-
-	RRR_DBG_4("Buffer %p write lock wait for write mutex end\n", buffer);
-	pthread_mutex_lock(&buffer->mutex);
-	buffer->writer_waiting = 0;
-	RRR_DBG_4("Buffer %p write lock unlock write mutex end\n", buffer);
-	pthread_mutex_unlock(&buffer->mutex);
+	pthread_rwlock_wrlock(&buffer->rwlock);
 }
 
 static inline int rrr_fifo_write_trylock(struct rrr_fifo_buffer *buffer) {
-	int ok = 0;
-
-	pthread_mutex_lock(&buffer->mutex);
-	if (buffer->writer_waiting == 0) {
-		ok = 1;
-	}
-	pthread_mutex_unlock(&buffer->mutex);
-
-	if (ok == 0) {
+	if (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
 		return 1;
 	}
-
-	pthread_mutex_lock(&buffer->mutex);
-	if (buffer->readers == 0 && buffer->writers == 0) {
-//		VL_DEBUG_MSG_4("Buffer %p write lock obtained\n", buffer);
-		RRR_DBG_4("Buffer %p write lock obtained in trylock\n", buffer);
-		ok = 2;
-		buffer->writers = 1;
-	}
-	pthread_mutex_unlock(&buffer->mutex);
-
-	return (ok == 2 ? 0 : 1);
+	return 0;
 }
 
 static inline void rrr_fifo_write_unlock(struct rrr_fifo_buffer *buffer) {
-	RRR_DBG_4("Buffer %p write unlock\n", buffer);
-	pthread_mutex_lock(&buffer->mutex);
-	buffer->writers = 0;
-	pthread_mutex_unlock(&buffer->mutex);
+	pthread_rwlock_unlock(&buffer->rwlock);
 }
 
 static inline void rrr_fifo_read_lock(struct rrr_fifo_buffer *buffer) {
-	int ok = 0;
-	pthread_mutex_lock(&buffer->mutex);
-	buffer->readers_waiting++;
-	pthread_mutex_unlock(&buffer->mutex);
-	while (!ok) {
-		RRR_DBG_4("Buffer %p read lock wait for mutex\n", buffer);
-		pthread_mutex_lock(&buffer->mutex);
-		if (buffer->writers == 0 && buffer->writer_waiting == 0) {
-			RRR_DBG_4("Buffer %p read lock pass 1\n", buffer);
-			buffer->readers++;
-			ok = 1;
-			buffer->readers_waiting--;
-			pthread_mutex_unlock(&buffer->mutex);
-		}
-		else {
-			pthread_mutex_unlock(&buffer->mutex);
-			//usleep(FIFO_SPIN_DELAY);
-		}
-	}
+	pthread_rwlock_rdlock(&buffer->rwlock);
 }
 
 static inline void rrr_fifo_read_unlock(struct rrr_fifo_buffer *buffer) {
-	RRR_DBG_4("Buffer %p read unlock wait for mutex\n", buffer);
-	pthread_mutex_lock(&buffer->mutex);
-	RRR_DBG_4("Buffer %p read unlock\n", buffer);
-	buffer->readers--;
-	if (buffer->readers < 0) {
-		RRR_BUG("Readers was <0 in fifo_read_unlock\n");
-	}
-	pthread_mutex_unlock(&buffer->mutex);
+	pthread_rwlock_unlock(&buffer->rwlock);
 }
 
 static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigned int wait_milliseconds) {
@@ -304,24 +223,24 @@ static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigne
  * counting.
  */
 
-int rrr_fifo_buffer_clear_with_callback (
+void rrr_fifo_buffer_clear_with_callback (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
 		struct rrr_fifo_callback_args *callback_data
 );
-int rrr_fifo_buffer_clear (
+void rrr_fifo_buffer_clear (
 		struct rrr_fifo_buffer *buffer
 );
 int rrr_fifo_search (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_CALLBACK_ARGS),
+		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		struct rrr_fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
 int rrr_fifo_read_minimum (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_CALLBACK_ARGS),
+		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		struct rrr_fifo_callback_args *callback_data,
 		uint64_t minimum_order,
 		unsigned int wait_milliseconds
@@ -333,29 +252,30 @@ int rrr_fifo_clear_order_lt (
 int rrr_fifo_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_CALLBACK_ARGS),
+		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		struct rrr_fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
 int rrr_fifo_read (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_CALLBACK_ARGS),
+		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		struct rrr_fifo_callback_args *callback_data,
 		unsigned int wait_milliseconds
 );
 
 //void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
-void rrr_fifo_buffer_write(struct rrr_fifo_buffer *buffer, char *data, unsigned long int size);
-void rrr_fifo_buffer_delayed_write (struct rrr_fifo_buffer *buffer, char *data, unsigned long int size);
-void rrr_fifo_buffer_write_ordered(struct rrr_fifo_buffer *buffer, uint64_t order, char *data, unsigned long int size);
-
-void rrr_fifo_buffer_invalidate_with_callback (
+static int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct rrr_fifo_callback_args *callback_data
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		void *callback_arg
 );
-void rrr_fifo_buffer_invalidate(struct rrr_fifo_buffer *buffer);
-// void fifo_buffer_destroy(struct fifo_buffer *buffer); Not thread safe
+int rrr_fifo_buffer_write_delayed (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		void *callback_arg
+);
+
+void rrr_fifo_buffer_destroy(struct rrr_fifo_buffer *buffer);
 int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer);
 int rrr_fifo_buffer_init_custom_free(struct rrr_fifo_buffer *buffer, void (*custom_free)(void *arg));
 int rrr_fifo_buffer_get_stats (struct rrr_fifo_buffer_stats *stats, struct rrr_fifo_buffer *buffer);

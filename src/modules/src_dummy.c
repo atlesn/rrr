@@ -75,7 +75,7 @@ int data_init(struct dummy_data *data) {
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct dummy_data *data = (struct dummy_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->buffer);
+	rrr_fifo_buffer_clear(&data->buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
 }

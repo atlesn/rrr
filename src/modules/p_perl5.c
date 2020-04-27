@@ -364,7 +364,7 @@ int data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_d
 	goto out;
 
 	out_destroy_output_buffer:
-		rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
+		rrr_fifo_buffer_clear(&data->output_buffer_ip);
 	out_destroy_channel_to_child:
 		rrr_mmap_channel_destroy(data->channel_to_child);
 	out_destroy_channel_from_child:
@@ -477,8 +477,8 @@ void terminate_child (struct perl5_data *data) {
 void data_cleanup(void *arg) {
 	struct perl5_data *data = arg;
 
-	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
-	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
+	rrr_fifo_buffer_clear(&data->output_buffer_ip);
+	rrr_fifo_buffer_clear(&data->input_buffer_ip);
 
 	RRR_FREE_IF_NOT_NULL(data->perl5_file);
 	RRR_FREE_IF_NOT_NULL(data->source_sub);

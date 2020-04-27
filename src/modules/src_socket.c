@@ -59,8 +59,8 @@ struct socket_data {
 
 void data_cleanup(void *arg) {
 	struct socket_data *data = (struct socket_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->buffer);
-	rrr_fifo_buffer_invalidate(&data->inject_buffer);
+	rrr_fifo_buffer_clear(&data->buffer);
+	rrr_fifo_buffer_clear(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_socket_client_collection_clear(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);

@@ -319,7 +319,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 		__rrr_mqtt_connection_close (connection);
 	}
 
-	rrr_fifo_buffer_invalidate(&connection->receive_queue.buffer);
+	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
 
 	__rrr_mqtt_connection_read_session_destroy(&connection->read_session);
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);

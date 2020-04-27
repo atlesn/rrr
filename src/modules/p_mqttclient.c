@@ -101,7 +101,7 @@ struct mqtt_client_data {
 
 static void data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->output_buffer);
+	rrr_fifo_buffer_clear(&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);

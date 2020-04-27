@@ -62,7 +62,7 @@ struct mqtt_broker_data {
 
 static void data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->local_buffer);
+	rrr_fifo_buffer_clear(&data->local_buffer);
 }
 
 static int data_init (

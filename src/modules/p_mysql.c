@@ -132,9 +132,9 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->column_tags);
 	rrr_map_clear(&data->blob_write_columns);
 
-	rrr_fifo_buffer_invalidate (&data->input_buffer);
-	rrr_fifo_buffer_invalidate (&data->output_buffer_local);
-	rrr_fifo_buffer_invalidate (&data->output_buffer_ip);
+	rrr_fifo_buffer_clear (&data->input_buffer);
+	rrr_fifo_buffer_clear (&data->output_buffer_local);
+	rrr_fifo_buffer_clear (&data->output_buffer_ip);
 
 	RRR_FREE_IF_NOT_NULL(data->mysql_server);
 	RRR_FREE_IF_NOT_NULL(data->mysql_user);

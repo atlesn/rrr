@@ -69,7 +69,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 void data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->storage);
+	rrr_fifo_buffer_clear(&data->storage);
 }
 
 int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {

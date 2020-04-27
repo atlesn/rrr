@@ -271,7 +271,7 @@ void python3_stop(void *arg) {
 
 void data_cleanup(void *arg) {
 	struct python3_data *data = arg;
-	rrr_fifo_buffer_invalidate (&data->output_buffer);
+	rrr_fifo_buffer_clear (&data->output_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->python3_module);
 	RRR_FREE_IF_NOT_NULL(data->source_function);

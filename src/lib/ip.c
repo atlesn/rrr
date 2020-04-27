@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -132,6 +132,8 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 	}
 
 	memset(message, '\0', message_size);
+
+	message->msg_size = message_size;
 
 	if (rrr_ip_buffer_entry_new (
 			&entry,
