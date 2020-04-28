@@ -1,4 +1,4 @@
-.Dd 2020-04-16
+.Dd 2020-04-28
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -124,49 +124,51 @@ Stop generating messages after this number is reached. 0 value or not defined me
 .It dummy_random_payload_max_size={BYTES}
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
 .El
-.SS udp (PAI)
-This module is capable of listening on an UDP port and read messages or arrays, as well as sending data to remote hosts.
+.SS ip (PAI)
+This module is capable of listening on an UDP or TCP port and read messages or arrays, as well as sending data to remote hosts.
 A message is created for each received packet and a timestamp is added.
 If the received data does not match the specified data array, the packet is dropped.
 .PP
-If an instance is configured to wait for and udp module before starting, the udp module set up any listening sockets before the
+If an instance is configured to wait for this module before starting, the we will set up any listening sockets before the
 waiting instance is started.
 .Bl -tag -width -indent
-.It udp_port=LISTEN PORT
-Port to listen on and also source port for outbound messages, range is 1-65535.
+.It ip_udp_port=LISTEN PORT
+.It ip_tcp_port=LISTEN PORT
+Port to listen on on udp or tcp. Udp  is also source port for outbound messages. Range is 1-65535, default value is 0 which means we don't listen.
 If left unspecified, no listening takes place.
-.It udp_input_types=ARRAY DEFINITION
+.It ip_input_types=ARRAY DEFINITION
 Specification of expected data to receive from remote. See
 .Xr rrr_post(1)
 for the syntax. No listening takes places unless this is specified.
 To receive RRR messages, simply set the definition to
 .B msg
 and set
-.B udp_extract_rrr_messages
+.B ip_extract_rrr_messages
 to
 .B yes.
-.It udp_extract_rrr_messages={yes|no}
-Extract any RRR messages from the received data (if specified in udp_input_types) and save them in the buffer for other modules to pick up.
+.It ip_extract_rrr_messages={yes|no}
+Extract any RRR messages from the received data (if specified in ip_input_types) and save them in the buffer for other modules to pick up.
 Causes any other data in the received arrays to be dropped.
 If set to yes and no message field is specified in the array definition, an error will be produced.
 Defaults to no.
-.It udp_default_topic=MQTT-TOPIC
+.It ip_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
-.It udp_sync_byte_by_byte={yes|no}
+.It ip_sync_byte_by_byte={yes|no}
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
-.It udp_send_rrr_message={yes|no}
-If set to yes, UDP will send complete RRR messages encoded for network. If set to no or left unset,
+.It ip_send_rrr_message={yes|no}
+If set to yes, we will send complete RRR messages encoded for network. If set to no or left unset,
 messages with arrays will have their array packed and sent, and messages with other data will simply have their
 contents sent as is.
-.It udp_target_host=HOST
-.It udp_target_port=PORT
-Default target host and port for messages from other modules which do not contain address information.
-If left unset and UDP recevies messages which do not contain address information, the messages are dropped
-and warning messages are produced.
-.It udp_force_target={yes|no}
+.It ip_target_host=HOST
+.It ip_target_port=PORT
+.It ip_target_protocol=PROTOCOL
+Default target host, port and protocol for messages from other modules which do not contain address information.
+If left unset and we recevie messages which do not contain address information, the messages are dropped
+and warning messages are produced. Protocol may be udp or tcp, defaults to udp.
+.It ip_force_target={yes|no}
 Use the specified target host and port even if messages contain other address information. Default is no.
-.It udp_array_send_tags=tag1[,tag2[,...]]
+.It ip_array_send_tags=tag1[,tag2[,...]]
 Look for the defined tags in array messages from other modules, and send these concatenated together to remote.
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
@@ -471,15 +473,32 @@ the address information of the original sender of a message is retained. Other I
 then use this information if they read data from the Perl instance, for example if you wish to use
 a Perl script to generate a reply message to some remote host. There is no high-level method for modifying
 the address information inside the Perl script, but the values
-.B originating_addr
+.B ip_addr
 and
-.B originating_addr_len
+.B ip_addr_len
 are to be found in the message hash. The values are filled with data from
 .B struct sockaddr
 and
 .B socklen_t
 which is provided by the operating system. These two values may be saved and re-used in later messages,
 or they may be modified if you know how to do that (not documented here).
+In addition,
+.B ip_so_type
+can be either "udp" or "tcp" to describe a protocol type. Some modules may use this parameter. It can also be empty.
+.PP
+The following additional parameters are available in the rrr_message hash reference:
+.Bl -tag -width -indent
+.It topic
+The MQTT topic of the messsage.
+.It timestamp
+The timestamp of the message.
+.It data
+The raw data of the message (ignored when arrays are being used)
+.It data_length
+The length of the data.
+.It type_and_class
+Type and class of message, for internal use.
+.El
 .PP
 Below follows an example perl script.
 .PP

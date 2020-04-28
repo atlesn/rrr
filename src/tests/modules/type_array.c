@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -502,7 +502,7 @@ int test_averager (
 		if (entry != NULL) {
 			rrr_ip_buffer_entry_destroy(entry);
 		}
-		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, message) != 0) {
+		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, 0, message) != 0) {
 			TEST_MSG("Could not create ip buffer entry in test_averager\n");
 			ret = 1;
 			goto out;
@@ -628,7 +628,7 @@ int test_type_array (
 		goto out;
 	}
 
-	if (rrr_ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, data) != 0) {
+	if (rrr_ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, 0, data) != 0) {
 		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
 		ret = 1;
 		goto out;
@@ -823,7 +823,7 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, new_message) != 0) {
+	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, 0, new_message) != 0) {
 		TEST_MSG("Could not allocate ip buffer entry in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;

@@ -49,6 +49,9 @@ struct rrr_read_session {
 //	struct rrr_socket_client *client;
 	uint64_t last_read_time;
 
+	// This is set if get socket options callback is used
+	int socket_options;
+
 	// Used to distinguish clients from each other
 	struct sockaddr src_addr;
 	socklen_t src_addr_len;
@@ -114,13 +117,17 @@ int rrr_read_message_using_callbacks (
 													ssize_t read_step_max_size,
 													void *private_arg
 	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session		*(*function_get_read_session_with_overshoot) (
+		struct rrr_read_session				*(*function_get_read_session_with_overshoot) (
 													void *private_arg
 											 ),
-		struct rrr_read_session		*(*function_get_read_session) (
+		struct rrr_read_session				*(*function_get_read_session) (
 													void *private_arg
 											 ),
 		void								 (*function_read_session_remove) (
+													struct rrr_read_session *read_session,
+													void *private_arg
+											 ),
+		int									*(*function_get_socket_options) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),

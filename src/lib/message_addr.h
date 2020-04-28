@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_message_addr {
 	RRR_SOCKET_MSG_HEAD;
 	uint64_t addr_len;
+	uint8_t protocol;
 	union {
-		char addr__; // Avoid compiler warnings "taking address of packed member"
 		struct sockaddr addr;
 	};
 } __attribute((packed));
