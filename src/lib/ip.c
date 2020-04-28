@@ -467,7 +467,7 @@ int rrr_ip_send (
 			goto out;
 		}
 		else if (errno == EPIPE) {
-			RRR_MSG_ERR ("Pipe full in ip_send_raw\n");
+			RRR_MSG_ERR ("Pipe full in ip_send_raw or connection closed by remote\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
