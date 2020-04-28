@@ -45,18 +45,21 @@ sub process {
 
 	push_tag($message, "reply", "A\r");
 
-	my $sin = sockaddr_in (7777, inet_aton("127.0.0.1"));
-	my $sin_len = bytes::length($sin);
-
-	$message->{'ip_addr'} = $sin;
-	$message->{'ip_addr_len'} = $sin_len;
+	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("192.168.0.1"));
+	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
 	$message->{'ip_so_type'} = "tcp";
+
+	$message->send();
+
+	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("192.168.0.1"));
+	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
+	$message->{'ip_so_type'} = "udp";
+
+	$message->send();
 
 #	foreach my $key (sort keys(%{$message})) {
 #		print "Key: $key: " . $message->{$key} . "\n";
 #	}
-
-	$message->send();
 
 	return 1;
 }
