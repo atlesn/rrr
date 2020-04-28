@@ -127,7 +127,7 @@ int rrr_read_message_using_callbacks (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
-		int									*(*function_get_socket_options) (
+		int									 (*function_get_socket_options) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),

@@ -973,6 +973,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 		if (!ip_data->ip_tcp_preserve_connections) {
 			rrr_ip_accept_data_collection_close_and_remove_by_fd(tcp_connect_data, accept_data->ip_data.fd);
 		}
+	goto out;
 	out_put_back:
 		rrr_fifo_buffer_write(&ip_data->send_buffer, data, size);
 		ret = RRR_FIFO_SEARCH_STOP; // Don't return FREE obviously
