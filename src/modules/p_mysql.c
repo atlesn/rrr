@@ -873,7 +873,14 @@ int poll_callback_local(struct rrr_fifo_callback_args *poll_data, char *data, un
 
 	(void)(size);
 
-	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(reading), NULL, 0, reading) != 0) {
+	if (rrr_ip_buffer_entry_new (
+			&entry,
+			MSG_TOTAL_SIZE(reading),
+			NULL,
+			0,
+			0,
+			reading
+	) != 0) {
 		RRR_MSG_ERR("Could not allocate ip buffer entry in poll_callback_local\n");
 		ret = 1;
 		goto out;

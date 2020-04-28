@@ -212,7 +212,7 @@ int read_raw_data_callback(struct rrr_read_session *read_session, void *arg) {
 	);
 }
 
-int read_data(struct socket_data *data) {
+int udp_read_data(struct socket_data *data) {
 	if (data->receive_rrr_message != 0) {
 		struct rrr_read_common_receive_message_callback_data callback_data = {
 				read_data_receive_message_callback,
@@ -329,7 +329,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 		}
 
 		int err = 0;
-		if ((err = read_data(data)) != 0) {
+		if ((err = udp_read_data(data)) != 0) {
 			if (err == RRR_SOCKET_SOFT_ERROR) {
 				// Upon receival of invalid data, we must close the socket as sizes of
 				// the messages and boundaries might be out of sync

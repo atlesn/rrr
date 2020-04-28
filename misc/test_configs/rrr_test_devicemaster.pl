@@ -2,9 +2,11 @@
 
 package main;
 
+use Socket qw(:DEFAULT :crlf);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use bytes;
 
 my $global_settings = undef;
 
@@ -41,7 +43,18 @@ sub process {
 #		return 1;
 	}
 
-	push_tag("A\r", "reply", "str");
+	push_tag($message, "reply", "A\r");
+
+	my $sin = sockaddr_in (7777, inet_aton("127.0.0.1"));
+	my $sin_len = bytes::length($sin);
+
+	$message->{'ip_addr'} = $sin;
+	$message->{'ip_addr_len'} = $sin_len;
+	$message->{'ip_so_type'} = "tcp";
+
+#	foreach my $key (sort keys(%{$message})) {
+#		print "Key: $key: " . $message->{$key} . "\n";
+#	}
 
 	$message->send();
 

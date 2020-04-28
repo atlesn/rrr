@@ -560,7 +560,16 @@ int rrr_socket_connect_nonblock (
 	if (connect(fd, addr, addr_len) == 0) {
 		goto out;
 	}
-	else if (errno == EINPROGRESS) {
+	else if (errno == EINPROGRESS || errno == EAGAIN) {
+		ret = 0;
+		goto out;
+	}
+	else if (errno == ECONNREFUSED) {
+		RRR_MSG_ERR ("Connection refused in rrr_socket_connect_nonblock\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}/*
+	else {
 		struct pollfd pollfd = {
 			fd, POLLOUT, 0
 		};
@@ -605,7 +614,7 @@ int rrr_socket_connect_nonblock (
 				goto out;
 			}
 		}
-	}
+	}*/
 	else {
 		RRR_MSG_ERR("Error while connecting: %s\n", rrr_strerror(errno));
 		ret = 1;
