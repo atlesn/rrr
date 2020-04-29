@@ -455,19 +455,19 @@ int rrr_ip_send (
 	retry:
 	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
 		*err = errno;
-		if (--max_retries == 100) {
-			RRR_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
-					fd, getpid());
-			ret = RRR_SOCKET_SOFT_ERROR;
-			goto out;
-		}
-		else if (errno == ECONNREFUSED || errno == ECONNRESET) {
+		if (errno == ECONNREFUSED || errno == ECONNRESET) {
 			RRR_MSG_ERR ("Connection refused in ip_send_raw\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 		else if (errno == EPIPE) {
-			RRR_MSG_ERR ("Pipe full in ip_send_raw\n");
+			RRR_MSG_ERR ("Pipe full in ip_send_raw or connection closed by remote\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (--max_retries == 0) {
+			RRR_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
+					fd, getpid());
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
