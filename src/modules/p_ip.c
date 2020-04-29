@@ -944,20 +944,30 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 
 	goto out;
 	ip_tcp_send:
-		if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
+		if ((ret = rrr_socket_connect_nonblock_postcheck(accept_data->ip_data.fd)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
-				if (err == EAGAIN || err == EWOULDBLOCK ) {
-					RRR_MSG("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
+				RRR_DBG_3("Connection not ready while sending in ip instance %s, putting message back into send queue\n",
+						INSTANCE_D_NAME(thread_data));
+				goto out_put_back;
+			}
+
+			RRR_DBG_1("Connection problem with TCP connection, dropping message in ip instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 0;
+		}
+		else if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
+			if (ret == RRR_SOCKET_SOFT_ERROR) {
+				if (err == EAGAIN || err == EWOULDBLOCK) {
+					RRR_DBG_1("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
 							INSTANCE_D_NAME(thread_data));
 					ret = 0;
 					goto out_put_back;
 				}
-				else {
-					RRR_MSG("Connection problem with TCP connection, dropping message in ip instance %s\n",
-							INSTANCE_D_NAME(thread_data));
-					ret = 0;
-					// No goto
-				}
+
+				RRR_MSG_ERR("Connection problem with TCP connection while sending, dropping message in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 0;
+				// No goto
 			}
 			else {
 				RRR_MSG_ERR("Error while sending tcp message in ip instance %s\n",
@@ -975,10 +985,14 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 
 	out_put_back:
 		rrr_fifo_buffer_write(&ip_data->send_buffer, data, size);
-		ret = RRR_FIFO_SEARCH_STOP; // Don't return FREE obviously
+		data = NULL; // Prevents FREE below
+
+		// Don't stop and block others, continue reading from the buffer in
+		// case there are other targets
+		ret = 0;
 
 	out:
-		if (ret != RRR_FIFO_SEARCH_STOP) {
+		if (data != NULL) {
 			ret |= RRR_FIFO_SEARCH_FREE;
 		}
 		if (accept_data_tmp != NULL) {
