@@ -35,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip.h"
+#include "../../lib/ip_buffer_entry.h"
 #include "../../lib/messages.h"
 #include "../../lib/rrr_endian.h"
 #include "../../lib/rrr_strerror.h"

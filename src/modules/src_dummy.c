@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/stats_instance.h"
 #include "../global.h"
 #include "../lib/random.h"

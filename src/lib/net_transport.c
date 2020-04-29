@@ -309,7 +309,6 @@ void rrr_net_transport_ctx_handle_close (
 ) {
 	struct rrr_net_transport_handle_collection *collection = &handle->transport->handles;
 
-	int ret = 0;
 	int did_destroy = 0;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();

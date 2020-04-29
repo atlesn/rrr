@@ -490,6 +490,8 @@ static int __rrr_http_session_receive_response_callback (
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_part *part = receive_data->session->response_part;
 
+	(void)(read_session);
+
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_dump_header(part);
 	}
@@ -506,6 +508,8 @@ static int __rrr_http_session_receive_request_callback (
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_part *part = receive_data->session->request_part;
+
+	(void)(read_session);
 
 	int ret = 0;
 

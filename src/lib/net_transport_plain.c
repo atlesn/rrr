@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_plain.h"
 #include "read.h"
 #include "ip.h"
+#include "ip_accept_data.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
@@ -41,7 +42,7 @@ static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *han
 }
 
 static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transport) {
-	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
+//	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
 
 	// This will call back into our close() function for each handle
 	rrr_net_transport_common_cleanup(transport);

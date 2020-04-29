@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_accept_data.h"
 #include "../lib/array.h"
 #include "../lib/type.h"
 #include "../lib/rrr_socket.h"
