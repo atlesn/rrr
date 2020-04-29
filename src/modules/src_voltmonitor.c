@@ -50,6 +50,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/messages.h"
 #include "../lib/array.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/array.h"
 #include "../global.h"
 

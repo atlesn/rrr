@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -1072,7 +1073,7 @@ int read_from_child_callback_msg (const struct rrr_message *message, void *arg) 
 	if (rrr_ip_buffer_entry_new_with_empty_message (
 			&entry,
 			MSG_TOTAL_SIZE(message),
-			&data->latest_message_addr.addr,
+			(struct sockaddr *) &data->latest_message_addr.addr,
 			data->latest_message_addr.addr_len,
 			data->latest_message_addr.protocol
 	) != 0) {

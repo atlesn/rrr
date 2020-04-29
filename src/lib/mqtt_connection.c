@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "ip.h"
+#include "ip_accept_data.h"
 #include "buffer.h"
 #include "vl_time.h"
 #include "../global.h"
