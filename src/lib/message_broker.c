@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stddef.h>
+#include <pthread.h>
 
 #include "../global.h"
 #include "linked_list.h"
@@ -61,7 +62,7 @@ int __rrr_message_broker_costumer_new (
 		goto out_free;
 	}
 
-	if (ptread_mutex_init (&costumer->lock, NULL) != 0) {
+	if (pthread_mutex_init (&costumer->lock, NULL) != 0) {
 		RRR_MSG_ERR("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
 		goto out_free_name;
 	}
@@ -75,7 +76,7 @@ int __rrr_message_broker_costumer_new (
 
 	goto out;
 	out_destroy_mutex:
-		pthread_mtuex_destroy(&costumer->lock);
+		pthread_mutex_destroy(&costumer->lock);
 	out_free_name:
 		free(costumer->name);
 	out_free:
@@ -199,6 +200,7 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	ssize_t data_length;
 	const struct sockaddr *addr;
 	socklen_t socklen;
+	int protocol;
 	int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg);
 	void *callback_arg;
 };
@@ -229,7 +231,8 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 			&entry,
 			callback_data->data_length,
 			callback_data->addr,
-			callback_data->socklen
+			callback_data->socklen,
+			callback_data->protocol
 	) != 0) {
 		RRR_MSG_ERR("Could not allocate ip buffer entry in __rrr_message_broker_write_entry_intermediate\n");
 		ret = 1;
@@ -276,6 +279,7 @@ int rrr_message_broker_write_entry (
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t socklen,
+		int protocol,
 		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
 		void *callback_arg
 ) {
@@ -287,6 +291,7 @@ int rrr_message_broker_write_entry (
 			data_length,
 			addr,
 			socklen,
+			protocol,
 			callback,
 			callback_arg
 	};

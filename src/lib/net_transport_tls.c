@@ -641,6 +641,7 @@ static int __rrr_net_transport_tls_read_message (
 				__rrr_net_transport_tls_read_get_read_session_with_overshoot,
 				__rrr_net_transport_tls_read_get_read_session,
 				__rrr_net_transport_tls_read_remove_read_session,
+				NULL,
 				&read_callback_data
 		);
 

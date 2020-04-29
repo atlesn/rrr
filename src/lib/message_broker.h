@@ -73,6 +73,7 @@ int rrr_message_broker_write_entry (
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t socklen,
+		int protocol,
 		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
 		void *callback_arg
 );
