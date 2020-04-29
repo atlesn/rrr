@@ -90,7 +90,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 			&array_message_python3,
 			&array_message_mqtt_raw,
 			thread_data->init_data.module->all_instances,
-			"instance_udp",
+			"instance_ip",
 			"instance_socket",
 			"instance_buffer_from_perl5",
 			"instance_buffer_from_python3",
