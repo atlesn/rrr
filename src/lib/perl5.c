@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "vl_time.h"
 #include "array.h"
+#include "ip.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
 	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"
@@ -414,12 +415,14 @@ struct rrr_perl5_message_hv *__rrr_perl5_allocate_message_hv (struct rrr_perl5_c
 
     SV **tmp;
 
-    DEFINE_SCALAR_FIELD(type);
-    DEFINE_SCALAR_FIELD(class);
+    DEFINE_SCALAR_FIELD(type_and_class);
     DEFINE_SCALAR_FIELD(timestamp);
-    DEFINE_SCALAR_FIELD(timestamp_to);
-    DEFINE_SCALAR_FIELD(data_numeric);
+    DEFINE_SCALAR_FIELD(topic);
+    DEFINE_SCALAR_FIELD(data);
     DEFINE_SCALAR_FIELD(data_length);
+    DEFINE_SCALAR_FIELD(ip_addr);
+    DEFINE_SCALAR_FIELD(ip_addr_len);
+    DEFINE_SCALAR_FIELD(ip_so_type);
 
 	SV *data = newSV(0);
 	SvUTF8_off(data);
@@ -902,9 +905,36 @@ int rrr_perl5_hv_to_message (
 
     rrr_message_addr_init(target_addr);
 
-	DEFINE_AND_FETCH_FROM_HV(originating_addr_len, hv);
+	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
 
-	target_addr->addr_len = SvUV(originating_addr_len);
+	STRLEN ip_so_type_len = 0;
+	char *so_type_str = SvPVutf8_force(ip_so_type, ip_so_type_len);
+
+	int protocol = RRR_IP_AUTO;
+
+	if (ip_so_type_len == 0) {
+		// Not specified
+	}
+	else if (ip_so_type_len >= 3) {
+		if (strncasecmp("udp", so_type_str, 3) == 0) {
+			protocol = RRR_IP_UDP;
+		}
+		else if (strncasecmp("tcp", so_type_str, 3) == 0) {
+			protocol = RRR_IP_TCP;
+		}
+		else {
+			RRR_MSG_ERR("Warning: unknown ip_so_type from perl script, must be 'udp' or 'tcp'\n");
+		}
+	}
+	else if (ip_so_type_len < 3) {
+		RRR_MSG_ERR("Warning: ip_so_type from Perl function was too short\n");
+	}
+
+	target_addr->protocol = protocol;
+
+	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
+
+	target_addr->addr_len = SvUV(ip_addr_len);
 	if (target_addr->addr_len > 0) {
 		if (target_addr->addr_len > sizeof(target_addr->addr)) {
 			RRR_MSG_ERR("Address length field from message hash was too big (%" PRIu64 " > %lu)\n",
@@ -913,9 +943,9 @@ int rrr_perl5_hv_to_message (
 			goto out;
 		}
 
-		DEFINE_AND_FETCH_FROM_HV(originating_addr, hv);
-		SvUTF8_off(originating_addr);
-		char *data_str = SvPVbyte_force(originating_addr, target_addr->addr_len);
+		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
+		SvUTF8_off(ip_addr);
+		char *data_str = SvPVbyte_force(ip_addr, target_addr->addr_len);
 		memcpy(&target_addr->addr, data_str, target_addr->addr_len);
 	}
 
@@ -1127,10 +1157,11 @@ int rrr_perl5_message_to_hv (
 	DEFINE_AND_FETCH_FROM_HV(data_length, hv);
 	DEFINE_AND_FETCH_FROM_HV(topic, hv);
 
-	DEFINE_AND_FETCH_FROM_HV(originating_addr, hv);
-	DEFINE_AND_FETCH_FROM_HV(originating_addr_len, hv);
+	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
+	DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
+	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
 
-    SvUTF8_off(originating_addr);
+    SvUTF8_off(ip_addr);
     SvUTF8_off(data);
     SvUTF8_on(topic);
 
@@ -1138,7 +1169,12 @@ int rrr_perl5_message_to_hv (
     // older message is retained
     sv_setuv(type_and_class, message->type_and_class);
     sv_setuv(timestamp, message->timestamp);
-    sv_setpvn(topic, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
+    if (MSG_TOPIC_LENGTH(message) > 0) {
+    	sv_setpvn(topic, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
+    }
+    else {
+    	sv_setpv(topic, "");
+    }
     sv_setuv(data_length, MSG_DATA_LENGTH(message));
     sv_setpvn(data, MSG_DATA_PTR(message), MSG_DATA_LENGTH(message));
 
@@ -1150,13 +1186,25 @@ int rrr_perl5_message_to_hv (
 	}
 
 	if (message_addr != NULL && message_addr->addr_len > 0) {
-		sv_setpvn(originating_addr, (char *) &message_addr->addr, (STRLEN) sizeof(message_addr->addr));
-		sv_setuv(originating_addr_len, message_addr->addr_len);
+		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(message_addr->addr));
+		sv_setuv(ip_addr_len, message_addr->addr_len);
 	}
 	else {
-		sv_setpv(originating_addr, "");
-		sv_setuv(originating_addr_len, 0);
+		sv_setpv(ip_addr, "");
+		sv_setuv(ip_addr_len, 0);
 	}
+
+	switch (message_addr->protocol) {
+		case RRR_IP_UDP:
+			sv_setpv(ip_so_type, "udp");
+			break;
+		case RRR_IP_TCP:
+			sv_setpv(ip_so_type, "tcp");
+			break;
+		default:
+			sv_setpv(ip_so_type, "");
+			break;
+	};
 
     out:
 	return ret;

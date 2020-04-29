@@ -77,6 +77,7 @@ int rrr_ip_buffer_entry_new (
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
+		int protocol,
 		void *message
 ) {
 	int ret = 0;
@@ -105,6 +106,7 @@ int rrr_ip_buffer_entry_new (
 	entry->send_time = 0;
 	entry->message = message;
 	entry->data_length = data_length;
+	entry->protocol = protocol;
 
 	*result = entry;
 
@@ -116,7 +118,8 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int protocol
 ) {
 	int ret = 0;
 
@@ -140,6 +143,7 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 			message_size,
 			addr,
 			addr_len,
+			protocol,
 			message
 	) != 0) {
 		RRR_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
@@ -164,7 +168,8 @@ int rrr_ip_buffer_entry_clone (
 			result,
 			source->data_length,
 			&source->addr,
-			source->addr_len
+			source->addr_len,
+			source->protocol
 	);
 
 	if (ret == 0) {
@@ -251,11 +256,27 @@ static int __ip_receive_callback (
 
 	struct rrr_ip_buffer_entry *entry = NULL;
 
+	int protocol = 0;
+
+	switch (read_session->socket_options) {
+		case SOCK_DGRAM:
+			protocol = RRR_IP_UDP;
+			break;
+		case SOCK_STREAM:
+			protocol = RRR_IP_TCP;
+			break;
+		default:
+			RRR_MSG_ERR("Unknown SO_TYPE %i in __ip_receive_callback\n", read_session->socket_options);
+			ret = 1;
+			goto out;
+	}
+
 	if (rrr_ip_buffer_entry_new (
 			&entry,
 			read_session->target_size,
 			&read_session->src_addr,
 			read_session->src_addr_len,
+			protocol,
 			read_session->rx_buf_ptr
 	) != 0) {
 		RRR_MSG_ERR("Could not allocate ip buffer entry in __ip_receive_packets_callback\b");
@@ -308,7 +329,9 @@ int rrr_ip_receive_array (
 		struct ip_stats *stats
 ) {
 	struct ip_receive_callback_data callback_data = {
-		callback, arg, stats
+		callback,
+		arg,
+		stats
 	};
 
 	return rrr_socket_common_receive_array (
@@ -417,6 +440,7 @@ int rrr_ip_receive_rrr_message (
 */
 
 int rrr_ip_send (
+	int *err,
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
@@ -426,14 +450,27 @@ int rrr_ip_send (
 	int ret = 0;
 	ssize_t bytes = 0;
 
+	*err = 0;
+
 	int max_retries = 100;
 
 	retry:
 	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
-		if (--max_retries == 100) {
+		*err = errno;
+		if (errno == ECONNREFUSED || errno == ECONNRESET) {
+			RRR_MSG_ERR ("Connection refused in ip_send_raw\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (errno == EPIPE) {
+			RRR_MSG_ERR ("Pipe full in ip_send_raw or connection closed by remote\n");
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (--max_retries == 0) {
 			RRR_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
 					fd, getpid());
-			ret = 1;
+			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -494,7 +531,8 @@ int rrr_ip_send_message (
 			(struct rrr_socket_msg *) final_message
 	);
 
-	if ((ret = rrr_ip_send(info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
+	int err;
+	if ((ret = rrr_ip_send(&err, info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
 		RRR_MSG_ERR("Data could not be sent in ip_send_message\n");
 		goto out;
 	}
@@ -619,7 +657,8 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	struct addrinfo *rp;
 	int did_send = 0;
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
-		if (rrr_ip_send(ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
+		int err;
+		if (rrr_ip_send(&err, ip_data->fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, data, size) == 0) {
 			did_send = 1;
 			break;
 		}
@@ -635,6 +674,64 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 
 	out:
 	return ret;
+}
+
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+		struct rrr_ip_accept_data **accept_data,
+		struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int fd = 0;
+
+	*accept_data = NULL;
+
+	fd = rrr_socket (
+			AF_INET,
+			SOCK_STREAM|SOCK_NONBLOCK,
+			0,
+			"ip_network_connect_tcp_ipv4_or_ipv6_raw",
+			NULL
+	);
+	if (fd == -1) {
+		RRR_MSG_ERR("Error while creating socket: %s\n", rrr_strerror(errno));
+		goto out_error;
+	}
+
+    struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
+    if (accept_result == NULL) {
+    	RRR_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+    	goto out_close_socket;
+    }
+
+    memset(accept_result, '\0', sizeof(*accept_result));
+
+	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
+		RRR_MSG_ERR("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		goto out_free_accept;
+	}
+
+    accept_result->ip_data.fd = fd;
+    accept_result->len = addr_len;
+    memcpy (&accept_result->addr, addr, addr_len);
+
+    struct sockaddr_in *sockaddr_in = (struct sockaddr_in *) &addr;
+    accept_result->ip_data.port = ntohs(sockaddr_in->sin_port);
+
+/*    if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
+    	RRR_MSG_ERR("getsockname failed: %s\n", rrr_strerror(errno));
+		goto out_free_accept;
+    }*/
+
+    *accept_data = accept_result;
+
+	return 0;
+
+	out_free_accept:
+		free(accept_result);
+	out_close_socket:
+		rrr_socket_close(fd);
+	out_error:
+		return 1;
 }
 
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host) {
@@ -855,3 +952,71 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 		RRR_FREE_IF_NOT_NULL(res);
 		return ret;
 }
+
+void rrr_ip_accept_data_close_and_destroy (struct rrr_ip_accept_data *accept_data) {
+	if (accept_data->ip_data.fd != 0) {
+		rrr_ip_close(&accept_data->ip_data);
+	}
+	free(accept_data);
+}
+
+void rrr_ip_accept_data_close_and_destroy_void (void *accept_data) {
+	rrr_ip_accept_data_close_and_destroy(accept_data);
+}
+
+void rrr_ip_accept_data_collection_clear(struct rrr_ip_accept_data_collection *collection) {
+	RRR_LL_DESTROY(collection, struct rrr_ip_accept_data, rrr_ip_accept_data_close_and_destroy(node));
+}
+
+void rrr_ip_accept_data_collection_clear_void(void *collection) {
+	rrr_ip_accept_data_collection_clear(collection);
+}
+
+void rrr_ip_accept_data_collection_close_and_remove (
+		struct rrr_ip_accept_data_collection *collection,
+		struct sockaddr *sockaddr,
+		socklen_t socklen
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_ip_accept_data);
+		if (node->len == socklen && memcmp(&node->addr, sockaddr, node->len) == 0) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_ip_accept_data_close_and_destroy(node));
+}
+
+void rrr_ip_accept_data_collection_close_and_remove_by_fd (
+		struct rrr_ip_accept_data_collection *collection,
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_ip_accept_data);
+		if (node->ip_data.fd == fd) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, 0; rrr_ip_accept_data_close_and_destroy(node));
+}
+
+struct rrr_ip_accept_data *rrr_ip_accept_data_collection_find (
+		struct rrr_ip_accept_data_collection *collection,
+		struct sockaddr *sockaddr,
+		socklen_t socklen
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_ip_accept_data);
+		if (node->len == socklen && memcmp(&node->addr, sockaddr, node->len) == 0) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+
+struct rrr_ip_accept_data *rrr_ip_accept_data_collection_find_by_fd (
+		struct rrr_ip_accept_data_collection *collection,
+		int fd
+) {
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_ip_accept_data);
+		if (node->ip_data.fd == fd) {
+			return node;
+		}
+	RRR_LL_ITERATE_END();
+	return NULL;
+}
+

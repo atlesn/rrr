@@ -714,6 +714,7 @@ int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsign
 			MSG_TOTAL_SIZE(message),
 			NULL,
 			0,
+			0,
 			message
 	) != 0) {
 		RRR_MSG_ERR("Could not create ip buffer entry in poll_callback of perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -1071,8 +1072,9 @@ int read_from_child_callback_msg (const struct rrr_message *message, void *arg) 
 	if (rrr_ip_buffer_entry_new_with_empty_message (
 			&entry,
 			MSG_TOTAL_SIZE(message),
-			(void *) &data->latest_message_addr.addr__,
-			data->latest_message_addr.addr_len
+			&data->latest_message_addr.addr,
+			data->latest_message_addr.addr_len,
+			data->latest_message_addr.protocol
 	) != 0) {
 		RRR_MSG_ERR("Could not create ip buffer entry in read_from_child_callback_msg of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));

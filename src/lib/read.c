@@ -171,6 +171,10 @@ int rrr_read_message_using_callbacks (
 		void								 (*function_read_session_remove) (
 													struct rrr_read_session *read_session,
 													void *private_arg
+										 	 ),
+		int									 (*function_get_socket_options) (
+													struct rrr_read_session *read_session,
+													void *private_arg
 											 ),
 		void *functions_callback_arg
 ) {
@@ -211,6 +215,14 @@ int rrr_read_message_using_callbacks (
 	if ((read_session = function_get_read_session(functions_callback_arg)) == NULL) {
 		ret = RRR_READ_HARD_ERROR;
 		goto out;
+	}
+
+	/* Check for socket_options */
+	if (function_get_socket_options != NULL && read_session->socket_options == 0) {
+		if ((ret = function_get_socket_options(read_session, functions_callback_arg)) != 0) {
+			RRR_MSG_ERR("Error while gettings socket options in rrr_socket_read_message_using_callbacks\n");
+			goto out;
+		}
 	}
 
 	/* Check for EOF / connection close */
