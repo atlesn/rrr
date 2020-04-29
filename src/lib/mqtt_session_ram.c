@@ -812,7 +812,7 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 				queue_callback_data.counter);
 	}
 
-	return rrr_fifo_search (
+	return rrr_fifo_buffer_search (
 			&queue->buffer,
 			__rrr_mqtt_session_ram_maintain_queue_callback,
 			&callback_data,
@@ -883,7 +883,7 @@ static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 	};
 
 	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(
-			rrr_fifo_read_clear_forward(
+			rrr_fifo_buffer_read_clear_forward(
 					&data->publish_local_queue.buffer,
 					NULL,
 					__rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback,
@@ -909,7 +909,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
 	struct rrr_fifo_callback_args callback_args = { data, NULL, 0 };
-	ret = rrr_fifo_read_clear_forward(&data->publish_forward_queue.buffer, NULL,  __rrr_mqtt_session_collection_ram_forward_publish_to_clients, &callback_args, 0);
+	ret = rrr_fifo_buffer_read_clear_forward(&data->publish_forward_queue.buffer, NULL,  __rrr_mqtt_session_collection_ram_forward_publish_to_clients, &callback_args, 0);
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_ERR("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -1442,7 +1442,7 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 	};
 	struct rrr_fifo_callback_args fifo_callback_data = {NULL, &callback_data, 0};
 
-	ret = rrr_fifo_read (
+	ret = rrr_fifo_buffer_read (
 			&queue->buffer,
 			__rrr_mqtt_session_ram_process_ack_callback,
 			&fifo_callback_data,
@@ -1885,7 +1885,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		};
 
 		// Callback will INCREF the packet it finds
-		int ret_tmp = rrr_fifo_read_minimum (
+		int ret_tmp = rrr_fifo_buffer_read_minimum (
 				&ram_session->from_remote_queue.buffer,
 				NULL,
 				__rrr_mqtt_session_ram_find_qos2_publish_callback,
@@ -2164,7 +2164,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	struct rrr_fifo_callback_args fifo_callback_args = {NULL, &callback_data, 0};
 
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US
-	ret = rrr_fifo_read (
+	ret = rrr_fifo_buffer_read (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
 			&fifo_callback_args,
@@ -2185,7 +2185,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	callback_data.counter = 0;
 
 	// RETRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM REMOTE
-	ret = rrr_fifo_read (
+	ret = rrr_fifo_buffer_read (
 			&ram_session->from_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
 			&fifo_callback_args,

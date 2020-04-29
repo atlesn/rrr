@@ -153,7 +153,7 @@ static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 			0
 	};
 
-	return rrr_fifo_read_clear_forward (
+	return rrr_fifo_buffer_read_clear_forward (
 			&ip_data->delivery_buffer,
 			NULL,
 			__poll_delete_extract_msg_callback,
@@ -196,13 +196,13 @@ static int poll (RRR_MODULE_POLL_SIGNATURE) {
 			0
 	};
 
-	return rrr_fifo_search(&ip_data->delivery_buffer, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
+	return rrr_fifo_buffer_search(&ip_data->delivery_buffer, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
 }
 
 static int poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	struct ip_data *ip_data = data->private_data;
 
-	return rrr_fifo_read_clear_forward (
+	return rrr_fifo_buffer_read_clear_forward (
 			&ip_data->delivery_buffer,
 			NULL,
 			callback,
@@ -1036,8 +1036,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
-	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
 	poll_remove_senders_also_in(&poll, &poll_ip);
 
 	int has_senders = (poll_collection_count(&poll) + poll_collection_count(&poll_ip) > 0 ? 1 : 0);
@@ -1113,7 +1113,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			0
 		};
 
-		if (rrr_fifo_read_clear_forward(&data->send_buffer, NULL, input_callback, &callback_args, 0) != 0) {
+		if (rrr_fifo_buffer_read_clear_forward(&data->send_buffer, NULL, input_callback, &callback_args, 0) != 0) {
 			RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			break;
 		}
@@ -1126,7 +1126,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				break;
 			}
 			struct rrr_fifo_callback_args callback_data = {NULL, data, 0};
-			if (rrr_fifo_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 0) != 0) {
+			if (rrr_fifo_buffer_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 0) != 0) {
 				RRR_MSG_ERR("Error from inject buffer in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 				break;
 			}

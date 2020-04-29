@@ -669,7 +669,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 				thread_data, influxdb_data, 0
 			};
 
-			if (rrr_fifo_read_clear_forward(&influxdb_data->error_buf, NULL, error_buf_callback, &callback_args, 0) != 0) {
+			if (rrr_fifo_buffer_read_clear_forward(&influxdb_data->error_buf, NULL, error_buf_callback, &callback_args, 0) != 0) {
 				RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n", INSTANCE_D_NAME(thread_data));
 				goto out_message;
 			}

@@ -248,7 +248,7 @@ int ipclient_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 		ipclient_data->thread_data, &strip_callback_data, 0
 	};
 
-	return rrr_fifo_read_clear_forward (
+	return rrr_fifo_buffer_read_clear_forward (
 			&ipclient_data->local_output_buffer,
 			NULL,
 			ipclient_poll_delete_strip_ip_buffer,
@@ -260,7 +260,7 @@ int ipclient_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 int ipclient_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	struct ipclient_data *ipclient_data = data->private_data;
 
-	return rrr_fifo_read_clear_forward(&ipclient_data->local_output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_read_clear_forward(&ipclient_data->local_output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll_callback_final (struct ipclient_data *data, struct rrr_ip_buffer_entry *entry) {
@@ -430,7 +430,7 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 		data->thread_data, &callback_data, 0
 	};
 
-	if ((ret = rrr_fifo_search(&data->send_queue_intermediate, data->queue_method, &fifo_callback_args, 0)) != 0) {
+	if ((ret = rrr_fifo_buffer_search(&data->send_queue_intermediate, data->queue_method, &fifo_callback_args, 0)) != 0) {
 		RRR_MSG_ERR("Error from buffer in ipclient send_packets\n");
 		ret = 1;
 		goto out;
@@ -504,8 +504,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
-	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
 
 	poll_remove_senders_also_in(&poll, &poll_ip);
 

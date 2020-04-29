@@ -376,7 +376,7 @@ int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 
 	int ret = 0;
 
-	ret |= rrr_fifo_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	ret |= rrr_fifo_buffer_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 
 	return ret;
 }

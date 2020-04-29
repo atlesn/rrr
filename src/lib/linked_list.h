@@ -37,6 +37,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	type *ptr_prev;								\
 	type *ptr_next
 
+#define RRR_LL_NODE_INIT(node)					\
+	node->ptr_prev = NULL;						\
+	node->ptr_next = NULL
+
 #define RRR_LL_VERIFY_HEAD(head) 									\
 	do {if (														\
 		(head->ptr_first != NULL && head->ptr_last == NULL) ||		\
@@ -158,6 +162,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		prev = node;														\
 		node = next;														\
 	}} while (0)
+
+#define RRR_LL_UNSHIFT(head)												\
+	RRR_LL_FIRST(head);														\
+	do {if ((head)->ptr_last == (head)->ptr_first) {						\
+		(head)->ptr_first = NULL;											\
+		(head)->ptr_last = NULL;											\
+	} else {																\
+		(head)->ptr_first = (head)->ptr_first->ptr_next;					\
+		(head)->ptr_first->ptr_prev = NULL;									\
+	} (head)->node_count--; } while (0)
 
 #define RRR_LL_ITERATE_BEGIN_AT(head, type, at, reverse) do {	\
 	type *node = (at);											\

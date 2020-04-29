@@ -287,12 +287,12 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return  rrr_fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+	return  rrr_fifo_buffer_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return rrr_fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {

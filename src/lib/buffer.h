@@ -57,16 +57,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_WRITE_ORDERED	(1<<12)
 
 #define RRR_FIFO_READ_CALLBACK_ARGS \
-	struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size
+	void *arg, char *data, unsigned long int size
 
 #define RRR_FIFO_WRITE_CALLBACK_ARGS \
 	char **data, unsigned long int *size, uint64_t *order, void *arg
 
-struct rrr_fifo_callback_args {
+/*
+void {
 	void *source;
 	void *private_data;
 	unsigned int flags;
 };
+*/
 
 struct rrr_fifo_buffer_entry {
 	char *data;
@@ -225,46 +227,46 @@ static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigne
 
 void rrr_fifo_buffer_clear_with_callback (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct rrr_fifo_callback_args *callback_data
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
 );
 void rrr_fifo_buffer_clear (
 		struct rrr_fifo_buffer *buffer
 );
-int rrr_fifo_search (
+int rrr_fifo_buffer_search (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		struct rrr_fifo_callback_args *callback_data,
+		void *callback_data,
 		unsigned int wait_milliseconds
 );
-int rrr_fifo_read_minimum (
+int rrr_fifo_buffer_read_minimum (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		struct rrr_fifo_callback_args *callback_data,
+		void *callback_data,
 		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 );
-int rrr_fifo_clear_order_lt (
+int rrr_fifo_buffer_clear_order_lt (
 		struct rrr_fifo_buffer *buffer,
 		uint64_t order_min
 );
-int rrr_fifo_read_clear_forward (
+int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		struct rrr_fifo_callback_args *callback_data,
+		void *callback_data,
 		unsigned int wait_milliseconds
 );
-int rrr_fifo_read (
+int rrr_fifo_buffer_read (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		struct rrr_fifo_callback_args *callback_data,
+		void *callback_data,
 		unsigned int wait_milliseconds
 );
 
 //void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
-static int rrr_fifo_buffer_write (
+int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
 		void *callback_arg

@@ -26,12 +26,40 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "ip_buffer_entry.h"
 #include "messages.h"
+#include "linked_list.h"
+
+// This lock protects the lock member of all ip buffer entries
+// and must be held when accessing the locks
+pthread_mutex_t rrr_ip_buffer_master_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int __rrr_ip_buffer_entry_lock_init (struct rrr_ip_buffer_entry *entry) {
+	int ret = 0;
+	pthread_mutex_lock(&rrr_ip_buffer_master_lock);
+	ret = pthread_mutex_init(&entry->lock, NULL);
+	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
+	return ret;
+}
+
+static void __rrr_ip_buffer_entry_lock_destroy (struct rrr_ip_buffer_entry *entry) {
+	pthread_mutex_lock(&rrr_ip_buffer_master_lock);
+	pthread_mutex_destroy(&entry->lock);
+	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
+}
+
+void rrr_ip_buffer_entry_destroy_while_locked (
+		struct rrr_ip_buffer_entry *entry
+) {
+	RRR_FREE_IF_NOT_NULL(entry->message);
+	rrr_ip_buffer_entry_unlock(entry);
+	__rrr_ip_buffer_entry_lock_destroy(entry);
+	free(entry);
+}
 
 void rrr_ip_buffer_entry_destroy (
 		struct rrr_ip_buffer_entry *entry
 ) {
-	RRR_FREE_IF_NOT_NULL(entry->message);
-	free(entry);
+	rrr_ip_buffer_entry_lock(entry);
+	rrr_ip_buffer_entry_destroy_while_locked(entry);
 }
 
 void rrr_ip_buffer_entry_destroy_void (
@@ -40,13 +68,10 @@ void rrr_ip_buffer_entry_destroy_void (
 	rrr_ip_buffer_entry_destroy(entry);
 }
 
-void rrr_ip_buffer_entry_set_message_dangerous (
-		struct rrr_ip_buffer_entry *entry,
-		void *message,
-		ssize_t data_length
+void rrr_ip_buffer_entry_collection_clear (
+		struct rrr_ip_buffer_entry_collection *collection
 ) {
-	entry->message = message;
-	entry->data_length = data_length;
+	RRR_LL_DESTROY(collection, struct rrr_ip_buffer_entry, rrr_ip_buffer_entry_destroy(node));
 }
 
 int rrr_ip_buffer_entry_new (
@@ -68,6 +93,16 @@ int rrr_ip_buffer_entry_new (
 		goto out;
 	}
 
+	if (__rrr_ip_buffer_entry_lock_init(entry) != 0) {
+		RRR_MSG_ERR("Could not initialize lock in rrr_ip_buffer_entry_new\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	rrr_ip_buffer_entry_lock(entry);
+
+	RRR_LL_NODE_INIT(entry);
+
 	if (addr == NULL) {
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
@@ -85,10 +120,14 @@ int rrr_ip_buffer_entry_new (
 	entry->data_length = data_length;
 	entry->protocol = protocol;
 
-	*result = entry;
+	rrr_ip_buffer_entry_unlock(entry);
 
+	*result = entry;
+	goto out;
+	out_free:
+		free(entry);
 	out:
-	return ret;
+		return ret;
 }
 
 int rrr_ip_buffer_entry_new_with_empty_message (
@@ -111,8 +150,6 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 		goto out;
 	}
 
-	memset(message, '\0', message_size);
-
 	if (rrr_ip_buffer_entry_new (
 			&entry,
 			message_size,
@@ -125,6 +162,10 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 		ret = 1;
 		goto out;
 	}
+
+	rrr_ip_buffer_entry_lock(entry);
+	memset(message, '\0', message_size);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	message = NULL;
 
@@ -139,6 +180,7 @@ int rrr_ip_buffer_entry_clone (
 		struct rrr_ip_buffer_entry **result,
 		const struct rrr_ip_buffer_entry *source
 ) {
+	rrr_ip_buffer_entry_lock((struct rrr_ip_buffer_entry *) source);
 	int ret = rrr_ip_buffer_entry_new_with_empty_message (
 			result,
 			source->data_length,
@@ -146,10 +188,13 @@ int rrr_ip_buffer_entry_clone (
 			source->addr_len,
 			source->protocol
 	);
+	rrr_ip_buffer_entry_unlock((struct rrr_ip_buffer_entry *) source);
 
 	if (ret == 0) {
+		rrr_ip_buffer_entry_lock(*result);
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
+		rrr_ip_buffer_entry_unlock(*result);
 	}
 
 	return ret;

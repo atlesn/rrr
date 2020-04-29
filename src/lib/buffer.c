@@ -334,8 +334,8 @@ static void __rrr_fifo_attempt_write_queue_merge(struct rrr_fifo_buffer *buffer)
  */
 void rrr_fifo_buffer_clear_with_callback (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct rrr_fifo_callback_args *callback_data
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data
 ) {
 	rrr_fifo_write_lock(buffer);
 
@@ -382,10 +382,10 @@ void rrr_fifo_buffer_clear(struct rrr_fifo_buffer *buffer) {
  * to take control of the memory of an entry which fifo_search deletes, if not
  * it will be leaked unless the callback also tells us to free the data using FIFO_SEARCH_FREE.
  */
-int rrr_fifo_search (
+int rrr_fifo_buffer_search (
 	struct rrr_fifo_buffer *buffer,
-	int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-	struct rrr_fifo_callback_args *callback_data,
+	int (*callback)(void *callback_data, char *data, unsigned long int size),
+	void *callback_data,
 	unsigned int wait_milliseconds
 ) {
 	__rrr_fifo_attempt_write_queue_merge(buffer);
@@ -476,7 +476,7 @@ int rrr_fifo_search (
  * Delete entries with and order value < order_min. We assume the buffer is
  * already ordered by using fifo_buffer_write_ordered writes only.
  */
-int rrr_fifo_clear_order_lt (
+int rrr_fifo_buffer_clear_order_lt (
 		struct rrr_fifo_buffer *buffer,
 		uint64_t order_min
 ) {
@@ -541,11 +541,11 @@ int rrr_fifo_clear_order_lt (
  * taking control of the start of the queue making it inaccessible to
  * others. The callback function must store the data pointer or free it.
  */
-int rrr_fifo_read_clear_forward (
+int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct rrr_fifo_callback_args *callback_data,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
 	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
@@ -699,10 +699,10 @@ int rrr_fifo_read_clear_forward (
  * same time. The callback function must not free the data or store it's pointer.
  * This function does not check FIFO_MAX_READS.
  */
-int rrr_fifo_read (
+int rrr_fifo_buffer_read (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		struct rrr_fifo_callback_args *callback_data,
+		void *callback_data,
 		unsigned int wait_milliseconds
 ) {
 	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
@@ -762,11 +762,11 @@ int rrr_fifo_read (
  * callback function produces an error, we stop.
  */
 
-int rrr_fifo_read_minimum (
+int rrr_fifo_buffer_read_minimum (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size),
-		struct rrr_fifo_callback_args *callback_data,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
 		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 ) {
@@ -957,7 +957,7 @@ void __rrr_fifo_buffer_update_ratelimit(struct rrr_fifo_buffer *buffer) {
  * update the pointers to the end. To provide memory fence, the data should be
  * allocated and written to inside the callback.
  */
-static int rrr_fifo_buffer_write (
+int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
 		void *callback_arg

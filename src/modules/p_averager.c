@@ -35,12 +35,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../global.h"
 
 struct averager_data {
 	struct rrr_instance_thread_data *thread_data;
-	struct rrr_fifo_buffer input_buffer;
-	struct rrr_fifo_buffer output_buffer;
+	struct rrr_ip_buffer_entry_collection input_list;
+	struct rrr_ip_buffer_entry_collection output_list;
 
 	// Set this to 1 when others may read from our buffer
 	int preserve_point_measurements;
@@ -60,59 +61,73 @@ struct averager_data {
 // Create an average/max/min-reading every x seconds
 #define RRR_DEFAULT_AVERAGER_INTERVAL 10
 
-// Poll of our output buffer from other modules
-int averager_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct averager_data *avg_data = data->private_data;
-
-	return rrr_fifo_read_clear_forward(&avg_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-// Poll of our output buffer from other modules
-int averager_poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct averager_data *avg_data = data->private_data;
-
-	return rrr_fifo_search(&avg_data->output_buffer, callback, poll_data, wait_milliseconds);
-}
-
 // Messages when polling from sender comes in here
-int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_message *message = (struct rrr_message *) data;
+int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_message *message = entry->message;
 
-	struct rrr_instance_thread_data *thread_data = poll_data->private_data;
 	struct averager_data *averager_data = thread_data->private_data;
 
-	// We route info messages directly to output and store point measurements in input buffer
+	int ret = 0;
+
 	if (MSG_IS_MSG(message) && MSG_IS_ARRAY(message)) {
-		rrr_fifo_buffer_write_ordered(&averager_data->input_buffer, message->timestamp, data, size);
+		RRR_LL_APPEND(&averager_data->input_list, entry);
+
 		if (averager_data->preserve_point_measurements == 1) {
+			struct rrr_ip_buffer_entry *dup_entry = NULL;
+
+			if (rrr_ip_buffer_entry_clone(&dup_entry, entry) != 0) {
+				RRR_MSG_ERR("Could not duplicate message in poll_callback of averager instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out;
+			}
+
+
 			struct rrr_message *dup_message = rrr_message_duplicate(message);
 			if (averager_data->msg_topic != NULL) {
 				if (rrr_message_set_topic(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
 					RRR_MSG_ERR("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
-			rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp,
-				(char*) dup_message, sizeof(*dup_message)
-			);
+
+			RRR_LL_APPEND(&averager_data->output_list, entry);
 		}
 	}
 	else if (averager_data->discard_unknown_messages) {
-		RRR_DBG_2 ("Averager: size %lu unknown message, discarding according to configuration\n", size);
-		free(data);
+		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", discarding according to configuration\n",
+				INSTANCE_D_NAME(thread_data), message->timestamp);
+		rrr_ip_buffer_entry_destroy_while_locked(entry);
+		entry = NULL;
 	}
 	else {
-		RRR_DBG_2 ("Averager: size %lu unknown message, writing to output buffer\n", size);
-		rrr_fifo_buffer_write_ordered(&averager_data->output_buffer, message->timestamp, data, size);
+		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", writing to output buffer\n",
+				INSTANCE_D_NAME(thread_data), message->timestamp);
+		RRR_LL_APPEND(&averager_data->output_list, entry);
 	}
 
-	return 0;
+	out:
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_unlock(entry);
+	}
+	// Don't return FREE
+	return ret;
 }
 
 void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t timespan_useconds = data->timespan * 1000000;
 	uint64_t time_now = rrr_time_get_64();
+	uint64_t min_time = time_now - timespan_useconds;
 
-	rrr_fifo_clear_order_lt(&data->input_buffer, time_now - timespan_useconds);
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
+		rrr_ip_buffer_entry_lock(node);
+		struct rrr_message *message = node->message;
+		if (message->timestamp < min_time) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			rrr_ip_buffer_entry_unlock(node);
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
 }
 
 struct averager_calculation {
@@ -131,20 +146,20 @@ struct averager_calculation {
 static int __averager_get_64_from_array (uint64_t *result, struct averager_data *averager_data, struct rrr_array *array, const char *tag) {
 	struct rrr_type_value *value = NULL;
 
-	int ret = RRR_FIFO_OK;
+	int ret = 0;
 
 	*result = 0;
 
 	if ((value = rrr_array_value_get_by_tag(array, tag)) == NULL) {
 		RRR_MSG_ERR("Could not find tag '%s' in array message in averager instance %s, dropping message\n",
 				tag, INSTANCE_D_NAME(averager_data->thread_data));
-		ret = RRR_FIFO_SEARCH_KEEP;
+		ret = 1;
 		goto out;
 	}
 	if (!RRR_TYPE_IS_64(value->definition->type)) {
 		RRR_MSG_ERR("Value '%s' from array message in averager instance %s was not of type 64, dropping message\n",
 				tag, INSTANCE_D_NAME(averager_data->thread_data));
-		ret = RRR_FIFO_SEARCH_KEEP;
+		ret = 1;
 		goto out;
 	}
 
@@ -154,28 +169,31 @@ static int __averager_get_64_from_array (uint64_t *result, struct averager_data 
 	return ret;
 }
 
-int averager_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct averager_calculation *calculation = poll_data->private_data;
-	struct averager_data *averager_data = poll_data->source;
-
-	struct rrr_message *message = (struct rrr_message *) data;
+int averager_process_message (
+		struct averager_data *averager_data,
+		struct averager_calculation *calculation,
+		struct rrr_ip_buffer_entry *entry_locked
+) {
+	struct rrr_message *message = entry_locked->message;
 	struct rrr_array array_tmp = {0};
 
-	int ret = RRR_FIFO_OK;
+	int ret = 0;
 
-	RRR_DBG_4("averager instance %s callback got packet from buffer of size %lu\n",
-			INSTANCE_D_NAME(averager_data->thread_data), size);
+	RRR_DBG_4("averager instance %s callback got a message from buffer with timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(averager_data->thread_data), message->timestamp);
+
+	// NOTE : Not all errors are critical, some are user caused
 
 	if (!MSG_IS_ARRAY(message)) {
 		RRR_DBG_2 ("Averager: Ignoring a message which is not and array\n");
-		ret = RRR_FIFO_SEARCH_KEEP;
+		ret = 0;
 		goto out;
 	}
 
 	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
 		RRR_MSG_ERR("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
-		ret = RRR_FIFO_GLOBAL_ERR;
+		ret = 1;
 		goto out;
 	}
 
@@ -184,12 +202,15 @@ int averager_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsi
 	uint64_t timestamp_to;
 
 	if ((ret = __averager_get_64_from_array(&data_numeric, averager_data, &array_tmp, "measurement")) != 0) {
+		ret = 0;
 		goto out;
 	}
 	if ((ret = __averager_get_64_from_array(&timestamp_from, averager_data, &array_tmp, "timestamp_from")) != 0) {
+		ret = 0;
 		goto out;
 	}
 	if ((ret = __averager_get_64_from_array(&timestamp_to, averager_data, &array_tmp, "timestamp_to")) != 0) {
+		ret = 0;
 		goto out;
 	}
 
@@ -215,6 +236,41 @@ int averager_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsi
 	return ret;
 }
 
+struct averager_spawn_message_callback_data {
+	struct rrr_array *array_tmp;
+	struct averager_data *data;
+};
+
+int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void *arg) {
+	struct averager_spawn_message_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_message *message = NULL;
+
+	if (rrr_array_new_message_from_collection (
+			&message,
+			callback_data->array_tmp,
+			rrr_time_get_64(),
+			callback_data->data->msg_topic,
+			(callback_data->data->msg_topic != 0 ? strlen(callback_data->data->msg_topic) : 0)
+	) != 0) {
+		RRR_MSG_ERR ("Could not create message in averager_spawn_message of instance %s\n",
+				INSTANCE_D_NAME(callback_data->data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	new_entry->data_length = MSG_TOTAL_SIZE(message);
+	new_entry->message = message;
+	message = NULL;
+
+	out:
+	rrr_ip_buffer_entry_unlock(new_entry);
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
 int averager_spawn_message (
 	struct averager_data *data,
 	uint64_t time_from,
@@ -223,7 +279,7 @@ int averager_spawn_message (
 	uint64_t max,
 	uint64_t min
 ) {
-	struct rrr_message *message = NULL;
+//	struct rrr_message *message = NULL;
 
 	struct rrr_array array_tmp = {0};
 
@@ -255,23 +311,28 @@ int averager_spawn_message (
 		goto out;
 	}
 
-	if (rrr_array_new_message_from_collection (
-			&message,
+	struct averager_spawn_message_callback_data callback_data = {
 			&array_tmp,
-			rrr_time_get_64(),
-			data->msg_topic,
-			(data->msg_topic != 0 ? strlen(data->msg_topic) : 0)
+			data
+	};
+
+	if (rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER(&data->thread_data),
+			INSTANCE_D_HANDLE(&data->thread_data),
+			rrr_array_new_message_estimate_size(&array_tmp),
+			NULL,
+			0,
+			0,
+			averager_spawn_message_callback,
+			&array_tmp
 	) != 0) {
-		RRR_MSG_ERR ("Could not create message in averager_spawn_message\n");
+		RRR_MSG_ERR("Could not create and write array message to output buffer in averager instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
 
-	rrr_fifo_buffer_write_ordered(&data->output_buffer, time_to, (char*) message, sizeof(*message));
-	message = NULL;
-
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -282,7 +343,17 @@ int averager_calculate_average(struct averager_data *data) {
 
 	int ret = 0;
 
-	rrr_fifo_search(&data->input_buffer, averager_callback, &poll_data, 50);
+	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
+		rrr_ip_buffer_entry_lock(node);
+		if ((ret = averager_process_message(data, &calculation, node)) != 0) {
+			RRR_LL_ITERATE_LAST();
+		}
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, rrr_ip_buffer_entry_destroy_while_locked(node));
+
+	if (ret != 0) {
+		goto out;
+	}
 
 	if (calculation.entries == 0) {
 		RRR_DBG_2 ("Averager: No entries, not averaging\n");
@@ -294,7 +365,8 @@ int averager_calculate_average(struct averager_data *data) {
 
 	// Use the maximum timestamp for "to" for all three to make sure they can be written on block device
 	// without newer timestamps getting written before older ones.
-	ret |= averager_spawn_message(
+
+	ret |= averager_spawn_message (
 			data,
 			calculation.timestamp_from,
 			calculation.timestamp_to,
@@ -308,31 +380,26 @@ int averager_calculate_average(struct averager_data *data) {
 		return ret;
 	}
 
+	out:
 	return ret;
 }
 
 void data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct averager_data *data = (struct averager_data *) arg;
-	rrr_fifo_buffer_clear(&data->input_buffer);
-	rrr_fifo_buffer_clear(&data->output_buffer);
 	// Don't destroy mutex, threads might still try to use it
 	//fifo_buffer_destroy(&data->buffer);
+	rrr_ip_buffer_entry_collection_clear (&data->input_list);
+	rrr_ip_buffer_entry_collection_clear (&data->output_list);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
 int data_init(struct averager_data *data, struct rrr_instance_thread_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
-	int ret = 0;
-	ret |= rrr_fifo_buffer_init(&data->input_buffer) << 0;
-	ret |= rrr_fifo_buffer_init(&data->output_buffer) << 1;
-	if (ret != 0) {
-		data_cleanup(data);
-	}
 
 	data->thread_data = thread_data;
 
-	return ret;
+	return 0;
 }
 
 int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
@@ -401,7 +468,6 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 	return ret;
 }
 
-
 static void *thread_entry_averager(struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct averager_data *data = thread_data->private_data = thread_data->private_memory;
@@ -438,7 +504,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
+	if (poll_add_from_thread_senders(&poll, thread_data) != 0) {
 		RRR_MSG_ERR("Averager requires poll_delete from senders\n");
 		goto out_message;
 	}
@@ -460,9 +526,21 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		uint64_t current_time = rrr_time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
 			if (averager_calculate_average(data) != 0) {
-				goto out_message;
+				break;
 			}
 			previous_average_time = current_time;
+		}
+
+		if (RRR_LL_COUNT(&data->output_list) > 0) {
+			if (rrr_message_broker_write_entries_from_collection (
+					INSTANCE_D_BROKER(thread_data),
+					INSTANCE_D_HANDLE(thread_data),
+					&data->output_list
+			) != 0) {
+				RRR_MSG_ERR("Could not write to output buffer in averager instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
+			}
 		}
 	}
 
@@ -487,10 +565,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
-		NULL,
-		averager_poll,
-		NULL,
-		averager_poll_delete,
 		NULL,
 		test_config,
 		NULL,

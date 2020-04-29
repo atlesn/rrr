@@ -47,12 +47,12 @@ struct dummy_data {
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return rrr_fifo_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll (RRR_MODULE_POLL_SIGNATURE) {
 	struct dummy_data *dummy_data = data->private_data;
-	return rrr_fifo_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
 }
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {

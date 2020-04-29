@@ -576,7 +576,7 @@ void __rrr_py_persistent_thread_process (
 			}
 		}
 
-		ret = rrr_fifo_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
+		ret = rrr_fifo_buffer_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
 		if (ret != 0) {
 			RRR_MSG_ERR("Error from fifo buffer in python3 __rrr_py_persistent_thread_process\n");
 			break;

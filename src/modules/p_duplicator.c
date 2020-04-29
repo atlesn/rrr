@@ -205,7 +205,7 @@ int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 
 	// Sleeping in the buffer does not work because it is never empty. Sleep
 	// if we don't actually send anything to the callback.
-	int res = rrr_fifo_read_minimum (
+	int res = rrr_fifo_buffer_read_minimum (
 			&duplicator_data->input_buffer,
 			NULL,
 			read_minimum_callback,
@@ -286,7 +286,7 @@ int maintain_input_buffer(struct duplicator_data *data) {
 	}
 	readers_read_unlock(data);
 
-	if (rrr_fifo_clear_order_lt(&data->input_buffer, lowest_timestamp) == RRR_FIFO_GLOBAL_ERR) {
+	if (rrr_fifo_buffer_clear_order_lt(&data->input_buffer, lowest_timestamp) == RRR_FIFO_GLOBAL_ERR) {
 		RRR_MSG_ERR("Duplicator got error from fifo_clear_order_lt\n");
 		ret = 1;
 	}
@@ -350,7 +350,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
 
 	RRR_DBG_1 ("duplicator instance %s started thread, waiting a bit for readers to register\n",
 			INSTANCE_D_NAME(thread_data));

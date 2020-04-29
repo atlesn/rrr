@@ -1003,6 +1003,14 @@ int rrr_array_selected_tags_export (
 	return ret;
 }
 
+ssize_t rrr_array_new_message_estimate_size (
+		const struct rrr_array *definition
+) {
+	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+
+	return total_data_length + sizeof(struct rrr_message) - 1;
+}
+
 int rrr_array_new_message_from_collection (
 		struct rrr_message **final_message,
 		const struct rrr_array *definition,

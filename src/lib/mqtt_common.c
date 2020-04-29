@@ -942,7 +942,7 @@ static int __rrr_mqtt_common_handle_packets (
 	};
 
 	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			rrr_fifo_read_clear_forward (
+			rrr_fifo_buffer_read_clear_forward (
 					&connection->receive_queue.buffer,
 					NULL,
 					__rrr_mqtt_common_handle_packets_callback,

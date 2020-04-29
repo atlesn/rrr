@@ -44,7 +44,7 @@ struct buffer_data {
 int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct buffer_data *buffer_data = data->private_data;
 
-	if (rrr_fifo_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
+	if (rrr_fifo_buffer_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
 		return 1;
 	}
 

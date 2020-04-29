@@ -900,14 +900,14 @@ int poll_callback_local(struct rrr_fifo_callback_args *poll_data, char *data, un
 int mysql_poll_delete_local (RRR_MODULE_POLL_SIGNATURE) {
 	struct mysql_data *mysql_data = data->private_data;
 
-	return rrr_fifo_read_clear_forward(&mysql_data->output_buffer_local, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_read_clear_forward(&mysql_data->output_buffer_local, NULL, callback, poll_data, wait_milliseconds);
 }
 
 // Poll request from other IP-capable modules
 int mysql_poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
 	struct mysql_data *mysql_data = data->private_data;
 
-	return rrr_fifo_read_clear_forward(&mysql_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_read_clear_forward(&mysql_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds);
 }
 
 int mysql_save(struct process_entries_data *data, struct rrr_ip_buffer_entry *entry) {
@@ -1053,7 +1053,7 @@ int process_entries (struct rrr_instance_thread_data *thread_data) {
 		}
 	}
 
-	ret = rrr_fifo_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data, 50);
+	ret = rrr_fifo_buffer_read_clear_forward(&data->input_buffer, NULL, process_callback, &poll_data, 50);
 	if (ret != 0) {
 		RRR_MSG_ERR ("mysql: Error when saving entries to database\n");
 		mysql_disconnect(data);
@@ -1100,8 +1100,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
-	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	poll_add_from_thread_senders(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
 
 	poll_remove_senders_also_in(&poll, &poll_ip);
 

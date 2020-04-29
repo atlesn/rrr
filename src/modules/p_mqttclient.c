@@ -483,12 +483,12 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
 	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
 }
 
 static int poll_keep (RRR_MODULE_POLL_SIGNATURE) {
 	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
+	return rrr_fifo_buffer_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
 }
 
 static int process_unsuback (
@@ -1398,7 +1398,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE);
 
 	if (poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {

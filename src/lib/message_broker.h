@@ -34,11 +34,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_BROKER_DROP		2
 #define RRR_MESSAGE_BROKER_AGAIN	3
 
+// All costumers must be registered prior to starting any threads
+
 struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
 	char *name;
-	pthread_mutex_t lock;
 	struct rrr_fifo_buffer queue;
+	int usercount;
 };
 
 struct rrr_message_broker {
@@ -47,6 +49,7 @@ struct rrr_message_broker {
 };
 
 struct rrr_ip_buffer_entry;
+struct rrr_ip_buffer_entry_collection;
 
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
@@ -70,12 +73,30 @@ int rrr_message_broker_costumer_register (
 int rrr_message_broker_write_entry (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
 		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
 		void *callback_arg
+);
+int rrr_message_broker_write_entries_from_collection (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		struct rrr_ip_buffer_entry_collection *collection
+);
+int rrr_message_broker_poll_delete (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
+);
+int rrr_message_broker_poll (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		void *callback_arg,
+		unsigned int wait_milliseconds
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */

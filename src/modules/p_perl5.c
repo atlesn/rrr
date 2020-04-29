@@ -177,7 +177,7 @@ int poll_delete(RRR_MODULE_POLL_SIGNATURE) {
 			0
 	};
 
-	if (rrr_fifo_read_clear_forward (
+	if (rrr_fifo_buffer_read_clear_forward (
 			&perl5_data->output_buffer_ip,
 			NULL,
 			poll_delete_extract_message_callback,
@@ -193,7 +193,7 @@ int poll_delete(RRR_MODULE_POLL_SIGNATURE) {
 int poll_delete_ip(RRR_MODULE_POLL_SIGNATURE) {
 	struct perl5_data *perl5_data = data->private_data;
 
-	if (rrr_fifo_read_clear_forward(&perl5_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
+	if (rrr_fifo_buffer_read_clear_forward(&perl5_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
 		return 1;
 	}
 
@@ -1196,8 +1196,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
-	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
+	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	poll_add_from_thread_senders(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
 	poll_remove_senders_also_in(&poll, &poll_ip);
 
 	int no_polling = 1;
@@ -1244,7 +1244,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		input_callback_data.count = 0;
 		if (rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip) > 0) {
 			int prev_mmap_full_counter = data->mmap_full_counter;
-			if (rrr_fifo_read_clear_forward (
+			if (rrr_fifo_buffer_read_clear_forward (
 					&data->input_buffer_ip,
 					NULL,
 					input_callback,
