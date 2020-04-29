@@ -111,7 +111,8 @@ int rrr_socket_common_receive_array (
 		void *arg
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_data callback_data_array = {
-			definition, do_sync_byte_by_byte
+			definition,
+			do_sync_byte_by_byte
 	};
 
 	struct receive_callback_data callback_data = {

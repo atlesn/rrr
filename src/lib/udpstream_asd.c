@@ -849,6 +849,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 			MSG_TOTAL_SIZE(message),
 			receive_data->udpstream_receive_data->addr,
 			receive_data->udpstream_receive_data->addr_len,
+			RRR_IP_UDP,
 			message
 	) != 0) {
 		RRR_MSG_ERR("Could not create ip buffer message in __rrr_udpstream_asd_receive_messages_callback_final\n");

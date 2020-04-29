@@ -555,6 +555,75 @@ int rrr_socket_unix_create_bind_and_listen (
 	return ret;
 }
 
+int rrr_socket_connect_nonblock_postcheck (
+		int fd
+) {
+	int ret = RRR_SOCKET_OK;
+
+	struct pollfd pollfd = {
+		fd, POLLOUT, 0
+	};
+
+	int timeout = 5; // 5 ms
+
+	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
+		if ((pollfd.revents & (POLLHUP)) != 0) {
+			RRR_MSG_ERR("Connection refused while connecting (POLLHUP)\n");
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out;
+		}
+		else if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (errno == ECONNREFUSED) {
+			RRR_MSG_ERR("Connection refused while connecting (ECONNREFUSED)\n");
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out;
+		}
+
+		RRR_MSG_ERR("Error from poll() while connecting: %s\n", rrr_strerror(errno));
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+	else if ((pollfd.revents & POLLOUT) != 0) {
+		goto out;
+	}
+	else if ((pollfd.revents & POLLOUT) == 0) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+	else {
+		int error = 0;
+		socklen_t len = sizeof(error);
+		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
+			RRR_MSG_ERR("Error from getsockopt while connecting: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+		else if (error == 0) {
+			goto out;
+		}
+		else if (error == EINPROGRESS) {
+			ret = RRR_SOCKET_SOFT_ERROR;
+			goto out;
+		}
+		else if (error == ECONNREFUSED) {
+			RRR_MSG_ERR("Connection refused while connecting\n");
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out;
+		}
+		else {
+			RRR_MSG_ERR("Unknown error while connecting: %i\n", error);
+			ret = RRR_SOCKET_HARD_ERROR;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_socket_connect_nonblock (
 		int fd,
 		struct sockaddr *addr,
@@ -565,51 +634,14 @@ int rrr_socket_connect_nonblock (
 	if (connect(fd, addr, addr_len) == 0) {
 		goto out;
 	}
-	else if (errno == EINPROGRESS) {
-		struct pollfd pollfd = {
-			fd, POLLOUT, 0
-		};
-
-		if ((poll(&pollfd, 1, 5 * 1000) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
-			RRR_MSG_ERR("Error from poll() while connecting: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		else if ((pollfd.revents & POLLOUT) != 0) {
-			goto out;
-		}
-		else if ((pollfd.revents & POLLOUT) == 0) {
-			RRR_MSG_ERR("Timeout from poll() while connecting\n");
-			ret = 1;
-			goto out;
-		}
-		else {
-			int error = 0;
-			socklen_t len = sizeof(error);
-			if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-				RRR_MSG_ERR("Error from getsockopt while connecting: %s\n", rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
-			else if (error == 0) {
-				goto out;
-			}
-			else if (error == EINPROGRESS) {
-				RRR_MSG_ERR("Timeout from while connecting: %s\n", rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
-			else if (error == ECONNREFUSED) {
-				RRR_MSG_ERR("Connection refused while connecting\n");
-				ret = 1;
-				goto out;
-			}
-			else {
-				RRR_MSG_ERR("Unknown error while connecting: %i\n", error);
-				ret = 1;
-				goto out;
-			}
-		}
+	else if (errno == EINPROGRESS || errno == EAGAIN) {
+		ret = 0;
+		goto out;
+	}
+	else if (errno == ECONNREFUSED) {
+		RRR_MSG_ERR ("Connection refused in rrr_socket_connect_nonblock\n");
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
 	}
 	else {
 		RRR_MSG_ERR("Error while connecting: %s\n", rrr_strerror(errno));

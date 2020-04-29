@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,8 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "rrr_socket.h"
-
-#define RRR_IP_DEFAULT_PORT 5555
+#include "linked_list.h"
 
 #define RRR_IP_RECEIVE_OK 0
 #define RRR_IP_RECEIVE_ERR 1
@@ -37,6 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Print/reset stats every X seconds
 #define RRR_IP_STATS_DEFAULT_PERIOD 3
+
+#define RRR_IP_AUTO	0
+#define RRR_IP_UDP	1
+#define RRR_IP_TCP	2
 
 struct rrr_message;
 struct rrr_array;
@@ -62,6 +65,7 @@ struct rrr_ip_buffer_entry {
 	ssize_t data_length;
 	struct sockaddr addr;
 	socklen_t addr_len;
+	int protocol;
 	uint64_t send_time;
 	void *message;
 };
@@ -79,9 +83,14 @@ struct rrr_ip_data {
 };
 
 struct rrr_ip_accept_data {
+	RRR_LL_NODE(struct rrr_ip_accept_data);
 	struct rrr_sockaddr addr;
 	socklen_t len;
 	struct rrr_ip_data ip_data;
+};
+
+struct rrr_ip_accept_data_collection {
+	RRR_LL_HEAD(struct rrr_ip_accept_data);
 };
 
 #define RRR_IP_STATS_UPDATE_OK 0		// Stats was updated
@@ -104,13 +113,15 @@ int rrr_ip_buffer_entry_new (
 		ssize_t data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
+		int protocol,
 		void *message
 );
 int rrr_ip_buffer_entry_new_with_empty_message (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		int protocol
 );
 int rrr_ip_buffer_entry_clone (
 		struct rrr_ip_buffer_entry **result,
@@ -139,6 +150,7 @@ int rrr_ip_receive_array (
 		struct ip_stats *stats
 );
 int rrr_ip_send (
+	int *err,
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
@@ -160,10 +172,37 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 		void *data,
 		ssize_t size
 );
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+		struct rrr_ip_accept_data **accept_data,
+		struct sockaddr *addr,
+		socklen_t addr_len
+);
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host);
 int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections);
 int rrr_ip_close (struct rrr_ip_data *data);
 int rrr_ip_accept(struct rrr_ip_accept_data **accept_data,
 		struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay);
+void rrr_ip_accept_data_close_and_destroy (struct rrr_ip_accept_data *accept_data);
+void rrr_ip_accept_data_close_and_destroy_void (void *accept_data);
+void rrr_ip_accept_data_collection_clear(struct rrr_ip_accept_data_collection *collection);
+void rrr_ip_accept_data_collection_clear_void(void *collection);
+void rrr_ip_accept_data_collection_close_and_remove(
+		struct rrr_ip_accept_data_collection *collection,
+		struct sockaddr *sockaddr,
+		socklen_t socklen
+);
+void rrr_ip_accept_data_collection_close_and_remove_by_fd (
+		struct rrr_ip_accept_data_collection *collection,
+		int fd
+);
+struct rrr_ip_accept_data *rrr_ip_accept_data_collection_find (
+		struct rrr_ip_accept_data_collection *collection,
+		struct sockaddr *sockaddr,
+		socklen_t socklen
+);
+struct rrr_ip_accept_data *rrr_ip_accept_data_collection_find_by_fd (
+		struct rrr_ip_accept_data_collection *collection,
+		int fd
+);
 
 #endif

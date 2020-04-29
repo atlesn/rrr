@@ -1,3 +1,12 @@
+rrr (0.17-4) unstable; urgency=medium
+
+  * Rename UDP-module to "ip", make it support both TCP and UDP
+  * Possible to choose between udp and tcp for messages inside perl module,
+    ip module may then send the message to the chosen destination.
+  * TCP or UDP flag is otherwise preserved across modules
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 29 Apr 2020 07:17:23 +0200
+
 rrr (0.17-3) unstable; urgency=medium
 
   * Remove noisy printf from perl5 module
