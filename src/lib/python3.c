@@ -42,6 +42,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3.h"
 #include "buffer.h"
 #include "rrr_strerror.h"
+#include "message_addr.h"
+#include "ip_buffer_entry.h"
 #include "../global.h"
 
 struct python3_fork_zombie {
@@ -366,10 +368,10 @@ static struct python3_fork *rrr_py_fork_new (struct python3_rrr_objects *rrr_obj
 	return NULL;
 }
 
-PyObject *__rrr_py_socket_message_to_pyobject (struct rrr_socket_msg *message) {
+PyObject *__rrr_py_socket_message_to_pyobject (struct rrr_socket_msg *message, struct rrr_message_addr *message_addr) {
 	PyObject *ret = NULL;
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
-		ret = rrr_python3_rrr_message_new_from_message (message);
+		ret = rrr_python3_rrr_message_new_from_message_and_address (message, message_addr);
 	}
 	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		ret = rrr_python3_setting_new_from_setting (message);
@@ -408,21 +410,19 @@ struct persistent_rw_child_callback_data {
 	PyObject *config_function;
 };
 
-int __rrr_py_persistent_thread_rw_child_callback (struct rrr_fifo_callback_args *fifo_callback_data, char *data, unsigned long int size) {
+int __rrr_py_persistent_thread_rw_child_callback (
+		struct rrr_socket_msg *message,
+		struct rrr_message_addr *addr_message,
+		struct persistent_rw_child_callback_data *callback_data
+) {
 	PyObject *result = NULL;
 	PyObject *arg = NULL;
 
-	struct persistent_rw_child_callback_data *callback_data = fifo_callback_data->private_data;
 	PyObject *rrr_socket = callback_data->fork->socket_child;
-	struct rrr_socket_msg *message = (struct rrr_socket_msg *) data;
 
 	int ret = 0;
 
-	if (size != message->msg_size) {
-		RRR_BUG("Size mismatch in __rrr_py_persistent_thread_rw_child_callback\n");
-	}
-
-	arg = __rrr_py_socket_message_to_pyobject(message);
+	arg = __rrr_py_socket_message_to_pyobject(message, addr_message);
 	if (arg == NULL) {
 		RRR_MSG_ERR("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
 		ret = 1;
@@ -526,21 +526,14 @@ void __rrr_py_persistent_thread_process (
 		int *start_sourcing_requested
 ) {
 	struct rrr_socket_msg *message = NULL;
-	struct rrr_fifo_buffer receive_buffer;
 	PyObject *rrr_socket = fork->socket_child;
 
 	*start_sourcing_requested = 0;
 
-	if (rrr_fifo_buffer_init(&receive_buffer) != 0) {
-		RRR_MSG_ERR("Could not initialize fifo buffer in __rrr_py_persistent_thread_process\n");
-		goto out;
-	}
+	struct rrr_message_addr previous_addr_msg = {0};
 
 	struct persistent_rw_child_callback_data child_callback_data = {
 			fork, function, config_function
-	};
-	struct rrr_fifo_callback_args fifo_callback_args = {
-			NULL, &child_callback_data, 0
 	};
 
 	int ret = 0;
@@ -570,22 +563,21 @@ void __rrr_py_persistent_thread_process (
 
 				RRR_FREE_IF_NOT_NULL(message);
 			}
+			else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+				previous_addr_msg = *((struct rrr_message_addr *) message);
+			}
 			else {
-				rrr_fifo_buffer_write(&receive_buffer, (char*) message, message->msg_size);
+				if (__rrr_py_persistent_thread_rw_child_callback(message, &previous_addr_msg, &child_callback_data) != 0) {
+					ret = 1;
+					goto out;
+				}
 				message = NULL;
 			}
-		}
-
-		ret = rrr_fifo_buffer_read_clear_forward(&receive_buffer, NULL, __rrr_py_persistent_thread_rw_child_callback, &fifo_callback_args, 30);
-		if (ret != 0) {
-			RRR_MSG_ERR("Error from fifo buffer in python3 __rrr_py_persistent_thread_process\n");
-			break;
 		}
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
-	rrr_fifo_buffer_clear(&receive_buffer);
 
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
 		RRR_DBG("Pytohn3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
@@ -852,58 +844,11 @@ int rrr_py_start_persistent_rw_thread (
 	);
 }
 
-int rrr_py_persistent_receive_message (
-		struct python3_fork *fork,
-		int (*callback)(struct rrr_socket_msg *message, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-	struct rrr_socket_msg *message = NULL;
-
-	int counter = 0;
-	while (++counter <= 500) {
-		if (fork->invalid == 1) {
-			RRR_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
-			ret = 1;
-			break;
-		}
-		ret = fork->recv(&message, fork->socket_main);
-		if (ret != 0) {
-			RRR_MSG_ERR("Error while receiving message from python3 child\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (message == NULL) {
-			break;
-		}
-
-		RRR_DBG_3("rrr_py_persistent_receive_message got a message\n");
-
-		// If ret == 0, callback has taken control of memory
-		// If ret != 0, there is an error and we must free memory
-		ret = callback(message, callback_arg);
-		if (ret != 0) {
-			RRR_MSG_ERR("Error from callback function while receiving message from python3 child\n");
-			ret = 1;
-			goto out;
-		}
-
-		message = NULL;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(message);
-	return ret;
-}
-
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
-		struct rrr_socket_msg *message
+		struct rrr_ip_buffer_entry *entry
 ) {
 	int ret = 0;
-
-	RRR_DBG_3("rrr_py_persistent_process_message processing message\n");
 
 	if (fork->invalid == 1) {
 		RRR_MSG_ERR("Fork was invalid in rrr_py_persistent_process_message, child has exited\n");
@@ -911,7 +856,20 @@ int rrr_py_persistent_process_message (
 		goto out;
 	}
 
-	ret = fork->send(fork->socket_main, message);
+	struct rrr_message_addr message_addr;
+	rrr_message_addr_init(&message_addr);
+	if (entry->addr_len > 0) {
+		memcpy(&message_addr.addr, &entry->addr, entry->addr_len);
+		message_addr.addr_len = entry->addr_len;
+	}
+
+	ret = fork->send(fork->socket_main, (struct rrr_socket_msg *) &message_addr);
+	if (ret != 0) {
+		RRR_MSG_ERR("Could not process new python3 message object in rrr_py_persistent_process_message\n");
+		goto out;
+	}
+
+	ret = fork->send(fork->socket_main, entry->message);
 	if (ret != 0) {
 		RRR_MSG_ERR("Could not process new python3 message object in rrr_py_persistent_process_message\n");
 		goto out;

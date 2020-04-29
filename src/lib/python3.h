@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../build_directory.h"
 
 struct rrr_socket_msg;
+struct rrr_ip_buffer_entry;
 
 #define RRR_PYTHON3_OBJECT_CACHE_FULL 2
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
@@ -97,7 +98,7 @@ int rrr_py_persistent_receive_message (
 );
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
-		struct rrr_socket_msg *message
+		struct rrr_ip_buffer_entry *entry
 );
 // Stop sending data to the fork and call the function continuously
 int rrr_py_persistent_start_sourcing (

@@ -353,7 +353,7 @@ int rrr_message_broker_write_entry (
 int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_ip_buffer_entry_collection *collection = arg;
 
-	struct rrr_ip_buffer_entry *entry = RRR_LL_UNSHIFT(collection);
+	struct rrr_ip_buffer_entry *entry = RRR_LL_SHIFT(collection);
 
 	*data = (char*) entry;
 	*size = sizeof(*entry);

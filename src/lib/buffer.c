@@ -1019,7 +1019,7 @@ int rrr_fifo_buffer_write (
 		}
 
 		if (entry->data == NULL) {
-			RRR_BUG("Data from callback was NULL in rrr_fifo_buffer_write\n", ret);
+			RRR_BUG("Data from callback was NULL in rrr_fifo_buffer_write, must return ABORT\n", ret);
 		}
 
 		RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
@@ -1079,6 +1079,8 @@ int rrr_fifo_buffer_write (
 		buffer->entry_count++;
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
+		// It's possible to return AGAIN forever, as we unlock here
+		// to allow others to use the buffer
 		rrr_fifo_write_unlock(buffer);
 		__rrr_fifo_buffer_do_ratelimit(buffer);
 		rrr_fifo_write_lock(buffer);

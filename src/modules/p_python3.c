@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/python3.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 // TODO : This should NOT be here, allocate inside python3_data
@@ -53,7 +54,9 @@ struct python3_reader_data {
 	struct python3_data *data;
 	struct rrr_fifo_buffer *output_buffer;
 	struct rrr_thread *thread;
+	struct rrr_message_addr previous_address_msg;
 	int message_counter;
+	int loop_count;
 };
 
 struct python3_data {
@@ -124,9 +127,8 @@ struct python3_send_config_callback_data {
 int python3_send_config_callback (struct rrr_setting_packed *setting_packed, void *callback_arg) {
 	struct python3_send_config_callback_data *data = callback_arg;
 
-	int ret = 0;
-
-	if (rrr_py_persistent_process_message(data->target, rrr_setting_safe_cast(setting_packed)) != 0) {
+	int ret = data->target->send(data->target->socket_main, rrr_setting_safe_cast(setting_packed));
+	if (ret != 0) {
 		RRR_MSG_ERR("Could not send setting to python3 config function in instance %s:\n",
 				INSTANCE_D_NAME(data->data->thread_data));
 		ret = 1;
@@ -331,20 +333,18 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	(void)(size);
-
-	struct rrr_instance_thread_data *thread_data = (struct rrr_instance_thread_data *) poll_data->source;
 	struct python3_data *python3_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
 
 	rrr_thread_update_watchdog_time(python3_data->thread_data->thread);
+
+	struct rrr_message *message = entry->message;
 
 	RRR_DBG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp);
 
 	ret = rrr_py_persistent_process_message (
 			python3_data->processing_fork,
-			rrr_message_safe_cast(message)
+			entry
 	);
 	if (ret != 0) {
 		RRR_MSG_ERR("Error returned from rrr_py_persistent_process_message in instance %s\n",
@@ -355,30 +355,6 @@ int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out:
 	RRR_FREE_IF_NOT_NULL(message);
 	return (ret == 0 ? 0 : RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR);
-}
-
-int python3_poll(struct python3_data *data, struct poll_collection *poll) {
-	int ret = 0;
-
-	if ((ret = poll_do_poll_delete_simple (poll, data->thread_data, process_input_callback, 1000)) != 0) {
-		RRR_MSG_ERR("python3 return from fifo_read_clear_forward was not 0 but %i in instance %s\n",
-				ret, INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-// Poll request from other modules
-int python3_poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct python3_data *py_data = data->private_data;
-
-	int ret = 0;
-
-	ret |= rrr_fifo_buffer_read_clear_forward(&py_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
-
-	return ret;
 }
 
 int thread_cancel_callback(void *arg, PyThreadState *tstate_orig) {
@@ -420,12 +396,17 @@ void child_exit_handler (pid_t pid, void *arg) {
 struct read_from_processor_callback_data {
 	struct python3_data *data;
 	struct rrr_fifo_buffer *output_buffer;
+	struct rrr_message_addr *previous_addr_msg;
 	int message_count;
 };
 
-int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void *arg) {
-	struct read_from_processor_callback_data *callback_data = arg;
+int read_from_source_or_processor_finalize (
+		struct rrr_ip_buffer_entry *entry,
+		struct rrr_socket_msg *message,
+		struct read_from_processor_callback_data *callback_data
+) {
 	struct python3_data *python3_data = callback_data->data;
+	struct rrr_message_addr *previous_address_msg = callback_data->previous_addr_msg;
 
 	int ret = 0;
 
@@ -436,7 +417,22 @@ int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void
 				INSTANCE_D_NAME(python3_data->thread_data), rrr_message->timestamp);
 
 		callback_data->message_count++;
-		rrr_fifo_buffer_write(callback_data->output_buffer, (char*) rrr_message, sizeof(*rrr_message));
+
+		entry->message = message;
+		entry->data_length = MSG_TOTAL_SIZE(message);
+		message = NULL;
+
+		if (previous_address_msg->addr_len > 0) {
+			if (previous_address_msg->addr_len > sizeof(previous_address_msg->addr)) {
+				RRR_BUG("BUG: Address length too long in read_from_source_or_processor_finalize\n");
+			}
+			memcpy(&entry->addr, &previous_address_msg->addr, previous_address_msg->addr_len);
+			entry->addr_len = previous_address_msg->addr_len;
+			previous_address_msg->addr_len = 0;
+		}
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+		*(callback_data->previous_addr_msg) = *((struct rrr_message_addr *) message);
 	}
 	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		struct rrr_setting_packed *setting = (struct rrr_setting_packed *) message;
@@ -454,33 +450,77 @@ int read_from_source_or_processor_callback (struct rrr_socket_msg *message, void
 	}
 
 	out:
-	if (ret != 0) {
-		free(message);
-	}
+	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
-int read_from_source_or_processor(struct python3_reader_data *data) {
+int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct python3_reader_data *data = arg;
 	struct python3_data *python3_data = data->data;
+	struct python3_fork *fork = data->fork;
+
 	int ret = 0;
 
-	struct read_from_processor_callback_data callback_data = {python3_data, data->output_buffer, 0};
-	ret |= rrr_py_persistent_receive_message (
-			data->fork,
-			read_from_source_or_processor_callback,
-			&callback_data
-	);
+	struct rrr_socket_msg *message = NULL;
+
+	struct read_from_processor_callback_data callback_data = {
+			python3_data,
+			data->output_buffer,
+			&data->previous_address_msg,
+			0
+	};
+
+	if (fork->invalid == 1) {
+		RRR_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
+		ret = 1;
+		break;
+	}
+
+	int retries = 50;
+
+	while (--retries > 0) {
+		ret = fork->recv(&message, fork->socket_main);
+		if (ret != 0) {
+			RRR_MSG_ERR("Error while receiving message from python3 child\n");
+			ret = 1;
+			goto out;
+		}
+		if (message != NULL) {
+			break;
+		}
+		usleep(50);
+	}
+
+	if (message == NULL) {
+		ret = RRR_MESSAGE_BROKER_DROP;
+		goto out;
+	}
 
 	data->message_counter += callback_data.message_count;
 
-//	printf ("%s read %i messages\n", data->thread->name, callback_data.message_count);
+	RRR_DBG_3("rrr_py_persistent_receive_message got a message\n");
 
+	// This function always handles memory
+	ret = read_from_source_or_processor_finalize(entry, message, &callback_data);
+	message = NULL;
 
-//	if (ret == 0) {
-//		VL_DEBUG_MSG_3("Python3 instance %s generated source messages in the program in thread '%s'\n",
-//				INSTANCE_D_NAME(python3_data->thread_data), data->thread->name);
-//	}
+	if (ret != 0) {
+		RRR_MSG_ERR("Error from callback function while receiving message from python3 child\n");
+		ret = 1;
+		goto out;
+	}
 
+	if (data->loop_count <= 0) {
+		data->loop_count = 500;
+	}
+
+	if (--(data->loop_count) >= 0) {
+		ret = RRR_MESSAGE_BROKER_AGAIN;
+	}
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
 
@@ -498,7 +538,15 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(data->thread) == 0) {
 		rrr_thread_update_watchdog_time(data->thread);
 
-		if (read_from_source_or_processor(data) != 0) {
+		if (rrr_message_broker_write_entry (
+				INSTANCE_D_BROKER(python3_data->thread_data),
+				INSTANCE_D_HANDLE(python3_data->thread_data),
+				NULL,
+				0,
+				0,
+				read_from_source_or_processor_callback,
+				data
+		) != 0) {
 			RRR_MSG_ERR("Error while reading in python3 instance %s thread '%s'\n",
 					INSTANCE_D_NAME(python3_data->thread_data), data->thread->name);
 			break;
@@ -686,10 +734,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK) != 0) {
-		RRR_MSG_ERR("Python3 instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
+	poll_add_from_thread_senders(&poll, thread_data);
 
 	int no_polling = 1;
 	if (poll_collection_count (&poll) > 0) {
@@ -790,10 +835,6 @@ static struct rrr_module_operations module_operations = {
 		thread_preload_python3,
 		thread_entry_python3,
 		thread_poststop_python3,
-		NULL,
-		NULL,
-		python3_poll_delete,
-		NULL,
 		test_config,
 		NULL,
 		thread_cancel_python3

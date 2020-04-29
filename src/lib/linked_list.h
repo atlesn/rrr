@@ -163,7 +163,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;														\
 	}} while (0)
 
-#define RRR_LL_UNSHIFT(head)												\
+#define RRR_LL_SHIFT(head)													\
 	RRR_LL_FIRST(head);														\
 	do {if ((head)->ptr_last == (head)->ptr_first) {						\
 		(head)->ptr_first = NULL;											\

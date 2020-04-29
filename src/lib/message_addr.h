@@ -43,6 +43,7 @@ static inline void rrr_message_addr_prepare_for_network (struct rrr_message_addr
 }
 
 int rrr_message_addr_to_host (struct rrr_message_addr *msg);
+void rrr_message_addr_init_head (struct rrr_message_addr *target);
 void rrr_message_addr_init (struct rrr_message_addr *target);
 int rrr_message_addr_new (struct rrr_message_addr **target);
 

@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "fixed_point.h"
 #include "vl_time.h"
+#include "message_addr.h"
 #include "../global.h"
 
 //static const unsigned long int max_8 = 0xff;
@@ -57,6 +58,7 @@ struct rrr_python3_rrr_message_data {
 	struct rrr_message *message_dynamic;
 	PyObject *rrr_array;
 	struct rrr_python3_rrr_message_constants constants;
+	struct rrr_message_addr ip_addr;
 };
 
 static int __rrr_python3_rrr_message_set_topic_and_data (
@@ -1081,7 +1083,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	return ret;
 }
 
-struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
+struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr *message_addr, PyObject *self) {
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 	struct rrr_array array_tmp = {0};
 
@@ -1137,6 +1139,8 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 				MSG_TYPE(ret));
 	}
 
+	*message_addr = data->ip_addr;
+
 	goto out;
 	out_err:
 		ret = NULL;
@@ -1147,7 +1151,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 		return ret;
 }
 
-PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) {
+PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socket_msg *msg, struct rrr_message_addr *message_addr) {
 	struct rrr_python3_rrr_message_data *ret = NULL;
 	struct rrr_array array_tmp = {0};
 	PyObject *node_list = NULL;
@@ -1168,6 +1172,8 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 	if (ret == NULL) {
 		goto out_err;
 	}
+
+	ret->ip_addr = *message_addr;
 
 	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 
