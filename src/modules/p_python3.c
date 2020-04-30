@@ -34,12 +34,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
-#include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/python3.h"
 #include "../lib/message_broker.h"
+#include "../lib/message_addr.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../global.h"
 
 // TODO : This should NOT be here, allocate inside python3_data
@@ -52,7 +53,7 @@ struct python3_preload_data {
 struct python3_reader_data {
 	struct python3_fork *fork;
 	struct python3_data *data;
-	struct rrr_fifo_buffer *output_buffer;
+	struct rrr_ip_buffer_entry_collection output_buffer;
 	struct rrr_thread *thread;
 	struct rrr_message_addr previous_address_msg;
 	int message_counter;
@@ -61,8 +62,6 @@ struct python3_reader_data {
 
 struct python3_data {
 	struct rrr_instance_thread_data *thread_data;
-
-	struct rrr_fifo_buffer output_buffer;
 
 	char *python3_module;
 	char *source_function;
@@ -106,17 +105,32 @@ int data_init(struct python3_data *data, struct python3_preload_data *preload_da
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
 
-	ret |= rrr_fifo_buffer_init (&data->output_buffer);
-
 	if (preload_data == NULL) {
-		RRR_MSG_ERR("Bug: No preload data in python3 data_init\n");
-		exit(EXIT_FAILURE);
+		RRR_BUG("BUG: No preload data in python3 data_init\n");
 	}
 
 	data->thread_data = thread_data;
 	data->tstate = preload_data->istate;
 
 	return ret;
+}
+
+void data_cleanup(void *arg) {
+	struct python3_data *data = arg;
+
+	RRR_FREE_IF_NOT_NULL(data->python3_module);
+	RRR_FREE_IF_NOT_NULL(data->source_function);
+	RRR_FREE_IF_NOT_NULL(data->process_function);
+	RRR_FREE_IF_NOT_NULL(data->config_function);
+	RRR_FREE_IF_NOT_NULL(data->module_path);
+
+	if (python3_swap_thread_out(&data->python3_thread_ctx) == 0) {
+		if (data->tstate != NULL) {
+			python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
+
+			python3_swap_thread_out(&data->python3_thread_ctx);
+		}
+	}
 }
 
 struct python3_send_config_callback_data {
@@ -271,25 +285,6 @@ void python3_stop(void *arg) {
 	}
 }
 
-void data_cleanup(void *arg) {
-	struct python3_data *data = arg;
-	rrr_fifo_buffer_clear (&data->output_buffer);
-
-	RRR_FREE_IF_NOT_NULL(data->python3_module);
-	RRR_FREE_IF_NOT_NULL(data->source_function);
-	RRR_FREE_IF_NOT_NULL(data->process_function);
-	RRR_FREE_IF_NOT_NULL(data->config_function);
-	RRR_FREE_IF_NOT_NULL(data->module_path);
-
-	if (python3_swap_thread_out(&data->python3_thread_ctx) == 0) {
-		if (data->tstate != NULL) {
-			python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
-
-			python3_swap_thread_out(&data->python3_thread_ctx);
-		}
-	}
-}
-
 static void thread_poststop_python3 (const struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_preload_data *preload_data = thread_data->preload_data = thread_data->preload_memory;
@@ -330,7 +325,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int process_input_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int python3_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
 	struct python3_data *python3_data = thread_data->private_data;
@@ -395,7 +390,6 @@ void child_exit_handler (pid_t pid, void *arg) {
 
 struct read_from_processor_callback_data {
 	struct python3_data *data;
-	struct rrr_fifo_buffer *output_buffer;
 	struct rrr_message_addr *previous_addr_msg;
 	int message_count;
 };
@@ -465,7 +459,6 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 
 	struct read_from_processor_callback_data callback_data = {
 			python3_data,
-			data->output_buffer,
 			&data->previous_address_msg,
 			0
 	};
@@ -473,7 +466,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 	if (fork->invalid == 1) {
 		RRR_MSG_ERR("Fork was invalid in rrr_py_persistent_receive_message, child has exited\n");
 		ret = 1;
-		break;
+		goto out;
 	}
 
 	int retries = 50;
@@ -572,7 +565,6 @@ int preload_reader_thread (
 		struct rrr_thread_collection *collection,
 		struct python3_data *python3_data,
 		struct python3_fork *fork,
-		struct rrr_fifo_buffer *output_buffer,
 		const char *name
 ) {
 	int ret = 0;
@@ -581,7 +573,7 @@ int preload_reader_thread (
 	reader_data->message_counter = 0;
 	reader_data->data = python3_data;
 	reader_data->fork = fork;
-	reader_data->output_buffer = output_buffer;
+
 	thread = rrr_thread_preload_and_register (
 			collection,
 			thread_entry_python3_reader,
@@ -630,7 +622,6 @@ static int threads_start(struct python3_data *data) {
 				data->thread_collection,
 				data,
 				data->source_fork,
-				&data->output_buffer,
 				name
 		) != 0) {
 			goto out_destroy_collection;
@@ -644,7 +635,6 @@ static int threads_start(struct python3_data *data) {
 				data->thread_collection,
 				data,
 				data->processing_fork,
-				&data->output_buffer,
 				name
 		) != 0) {
 			goto out_destroy_collection;
@@ -767,42 +757,64 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	// This must be delayed as the results from any config functions are
 	// asynchronously received
 	uint64_t check_settings_used_time = rrr_time_get_64() + 1000000;
+	uint64_t prev_stats_time = 0;
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
+		uint64_t time_now = rrr_time_get_64();
 
 		if (check_settings_used_time != 0 && check_settings_used_time > rrr_time_get_64()) {
 			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 			check_settings_used_time = 0;
 		}
 
-		int output_buffer_size = rrr_fifo_buffer_get_entry_count(&data->output_buffer);
+		if (sigchld_pending) {
+			rrr_py_handle_sigchld(child_exit_handler, data);
+			sigchld_pending = 0;
+		}
 
-		if (output_buffer_size > 500) {
-			usleep(1000);
+		if (no_polling) {
+			usleep (10000);
 		}
 		else {
-			if (sigchld_pending) {
-				rrr_py_handle_sigchld(child_exit_handler, data);
-				sigchld_pending = 0;
-			}
-
-			if (no_polling) {
-				usleep (10000);
-			}
-			else {
-				if ((res = python3_poll(data, &poll)) != 0) {
-					RRR_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
-							res, INSTANCE_D_NAME(thread_data));
-					break;
-				}
-			}
-
-			if (rrr_thread_check_any_stopped (data->thread_collection) != 0) {
-				RRR_MSG_ERR("One or more reader threads have stopped in python3 instance %s\n",
-						INSTANCE_D_NAME(thread_data));
+			if ((res = poll_do_poll_delete(thread_data, &poll, python3_poll_callback, 50)) != 0) {
+				RRR_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
+						res, INSTANCE_D_NAME(thread_data));
 				break;
 			}
+		}
+
+		if (rrr_thread_check_any_stopped (data->thread_collection) != 0) {
+			RRR_MSG_ERR("One or more reader threads have stopped in python3 instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
+		}
+
+		if (time_now - prev_stats_time > 1000000) {
+			int delivery_entry_count  = 0;
+			int delivery_ratelimit_active = 0;
+
+			if (rrr_message_broker_get_entry_count_and_ratelimit (
+					&delivery_entry_count,
+					&delivery_ratelimit_active,
+					INSTANCE_D_BROKER(thread_data),
+					INSTANCE_D_HANDLE(thread_data)
+			) != 0) {
+				RRR_MSG_ERR("Error while getting output buffer size in python3 instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				goto out_message;
+			}
+
+			if (delivery_entry_count > 10000 && delivery_ratelimit_active == 0) {
+				RRR_DBG_1("Enabling ratelimit on buffer in python3 instance %s due to slow reader\n", INSTANCE_D_NAME(thread_data));
+				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+			}
+			else if (delivery_entry_count < 10 && delivery_ratelimit_active == 1) {
+				RRR_DBG_1("Disabling ratelimit on buffer in python3 instance %s due to low buffer level\n", INSTANCE_D_NAME(thread_data));
+				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
+			}
+
+			prev_stats_time = rrr_time_get_64();
 		}
 	}
 
