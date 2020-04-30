@@ -575,17 +575,14 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		if (time_now - prev_stats_time > 1000000) {
 			int output_buffer_count = 0;
-			unsigned int send_queue_count = 0;
 			int ratelimit_active = 0;
+			unsigned int send_queue_count = 0;
 
-			if (rrr_message_broker_get_entry_count_and_ratelimit (
+			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 					&output_buffer_count,
 					&ratelimit_active,
-					INSTANCE_D_BROKER(thread_data),
-					INSTANCE_D_HANDLE(thread_data)
+					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Could not get buffer entry count in ipclient instance %s\n",
-						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 
@@ -605,30 +602,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 				);
 				RRR_DBG("--------------\n");
 			}
+
 			prev_stats_time = time_now;
 			receive_total = 0;
 			queued_total = 0;
 			send_total = 0;
 			delivered_total = 0;
-
-			if (ratelimit_active != 1 && output_buffer_count > 250000) {
-				RRR_DBG_1("ipclient instance %s enabling rate limit on output buffer\n",
-						INSTANCE_D_NAME(thread_data));
-				rrr_message_broker_set_ratelimit (
-						INSTANCE_D_BROKER(thread_data),
-						INSTANCE_D_HANDLE(thread_data),
-						1
-				);
-			}
-			else if (ratelimit_active != 0 && output_buffer_count == 0) {
-				RRR_DBG_1("ipclient instance %s disabling rate limit on output buffer\n",
-						INSTANCE_D_NAME(thread_data));
-				rrr_message_broker_set_ratelimit (
-						INSTANCE_D_BROKER(thread_data),
-						INSTANCE_D_HANDLE(thread_data),
-						0
-				);
-			}
 		}
 
 		if (err != 0) {

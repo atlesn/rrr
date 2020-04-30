@@ -1,9 +1,8 @@
 /*
-#include <instance_collection.h>
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -589,4 +588,38 @@ int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self)
 	}
 
 	return callback_data.count;
+}
+
+int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+		int *delivery_entry_count,
+		int *delivery_ratelimit_active,
+		struct rrr_instance_thread_data *thread_data
+) {
+	int ret = 0;
+
+	if (rrr_message_broker_get_entry_count_and_ratelimit (
+			&delivery_entry_count,
+			&delivery_ratelimit_active,
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data)
+	) != 0) {
+		RRR_MSG_ERR("Error while getting output buffer size in %s instance %s\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (delivery_entry_count > 10000 && delivery_ratelimit_active == 0) {
+		RRR_DBG_1("Enabling ratelimit on buffer in %s instance %s due to slow reader\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+	}
+	else if (delivery_entry_count < 10 && delivery_ratelimit_active == 1) {
+		RRR_DBG_1("Disabling ratelimit on buffer in %s instance %s due to low buffer level\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
+	}
+
+	out:
+	return ret;
 }

@@ -794,24 +794,12 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 			int delivery_entry_count  = 0;
 			int delivery_ratelimit_active = 0;
 
-			if (rrr_message_broker_get_entry_count_and_ratelimit (
+			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 					&delivery_entry_count,
 					&delivery_ratelimit_active,
-					INSTANCE_D_BROKER(thread_data),
-					INSTANCE_D_HANDLE(thread_data)
+					thread_data
 			) != 0) {
-				RRR_MSG_ERR("Error while getting output buffer size in python3 instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				goto out_message;
-			}
-
-			if (delivery_entry_count > 10000 && delivery_ratelimit_active == 0) {
-				RRR_DBG_1("Enabling ratelimit on buffer in python3 instance %s due to slow reader\n", INSTANCE_D_NAME(thread_data));
-				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
-			}
-			else if (delivery_entry_count < 10 && delivery_ratelimit_active == 1) {
-				RRR_DBG_1("Disabling ratelimit on buffer in python3 instance %s due to low buffer level\n", INSTANCE_D_NAME(thread_data));
-				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
+				break;
 			}
 
 			prev_stats_time = rrr_time_get_64();
