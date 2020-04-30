@@ -84,16 +84,6 @@ int data_init(struct socket_data *data, struct rrr_instance_thread_data *thread_
 	return ret;
 }
 
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct socket_data *socket_data = data->private_data;
-	return rrr_fifo_buffer_read_clear_forward(&socket_data->buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct socket_data *socket_data = data->private_data;
-	return rrr_fifo_buffer_search(&socket_data->buffer, callback, poll_data, wait_milliseconds);
-}
-
 int parse_config (struct socket_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
@@ -369,10 +359,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
-	NULL,
-	poll,
-	NULL,
-	poll_delete,
 	NULL,
 	test_config,
 	NULL,

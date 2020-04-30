@@ -985,30 +985,35 @@ int rrr_fifo_buffer_write (
 		int do_ordered_write = 0;
 		if (ret != 0) {
 			if ((ret & RRR_FIFO_WRITE_ORDERED) == RRR_FIFO_WRITE_ORDERED) {
+				if ((ret & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
+					RRR_BUG("BUG: Callback return WRITE_ORDERED along with other illegal return values %i in rrr_fifo_buffer_write\n", ret);
+				}
 				do_ordered_write = 1;
 			}
 
 			if ((ret & RRR_FIFO_WRITE_AGAIN) == RRR_FIFO_WRITE_AGAIN) {
-				if ((ret & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED)) != 0) {
+				if ((ret & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
 					RRR_BUG("BUG: Callback return WRITE_AGAIN along with other illegal return values %i in rrr_fifo_buffer_write\n", ret);
 				}
 				write_again = 1;
 			}
-			else if ((ret & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR) {
+
+			if ((ret & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR) {
 				if ((ret & ~(RRR_FIFO_GLOBAL_ERR)) != 0) {
 					RRR_BUG("BUG: Callback returned GLOBAL_ERR along with return values %i in rrr_fifo_buffer_write\n", ret);
 				}
 				goto out;
 			}
-			else if ((ret & RRR_FIFO_WRITE_ABORT) == RRR_FIFO_WRITE_ABORT) {
-				if ((ret &= ~(RRR_FIFO_WRITE_ABORT)) != 0) {
-					RRR_BUG("BUG: Callback returned WRITE_CANCEL along with return values %i in rrr_fifo_buffer_write\n", ret);
+
+			if ((ret & RRR_FIFO_WRITE_DROP) == RRR_FIFO_WRITE_DROP) {
+				if ((ret &= ~(RRR_FIFO_WRITE_DROP|RRR_FIFO_WRITE_AGAIN)) != 0) {
+					RRR_BUG("BUG: Callback returned WRITE_DROP along with return values %i in rrr_fifo_buffer_write\n", ret);
 				}
 				ret = 0;
-				goto out;
+				goto loop_out_drop;
 			}
 
-			ret &= ~(RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_AGAIN);
+			ret &= ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP);
 
 			if (ret != 0) {
 				RRR_BUG("Unknown return values %i from callback in rrr_fifo_buffer_write\n", ret);
@@ -1086,6 +1091,12 @@ int rrr_fifo_buffer_write (
 		rrr_fifo_write_lock(buffer);
 
 		entry = NULL;
+
+		loop_out_drop:
+		if (entry != NULL) {
+			__rrr_fifo_buffer_entry_destroy_unlocked(buffer, entry);
+			entry = NULL;
+		}
 	} while (write_again);
 
 //	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
@@ -1148,8 +1159,8 @@ int rrr_fifo_buffer_write_delayed (
 				}
 				goto out;
 			}
-			else if ((ret & RRR_FIFO_WRITE_ABORT) == RRR_FIFO_WRITE_ABORT) {
-				if ((ret &= ~RRR_FIFO_WRITE_ABORT) != 0) {
+			else if ((ret & RRR_FIFO_WRITE_DROP) == RRR_FIFO_WRITE_DROP) {
+				if ((ret &= ~RRR_FIFO_WRITE_DROP) != 0) {
 					RRR_BUG("BUG: Callback returned WRITE_CANCEL along with return values %i in rrr_fifo_buffer_delayed_write\n", ret);
 				}
 				ret = 0;

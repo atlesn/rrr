@@ -143,5 +143,6 @@ int rrr_instance_process_from_config(
 		struct rrr_config *config,
 		const char **library_paths
 );
+int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self);
 
 #endif /* RRR_INSTANCES_H */

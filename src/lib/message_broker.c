@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stddef.h>
 #include <pthread.h>
+#include <sys/types.h>
 
 #include "../global.h"
 #include "modules.h"
@@ -37,8 +38,9 @@ static void __rrr_message_broker_costumer_incref (struct rrr_message_broker_cost
 static void __rrr_message_broker_costumer_decref (struct rrr_message_broker_costumer *costumer) {
 	if (--(costumer->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(costumer->name);
-		rrr_fifo_buffer_destroy(&costumer->queue);
-
+		RRR_LL_DESTROY(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node, rrr_fifo_buffer_destroy(&node->queue));
+		rrr_fifo_buffer_destroy(&costumer->main_queue);
+		pthread_mutex_destroy(&costumer->split_buffers.lock);
 		free(costumer);
 	}
 }
@@ -85,9 +87,14 @@ static int __rrr_message_broker_costumer_new (
 		goto out_free;
 	}
 
-	if (rrr_fifo_buffer_init_custom_free(&costumer->queue, rrr_ip_buffer_entry_destroy_void) != 0) {
+	if (rrr_fifo_buffer_init_custom_free(&costumer->main_queue, rrr_ip_buffer_entry_destroy_void) != 0) {
 		RRR_MSG_ERR("Could not initialize buffer in __rrr_message_broker_costumer_new\n");
 		goto out_free_name;
+	}
+
+	if (pthread_mutex_init(&costumer->split_buffers.lock, NULL) != 0) {
+		RRR_MSG_ERR("Could not initialize mutex in __rrr_message_broker_costumer_new\n");
+		goto out_destroy_fifo;
 	}
 
 	costumer->usercount = 1;
@@ -95,6 +102,8 @@ static int __rrr_message_broker_costumer_new (
 	*result = costumer;
 
 	goto out;
+	out_destroy_fifo:
+		rrr_fifo_buffer_destroy(&costumer->main_queue);
 	out_free_name:
 		free(costumer->name);
 	out_free:
@@ -124,6 +133,10 @@ int rrr_message_broker_init (
 		ret = 1;
 		goto out;
 	}
+
+	pthread_mutex_lock(&broker->lock);
+	broker->creator = pthread_self();
+	pthread_mutex_unlock(&broker->lock);
 
 	goto out;
 //	out_destroy_mutex:
@@ -234,6 +247,67 @@ int rrr_message_broker_costumer_register (
 		pthread_cleanup_pop(1);							\
 	} while(0)
 
+static int __rrr_message_broker_split_output_buffer_new_and_add (
+		struct rrr_message_broker_split_buffer_collection *target
+) {
+	int ret = 0;
+
+	struct rrr_message_broker_split_buffer_node *node = malloc(sizeof(*node));
+	if (node == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in __rrr_message_broker_split_output_buffer_new\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(node, '\0', sizeof(*node));
+
+	if (rrr_fifo_buffer_init_custom_free(&node->queue, rrr_ip_buffer_entry_destroy_void) != 0) {
+		RRR_MSG_ERR("Could not initialize buffer in __rrr_message_broker_split_output_buffer_new\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	RRR_LL_APPEND(target, node);
+	node = NULL;
+
+	goto out;
+	out_free:
+		free(node);
+	out:
+		return ret;
+}
+
+// Call in preload stage only from main thread. Number of slots
+// have to match or exceed the number of different reader threads which
+// will read from us, if not we will give a BUG()
+int rrr_message_broker_setup_split_output_buffer (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int slots
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_setup_split_output_buffer");
+
+	pthread_mutex_lock(&broker->lock);
+
+	if (broker->creator != pthread_self()) {
+		RRR_BUG("BUG: rrr_message_broker_setup_split_output_buffer called from other thread than creator\n");
+	}
+
+	while (slots--) {
+		if (__rrr_message_broker_split_output_buffer_new_and_add(&costumer->split_buffers) != 0) {
+			goto out_unlock;
+		}
+	}
+
+	out_unlock:
+	pthread_mutex_unlock(&broker->lock);
+
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
 struct rrr_message_broker_write_entry_intermediate_callback_data {
 	const struct sockaddr *addr;
 	socklen_t socklen;
@@ -281,27 +355,36 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	rrr_ip_buffer_entry_lock(entry);
 
 	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
+		int ret_tmp = 0;
+
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
-			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN in __rrr_message_broker_write_entry_intermediate\n", ret);
+			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN which was not DROP in __rrr_message_broker_write_entry_intermediate\n", ret);
 			}
-			ret = RRR_FIFO_WRITE_AGAIN;
+			ret_tmp |= RRR_FIFO_WRITE_AGAIN;
 			// No goto
 		}
-		else if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
-			if ((ret & ~(RRR_MESSAGE_BROKER_DROP)) != 0) {
-				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP in __rrr_message_broker_write_entry_intermediate\n", ret);
+
+		if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
+			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
+				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP which was not AGAIN in __rrr_message_broker_write_entry_intermediate\n", ret);
 			}
 			// Entry will be freed by pthread_cleanup_pop
-			ret = RRR_FIFO_WRITE_ABORT;
-			goto out;
+			ret_tmp |= RRR_FIFO_WRITE_DROP;
 		}
-		else if ((ret & ~(RRR_MESSAGE_BROKER_ERR)) != 0) {
+
+		ret &= ~(RRR_MESSAGE_BROKER_DROP|RRR_MESSAGE_BROKER_AGAIN);
+
+		if ((ret & ~(RRR_MESSAGE_BROKER_ERR)) != 0) {
 			RRR_BUG("Unknown return values %i from callback to __rrr_message_broker_write_entry_intermediate\n", ret);
 		}
-		else {
+		else if (ret_tmp == 0) {
 			// Entry will be freed by pthread_cleanup_pop
 			ret = RRR_FIFO_GLOBAL_ERR;
+			goto out;
+		}
+
+		if ((ret_tmp & RRR_FIFO_WRITE_DROP) != 0) {
 			goto out;
 		}
 	}
@@ -339,7 +422,7 @@ int rrr_message_broker_write_entry (
 	};
 
 	if ((ret = rrr_fifo_buffer_write (
-			&costumer->queue,
+			&costumer->main_queue,
 			__rrr_message_broker_write_entry_intermediate,
 			&callback_data
 	)) != 0) {
@@ -353,7 +436,7 @@ int rrr_message_broker_write_entry (
 	return ret;
 }
 
-static int __rrr_message_broker_write_clone_and_write_entry_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
+static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	const struct rrr_ip_buffer_entry *source = arg;
 
 	int ret = 0;
@@ -386,8 +469,8 @@ int rrr_message_broker_clone_and_write_entry (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_clone_and_write_entry");
 
 	if ((ret = rrr_fifo_buffer_write (
-			&costumer->queue,
-			__rrr_message_broker_write_clone_and_write_entry_callback,
+			&costumer->main_queue,
+			__rrr_message_broker_clone_and_write_entry_callback,
 			(void *) entry
 	)) != 0) {
 		RRR_MSG_ERR("Error while writing to buffer in rrr_message_broker_clone_and_write_entry\n");
@@ -423,7 +506,7 @@ int rrr_message_broker_write_entry_unsafe (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_unsafe");
 
 	if ((ret = rrr_fifo_buffer_write (
-			&costumer->queue,
+			&costumer->main_queue,
 			__rrr_message_broker_write_entry_unsafe_callback,
 			entry
 	)) != 0) {
@@ -448,7 +531,7 @@ int rrr_message_broker_write_entry_delayed_unsafe (
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_delayed_unsafe");
 
 	if ((ret = rrr_fifo_buffer_write_delayed (
-			&costumer->queue,
+			&costumer->main_queue,
 			__rrr_message_broker_write_entry_unsafe_callback,
 			entry
 	)) != 0) {
@@ -483,7 +566,7 @@ int rrr_message_broker_write_entries_from_collection (
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entries_from_collection");
 
-	ret = rrr_fifo_buffer_write(&costumer->queue, __rrr_message_broker_write_entries_from_collection_callback, collection);
+	ret = rrr_fifo_buffer_write(&costumer->main_queue, __rrr_message_broker_write_entries_from_collection_callback, collection);
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
@@ -503,11 +586,113 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 	int ret = 0;
 
 	rrr_ip_buffer_entry_lock(entry);
+
 	ret =  callback_data->callback(entry, callback_data->callback_arg);
+
 	// Callback must unlock
 
 	return ret;
 }
+
+static void __rrr_message_broker_get_source_buffer (
+		struct rrr_fifo_buffer **use_buffer,
+		struct rrr_message_broker_costumer *costumer
+) {
+	pthread_mutex_lock(&costumer->split_buffers.lock);
+
+	if (RRR_LL_COUNT(&costumer->split_buffers) == 0) {
+		*use_buffer = &costumer->main_queue;
+		goto out;
+	}
+
+	struct rrr_fifo_buffer *found_buffer = NULL;
+
+	pthread_t tid = pthread_self();
+
+	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+		if (node->identifier == tid) {
+			found_buffer = &node->queue;
+			RRR_LL_ITERATE_LAST();
+		}
+		else if (node->identifier == 0) {
+			// Allocate
+			node->identifier = tid;
+			found_buffer = &node->queue;
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+
+	if (found_buffer == NULL) {
+		RRR_BUG("Not enough slots in __rrr_message_broker_split_buffers_handle\n");
+	}
+
+	*use_buffer = found_buffer;
+
+	out:
+	pthread_mutex_unlock(&costumer->split_buffers.lock);
+}
+
+static int __rrr_message_broker_split_buffers_fill_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
+	struct rrr_message_broker_costumer *costumer = arg;
+
+	(void)(size);
+
+	int ret = 0;
+
+	// Split buffer lock must be held by caller
+
+	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+		// Use delayed write in case there are other threads reading from their buffer
+		if ((ret = rrr_fifo_buffer_write_delayed (
+				&costumer->main_queue,
+				__rrr_message_broker_clone_and_write_entry_callback,
+				(void *) data
+		)) != 0) {
+			RRR_MSG_ERR("Error while writing to buffer in __rrr_message_broker_split_buffers_fill_callback\n");
+			ret = RRR_MESSAGE_BROKER_ERR;
+			goto out;
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret | RRR_FIFO_SEARCH_FREE;
+}
+
+static int __rrr_message_broker_split_buffers_fill (struct rrr_message_broker_costumer *costumer) {
+	int ret = 0;
+
+	if (rrr_fifo_buffer_get_entry_count(&costumer->main_queue) == 0) {
+		goto out_no_unlock;
+	}
+
+	// Somebody else is probably doing this already
+	if (pthread_mutex_trylock(&costumer->split_buffers.lock) != 0) {
+		goto out_no_unlock;
+	}
+
+	if ((ret = rrr_fifo_buffer_read_clear_forward (
+			&costumer->main_queue,
+			NULL,
+			__rrr_message_broker_split_buffers_fill_callback,
+			costumer,
+			0
+	)) != 0) {
+		RRR_MSG_ERR("Error from FIFO in __rrr_message_broker_split_buffers_fill\n");
+		goto out;
+	}
+
+	out:
+		pthread_mutex_unlock(&costumer->split_buffers.lock);
+	out_no_unlock:
+		return ret;
+}
+
+#define RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING()							\
+		struct rrr_fifo_buffer *source_buffer = NULL;							\
+		do {__rrr_message_broker_get_source_buffer (&source_buffer, costumer);	\
+		if ((ret = __rrr_message_broker_split_buffers_fill(costumer)) != 0) {	\
+			goto out;															\
+		}} while(0)
 
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,
@@ -520,13 +705,15 @@ int rrr_message_broker_poll_delete (
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete ");
 
+	RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
 			callback,
 			callback_arg
 	};
 
 	if ((ret = rrr_fifo_buffer_read_clear_forward (
-			&costumer->queue,
+			source_buffer,
 			NULL,
 			__rrr_message_broker_poll_delete_intermediate,
 			&callback_data,
@@ -551,13 +738,15 @@ int rrr_message_broker_poll (
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll");
 
+	RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
 			callback,
 			callback_arg
 	};
 
 	if ((ret = rrr_fifo_buffer_search (
-			&costumer->queue,
+			source_buffer,
 			__rrr_message_broker_poll_delete_intermediate,
 			&callback_data,
 			wait_milliseconds
@@ -579,9 +768,12 @@ int rrr_message_broker_set_ratelimit (
 
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
 
-	rrr_fifo_buffer_set_do_ratelimit(&costumer->queue, set);
+	rrr_fifo_buffer_set_do_ratelimit(&costumer->main_queue, set);
 
-	out:
+	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+		rrr_fifo_buffer_set_do_ratelimit(&node->queue, set);
+	RRR_LL_ITERATE_END();
+
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }
@@ -597,11 +789,15 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 	*entry_count = 0;
 	*ratelimit_active = 0;
 
-
 	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
 
-	*entry_count = rrr_fifo_buffer_get_entry_count(&costumer->queue);
-	*ratelimit_active = rrr_fifo_buffer_get_ratelimit_active(&costumer->queue);
+	// Ratelimit is the same on split buffers
+	*ratelimit_active = rrr_fifo_buffer_get_ratelimit_active(&costumer->main_queue);
+	*entry_count = rrr_fifo_buffer_get_entry_count(&costumer->main_queue);
+
+	RRR_LL_ITERATE_BEGIN(&costumer->split_buffers, struct rrr_message_broker_split_buffer_node);
+		(*entry_count) += rrr_fifo_buffer_get_entry_count(&node->queue);
+	RRR_LL_ITERATE_END();
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;

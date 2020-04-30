@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 struct averager_data {
@@ -319,7 +320,6 @@ int averager_spawn_message (
 	if (rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(&data->thread_data),
 			INSTANCE_D_HANDLE(&data->thread_data),
-			rrr_array_new_message_estimate_size(&array_tmp),
 			NULL,
 			0,
 			0,
@@ -339,7 +339,6 @@ int averager_spawn_message (
 
 int averager_calculate_average(struct averager_data *data) {
 	struct averager_calculation calculation = {data, 0, ULONG_MAX, 0, 0, UINT64_MAX, 0, 0, 0};
-	struct rrr_fifo_callback_args poll_data = {data, &calculation, 0};
 
 	int ret = 0;
 
@@ -349,7 +348,7 @@ int averager_calculate_average(struct averager_data *data) {
 			RRR_LL_ITERATE_LAST();
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, rrr_ip_buffer_entry_destroy_while_locked(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
 
 	if (ret != 0) {
 		goto out;
@@ -504,10 +503,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	if (poll_add_from_thread_senders(&poll, thread_data) != 0) {
-		RRR_MSG_ERR("Averager requires poll_delete from senders\n");
-		goto out_message;
-	}
+	poll_add_from_thread_senders(&poll, thread_data);
 
 	RRR_DBG_1 ("Averager started thread %p\n", thread_data);
 

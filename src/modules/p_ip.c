@@ -493,7 +493,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct ip_read_array_intermediate_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->data;
 
-	int ret = 0;
+	int ret = RRR_MESSAGE_BROKER_OK;
 
 	struct rrr_ip_buffer_entry *entry_tmp_ptr = entry;
 
@@ -512,21 +512,21 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			if (callback_data->handle_soft_error) {
 				// Caller handles return value
 				callback_data->return_value_from_array = ret;
-				ret = 0;
+				ret = RRR_MESSAGE_BROKER_OK;
 				goto out_no_loop;
 			}
 			else {
 				RRR_MSG_ERR("Received invalid data in ip_receive_packets in ip instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				// Don't allow invalid data to stop processing
-				ret = 0;
+				ret = RRR_MESSAGE_BROKER_OK;
 				data->read_error_count++;
 			}
 		}
 		else {
 			RRR_MSG_ERR("Error from ip_receive_packets in ip instance %s return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
-			ret = 1;
+			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
 		}
 	}
@@ -535,12 +535,18 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 		if (--(callback_data->loops) > 0 && ret == 0) {
 			ret = RRR_MESSAGE_BROKER_AGAIN;
 		}
+
 	out_no_loop:
+		if (ret != RRR_MESSAGE_BROKER_ERR) {
+			// Always destroy, entry is never used by callbacks except for as reference
+			ret |= RRR_MESSAGE_BROKER_DROP;
+		}
+
 		if (entry_tmp_ptr == NULL) {
 			RRR_BUG("Entry became NULL in ip_read_array_intermediate\n");
 		}
-		// Always destroy, entry is never used by callbacks except for as reference
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
+
+		rrr_ip_buffer_entry_unlock(entry);
 		return ret;
 }
 

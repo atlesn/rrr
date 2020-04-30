@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_SEARCH_FREE	(1<<5)
 
 #define RRR_FIFO_WRITE_AGAIN	(1<<10)
-#define RRR_FIFO_WRITE_ABORT	(1<<11)
+#define RRR_FIFO_WRITE_DROP	(1<<11)
 #define RRR_FIFO_WRITE_ORDERED	(1<<12)
 
 #define RRR_FIFO_READ_CALLBACK_ARGS \

@@ -36,16 +36,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // All costumers must be registered prior to starting any threads
 
+struct rrr_message_broker_split_buffer_node {
+	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
+	struct rrr_fifo_buffer queue;
+	pthread_t identifier;
+};
+
+struct rrr_message_broker_split_buffer_collection {
+	RRR_LL_HEAD(struct rrr_message_broker_split_buffer_node);
+	pthread_mutex_t lock;
+};
+
 struct rrr_message_broker_costumer {
 	RRR_LL_NODE(struct rrr_message_broker_costumer);
+	struct rrr_fifo_buffer main_queue;
+	struct rrr_message_broker_split_buffer_collection split_buffers;
 	char *name;
-	struct rrr_fifo_buffer queue;
 	int usercount;
 };
 
 struct rrr_message_broker {
 	RRR_LL_HEAD(struct rrr_message_broker_costumer);
 	pthread_mutex_t lock;
+	pthread_t creator;
 };
 
 struct rrr_ip_buffer_entry;
@@ -69,6 +82,11 @@ int rrr_message_broker_costumer_register (
 		rrr_message_broker_costumer_handle **result,
 		struct rrr_message_broker *broker,
 		const char *name_unique
+);
+int rrr_message_broker_setup_split_output_buffer (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int slots
 );
 int rrr_message_broker_write_entry (
 		struct rrr_message_broker *broker,

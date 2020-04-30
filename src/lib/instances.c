@@ -555,3 +555,38 @@ int rrr_instance_process_from_config (
 	out:
 	return ret;
 }
+
+struct rrr_instance_count_receivers_of_self_callback_data {
+	struct rrr_instance_thread_data *self;
+	int count;
+};
+
+static int __rrr_instance_count_receivers_of_self_callback (struct instance_metadata *instance, void *arg) {
+	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
+	if (instance->thread_data == callback_data->self) {
+		callback_data->count++;
+	}
+	return 0;
+}
+
+int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self) {
+	struct instance_metadata_collection *instances = self->init_data.module->all_instances;
+
+	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
+			self,
+			0
+	};
+
+	RRR_INSTANCE_LOOP(instance, instances)
+	{
+		if (instance->thread_data != self) {
+			rrr_instance_collection_iterate (
+					&instance->senders,
+					__rrr_instance_count_receivers_of_self_callback,
+					&callback_data
+			);
+		}
+	}
+
+	return callback_data.count;
+}
