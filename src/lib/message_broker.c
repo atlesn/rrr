@@ -437,6 +437,31 @@ int rrr_message_broker_write_entry_unsafe (
 	return ret;
 }
 
+// Read comment above about unsafe
+int rrr_message_broker_write_entry_delayed_unsafe (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		struct rrr_ip_buffer_entry *entry
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_delayed_unsafe");
+
+	if ((ret = rrr_fifo_buffer_write_delayed (
+			&costumer->queue,
+			__rrr_message_broker_write_entry_unsafe_callback,
+			entry
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing to buffer in rrr_message_broker_write_entry_delayed_unsafe\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
 int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_ip_buffer_entry_collection *collection = arg;
 
@@ -577,6 +602,23 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 
 	*entry_count = rrr_fifo_buffer_get_entry_count(&costumer->queue);
 	*ratelimit_active = rrr_fifo_buffer_get_ratelimit_active(&costumer->queue);
+
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+int rrr_message_broker_with_ctx_do (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*callback)(void *callback_arg_1, void *callback_arg_2),
+		void *callback_arg_1,
+		void *callback_arg_2
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_with_ctx_do");
+
+	ret = callback(callback_arg_1, callback_arg_2);
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;

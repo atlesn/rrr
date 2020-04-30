@@ -519,7 +519,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
+		if (poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
 			break;
 		}
 

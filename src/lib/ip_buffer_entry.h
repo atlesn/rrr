@@ -89,5 +89,13 @@ int rrr_ip_buffer_entry_clone (
 		struct rrr_ip_buffer_entry **result,
 		const struct rrr_ip_buffer_entry *source
 );
+void rrr_ip_buffer_entry_set_unlocked (
+		struct rrr_ip_buffer_entry *target,
+		void *message,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int protocol
+);
 
 #endif /* RRR_IP_BUFFER_ENTRY_H */

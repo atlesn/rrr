@@ -1103,7 +1103,8 @@ int rrr_fifo_buffer_write (
  * if there are readers or an ordinary writer on the buffer. The read functions will, each time
  * they run, check if there are no other readers, and if so, they will push the delayed entries
  * to the end of the buffer. Some read functions hold write lock anyway, and these will always
- * merge in the write queue.
+ * merge in the write queue. This method may also be used to add entries while already being
+ * in write context.
  */
 int rrr_fifo_buffer_write_delayed (
 		struct rrr_fifo_buffer *buffer,

@@ -28,8 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/settings.h"
 #include "../lib/vl_time.h"
-#include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
@@ -44,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
 #include "../lib/stats_instance.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 #define IP_DEFAULT_PORT		2222
@@ -51,9 +50,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct ip_data {
 	struct rrr_instance_thread_data *thread_data;
-	struct rrr_fifo_buffer send_buffer;
-	struct rrr_fifo_buffer inject_buffer;
-	struct rrr_fifo_buffer delivery_buffer;
+	struct rrr_ip_buffer_entry_collection send_buffer;
+//	struct rrr_ip_buffer_entry_collection delivery_buffer;
 	unsigned int source_udp_port;
 	unsigned int source_tcp_port;
 	struct rrr_ip_data ip_udp;
@@ -80,9 +78,7 @@ struct ip_data {
 
 void data_cleanup(void *arg) {
 	struct ip_data *data = (struct ip_data *) arg;
-	rrr_fifo_buffer_clear(&data->send_buffer);
-	rrr_fifo_buffer_clear(&data->inject_buffer);
-	rrr_fifo_buffer_clear(&data->delivery_buffer);
+	rrr_ip_buffer_entry_collection_clear(&data->send_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_read_session_collection_clear(&data->read_sessions_udp);
 	rrr_read_session_collection_clear(&data->read_sessions_tcp);
@@ -96,119 +92,7 @@ int data_init(struct ip_data *data, struct rrr_instance_thread_data *thread_data
 
 	data->thread_data = thread_data;
 
-	int ret = 0;
-
-	ret |= rrr_fifo_buffer_init_custom_free(&data->send_buffer, rrr_ip_buffer_entry_destroy_void);
-	ret |= rrr_fifo_buffer_init_custom_free(&data->inject_buffer, rrr_ip_buffer_entry_destroy_void);
-	ret |= rrr_fifo_buffer_init_custom_free(&data->delivery_buffer, rrr_ip_buffer_entry_destroy_void);
-
-	if (ret != 0) {
-		data_cleanup(data);
-	}
-
-	return ret;
-}
-
-struct ip_poll_delete_callback_data {
-	struct ip_data *ip_data;
-	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
-	struct rrr_fifo_callback_args *poll_data;
-};
-
-static int __poll_delete_extract_msg_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct ip_poll_delete_callback_data *ip_callback_data = callback_data->private_data;
-//	struct ip_data *ip_data = ip_callback_data->ip_data;
-
-	(void)(size);
-
-	int ret = 0;
-
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-
-	ret = ip_callback_data->callback (
-			ip_callback_data->poll_data,
-			entry->message,
-			entry->data_length
-	);
-
-	// Ownership of message pointer is handed over to callback
-	entry->message = NULL;
-	rrr_ip_buffer_entry_destroy(entry);
-
-	return ret;
-}
-
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct ip_data *ip_data = data->private_data;
-
-	struct ip_poll_delete_callback_data callback_data = {
-			ip_data,
-			callback,
-			poll_data
-	};
-
-	struct rrr_fifo_callback_args fifo_args = {
-			ip_data->thread_data,
-			&callback_data,
-			0
-	};
-
-	return rrr_fifo_buffer_read_clear_forward (
-			&ip_data->delivery_buffer,
-			NULL,
-			__poll_delete_extract_msg_callback,
-			&fifo_args,
-			wait_milliseconds
-	);
-}
-
-static int __poll_extract_msg_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct ip_poll_delete_callback_data *ip_callback_data = callback_data->private_data;
-//	struct ip_data *ip_data = ip_callback_data->ip_data;
-
-	(void)(size);
-
-	int ret = 0;
-
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-
-	ret = ip_callback_data->callback (
-			ip_callback_data->poll_data,
-			entry->message,
-			entry->data_length
-	);
-
-	return ret;
-}
-
-static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct ip_data *ip_data = data->private_data;
-
-	struct ip_poll_delete_callback_data callback_data = {
-			ip_data,
-			callback,
-			poll_data
-	};
-
-	struct rrr_fifo_callback_args fifo_args = {
-			ip_data->thread_data,
-			&callback_data,
-			0
-	};
-
-	return rrr_fifo_buffer_search(&ip_data->delivery_buffer, __poll_extract_msg_callback, &fifo_args, wait_milliseconds);
-}
-
-static int poll_delete_ip (RRR_MODULE_POLL_SIGNATURE) {
-	struct ip_data *ip_data = data->private_data;
-
-	return rrr_fifo_buffer_read_clear_forward (
-			&ip_data->delivery_buffer,
-			NULL,
-			callback,
-			poll_data,
-			wait_milliseconds
-	);
+	return 0;
 }
 
 int config_parse_port (struct ip_data *data, struct rrr_instance_config *config) {
@@ -448,10 +332,9 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 struct ip_read_callback_data {
 	struct ip_data *ip_data;
 	const struct rrr_ip_buffer_entry *entry_orig;
-	int protocol;
 };
 
-int read_data_receive_message_callback (struct rrr_message *message, void *arg) {
+int ip_read_data_receive_message_callback (struct rrr_message *message, void *arg) {
 	struct ip_read_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->ip_data;
 
@@ -462,9 +345,9 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	if (rrr_ip_buffer_entry_new (
 			&new_entry,
 			MSG_TOTAL_SIZE(message),
-			&callback_data->entry_orig->addr,
+			(struct sockaddr *) &callback_data->entry_orig->addr,
 			callback_data->entry_orig->addr_len,
-			callback_data->protocol,
+			callback_data->entry_orig->protocol,
 			message
 	) != 0) {
 		RRR_MSG_ERR("Could not create new ip buffer entry in read_data_receive_message_callback\n");
@@ -478,7 +361,17 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	// Now managed by ip buffer entry
 	message = NULL;
 
-	rrr_fifo_buffer_write(&data->delivery_buffer, (char*)new_entry, sizeof(*new_entry));
+	// Unsafe is ok, we are in context. Must also use delayed write
+	// as write lock is already held on the buffer.
+	if ((ret = rrr_message_broker_write_entry_delayed_unsafe (
+			INSTANCE_D_BROKER(data->thread_data),
+			INSTANCE_D_HANDLE(data->thread_data),
+			new_entry
+	)) != 0) {
+		RRR_MSG_ERR("Could not write message to output buffer in ip instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
 	// Now managed by fifo buffer
 	new_entry = NULL;
@@ -512,7 +405,7 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 				goto out;
 			}
 
-			if ((ret = read_data_receive_message_callback(message_new, arg)) != 0) {
+			if ((ret = ip_read_data_receive_message_callback(message_new, arg)) != 0) {
 				goto out;
 			}
 
@@ -534,14 +427,15 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 	return ret;
 }
 
-int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+int ip_read_raw_data_callback (struct rrr_ip_buffer_entry **entry_ptr, void *arg) {
 	struct ip_data *data = arg;
 	int ret = 0;
 
+	struct rrr_ip_buffer_entry *entry = *entry_ptr;
+
 	struct ip_read_callback_data callback_data = {
 			data,
-			entry,
-			entry->protocol
+			entry // Only used for reference by callbacks,
 	};
 
 	if (data->do_extract_rrr_messages) {
@@ -560,7 +454,7 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 			data->default_topic,
 			data->default_topic_length,
 			&data->definitions,
-			read_data_receive_message_callback,
+			ip_read_data_receive_message_callback,
 			&callback_data
 		);
 	}
@@ -579,47 +473,105 @@ int read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_destroy_void(entry);
+	// The entry will be destroyed by callers as we leave the pointer alone
+	if (*entry_ptr == NULL) {
+		RRR_BUG("Entry pointer became NULL in ip_read_raw_data_callback\n");
+	}
 	return ret;
 }
 
-int inject_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	RRR_DBG_4("ip inject callback size %lu\n", size);
-	struct ip_data *ip_data = poll_data->private_data;
-	return read_raw_data_callback((struct rrr_ip_buffer_entry *) data, ip_data);
-}
+struct ip_read_array_intermediate_callback_data {
+	struct ip_data *data;
+	int handle_soft_error;
+	int return_value_from_array;
+	int fd;
+	struct rrr_read_session_collection *read_sessions;
+	int loops;
+};
 
-int read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rrr_read_session_collection *read_sessions) {
+int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct ip_read_array_intermediate_callback_data *callback_data = arg;
+	struct ip_data *data = callback_data->data;
+
 	int ret = 0;
 
-	for (int i = 0; i < 10; i++) {
-		if ((ret = rrr_ip_receive_array (
-				read_sessions,
-				fd,
-				RRR_READ_F_NO_SLEEPING,
-				&data->definitions,
-				data->do_sync_byte_by_byte,
-				read_raw_data_callback,
-				data,
-				NULL
-		)) != 0) {
-			if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-				if (handle_soft_error) {
-					break;
-				}
+	struct rrr_ip_buffer_entry *entry_tmp_ptr = entry;
+
+	if ((ret = rrr_ip_receive_array (
+			&entry_tmp_ptr,
+			callback_data->read_sessions,
+			callback_data->fd,
+			RRR_READ_F_NO_SLEEPING,
+			&data->definitions,
+			data->do_sync_byte_by_byte,
+			ip_read_raw_data_callback,
+			data,
+			NULL
+	)) != 0) {
+		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
+			if (callback_data->handle_soft_error) {
+				// Caller handles return value
+				callback_data->return_value_from_array = ret;
+				ret = 0;
+				goto out_no_loop;
+			}
+			else {
 				RRR_MSG_ERR("Received invalid data in ip_receive_packets in ip instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				// Don't allow invalid data to stop processing
 				ret = 0;
 				data->read_error_count++;
 			}
-			else {
-				RRR_MSG_ERR("Error from ip_receive_packets in ip instance %s return was %i\n",
-						INSTANCE_D_NAME(data->thread_data), ret);
-				ret = 1;
-				goto out;
-			}
 		}
+		else {
+			RRR_MSG_ERR("Error from ip_receive_packets in ip instance %s return was %i\n",
+					INSTANCE_D_NAME(data->thread_data), ret);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+		if (--(callback_data->loops) > 0 && ret == 0) {
+			ret = RRR_MESSAGE_BROKER_AGAIN;
+		}
+	out_no_loop:
+		if (entry_tmp_ptr == NULL) {
+			RRR_BUG("Entry became NULL in ip_read_array_intermediate\n");
+		}
+		// Always destroy, entry is never used by callbacks except for as reference
+		rrr_ip_buffer_entry_destroy_while_locked(entry);
+		return ret;
+}
+
+int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rrr_read_session_collection *read_sessions) {
+	int ret = 0;
+
+	struct ip_read_array_intermediate_callback_data callback_data = {
+			data,
+			handle_soft_error,
+			0,
+			fd,
+			read_sessions,
+			10
+	};
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER(data->thread_data),
+			INSTANCE_D_HANDLE(data->thread_data),
+			NULL,
+			0,
+			0,
+			ip_read_array_intermediate,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing entries in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (ret == 0 && handle_soft_error) {
+		ret = callback_data.return_value_from_array;
 	}
 
 	out:
@@ -651,7 +603,7 @@ int tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *a
 	}
 
 	RRR_LL_ITERATE_BEGIN(accept_data_collection, struct rrr_ip_accept_data);
-		if ((ret = read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp)) != 0) {
+		if ((ret = ip_read_loop (data, 1, node->ip_data.fd, &data->read_sessions_tcp)) != 0) {
 			if (ret == RRR_SOCKET_SOFT_ERROR) {
 				RRR_MSG_ERR("Closing tcp connection following error in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -664,11 +616,11 @@ int tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *a
 	return ret;
 }
 
-int udp_read_data (struct ip_data *data) {
+int udp_read_data(struct ip_data *data) {
 	int ret = 0;
 
 	if (data->source_udp_port > 0) {
-		if ((ret = read_loop (data, 0, data->ip_udp.fd, &data->read_sessions_udp)) != 0) {
+		if ((ret = ip_read_loop (data, 0, data->ip_udp.fd, &data->read_sessions_udp)) != 0) {
 			goto out;
 		}
 	}
@@ -677,73 +629,62 @@ int udp_read_data (struct ip_data *data) {
 	return ret;
 }
 
+static int inject_callback(void *arg1, void *arg2) {
+	struct ip_data *data = arg1;
+	struct rrr_ip_buffer_entry *entry = arg2;
+
+	return ip_read_raw_data_callback(&entry, data);
+}
+
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct ip_data *data = thread_data->private_data;
-	RRR_DBG_2("ip: writing data from inject function\n");
 
-	rrr_fifo_buffer_write(&data->inject_buffer, (char *) message, sizeof(*message));
+	RRR_DBG_2("ip instance %s writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
-	return 0;
-}
+	rrr_ip_buffer_entry_lock(message);
 
-static int poll_callback_final (struct ip_data *data, struct rrr_ip_buffer_entry *entry) {
-	data->messages_count_polled++;
-	rrr_fifo_buffer_write(&data->send_buffer, (char *) entry, sizeof(*entry));
-	return 0;
-}
-
-static int poll_callback (struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
-	struct ip_data *private_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
-	struct rrr_ip_buffer_entry *entry = NULL;
-
-	RRR_DBG_3 ("ip instance %s: Result from buffer: timestamp %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp, size);
-
-	if (rrr_ip_buffer_entry_new (
-			&entry,
-			MSG_TOTAL_SIZE(message),
-			NULL,
-			0,
-			0,
+	int ret = rrr_message_broker_with_ctx_do (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			inject_callback,
+			data,
 			message
-	) != 0) {
-		RRR_MSG_ERR("Could not create ip buffer entry in ip poll_callback\n");
-		free(data);
-		return 1;
-	}
+	);
 
-	return poll_callback_final(private_data, entry);
+	rrr_ip_buffer_entry_destroy_while_locked(message);
+
+	return ret;
 }
 
-static int poll_callback_ip (struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
-	struct ip_data *private_data = thread_data->private_data;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct ip_data *data = thread_data->private_data;
 
-	RRR_DBG_3 ("ip instance %s: Result from buffer ip: size %lu\n",
-			INSTANCE_D_NAME(thread_data), size);
+	struct rrr_message *message = entry->message;
 
-	return poll_callback_final(private_data, entry);
+	RRR_DBG_3 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp);
+
+	RRR_LL_APPEND(&data->send_buffer, entry);
+
+	rrr_ip_buffer_entry_unlock(entry);
+
+	return 0;
 }
 
-struct input_callback_data {
-	struct ip_data *ip_data;
-	struct rrr_ip_accept_data_collection *tcp_connect_data;
-};
+// TODO : This function is very long, have a look at that
 
-static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
-	struct input_callback_data *input_callback_data = poll_data->private_data;
-	struct ip_data *ip_data = input_callback_data->ip_data;
-	struct rrr_ip_accept_data_collection *tcp_connect_data = input_callback_data->tcp_connect_data;
+static int input_callback (
+		int *do_destroy,
+		struct ip_data *ip_data,
+		struct rrr_ip_accept_data_collection *tcp_connect_data,
+		struct rrr_ip_buffer_entry *entry
+) {
+	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
 	struct rrr_ip_accept_data *accept_data_tmp = NULL;
-	int ret = RRR_FIFO_OK;
+	int ret = 0;
 
-	(void)(size);
-
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+	// Default is that message was handled correctly and should be destroyed
+	*do_destroy = 1;
 
 	char *tmp_data = NULL; // Freed upon function return
 
@@ -899,14 +840,14 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 		if (entry->protocol == RRR_IP_TCP) {
 			accept_data = rrr_ip_accept_data_collection_find (
 					tcp_connect_data,
-					&entry->addr,
+					(struct sockaddr *) &entry->addr,
 					entry->addr_len
 			);
 
 			if (accept_data == NULL) {
 				if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw(
 						&accept_data_tmp,
-						&entry->addr,
+						(struct sockaddr *) &entry->addr,
 						entry->addr_len
 				) != 0) {
 					RRR_MSG_ERR("Could not connect to remote in ip instance %s, dropping message\n",
@@ -926,7 +867,7 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 			ret = rrr_ip_send (
 				&err,
 				ip_data->ip_udp.fd,
-				&entry->addr,
+				(struct sockaddr *) &entry->addr,
 				entry->addr_len,
 				(void *) send_data, // Cast away const OK
 				send_size
@@ -982,17 +923,12 @@ static int input_callback(struct rrr_fifo_callback_args *poll_data, char *data, 
 	goto out;
 
 	out_put_back:
-		rrr_fifo_buffer_write(&ip_data->send_buffer, data, size);
-		data = NULL; // Prevents FREE below
-
 		// Don't stop and block others, continue reading from the buffer in
 		// case there are other targets
 		ret = 0;
+		*do_destroy = 0;
 
 	out:
-		if (data != NULL) {
-			ret |= RRR_FIFO_SEARCH_FREE;
-		}
 		if (accept_data_tmp != NULL) {
 			rrr_ip_accept_data_close_and_destroy_void(accept_data_tmp);
 		}
@@ -1005,7 +941,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
 	struct poll_collection poll;
-	struct poll_collection poll_ip;
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
@@ -1017,16 +952,14 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll_ip);
 	poll_collection_init(&poll);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+
 	// Don't set running here, wait until listening has started
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
@@ -1036,11 +969,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
-	poll_add_from_thread_senders(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP|RRR_POLL_NO_SENDERS_OK);
-	poll_remove_senders_also_in(&poll, &poll_ip);
+	poll_add_from_thread_senders(&poll, thread_data);
 
-	int has_senders = (poll_collection_count(&poll) + poll_collection_count(&poll_ip) > 0 ? 1 : 0);
+	int has_senders = (poll_collection_count(&poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_ERR("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1094,27 +1025,29 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (has_senders != 0) {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 0) != 0) {
-				break;
-			}
-			if (poll_do_poll_delete_ip_simple (&poll_ip, thread_data, poll_callback_ip, 0) != 0) {
+			if (poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
 				break;
 			}
 		}
 
-		struct input_callback_data input_callback_data = {
-			data,
-			&tcp_connect_data
-		};
+		int ret_tmp = 0;
+		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_ip_buffer_entry);
+			int do_destroy = 0;
+			rrr_ip_buffer_entry_lock(node);
+			if ((ret_tmp = input_callback(&do_destroy, data, &tcp_connect_data, node)) != 0) {
+				RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+				RRR_LL_ITERATE_LAST();
+			}
 
-		struct rrr_fifo_callback_args callback_args = {
-			thread_data,
-			&input_callback_data,
-			0
-		};
+			if (do_destroy) {
+				RRR_LL_ITERATE_SET_DESTROY();
+			}
+			else {
+				rrr_ip_buffer_entry_unlock(node);
+			}
+		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
 
-		if (rrr_fifo_buffer_read_clear_forward(&data->send_buffer, NULL, input_callback, &callback_args, 0) != 0) {
-			RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+		if (ret_tmp != 0) {
 			break;
 		}
 
@@ -1125,12 +1058,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			if (tcp_read_data(data, &tcp_accept_data) != 0) {
 				break;
 			}
-			struct rrr_fifo_callback_args callback_data = {NULL, data, 0};
-			if (rrr_fifo_buffer_read_clear_forward(&data->inject_buffer, NULL, inject_callback, &callback_data, 0) != 0) {
-				RRR_MSG_ERR("Error from inject buffer in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
-				break;
-			}
-
 		}
 
 		// Sleep if nothing happened
@@ -1144,6 +1071,20 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 
 		if (stats != NULL && time_now > next_stats_time) {
+			int delivery_entry_count = 0;
+			int delivery_ratelimit_active = 0;
+
+			if (rrr_message_broker_get_entry_count_and_ratelimit (
+					&delivery_entry_count,
+					&delivery_ratelimit_active,
+					INSTANCE_D_BROKER(thread_data),
+					INSTANCE_D_HANDLE(thread_data)
+			) != 0) {
+				RRR_MSG_ERR("Error while getting numbers from output buffer in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
+			}
+
 			rrr_stats_instance_update_rate(stats, 1, "read_error_count", data->read_error_count);
 			rrr_stats_instance_update_rate(stats, 2, "read_count", data->messages_count_read);
 			rrr_stats_instance_update_rate(stats, 3, "polled_count", data->messages_count_polled);
@@ -1151,7 +1092,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 					stats,
 					"delivery_buffer_count",
 					0,
-					rrr_fifo_buffer_get_entry_count(&data->delivery_buffer)
+					delivery_entry_count
 			);
 			tick = 0;
 			data->read_error_count = 0;
@@ -1159,9 +1100,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			data->messages_count_polled = 0;
 			next_stats_time = time_now + 1000000;
 
-			if (rrr_fifo_buffer_get_entry_count(&data->delivery_buffer) > 10000) {
+			if (delivery_entry_count > 10000 && delivery_ratelimit_active == 0) {
 				RRR_DBG_1("Enabling ratelimit on buffer in ip instance %s due to slow reader\n", INSTANCE_D_NAME(thread_data));
-				rrr_fifo_buffer_set_do_ratelimit(&data->delivery_buffer, 1);
+				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+			}
+			else if (delivery_entry_count < 10 && delivery_ratelimit_active == 1) {
+				RRR_DBG_1("Disabling ratelimit on buffer in ip instance %s due to low buffer level\n", INSTANCE_D_NAME(thread_data));
+				rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
 			}
 		}
 
@@ -1187,7 +1132,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 //	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
@@ -1208,10 +1152,6 @@ static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_ip,
 	NULL,
-	poll,
-	NULL,
-	poll_delete,
-	poll_delete_ip,
 	test_config,
 	inject,
 	NULL

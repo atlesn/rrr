@@ -89,6 +89,11 @@ int rrr_message_broker_write_entry_unsafe (
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry *entry
 );
+int rrr_message_broker_write_entry_delayed_unsafe (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		struct rrr_ip_buffer_entry *entry
+);
 int rrr_message_broker_write_entries_from_collection (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
@@ -118,6 +123,13 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 		int *ratelimit_active,
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle
+);
+int rrr_message_broker_with_ctx_do (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*callback)(void *callback_arg_1, void *callback_arg_2),
+		void *callback_arg_1,
+		void *callback_arg_2
 );
 
 #endif /* RRR_MESSAGE_BROKER_H */

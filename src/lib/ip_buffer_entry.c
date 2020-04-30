@@ -199,3 +199,20 @@ int rrr_ip_buffer_entry_clone (
 
 	return ret;
 }
+
+void rrr_ip_buffer_entry_set_unlocked (
+		struct rrr_ip_buffer_entry *target,
+		void *message,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int protocol
+) {
+	RRR_FREE_IF_NOT_NULL(target->message);
+
+	target->message = message;
+	target->data_length = message_data_length;
+	memcpy(&target->addr, addr, addr_len);
+	target->addr_len = addr_len;
+	target->protocol = protocol;
+}

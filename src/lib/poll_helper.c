@@ -193,7 +193,13 @@ int poll_do_poll_delete (
 
 		struct poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_message_broker_poll_delete(INSTANCE_D_BROKER(entry->thread_data), entry->handle, callback, thread_data, wait_milliseconds);
+		ret_tmp = rrr_message_broker_poll_delete (
+				INSTANCE_D_BROKER(entry->thread_data),
+				entry->handle,
+				callback,
+				thread_data,
+				wait_milliseconds
+		);
 
 		if (	(ret_tmp & RRR_FIFO_CALLBACK_ERR) ==  RRR_FIFO_CALLBACK_ERR ||
 				(ret_tmp & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR
