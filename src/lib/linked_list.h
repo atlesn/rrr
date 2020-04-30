@@ -164,7 +164,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}} while (0)
 
 #define RRR_LL_SHIFT(head)													\
-	RRR_LL_FIRST(head);														\
+	RRR_LL_FIRST(head);	/* Shift is used with assignment */					\
 	do {if ((head)->ptr_last == (head)->ptr_first) {						\
 		(head)->ptr_first = NULL;											\
 		(head)->ptr_last = NULL;											\
@@ -172,6 +172,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		(head)->ptr_first = (head)->ptr_first->ptr_next;					\
 		(head)->ptr_first->ptr_prev = NULL;									\
 	} (head)->node_count--; } while (0)
+
+#define RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)					\
+	do {if ((source)->ptr_first != NULL) {									\
+			if ((target)->ptr_last != NULL) {								\
+				(target)->ptr_last->ptr_next = (source)->ptr_first;			\
+			}																\
+			(source)->ptr_first->ptr_prev = (target)->ptr_last;				\
+			(target)->ptr_last = (source)->ptr_last;						\
+			if ((target)->ptr_first == NULL) {								\
+				(target)->ptr_first = (source)->ptr_first;					\
+			}																\
+			(source)->ptr_first = (source)->ptr_last = NULL;				\
+		}} while(0)
 
 #define RRR_LL_ITERATE_BEGIN_AT(head, type, at, reverse) do {	\
 	type *node = (at);											\
@@ -253,7 +266,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				if ((lock) != 0) { lock_err; }													\
 				__RRR_LL_ITERATE_REMOVE_NODE(head);												\
 				if ((unlock) != 0) { lock_err; }												\
-			}																			\
+			}																					\
 			linked_list_iterate_destroy = 0;													\
 		}																						\
 		if (linked_list_reverse) {																\

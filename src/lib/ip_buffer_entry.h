@@ -70,6 +70,9 @@ void rrr_ip_buffer_entry_destroy_void (
 void rrr_ip_buffer_entry_collection_clear (
 		struct rrr_ip_buffer_entry_collection *collection
 );
+void rrr_ip_buffer_entry_collection_clear_void (
+		void *arg
+);
 int rrr_ip_buffer_entry_new (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,

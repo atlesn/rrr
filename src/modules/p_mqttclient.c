@@ -41,10 +41,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
+#include "../lib/message_broker.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
@@ -481,16 +483,6 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	return ret;
 }
 
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_buffer_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll_keep (RRR_MODULE_POLL_SIGNATURE) {
-	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_buffer_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
-}
-
 static int process_unsuback (
 		struct mqtt_client_data *data,
 		const struct rrr_mqtt_subscription *subscription,
@@ -639,13 +631,10 @@ static int message_data_to_payload (
 	return 0;
 }
 
-static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
+static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct mqtt_client_data *private_data = thread_data->private_data;
 	struct rrr_mqtt_p_publish *publish = NULL;
-	struct rrr_message *reading = (struct rrr_message *) data;
-
-	(void)(size);
+	struct rrr_message *reading = (struct rrr_message *) entry->message;
 
 	char *payload = NULL;
 	ssize_t payload_size = 0;
@@ -653,8 +642,8 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 
 	struct rrr_array array_tmp = {0};
 
-	RRR_DBG_2 ("mqtt client %s: Result from buffer: timestamp %" PRIu64 " size %lu, creating PUBLISH\n",
-			INSTANCE_D_NAME(thread_data), reading->timestamp, size);
+	RRR_DBG_2 ("mqtt client %s: Result from buffer: timestamp %" PRIu64 ", creating PUBLISH\n",
+			INSTANCE_D_NAME(thread_data), reading->timestamp);
 
 	if (private_data->mqtt_client_data->protocol_version == NULL) {
 		RRR_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
@@ -725,9 +714,9 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 			ret = 1;
 			goto out_free;
 		}
-		payload = data;
+		payload = entry->message;
 		payload_size = msg_size;
-		data = NULL;
+		entry->message = NULL;
 	}
 	else if (private_data->publish_values_from_array != NULL) {
 		if (!MSG_IS_ARRAY(reading)) {
@@ -807,7 +796,7 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	RRR_FREE_IF_NOT_NULL(data);
+	rrr_ip_buffer_entry_destroy_while_locked(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -995,10 +984,64 @@ static int __try_create_array_message_from_publish (
 	return ret;
 }
 
+struct receive_publish_create_entry_callback_data {
+	struct mqtt_client_data *data;
+	const struct rrr_message *message;
+};
 
-#define WRITE_TO_BUFFER_AND_SET_TO_NULL(msg)								\
-	rrr_fifo_buffer_write(&data->output_buffer, (char*) msg, sizeof(*msg));		\
-	msg = NULL
+static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct receive_publish_create_entry_callback_data *data = arg;
+
+	int ret = 0;
+
+	size_t msg_size = MSG_TOTAL_SIZE(data->message);
+
+	if ((entry->message = malloc(msg_size)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in __receive_publish_create_entry_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Data must be copied to have the write happening while the locks are held
+	memcpy(entry->message, data->message, msg_size);
+	entry->data_length = msg_size;
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
+static int __receive_publish_create_and_save_entry (const struct rrr_message *message, struct mqtt_client_data *data) {
+	int ret = 0;
+
+	struct receive_publish_create_entry_callback_data callback_data = {
+			data,
+			message
+	};
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER(data->thread_data),
+			INSTANCE_D_HANDLE(data->thread_data),
+			NULL,
+			0,
+			0,
+			__receive_publish_create_entry_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing entry to output buffer in __receive_publish_create_entry of mqtt client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+#define WRITE_TO_BUFFER_AND_SET_TO_NULL(message)								\
+	if ((ret = __receive_publish_create_and_save_entry(message, data)) != 0) {	\
+		goto out;																\
+	}	RRR_FREE_IF_NOT_NULL(message)
 
 static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
@@ -1398,7 +1441,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
-	poll_add_from_thread_senders(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	poll_add_from_thread_senders(&poll, thread_data);
 
 	if (poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {
@@ -1467,9 +1510,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-				goto out_destroy_client;
-			}
+			poll_do_poll_delete (thread_data, &poll, poll_callback, 50);
+
 			startup_time = 0;
 		}
 
@@ -1508,10 +1550,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
-		NULL,
-		poll_keep,
-		NULL,
-		poll_delete,
 		NULL,
 		NULL,
 		NULL,

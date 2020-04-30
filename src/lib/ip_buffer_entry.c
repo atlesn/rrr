@@ -74,6 +74,12 @@ void rrr_ip_buffer_entry_collection_clear (
 	RRR_LL_DESTROY(collection, struct rrr_ip_buffer_entry, rrr_ip_buffer_entry_destroy(node));
 }
 
+void rrr_ip_buffer_entry_collection_clear_void (
+		void *arg
+) {
+	rrr_ip_buffer_entry_collection_clear(arg);
+}
+
 int rrr_ip_buffer_entry_new (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,

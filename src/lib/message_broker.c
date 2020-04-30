@@ -371,6 +371,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 			}
 			// Entry will be freed by pthread_cleanup_pop
 			ret_tmp |= RRR_FIFO_WRITE_DROP;
+			// No goto
 		}
 
 		ret &= ~(RRR_MESSAGE_BROKER_DROP|RRR_MESSAGE_BROKER_AGAIN);
