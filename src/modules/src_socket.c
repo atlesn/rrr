@@ -176,8 +176,9 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int read_data_receive_message_callback (struct rrr_message *message, void *arg) {
+int read_data_receive_message_callback (struct rrr_message **message_ptr, void *arg) {
 	struct socket_data *data = arg;
+	struct rrr_message *message = *message_ptr;
 
 	if (MSG_TOPIC_LENGTH(message) == 0 && data->default_topic != NULL) {
 		if (rrr_message_set_topic(&message, data->default_topic, strlen(data->default_topic)) != 0) {
@@ -194,7 +195,6 @@ int read_data_receive_message_callback (struct rrr_message *message, void *arg) 
 	return 0;
 
 	out_err:
-		free(message);
 		return 1;
 }
 

@@ -292,6 +292,7 @@ int rrr_mqtt_conn_check_alive (
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
+		struct rrr_mqtt_p **packet,
 		struct rrr_mqtt_conn *connection
 );
 int rrr_mqtt_conn_iterator_ctx_parse (

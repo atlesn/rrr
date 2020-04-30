@@ -374,7 +374,7 @@ static int __rrr_mqtt_session_ram_packet_id_release_callback (RRR_FIFO_READ_CALL
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	(void)(size);
-	(void)(callback_data);
+	(void)(arg);
 
 	return (__rrr_mqtt_session_ram_packet_id_release(packet) == 0 ? RRR_FIFO_OK : RRR_FIFO_GLOBAL_ERR);
 }
@@ -651,7 +651,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish (
 }
 
 static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_mqtt_session_collection_ram_data *ram_data = callback_data->source;
+	struct rrr_mqtt_session_collection_ram_data *ram_data = arg;
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
 
 	(void)(size);
@@ -721,7 +721,7 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 		goto out;
 	}
 
-	struct maintain_queue_callback_data *queue_callback_data = callback_data->private_data;
+	struct maintain_queue_callback_data *queue_callback_data = arg;
 
 	int ack_complete = 0;
 	int discard_now = 0;
@@ -803,9 +803,6 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 		complete_publish_grace_time * 1000 * 1000,
 		retry_interval * 1000 * 1000
 	};
-	struct rrr_fifo_callback_args callback_data = {
-			NULL, &queue_callback_data, 0
-	};
 
 	if (queue_callback_data.counter > 0) {
 		RRR_DBG_1("Deleted %i entries in __rrr_mqtt_session_ram_maintain_queue\n",
@@ -815,7 +812,7 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 	return rrr_fifo_buffer_search (
 			&queue->buffer,
 			__rrr_mqtt_session_ram_maintain_queue_callback,
-			&callback_data,
+			&queue_callback_data,
 			0
 	);
 }
@@ -847,7 +844,7 @@ static int __rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callba
 
 	(void)(size);
 
-	struct iterate_local_delivery_callback_data *iterate_callback_data = callback_data->private_data;
+	struct iterate_local_delivery_callback_data *iterate_callback_data = arg;
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
 
 	if (RRR_MQTT_P_GET_TYPE(publish) != RRR_MQTT_P_TYPE_PUBLISH) {
@@ -878,16 +875,12 @@ static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 			callback_arg
 	};
 
-	struct rrr_fifo_callback_args callback_args = {
-			NULL, &iterate_callback_data, 0
-	};
-
 	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(
 			rrr_fifo_buffer_read_clear_forward(
 					&data->publish_local_queue.buffer,
 					NULL,
 					__rrr_mqtt_session_collection_iterate_and_clear_local_delivery_callback,
-					&callback_args,
+					&iterate_callback_data,
 					0
 			),
 			goto out,
@@ -908,8 +901,13 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	uint64_t time_now = rrr_time_get_64();
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	struct rrr_fifo_callback_args callback_args = { data, NULL, 0 };
-	ret = rrr_fifo_buffer_read_clear_forward(&data->publish_forward_queue.buffer, NULL,  __rrr_mqtt_session_collection_ram_forward_publish_to_clients, &callback_args, 0);
+	ret = rrr_fifo_buffer_read_clear_forward(
+			&data->publish_forward_queue.buffer,
+			NULL,
+			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
+			data,
+			0
+	);
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
 		RRR_MSG_ERR("Critical error from publish queue buffer in __rrr_mqtt_session_collection_ram_maintain\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -981,7 +979,7 @@ struct preserve_publish_list {
 static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) data;
-	struct preserve_publish_list *preserve_data = callback_data->private_data;
+	struct preserve_publish_list *preserve_data = arg;
 
 	// Upon errors, the generated linked list must be cleared by caller
 
@@ -1035,10 +1033,6 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 
 	struct preserve_publish_list preserve_data = {0};
 
-	struct rrr_fifo_callback_args fifo_args = {
-		NULL, &preserve_data, 0
-	};
-
 	// Remove the packet ID free functions as the packets might call back in the
 	// session system to release packet ID when they are destroyed, which cause
 	// deadlock with ram session lock. We also preserve the outbound PUBLISH packets
@@ -1046,7 +1040,7 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 	rrr_fifo_buffer_clear_with_callback (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback,
-			&fifo_args
+			&preserve_data
 	);
 
 	if (preserve_data.error_in_callback != 0) {
@@ -1214,7 +1208,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 
 	(void)(size);
 
-	struct ram_process_ack_callback_data *ack_callback_data = callback_data->private_data;
+	struct ram_process_ack_callback_data *ack_callback_data = arg;
 	struct rrr_mqtt_session_ram *ram_session = ack_callback_data->ram_session;
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 	struct rrr_mqtt_p *ack_packet = ack_callback_data->ack_packet;
@@ -1440,12 +1434,11 @@ static int __rrr_mqtt_session_ram_process_iterate_ack (
 			0, // Initialize found counter
 			ram_session
 	};
-	struct rrr_fifo_callback_args fifo_callback_data = {NULL, &callback_data, 0};
 
 	ret = rrr_fifo_buffer_read (
 			&queue->buffer,
 			__rrr_mqtt_session_ram_process_ack_callback,
-			&fifo_callback_data,
+			&callback_data,
 			0
 	);
 
@@ -1789,7 +1782,7 @@ static int __rrr_mqtt_session_ram_find_qos2_publish_callback (RRR_FIFO_READ_CALL
 
 	(void)(size);
 
-	struct find_qos2_publish_data *qos2_publish_data = callback_data->private_data;
+	struct find_qos2_publish_data *qos2_publish_data = arg;
 	struct rrr_mqtt_p_publish *publish_in_buffer = (struct rrr_mqtt_p_publish *) data;
 	struct rrr_mqtt_p_publish *publish_received = qos2_publish_data->publish;
 
@@ -1880,16 +1873,12 @@ static int __rrr_mqtt_session_ram_receive_publish (
 				0
 		};
 
-		struct rrr_fifo_callback_args fifo_callback_args = {
-				NULL, &callback_data, 0
-		};
-
 		// Callback will INCREF the packet it finds
 		int ret_tmp = rrr_fifo_buffer_read_minimum (
 				&ram_session->from_remote_queue.buffer,
 				NULL,
 				__rrr_mqtt_session_ram_find_qos2_publish_callback,
-				&fifo_callback_args,
+				&callback_data,
 				publish->packet_identifier - 1,
 				0
 		);
@@ -1996,7 +1985,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 
 	(void)(size);
 
-	struct iterate_send_queue_callback_data *iterate_callback_data = callback_data->private_data;
+	struct iterate_send_queue_callback_data *iterate_callback_data = arg;
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	RRR_MQTT_P_LOCK(packet);
@@ -2161,13 +2150,11 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			ram_session
 	};
 
-	struct rrr_fifo_callback_args fifo_callback_args = {NULL, &callback_data, 0};
-
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US
 	ret = rrr_fifo_buffer_read (
 			&ram_session->to_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
-			&fifo_callback_args,
+			&callback_data,
 			0
 	);
 
@@ -2188,7 +2175,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 	ret = rrr_fifo_buffer_read (
 			&ram_session->from_remote_queue.buffer,
 			__rrr_mqtt_session_ram_iterate_send_queue_callback,
-			&fifo_callback_args,
+			&callback_data,
 			0
 	);
 

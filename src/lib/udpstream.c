@@ -1059,17 +1059,142 @@ struct ack_list {
 	RRR_LL_HEAD(struct ack_list_node);
 };
 
-static int __rrr_udpstream_process_receive_buffer (
-		struct rrr_udpstream *data,
-		struct rrr_udpstream_stream *stream,
-		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
-		void *callback_validator_arg,
-		int (*callback)(const struct rrr_udpstream_receive_data *receive_data, void *arg),
-		void *callback_arg
+struct rrr_udpstream_process_receive_buffer_callback_data {
+	struct rrr_udpstream_stream *stream;
+	int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg);
+	void *callback_validator_arg;
+	int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg);
+	void *receive_callback_arg;
+
+	uint32_t accumulated_data_size;
+	struct rrr_udpstream_frame *first_deliver_node;
+	struct rrr_udpstream_frame *last_deliver_node;
+};
+
+static int __rrr_udpstream_process_receive_buffer_callback (
+		void **joined_data,
+		void *allocation_handle,
+		void *arg
 ) {
+	void *write_pos = *joined_data;
+	struct rrr_udpstream_process_receive_buffer_callback_data *data = arg;
+
+	int ret = 0;
+
+	// Read from the first undelivered node up to boundary to get a full original message
+	RRR_LL_ITERATE_BEGIN_AT(&stream->receive_buffer, struct rrr_udpstream_frame, data->first_deliver_node, 0);
+		if (node->data != NULL && node->data_size > 0) {
+			memcpy (write_pos, node->data, node->data_size);
+			write_pos += node->data_size;
+		}
+
+		if (node == data->last_deliver_node) {
+			RRR_LL_ITERATE_LAST();
+
+			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
+					data->stream->stream_id, node->frame_id, node->application_data);
+
+			if (write_pos - *joined_data != data->accumulated_data_size) {
+				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
+			}
+
+			if (data->validator_callback != NULL) {
+				ssize_t target_size = 0;
+
+				if ((ret = data->validator_callback (
+						&target_size,
+						*joined_data,
+						data->accumulated_data_size,
+						data->callback_validator_arg
+				)) != 0) {
+					RRR_MSG_ERR("Header validation failed of message in UDP-stream %u, data will be lost\n",
+							data->stream->stream_id);
+					ret = 0;
+					goto loop_bottom_clenaup;
+				}
+
+				if (target_size != data->accumulated_data_size) {
+					RRR_MSG_ERR("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
+							data->stream->stream_id);
+					goto loop_bottom_clenaup;
+				}
+			}
+
+			if (data->receive_callback != NULL) {
+				struct rrr_udpstream_receive_data callback_data = {
+						allocation_handle,
+						data->accumulated_data_size,
+						data->stream->connect_handle,
+						data->stream->stream_id,
+						node->application_data,
+						node->source_addr,
+						node->source_addr_len
+				};
+
+				// This function must always take care of or free memory in callback_data->data
+				if (data->receive_callback (joined_data, &callback_data, data->receive_callback_arg) != 0) {
+					RRR_MSG_ERR("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
+					ret = 1;
+					goto out;
+				}
+			}
+
+			loop_bottom_clenaup:
+			data->accumulated_data_size = 0;
+			data->first_deliver_node = NULL;
+		}
+
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->stream->receive_buffer, __rrr_udpstream_frame_destroy(node));
+
+	out:
+	return ret;
+}
+/* Not currently used. ASD framework has allocator function.
+int rrr_udpstream_default_allocator (
+		uint32_t size,
+		int (*callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+		void *udpstream_callback_arg,
+		void *arg
+) {
+	(void)(arg);
+
 	int ret = 0;
 
 	void *joined_data = NULL;
+
+	if ((joined_data = malloc(size)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
+		ret = 1;
+		goto out;
+	}
+
+	ret = callback(&joined_data, NULL, udpstream_callback_arg);
+
+	if (*joined_data != NULL) {
+		free(*joined_data);
+	}
+
+	out:
+	return ret;
+}
+*/
+static int __rrr_udpstream_process_receive_buffer (
+		struct rrr_udpstream *data,
+		struct rrr_udpstream_stream *stream,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
+		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
+		void *validator_callback_arg,
+		int (*final_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		void *final_callback_arg
+) {
+	int ret = 0;
 
 	struct ack_list ack_list = {0};
 
@@ -1250,84 +1375,31 @@ static int __rrr_udpstream_process_receive_buffer (
 
 	stream->receive_buffer.frame_id_prev_boundary_pos = last_deliver_node->frame_id;
 
-	RRR_FREE_IF_NOT_NULL(joined_data);
-	if ((joined_data = malloc(accumulated_data_size)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
-		ret = 1;
+	struct rrr_udpstream_process_receive_buffer_callback_data callback_data = {
+			stream,
+			validator_callback,
+			validator_callback_arg,
+			final_callback,
+			final_callback_arg,
+			accumulated_data_size,
+			first_deliver_node,
+			last_deliver_node
+	};
+
+	if ((ret = allocator_callback (
+			accumulated_data_size,
+			__rrr_udpstream_process_receive_buffer_callback,
+			&callback_data,
+			allocator_callback_arg
+	)) != 0) {
+		RRR_MSG_ERR("Error from allocator in __rrr_udpstream_process_receive_buffer\n");
 		goto out;
 	}
-
-	void *write_pos = joined_data;
-	// Read from the first undelivered node up to boundary to get a full original message
-	RRR_LL_ITERATE_BEGIN_AT(&stream->receive_buffer, struct rrr_udpstream_frame, first_deliver_node, 0);
-		if (node->data != NULL && node->data_size > 0) {
-			memcpy (write_pos, node->data, node->data_size);
-			write_pos += node->data_size;
-		}
-
-		if (node == last_deliver_node) {
-			RRR_LL_ITERATE_LAST();
-
-			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
-					stream->stream_id, node->frame_id, node->application_data);
-
-			if (write_pos - joined_data != accumulated_data_size) {
-				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
-			}
-
-			if (validator_callback != NULL) {
-				ssize_t target_size = 0;
-
-				if ((ret = validator_callback (
-						&target_size,
-						joined_data,
-						accumulated_data_size,
-						callback_validator_arg
-				)) != 0) {
-					RRR_MSG_ERR("Header validation failed of message in UDP-stream %u, data will be lost\n", stream->stream_id);
-					ret = 0;
-					goto loop_bottom_clenaup;
-				}
-
-				if (target_size != accumulated_data_size) {
-					RRR_MSG_ERR("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n", stream->stream_id);
-					goto loop_bottom_clenaup;
-				}
-			}
-
-			if (callback != NULL) {
-				struct rrr_udpstream_receive_data callback_data = {
-						joined_data,
-						accumulated_data_size,
-						stream->connect_handle,
-						stream->stream_id,
-						node->application_data,
-						node->source_addr,
-						node->source_addr_len
-				};
-				joined_data = NULL;
-
-				// This function must always take care of or free memory in callback_data->data
-				if (callback (&callback_data, callback_arg) != 0) {
-					RRR_MSG_ERR("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
-					ret = 1;
-					goto out;
-				}
-			}
-
-			loop_bottom_clenaup:
-			accumulated_data_size = 0;
-			first_deliver_node = NULL;
-		}
-
-		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&stream->receive_buffer, __rrr_udpstream_frame_destroy(node));
 
 	goto deliver_again;
 
 	out:
 	RRR_LL_DESTROY(&ack_list, struct ack_list_node, free(node));
-	RRR_FREE_IF_NOT_NULL(joined_data);
 	return ret;
 }
 
@@ -1335,9 +1407,16 @@ static int __rrr_udpstream_process_receive_buffer (
 // memory in receive_data->data or free it, also upon errors
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
 		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
 		void *validator_callback_arg,
-		int (*receive_callback)(const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
 		void *receive_callback_arg
 ) {
 	int ret = 0;
@@ -1348,6 +1427,8 @@ int rrr_udpstream_do_process_receive_buffers (
 		if ((ret = __rrr_udpstream_process_receive_buffer (
 				data,
 				node,
+				allocator_callback,
+				allocator_callback_arg,
 				validator_callback,
 				validator_callback_arg,
 				receive_callback,
@@ -1392,7 +1473,7 @@ static int __rrr_udpstream_maintain (
 
 // Do all reading and store messages into the buffer. Control messages are
 // not buffered, but delivered directly to the application layer through
-// the callback function.
+// the receive_callback function.
 int rrr_udpstream_do_read_tasks (
 		struct rrr_udpstream *data,
 		int (*control_frame_listener)(uint32_t connect_handle, uint64_t application_data, void *arg),

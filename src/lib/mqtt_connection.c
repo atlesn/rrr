@@ -1266,9 +1266,12 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 }
 
 int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
+		struct rrr_mqtt_p **packet,
 		struct rrr_mqtt_conn *connection
 ) {
 	int ret = RRR_MQTT_CONN_OK;
+
+	*packet = NULL;
 
 	/* There can be multiple parse threads, make sure we do not block */
 	if (RRR_MQTT_CONN_TRYLOCK(connection) != 0) {
@@ -1287,13 +1290,10 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 			goto out_unlock;
 		}
 
-		struct rrr_mqtt_p *packet;
 		ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
 		if (rrr_mqtt_p_standardized_get_refcount(packet) != 1) {
 			RRR_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
 		}
-
-		rrr_fifo_buffer_write(&connection->receive_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
 
 		rrr_mqtt_parse_session_destroy(&connection->parse_session);
 		rrr_mqtt_parse_session_init(&connection->parse_session);

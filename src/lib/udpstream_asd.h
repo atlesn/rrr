@@ -159,7 +159,13 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*final_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
 		struct rrr_udpstream_asd *session
 );
-
 #endif /* RRR_UDPSTREAM_ASD_H */

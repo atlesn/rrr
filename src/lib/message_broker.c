@@ -277,7 +277,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 		goto out;
 	}
 
-	// Callback must unlock
+	// Callback must ALWAYS unlock
 	rrr_ip_buffer_entry_lock(entry);
 
 	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
@@ -286,11 +286,13 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 				RRR_BUG("BUG: Extra return values from callback (%i) in addition to AGAIN in __rrr_message_broker_write_entry_intermediate\n", ret);
 			}
 			ret = RRR_FIFO_WRITE_AGAIN;
+			// No goto
 		}
 		else if ((ret & RRR_MESSAGE_BROKER_DROP) == RRR_MESSAGE_BROKER_DROP) {
 			if ((ret & ~(RRR_MESSAGE_BROKER_DROP)) != 0) {
 				RRR_BUG("BUG: Extra return values from callback (%i) in addition to DROP in __rrr_message_broker_write_entry_intermediate\n", ret);
 			}
+			// Entry will be freed by pthread_cleanup_pop
 			ret = RRR_FIFO_WRITE_ABORT;
 			goto out;
 		}
@@ -298,6 +300,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 			RRR_BUG("Unknown return values %i from callback to __rrr_message_broker_write_entry_intermediate\n", ret);
 		}
 		else {
+			// Entry will be freed by pthread_cleanup_pop
 			ret = RRR_FIFO_GLOBAL_ERR;
 			goto out;
 		}
@@ -341,6 +344,90 @@ int rrr_message_broker_write_entry (
 			&callback_data
 	)) != 0) {
 		RRR_MSG_ERR("Error while writing to buffer in rrr_message_broker_write_entry\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+static int __rrr_message_broker_write_clone_and_write_entry_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
+	const struct rrr_ip_buffer_entry *source = arg;
+
+	int ret = 0;
+
+	struct rrr_ip_buffer_entry *target = NULL;
+
+	if (rrr_ip_buffer_entry_clone(&target, source) != 0) {
+		RRR_MSG_ERR("Could not clone ip buffer entry in __rrr_message_broker_write_clone_and_write_entry_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	*data = (char *) target;
+	*size = sizeof(*target);
+	*order = 0;
+
+	target = NULL;
+
+	out:
+	return ret;
+}
+
+int rrr_message_broker_clone_and_write_entry (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		const struct rrr_ip_buffer_entry *entry
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_clone_and_write_entry");
+
+	if ((ret = rrr_fifo_buffer_write (
+			&costumer->queue,
+			__rrr_message_broker_write_clone_and_write_entry_callback,
+			(void *) entry
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing to buffer in rrr_message_broker_clone_and_write_entry\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_WRITE_CALLBACK_ARGS) {
+	struct rrr_ip_buffer_entry *entry = arg;
+
+	*data = (char *) entry;
+	*size = sizeof(*entry);
+	*order = 0;
+
+	return 0;
+}
+
+// Only to be used when we already are inside a read callback and the
+// entry we passed in is guaranteed to have been allocated and modified
+// exclusively in message broker context
+int rrr_message_broker_write_entry_unsafe (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		struct rrr_ip_buffer_entry *entry
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_write_entry_unsafe");
+
+	if ((ret = rrr_fifo_buffer_write (
+			&costumer->queue,
+			__rrr_message_broker_write_entry_unsafe_callback,
+			entry
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing to buffer in rrr_message_broker_write_entry_unsafe\n");
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
 	}
@@ -437,7 +524,7 @@ int rrr_message_broker_poll (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete ");
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll");
 
 	struct rrr_message_broker_read_entry_intermediate_callback_data callback_data = {
 			callback,
@@ -454,6 +541,43 @@ int rrr_message_broker_poll (
 	}
 
 	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+int rrr_message_broker_set_ratelimit (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int set
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
+
+	rrr_fifo_buffer_set_do_ratelimit(&costumer->queue, set);
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+int rrr_message_broker_get_entry_count_and_ratelimit (
+		int *entry_count,
+		int *ratelimit_active,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	*entry_count = 0;
+	*ratelimit_active = 0;
+
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_set_ratelimit");
+
+	*entry_count = rrr_fifo_buffer_get_entry_count(&costumer->queue);
+	*ratelimit_active = rrr_fifo_buffer_get_ratelimit_active(&costumer->queue);
+
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
 	return ret;
 }

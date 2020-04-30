@@ -387,11 +387,11 @@ int rrr_read_message_using_callbacks (
 }
 
 int rrr_read_common_receive_message_raw_callback (
-		void *data,
+		void **data,
 		ssize_t data_size,
 		struct rrr_read_common_receive_message_callback_data *callback_data
 ) {
-	struct rrr_socket_msg *socket_msg = data;
+	struct rrr_socket_msg *socket_msg = *data;
 
 	int ret = 0;
 
@@ -399,20 +399,20 @@ int rrr_read_common_receive_message_raw_callback (
 	if (rrr_socket_msg_head_to_host_and_verify(socket_msg, data_size) != 0) {
 		RRR_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
-		goto out_free;
+		goto out;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length(socket_msg, data_size) != 0) {
 		RRR_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
-		goto out_free;
+		goto out;
 	}
 
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(socket_msg)) {
 		if (callback_data->callback_msg == NULL) {
 			RRR_MSG_ERR("Received an rrr_message in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
-			goto out_free;
+			goto out;
 		}
 
 		struct rrr_message *message = (struct rrr_message *) socket_msg;
@@ -420,38 +420,35 @@ int rrr_read_common_receive_message_raw_callback (
 			RRR_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
 					MSG_TOTAL_SIZE(message), message->msg_size);
 			ret = RRR_READ_SOFT_ERROR;
-			goto out_free;
+			goto out;
 		}
 
-		ret = callback_data->callback_msg(message, callback_data->callback_arg);
-		data = NULL;
+		ret = callback_data->callback_msg((struct rrr_message **) data, callback_data->callback_arg);
 	}
 	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(socket_msg)) {
 		if (callback_data->callback_addr_msg == NULL) {
 			RRR_MSG_ERR("Received an rrr_message_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
-			goto out_free;
+			goto out;
 		}
 
 		struct rrr_message_addr *message = (struct rrr_message_addr *) socket_msg;
 		if (rrr_message_addr_to_host(message) != 0) {
 			RRR_MSG_ERR("Invalid data in received address message in rrr_read_common_receive_message_raw_callback\n");
 			ret = RRR_READ_SOFT_ERROR;
-			goto out_free;
+			goto out;
 		}
 
 		ret = callback_data->callback_addr_msg(message, callback_data->callback_arg);
-		data = NULL;
 	}
 	else {
 		RRR_MSG_ERR("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",
 				socket_msg->msg_type);
 		ret = RRR_READ_SOFT_ERROR;
-		goto out_free;
+		goto out;
 	}
 
-	out_free:
-	RRR_FREE_IF_NOT_NULL(data);
+	out:
 	return ret;
 
 }
@@ -462,15 +459,14 @@ int rrr_read_common_receive_message_callback (
 ) {
 	int ret = 0;
 
-	// Memory is always taken care of or freed by this function
-	if ((ret = rrr_read_common_receive_message_raw_callback(read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
+	if ((ret = rrr_read_common_receive_message_raw_callback(&read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
 		// Returns soft error if message is invalid, might also return
 		// other errors from final callback function
 		goto out;
 	}
 
 	out:
-	read_session->rx_buf_ptr = NULL;
+	RRR_FREE_IF_NOT_NULL(read_session->rx_buf_ptr);
 	return ret;
 }
 

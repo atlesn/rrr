@@ -318,7 +318,7 @@ struct rrr_udpstream {
 
 // Used when data is delivered to the API user after receiving a full message
 struct rrr_udpstream_receive_data {
-	void *data;
+	void *allocation_handle;
 	ssize_t data_size;
 	uint32_t connect_handle;
 	uint16_t stream_id;
@@ -352,6 +352,26 @@ void rrr_udpstream_set_flags (
 		int flags
 );
 
+// A callback function for allocating memory for final message must be provided. With this,
+// it is possible to wrap any data copying from message chunks to the final messages inside
+// locks to provide memory fence.
+//
+// The costum allocator must call the callback with the provided arguments. A pointer to a
+// buffer of the required size is to be given in joined_data. If the pointer has not been
+// set to NULL when the callback returns, the allocator must free the memory.
+//
+// If the pointer to the buffer is part of another data structure which has also been allocated,
+// a pointer to this data structure may be sent in allocation_handle.
+
+/* Disabled, currently not used
+int rrr_udpstream_default_allocator (
+		uint32_t size,
+		int (*callback)(void **joined_data, void *allocation_handle, void *udpstream_data),
+		void *udpstream_data,
+		void *arg
+);
+*/
+
 // This function will merge received frames back into the original messages. If the messages
 // themselves contain length information and CRC32, this should be checked in the
 // callback_validator-function. A length MUST be returned from this function. If it is not
@@ -366,12 +386,18 @@ void rrr_udpstream_set_flags (
 
 int rrr_udpstream_do_process_receive_buffers (
 		struct rrr_udpstream *data,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
 		int (*validator_callback)(ssize_t *target_size, void *data, ssize_t data_size, void *arg),
 		void *validator_callback_arg,
-		int (*receive_callback)(const struct rrr_udpstream_receive_data *receive_data, void *arg),
+		int (*receive_callback)(void **joined_data, const struct rrr_udpstream_receive_data *receive_data, void *arg),
 		void *receive_callback_arg
 );
-
 // This should be called on a regular basis to perform all reading from network. If a control frame
 // is received, the callback is called.
 int rrr_udpstream_do_read_tasks (

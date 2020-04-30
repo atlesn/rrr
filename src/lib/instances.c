@@ -230,15 +230,6 @@ int rrr_instance_load_and_save (
 		return 1;
 	}
 
-	if ((module->dynamic_data->type == RRR_MODULE_TYPE_DEADEND  || module->dynamic_data->type == RRR_MODULE_TYPE_NETWORK) && (
-			module->dynamic_data->operations.poll != NULL ||
-			module->dynamic_data->operations.poll_delete != NULL ||
-			module->dynamic_data->operations.poll_delete_ip != NULL
-	)) {
-		RRR_BUG("Poll functions specified for module %s which is of deadend or network type\n",
-				module->dynamic_data->instance_name);
-	}
-
 	return 0;
 }
 

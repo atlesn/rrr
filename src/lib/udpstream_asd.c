@@ -212,7 +212,7 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 // message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_insert_entry (
 		struct rrr_udpstream_asd_queue_new *queue,
-		struct rrr_ip_buffer_entry **message,
+		struct rrr_ip_buffer_entry **entry,
 		uint32_t message_id
 ) {
 	int ret = 0;
@@ -230,8 +230,8 @@ static int __rrr_udpstream_asd_queue_insert_entry (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	new_entry->message_id = message_id;
-	new_entry->message = *message;
-	*message = NULL;
+	new_entry->message = *entry;
+	*entry = NULL;
 
 	__rrr_udpstream_asd_queue_insert_ordered(queue, new_entry);
 	new_entry = NULL;
@@ -266,7 +266,7 @@ static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **t
 // message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_collection_insert_entry (
 		struct rrr_udpstream_asd_queue_collection *collection,
-		struct rrr_ip_buffer_entry **message,
+		struct rrr_ip_buffer_entry **entry,
 		uint32_t connect_handle,
 		uint32_t message_id
 ) {
@@ -290,7 +290,7 @@ static int __rrr_udpstream_asd_queue_collection_insert_entry (
 		RRR_LL_APPEND(collection, target);
 	}
 
-	ret = __rrr_udpstream_asd_queue_insert_entry(target, message, message_id);
+	ret = __rrr_udpstream_asd_queue_insert_entry(target, entry, message_id);
 
 	out:
 	return ret;
@@ -838,25 +838,68 @@ struct rrr_asd_receive_messages_callback_data {
 	int count;
 };
 
-static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_message *message, void *arg) {
+/* Disabled, not currently used. ipclient has it's own allocator.
+int rrr_udpstream_asd_default_allocator (
+		uint32_t size,
+		int (*callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+		void *udpstream_callback_arg,
+		void *arg
+) {
+	(void)(arg);
+
 	int ret = 0;
 
-	struct rrr_asd_receive_messages_callback_data *receive_data = arg;
-	struct rrr_udpstream_asd *session = receive_data->session;
 	struct rrr_ip_buffer_entry *new_entry = NULL;
 
 	if (rrr_ip_buffer_entry_new (
 			&new_entry,
-			MSG_TOTAL_SIZE(message),
-			receive_data->udpstream_receive_data->addr,
-			receive_data->udpstream_receive_data->addr_len,
+			0,
+			NULL,
+			0,
 			RRR_IP_UDP,
-			message
+			NULL
 	) != 0) {
-		RRR_MSG_ERR("Could not create ip buffer message in __rrr_udpstream_asd_receive_messages_callback_final\n");
+		RRR_MSG_ERR("Could not create ip buffer message in rrr_udpstream_asd_default_allocator\n");
 		ret = 1;
 		goto out;
 	}
+
+	void *joined_data = NULL;
+
+	if ((joined_data = malloc(size)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
+		ret = 1;
+		goto out_destroy;
+	}
+
+	rrr_ip_buffer_entry_lock(new_entry);
+
+	new_entry->message = joined_data;
+	new_entry->data_length = size;
+
+	ret = callback(&joined_data, new_entry, udpstream_callback_arg);
+
+	if (joined_data != NULL) {
+		rrr_ip_buffer_entry_destroy_while_locked(new_entry);
+	}
+	else {
+		rrr_ip_buffer_entry_unlock(new_entry);
+	}
+
+	goto out;
+	out_destroy:
+		rrr_ip_buffer_entry_destroy(new_entry);
+	out:
+		return ret;
+}
+*/
+
+static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_message **message, void *arg) {
+	int ret = 0;
+
+	struct rrr_asd_receive_messages_callback_data *receive_data = arg;
+	struct rrr_udpstream_asd *session = receive_data->session;
+	struct rrr_ip_buffer_entry *entry = receive_data->udpstream_receive_data->allocation_handle;
 
 	// TODO : Make this a soft error?
 	if (receive_data->udpstream_receive_data->application_data > 0xffffffff) {
@@ -869,11 +912,11 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 	}
 
 	RRR_DBG_3("ASD %u RECV timestamp %" PRIu64 "\n",
-			session->connect_handle, message->timestamp);
+			session->connect_handle, (*message)->timestamp);
 
 	if ((ret = __rrr_udpstream_asd_queue_collection_insert_entry (
 			&session->release_queues,
-			&new_entry,
+			&entry,
 			receive_data->udpstream_receive_data->connect_handle,
 			receive_data->udpstream_receive_data->application_data
 	)) != 0) {
@@ -882,16 +925,23 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 		goto out;
 	}
 
+	// Tells allocator that we've taken care of the ip buffer entry and it
+	// is not to be freed
+	if (entry == NULL) {
+		*message = NULL;
+	}
+
 	receive_data->count++;
 
 	out:
-	if (new_entry != NULL) {
-		rrr_ip_buffer_entry_destroy(new_entry);
-	}
 	return ret;
 }
 
-static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpstream_receive_data *receive_data, void *arg) {
+static int __rrr_udpstream_asd_receive_messages_callback (
+		void **joined_data,
+		const struct rrr_udpstream_receive_data *receive_data,
+		void *arg
+) {
 	struct rrr_asd_receive_messages_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -904,9 +954,8 @@ static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpst
 			callback_data
 	};
 
-	// This function will always free the data, also upon errors
 	if ((ret = rrr_read_common_receive_message_raw_callback (
-			receive_data->data,
+			joined_data,
 			receive_data->data_size,
 			&socket_callback_data
 	)) != 0) {
@@ -927,7 +976,17 @@ static int __rrr_udpstream_asd_receive_messages_callback (const struct rrr_udpst
 	return ret;
 }
 
-static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_udpstream_asd *session) {
+static int __rrr_udpstream_asd_do_receive_tasks (
+		int *receive_count,
+		struct rrr_udpstream_asd *session,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*final_callback)(void **joined_data, struct rrr_udpstream_process_receive_buffer_callback_data *data),
+				struct rrr_udpstream_process_receive_buffer_callback_data *data,
+				void *arg
+		),
+		void *allocator_callback_arg
+) {
 	int ret = 0;
 
 	struct rrr_asd_receive_messages_callback_data receive_callback_data = {
@@ -937,6 +996,8 @@ static int __rrr_udpstream_asd_do_receive_tasks (int *receive_count, struct rrr_
 	if (__rrr_udpstream_asd_queue_collection_count_entries(&session->release_queues) < RRR_UDPSTREAM_ASD_RELEASE_QUEUE_MAX) {
 		if ((ret = rrr_udpstream_do_process_receive_buffers (
 				&session->udpstream,
+				allocator_callback,
+				allocator_callback_arg,
 				rrr_read_common_get_session_target_length_from_message_and_checksum_raw,
 				NULL,
 				__rrr_udpstream_asd_receive_messages_callback,
@@ -982,6 +1043,9 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 			struct rrr_ip_buffer_entry *message = node->message;
 			node->message = NULL;
 
+			RRR_DBG_3("ASD DELIVER %u timestamp %" PRIu64 ", grace started\n",
+					node->message_id, node->send_time);
+
 			// !!! Callback MUST take care of message memory also upon errors
 			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
 				RRR_MSG_ERR("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
@@ -990,9 +1054,6 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 			}
 
 			delivered_count++;
-
-			RRR_DBG_3("ASD DELIVER %u timestamp %" PRIu64 ", grace started\n",
-					node->message_id, message->send_time);
 
 			node->delivered_grace_counter = RRR_UDPSTREAM_ASD_DELIVERY_GRACE_COUNTER;
 		}
@@ -1129,6 +1190,13 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*final_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
 		struct rrr_udpstream_asd *session
 ) {
 	int ret = 0;
@@ -1154,7 +1222,7 @@ int rrr_udpstream_asd_buffer_tick (
 		ret = 0;
 	}
 
-	if ((ret = __rrr_udpstream_asd_do_send_tasks (session)) != 0) {
+	if ((ret = __rrr_udpstream_asd_do_send_tasks(session)) != 0) {
 		if (ret == RRR_UDPSTREAM_NOT_READY) {
 			goto out_not_ready;
 		}
@@ -1172,7 +1240,12 @@ int rrr_udpstream_asd_buffer_tick (
 		goto out;
 	}
 
-	if ((ret = __rrr_udpstream_asd_do_receive_tasks(receive_count, session)) != 0) {
+	if ((ret = __rrr_udpstream_asd_do_receive_tasks (
+			receive_count,
+			session,
+			allocator_callback,
+			allocator_callback_arg
+	)) != 0) {
 		RRR_MSG_ERR("Error from UDP-stream while receiving packets of UDP-stream ASD handle %u\n",
 				session->connect_handle);
 		ret = 1;

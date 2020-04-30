@@ -28,57 +28,52 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/message_broker.h"
 #include "../lib/stats_instance.h"
 #include "../global.h"
 #include "../lib/random.h"
 
 struct dummy_data {
-	struct rrr_fifo_buffer buffer;
 	int no_generation;
 	int no_sleeping;
 	rrr_setting_uint max_generated;
 	rrr_setting_uint random_payload_max_size;
 };
 
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct dummy_data *dummy_data = data->private_data;
-	return rrr_fifo_buffer_read_clear_forward(&dummy_data->buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct dummy_data *dummy_data = data->private_data;
-	return rrr_fifo_buffer_search(&dummy_data->buffer, callback, poll_data, wait_milliseconds);
-}
-
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
-	struct dummy_data *data = thread_data->private_data;
-	RRR_DBG_2("dummy: writing data from inject function\n");
+	RRR_DBG_2("dummy instance %s: writing data from inject function\n",
+			INSTANCE_D_NAME(thread_data));
 
-	rrr_fifo_buffer_write(&data->buffer, message->message, message->data_length);
-	message->message = NULL;
+	int ret = 0;
 
+	if (rrr_message_broker_clone_and_write_entry (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			message
+	) != 0) {
+		RRR_MSG_ERR("Could not inject message in dummy instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
 	rrr_ip_buffer_entry_destroy(message);
-
-	return 0;
+	return ret;
 }
 
 int data_init(struct dummy_data *data) {
 	memset(data, '\0', sizeof(*data));
-	int ret = rrr_fifo_buffer_init(&data->buffer);
-	return ret;
+	return 0;
 }
 
 void data_cleanup(void *arg) {
-	// Make sure all readers have left and invalidate buffer
 	struct dummy_data *data = (struct dummy_data *) arg;
-	rrr_fifo_buffer_clear(&data->buffer);
-	// Don't destroy mutex, threads might still try to use it
-	//fifo_buffer_destroy(&data->buffer);
+	(void)(data);
 }
 
 int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
@@ -143,6 +138,40 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
+static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct dummy_data *data = arg;
+
+	int ret = 0;
+
+	struct rrr_message *reading = NULL;
+
+	uint64_t time = rrr_time_get_64();
+
+	size_t payload_size = 0;
+	if (data->random_payload_max_size > 0) {
+		payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
+	}
+
+	if (rrr_message_new_empty (
+			&reading,
+			MSG_TYPE_MSG,
+			MSG_CLASS_DATA,
+			time,
+			0,
+			payload_size
+	) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	entry->message = reading;
+	entry->data_length = MSG_TOTAL_SIZE(reading);
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
 static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
@@ -172,7 +201,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
 	if (data->no_sleeping == 1) {
 		RRR_DBG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
-		rrr_fifo_buffer_set_do_ratelimit(&data->buffer, 1);
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
 
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
@@ -185,28 +214,20 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
-			uint64_t time = rrr_time_get_64();
-
-			struct rrr_message *reading = NULL;
-
-			size_t payload_size = 0;
-			if (data->random_payload_max_size > 0) {
-				payload_size = ((size_t) rrr_rand()) % data->random_payload_max_size;
-			}
-
-			if (rrr_message_new_empty (
-					&reading,
-					MSG_TYPE_MSG,
-					MSG_CLASS_DATA,
-					time,
+			if (rrr_message_broker_write_entry (
+					INSTANCE_D_BROKER(thread_data),
+					INSTANCE_D_HANDLE(thread_data),
+					NULL,
 					0,
-					payload_size
-			) != 0) {
-				return NULL;
+					0,
+					dummy_write_message_callback,
+					data
+			)) {
+				RRR_MSG_ERR("Could not create new message in dummy instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
 			}
 
-//			RRR_DBG_3("dummy: writing data measurement %" PRIu64 "\n", reading->data_numeric);
-			rrr_fifo_buffer_write(&data->buffer, (char*)reading, sizeof(*reading));
 			generated_count++;
 			generated_count_total++;
 			generated_count_to_stats++;
@@ -232,7 +253,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
 			usleep (50000); // 50 ms
 		}
-
 	}
 
 	out_cleanup:
@@ -258,10 +278,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_dummy,
-	NULL,
-	poll,
-	NULL,
-	poll_delete,
 	NULL,
 	test_config,
 	inject,
