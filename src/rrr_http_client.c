@@ -257,6 +257,8 @@ static int __rrr_http_client_receive_callback (
 	int ret = 0;
 
 	(void)(response);
+	(void)(chunk_idx);
+	(void)(chunk_total);
 
 	if (data_start != NULL && data_size > 0) {
 //		const char *separator_line = "=============================";

@@ -337,6 +337,9 @@ struct rrr_udpstream_send_data {
 	socklen_t addr_len;
 };
 
+// Not to be dereferenced by application
+struct rrr_udpstream_process_receive_buffer_callback_data;
+
 // Clear and initialize a UDP-stream
 void rrr_udpstream_clear (
 		struct rrr_udpstream *stream

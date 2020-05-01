@@ -598,8 +598,8 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 	int ret = 0;
 
 	if (rrr_message_broker_get_entry_count_and_ratelimit (
-			&delivery_entry_count,
-			&delivery_ratelimit_active,
+			delivery_entry_count,
+			delivery_ratelimit_active,
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data)
 	) != 0) {
@@ -609,12 +609,12 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 		goto out;
 	}
 
-	if (delivery_entry_count > 10000 && delivery_ratelimit_active == 0) {
+	if (*delivery_entry_count > 10000 && *delivery_ratelimit_active == 0) {
 		RRR_DBG_1("Enabling ratelimit on buffer in %s instance %s due to slow reader\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
 		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
-	else if (delivery_entry_count < 10 && delivery_ratelimit_active == 1) {
+	else if (*delivery_entry_count < 10 && *delivery_ratelimit_active == 1) {
 		RRR_DBG_1("Disabling ratelimit on buffer in %s instance %s due to low buffer level\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
 		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);

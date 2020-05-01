@@ -412,9 +412,7 @@ void __rrr_net_http_server_worker_close_transport (void *arg) {
 
 
 int __rrr_net_http_server_worker_http_session_receive_callback (
-		struct rrr_http_session *session,
-		const char *start,
-		const char *end,
+		struct rrr_http_part *part,
 		void *arg
 ) {
 	return 0;
@@ -422,7 +420,7 @@ int __rrr_net_http_server_worker_http_session_receive_callback (
 
 int __rrr_net_http_server_worker_net_transport_ctx_do_work (struct rrr_net_transport_handle *handle, void *arg) {
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
-	struct http_session_data *session = handle->application_private_ptr;
+//	struct http_session_data *session = handle->application_private_ptr;
 
 	int ret = 0;
 

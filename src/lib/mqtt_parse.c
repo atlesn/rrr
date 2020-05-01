@@ -1351,7 +1351,5 @@ int rrr_mqtt_packet_parse_finalize (
 	*packet = session->packet;
 	session->packet = NULL;
 
-	rrr_mqtt_parse_session_destroy(session);
-
 	return ret;
 }

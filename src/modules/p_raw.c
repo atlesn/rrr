@@ -198,10 +198,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_raw,
 		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
 		test_config,
 		NULL,
 		NULL

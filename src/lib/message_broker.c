@@ -385,7 +385,9 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 			goto out;
 		}
 
-		if ((ret_tmp & RRR_FIFO_WRITE_DROP) != 0) {
+		ret = ret_tmp;
+
+		if ((ret & RRR_FIFO_WRITE_DROP) != 0) {
 			goto out;
 		}
 	}
@@ -588,7 +590,7 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 
 	rrr_ip_buffer_entry_lock(entry);
 
-	ret =  callback_data->callback(entry, callback_data->callback_arg);
+	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock
 
@@ -801,6 +803,23 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 	RRR_LL_ITERATE_END();
 
 	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
+// Note that stats from any split queues are not retrieved
+int rrr_message_broker_get_fifo_stats (
+		struct rrr_fifo_buffer_stats *target,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_get_fifo_stats");
+
+	rrr_fifo_buffer_get_stats(target, &costumer->main_queue);
+
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+
 	return ret;
 }
 

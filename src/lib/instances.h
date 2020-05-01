@@ -98,6 +98,8 @@ struct rrr_instance_thread_data {
 #define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
+#define INSTANCE_D_BROKER_ARGS(thread_data) \
+		thread_data->init_data.message_broker, thread_data->message_broker_handle
 
 #define RRR_INSTANCE_LOOP(target,collection) \
 	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)

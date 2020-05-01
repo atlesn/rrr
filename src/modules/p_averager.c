@@ -83,7 +83,6 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-
 			struct rrr_message *dup_message = rrr_message_duplicate(message);
 			if (averager_data->msg_topic != NULL) {
 				if (rrr_message_set_topic(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
@@ -92,6 +91,8 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 
 			RRR_LL_APPEND(&averager_data->output_list, entry);
+			rrr_ip_buffer_entry_unlock(entry);
+			entry = NULL;
 		}
 	}
 	else if (averager_data->discard_unknown_messages) {
@@ -104,13 +105,17 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", writing to output buffer\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
 		RRR_LL_APPEND(&averager_data->output_list, entry);
+		rrr_ip_buffer_entry_unlock(entry);
+		entry = NULL;
 	}
 
 	out:
-	if (entry != NULL) {
-		rrr_ip_buffer_entry_unlock(entry);
+	if (ret != 0) {
+		rrr_ip_buffer_entry_destroy_while_locked(entry);
 	}
-	// Don't return FREE
+	else if (entry != NULL) {
+		RRR_BUG("Entry was noy NULL in averager poll_callback\n");
+	}
 	return ret;
 }
 
@@ -318,13 +323,12 @@ int averager_spawn_message (
 	};
 
 	if (rrr_message_broker_write_entry (
-			INSTANCE_D_BROKER(&data->thread_data),
-			INSTANCE_D_HANDLE(&data->thread_data),
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
 			0,
 			averager_spawn_message_callback,
-			&array_tmp
+			&callback_data
 	) != 0) {
 		RRR_MSG_ERR("Could not create and write array message to output buffer in averager instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));

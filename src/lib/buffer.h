@@ -157,30 +157,6 @@ static inline void rrr_fifo_buffer_set_do_ratelimit(struct rrr_fifo_buffer *buff
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 }
 
-// TODO : These locking methods are unfair, fix if it matters
-static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_wrlock(&buffer->rwlock);
-}
-
-static inline int rrr_fifo_write_trylock(struct rrr_fifo_buffer *buffer) {
-	if (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
-		return 1;
-	}
-	return 0;
-}
-
-static inline void rrr_fifo_write_unlock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_unlock(&buffer->rwlock);
-}
-
-static inline void rrr_fifo_read_lock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_rdlock(&buffer->rwlock);
-}
-
-static inline void rrr_fifo_read_unlock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_unlock(&buffer->rwlock);
-}
-
 static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigned int wait_milliseconds) {
 	if (wait_milliseconds == 0) {
 		return 0;

@@ -142,6 +142,11 @@ int rrr_message_broker_get_entry_count_and_ratelimit (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle
 );
+int rrr_message_broker_get_fifo_stats (
+		struct rrr_fifo_buffer_stats *target,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+);
 int rrr_message_broker_with_ctx_do (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,

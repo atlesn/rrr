@@ -169,7 +169,12 @@ int poll_do_poll (
 
 		struct poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_message_broker_poll(INSTANCE_D_BROKER(entry->thread_data), entry->handle, callback, thread_data, wait_milliseconds);
+		ret_tmp = rrr_message_broker_poll (
+				INSTANCE_D_BROKER_ARGS(entry->thread_data),
+				callback,
+				thread_data,
+				wait_milliseconds
+		);
 
 		if (ret_tmp != 1) {
 			ret = 1;
@@ -194,8 +199,7 @@ int poll_do_poll_delete (
 		struct poll_collection_entry *entry = node;
 
 		ret_tmp = rrr_message_broker_poll_delete (
-				INSTANCE_D_BROKER(entry->thread_data),
-				entry->handle,
+				INSTANCE_D_BROKER_ARGS(entry->thread_data),
 				callback,
 				thread_data,
 				wait_milliseconds

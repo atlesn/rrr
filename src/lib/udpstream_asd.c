@@ -981,8 +981,8 @@ static int __rrr_udpstream_asd_do_receive_tasks (
 		struct rrr_udpstream_asd *session,
 		int (*allocator_callback) (
 				uint32_t size,
-				int (*final_callback)(void **joined_data, struct rrr_udpstream_process_receive_buffer_callback_data *data),
-				struct rrr_udpstream_process_receive_buffer_callback_data *data,
+				int (*receive_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
 				void *arg
 		),
 		void *allocator_callback_arg

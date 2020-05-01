@@ -38,7 +38,6 @@ typedef void rrr_message_broker_costumer_handle;
 
 struct poll_collection_entry {
 	RRR_LL_NODE(struct poll_collection_entry);
-	rrr_message_broker_costumer_handle *handle;
 	struct rrr_instance_thread_data *thread_data;
 };
 

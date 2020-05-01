@@ -263,7 +263,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 
 	if (message_addr.addr_len > 0) {
 		rrr_message_addr_init_head(&message_addr);
-		if ((ret = rrr_python3_socket_send(self, &message_addr)) != 0) {
+		if ((ret = rrr_python3_socket_send(self, (struct rrr_socket_msg *)  &message_addr)) != 0) {
 			RRR_MSG_ERR("Received error in python3 socket send function\n");
 			ret = 1;
 			goto out;

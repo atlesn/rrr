@@ -555,7 +555,6 @@ int rrr_mqtt_common_handle_properties (
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
-	RRR_MQTT_P_LOCK(packet);
 
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 	struct rrr_mqtt_p *ack = NULL;
@@ -655,16 +654,17 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					&connection->session,
 					ack
 			),
-			goto out_nolock,
+			goto out_relock,
 			" in session send packet function in rrr_mqtt_common_handle_publish"
 		);
 
 		RRR_MQTT_P_LOCK(packet);
 	}
 
+	goto out;
+	out_relock:
+		RRR_MQTT_P_LOCK(packet);
 	out:
-		RRR_MQTT_P_UNLOCK(packet);
-	out_nolock:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(ack);
 		return ret;
 }
@@ -716,8 +716,6 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			packet
 	);
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if (ret != 0) {
 		if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
 			goto out;
@@ -738,7 +736,6 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	out:
-	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
@@ -763,8 +760,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			connection,
 			packet
 	);
-
-	RRR_MQTT_P_LOCK(packet);
 
 	if (ret != 0) {
 		if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
@@ -816,7 +811,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 
 	out:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(next_ack);
-		RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
@@ -843,8 +837,6 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	(void)(mqtt_data);
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if ((ret = rrr_mqtt_conn_iterator_ctx_update_state (
 			connection,
 			packet,
@@ -855,25 +847,23 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	out:
-	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
-static int __rrr_mqtt_common_handle_packet (
-		struct rrr_mqtt_data *mqtt_data,
+static int __rrr_mqtt_common_handle_packet_callback (
 		struct rrr_mqtt_conn *connection,
-		struct rrr_mqtt_p *packet
+		struct rrr_mqtt_p *packet,
+		void *arg
 ) {
 	int ret = 0;
 
-	if (RRR_MQTT_CONN_TRYLOCK(connection) != 0) {
-		ret = RRR_MQTT_CONN_BUSY;
-		goto out_nolock;
+	struct rrr_mqtt_data *mqtt_data = arg;
+
+	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
+		RRR_BUG("Connection was not locked in __rrr_mqtt_common_handle_packet\n");
 	}
 
-	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out;
-	}
+	RRR_MQTT_P_LOCK(packet);
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
@@ -912,8 +902,7 @@ static int __rrr_mqtt_common_handle_packet (
 	);
 
 	out:
-		RRR_MQTT_CONN_UNLOCK(connection);
-	out_nolock:
+		RRR_MQTT_P_UNLOCK(packet);
 		return ret;
 }
 
@@ -923,7 +912,6 @@ static int __rrr_mqtt_common_read_parse_handle (
 ) {
 	int ret = RRR_MQTT_CONN_OK;
 
-	struct rrr_mqtt_p *packet = NULL;
 	struct rrr_mqtt_data *data = arg;
 	(void)(data);
 
@@ -948,29 +936,22 @@ static int __rrr_mqtt_common_read_parse_handle (
 				"while parsing data from mqtt client"
 		);
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-				rrr_mqtt_conn_iterator_ctx_check_parse_finalize (&packet, connection),
+				rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
+						connection,
+						__rrr_mqtt_common_handle_packet_callback,
+						data
+				),
 				goto out,
 				"while finalizing data from mqtt client"
 		);
-
-		if (packet != NULL) {
-			RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-					__rrr_mqtt_common_handle_packet(data, connection, packet),
-					goto out,
-					"while handling packet from mqtt client"
-			);
-		}
 
 		if (connection->protocol_version == NULL) {
 			// Possible need of handling CONNECT packet
 			break;
 		}
-
-		RRR_MQTT_P_DECREF_IF_NOT_NULL(packet);
 	}
 
 	out:
-	RRR_MQTT_P_DECREF_IF_NOT_NULL(packet);
 	return ret;
 }
 

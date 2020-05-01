@@ -332,7 +332,7 @@ int python3_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	rrr_thread_update_watchdog_time(python3_data->thread_data->thread);
 
-	struct rrr_message *message = entry->message;
+	const struct rrr_message *message = entry->message;
 
 	RRR_DBG_3("python3 instance %s processing message with timestamp %" PRIu64 " from input buffer\n",
 			INSTANCE_D_NAME(python3_data->thread_data), message->timestamp);
@@ -348,7 +348,7 @@ int python3_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	rrr_ip_buffer_entry_destroy_while_locked(entry);
 	return (ret == 0 ? 0 : RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR);
 }
 

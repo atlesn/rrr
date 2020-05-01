@@ -390,8 +390,6 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if (connack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		RRR_MSG_ERR("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
@@ -451,7 +449,6 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_DBG_1("Received CONNACK with keep-alive %u, now connected\n", client_data->session_properties.server_keep_alive);
 
 	out:
-		RRR_MQTT_P_UNLOCK(packet);
 		return ret;
 }
 

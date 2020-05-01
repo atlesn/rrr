@@ -119,7 +119,7 @@ struct rrr_mqtt_session_collection_ram_data {
 	pthread_mutex_unlock(&session->lock); } while(0)
 
 struct rrr_mqtt_session_ram_fifo_write_callback_data {
-	char *data;
+	struct rrr_mqtt_p *data;
 	unsigned long size;
 	uint64_t order;
 	int do_order;
@@ -131,7 +131,7 @@ struct rrr_mqtt_session_ram_fifo_write_callback_data {
 static int __rrr_mqtt_session_ram_fifo_write_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
 	struct rrr_mqtt_session_ram_fifo_write_callback_data *callback_data = arg;
 
-	*data = callback_data->data;
+	*data = (char *) callback_data->data;
 	*size = callback_data->size;
 	*order = callback_data->order;
 
@@ -146,24 +146,24 @@ static int __rrr_mqtt_session_ram_fifo_write_callback (RRR_FIFO_WRITE_CALLBACK_A
 
 static int __rrr_mqtt_session_ram_fifo_write (
 		struct rrr_fifo_buffer *buffer,
-		char *data,
+		struct rrr_mqtt_p *packet,
 		unsigned long size,
 		uint64_t order,
 		int do_order
 ) {
 	struct rrr_mqtt_session_ram_fifo_write_callback_data callback_data = {
-		data,
+		packet,
 		size,
 		order,
 		do_order
 	};
 
-	return rrr_fifo_buffer_write(buffer, __rrr_mqtt_session_ram_fifo_write_callback, &callback_data);
+	return rrr_fifo_buffer_write (buffer, __rrr_mqtt_session_ram_fifo_write_callback, &callback_data);
 }
 
 static int __rrr_mqtt_session_ram_fifo_write_delayed (
 		struct rrr_fifo_buffer *buffer,
-		char *data,
+		struct rrr_mqtt_p *data,
 		unsigned long size,
 		uint64_t order
 ) {
@@ -239,7 +239,7 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		struct rrr_mqtt_p_publish *publish
 ) {
 	RRR_MQTT_P_INCREF(publish);
-	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->ram_data->publish_forward_queue.buffer, (char*) publish, sizeof(*publish), 0 ,0) != 0) {
+	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->ram_data->publish_forward_queue.buffer, (struct rrr_mqtt_p *) publish, sizeof(*publish), 0 ,0) != 0) {
 		RRR_MSG_ERR("Could not write to publish forward queue in__rrr_mqtt_session_ram_delivery_forward\n");
 		RRR_MQTT_P_DECREF(publish);
 		return RRR_MQTT_SESSION_INTERNAL_ERROR;
@@ -265,7 +265,7 @@ static int __rrr_mqtt_session_ram_delivery_local (
 	}
 
 	RRR_MQTT_P_INCREF(publish);
-	if (__rrr_mqtt_session_ram_fifo_write_delayed(&ram_session->ram_data->publish_local_queue.buffer, (char*) publish, sizeof(*publish), 0) != 0) {
+	if (__rrr_mqtt_session_ram_fifo_write_delayed(&ram_session->ram_data->publish_local_queue.buffer, (struct rrr_mqtt_p *) publish, sizeof(*publish), 0) != 0) {
 		RRR_MSG_ERR("Could not write to publish local queue in __rrr_mqtt_session_ram_delivery_local\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		RRR_MQTT_P_DECREF(publish);
@@ -607,7 +607,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 
 	RRR_MQTT_P_UNLOCK(new_publish);
 
-	if (__rrr_mqtt_session_ram_fifo_write_delayed(&session->to_remote_queue.buffer, (char*) new_publish, sizeof(*new_publish), 0) != 0) {
+	if (__rrr_mqtt_session_ram_fifo_write_delayed(&session->to_remote_queue.buffer, (struct rrr_mqtt_p *) new_publish, sizeof(*new_publish), 0) != 0) {
 		RRR_MSG_ERR("Could not write to to_remote_queue in __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
@@ -1061,7 +1061,7 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 		node->dup = 0;
 		RRR_MQTT_P_UNLOCK(node);
 
-		if (__rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, (char*) node, sizeof(*node), 0, 0) != 0) {
+		if (__rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, node, sizeof(*node), 0, 0) != 0) {
 			RRR_MSG_ERR("Could not write to to_remote_queue in __rrr_mqtt_session_ram_clean_unlocked\n");
 			RRR_MQTT_P_DECREF(node);
 			ret = RRR_MQTT_SESSION_ERROR;
@@ -1853,7 +1853,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		RRR_MQTT_P_INCREF(publish);
 		if (__rrr_mqtt_session_ram_fifo_write(
 				&ram_session->from_remote_queue.buffer,
-				(char*) publish,
+				(struct rrr_mqtt_p *) publish,
 				sizeof(*publish),
 				publish->packet_identifier,
 				1
@@ -1910,7 +1910,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 			RRR_MQTT_P_INCREF(publish);
 			if (__rrr_mqtt_session_ram_fifo_write(
 					&ram_session->from_remote_queue.buffer,
-					(char*) publish,
+					(struct rrr_mqtt_p *) publish,
 					sizeof(*publish),
 					publish->packet_identifier,
 					1
@@ -2317,9 +2317,12 @@ static int __rrr_mqtt_session_ram_send_packet (
 	out_write_to_buffer:
 	RRR_MQTT_P_UNLOCK(packet);
 
-	// No DECREF needed, buffer always does that, also on errors
 	RRR_MQTT_P_INCREF(packet);
-	rrr_fifo_buffer_write(&ram_session->to_remote_queue.buffer, (char *) packet, sizeof(*packet));
+	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, packet, sizeof(*packet), 0, 1) != 0) {
+		RRR_MSG_ERR("Could not write to to_remote_queue in __rrr_mqtt_session_ram_send_packet\n");
+		ret = 1;
+		RRR_MQTT_P_DECREF(packet);
+	}
 
 	RRR_MQTT_P_LOCK(packet);
 
@@ -2339,7 +2342,9 @@ static int __rrr_mqtt_session_ram_receive_packet (
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
-	RRR_MQTT_P_LOCK(packet);
+	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
+		RRR_BUG("BUG: Packet was not locked in __rrr_mqtt_session_ram_receive_packet\n");
+	}
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		ret = __rrr_mqtt_session_ram_receive_publish(ram_session, (struct rrr_mqtt_p_publish *) packet);
@@ -2394,7 +2399,6 @@ static int __rrr_mqtt_session_ram_receive_packet (
 				RRR_MQTT_P_GET_TYPE(packet));
 	}
 
-	RRR_MQTT_P_UNLOCK(packet);
 	SESSION_RAM_DECREF();
 
 	return ret;

@@ -508,10 +508,10 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
-			if (poll_do_poll_delete (&poll, thread_data, poll_callback, 25) != 0) {
+			if (poll_do_poll_delete (thread_data, &poll, poll_callback, 25) != 0) {
 				break;
 			}
-		} while (rrr_fifo_buffer_get_entry_count(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
+		} while (RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
 				rrr_time_get_64() < poll_timeout &&
 				no_polling == 0
 		);
@@ -534,9 +534,9 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		if (rrr_udpstream_asd_buffer_tick (
 				&receive_count,
 				&send_count,
-				data->udpstream_asd,
 				ipclient_udpstream_allocator,
-				data
+				data,
+				data->udpstream_asd
 		) != 0) {
 			RRR_MSG_ERR("UDP-stream regular tasks failed in send_packets of ipclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));

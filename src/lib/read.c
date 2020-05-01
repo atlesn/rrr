@@ -459,7 +459,7 @@ int rrr_read_common_receive_message_callback (
 ) {
 	int ret = 0;
 
-	if ((ret = rrr_read_common_receive_message_raw_callback(&read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
+	if ((ret = rrr_read_common_receive_message_raw_callback((void **) &read_session->rx_buf_ptr, read_session->rx_buf_wpos, arg)) != 0) {
 		// Returns soft error if message is invalid, might also return
 		// other errors from final callback function
 		goto out;

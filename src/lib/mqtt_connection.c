@@ -1265,13 +1265,18 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 	return ret;
 }
 
-int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
-		struct rrr_mqtt_p **packet,
-		struct rrr_mqtt_conn *connection
+int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
+		struct rrr_mqtt_conn *connection,
+		int (*handler_callback)(
+				struct rrr_mqtt_conn *connection,
+				struct rrr_mqtt_p *packet,
+				void *arg
+		),
+		void *callback_arg
 ) {
 	int ret = RRR_MQTT_CONN_OK;
 
-	*packet = NULL;
+	struct rrr_mqtt_p *packet = NULL;
 
 	/* There can be multiple parse threads, make sure we do not block */
 	if (RRR_MQTT_CONN_TRYLOCK(connection) != 0) {
@@ -1300,12 +1305,18 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 
 		connection->read_complete = 0;
 		connection->parse_complete = 0;
+
+		if ((ret = handler_callback(connection, packet, callback_arg))) {
+			RRR_MSG_ERR("Error from handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
+			ret = 1;
+			goto out_unlock;
+		}
 	}
 
 	out_unlock:
 		RRR_MQTT_CONN_UNLOCK(connection);
-
 	out_nolock:
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(packet);
 		return ret;
 }
 

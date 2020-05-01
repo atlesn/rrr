@@ -451,8 +451,6 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 
 	struct rrr_array array = {0};
 
-	rrr_ip_buffer_entry_lock(entry);
-
 	RRR_DBG_2 ("InfluxDB %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
 			INSTANCE_D_NAME(influxdb_data->thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
@@ -477,6 +475,7 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 					INSTANCE_D_NAME(influxdb_data->thread_data));
 
 			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
+			rrr_ip_buffer_entry_unlock(entry);
 			entry = NULL;
 			ret = 0;
 			goto discard;
@@ -491,9 +490,6 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 	rrr_array_clear(&array);
 	if (entry != NULL) {
 		rrr_ip_buffer_entry_destroy_while_locked(entry);
-	}
-	else {
-		rrr_ip_buffer_entry_unlock(entry);
 	}
 	return ret;
 }
@@ -651,9 +647,11 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 			// The callback might add entries back into data->error_buf
 			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
+				rrr_ip_buffer_entry_lock(node);
 				if (common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
+					rrr_ip_buffer_entry_unlock(node);
 					goto out_message;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();
