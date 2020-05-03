@@ -2078,15 +2078,13 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		packet_to_transmit = packet;
 	}
 
-	RRR_MQTT_P_UNLOCK(packet);
-
 	if (packet_to_transmit == NULL) {
 		goto out_unlock;
 	}
 
 	if (++iterate_callback_data->counter > iterate_callback_data->max_count) {
 		ret = RRR_FIFO_SEARCH_STOP;
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	if (packet->dup != 0) {
@@ -2102,7 +2100,6 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 			iterate_callback_data->callback_arg
 	);
 
-	RRR_MQTT_P_LOCK(packet);
 	packet->last_attempt = rrr_time_get_64();
 
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
@@ -2281,19 +2278,15 @@ static int __rrr_mqtt_session_ram_send_packet (
 		int packet_was_outbound = 0;
 		switch (RRR_MQTT_P_GET_TYPE(packet)) {
 			case RRR_MQTT_P_TYPE_PUBACK:
-				break;
 			case RRR_MQTT_P_TYPE_PUBREC:
-				break;
-			case RRR_MQTT_P_TYPE_PUBREL:
-				packet_was_outbound = 1;
-				break;
 			case RRR_MQTT_P_TYPE_PUBCOMP:
 				break;
 			case RRR_MQTT_P_TYPE_SUBACK:
-				goto out_write_to_buffer;
-				break;
 			case RRR_MQTT_P_TYPE_UNSUBACK:
 				goto out_write_to_buffer;
+				break;
+			case RRR_MQTT_P_TYPE_PUBREL:
+				packet_was_outbound = 1;
 				break;
 			default:
 				RRR_BUG("Unknown ACK packet %u in __rrr_mqtt_session_ram_send_packet\n",
@@ -2365,24 +2358,14 @@ static int __rrr_mqtt_session_ram_receive_packet (
 		int packet_was_outbound = 0;
 		switch (RRR_MQTT_P_GET_TYPE(packet)) {
 			case RRR_MQTT_P_TYPE_PUBACK:
-				packet_was_outbound = 1;
-				break;
 			case RRR_MQTT_P_TYPE_PUBREC:
+			case RRR_MQTT_P_TYPE_PUBCOMP:
+			case RRR_MQTT_P_TYPE_SUBACK:
+			case RRR_MQTT_P_TYPE_UNSUBACK:
+			case RRR_MQTT_P_TYPE_PINGRESP:
 				packet_was_outbound = 1;
 				break;
 			case RRR_MQTT_P_TYPE_PUBREL:
-				break;
-			case RRR_MQTT_P_TYPE_PUBCOMP:
-				packet_was_outbound = 1;
-				break;
-			case RRR_MQTT_P_TYPE_SUBACK:
-				packet_was_outbound = 1;
-				break;
-			case RRR_MQTT_P_TYPE_UNSUBACK:
-				packet_was_outbound = 1;
-				break;
-			case RRR_MQTT_P_TYPE_PINGRESP:
-				packet_was_outbound = 1;
 				break;
 			default:
 				RRR_BUG("Unknown ACK packet %u in __rrr_mqtt_session_ram_receive_packet\n",
