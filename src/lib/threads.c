@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define VL_THREAD_INCAPACITATE_WATCHDOGS
 
 // Threads which does not shutdown nicely will remain while others shut down
-#define VL_THREAD_DISABLE_CANCELLING
+//#define VL_THREAD_DISABLE_CANCELLING
 
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
