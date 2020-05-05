@@ -643,6 +643,9 @@ int test_type_array (
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
 	struct test_result test_result_1 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 1/3, should be 2: %i\n", test_result_1.result);
 	*result_message_1 = test_result_1.message;
 
@@ -650,6 +653,9 @@ int test_type_array (
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_2->thread_data));
 	struct test_result test_result_2 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 2/3, should be 2: %i\n", test_result_2.result);
 	*result_message_2 = test_result_2.message;
 
@@ -657,6 +663,9 @@ int test_type_array (
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_3->thread_data));
 	struct test_result test_result_3 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_3, output_3->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 3/3, should be 2: %i\n", test_result_3.result);
 	*result_message_3 = test_result_3.message;
 

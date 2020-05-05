@@ -161,7 +161,7 @@ void rrr_mqtt_topic_token_destroy (
 
 	// The data field is not a separate pointer, don't free
 
-	printf ("free token %p (destroy)\n", first_token);
+//	printf ("free token %p (destroy)\n", first_token);
 	free(first_token);
 }
 
@@ -178,7 +178,7 @@ int rrr_mqtt_topic_tokens_clone (
 	}
 
 	struct rrr_mqtt_topic_token *result = malloc(strlen(first_token->data) + sizeof(*result));
-	printf ("allocate token %p (clone)\n", result);
+//	printf ("allocate token %p (clone)\n", result);
 	if (result == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_topic_tokens_clone\n");
 		ret = 1;
@@ -197,7 +197,7 @@ int rrr_mqtt_topic_tokens_clone (
 
 	goto out;
 	out_free:
-		printf ("free token %p (clone)\n", result);
+//		printf ("free token %p (clone)\n", result);
 		free(result);
 		result = NULL;
 	out:
@@ -225,7 +225,7 @@ int rrr_mqtt_topic_tokenize (
 
 		ssize_t len = token_end - pos;
 		token = malloc(sizeof(*token) + len + 1);
-		printf ("allocate token %p\n", token);
+//		printf ("allocate token %p\n", token);
 		if (token == NULL) {
 			RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_subscription_topic_tokenize\n");
 			ret = 1;
@@ -250,9 +250,9 @@ int rrr_mqtt_topic_tokenize (
 	goto out;
 
 	out_cleanup:
-		if (token != NULL) {
+/*		if (token != NULL) {
 				printf ("free token %p\n", token);
-		}
+		}*/
 		RRR_FREE_IF_NOT_NULL(token);
 	out:
 		return ret;
