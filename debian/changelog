@@ -1,4 +1,4 @@
-rrr (0.17-5) unstable; urgency=medium
+rrr (0.18) unstable; urgency=medium
 
   * New message broker to transfer messages between modules with proper
     memory fencing
