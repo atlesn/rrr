@@ -256,7 +256,10 @@ int rrr_socket_read_message_default (
 			__rrr_socket_read_message_default_get_read_session_with_overshoot,
 			__rrr_socket_read_message_default_get_read_session,
 			__rrr_socket_read_message_default_remove_read_session,
-			__rrr_socket_read_message_default_get_socket_options,
+			((socket_read_flags & RRR_SOCKET_READ_NO_GETSOCKOPTS) != RRR_SOCKET_READ_NO_GETSOCKOPTS
+				? __rrr_socket_read_message_default_get_socket_options
+				: NULL
+			),
 			&callback_data
 	);
 }

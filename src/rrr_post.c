@@ -441,9 +441,9 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 		goto out;
 	}
 
-	int read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_USE_TIMEOUT;
+	int socket_read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_USE_TIMEOUT | RRR_SOCKET_READ_NO_GETSOCKOPTS;
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
-		read_flags |= RRR_SOCKET_READ_CHECK_EOF;
+		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
 
 	while (	ret == 0 &&
@@ -454,7 +454,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				&read_sessions,
 				data->input_fd,
 				0,
-				read_flags,
+				socket_read_flags,
 				&data->definition,
 				data->sync_byte_by_byte,
 				__rrr_post_read_callback,
