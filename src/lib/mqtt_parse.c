@@ -854,7 +854,9 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 		publish->reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_NAME_INVALID;
 	}
 
-	if (rrr_mqtt_topic_tokenize(&publish->token_tree, publish->topic) != 0) {
+	// If previous parse was incomplete, free the tree
+	rrr_mqtt_topic_token_destroy(publish->token_tree_);
+	if (rrr_mqtt_topic_tokenize(&publish->token_tree_, publish->topic) != 0) {
 		RRR_MSG_ERR("Could not create topic token tree in rrr_mqtt_parse_publish\n");
 		return RRR_MQTT_PARSE_INTERNAL_ERROR;
 	}

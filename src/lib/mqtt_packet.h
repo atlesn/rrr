@@ -414,7 +414,7 @@ struct rrr_mqtt_p_publish {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	char *topic;
-	struct rrr_mqtt_topic_token *token_tree;
+	struct rrr_mqtt_topic_token *token_tree_;
 
 	/* These three are also accessible through packet type flags but we cache them here */
 	//uint8_t dup; <-- defined in header

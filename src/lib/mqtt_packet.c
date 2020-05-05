@@ -283,7 +283,7 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFI
 		strcpy(result->topic, publish->topic);
 	}
 
-	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree, publish->token_tree);
+	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree_, publish->token_tree_);
 	if (ret != 0) {
 		RRR_MSG_ERR("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
 		goto out_free_topic;
@@ -337,7 +337,7 @@ static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	rrr_mqtt_property_collection_destroy(&publish->properties);
 	rrr_mqtt_property_collection_destroy(&publish->user_properties);
 	rrr_mqtt_property_collection_destroy(&publish->subscription_ids);
-	rrr_mqtt_topic_token_destroy(publish->token_tree);
+	rrr_mqtt_topic_token_destroy(publish->token_tree_);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.puback);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.pubrec);
