@@ -43,28 +43,32 @@ struct buffer_data {
 };
 
 int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	int ret = rrr_message_broker_write_entry_unsafe (
+//	printf ("buffer got entry %p\n", entry);
+
+	struct rrr_message *message = entry->message;
+
+	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp);
+
+	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
 	);
 
-	if (ret == 0) {
-		// Memory handled by message broker, unlock only
-		rrr_ip_buffer_entry_unlock(entry);
-	}
-	else {
-		RRR_MSG_ERR("Error while adding message to buffer in buffer isntance %s\n",
+	if (ret != 0) {
+		RRR_MSG_ERR("Error while adding message to buffer in buffer instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
 	}
 
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
+	// This will also unlock
 	if (rrr_message_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
@@ -73,8 +77,6 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 		RRR_MSG_ERR("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		return 1;
 	}
-
-	rrr_ip_buffer_entry_destroy(message);
 
 	return 0;
 }

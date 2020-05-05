@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -268,7 +267,7 @@ void python3_stop(void *arg) {
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
 	// This will invalidate the forks
-	rrr_py_terminate_threads(&data->rrr_objects);
+	rrr_py_terminate_forks(&data->rrr_objects);
 
 	data->processing_fork = NULL;
 	data->source_fork = NULL;
@@ -348,37 +347,43 @@ int python3_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 	out:
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return (ret == 0 ? 0 : RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR);
 }
-
+/*
 int thread_cancel_callback(void *arg, PyThreadState *tstate_orig) {
 	(void)(tstate_orig);
 
+	// Might also kill forks from other threads
+	rrr_py_terminate_forks (&data->rrr_objects);
+
 	struct python3_data *data = arg;
-	rrr_py_terminate_threads (&data->rrr_objects);
+	rrr_py_terminate_forks (&data->rrr_objects);
 	return 0;
 }
-
+*/
+/*
 static int thread_cancel_python3 (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data;
-
-	(void)(data);
-
 	RRR_MSG_ERR ("Custom cancel function for thread %s/%p running\n", thread->name, thread);
 
-	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data) != 0) {
+	// No need to hold GIL
+	rrr_py_terminate_forks (&data->rrr_objects);
+
+	if (rrr_py_with_global_tstate_do(thread_cancel_callback, data, 1) != 0) {
 		RRR_MSG_ERR("Could not terminate threads in thread_cancel_python3\n");
 		PyErr_Print();
 		return 1;
 	}
 
+	pthread_cancel(thread->thread);
+
 	RRR_MSG_ERR ("Custom cancel function done for %s/%p\n", thread->name, thread);
 
 	return 0;
 }
-
+*/
 // Fork system is locked in this context
 void child_exit_handler (pid_t pid, void *arg) {
 	struct python3_data *data = arg;
@@ -469,19 +474,11 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 		goto out;
 	}
 
-	int retries = 50;
-
-	while (--retries > 0) {
-		ret = fork->recv(&message, fork->socket_main);
-		if (ret != 0) {
-			RRR_MSG_ERR("Error while receiving message from python3 child\n");
-			ret = 1;
-			goto out;
-		}
-		if (message != NULL) {
-			break;
-		}
-		usleep(50);
+	ret = fork->recv(&message, fork->socket_main);
+	if (ret != 0) {
+		RRR_MSG_ERR("Error while receiving message from python3 child\n");
+		ret = 1;
+		goto out;
 	}
 
 	if (message == NULL) {
@@ -493,7 +490,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 
 	RRR_DBG_3("rrr_py_persistent_receive_message got a message\n");
 
-	// This function always handles memory
+	// This function always handles memory of message
 	ret = read_from_source_or_processor_finalize(entry, message, &callback_data);
 	message = NULL;
 
@@ -507,12 +504,17 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 		data->loop_count = 500;
 	}
 
+	ret = 0;
+	if (entry->message == NULL) {
+		ret |= RRR_MESSAGE_BROKER_DROP;
+	}
+
 	if (--(data->loop_count) >= 0) {
-		ret = RRR_MESSAGE_BROKER_AGAIN;
+		ret |= RRR_MESSAGE_BROKER_AGAIN;
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -528,8 +530,13 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	uint64_t start_time = rrr_time_get_64();
+	unsigned int tick = 0;
 	while (rrr_thread_check_encourage_stop(data->thread) == 0) {
 		rrr_thread_update_watchdog_time(data->thread);
+
+//		printf("python3 reader tick: %u\n", tick);
+
+		int message_counter_old = data->message_counter;
 
 		if (rrr_message_broker_write_entry (
 				INSTANCE_D_BROKER(python3_data->thread_data),
@@ -545,6 +552,12 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 			break;
 		}
 
+//		printf("python3 reader tick: %u write done\n", tick);
+
+		if (data->message_counter == message_counter_old) {
+			usleep(10000);
+		}
+
 		uint64_t now_time = rrr_time_get_64();
 		if (now_time - start_time > 1000000) {
 			RRR_DBG_1("python3 read thread '%s' messages per second: %i\n",
@@ -552,9 +565,9 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 			data->message_counter = 0;
 			start_time = rrr_time_get_64();
 		}
-	}
 
-	usleep(50000);
+		tick++;
+	}
 
 //	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -759,9 +772,12 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	uint64_t check_settings_used_time = rrr_time_get_64() + 1000000;
 	uint64_t prev_stats_time = 0;
 
+	unsigned int tick = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 		uint64_t time_now = rrr_time_get_64();
+
+//		printf ("Python 3 ticks: %u\n", tick);
 
 		if (check_settings_used_time != 0 && check_settings_used_time > rrr_time_get_64()) {
 			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -804,6 +820,8 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 			prev_stats_time = rrr_time_get_64();
 		}
+
+		tick++;
 	}
 
 	out_message:
@@ -837,7 +855,8 @@ static struct rrr_module_operations module_operations = {
 		thread_poststop_python3,
 		test_config,
 		NULL,
-		thread_cancel_python3
+		//thread_cancel_python3
+		NULL
 };
 
 static const char *module_name = "python3";

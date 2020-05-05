@@ -607,13 +607,10 @@ int perl5_input_callback (int *count, struct perl5_data *perl5_data, struct rrr_
 		// current message will be written at the beginning at the buffer, and any remaining messages
 		// will be joined in after it.
 //		printf ("perl5_input_callback: putback message %p\n", entry->message);
+		rrr_ip_buffer_entry_incref_while_locked(entry);
 		RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
-		rrr_ip_buffer_entry_unlock(entry);
-		entry = NULL;
 	out:
-		if (entry != NULL) {
-			rrr_ip_buffer_entry_destroy_while_locked(entry);
-		}
+		rrr_ip_buffer_entry_unlock_(entry);
 		return ret;
 }
 
@@ -626,9 +623,10 @@ int perl5_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 //	printf ("perl5_poll_callback: put message %p\n", entry->message);
 
+	rrr_ip_buffer_entry_incref_while_locked(entry);
 	RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return 0;
 }
@@ -974,7 +972,7 @@ int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	out:
 	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&data->latest_message_addr, '\0', sizeof(data->latest_message_addr));
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -1122,18 +1120,23 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&input_buffer_tmp, &data->input_buffer_ip);
 
 			// Callback might add entries back into input buffer
-			RRR_LL_ITERATE_BEGIN(&data->input_buffer_ip, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock(node);
+			RRR_LL_ITERATE_BEGIN(&input_buffer_tmp, struct rrr_ip_buffer_entry);
+				rrr_ip_buffer_entry_lock_(node);
 
 				int old_count = input_count;
 
 				int ret_tmp = perl5_input_callback(&input_count, data, node);
-				if (ret_tmp != 0 || old_count == input_count) {
-					RRR_LL_ITERATE_LAST();
+				if (ret_tmp != 0) {
+					rrr_ip_buffer_entry_unlock_(node);
+					RRR_LL_ITERATE_BREAK();
 				}
 
 				RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(&data->input_buffer_ip);
+
+				if (old_count == input_count) {
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&input_buffer_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 
 			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&data->input_buffer_ip, &input_buffer_tmp);
 

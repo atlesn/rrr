@@ -901,7 +901,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	uint64_t time_now = rrr_time_get_64();
 
 	// FORWARD NEW PUBLISH MESSAGES TO CLIENTS AND ERASE QUEUE
-	ret = rrr_fifo_buffer_read_clear_forward(
+	ret = rrr_fifo_buffer_read_clear_forward (
 			&data->publish_forward_queue.buffer,
 			NULL,
 			__rrr_mqtt_session_collection_ram_forward_publish_to_clients,
@@ -2100,6 +2100,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 			iterate_callback_data->callback_arg
 	);
 
+	// Set the last attempt of the original packet, as packet_to transmit
+	// might be store inside another packet
 	packet->last_attempt = rrr_time_get_64();
 
 	if ((ret & RRR_FIFO_GLOBAL_ERR) != 0) {
@@ -2123,8 +2125,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	out_unlock:
 		RRR_MQTT_P_UNLOCK(packet);
 
-	out_nolock:
-		return ret;
+	return ret;
 }
 
 static int __rrr_mqtt_session_ram_iterate_send_queue (

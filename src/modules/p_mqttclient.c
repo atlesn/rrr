@@ -796,7 +796,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -1007,7 +1007,7 @@ static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *
 	entry->data_length = msg_size;
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 

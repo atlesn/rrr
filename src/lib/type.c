@@ -1059,6 +1059,11 @@ int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 
 	ssize_t output_size = node->total_stored_length * 2 + 1;
 
+	// Valgrind complains about invalid writes for some reason
+	if (output_size < 32) {
+		output_size = 32;
+	}
+
 	char *result = malloc(output_size);
 	if (result == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in__rrr_type_bin_to_str\n");

@@ -41,27 +41,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	node->ptr_prev = NULL;						\
 	node->ptr_next = NULL
 
-#define RRR_LL_VERIFY_HEAD(head) 									\
-	do {if (														\
-		(head->ptr_first != NULL && head->ptr_last == NULL) ||		\
-		(head->ptr_last != NULL && head->ptr_first == NULL) ||		\
-		(head->ptr_first == NULL && head->node_count != 0)			\
-	) {																\
-		RRR_BUG("Bug: Linked list head integrity error");			\
+#define RRR_LL_VERIFY_HEAD(head) 										\
+	do {if (															\
+		((head)->ptr_first != NULL && (head)->ptr_last == NULL) ||		\
+		((head)->ptr_last != NULL && (head)->ptr_first == NULL) ||		\
+		((head)->ptr_first == NULL && (head)->node_count != 0)			\
+	) {																	\
+		RRR_BUG("Bug: Linked list head integrity error");				\
 	}} while(0)
 
-#define RRR_LL_VERIFY_NODE(head)										\
-	do {if (	(node->ptr_prev == NULL && head->ptr_first != node) ||	\
-				(node->ptr_next == NULL && head->ptr_last != node) ||	\
-				(node->ptr_prev != NULL && head->ptr_first == node) ||	\
-				(node->ptr_next != NULL && head->ptr_last == node) ||	\
-				(	head->ptr_first != node &&							\
-					head->ptr_last != node &&							\
-					(node->ptr_next == NULL || node->ptr_prev == NULL)	\
-				)														\
-		) {																\
-			RRR_BUG("Bug: Linked list node integrity error");			\
-		}																\
+#define RRR_LL_VERIFY_NODE(head)											\
+	do {if (	(node->ptr_prev == NULL && (head)->ptr_first != node) ||	\
+				(node->ptr_next == NULL && (head)->ptr_last != node) ||		\
+				(node->ptr_prev != NULL && (head)->ptr_first == node) ||	\
+				(node->ptr_next != NULL && (head)->ptr_last == node) ||		\
+				(	(head)->ptr_first != node &&							\
+					(head)->ptr_last != node &&								\
+					(node->ptr_next == NULL || node->ptr_prev == NULL)		\
+				)															\
+		) {																	\
+			RRR_BUG("Bug: Linked list node integrity error");				\
+		}																	\
 	} while(0)
 
 #define RRR_LL_IS_EMPTY(head)							\
@@ -184,6 +184,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				(target)->ptr_first = (source)->ptr_first;					\
 			}																\
 			(source)->ptr_first = (source)->ptr_last = NULL;				\
+			(target)->node_count += (source)->node_count;					\
+			(source)->node_count = 0;										\
 		}} while(0)
 
 #define RRR_LL_ITERATE_BEGIN_AT(head, type, at, reverse) do {	\

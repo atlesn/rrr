@@ -328,9 +328,11 @@ static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
 	}
 }
 
+//	printf ("packet %p lock\n", (p));
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
 
+//	printf ("packet %p unlock\n", (p));
 #define RRR_MQTT_P_UNLOCK(p)	\
 	pthread_mutex_unlock(&((p)->data_lock))
 

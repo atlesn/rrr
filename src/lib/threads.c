@@ -37,7 +37,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "../global.h"
 
-// #define VL_THREAD_NO_WATCHDOGS
+// Very harsh option to make watchdogs stop checking alive timers of threads
+//#define VL_THREAD_INCAPACITATE_WATCHDOGS
+
+// Threads which does not shutdown nicely will remain while others shut down
+#define VL_THREAD_DISABLE_CANCELLING
 
 // Set this higher (like 1000) when debugging
 #define VL_THREAD_FREEZE_LIMIT_FACTOR 1
@@ -307,7 +311,8 @@ void rrr_thread_destroy_collection (
 			// condition with is_ghost and ghost_cleanup_pointer
 
 			// Move pointer to thread, we expect it to clean up if it dies
-			RRR_MSG_ERR ("Thread is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n");
+			RRR_MSG_ERR ("Thread %s is ghost when freeing all threads. Move main thread data pointer into thread for later cleanup.\n",
+					node->name);
 			node->free_by_ghost = 1;
 			__rrr_thread_push_ghost(node);
 			rrr_thread_unlock(node);
@@ -528,6 +533,13 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_RUNNING);
 
+
+#ifdef VL_THREAD_INCAPACITATE_WATCHDOGS
+	while (1) {
+		usleep(5000000);
+	}
+#endif
+
 	uint64_t prev_loop_time = rrr_time_get_64();
 	while (1) {
 
@@ -595,6 +607,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
 	uint64_t prevtime = rrr_time_get_64();
+#ifndef VL_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
 		uint64_t nowtime = rrr_time_get_64();
 		if (prevtime + RRR_THREAD_WATCHDOG_KILLTIME_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime) {
@@ -612,6 +625,9 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 		usleep (10000); // 10 ms
 	}
+#else
+	RRR_DBG_1 ("Thread watchdog cancelling disabled, soft stop signals only\n");
+#endif
 
 	RRR_DBG_1 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
@@ -777,7 +793,6 @@ int rrr_thread_start (struct rrr_thread *thread) {
 
 	pthread_detach(thread->thread);
 
-#ifndef VL_THREAD_NO_WATCHDOGS
 	struct watchdog_data *watchdog_data = malloc(sizeof(*watchdog_data));
 	watchdog_data->watchdog_thread = thread->watchdog;
 	watchdog_data->watched_thread = thread;
@@ -800,7 +815,6 @@ int rrr_thread_start (struct rrr_thread *thread) {
 	thread->watchdog->is_watchdog = 1;
 
 	RRR_DBG_1 ("Thread %s Watchdog started\n", thread->name);
-#endif
 
 	// Thread tries to set a signal first and therefore can't proceed untill we unlock
 	rrr_thread_unlock(thread);

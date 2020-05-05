@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MESSAGE_BROKER_OK		0
 #define RRR_MESSAGE_BROKER_POST		RRR_MESSAGE_BROKER_OK
-#define RRR_MESSAGE_BROKER_ERR		1
-#define RRR_MESSAGE_BROKER_DROP		2
-#define RRR_MESSAGE_BROKER_AGAIN	3
+#define RRR_MESSAGE_BROKER_ERR		(1<<0)
+#define RRR_MESSAGE_BROKER_DROP		(1<<1)
+#define RRR_MESSAGE_BROKER_AGAIN	(1<<2)
 
 // All costumers must be registered prior to starting any threads
 
@@ -68,6 +68,9 @@ struct rrr_ip_buffer_entry_collection;
 // inside this framework, memory might become freed up at any time
 typedef void rrr_message_broker_costumer_handle;
 
+void rrr_message_broker_unregister_all_hard (
+		struct rrr_message_broker *broker
+);
 void rrr_message_broker_cleanup (
 		struct rrr_message_broker *broker
 );
@@ -102,12 +105,12 @@ int rrr_message_broker_clone_and_write_entry (
 		rrr_message_broker_costumer_handle *handle,
 		const struct rrr_ip_buffer_entry *entry
 );
-int rrr_message_broker_write_entry_unsafe (
+int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry *entry
 );
-int rrr_message_broker_write_entry_delayed_unsafe (
+int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry *entry
@@ -148,6 +151,13 @@ int rrr_message_broker_get_fifo_stats (
 		rrr_message_broker_costumer_handle *handle
 );
 int rrr_message_broker_with_ctx_do (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
+		int (*callback)(void *callback_arg_1, void *callback_arg_2),
+		void *callback_arg_1,
+		void *callback_arg_2
+);
+int rrr_message_broker_with_ctx_and_buffer_lock_do (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),

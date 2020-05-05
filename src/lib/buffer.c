@@ -31,27 +31,38 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_BUFFER_DEBUG 1
 
 static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_wrlock(&buffer->rwlock);
+//	printf ("buffer %p write lock wait thread %lu\n", buffer, pthread_self());
+	while (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
+		pthread_testcancel();
+		usleep(10);
+	}
+//	printf ("buffer %p write lock done thread %lu\n", buffer, pthread_self());
 }
 
 static inline int rrr_fifo_write_trylock(struct rrr_fifo_buffer *buffer) {
 	if (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
 		return 1;
 	}
+//	printf ("buffer %p write trylock thread %lu\n", buffer, pthread_self());
 	return 0;
 }
 
 static inline void rrr_fifo_read_lock(struct rrr_fifo_buffer *buffer) {
-	pthread_rwlock_rdlock(&buffer->rwlock);
+//	printf ("buffer %p read lock wait thread %lu\n", buffer, pthread_self());
+	while (pthread_rwlock_tryrdlock(&buffer->rwlock) != 0) {
+		pthread_testcancel();
+		usleep(10);
+	}
+//	printf ("buffer %p read lock done thread %lu\n", buffer, pthread_self());
 }
 
 static inline void rrr_fifo_unlock(struct rrr_fifo_buffer *buffer) {
 	pthread_rwlock_unlock(&buffer->rwlock);
+//	printf ("buffer %p     unlock thread %lu\n", buffer, pthread_self());
 }
 
 static inline void rrr_fifo_unlock_void(void *arg) {
-	struct rrr_fifo_buffer *buffer = arg;
-	pthread_rwlock_unlock(&buffer->rwlock);
+	rrr_fifo_unlock(arg);
 }
 
 #ifdef RRR_FIFO_BUFFER_DEBUG
@@ -213,7 +224,7 @@ static void __rrr_fifo_merge_write_queue_nolock(struct rrr_fifo_buffer *buffer) 
 
 		// Write all metadata again to force write while holding buffer write lock
 		while (first) {
-			// TODO : Unsure if compiler optimizes this away
+			// TODO : Unsure if compiler optimizes this away, looks like GCC actually does the writing
 			struct rrr_fifo_buffer_entry tmp = *first;
 			*first = tmp;
 			first = first->next;
@@ -273,44 +284,58 @@ int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer) {
 
 	memset (buffer, '\0', sizeof(*buffer));
 
-	ret = pthread_mutex_init (&buffer->write_queue_mutex, NULL);
-	if (ret != 0) { goto out;}
+	pthread_rwlockattr_t rwlockattr;
 
-	ret = pthread_rwlock_init(&buffer->rwlock, NULL);
-	if (ret != 0) { goto out;}
+	if (pthread_rwlockattr_init(&rwlockattr) != 0) {
+		goto out;
+	}
+
+	ret = pthread_mutex_init (&buffer->write_queue_mutex, NULL);
+	if (ret != 0) {
+		goto out_destroy_rwlockattr;
+	}
+
+	ret = pthread_rwlock_init(&buffer->rwlock, &rwlockattr);
+	if (ret != 0) {
+		goto out_destroy_write_queue_mutex;
+	}
 
 	ret = pthread_mutex_init (&buffer->ratelimit_mutex, NULL);
-	if (ret != 0) { goto out;}
+	if (ret != 0) {
+		goto out_destroy_rwlock;
+	}
 
 	ret = pthread_mutex_init (&buffer->stats_mutex, NULL);
-	if (ret != 0) { goto out;}
+	if (ret != 0) {
+		goto out_destroy_ratelimit_mutex;
+	}
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->buffer_do_ratelimit = 0;
 	buffer->ratelimit.sleep_spin_time = 2000000;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
-	pthread_rwlock_wrlock(&buffer->rwlock);
-
-	int sem_ret = sem_init(&buffer->new_data_available, 1, 0);
-	if (sem_ret != 0) {
-		char buf[1024];
-		buf[0] = '\0';
-		strerror_r(errno, buf, sizeof(buf));
-		RRR_MSG_ERR("Could not initialize semaphore in buffer: %s\n", buf);
-		ret = 1;
+	if (sem_init(&buffer->new_data_available, 1, 0) != 0) {
+		goto out_destroy_stats_mutex;
 	}
 
+	pthread_rwlock_wrlock(&buffer->rwlock);
 	buffer->free_entry = &__rrr_fifo_default_free;
-
 	pthread_rwlock_unlock(&buffer->rwlock);
 
+	goto out;
+	out_destroy_stats_mutex:
+		pthread_mutex_destroy(&buffer->stats_mutex);
+	out_destroy_ratelimit_mutex:
+		pthread_mutex_destroy(&buffer->ratelimit_mutex);
+	out_destroy_rwlock:
+		pthread_rwlock_destroy(&buffer->rwlock);
+	out_destroy_write_queue_mutex:
+		pthread_mutex_destroy(&buffer->write_queue_mutex);
+	out_destroy_rwlockattr:
+		pthread_rwlockattr_destroy(&rwlockattr);
 	out:
-	if (ret != 0) {
-		ret = 1;
-	}
-
-	return ret;
+		return (ret != 0 ? 1 : 0);
 }
 
 int rrr_fifo_buffer_init_custom_free(struct rrr_fifo_buffer *buffer, void (*custom_free)(void *arg)) {
@@ -451,7 +476,7 @@ int rrr_fifo_buffer_search (
 		int actions = 0;
 
 		__rrr_fifo_buffer_entry_lock(entry);
-		callback(callback_data, entry->data, entry->size);
+		actions = callback(callback_data, entry->data, entry->size);
 		__rrr_fifo_buffer_entry_unlock(entry);
 
 		if (actions == RRR_FIFO_SEARCH_KEEP) { // Just a 0
@@ -595,15 +620,19 @@ int rrr_fifo_buffer_read_clear_forward (
 
 	int ret = RRR_FIFO_OK;
 
-	struct rrr_fifo_buffer_entry *current = buffer->gptr_first;
+	struct rrr_fifo_buffer_entry *current = NULL;
 	struct rrr_fifo_buffer_entry *stop = NULL;
+	struct rrr_fifo_buffer_entry *last_element_max = NULL;
 	int max_counter = RRR_FIFO_MAX_READS;
-	struct rrr_fifo_buffer_entry *last_element_max = current;
 
 	rrr_fifo_write_lock(buffer);
 	pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
 
 	__rrr_fifo_merge_write_queue_nolock(buffer);
+
+	// Must be set after write queue merge
+	current = buffer->gptr_first;
+	last_element_max = current;
 
 	while (last_element_max != NULL && --max_counter) {
 		if (last_element_max == last_element) {
@@ -1006,6 +1035,27 @@ void __rrr_fifo_buffer_update_ratelimit(struct rrr_fifo_buffer *buffer) {
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 }
 
+int rrr_fifo_buffer_with_write_lock_do (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *arg1, void *arg2),
+		void *callback_arg1,
+		void *callback_arg2
+) {
+	int ret = 0;
+
+	rrr_fifo_write_lock(buffer);
+	pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
+
+	ret = callback(callback_arg1, callback_arg2);
+	if (ret != RRR_FIFO_OK && ret != RRR_FIFO_GLOBAL_ERR) {
+		RRR_BUG("Bug: Unknown return value %i to rrr_fifo_buffer_with_write_lock_do\n", ret);
+	}
+
+	pthread_cleanup_pop(1);
+
+	return ret;
+}
+
 /*
  * This writing method holds the lock for a minimum amount of time, only to
  * update the pointers to the end. To provide memory fence, the data should be
@@ -1019,6 +1069,13 @@ int rrr_fifo_buffer_write (
 	int ret = 0;
 
 	int write_again = 0;
+
+	int entry_count_before = 0;
+	int entry_count_after = 0;
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	entry_count_before = buffer->entry_count;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	do {
 		struct rrr_fifo_buffer_entry *entry = NULL;
@@ -1042,6 +1099,7 @@ int rrr_fifo_buffer_write (
 		ret = callback(&entry->data, &entry->size, &order, callback_arg);
 		pthread_cleanup_pop(1);
 
+		write_again = 0;
 		int do_ordered_write = 0;
 		if (ret != 0) {
 			if ((ret & RRR_FIFO_WRITE_ORDERED) == RRR_FIFO_WRITE_ORDERED) {
@@ -1078,9 +1136,6 @@ int rrr_fifo_buffer_write (
 			if (ret != 0) {
 				RRR_BUG("Unknown return values %i from callback in rrr_fifo_buffer_write\n", ret);
 			}
-		}
-		else {
-			write_again = 0;
 		}
 
 		if (entry->data == NULL) {
@@ -1144,6 +1199,7 @@ int rrr_fifo_buffer_write (
 
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
 		buffer->entry_count++;
+		entry_count_after = buffer->entry_count;
 		pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 		do_free_entry = 0;
@@ -1158,6 +1214,9 @@ int rrr_fifo_buffer_write (
 
 		__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
+
+	RRR_DBG_3("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
+			buffer, entry_count_before, entry_count_after);
 
 //	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
@@ -1233,8 +1292,6 @@ int rrr_fifo_buffer_write_delayed (
 			RRR_BUG("Data from callback was NULL in rrr_fifo_buffer_write\n");
 		}
 
-		RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK();
-
 		if (buffer->gptr_write_queue_first == NULL) {
 			buffer->gptr_write_queue_last = entry;
 			buffer->gptr_write_queue_first = entry;
@@ -1250,7 +1307,9 @@ int rrr_fifo_buffer_write_delayed (
 			pthread_mutex_unlock(&buffer->ratelimit_mutex);
 		}
 
-		RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK();
+		// Can't do this here, might deadlock (many call delayed_write while holding)
+		// the write lock
+		// RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK();
 
 		pthread_mutex_unlock (&buffer->write_queue_mutex);
 		__rrr_fifo_buffer_do_ratelimit(buffer);

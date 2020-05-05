@@ -157,7 +157,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_ip_buffer_entry *entry);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_ip_buffer_entry *entry);
 };
 
 /* Check order with function pointers */
@@ -326,7 +326,7 @@ int colplan_array_bind_execute (
 		struct mysql_data *mysql_data,
 		MYSQL_STMT *stmt,
 		int column_count_from_prepare,
-		struct rrr_ip_buffer_entry *entry
+		const struct rrr_ip_buffer_entry *entry
 ) {
 	int ret = 0;
 
@@ -723,19 +723,20 @@ int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
 
+	rrr_ip_buffer_entry_incref_while_locked(entry);
 	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return 0;
 }
 
-int mysql_save(struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
+int mysql_save(const struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
 	if (mysql_data->mysql_connected != 1) {
 		return 1;
 	}
 
-	struct rrr_message *message = entry->message;
+	const struct rrr_message *message = entry->message;
 
 	int is_unknown = 0;
 	int colplan_index = COLUMN_PLAN_VOLTAGE;
@@ -781,14 +782,13 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 	if (mysql_save_res != 0) {
 		if (mysql_data->drop_unknown_messages) {
 			RRR_MSG_ERR("mysql instance %s dropping message\n", INSTANCE_D_NAME(thread_data));
-			rrr_ip_buffer_entry_destroy(entry);
-			entry = NULL;
+			// Will be destroyed below
 		}
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
+			rrr_ip_buffer_entry_incref_while_locked(entry);
 			RRR_LL_APPEND(&mysql_data->input_buffer, entry);
-			entry = NULL;
 		}
 	}
 	else if (mysql_data->generate_tag_messages != 0) {
@@ -801,7 +801,7 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
-		if (rrr_message_broker_write_entry_unsafe (
+		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				entry
@@ -809,15 +809,9 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 			RRR_MSG_ERR("Warning: Could not write tag message to output buffer in mysql instance %s, message lost\n",
 					INSTANCE_D_NAME(thread_data));
 		}
-		else {
-			rrr_ip_buffer_entry_unlock(entry);
-			entry = NULL;
-		}
 	}
 
-	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
-	}
+	rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
 
 	return 0;
 }
@@ -866,8 +860,8 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 	}
 
 	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock(node);
-		// Callback always takes care of entry memory
+		RRR_LL_VERIFY_NODE(source_buffer);
+		rrr_ip_buffer_entry_lock_(node);
 		process_callback(node, stmt, column_count, thread_data);
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
@@ -925,6 +919,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 		}
 
 		RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&process_buffer_tmp, &data->input_buffer);
+		RRR_LL_VERIFY_HEAD(&process_buffer_tmp);
+		RRR_LL_VERIFY_HEAD(&data->input_buffer);
 		process_entries(&process_buffer_tmp, thread_data);
 
 		if (data->mysql_connected != 1) {

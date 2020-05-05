@@ -271,7 +271,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 

@@ -109,8 +109,8 @@ int rrr_stats_print_reset(struct ip_stats *stats, int do_reset) {
 }
 
 struct ip_receive_callback_data {
-	struct rrr_ip_buffer_entry **target_entry;
-	int (*callback)(struct rrr_ip_buffer_entry **entry, void *arg);
+	struct rrr_ip_buffer_entry *target_entry;
+	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
 	struct ip_stats *stats;
 };
@@ -142,12 +142,12 @@ static int __ip_receive_callback (
 			goto out;
 	}
 
-	if ((*(callback_data->target_entry))->message != NULL) {
+	if (callback_data->target_entry->message != NULL) {
 		RRR_BUG("message pointer of entry was not empty in __ip_receive_callback\n");
 	}
 
 	rrr_ip_buffer_entry_set_unlocked (
-			*(callback_data->target_entry),
+			callback_data->target_entry,
 			read_session->rx_buf_ptr,
 			read_session->target_size,
 			&read_session->src_addr,
@@ -192,13 +192,13 @@ static int __ip_receive_callback (
 }
 
 int rrr_ip_receive_array (
-		struct rrr_ip_buffer_entry **target_entry,
+		struct rrr_ip_buffer_entry *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
-		int (*callback)(struct rrr_ip_buffer_entry **entry, void *arg),
+		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 ) {

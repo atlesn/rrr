@@ -587,7 +587,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out_generate_ack
 	);
 
-	RRR_MQTT_P_UNLOCK(packet);
+//	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_INCREF(packet);
 	unsigned int dummy;
 	int ret_from_receive_publish = mqtt_data->sessions->methods->receive_packet(
@@ -597,7 +597,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			&dummy
 	);
 	RRR_MQTT_P_DECREF(packet);
-	RRR_MQTT_P_LOCK(packet);
+//	RRR_MQTT_P_LOCK(packet);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			ret_from_receive_publish,
@@ -965,15 +965,15 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
 	struct rrr_mqtt_conn *connection = callback_data->connection;
 
-	RRR_MQTT_P_LOCK(packet);
+	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
+		RRR_BUG("BUG: Packet %p was not locked in rrr_mqtt_common_send_from_sessions_callback\n", packet);
+	}
 
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(connection, packet) != 0) {
 		RRR_MSG_ERR("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
 	}
-
-	RRR_MQTT_P_UNLOCK(packet);
 
 	return ret;
 }

@@ -474,9 +474,8 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 			RRR_MSG_ERR("Storing message with error in buffer for later retry in influxdb instance %s\n",
 					INSTANCE_D_NAME(influxdb_data->thread_data));
 
+			rrr_ip_buffer_entry_incref_while_locked(entry);
 			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
-			rrr_ip_buffer_entry_unlock(entry);
-			entry = NULL;
 			ret = 0;
 			goto discard;
 		}
@@ -488,9 +487,7 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 
 	discard:
 	rrr_array_clear(&array);
-	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
-	}
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -647,15 +644,15 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 			// The callback might add entries back into data->error_buf
 			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock(node);
+				rrr_ip_buffer_entry_lock_(node);
 				if (common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
-					rrr_ip_buffer_entry_unlock(node);
+					rrr_ip_buffer_entry_unlock_(node);
 					goto out_message;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();
-			RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(&error_buf_tmp);
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 		}
 	}
 

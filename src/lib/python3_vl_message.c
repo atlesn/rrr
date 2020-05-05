@@ -1161,11 +1161,11 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 	struct rrr_message *rrr_message = (struct rrr_message *) msg;
 
 	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
-		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message was not a rrr_message\n");
+		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message_and_address was not a rrr_message\n");
 	}
 
-	if (msg->msg_size < sizeof(ret->message_static)) {
-		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message\n");
+	if (msg->msg_size < MSG_MIN_SIZE(&ret->message_static)) {
+		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message_and_address\n");
 	}
 
 	ret = (struct rrr_python3_rrr_message_data *) rrr_python3_rrr_message_f_new(&rrr_python3_rrr_message_type, NULL, NULL);
@@ -1179,7 +1179,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 
 	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1194,12 +1194,12 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 
 	ret->rrr_array = rrr_python3_array_new();
 	if (ret->rrr_array == NULL) {
-		RRR_MSG_ERR("Could not create array in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not create array in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
 	if (rrr_array_message_to_collection(&array_tmp, rrr_message) != 0) {
-		RRR_MSG_ERR("Could not parse array from message in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1210,14 +1210,14 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 		else {
 			node_tag = PyUnicode_FromString(node->tag);
 			if (node_tag == NULL) {
-				RRR_MSG_ERR("Could not create node for tag in rrr_python3_rrr_message_new_from_message\n");
+				RRR_MSG_ERR("Could not create node for tag in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 		}
 
 		node_list = PyList_New(node->element_count);
 		if (node_list == NULL) {
-			RRR_MSG_ERR("Could not create list for node in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 
@@ -1229,7 +1229,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
-			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 		for (rrr_type_array_size i = 0; i < node->element_count; i++) {
@@ -1253,13 +1253,13 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
 			}
 			else {
-				RRR_MSG_ERR("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message\n",
+				RRR_MSG_ERR("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",
 						node->definition->type);
 				goto out_err;
 			}
 
 			if (node_element_value == NULL) {
-				RRR_MSG_ERR("Could not create array node data in rrr_python3_rrr_message_new_from_message\n");
+				RRR_MSG_ERR("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 
@@ -1268,7 +1268,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 		}
 
 		if (rrr_python3_array_append_value_with_list(ret->rrr_array, node_tag, node_list, node->definition->type) != 0) {
-			RRR_MSG_ERR("Could not append node value to array in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Could not append node value to array in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 

@@ -355,6 +355,8 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 		goto out;
 	}
 
+	rrr_ip_buffer_entry_lock_(new_entry);
+
 	RRR_DBG_3("ip instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
 
@@ -363,7 +365,8 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 
 	// Unsafe is ok, we are in context. Must also use delayed write
 	// as write lock is already held on the buffer.
-	if ((ret = rrr_message_broker_write_entry_delayed_unsafe (
+
+	if ((ret = rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			new_entry
@@ -373,15 +376,10 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 		goto out;
 	}
 
-	// Now managed by fifo buffer
-	new_entry = NULL;
-
 	data->messages_count_read++;
 
 	out:
-	if (new_entry != NULL) {
-		rrr_ip_buffer_entry_destroy(new_entry);
-	}
+	rrr_ip_buffer_entry_decref_while_locked_and_unlock(new_entry);
 	if (message != NULL) {
 		free(message);
 	}
@@ -427,12 +425,9 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 	return ret;
 }
 
-int ip_read_raw_data_callback (struct rrr_ip_buffer_entry **entry_ptr, void *arg) {
+int ip_read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct ip_data *data = arg;
 	int ret = 0;
-
-	struct rrr_ip_buffer_entry *entry = *entry_ptr;
-
 	struct ip_read_callback_data callback_data = {
 			data,
 			entry // Only used for reference by callbacks,
@@ -473,10 +468,6 @@ int ip_read_raw_data_callback (struct rrr_ip_buffer_entry **entry_ptr, void *arg
 	}
 
 	out:
-	// The entry will be destroyed by callers as we leave the pointer alone
-	if (*entry_ptr == NULL) {
-		RRR_BUG("Entry pointer became NULL in ip_read_raw_data_callback\n");
-	}
 	return ret;
 }
 
@@ -495,10 +486,8 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	struct rrr_ip_buffer_entry *entry_tmp_ptr = entry;
-
 	if ((ret = rrr_ip_receive_array (
-			&entry_tmp_ptr,
+			entry,
 			callback_data->read_sessions,
 			callback_data->fd,
 			RRR_READ_F_NO_SLEEPING,
@@ -542,11 +531,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			ret |= RRR_MESSAGE_BROKER_DROP;
 		}
 
-		if (entry_tmp_ptr == NULL) {
-			RRR_BUG("Entry became NULL in ip_read_array_intermediate\n");
-		}
-
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_ip_buffer_entry_unlock_(entry);
 		return ret;
 }
 
@@ -559,7 +544,7 @@ int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rr
 			0,
 			fd,
 			read_sessions,
-			10
+			4
 	};
 
 	if ((ret = rrr_message_broker_write_entry (
@@ -639,15 +624,13 @@ static int inject_callback(void *arg1, void *arg2) {
 	struct ip_data *data = arg1;
 	struct rrr_ip_buffer_entry *entry = arg2;
 
-	return ip_read_raw_data_callback(&entry, data);
+	return ip_read_raw_data_callback(entry, data);
 }
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	struct ip_data *data = thread_data->private_data;
 
 	RRR_DBG_2("ip instance %s writing data from inject function\n", INSTANCE_D_NAME(thread_data));
-
-	rrr_ip_buffer_entry_lock(message);
 
 	int ret = rrr_message_broker_with_ctx_do (
 			INSTANCE_D_BROKER(thread_data),
@@ -657,7 +640,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 			message
 	);
 
-	rrr_ip_buffer_entry_destroy_while_locked(message);
+	rrr_ip_buffer_entry_unlock_(message);
 
 	return ret;
 }
@@ -670,9 +653,10 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_3 ("ip instance %s: Result from buffer timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
+	rrr_ip_buffer_entry_incref_while_locked(entry);
 	RRR_LL_APPEND(&data->send_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return 0;
 }
@@ -1030,6 +1014,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
+//		printf ("IP ticks: %u\n", tick);
+
 		if (has_senders != 0) {
 			if (poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
 				break;
@@ -1039,7 +1025,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		int ret_tmp = 0;
 		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_ip_buffer_entry);
 			int do_destroy = 0;
-			rrr_ip_buffer_entry_lock(node);
+			rrr_ip_buffer_entry_lock_(node);
 			if ((ret_tmp = input_callback(&do_destroy, data, &tcp_connect_data, node)) != 0) {
 				RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 				RRR_LL_ITERATE_LAST();
@@ -1049,9 +1035,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			else {
-				rrr_ip_buffer_entry_unlock(node);
+				rrr_ip_buffer_entry_unlock_(node);
 			}
-		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
+		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 
 		if (ret_tmp != 0) {
 			break;

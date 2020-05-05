@@ -264,7 +264,7 @@ int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pi
 	return ret;
 }
 
-void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects) {
+void rrr_py_terminate_forks (struct python3_rrr_objects *rrr_objects) {
 	int count = 0;
 
 	struct python3_fork *fork = NULL;
@@ -456,7 +456,8 @@ int __rrr_py_persistent_thread_rw_child_callback (
 		}
 	}
 	else {
-		RRR_DBG_3("Python3 no functions define for received message type\n");
+		// This happens when no config-function is specified
+		RRR_DBG_3("Python3 no functions defined for received message type %p, %s\n", Py_TYPE(arg), arg->ob_type->tp_name);
 	}
 
 	if (ret != 0) {
@@ -625,7 +626,7 @@ static int __fork_main_tstate_callback(void *arg, PyThreadState *tstate_orig) {
 }
 
 static int __fork_callback(void *arg) {
-	return rrr_py_with_global_tstate_do(__fork_main_tstate_callback, arg);
+	return rrr_py_with_global_tstate_do(__fork_main_tstate_callback, arg, 0);
 }
 
 static pid_t __rrr_py_fork_intermediate (
@@ -1056,7 +1057,9 @@ void __rrr_py_finalize_decrement_users(void) {
 	__rrr_py_global_unlock(NULL);
 }
 
-int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg) {
+int rrr_py_with_global_tstate_do (
+		int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg, int force_gil_release
+) {
 	int ret = 0;
 
 	// XXX    Feel free to read through this and check if it's correct. The
@@ -1068,6 +1071,16 @@ int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstat
 	PyThreadState *state_orig = NULL;
 
 	if (PyGILState_Check()) {
+			if (force_gil_release) {
+				// We can end up here when killing a thread holding current tstate.
+				// We are usually called through the cancel function and from the
+				// watchdog thread.
+				// Might happen if a thread has not been properly cancelled before
+				// we enter this function.
+				if (PyGILState_GetThisThreadState() == NULL) {
+					RRR_BUG("Abort: Another thread still holding GIL while attempting to acquire global tstate in rrr_py_with_global_tstate_do\n");
+				}
+			}
 			state_orig = PyEval_SaveThread();
 	}
 
@@ -1075,7 +1088,7 @@ int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstat
 	ret = callback(arg, state_orig);
 	PyEval_SaveThread();
 
-	if (state_orig != 0) {
+	if (state_orig != NULL) {
 		PyEval_RestoreThread(state_orig);
 	}
 

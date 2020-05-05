@@ -54,7 +54,7 @@ static int __rrr_udpstream_asd_queue_entry_destroy (
 		struct rrr_udpstream_asd_queue_entry *entry
 ) {
 	if (entry->message != NULL) {
-		rrr_ip_buffer_entry_destroy(entry->message);
+		rrr_ip_buffer_entry_decref(entry->message);
 	}
 	free(entry);
 	return 0;
@@ -210,9 +210,9 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 }
 
 // message pointer set to NULL if memory gets new owner
-static int __rrr_udpstream_asd_queue_insert_entry (
+static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_new *queue,
-		struct rrr_ip_buffer_entry **entry,
+		struct rrr_ip_buffer_entry *ip_entry,
 		uint32_t message_id
 ) {
 	int ret = 0;
@@ -229,9 +229,9 @@ static int __rrr_udpstream_asd_queue_insert_entry (
 	}
 	memset(new_entry, '\0', sizeof(*new_entry));
 
+	rrr_ip_buffer_entry_incref_while_locked(ip_entry);
 	new_entry->message_id = message_id;
-	new_entry->message = *entry;
-	*entry = NULL;
+	new_entry->message = ip_entry;
 
 	__rrr_udpstream_asd_queue_insert_ordered(queue, new_entry);
 	new_entry = NULL;
@@ -264,9 +264,9 @@ static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **t
 }
 
 // message pointer set to NULL if memory gets new owner
-static int __rrr_udpstream_asd_queue_collection_insert_entry (
+static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_collection *collection,
-		struct rrr_ip_buffer_entry **entry,
+		struct rrr_ip_buffer_entry *entry,
 		uint32_t connect_handle,
 		uint32_t message_id
 ) {
@@ -290,7 +290,7 @@ static int __rrr_udpstream_asd_queue_collection_insert_entry (
 		RRR_LL_APPEND(collection, target);
 	}
 
-	ret = __rrr_udpstream_asd_queue_insert_entry(target, entry, message_id);
+	ret = __rrr_udpstream_asd_queue_incref_and_insert_entry(target, entry, message_id);
 
 	out:
 	return ret;
@@ -594,9 +594,9 @@ static int __rrr_udpstream_asd_control_frame_listener (
 
 // Queue a message for transmission.
 // ip_message is set to NULL if memory is managed by new buffer
-int rrr_udpstream_asd_queue_message (
+int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
-		struct rrr_ip_buffer_entry **ip_message
+		struct rrr_ip_buffer_entry *ip_message
 ) {
 	int ret = RRR_UDPSTREAM_ASD_OK;
 	uint32_t id = 0;
@@ -628,7 +628,7 @@ int rrr_udpstream_asd_queue_message (
 		RRR_BUG("IDs exhausted in rrr_udpstream_asd_queue_message\n");
 	}
 
-	if ((ret = __rrr_udpstream_asd_queue_insert_entry (
+	if ((ret = __rrr_udpstream_asd_queue_incref_and_insert_entry (
 			&session->send_queue,
 			ip_message,
 			id
@@ -901,6 +901,10 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 	struct rrr_udpstream_asd *session = receive_data->session;
 	struct rrr_ip_buffer_entry *entry = receive_data->udpstream_receive_data->allocation_handle;
 
+	// Any allocator must put an ip buffer entry in the allocation handle
+	// The entry must be locked already at this location, allocator is responsible for ensuring that
+	// The allocator must unlock the entry after the callback chain is complete
+
 	// TODO : Make this a soft error?
 	if (receive_data->udpstream_receive_data->application_data > 0xffffffff) {
 		RRR_MSG_ERR("Application data/message ID out of range (%" PRIu64 ") in __rrr_udpstream_asd_receive_messages_callback_final connect handle %" PRIu32 ", message dropped\n",
@@ -914,9 +918,9 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 	RRR_DBG_3("ASD %u RECV timestamp %" PRIu64 "\n",
 			session->connect_handle, (*message)->timestamp);
 
-	if ((ret = __rrr_udpstream_asd_queue_collection_insert_entry (
+	if ((ret = __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 			&session->release_queues,
-			&entry,
+			entry,
 			receive_data->udpstream_receive_data->connect_handle,
 			receive_data->udpstream_receive_data->application_data
 	)) != 0) {
@@ -924,10 +928,8 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 		ret = 1;
 		goto out;
 	}
-
-	// Tells allocator that we've taken care of the ip buffer entry and it
-	// is not to be freed
-	if (entry == NULL) {
+	else {
+		// Tells the allocator that we are now using the memory
 		*message = NULL;
 	}
 
@@ -1046,12 +1048,16 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 			RRR_DBG_3("ASD DELIVER %u timestamp %" PRIu64 ", grace started\n",
 					node->message_id, node->send_time);
 
-			// !!! Callback MUST take care of message memory also upon errors
+			// Callback must ALWAYS unlock
+			rrr_ip_buffer_entry_lock_(message);
 			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
 				RRR_MSG_ERR("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 				ret = 1;
 				goto out;
 			}
+
+			rrr_ip_buffer_entry_decref(message);
+			node->message = NULL;
 
 			delivered_count++;
 

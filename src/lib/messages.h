@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_IS_MSG_DATA(message)	(MSG_IS_MSG(message) && MSG_IS_DATA(message))
 #define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
 
+#define MSG_MIN_SIZE(message)		(sizeof(*(message))-1)
 #define MSG_TOTAL_SIZE(message)		((message)->msg_size)
 #define MSG_TOPIC_LENGTH(message)	((message)->topic_length)
 #define MSG_TOPIC_PTR(message)		((message)->data + 0)

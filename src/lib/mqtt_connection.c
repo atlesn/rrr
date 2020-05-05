@@ -971,7 +971,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	struct rrr_mqtt_conn_read_session *read_session = &connection->read_session;
@@ -1191,7 +1191,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	if (connection->read_session.rx_buf == NULL) {
@@ -1285,7 +1285,7 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	if (connection->read_complete == 1) {

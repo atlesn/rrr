@@ -147,9 +147,9 @@ int rrr_udpstream_asd_new (
 		int accept_connections,
 		int disallow_ip_swap
 );
-int rrr_udpstream_asd_queue_message (
+int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
-		struct rrr_ip_buffer_entry **message
+		struct rrr_ip_buffer_entry *message
 );
 int rrr_udpstream_asd_deliver_and_maintain_queues (
 		struct rrr_udpstream_asd *session,

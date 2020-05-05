@@ -523,7 +523,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	uint64_t msg_value = 0;
 
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
-		if (message->msg_size < sizeof(struct rrr_message)) {
+		if (message->msg_size < MSG_MIN_SIZE(message)) {
 			RRR_BUG("Received an rrr_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
 

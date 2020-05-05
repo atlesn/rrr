@@ -285,8 +285,8 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 }
 
 int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {
-	data->thread_data = thread_data;
 	memset(data, '\0', sizeof(*data));
+	data->thread_data = thread_data;
 	return 0;
 }
 
@@ -404,7 +404,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -458,6 +458,7 @@ static int volmonitor_spawn_message (struct voltmonitor_data *data, uint64_t val
 
 int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_entry *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+
 	struct rrr_message *message = entry->message;
 
 	int ret = 0;
@@ -485,7 +486,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 	}
 
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_destroy(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 

@@ -294,6 +294,12 @@ int main (int argc, const char *argv[]) {
 			main_threads_stop(collection, instances);
 			rrr_thread_destroy_collection (collection, 0);
 
+			// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
+			// as the handle usercount will be > 1. This handle will not be destroyed untill the
+			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
+			// to find the handle as it will be removed from the costumer handle list.
+			rrr_message_broker_unregister_all_hard(&message_broker);
+
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
 				usleep(1000000);
 				goto threads_restart;

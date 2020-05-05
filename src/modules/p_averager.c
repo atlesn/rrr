@@ -70,53 +70,66 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	int ret = 0;
 
+	struct rrr_ip_buffer_entry *dup_entry = NULL;
+	struct rrr_message *dup_message = NULL;
+
 	if (MSG_IS_MSG(message) && MSG_IS_ARRAY(message)) {
+		rrr_ip_buffer_entry_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->input_list, entry);
 
 		if (averager_data->preserve_point_measurements == 1) {
-			struct rrr_ip_buffer_entry *dup_entry = NULL;
+			dup_entry = NULL;
 
-			if (rrr_ip_buffer_entry_clone(&dup_entry, entry) != 0) {
+			if (rrr_ip_buffer_entry_clone_no_locking(&dup_entry, entry) != 0) {
 				RRR_MSG_ERR("Could not duplicate message in poll_callback of averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
 			}
 
-			struct rrr_message *dup_message = rrr_message_duplicate(message);
+			rrr_ip_buffer_entry_lock_(dup_entry);
+
+			dup_message = dup_entry->message;
+			dup_entry->message = NULL;
+			dup_entry->data_length = 0;
+
 			if (averager_data->msg_topic != NULL) {
+				// This will re-allocate the message
 				if (rrr_message_set_topic(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
 					RRR_MSG_ERR("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
 
-			RRR_LL_APPEND(&averager_data->output_list, entry);
-			rrr_ip_buffer_entry_unlock(entry);
-			entry = NULL;
+			dup_entry->message = dup_message;
+			dup_entry->data_length = MSG_TOTAL_SIZE(dup_message);
+			dup_message = NULL;
+
+			// Due to linked list
+			rrr_ip_buffer_entry_incref_while_locked(dup_entry);
+
+			rrr_ip_buffer_entry_unlock_(dup_entry);
+
+			RRR_LL_APPEND(&averager_data->output_list, dup_entry);
 		}
 	}
 	else if (averager_data->discard_unknown_messages) {
 		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", discarding according to configuration\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
-		entry = NULL;
 	}
 	else {
 		RRR_DBG_2 ("Averager instance %s: unknown message with timestamp %" PRIu64 ", writing to output buffer\n",
 				INSTANCE_D_NAME(thread_data), message->timestamp);
+		rrr_ip_buffer_entry_incref_while_locked(entry);
 		RRR_LL_APPEND(&averager_data->output_list, entry);
-		rrr_ip_buffer_entry_unlock(entry);
-		entry = NULL;
 	}
 
 	out:
-	if (ret != 0) {
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
-	}
-	else if (entry != NULL) {
-		RRR_BUG("Entry was noy NULL in averager poll_callback\n");
-	}
-	return ret;
+		if (dup_entry != NULL) {
+			rrr_ip_buffer_entry_decref(dup_entry);
+		}
+		RRR_FREE_IF_NOT_NULL(dup_message);
+		rrr_ip_buffer_entry_unlock_(entry);
+		return ret;
 }
 
 void averager_maintain_buffer(struct averager_data *data) {
@@ -125,15 +138,15 @@ void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t min_time = time_now - timespan_useconds;
 
 	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock(node);
+		rrr_ip_buffer_entry_lock_(node);
 		struct rrr_message *message = node->message;
 		if (message->timestamp < min_time) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else {
-			rrr_ip_buffer_entry_unlock(node);
+			rrr_ip_buffer_entry_unlock_(node);
 		}
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 }
 
 struct averager_calculation {
@@ -272,7 +285,7 @@ int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(new_entry);
+	rrr_ip_buffer_entry_unlock_(new_entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -347,12 +360,13 @@ int averager_calculate_average(struct averager_data *data) {
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock(node);
+		rrr_ip_buffer_entry_lock_(node);
 		if ((ret = averager_process_message(data, &calculation, node)) != 0) {
+			rrr_ip_buffer_entry_unlock_(node);
 			RRR_LL_ITERATE_LAST();
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
-	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_destroy_while_locked(node));
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 
 	if (ret != 0) {
 		goto out;

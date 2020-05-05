@@ -43,7 +43,7 @@ struct raw_data {
 	int print_data;
 };
 
-int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_array array_tmp = {0};
 
@@ -68,13 +68,13 @@ int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-				RRR_MSG_ERR("Could not get array from message in poll_callback of raw instance %s\n",
+				RRR_MSG_ERR("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
 			}
 			if (rrr_array_dump(&array_tmp) != 0) {
-				RRR_MSG_ERR("Error while dumping array in poll_callback of raw instance %s\n",
+				RRR_MSG_ERR("Error while dumping array in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
@@ -86,7 +86,7 @@ int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out:
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -155,7 +155,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
+		if (poll_do_poll_delete (thread_data, &poll, raw_poll_callback, 50) != 0) {
 			break;
 		}
 

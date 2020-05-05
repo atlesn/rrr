@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIFO_SEARCH_FREE	(1<<5)
 
 #define RRR_FIFO_WRITE_AGAIN	(1<<10)
-#define RRR_FIFO_WRITE_DROP	(1<<11)
+#define RRR_FIFO_WRITE_DROP		(1<<11)
 #define RRR_FIFO_WRITE_ORDERED	(1<<12)
 
 #define RRR_FIFO_READ_CALLBACK_ARGS \
@@ -250,8 +250,12 @@ int rrr_fifo_buffer_read (
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
-
-//void fifo_read(struct fifo_buffer *buffer, void (*callback)(char *data, unsigned long int size)); Not needed, dupes fifo_search
+int rrr_fifo_buffer_with_write_lock_do (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(void *arg1, void *arg2),
+		void *callback_arg1,
+		void *callback_arg2
+);
 int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),

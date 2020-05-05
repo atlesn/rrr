@@ -58,19 +58,13 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct duplicator_data *data = thread_data->private_data;
 	(void)(data);
 
-	int ret = rrr_message_broker_write_entry_unsafe (
+	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
 	);
 
-	if (ret == 0) {
-		rrr_ip_buffer_entry_unlock(entry);
-	}
-	else {
-		rrr_ip_buffer_entry_destroy_while_locked(entry);
-	}
-
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 

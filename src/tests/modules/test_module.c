@@ -142,10 +142,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		NULL,
 		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
 		NULL
 };
 static const char *module_name = "test_module";

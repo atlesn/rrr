@@ -309,7 +309,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		entry->message = NULL;
 	}
 
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return ret;
 }
@@ -455,7 +455,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -507,21 +507,21 @@ int test_averager (
 			goto out;
 		}
 
-		if (entry != NULL) {
-			rrr_ip_buffer_entry_destroy(entry);
-		}
 		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, 0, message) != 0) {
 			TEST_MSG("Could not create ip buffer entry in test_averager\n");
 			ret = 1;
 			goto out;
 		}
 		message = NULL;
+		rrr_ip_buffer_entry_lock_(entry);
 
+		// Inject should not decref, but must unlock
 		if (inject(input->thread_data, entry)) {
 			TEST_MSG("Error from inject function in test_averager\n");
 			ret = 1;
 			goto out;
 		}
+		rrr_ip_buffer_entry_decref(entry);
 		entry = NULL;
 	}
 
@@ -534,7 +534,7 @@ int test_averager (
 
 	out:
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy(entry);
+		rrr_ip_buffer_entry_decref(entry);
 	}
 	rrr_array_clear(&array_tmp);
 	RRR_FREE_IF_NOT_NULL(message);
@@ -630,13 +630,14 @@ int test_type_array (
 	}
 	data = NULL;
 
+	rrr_ip_buffer_entry_lock_(entry);
+
 	ret = inject(input->thread_data, entry);
 	if (ret != 0) {
 		TEST_MSG("Error from inject function in test_type_array\n");
 		ret = 1;
 		goto out;
 	}
-	entry = NULL;
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
@@ -665,7 +666,7 @@ int test_type_array (
 	out:
 	RRR_FREE_IF_NOT_NULL(data);
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy(entry);
+		rrr_ip_buffer_entry_decref(entry);
 	}
 	return ret;
 }
@@ -683,7 +684,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 	test_result->result = 0;
 	entry->message = NULL;
 
-	rrr_ip_buffer_entry_destroy_while_locked(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -808,11 +809,6 @@ int test_type_array_mysql_and_network (
 	struct rrr_ip_buffer_entry *entry = NULL;
 	uint64_t expected_ack_timestamp = message->timestamp;
 
-	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
-
 	new_message = rrr_message_duplicate(message);
 	if (new_message == NULL) {
 		RRR_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
@@ -863,11 +859,9 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
+	rrr_ip_buffer_entry_lock_(entry);
 	ret = inject(input_buffer->thread_data, entry);
-	if (ret == 0) {
-		entry = NULL;
-	}
-	else {
+	if (ret != 0) {
 		RRR_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
@@ -899,9 +893,12 @@ int test_type_array_mysql_and_network (
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	test_type_array_mysql_data_cleanup(&mysql_data);
+	RRR_FREE_IF_NOT_NULL(new_message);
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+	}
+	RRR_FREE_IF_NOT_NULL(test_result.message);
+
 	return ret;
 }

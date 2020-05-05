@@ -50,6 +50,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 	int ret = 0;
 
+	// This will unlock the entry
 	if (rrr_message_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
@@ -62,7 +63,6 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_destroy(message);
 	return ret;
 }
 
@@ -168,7 +168,7 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
