@@ -35,10 +35,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "rrr_endian.h"
 #include "../global.h"
-#include "rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
 #include "rrr_strerror.h"
+#include "rrr_socket.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -250,7 +250,7 @@ static int __rrr_socket_add_unlocked_basic (
 
 int rrr_socket_accept (
 		int fd_in,
-		struct sockaddr *addr,
+		struct rrr_sockaddr *addr,
 		socklen_t *__restrict addr_len,
 		const char *creator
 ) {
@@ -265,9 +265,14 @@ int rrr_socket_accept (
 	}
 
 	pthread_mutex_lock(&socket_lock);
-	fd_out = accept(fd_in, addr, addr_len);
+
+	socklen_t addr_len_orig = *addr_len;
+	fd_out = accept(fd_in, (struct sockaddr *) addr, addr_len);
 	if (fd_out != -1) {
 		__rrr_socket_add_unlocked(fd_out, options.domain, options.type, options.protocol, creator, NULL);
+	}
+	if (*addr_len > addr_len_orig) {
+		RRR_BUG("BUG: Given addr_len was to short in rrr_socket_accept\n");
 	}
 	pthread_mutex_unlock(&socket_lock);
 
@@ -703,9 +708,10 @@ int rrr_socket_unix_create_and_connect (
 	return ret;
 }
 
-int rrr_socket_sendto (
+int rrr_socket_sendto_nonblock (
+		ssize_t *written_bytes,
 		int fd,
-		void *data,
+		const void *data,
 		ssize_t size,
 		struct sockaddr *addr,
 		socklen_t addr_len
@@ -713,6 +719,9 @@ int rrr_socket_sendto (
 	struct rrr_socket_options options;
 
 	int ret = RRR_SOCKET_OK;
+
+	*written_bytes = 0;
+	ssize_t done_bytes_total = 0;
 
 	if (rrr_socket_get_options_from_fd(&options, fd) != 0) {
 		RRR_MSG_ERR("Could not get socket options for fd %i in rrr_socket_sendto\n", fd);
@@ -729,22 +738,29 @@ int rrr_socket_sendto (
 	}
 
 	int max_retries = 10;
+	ssize_t done_bytes = 0;
 
 	retry:
+	if (--max_retries == 0) {
+		RRR_DBG_3("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
 	if (addr == NULL) {
-		ret = send(fd, data, size, flags);
+		done_bytes = send(fd, data + done_bytes_total, size - done_bytes_total, flags);
 	}
 	else {
-		ret = sendto(fd, data, size, flags, addr, addr_len);
+		done_bytes = sendto(fd, data + done_bytes_total, size - done_bytes_total, flags, addr, addr_len);
 	}
-	if (ret != size) {
-		if (ret == -1) {
-			if (--max_retries == 0) {
-				RRR_DBG_3("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
-				ret = RRR_SOCKET_SOFT_ERROR;
-				goto out;
-			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+
+	if (done_bytes > 0) {
+		done_bytes_total += done_bytes;
+	}
+
+	if (done_bytes_total != size) {
+		if (done_bytes <= 0) {
+			if (done_bytes == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
 				usleep(10);
 				goto retry;
 			}
@@ -760,19 +776,51 @@ int rrr_socket_sendto (
 						addr_len,
 						rrr_strerror(errno)
 				);
-				ret = 1;
+				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
 		}
 		else {
-			RRR_MSG_ERR("Error while sending message in rrr_socket_sendto, sent %i of %li bytes\n",
-					ret, size);
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
+			usleep(10);
+			goto retry;
 		}
 	}
 	else {
 		ret = RRR_SOCKET_OK;
+	}
+
+	out:
+	*written_bytes = done_bytes_total;
+	return ret;
+}
+
+int rrr_socket_sendto_blocking (
+		int fd,
+		const void *data,
+		ssize_t size,
+		struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = 0;
+
+	ssize_t written_bytes = 0;
+	ssize_t written_bytes_total = 0;
+
+	while (ret != 0) {
+		if ((ret = rrr_socket_sendto_nonblock (
+				&written_bytes,
+				fd,
+				data + written_bytes_total,
+				size - written_bytes_total,
+				addr,
+				addr_len
+		)) != 0) {
+			if (ret != RRR_SOCKET_SOFT_ERROR) {
+				RRR_MSG_ERR("Error from sendto in rrr_socket_sendto_blocking\n");
+				goto out;
+			}
+		}
+		written_bytes_total += written_bytes;
 	}
 
 	out:

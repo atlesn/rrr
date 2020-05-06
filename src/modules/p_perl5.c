@@ -25,7 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 
 #include "../lib/ip.h"
-#include "../lib/buffer.h"
+#include "../lib/ip_buffer_entry.h"
+#include "../lib/linked_list.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -42,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mmap_channel.h"
 #include "../lib/rrr_mmap.h"
 #include "../lib/rrr_socket.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 #include <EXTERN.h>
@@ -55,8 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
 
-	struct rrr_fifo_buffer output_buffer_ip;
-	struct rrr_fifo_buffer input_buffer_ip;
+	struct rrr_ip_buffer_entry_collection input_buffer_ip;
 
 	struct cmd_argv_copy *cmdline;
 
@@ -140,63 +141,6 @@ void perl5_child_data_cleanup (struct perl5_child_data *data) {
 //	printf("CHILD DATA AFTER CLEANUP ========================\n");
 //	rrr_mmap_dump_indexes(data->parent_data->channel_from_child->mmap);
 //	printf("=================================================\n");
-}
-
-struct extract_message_callback_data {
-	int (*callback_orig)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
-	struct rrr_fifo_callback_args *poll_data_orig;
-};
-
-static int poll_delete_extract_message_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	struct extract_message_callback_data *extract_message_data = callback_data->private_data;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-
-	(void)(size);
-
-	int ret = extract_message_data->callback_orig(extract_message_data->poll_data_orig, (char *) entry->message, sizeof(struct rrr_message));
-
-	// Callback takes ownership
-	entry->message = NULL;
-
-	return ret | RRR_FIFO_SEARCH_FREE;
-}
-
-int poll_delete(RRR_MODULE_POLL_SIGNATURE) {
-	struct perl5_data *perl5_data = data->private_data;
-
-	struct extract_message_callback_data callback_data = {
-			callback,
-			poll_data
-	};
-
-
-	struct rrr_fifo_callback_args callback_args = {
-			data->private_data,
-			&callback_data,
-			0
-	};
-
-	if (rrr_fifo_read_clear_forward (
-			&perl5_data->output_buffer_ip,
-			NULL,
-			poll_delete_extract_message_callback,
-			&callback_args,
-			wait_milliseconds
-	) == RRR_FIFO_GLOBAL_ERR) {
-		return 1;
-	}
-
-	return 0;
-}
-
-int poll_delete_ip(RRR_MODULE_POLL_SIGNATURE) {
-	struct perl5_data *perl5_data = data->private_data;
-
-	if (rrr_fifo_read_clear_forward(&perl5_data->output_buffer_ip, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
-		return 1;
-	}
-
-	return 0;
 }
 
 struct mmap_channel_callback_data {
@@ -347,26 +291,12 @@ int data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_d
 		goto out_destroy_channel_from_child;
 	}
 
-	if (rrr_fifo_buffer_init_custom_free(&data->output_buffer_ip, rrr_ip_buffer_entry_destroy_void) != 0) {
-		RRR_MSG_ERR("Could not initialize fifo buffer in perl5\n");
-		ret = 1;
-		goto out_destroy_channel_to_child;
-	}
-
-	if (rrr_fifo_buffer_init_custom_free(&data->input_buffer_ip, rrr_ip_buffer_entry_destroy_void) != 0) {
-		RRR_MSG_ERR("Could not initialize fifo buffer in perl5\n");
-		ret = 1;
-		goto out_destroy_output_buffer;
-	}
-
 	cmd_get_argv_copy(&data->cmdline, thread_data->init_data.cmd_data);
 
 	goto out;
 
-	out_destroy_output_buffer:
-		rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
-	out_destroy_channel_to_child:
-		rrr_mmap_channel_destroy(data->channel_to_child);
+//	out_destroy_channel_to_child:
+//		rrr_mmap_channel_destroy(data->channel_to_child);
 	out_destroy_channel_from_child:
 		rrr_mmap_channel_destroy(data->channel_from_child);
 	out_destroy_mmap:
@@ -477,8 +407,7 @@ void terminate_child (struct perl5_data *data) {
 void data_cleanup(void *arg) {
 	struct perl5_data *data = arg;
 
-	rrr_fifo_buffer_invalidate(&data->output_buffer_ip);
-	rrr_fifo_buffer_invalidate(&data->input_buffer_ip);
+	rrr_ip_buffer_entry_collection_clear(&data->input_buffer_ip);
 
 	RRR_FREE_IF_NOT_NULL(data->perl5_file);
 	RRR_FREE_IF_NOT_NULL(data->source_sub);
@@ -560,7 +489,7 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	return ret;
 }
 
-int spawn_message(struct perl5_child_data *child_data) {
+int worker_spawn_message(struct perl5_child_data *child_data) {
 	int ret = 0;
 
 	struct rrr_message *message = NULL;
@@ -580,7 +509,7 @@ int spawn_message(struct perl5_child_data *child_data) {
 			0,
 			0
 	) != 0) {
-		RRR_MSG_ERR("Could not initialize message in perl5 spawn_messages of instance %s\n",
+		RRR_MSG_ERR("Could not initialize message in perl5 worker_spawn_messages of instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -595,7 +524,7 @@ int spawn_message(struct perl5_child_data *child_data) {
 	return ret;
 }
 
-int process_message (
+int worker_process_message (
 		struct perl5_child_data *child_data,
 		const struct rrr_message *message,
 		struct rrr_message_addr *message_addr
@@ -609,14 +538,14 @@ int process_message (
 
 	ret |= rrr_perl5_message_to_new_hv(&hv_message, ctx, message, message_addr);
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not create rrr_perl5_message_hv struct in process_message of perl5 instance %s\n",
+		RRR_MSG_ERR("Could not create rrr_perl5_message_hv struct in worker_process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
 	ret |= rrr_perl5_call_blessed_hvref(ctx, data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not call process function in process_message of perl5 instance %s\n",
+		RRR_MSG_ERR("Could not call process function in worker_process_message of perl5 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -627,29 +556,20 @@ int process_message (
 
 }
 
-struct input_callback_data {
-	int count;
-};
+int perl5_input_callback (int *count, struct perl5_data *perl5_data, struct rrr_ip_buffer_entry *entry) {
+	struct rrr_instance_thread_data *thread_data = perl5_data->thread_data;
 
-int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = callback_data->source;
-	struct perl5_data *perl5_data = thread_data->private_data;
-	struct input_callback_data *input_callback_data = callback_data->private_data;
-
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 	struct rrr_message_addr addr_msg;
 	int ret = 0;
 
-	(void)(size);
-
 	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
 
-	if (input_callback_data->count > 10) {
+	if ((*count) > 10) {
 		goto out_put_back;
 	}
 
-//	printf ("input_callback: message %p\n", message);
+//	printf ("perl5_input_callback: message %p\n", message);
 
 	rrr_message_addr_init(&addr_msg);
 	if (entry->addr_len > 0) {
@@ -670,6 +590,7 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			perl5_data->mmap_full_counter++;
+			ret = 0;
 			goto out_put_back;
 		}
 		RRR_MSG_ERR("Passing message to perl5 instance %s fork using memory map failed.\n",
@@ -678,73 +599,34 @@ int input_callback (struct rrr_fifo_callback_args *callback_data, char *data, un
 		goto out;
 	}
 
-	input_callback_data->count++;
+	(*count)++;
 
 	goto out;
 	out_put_back:
 		// Since we are in read_clear_forward-context, the whole buffer is empty at this point. The
 		// current message will be written at the beginning at the buffer, and any remaining messages
 		// will be joined in after it.
-//		printf ("input_callback: putback message %p\n", entry->message);
-		rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, data, size);
-		entry = NULL;
-		data = NULL;
-		ret = RRR_FIFO_SEARCH_STOP;
+//		printf ("perl5_input_callback: putback message %p\n", entry->message);
+		rrr_ip_buffer_entry_incref_while_locked(entry);
+		RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
 	out:
-		if (entry != NULL) {
-			rrr_ip_buffer_entry_destroy(entry);
-		}
+		rrr_ip_buffer_entry_unlock_(entry);
 		return ret;
 }
 
-int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = caller_data->private_data;
+int perl5_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct perl5_data *perl5_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
-
-	struct rrr_ip_buffer_entry *entry = NULL;
-
-	int ret = 0;
-
-	RRR_DBG_3 ("perl5 instance %s Result from buffer: timestamp %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->timestamp, size);
-
-	if (rrr_ip_buffer_entry_new (
-			&entry,
-			MSG_TOTAL_SIZE(message),
-			NULL,
-			0,
-			0,
-			message
-	) != 0) {
-		RRR_MSG_ERR("Could not create ip buffer entry in poll_callback of perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	message = NULL;
-
-//	printf ("poll_callback: put message %p\n", entry->message);
-
-	rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, (char *) entry, sizeof(*entry));
-
-	out:
-	RRR_FREE_IF_NOT_NULL(message);
-	return ret;
-}
-
-int poll_callback_ip(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = caller_data->private_data;
-	struct perl5_data *perl5_data = thread_data->private_data;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 
-	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: timestamp %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), entry->addr_len, message->timestamp, size);
+	RRR_DBG_3 ("perl5 instance %s Result from buffer ip addr len %u: timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), entry->addr_len, message->timestamp);
 
-//	printf ("poll_callback_ip: put message %p\n", entry->message);
+//	printf ("perl5_poll_callback: put message %p\n", entry->message);
 
-	rrr_fifo_buffer_write(&perl5_data->input_buffer_ip, (char *) entry, sizeof(*entry));
+	rrr_ip_buffer_entry_incref_while_locked(entry);
+	RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
+
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return 0;
 }
@@ -795,7 +677,7 @@ int worker_socket_read_callback_msg (const struct rrr_message *message, void *ar
 
 	int ret = 0;
 
-	if ((ret = process_message(data, message, &data->latest_message_addr)) != 0) {
+	if ((ret = worker_process_message(data, message, &data->latest_message_addr)) != 0) {
 		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
 		ret = 1;
@@ -949,7 +831,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		}
 
 		if (no_spawning == 0 && time_now >= next_spawn_time) {
-			if (spawn_message(child_data) != 0) {
+			if (worker_spawn_message(child_data) != 0) {
 				break;
 			}
 			next_spawn_time = 0;
@@ -1056,52 +938,42 @@ int start_worker_fork (struct perl5_data *data) {
 struct read_callback_data {
 	struct perl5_data *data;
 	int count;
+	const struct rrr_message *message;
 };
 
-int read_from_child_callback_msg (const struct rrr_message *message, void *arg) {
+int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct read_callback_data *callback_data = arg;
 	struct perl5_data *data = callback_data->data;
 
 	int ret = 0;
 
-	struct rrr_ip_buffer_entry *entry = NULL;
-
-//	printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
-
-	// TODO : Look into warning "taking address of packed member of blabla latest_message_addr.addr"
-	if (rrr_ip_buffer_entry_new_with_empty_message (
-			&entry,
-			MSG_TOTAL_SIZE(message),
-			&data->latest_message_addr.addr,
-			data->latest_message_addr.addr_len,
-			data->latest_message_addr.protocol
-	) != 0) {
-		RRR_MSG_ERR("Could not create ip buffer entry in read_from_child_callback_msg of perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+	struct rrr_message *message_new = rrr_message_duplicate(callback_data->message);
+	if (message_new == NULL) {
+		RRR_MSG_ERR("Could not duplicate message in perl5 read_from_child_callback\n");
 		ret = 1;
 		goto out;
 	}
 
-	memcpy(entry->message, message, MSG_TOTAL_SIZE(message));
+//	printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
 
-	rrr_fifo_buffer_write (&data->output_buffer_ip, (char *) entry, sizeof(*entry));
+	// TODO : Look into warning "taking address of packed member of blabla latest_message_addr.addr"
+	rrr_ip_buffer_entry_set_unlocked (
+			entry,
+			message_new,
+			MSG_TOTAL_SIZE(message_new),
+			(struct sockaddr *) &data->latest_message_addr.addr,
+			data->latest_message_addr.addr_len,
+			data->latest_message_addr.protocol
+	);
+	message_new = NULL;
 
 	callback_data->count++;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&data->latest_message_addr, '\0', sizeof(data->latest_message_addr));
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
-}
-
-int read_from_child_callback_msg_addr (const struct rrr_message_addr *message, void *arg) {
-	struct read_callback_data *callback_data = arg;
-	struct perl5_data *data = callback_data->data;
-
-//	printf ("read_from_child_callback_msg_addr addr len: %" PRIu64 "\n", message->addr_len);
-
-	memcpy(&data->latest_message_addr, message, sizeof(*message));
-
-	return 0;
 }
 
 int read_from_child_mmap_channel_callback (const void *data, size_t data_size, void *arg) {
@@ -1117,7 +989,22 @@ int read_from_child_mmap_channel_callback (const void *data, size_t data_size, v
 
 	callback_data->data->latest_message_addr = *msg_addr;
 
-	return read_from_child_callback_msg(msg, arg);
+	callback_data->message = msg;
+
+	if (rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(callback_data->data->thread_data),
+			NULL,
+			0,
+			0,
+			read_from_child_callback,
+			callback_data
+	) != 0) {
+		RRR_MSG_ERR("Could to write to output buffer in perl5 instance %s\n",
+				INSTANCE_D_NAME(callback_data->data->thread_data));
+		return 1;
+	}
+
+	return 0;
 }
 
 int read_from_child_fork(int *read_count, struct perl5_data *data) {
@@ -1127,7 +1014,8 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 
 	struct read_callback_data callback_data = {
 			data,
-			0
+			0,
+			NULL
 	};
 
 	for (int i = 0; i < 10; i++) {
@@ -1162,21 +1050,19 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 static void *thread_entry_perl5(struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
 	struct poll_collection poll_ip;
+	struct rrr_ip_buffer_entry_collection input_buffer_tmp = {0};
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	poll_collection_init(&poll);
 	poll_collection_init(&poll_ip);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &input_buffer_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -1195,12 +1081,9 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
-	poll_add_from_thread_senders_ignore_error(&poll_ip, thread_data, RRR_POLL_POLL_DELETE_IP);
-	poll_remove_senders_also_in(&poll, &poll_ip);
-
+	poll_add_from_thread_senders(&poll_ip, thread_data);
 	int no_polling = 1;
-	if (poll_collection_count (&poll) + poll_collection_count(&poll_ip) > 0) {
+	if (poll_collection_count (&poll_ip) > 0) {
 		if (!data->process_sub) {
 			RRR_MSG_ERR("Perl5 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
@@ -1212,16 +1095,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
-	struct input_callback_data input_callback_data = {
-		0
-	};
-
-	struct rrr_fifo_callback_args fifo_callback_args = {
-		thread_data,
-		&input_callback_data,
-		0
-	};
-
 	int usleep_hits_a = 0;
 	int usleep_hits_b = 0;
 	int input_counter = 0;
@@ -1232,7 +1105,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	uint64_t next_stats_time = 0;
 	uint64_t next_bubblesort_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && data->child_pid != 0) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int read_count = 0;
 		// This will accept connection from child
@@ -1240,18 +1113,33 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			break;
 		}
 
-		input_callback_data.count = 0;
-		if (rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip) > 0) {
+		int input_count = 0;
+		if (RRR_LL_COUNT(&data->input_buffer_ip) > 0) {
 			int prev_mmap_full_counter = data->mmap_full_counter;
-			if (rrr_fifo_read_clear_forward (
-					&data->input_buffer_ip,
-					NULL,
-					input_callback,
-					&fifo_callback_args,
-					0
-			) != 0) {
-				break;
-			}
+
+			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&input_buffer_tmp, &data->input_buffer_ip);
+
+			// Callback might add entries back into input buffer
+			RRR_LL_ITERATE_BEGIN(&input_buffer_tmp, struct rrr_ip_buffer_entry);
+				rrr_ip_buffer_entry_lock_(node);
+
+				int old_count = input_count;
+
+				int ret_tmp = perl5_input_callback(&input_count, data, node);
+				if (ret_tmp != 0) {
+					rrr_ip_buffer_entry_unlock_(node);
+					RRR_LL_ITERATE_BREAK();
+				}
+
+				RRR_LL_ITERATE_SET_DESTROY();
+
+				if (old_count == input_count) {
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&input_buffer_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
+
+			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&data->input_buffer_ip, &input_buffer_tmp);
+
 			if (prev_mmap_full_counter != data->mmap_full_counter) {
 				consecutive_nothing_happend = 0;
 				usleep(5000); // 5 ms
@@ -1259,17 +1147,12 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			}
 		}
 		else if (no_polling == 0) {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 0) != 0) {
-				break;
-			}
-			if (poll_do_poll_delete_ip_simple(&poll_ip, thread_data, poll_callback_ip, 0) != 0) {
+			if (poll_do_poll_delete (thread_data, &poll_ip, perl5_poll_callback, 0) != 0) {
 				break;
 			}
 		}
 
-		if (	read_count != 0 ||
-				input_callback_data.count != 0
-		) {
+		if (read_count != 0 || input_count != 0) {
 			consecutive_nothing_happend = 0;
 		}
 
@@ -1284,7 +1167,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		from_child_counter += read_count;
-		input_counter += input_callback_data.count;
+		input_counter += input_count;
 
 		uint64_t time_now = rrr_time_get_64();
 
@@ -1301,17 +1184,32 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		if (time_now > next_stats_time) {
+			int output_buffer_count = 0;
+			int output_buffer_ratelimit_active = 0;
+
+			if (rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+					&output_buffer_count,
+					&output_buffer_ratelimit_active,
+					thread_data
+			) != 0) {
+				break;
+			}
+
 			rrr_stats_instance_update_rate(stats, 1, "usleep_hits_a", usleep_hits_a);
 			rrr_stats_instance_update_rate(stats, 2, "usleep_hits_b", usleep_hits_b);
 			rrr_stats_instance_update_rate(stats, 3, "ticks", tick);
 			rrr_stats_instance_update_rate(stats, 4, "mmap_to_child_full_hits", data->mmap_full_counter);
 			rrr_stats_instance_update_rate(stats, 5, "input_counter", input_counter);
 			rrr_stats_instance_update_rate(stats, 6, "from_child_counter", from_child_counter);
-			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->output_buffer_ip));
-			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, rrr_fifo_buffer_get_entry_count(&data->input_buffer_ip));
+			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, output_buffer_count);
+			rrr_stats_instance_post_unsigned_base10_text(stats, "input_buffer_count", 0, RRR_LL_COUNT(&data->input_buffer_ip));
 
 			struct rrr_fifo_buffer_stats fifo_stats;
-			rrr_fifo_buffer_get_stats(&fifo_stats, &data->output_buffer_ip);
+			if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
+				RRR_MSG_ERR("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+				break;
+			}
+
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_total", 0, fifo_stats.total_entries_written);
 
 			usleep_hits_a = usleep_hits_b = tick = input_counter = data->mmap_full_counter = from_child_counter = 0;
@@ -1338,7 +1236,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
@@ -1362,10 +1259,6 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_perl5,
 		NULL,
-		NULL,
-		NULL,
-		poll_delete,
-		poll_delete_ip,
 		test_config,
 		NULL,
 		perl5_cancel

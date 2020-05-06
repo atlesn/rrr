@@ -4,7 +4,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "../global.h"
 #include "gnu.h"
@@ -37,9 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "random.h"
 #include "read.h"
 
-void rrr_http_session_destroy (struct rrr_http_session *session) {
-	RRR_FREE_IF_NOT_NULL(session->host);
-	RRR_FREE_IF_NOT_NULL(session->endpoint);
+static void __rrr_http_session_destroy (struct rrr_http_session *session) {
+	RRR_FREE_IF_NOT_NULL(session->uri_str);
 	RRR_FREE_IF_NOT_NULL(session->user_agent);
 //	rrr_http_fields_collection_clear(&session->fields);
 	if (session->request_part != NULL) {
@@ -48,86 +48,94 @@ void rrr_http_session_destroy (struct rrr_http_session *session) {
 	if (session->response_part != NULL) {
 		rrr_http_part_destroy(session->response_part);
 	}
-	if (session->transport != NULL) {
-		rrr_net_transport_destroy(session->transport);
-	}
 	free(session);
 }
 
-int rrr_http_session_new (
-		struct rrr_http_session **target,
-		enum rrr_http_transport transport,
-		enum rrr_http_method method,
-		const char *host,
-		uint16_t port,
-		const char *endpoint,
-		const char *user_agent,
-		int tls_flags
-) {
+static void __rrr_http_session_destroy_void (void *ptr) {
+	__rrr_http_session_destroy(ptr);
+}
+
+static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 	int ret = 0;
 
 	*target = NULL;
 
 	struct rrr_http_session *session = malloc(sizeof(*session));
 	if (session == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new\n");
+		RRR_MSG_ERR("Could not allocate memory in __rrr_http_session_allocate\n");
 		ret = 1;
 		goto out;
 	}
 
 	memset(session, '\0', sizeof(*session));
 
-	if (transport == RRR_HTTP_TRANSPORT_ANY) {
-		if (port == 443) {
-			// Assume SSL
-			transport = RRR_HTTP_TRANSPORT_HTTPS;
-		}
-		else if (port == 80) {
-			// Assume Plaintext
-			transport = RRR_HTTP_TRANSPORT_HTTP;
-		}
+	// Response and request parts are allocated when needed
+
+	*target = session;
+
+	out:
+		return ret;
+}
+
+int rrr_http_session_transport_ctx_server_new (
+		struct rrr_net_transport_handle *handle
+) {
+	int ret = 0;
+
+	struct rrr_http_session *session = NULL;
+
+	if ((__rrr_http_session_allocate(&session)) != 0) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_server_new\n");
+		ret = 1;
+		goto out;
 	}
 
-	uint16_t default_port = 0;
-	switch (transport) {
-		case RRR_HTTP_TRANSPORT_ANY:
-		case RRR_HTTP_TRANSPORT_HTTP:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_PLAIN, 0);
-			default_port = 80;
-			break;
-		case RRR_HTTP_TRANSPORT_HTTPS:
-			ret = rrr_net_transport_new (&session->transport, RRR_NET_TRANSPORT_TLS, tls_flags);
-			default_port = 443;
-			break;
-		default:
-			RRR_BUG("Requested transport method %i not implemented in rrr_http_session_new\n", transport);
-			break;
-	};
+	// DO NOT STORE HANDLE POINTER
+	session->is_client = 0;
 
-	if (ret != 0) {
-		RRR_MSG_ERR("Could not create transport method in rrr_http_session_new\n");
+	// Transport framework responsible for cleaning up
+	rrr_net_transport_ctx_handle_application_data_bind (
+			handle,
+			session,
+			__rrr_http_session_destroy_void
+	);
+
+	session = NULL;
+
+	out:
+	if (session != NULL) {
+		__rrr_http_session_destroy(session);
+	}
+	return ret;
+}
+
+int rrr_http_session_transport_ctx_client_new (
+		struct rrr_net_transport_handle *handle,
+		enum rrr_http_method method,
+		const char *endpoint,
+		const char *user_agent
+) {
+	int ret = 0;
+
+	struct rrr_http_session *session = NULL;
+
+	if ((__rrr_http_session_allocate(&session)) != 0) {
+		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_transport_ctx_client_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	session->method = method;
-	session->port = (port > 0 ? port : default_port);
-
-	session->host = strdup(host);
-	if (session->host == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new A\n");
-		ret = 1;
-		goto out;
-	}
+	session->is_client = 1;
 
 	if (endpoint != NULL && *endpoint != '\0') {
-		session->endpoint = strdup(endpoint);
+		session->uri_str = strdup(endpoint);
 	}
 	else {
-		session->endpoint = strdup("/");
+		session->uri_str = strdup("/");
 	}
 
-	if (session->endpoint == NULL) {
+	if (session->uri_str == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_http_session_new B\n");
 		ret = 1;
 		goto out;
@@ -142,39 +150,87 @@ int rrr_http_session_new (
 		}
 	}
 
-	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
-		RRR_MSG_ERR("Could not create request part in rrr_http_session_new\n");
-		goto out;
-	}
+	// Transport framework responsible for cleaning up
+	rrr_net_transport_ctx_handle_application_data_bind (
+			handle,
+			session,
+			__rrr_http_session_destroy_void
+	);
 
-	*target = session;
 	session = NULL;
 
 	out:
 	if (session != NULL) {
-		rrr_http_session_destroy(session);
+		__rrr_http_session_destroy(session);
 	}
 	return ret;
 }
 
-int rrr_http_session_add_query_field (
-		struct rrr_http_session *session,
+static int __rrr_http_session_prepare_parts (struct rrr_http_session *session) {
+	int ret = 0;
+
+	if (session->response_part != NULL) {
+		rrr_http_part_destroy(session->response_part);
+	}
+	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
+		RRR_MSG_ERR("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
+		goto out;
+	}
+
+	if (session->request_part != NULL) {
+		rrr_http_part_destroy(session->request_part);
+	}
+	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
+		RRR_MSG_ERR("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_http_session_transport_ctx_add_query_field (
+		struct rrr_net_transport_handle *handle,
 		const char *name,
 		const char *value
 ) {
-	return rrr_http_fields_collection_add_field(&session->request_part->fields, name, value);
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	if (pthread_mutex_trylock(&handle->lock) == 0) {
+		RRR_BUG("BUG: Handle ot locked in rrr_http_session_transport_ctx_add_query_field\n");
+	}
+
+	if (__rrr_http_session_prepare_parts (session) != 0) {
+		return 1;
+	}
+
+	return rrr_http_field_collection_add_field(&session->request_part->fields, name, value);
 }
 
-int rrr_http_session_add_query_field_binary (
-		struct rrr_http_session *session,
+int rrr_http_session_transport_ctx_add_query_field_binary (
+		struct rrr_net_transport_handle *handle,
 		const char *name,
 		void *value,
 		ssize_t size
 ) {
-	return rrr_http_fields_collection_add_field_binary(&session->request_part->fields, name, value, size);
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	if (pthread_mutex_trylock(&handle->lock) == 0) {
+		RRR_BUG("BUG: Handle ot locked in rrr_http_session_transport_ctx_add_query_field_binary\n");
+	}
+
+	if (__rrr_http_session_prepare_parts (session) != 0) {
+		return 1;
+	}
+
+	return rrr_http_field_collection_add_field_binary(&session->request_part->fields, name, value, size);
 }
 
-static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_session *session) {
+static int __rrr_http_session_send_multipart_form_data_body (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	int ret = 0;
 	char *boundary_buf = NULL;
 	char *name_buf = NULL;
@@ -198,7 +254,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, body_buf, strlen(body_buf))) != 0) {
 		RRR_MSG_ERR("Could not send first part of HTTP request in __rrr_http_session_send_post_body\n");
 		goto out;
 	}
@@ -240,7 +296,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 			goto out;
 		}
 
-		if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
+		if ((ret = rrr_net_transport_ctx_send_blocking (handle, body_buf, strlen(body_buf))) != 0) {
 			RRR_MSG_ERR("Could not send form part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 			goto out;
 		}
@@ -257,7 +313,7 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, body_buf, strlen(body_buf))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, body_buf, strlen(body_buf))) != 0) {
 		RRR_MSG_ERR("Could not send last part of HTTP request in __rrr_http_session_send_multipart_form_data_body\n");
 		goto out;
 	}
@@ -271,16 +327,21 @@ static int __rrr_http_session_send_multipart_form_data_body (struct rrr_http_ses
 	return ret;
 }
 
-static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session *session, int no_urlencoding) {
+static int __rrr_http_session_send_post_x_www_form_body (
+		struct rrr_net_transport_handle *handle,
+		int no_urlencoding
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	int ret = 0;
 	char *body_buf = NULL;
 	char *final_buf = NULL;
 
 	if (no_urlencoding == 0) {
-		body_buf = rrr_http_fields_to_urlencoded_form_data(&session->request_part->fields);
+		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&session->request_part->fields);
 	}
 	else {
-		body_buf = rrr_http_fields_to_raw_form_data(&session->request_part->fields);
+		body_buf = rrr_http_field_collection_to_raw_form_data(&session->request_part->fields);
 	}
 
 	if (body_buf == NULL) {
@@ -301,7 +362,7 @@ static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, final_buf, strlen(final_buf))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, final_buf, strlen(final_buf))) != 0) {
 		RRR_MSG_ERR("Could not send GET body in __rrr_http_session_send_get_body\n");
 		goto out;
 	}
@@ -312,18 +373,29 @@ static int __rrr_http_session_send_post_x_www_form_body (struct rrr_http_session
 	return ret;
 }
 
-int rrr_http_session_send_request (
-		struct rrr_http_session *session
-) {
+struct rrr_http_session_send_request_callback_data {
+	const char *host;
+};
+
+static int __rrr_http_session_send_request (struct rrr_net_transport_handle *handle, void *arg) {
+	struct rrr_http_session_send_request_callback_data *callback_data = arg;
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	int ret = 0;
 
 	char *request_buf = NULL;
 	char *host_buf = NULL;
 	char *user_agent_buf = NULL;
 
-	host_buf = rrr_http_util_quote_header_value(session->host, '"', '"');
+	if ((ret = __rrr_http_session_prepare_parts (session)) != 0) {
+		RRR_MSG_ERR("Could not prepare parts in rrr_http_session_send_request\n");
+		ret = 1;
+		goto out;
+	}
+
+	host_buf = rrr_http_util_quote_header_value(callback_data->host, '"', '"');
 	if (host_buf == NULL) {
-		RRR_MSG_ERR("Invalid host '%s' in rrr_http_session_send_request\n", session->host);
+		RRR_MSG_ERR("Invalid host '%s' in rrr_http_session_send_request\n", callback_data->host);
 		ret = 1;
 		goto out;
 	}
@@ -342,7 +414,7 @@ int rrr_http_session_send_request (
 			"User-Agent: %s\r\n"
 			"Accept-Charset: UTF-8\r\n",
 			(session->method == RRR_HTTP_METHOD_GET ? "GET" : "POST"),
-			session->endpoint,
+			session->uri_str,
 			host_buf,
 			user_agent_buf
 	)) < 0) {
@@ -351,26 +423,26 @@ int rrr_http_session_send_request (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, request_buf, strlen(request_buf))) != 0) {
+	if ((ret = rrr_net_transport_ctx_send_blocking (handle, request_buf, strlen(request_buf))) != 0) {
 		RRR_MSG_ERR("Could not send first part of HTTP request in rrr_http_session_send_request\n");
 		goto out;
 	}
 
 	if (RRR_LL_COUNT(&session->request_part->fields) > 0) {
 		if (session->method == RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA) {
-			if ((ret = __rrr_http_session_send_multipart_form_data_body (session)) != 0) {
+			if ((ret = __rrr_http_session_send_multipart_form_data_body (handle)) != 0) {
 				RRR_MSG_ERR("Could not send POST multipart body in rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED) {
-			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 0)) != 0) {
+			if ((ret = __rrr_http_session_send_post_x_www_form_body (handle, 0)) != 0) {
 				RRR_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
 				goto out;
 			}
 		}
 		else if (session->method == RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING) {
-			if ((ret = __rrr_http_session_send_post_x_www_form_body (session, 1)) != 0) {
+			if ((ret = __rrr_http_session_send_post_x_www_form_body (handle, 1)) != 0) {
 				RRR_MSG_ERR("Could not send POST urlencoded body in rrr_http_session_send_request\n");
 				goto out;
 			}
@@ -381,7 +453,7 @@ int rrr_http_session_send_request (
 			goto out;
 		}
 	}
-	else if ((ret = rrr_net_transport_send (session->transport, session->transport_handle, "\r\n", strlen("\r\n"))) != 0) {
+	else if ((ret = rrr_net_transport_ctx_send_blocking (handle, "\r\n", strlen("\r\n"))) != 0) {
 		RRR_MSG_ERR("Could not send last \\r\\n in rrr_http_session_send_request\n");
 		goto out;
 	}
@@ -393,55 +465,76 @@ int rrr_http_session_send_request (
 	return ret;
 }
 
+int rrr_http_session_transport_ctx_send_request (
+		struct rrr_net_transport_handle *handle,
+		const char *host
+) {
+	struct rrr_http_session_send_request_callback_data callback_data = {
+		host
+	};
+
+	return __rrr_http_session_send_request(handle, &callback_data);
+}
+
 struct rrr_http_session_receive_data {
 	struct rrr_http_session *session;
 	ssize_t parse_complete_pos;
-	int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg);
+	int (*callback)(struct rrr_http_part *part, void *arg);
 	void *callback_arg;
 };
 
-static int __rrr_http_session_receive_callback (
+static int __rrr_http_session_receive_response_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
 	struct rrr_http_part *part = receive_data->session->response_part;
 
+	(void)(read_session);
+
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_part_dump_header(part);
+	}
+
+	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+			part->data_length,  part->request_or_response_length, part->header_length);
+
+	return receive_data->callback(part, receive_data->callback_arg);
+}
+
+static int __rrr_http_session_receive_request_callback (
+		struct rrr_read_session *read_session,
+		void *arg
+) {
+	struct rrr_http_session_receive_data *receive_data = arg;
+	struct rrr_http_part *part = receive_data->session->request_part;
+
+	(void)(read_session);
+
 	int ret = 0;
 
-	const char *start = read_session->rx_buf_ptr;
-	const char *part_start = start + part->response_code_length + part->header_length;
-	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
+//	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
-	receive_data->session->response_part->data_ptr = start;
-	receive_data->session->response_part->data_length = end - start;
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_part_dump_header(part);
+	}
 
-	RRR_DBG_3("HTTP reading complete, total session length is %li response length is %li header length is %li\n",
-			(ssize_t) (end - start),  part->response_code_length, part->header_length);
+	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
+			part->data_length,  part->request_or_response_length, part->header_length);
 
-	if (RRR_LL_COUNT(&part->chunks) == 0) {
-		ret = receive_data->callback(receive_data->session, part_start, end, receive_data->callback_arg);
+	if ((ret = rrr_http_part_process_multipart(part)) != 0) {
 		goto out;
 	}
 
-	RRR_DBG_3("HTTP reading complete, found %i chunks\n", RRR_LL_COUNT(&part->chunks));
+	if ((ret = rrr_http_part_extract_post_and_query_fields(part)) != 0) {
+		goto out;
+	}
 
-	const char *buf = read_session->rx_buf_ptr;
-	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
-		if (node->length == 0) {
-			RRR_LL_ITERATE_NEXT();
-		}
-		const char *data_start = buf + node->start;
-		const char *data_end = data_start + node->length;
-		if (data_end > end) {
-			RRR_BUG("Chunk end overrun in __rrr_http_session_receive_callback\n");
-		}
+	if (RRR_DEBUGLEVEL_3) {
+		rrr_http_field_collection_dump (&part->fields);
+	}
 
-		ret = receive_data->callback(receive_data->session, data_start, data_end, receive_data->callback_arg);
-		if (ret != 0) {
-			goto out;
-		}
-	RRR_LL_ITERATE_END();
+	ret = receive_data->callback(part, receive_data->callback_arg);
 
 	out:
 	return ret;
@@ -460,16 +553,32 @@ static int __rrr_http_session_receive_get_target_size (
 	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
 
-	ret = rrr_http_part_parse (
-			receive_data->session->response_part,
-			&target_size,
-			&parsed_bytes,
-			read_session->rx_buf_ptr,
-			receive_data->parse_complete_pos,
-			end
-	);
+	if (receive_data->session->is_client == 1) {
+		ret = rrr_http_part_parse (
+				receive_data->session->response_part,
+				&target_size,
+				&parsed_bytes,
+				read_session->rx_buf_ptr,
+				receive_data->parse_complete_pos,
+				end,
+				RRR_HTTP_PARSE_RESPONSE
+		);
+	}
+	else {
+		ret = rrr_http_part_parse (
+				receive_data->session->request_part,
+				&target_size,
+				&parsed_bytes,
+				read_session->rx_buf_ptr,
+				receive_data->parse_complete_pos,
+				end,
+				RRR_HTTP_PARSE_REQUEST
+		);
+	}
 
 	receive_data->parse_complete_pos += parsed_bytes;
+
+//	if (receive_data->session->is_client == 1 && receive_data->session->method == 0)
 
 	if (ret == RRR_HTTP_PARSE_OK) {
 		read_session->target_size = target_size;
@@ -487,21 +596,14 @@ static int __rrr_http_session_receive_get_target_size (
 	return ret;
 }
 
-int rrr_http_session_receive (
-		struct rrr_http_session *session,
-		int (*callback)(struct rrr_http_session *session, const char *start, const char *end, void *arg),
+int rrr_http_session_transport_ctx_receive (
+		struct rrr_net_transport_handle *handle,
+		int (*callback)(struct rrr_http_part *part, void *arg),
 		void *callback_arg
 ) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	int ret = 0;
-
-	if (session->response_part != NULL) {
-		rrr_http_part_destroy(session->response_part);
-	}
-
-	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
-		RRR_MSG_ERR("Could not create HTTP part in rrr_http_session_receive\n");
-		goto out;
-	}
 
 	struct rrr_http_session_receive_data callback_data = {
 			session,
@@ -510,19 +612,27 @@ int rrr_http_session_receive (
 			callback_arg
 	};
 
-	ret = rrr_net_transport_read_message (
-			session->transport,
-			session->transport_handle,
+	if ((ret = __rrr_http_session_prepare_parts(callback_data.session)) != 0) {
+		goto out;
+	}
+
+	while ((ret = rrr_net_transport_ctx_read_message (
+			handle,
+			100,
 			4096,
 			65535,
 			__rrr_http_session_receive_get_target_size,
 			&callback_data,
-			__rrr_http_session_receive_callback,
+			session->is_client
+				? __rrr_http_session_receive_response_callback
+				: __rrr_http_session_receive_request_callback,
 			&callback_data
-	);
+	)) == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
+		usleep(500);
+	}
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error while reading from server in rrr_http_session_receive\n");
+		RRR_MSG_ERR("Error while reading from server in rrr_http_session_transport_ctx_receive\n");
 		ret = 1;
 		goto out;
 	}
@@ -531,24 +641,40 @@ int rrr_http_session_receive (
 	return ret;
 }
 
-int rrr_http_session_connect (struct rrr_http_session *session) {
+int rrr_http_session_transport_ctx_send_response (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
 	int ret = 0;
 
-	if (rrr_net_transport_connect(&session->transport_handle, session->transport, session->port, session->host) != 0) {
-		RRR_MSG_ERR("Could not connect to HTTP server '%s' port '%u'\n", session->host, session->port);
-		ret = 1;
-		goto out;
+	if (session->response_part == NULL) {
+		RRR_BUG("BUG: Response part was NULL in rrr_http_session_send_response\n");
+	}
+	if (session->response_part->response_code == 0) {
+		RRR_BUG("BUG: Response code was not set in rrr_http_session_send_response\n");
 	}
 
-	out:
+	const char *response_str = NULL;
+
+	switch (session->response_part->response_code) {
+		case 200:
+			response_str = "HTTP/1.1 200 OK\r\n";
+			break;
+		case 204:
+			response_str = "HTTP/1.1 204 No Content\r\n";
+			break;
+		case 404:
+			response_str = "HTTP/1.1 404 Not Found\r\n";
+			break;
+		case 500:
+			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
+			break;
+		default:
+			RRR_BUG("BUG: Respone code %i not implemented in rrr_http_session_send_response\n", session->response_part->response_code);
+	}
+
+	ret |= rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str));
+
 	return ret;
-}
-
-void rrr_http_session_close (struct rrr_http_session *session) {
-	if (session->transport_handle > 0) {
-		if (rrr_net_transport_close(session->transport, session->transport_handle) != 0) {
-			RRR_MSG_ERR("Warning: Error while closing transport handle in rrr_http_session_close\n");
-		}
-		session->transport_handle = 0;
-	}
 }

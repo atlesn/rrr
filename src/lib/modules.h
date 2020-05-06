@@ -51,14 +51,14 @@ struct rrr_module_load_data {
 };
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE \
-	struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size
-
+	struct rrr_ip_buffer_entry *entry, struct rrr_instance_thread_data *thread_data
+/*
 #define RRR_MODULE_POLL_SIGNATURE \
 		struct rrr_instance_thread_data *data, \
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE), \
 		struct rrr_fifo_callback_args *poll_data, \
 		unsigned int wait_milliseconds
-
+*/
 #define RRR_MODULE_PRINT_SIGNATURE \
 		struct rrr_instance_thread_data *data
 
@@ -76,14 +76,6 @@ struct rrr_module_operations {
 
 	// Post stop function - Run after thread has finished from main thread context
 	void (*poststop)(const struct rrr_thread *);
-
-	// For modules which returns rrr_message struct from buffer
-	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
-	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
-	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
-
-	// For modules which return rrr_ip_buffer_entry from buffer
-	int (*poll_delete_ip)(RRR_MODULE_POLL_SIGNATURE);
 
 	// Test of configuration arguments
 	int (*test_config)(struct rrr_instance_config *config);

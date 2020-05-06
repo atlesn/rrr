@@ -45,18 +45,18 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/array.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/array.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;
 
-	struct rrr_fifo_buffer buffer;
 	usb_dev_handle *usb_handle;
 	struct usb_device *usb_device;
 
@@ -284,25 +284,14 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	return 1;
 }
 
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return  rrr_fifo_read_clear_forward(&voltmonitor_data->buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct voltmonitor_data *voltmonitor_data = data->private_data;
-	return rrr_fifo_search(&voltmonitor_data->buffer, callback, poll_data, wait_milliseconds);
-}
-
 int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {
-	data->thread_data = thread_data;
 	memset(data, '\0', sizeof(*data));
-	return rrr_fifo_buffer_init(&data->buffer);
+	data->thread_data = thread_data;
+	return 0;
 }
 
 void data_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->buffer);
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
@@ -383,53 +372,93 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	return ret;
 }
 
-static int spawn_message (struct voltmonitor_data *data, uint64_t value) {
+struct volmonitor_spawn_message_callback_data {
+	struct voltmonitor_data *data;
+	const struct rrr_array *array_tmp;
+	uint64_t time_now;
+};
+
+static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct volmonitor_spawn_message_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	struct rrr_message *message = NULL;
+
+	if (rrr_array_new_message_from_collection (
+			&message,
+			callback_data->array_tmp,
+			callback_data->time_now,
+			callback_data->data->msg_topic,
+			(callback_data->data->msg_topic != NULL ? strlen(callback_data->data->msg_topic) : 0)
+	) != 0) {
+		RRR_MSG_ERR("Could not create message in volmonitor_spawn_message of voltmonitor instance %s\n",
+				INSTANCE_D_NAME(callback_data->data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	entry->message = message;
+	entry->data_length = MSG_TOTAL_SIZE(message);
+
+	message = NULL;
+
+	out:
+	rrr_ip_buffer_entry_unlock_(entry);
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
+}
+
+static int volmonitor_spawn_message (struct voltmonitor_data *data, uint64_t value) {
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
-	struct rrr_message *message = NULL;
 
 	uint64_t time_now = rrr_time_get_64();
 
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", value) != 0) {
-		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
+		RRR_MSG_ERR("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", rrr_time_get_64()) != 0) {
-		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
+	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
+		RRR_MSG_ERR("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", rrr_time_get_64()) != 0) {
-		RRR_MSG_ERR("Error while pushing value to array in spawn_message of voltmonitor\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_array_new_message_from_collection (
-			&message,
-			&array_tmp,
-			time_now,
-			data->msg_topic,
-			(data->msg_topic != 0 ? strlen(data->msg_topic) : 0)
-	) != 0) {
-		RRR_MSG_ERR("Could not create message in spawn_message of voltmonitor\n");
+	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
+		RRR_MSG_ERR("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
 
-	rrr_fifo_buffer_write(&data->buffer, (char*)message, sizeof(*message));
-	message = NULL;
+	struct volmonitor_spawn_message_callback_data callback_data = {
+		data,
+		&array_tmp,
+		time_now
+	};
+
+	if ((ret = rrr_message_broker_write_entry(
+			INSTANCE_D_BROKER(data->thread_data),
+			INSTANCE_D_HANDLE(data->thread_data),
+			NULL,
+			0,
+			0,
+			voltmonitor_spawn_message_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_ERR("Could not spawn message in voltmonitor instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
 int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_entry *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
+
 	struct rrr_message *message = entry->message;
 
 	int ret = 0;
@@ -452,12 +481,12 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 	RRR_DBG_1("voltmonitor instance %s inject value %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), value);
 
-	if (spawn_message(data, value) != 0) {
+	if (volmonitor_spawn_message(data, value) != 0) {
 		RRR_BUG("Error while spawning message in voltmonitor inject\n");
 	}
 
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_destroy(entry);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -476,7 +505,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("voltmonitor thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -493,7 +522,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	pthread_cleanup_push(usb_cleanup, data);
 
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
@@ -502,7 +531,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 			continue;
 		}
 
-		if (spawn_message(data, abs(millivolts)) != 0) {
+		if (volmonitor_spawn_message(data, abs(millivolts)) != 0) {
 			RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -514,7 +543,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("voltmonitor received encourage stop\n");
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -538,10 +567,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_voltmonitor,
-		NULL,
-		poll,
-		NULL,
-		poll_delete,
 		NULL,
 		test_config,
 		inject,

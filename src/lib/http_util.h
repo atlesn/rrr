@@ -31,8 +31,22 @@ struct rrr_http_uri {
 	char *endpoint;
 };
 
+void rrr_http_util_print_where_message (
+		const char *start
+);
+int rrr_http_util_decode_urlencoded_string (
+		char *target
+);
 char *rrr_http_util_encode_uri (
 		const char *input
+);
+const char *rrr_http_util_find_quoted_string_end (
+		const char *start,
+		const char *end,
+		char endchr
+);
+int rrr_http_util_unquote_string (
+		char *target
 );
 char *rrr_http_util_quote_header_value (
 		const char *input,
@@ -40,6 +54,10 @@ char *rrr_http_util_quote_header_value (
 		char delimeter_end
 );
 const char *rrr_http_util_find_crlf (
+		const char *start,
+		const char *end
+);
+const char *rrr_http_util_find_whsp (
 		const char *start,
 		const char *end
 );
@@ -67,7 +85,9 @@ ssize_t rrr_http_util_count_whsp (
 		const char *end
 );
 void rrr_http_util_strtolower (char *str);
+void rrr_http_util_strtoupper (char *str);
 void rrr_http_util_uri_destroy (struct rrr_http_uri *uri);
 int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri);
+void rrr_http_util_nprintf (size_t length, const char *format, ...);
 
 #endif /* RRR_HTTP_UTIL_H */

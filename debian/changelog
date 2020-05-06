@@ -1,3 +1,11 @@
+rrr (0.18) unstable; urgency=medium
+
+  * New message broker to transfer messages between modules with proper
+    memory fencing
+  * Interface for users should remain the same
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 05 May 2020 13:57:17 +0200
+
 rrr (0.17-5) unstable; urgency=medium
 
   * Fix bug causing rrr_post not to work because we called getsockopts on files

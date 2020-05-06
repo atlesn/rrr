@@ -371,7 +371,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
 
-	RRR_MQTT_P_LOCK(packet);
+//	RRR_MQTT_P_LOCK(packet);
 
 	int client_id_was_assigned = 0;
 	int session_present = 0;
@@ -609,7 +609,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	out:
 
 	rrr_mqtt_session_properties_destroy(&session_properties);
-	RRR_MQTT_P_UNLOCK(packet);
+//	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;
 }
@@ -715,8 +715,6 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	(void)(mqtt_data);
 
-	RRR_MQTT_P_LOCK(packet);
-
 	pingresp = (struct rrr_mqtt_p_pingresp *) rrr_mqtt_p_allocate (RRR_MQTT_P_TYPE_PINGRESP, packet->protocol_version);
 	if (pingresp == NULL) {
 		RRR_MSG_ERR("Could not allocate CONNACK packet in rrr_mqtt_p_handler_connect\n");
@@ -730,7 +728,6 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out:
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(pingresp);
-	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 

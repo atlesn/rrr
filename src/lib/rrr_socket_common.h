@@ -51,7 +51,7 @@ int rrr_socket_common_receive_socket_msg (
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );
-int rrr_socket_common_prepare_and_send_socket_msg (
+int rrr_socket_common_prepare_and_send_socket_msg_blocking (
 		struct rrr_socket_msg *socket_msg,
 		int fd,
 		struct rrr_socket_common_in_flight_counter *in_flight

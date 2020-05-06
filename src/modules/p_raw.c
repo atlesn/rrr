@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
@@ -42,26 +43,16 @@ struct raw_data {
 	int print_data;
 };
 
-int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->private_data;
+int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct raw_data *raw_data = thread_data->private_data;
-	struct rrr_message *reading = NULL;
 	struct rrr_array array_tmp = {0};
 
 	int ret = 0;
 
-	if (poll_data->flags & RRR_POLL_POLL_DELETE_IP) {
-		struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-		reading = entry->message;
-		entry->message = NULL;
-		rrr_ip_buffer_entry_destroy(entry);
-	}
-	else {
-		reading = (struct rrr_message *) data;
-	}
+	struct rrr_message *reading = entry->message;
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: poll flags %u length %u timestamp from %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), poll_data->flags, MSG_TOTAL_SIZE(reading), reading->timestamp, size);
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
 	if (raw_data->print_data != 0) {
 		ssize_t print_length = MSG_DATA_LENGTH(reading);
@@ -77,13 +68,13 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-				RRR_MSG_ERR("Could not get array from message in poll_callback of raw instance %s\n",
+				RRR_MSG_ERR("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
 			}
 			if (rrr_array_dump(&array_tmp) != 0) {
-				RRR_MSG_ERR("Error while dumping array in poll_callback of raw instance %s\n",
+				RRR_MSG_ERR("Error while dumping array in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
@@ -95,7 +86,7 @@ int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned
 
 	out:
 	rrr_array_clear(&array_tmp);
-	free(reading);
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -139,7 +130,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	poll_collection_init(&poll);
 	pthread_cleanup_push(poll_collection_clear_void, &poll);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -152,12 +143,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (poll_add_from_thread_senders_and_count(
-			&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_POLL_DELETE_IP
-	) != 0) {
-		RRR_MSG_ERR("Raw requires poll_delete or poll_delete_ip from senders\n");
-		goto out_message;
-	}
+	poll_add_from_thread_senders (&poll, thread_data);
 
 	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
 
@@ -167,9 +153,9 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	uint64_t timer_start = rrr_time_get_64();
 	int ticks = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
+		if (poll_do_poll_delete (thread_data, &poll, raw_poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -192,10 +178,9 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 		ticks++;
 	}
 
-	out_message:
 	RRR_DBG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 
@@ -212,10 +197,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_raw,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
 		NULL,
 		test_config,
 		NULL,

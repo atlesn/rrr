@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARRAY_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "instance_config.h"
@@ -155,6 +156,9 @@ int rrr_array_selected_tags_export (
 		int *found_tags,
 		const struct rrr_array *definition,
 		const struct rrr_map *tags
+);
+ssize_t rrr_array_new_message_estimate_size (
+		const struct rrr_array *definition
 );
 int rrr_array_new_message_from_collection (
 		struct rrr_message **final_message,

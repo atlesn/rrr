@@ -147,9 +147,9 @@ int rrr_udpstream_asd_new (
 		int accept_connections,
 		int disallow_ip_swap
 );
-int rrr_udpstream_asd_queue_message (
+int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
-		struct rrr_ip_buffer_entry **message
+		struct rrr_ip_buffer_entry *message
 );
 int rrr_udpstream_asd_deliver_and_maintain_queues (
 		struct rrr_udpstream_asd *session,
@@ -159,7 +159,13 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 int rrr_udpstream_asd_buffer_tick (
 		int *receive_count,
 		int *send_count,
+		int (*allocator_callback) (
+				uint32_t size,
+				int (*final_callback)(void **joined_data, void *allocation_handle, void *udpstream_callback_arg),
+				void *udpstream_callback_arg,
+				void *arg
+		),
+		void *allocator_callback_arg,
 		struct rrr_udpstream_asd *session
 );
-
 #endif /* RRR_UDPSTREAM_ASD_H */

@@ -56,8 +56,8 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 
 		if (	rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
-				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED ||
-				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
+				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED
+//				|| rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
 		) {
 			// OK
 		}
@@ -76,7 +76,8 @@ int main_start_threads (
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
-		struct rrr_stats_engine *stats
+		struct rrr_stats_engine *stats,
+		struct rrr_message_broker *message_broker
 ) {
 	/*
 #ifdef VL_WITH_OPENSSL
@@ -99,10 +100,11 @@ int main_start_threads (
 		init_data.global_config = global_config;
 		init_data.instance_config = instance->config;
 		init_data.stats = stats;
+		init_data.message_broker = message_broker;
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 
-		if ((instance->thread_data = rrr_instance_init_thread(&init_data)) == NULL) {
+		if ((instance->thread_data = rrr_instance_new_thread(&init_data)) == NULL) {
 			goto out;
 		}
 	}

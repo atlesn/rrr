@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_setting.h"
 #include "rrr_socket.h"
 #include "messages.h"
+#include "message_addr.h"
 #include "settings.h"
 #include "read.h"
 #include "../../config.h"
@@ -112,7 +113,7 @@ static PyObject *rrr_python3_socket_f_accept (PyObject *self, PyObject *args) {
 		goto out;
 	}
 
-	struct sockaddr addr;
+	struct rrr_sockaddr addr;
 	socklen_t len = sizeof(addr);
 	int new_fd = rrr_socket_accept(socket_data->socket_fd, &addr, &len, "rrr_python3_socket_f_accept");
 
@@ -235,9 +236,11 @@ static PyObject *rrr_python3_socket_f_get_filename (PyObject *self, PyObject *ar
 static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	int ret = 0;
 
+	struct rrr_message_addr message_addr = {0};
+
 	struct rrr_socket_msg *message = NULL;
 	if (rrr_python3_rrr_message_check(arg)) {
-		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (arg);
+		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (&message_addr, arg);
 		if (rrr_message == NULL) {
 			ret = 1;
 			goto out;
@@ -256,6 +259,15 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 		RRR_MSG_ERR("Received unknown object type in python3 socket send\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (message_addr.addr_len > 0) {
+		rrr_message_addr_init_head(&message_addr);
+		if ((ret = rrr_python3_socket_send(self, (struct rrr_socket_msg *)  &message_addr)) != 0) {
+			RRR_MSG_ERR("Received error in python3 socket send function\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	if ((ret = rrr_python3_socket_send(self, message)) != 0) {
@@ -511,7 +523,7 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 	uint64_t msg_value = 0;
 
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
-		if (message->msg_size < sizeof(struct rrr_message)) {
+		if (message->msg_size < MSG_MIN_SIZE(message)) {
 			RRR_BUG("Received an rrr_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
 		}
 
@@ -519,6 +531,12 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		msg_size = MSG_TOTAL_SIZE((struct rrr_message *) message);
 
 		rrr_message_prepare_for_network((struct rrr_message *) message);
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+		msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR;
+		msg_size = sizeof(struct rrr_message_addr);
+
+		rrr_message_addr_prepare_for_network((struct rrr_message_addr *) message);
 	}
 	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		if (message->msg_size != sizeof(struct rrr_setting_packed)) {
@@ -662,6 +680,9 @@ static int __rrr_python3_socket_recv_callback (struct rrr_read_session *read_ses
 			ret = 1;
 			goto out;
 		}
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(tmp_head)) {
+		rrr_message_addr_to_host((struct rrr_message_addr *) tmp_head);
 	}
 	else if (RRR_SOCKET_MSG_IS_SETTING(tmp_head)) {
 		struct rrr_setting_packed *message = (struct rrr_setting_packed *) read_session->rx_buf_ptr;

@@ -32,6 +32,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
 
+#ifndef SOCK_MAXADDRLEN
+	#define SOCK_MAXADDRLEN 255
+#endif
+
+struct rrr_sockaddr {
+	struct sockaddr sockaddr;
+	char filler[SOCK_MAXADDRLEN - sizeof(struct sockaddr)];
+};
+
 struct rrr_socket_options {
 	int fd;
 	int domain;
@@ -54,7 +63,7 @@ int rrr_socket_with_lock_do (
 );
 int rrr_socket_accept (
 		int fd_in,
-		struct sockaddr *addr,
+		struct rrr_sockaddr *addr,
 		socklen_t *__restrict addr_len,
 		const char *creator
 );
@@ -110,19 +119,35 @@ int rrr_socket_unix_create_and_connect (
 		const char *filename,
 		int nonblock
 );
-int rrr_socket_sendto (
+int rrr_socket_sendto_nonblock (
+		ssize_t *written_bytes,
 		int fd,
-		void *data,
+		const void *data,
 		ssize_t size,
 		struct sockaddr *addr,
 		socklen_t addr_len
 );
-static inline int rrr_socket_send (
+int rrr_socket_sendto_blocking (
+		int fd,
+		const void *data,
+		ssize_t size,
+		struct sockaddr *addr,
+		socklen_t addr_len
+);
+static inline int rrr_socket_send_nonblock (
+		ssize_t *written_bytes,
 		int fd,
 		void *data,
 		ssize_t size
 ) {
-	return rrr_socket_sendto(fd, data, size, NULL, 0);
+	return rrr_socket_sendto_nonblock(written_bytes, fd, data, size, NULL, 0);
+}
+static inline int rrr_socket_send_blocking (
+		int fd,
+		void *data,
+		ssize_t size
+) {
+	return rrr_socket_sendto_blocking(fd, data, size, NULL, 0);
 }
 
 

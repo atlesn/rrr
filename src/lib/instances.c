@@ -1,9 +1,8 @@
 /*
-#include <instance_collection.h>
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "instances.h"
 #include "instance_config.h"
+#include "message_broker.h"
 
 struct instance_metadata *rrr_instance_find_by_thread (
 		struct instance_metadata_collection *collection,
@@ -46,7 +46,7 @@ int rrr_instance_check_threads_stopped(struct instance_metadata_collection *inst
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (
 				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPED ||
-				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
+//				rrr_thread_get_state(instance->thread_data->thread) == RRR_THREAD_STATE_STOPPING ||
 				rrr_thread_is_ghost(instance->thread_data->thread)
 		) {
 			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", instance->dynamic_data->instance_name);
@@ -58,7 +58,7 @@ int rrr_instance_check_threads_stopped(struct instance_metadata_collection *inst
 
 void rrr_instance_free_all_thread_data(struct instance_metadata_collection *instances) {
 	RRR_INSTANCE_LOOP(instance, instances) {
-		rrr_instance_free_thread(instance->thread_data);
+		rrr_instance_destroy_thread(instance->thread_data);
 		instance->thread_data = NULL;
 	}
 }
@@ -90,7 +90,7 @@ static void __rrr_instance_metadata_destroy (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *target
 ) {
-	rrr_instance_free_thread(target->thread_data);
+	rrr_instance_destroy_thread(target->thread_data);
 	rrr_instance_collection_clear(&target->senders);
 	rrr_instance_collection_clear(&target->wait_for);
 
@@ -227,15 +227,6 @@ int rrr_instance_load_and_save (
 	if (module == NULL || module->dynamic_data == NULL) {
 		RRR_MSG_ERR("Instance '%s' could not be loaded\n", instance_config->name);
 		return 1;
-	}
-
-	if ((module->dynamic_data->type == RRR_MODULE_TYPE_DEADEND  || module->dynamic_data->type == RRR_MODULE_TYPE_NETWORK) && (
-			module->dynamic_data->operations.poll != NULL ||
-			module->dynamic_data->operations.poll_delete != NULL ||
-			module->dynamic_data->operations.poll_delete_ip != NULL
-	)) {
-		RRR_BUG("Poll functions specified for module %s which is of deadend or network type\n",
-				module->dynamic_data->instance_name);
 	}
 
 	return 0;
@@ -431,7 +422,12 @@ unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_co
 	return result;
 }
 
-void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
+static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data) {
+	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
+	free(data);
+}
+
+void rrr_instance_destroy_thread (struct rrr_instance_thread_data *data) {
 	if (data == NULL) {
 		return;
 	}
@@ -440,10 +436,19 @@ void rrr_instance_free_thread(struct rrr_instance_thread_data *data) {
 		return;
 	}
 
-	free(data);
+	__rrr_instace_destroy_thread(data);
 }
 
-struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data) {
+void rrr_instance_destroy_thread_by_ghost (void *private_data) {
+	struct rrr_instance_thread_data *data = private_data;
+	if (private_data == NULL) {
+		return;
+	}
+
+	__rrr_instace_destroy_thread(data);
+}
+
+struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread_init_data *init_data) {
 	RRR_DBG_1 ("Init thread %s\n", init_data->module->instance_name);
 
 	struct rrr_instance_thread_data *data = malloc(sizeof(*data));
@@ -455,10 +460,24 @@ struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
 
-	return data;
+	if (rrr_message_broker_costumer_register (
+			&data->message_broker_handle,
+			init_data->message_broker,
+			init_data->module->instance_name
+	) != 0) {
+		RRR_MSG_ERR("Could not register with message broker in rrr_instance_new_thread\n");
+		goto out_free;
+	}
+
+	goto out;
+	out_free:
+		free(data);
+		data = NULL;
+	out:
+		return data;
 }
 
-int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
+int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
 	RRR_DBG_1 ("Preloading thread %s\n", module->instance_name);
@@ -472,6 +491,7 @@ int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,
+			rrr_instance_destroy_thread_by_ghost,
 			module->start_priority,
 			data, module->instance_name
 	);
@@ -529,6 +549,75 @@ int rrr_instance_process_from_config (
 					instance->dynamic_data->instance_name);
 			goto out;
 		}
+	}
+
+	out:
+	return ret;
+}
+
+struct rrr_instance_count_receivers_of_self_callback_data {
+	struct rrr_instance_thread_data *self;
+	int count;
+};
+
+static int __rrr_instance_count_receivers_of_self_callback (struct instance_metadata *instance, void *arg) {
+	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
+	if (instance->thread_data == callback_data->self) {
+		callback_data->count++;
+	}
+	return 0;
+}
+
+int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self) {
+	struct instance_metadata_collection *instances = self->init_data.module->all_instances;
+
+	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
+			self,
+			0
+	};
+
+	RRR_INSTANCE_LOOP(instance, instances)
+	{
+		if (instance->thread_data != self) {
+			rrr_instance_collection_iterate (
+					&instance->senders,
+					__rrr_instance_count_receivers_of_self_callback,
+					&callback_data
+			);
+		}
+	}
+
+	return callback_data.count;
+}
+
+int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+		int *delivery_entry_count,
+		int *delivery_ratelimit_active,
+		struct rrr_instance_thread_data *thread_data
+) {
+	int ret = 0;
+
+	if (rrr_message_broker_get_entry_count_and_ratelimit (
+			delivery_entry_count,
+			delivery_ratelimit_active,
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data)
+	) != 0) {
+		RRR_MSG_ERR("Error while getting output buffer size in %s instance %s\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (*delivery_entry_count > 10000 && *delivery_ratelimit_active == 0) {
+		RRR_DBG_1("Enabling ratelimit on buffer in %s instance %s due to slow reader\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+	}
+	else if (*delivery_entry_count < 10 && *delivery_ratelimit_active == 1) {
+		RRR_DBG_1("Disabling ratelimit on buffer in %s instance %s due to low buffer level\n",
+				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
 	}
 
 	out:

@@ -35,9 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip.h"
+#include "../../lib/ip_buffer_entry.h"
 #include "../../lib/messages.h"
 #include "../../lib/rrr_endian.h"
 #include "../../lib/rrr_strerror.h"
+#include "../../lib/message_broker.h"
 
 struct test_result {
 	int result;
@@ -98,14 +100,15 @@ struct test_final_data {
  */
 int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
-	struct test_result *result = poll_data->private_data;
+
+	// This cast is really weird, only done in test module. Our caller
+	// does not send thread_data struct but test_data struct.
+	struct test_result *result = (struct test_result *) thread_data;
 
 	result->message = NULL;
 	result->result = 1;
 
-	(void)(size);
-
-	struct rrr_message *message = (struct rrr_message *) data;
+	struct rrr_message *message = (struct rrr_message *) entry->message;
 	struct rrr_array collection = {0};
 
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
@@ -300,11 +303,13 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out:
 	if (ret != 0) {
-		RRR_FREE_IF_NOT_NULL(data);
 	}
 	else {
 		result->message = message;
+		entry->message = NULL;
 	}
+
+	rrr_ip_buffer_entry_unlock_(entry);
 
 	return ret;
 }
@@ -312,7 +317,6 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 int test_do_poll_loop (
 		struct test_result *test_result,
 		struct rrr_instance_thread_data *thread_data,
-		int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE),
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 ) {
 	int ret = 0;
@@ -322,8 +326,13 @@ int test_do_poll_loop (
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
 				INSTANCE_D_NAME(thread_data), i);
 
-		struct rrr_fifo_callback_args poll_data = {NULL, test_result, 0};
-		ret = poll_delete(thread_data, callback, &poll_data, 150);
+		ret = rrr_message_broker_poll_delete (
+				INSTANCE_D_BROKER_ARGS(thread_data),
+				callback,
+				test_result,
+				150
+		);
+
 		if (ret != 0) {
 			TEST_MSG("Error from poll_delete function in test_type_array\n");
 			ret = 1;
@@ -384,10 +393,11 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 }
 
 int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	struct test_result *result = poll_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
+	// This cast is really weird, only done in test module. Our caller
+	// does not send thread_data struct but test_data struct.
+	struct test_result *result = (struct test_result *) thread_data;
 
-	(void)(size);
+	struct rrr_message *message = (struct rrr_message *) entry->message;
 
 	int ret = 0;
 
@@ -435,7 +445,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 			result->message = message;
 			result->result = 2;
-			message = NULL;
+			entry->message = NULL;
 		}
 	}
 	else {
@@ -445,7 +455,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	RRR_FREE_IF_NOT_NULL(message);
+	rrr_ip_buffer_entry_unlock_(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -472,10 +482,8 @@ int test_averager (
 	}
 
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 
 	inject = input->dynamic_data->operations.inject;
-	poll_delete = output->dynamic_data->operations.poll_delete;
 
 	// Inject four messages to be averaged
 	for (int i = 2; i <= 8; i += 2) {
@@ -499,34 +507,34 @@ int test_averager (
 			goto out;
 		}
 
-		if (entry != NULL) {
-			rrr_ip_buffer_entry_destroy(entry);
-		}
 		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, 0, message) != 0) {
 			TEST_MSG("Could not create ip buffer entry in test_averager\n");
 			ret = 1;
 			goto out;
 		}
 		message = NULL;
+		rrr_ip_buffer_entry_lock_(entry);
 
+		// Inject should not decref, but must unlock
 		if (inject(input->thread_data, entry)) {
 			TEST_MSG("Error from inject function in test_averager\n");
 			ret = 1;
 			goto out;
 		}
+		rrr_ip_buffer_entry_decref(entry);
 		entry = NULL;
 	}
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
 	struct test_result test_result = {0, NULL};
-	ret |= test_do_poll_loop(&test_result, output->thread_data, poll_delete, test_averager_callback);
+	ret |= test_do_poll_loop(&test_result, output->thread_data, test_averager_callback);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 	*result_message = test_result.message;
 
 	out:
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy(entry);
+		rrr_ip_buffer_entry_decref(entry);
 	}
 	rrr_array_clear(&array_tmp);
 	RRR_FREE_IF_NOT_NULL(message);
@@ -564,20 +572,7 @@ int test_type_array (
 		return 1;
 	}
 
-	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-	int (*poll_delete_1)(RRR_MODULE_POLL_SIGNATURE);
-	int (*poll_delete_2)(RRR_MODULE_POLL_SIGNATURE);
-	int (*poll_delete_3)(RRR_MODULE_POLL_SIGNATURE);
-
-	inject = input->dynamic_data->operations.inject;
-	poll_delete_1 = output_1->dynamic_data->operations.poll_delete;
-	poll_delete_2 = output_2->dynamic_data->operations.poll_delete;
-	poll_delete_3 = output_3->dynamic_data->operations.poll_delete;
-
-	if (inject == NULL || poll_delete_1 == NULL || poll_delete_2 == NULL || poll_delete_3 == NULL) {
-		TEST_MSG("Could not find inject and/or poll_delete in modules in test_type_array\n");
-		return 1;
-	}
+	int (*inject)(RRR_MODULE_INJECT_SIGNATURE) = input->dynamic_data->operations.inject;
 
 	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not an rrr_message)
 
@@ -635,32 +630,42 @@ int test_type_array (
 	}
 	data = NULL;
 
+	rrr_ip_buffer_entry_lock_(entry);
+
 	ret = inject(input->thread_data, entry);
 	if (ret != 0) {
 		TEST_MSG("Error from inject function in test_type_array\n");
 		ret = 1;
 		goto out;
 	}
-	entry = NULL;
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
 	struct test_result test_result_1 = {1, NULL};
-	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, poll_delete_1, test_type_array_callback);
+	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 1/3, should be 2: %i\n", test_result_1.result);
 	*result_message_1 = test_result_1.message;
 
 	// Poll from second output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_2->thread_data));
 	struct test_result test_result_2 = {1, NULL};
-	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, poll_delete_2, test_type_array_callback);
+	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 2/3, should be 2: %i\n", test_result_2.result);
 	*result_message_2 = test_result_2.message;
 
 	// Poll from third output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_3->thread_data));
 	struct test_result test_result_3 = {1, NULL};
-	ret |= test_do_poll_loop(&test_result_3, output_3->thread_data, poll_delete_3, test_type_array_callback);
+	ret |= test_do_poll_loop(&test_result_3, output_3->thread_data, test_type_array_callback);
+	if (ret != 0) {
+		goto out;
+	}
 	TEST_MSG("Result of test_type_array 3/3, should be 2: %i\n", test_result_3.result);
 	*result_message_3 = test_result_3.message;
 
@@ -670,7 +675,7 @@ int test_type_array (
 	out:
 	RRR_FREE_IF_NOT_NULL(data);
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_destroy(entry);
+		rrr_ip_buffer_entry_decref(entry);
 	}
 	return ret;
 }
@@ -678,15 +683,17 @@ int test_type_array (
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	RRR_DBG_4("Received message_1 of size %lu in test_type_array_mysql_and_network_callback\n", size);
+	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
-	struct test_result *test_result = poll_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
+	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct test_result *test_result = (struct test_result *) thread_data;
 
 	test_result->message = message;
 	test_result->result = 0;
+	entry->message = NULL;
 
+	rrr_ip_buffer_entry_unlock_(entry);
 	return ret;
 }
 
@@ -811,11 +818,6 @@ int test_type_array_mysql_and_network (
 	struct rrr_ip_buffer_entry *entry = NULL;
 	uint64_t expected_ack_timestamp = message->timestamp;
 
-	pthread_cleanup_push(test_type_array_mysql_data_cleanup, &mysql_data);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(new_message, new_message);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(entry, entry);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(test_result, test_result.message);
-
 	new_message = rrr_message_duplicate(message);
 	if (new_message == NULL) {
 		RRR_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
@@ -857,29 +859,25 @@ int test_type_array_mysql_and_network (
 	}
 
 	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
 
 	inject = input_buffer->dynamic_data->operations.inject;
-	poll_delete = tag_buffer->dynamic_data->operations.poll_delete;
 
-	if (inject == NULL || poll_delete == NULL) {
-		TEST_MSG("Could not find inject/poll_delete in modules in test_type_array_mysql_and_network\n");
+	if (inject == NULL) {
+		TEST_MSG("Could not find inject in modules in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
 
+	rrr_ip_buffer_entry_lock_(entry);
 	ret = inject(input_buffer->thread_data, entry);
-	if (ret == 0) {
-		entry = NULL;
-	}
-	else {
+	if (ret != 0) {
 		RRR_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
 
 	TEST_MSG("Polling MySQL\n");
-	ret |= test_do_poll_loop(&test_result, tag_buffer->thread_data, poll_delete, test_type_array_mysql_and_network_callback);
+	ret |= test_do_poll_loop(&test_result, tag_buffer->thread_data, test_type_array_mysql_and_network_callback);
 	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
 
 	ret = test_result.result;
@@ -904,9 +902,12 @@ int test_type_array_mysql_and_network (
 	}
 
 	out:
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+	test_type_array_mysql_data_cleanup(&mysql_data);
+	RRR_FREE_IF_NOT_NULL(new_message);
+	if (entry != NULL) {
+		rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+	}
+	RRR_FREE_IF_NOT_NULL(test_result.message);
+
 	return ret;
 }

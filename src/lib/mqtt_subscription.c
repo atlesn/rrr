@@ -183,7 +183,7 @@ static int __rrr_mqtt_subscription_match_publish (
 		RRR_BUG("Topic name of packet was not valid in __rrr_mqtt_subscription_match_publish, should be checked at parsing\n");
 	}
 
-	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree);
+	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree_);
 
 	return ret;
 }

@@ -69,8 +69,12 @@ static int __rrr_socket_client_new (
 
 	memset(client, '\0', sizeof(*client));
 
+	if (addr_len > sizeof(client->addr)) {
+		RRR_BUG("Address length too long in __rrr_socket_client_new\n");
+	}
+
 	client->connected_fd = fd;
-	client->addr = *addr;
+	memcpy (&client->addr, addr, addr_len);
 	client->addr_len = addr_len;
 	client->last_seen = rrr_time_get_64();
 
@@ -153,7 +157,7 @@ int rrr_socket_client_collection_accept (
 	if (__rrr_socket_client_new (
 			&client_new,
 			temp.connected_fd,
-			&temp.addr,
+			(struct sockaddr *) &temp.addr,
 			temp.addr_len,
 			private_data_new,
 			private_arg,
@@ -176,7 +180,7 @@ int rrr_socket_client_collection_accept_simple (
 	return rrr_socket_client_collection_accept (collection, NULL, NULL, NULL);
 }
 
-int rrr_socket_client_collection_multicast_send (
+int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		struct rrr_socket_client_collection *collection,
 		void *data,
 		size_t size
@@ -185,7 +189,8 @@ int rrr_socket_client_collection_multicast_send (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
 		RRR_DBG_3("TX to fd %i\n", node->connected_fd);
-		if ((ret = rrr_socket_send(node->connected_fd, data, size)) != 0) {
+		ssize_t written_bytes_dummy = 0;
+		if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, node->connected_fd, data, size)) != 0) {
 			if (ret != RRR_SOCKET_SOFT_ERROR) {
 				RRR_DBG_1("Disconnecting client in client collection following send error\n");
 				RRR_LL_ITERATE_SET_DESTROY();

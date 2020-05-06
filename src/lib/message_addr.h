@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_ADDR_H
 #define RRR_MESSAGE_ADDR_H
 
+#include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "rrr_endian.h"
 
@@ -33,7 +34,7 @@ struct rrr_message_addr {
 	uint64_t addr_len;
 	uint8_t protocol;
 	union {
-		struct sockaddr addr;
+		struct rrr_sockaddr addr;
 	};
 } __attribute((packed));
 
@@ -42,6 +43,7 @@ static inline void rrr_message_addr_prepare_for_network (struct rrr_message_addr
 }
 
 int rrr_message_addr_to_host (struct rrr_message_addr *msg);
+void rrr_message_addr_init_head (struct rrr_message_addr *target);
 void rrr_message_addr_init (struct rrr_message_addr *target);
 int rrr_message_addr_new (struct rrr_message_addr **target);
 

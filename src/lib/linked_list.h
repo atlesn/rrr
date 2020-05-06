@@ -37,27 +37,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	type *ptr_prev;								\
 	type *ptr_next
 
-#define RRR_LL_VERIFY_HEAD(head) 									\
-	do {if (														\
-		(head->ptr_first != NULL && head->ptr_last == NULL) ||		\
-		(head->ptr_last != NULL && head->ptr_first == NULL) ||		\
-		(head->ptr_first == NULL && head->node_count != 0)			\
-	) {																\
-		RRR_BUG("Bug: Linked list head integrity error");			\
+#define RRR_LL_NODE_INIT(node)					\
+	node->ptr_prev = NULL;						\
+	node->ptr_next = NULL
+
+#define RRR_LL_VERIFY_HEAD(head) 										\
+	do {if (															\
+		((head)->ptr_first != NULL && (head)->ptr_last == NULL) ||		\
+		((head)->ptr_last != NULL && (head)->ptr_first == NULL) ||		\
+		((head)->ptr_first == NULL && (head)->node_count != 0)			\
+	) {																	\
+		RRR_BUG("Bug: Linked list head integrity error");				\
 	}} while(0)
 
-#define RRR_LL_VERIFY_NODE(head)										\
-	do {if (	(node->ptr_prev == NULL && head->ptr_first != node) ||	\
-				(node->ptr_next == NULL && head->ptr_last != node) ||	\
-				(node->ptr_prev != NULL && head->ptr_first == node) ||	\
-				(node->ptr_next != NULL && head->ptr_last == node) ||	\
-				(	head->ptr_first != node &&							\
-					head->ptr_last != node &&							\
-					(node->ptr_next == NULL || node->ptr_prev == NULL)	\
-				)														\
-		) {																\
-			RRR_BUG("Bug: Linked list node integrity error");			\
-		}																\
+#define RRR_LL_VERIFY_NODE(head)											\
+	do {if (	(node->ptr_prev == NULL && (head)->ptr_first != node) ||	\
+				(node->ptr_next == NULL && (head)->ptr_last != node) ||		\
+				(node->ptr_prev != NULL && (head)->ptr_first == node) ||	\
+				(node->ptr_next != NULL && (head)->ptr_last == node) ||		\
+				(	(head)->ptr_first != node &&							\
+					(head)->ptr_last != node &&								\
+					(node->ptr_next == NULL || node->ptr_prev == NULL)		\
+				)															\
+		) {																	\
+			RRR_BUG("Bug: Linked list node integrity error");				\
+		}																	\
 	} while(0)
 
 #define RRR_LL_IS_EMPTY(head)							\
@@ -159,6 +163,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		node = next;														\
 	}} while (0)
 
+#define RRR_LL_SHIFT(head)													\
+	RRR_LL_FIRST(head);	/* Shift is used with assignment */					\
+	do {if ((head)->ptr_last == (head)->ptr_first) {						\
+		(head)->ptr_first = NULL;											\
+		(head)->ptr_last = NULL;											\
+	} else {																\
+		(head)->ptr_first = (head)->ptr_first->ptr_next;					\
+		(head)->ptr_first->ptr_prev = NULL;									\
+	} (head)->node_count--; } while (0)
+
+#define RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(target,source)					\
+	do {if ((source)->ptr_first != NULL) {									\
+			if ((target)->ptr_last != NULL) {								\
+				(target)->ptr_last->ptr_next = (source)->ptr_first;			\
+			}																\
+			(source)->ptr_first->ptr_prev = (target)->ptr_last;				\
+			(target)->ptr_last = (source)->ptr_last;						\
+			if ((target)->ptr_first == NULL) {								\
+				(target)->ptr_first = (source)->ptr_first;					\
+			}																\
+			(source)->ptr_first = (source)->ptr_last = NULL;				\
+			(target)->node_count += (source)->node_count;					\
+			(source)->node_count = 0;										\
+		}} while(0)
+
 #define RRR_LL_ITERATE_BEGIN_AT(head, type, at, reverse) do {	\
 	type *node = (at);											\
 	type *prev = NULL; (void)(prev);							\
@@ -239,7 +268,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 				if ((lock) != 0) { lock_err; }													\
 				__RRR_LL_ITERATE_REMOVE_NODE(head);												\
 				if ((unlock) != 0) { lock_err; }												\
-			}																			\
+			}																					\
 			linked_list_iterate_destroy = 0;													\
 		}																						\
 		if (linked_list_reverse) {																\
@@ -253,5 +282,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
 
+#define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)	\
+	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, 0, asm(""), 0, 0, asm(""))
 
 #endif /* RRR_LINKED_LIST_H */

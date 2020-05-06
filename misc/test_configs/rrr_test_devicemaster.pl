@@ -23,7 +23,7 @@ sub get_from_tag {
 	return undef;
 }
 
-sub push_tag {
+sub push_str {
 	my $message = shift;
 	my $tag = shift;
 	my $value = shift;
@@ -33,33 +33,53 @@ sub push_tag {
 	push @{$message->{'array_types'}}, "str";
 }
 
+sub push_blob {
+	my $message = shift;
+	my $tag = shift;
+	my $value = shift;
+
+	push @{$message->{'array_values'}}, "$value";
+	push @{$message->{'array_tags'}}, $tag;
+	push @{$message->{'array_types'}}, "blob";
+}
+
+sub push_host {
+	my $message = shift;
+	my $tag = shift;
+	my $value = shift;
+
+	push @{$message->{'array_values'}}, "$value";
+	push @{$message->{'array_tags'}}, $tag;
+	push @{$message->{'array_types'}}, "h";
+}
+
 sub process {
 	my $message = shift;
 
 	my $code = get_from_tag($message, "code");
 	if (!defined($code)) {
-		push_tag($message, "code", $message->{'timestamp'});
+		push_host($message, "code", $message->{'timestamp'});
 #		printf "perl5: Could not find tag 'code' in message\n";
 #		return 1;
 	}
 
-	push_tag($message, "reply", "A\r");
+	push_blob($message, "reply", "A\r");
 
-	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("192.168.0.1"));
+	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("127.0.0.1"));
 	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
 	$message->{'ip_so_type'} = "tcp";
 
 	$message->send();
 
-	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("192.168.0.1"));
+	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("127.0.0.1"));
 	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
 	$message->{'ip_so_type'} = "udp";
 
 	$message->send();
 
-#	foreach my $key (sort keys(%{$message})) {
-#		print "Key: $key: " . $message->{$key} . "\n";
-#	}
+	foreach my $key (sort keys(%{$message})) {
+		print "Key: $key: " . $message->{$key} . "\n";
+	}
 
 	return 1;
 }

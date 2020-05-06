@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/stats_engine.h"
 #include "lib/stats_message.h"
 #include "lib/rrr_strerror.h"
+#include "lib/message_broker.h"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -63,36 +64,9 @@ const char *module_library_paths[] = {
 // on the stack correctly
 // #define RRR_NO_MODULE_UNLOAD
 
-static volatile int main_running = 1;
-
-int main_signal_handler(int s, void *arg) {
-	(void)(arg);
-
-	if (s == SIGCHLD) {
-		RRR_DBG_1("Received SIGCHLD\n");
-	}
-	else if (s == SIGUSR1) {
-		main_running = 0;
-		return RRR_SIGNAL_HANDLED;
-	}
-	else if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
-	}
-	else if (s == SIGTERM) {
-		exit(EXIT_FAILURE);
-	}
-	else if (s == SIGINT) {
-		// Allow double ctrl+c to close program
-		if (s == SIGINT) {
-			RRR_MSG_ERR("Received SIGINT\n");
-			signal(SIGINT, SIG_DFL);
-		}
-
-		main_running = 0;
-		return RRR_SIGNAL_HANDLED;
-	}
-
-	return RRR_SIGNAL_NOT_HANDLED;
+static int main_running = 1;
+int rrr_signal_handler(int s, void *arg) {
+	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -208,6 +182,7 @@ int main (int argc, const char *argv[]) {
 	int count = 0;
 
 	struct stats_data stats_data = {0};
+	struct rrr_message_broker message_broker = {0};
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -218,11 +193,16 @@ int main (int argc, const char *argv[]) {
 			rrr_signal_handler_remove
 	};
 
-	signal_handler = signal_functions.push_handler(main_signal_handler, NULL);
+	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
+
+	if (rrr_message_broker_init(&message_broker) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
 
 	if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
+		goto out_cleanup_message_broker;
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
@@ -269,33 +249,25 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
-	// Initialize signal handling
-	struct sigaction action;
-	action.sa_handler = rrr_signal;
-	sigemptyset (&action.sa_mask);
-	action.sa_flags = 0;
-
 	threads_restart:
 
 	rrr_socket_close_all_except(stats_data.engine.socket);
 
-	// During preload stage, signals are temporarily deactivated.
+	// During preload stage, signals are temporarily deactivated. Activate now.
 	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
 
-	// Handle forked children exiting
-	sigaction (SIGCHLD, &action, NULL);
-	// We generally ignore sigpipe and use NONBLOCK on all sockets
-	sigaction (SIGPIPE, &action, NULL);
-	// Used to set main_running = 0. The signal is set to default afterwards
-	// so that a second SIGINT will terminate the process
-	sigaction (SIGINT, &action, NULL);
-	// Used to set main_running = 0;
-	sigaction (SIGUSR1, &action, NULL);
-	// Exit immediately with EXIT_FAILURE
-	sigaction (SIGTERM, &action, NULL);
+	// Initialize signal handling
+	rrr_signal_default_signal_actions_register();
 
 	rrr_set_debuglevel_orig();
-	if ((ret = main_start_threads(&collection, instances, config, &cmd, &stats_data.engine)) != 0) {
+	if ((ret = main_start_threads (
+			&collection,
+			instances,
+			config,
+			&cmd,
+			&stats_data.engine,
+			&message_broker
+	)) != 0) {
 		goto out_stop_threads;
 	}
 
@@ -320,7 +292,13 @@ int main (int argc, const char *argv[]) {
 
 			rrr_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
-			rrr_thread_destroy_collection (collection);
+			rrr_thread_destroy_collection (collection, 0);
+
+			// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
+			// as the handle usercount will be > 1. This handle will not be destroyed untill the
+			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
+			// to find the handle as it will be removed from the costumer handle list.
+			rrr_message_broker_unregister_all_hard(&message_broker);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
 				usleep(1000000);
@@ -350,7 +328,7 @@ int main (int argc, const char *argv[]) {
 		rrr_set_debuglevel_on_exit();
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
-		rrr_thread_destroy_collection (collection);
+		rrr_thread_destroy_collection (collection, 0);
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
 			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
@@ -369,6 +347,9 @@ int main (int argc, const char *argv[]) {
 
 	out_destroy_metadata_collection:
 		rrr_instance_metadata_collection_destroy(instances);
+
+	out_cleanup_message_broker:
+		rrr_message_broker_cleanup(&message_broker);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);

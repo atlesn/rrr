@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "array.h"
 #include "fixed_point.h"
 #include "vl_time.h"
+#include "message_addr.h"
 #include "../global.h"
 
 //static const unsigned long int max_8 = 0xff;
@@ -57,6 +58,7 @@ struct rrr_python3_rrr_message_data {
 	struct rrr_message *message_dynamic;
 	PyObject *rrr_array;
 	struct rrr_python3_rrr_message_constants constants;
+	struct rrr_message_addr ip_addr;
 };
 
 static int __rrr_python3_rrr_message_set_topic_and_data (
@@ -1081,7 +1083,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	return ret;
 }
 
-struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
+struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr *message_addr, PyObject *self) {
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 	struct rrr_array array_tmp = {0};
 
@@ -1137,6 +1139,8 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 				MSG_TYPE(ret));
 	}
 
+	*message_addr = data->ip_addr;
+
 	goto out;
 	out_err:
 		ret = NULL;
@@ -1147,7 +1151,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (PyObject *self) {
 		return ret;
 }
 
-PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) {
+PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socket_msg *msg, struct rrr_message_addr *message_addr) {
 	struct rrr_python3_rrr_message_data *ret = NULL;
 	struct rrr_array array_tmp = {0};
 	PyObject *node_list = NULL;
@@ -1157,11 +1161,11 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 	struct rrr_message *rrr_message = (struct rrr_message *) msg;
 
 	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
-		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message was not a rrr_message\n");
+		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message_and_address was not a rrr_message\n");
 	}
 
-	if (msg->msg_size < sizeof(ret->message_static)) {
-		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message\n");
+	if (msg->msg_size < MSG_MIN_SIZE(&ret->message_static)) {
+		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message_and_address\n");
 	}
 
 	ret = (struct rrr_python3_rrr_message_data *) rrr_python3_rrr_message_f_new(&rrr_python3_rrr_message_type, NULL, NULL);
@@ -1169,11 +1173,13 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 		goto out_err;
 	}
 
+	ret->ip_addr = *message_addr;
+
 	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 
 	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1188,12 +1194,12 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 
 	ret->rrr_array = rrr_python3_array_new();
 	if (ret->rrr_array == NULL) {
-		RRR_MSG_ERR("Could not create array in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not create array in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
 	if (rrr_array_message_to_collection(&array_tmp, rrr_message) != 0) {
-		RRR_MSG_ERR("Could not parse array from message in rrr_python3_rrr_message_new_from_message\n");
+		RRR_MSG_ERR("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1204,14 +1210,14 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 		else {
 			node_tag = PyUnicode_FromString(node->tag);
 			if (node_tag == NULL) {
-				RRR_MSG_ERR("Could not create node for tag in rrr_python3_rrr_message_new_from_message\n");
+				RRR_MSG_ERR("Could not create node for tag in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 		}
 
 		node_list = PyList_New(node->element_count);
 		if (node_list == NULL) {
-			RRR_MSG_ERR("Could not create list for node in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 
@@ -1223,7 +1229,7 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
-			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 		for (rrr_type_array_size i = 0; i < node->element_count; i++) {
@@ -1247,13 +1253,13 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
 			}
 			else {
-				RRR_MSG_ERR("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message\n",
+				RRR_MSG_ERR("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",
 						node->definition->type);
 				goto out_err;
 			}
 
 			if (node_element_value == NULL) {
-				RRR_MSG_ERR("Could not create array node data in rrr_python3_rrr_message_new_from_message\n");
+				RRR_MSG_ERR("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 
@@ -1262,7 +1268,7 @@ PyObject *rrr_python3_rrr_message_new_from_message (struct rrr_socket_msg *msg) 
 		}
 
 		if (rrr_python3_array_append_value_with_list(ret->rrr_array, node_tag, node_list, node->definition->type) != 0) {
-			RRR_MSG_ERR("Could not append node value to array in rrr_python3_rrr_message_new_from_message\n");
+			RRR_MSG_ERR("Could not append node value to array in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 

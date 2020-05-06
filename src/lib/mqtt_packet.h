@@ -328,9 +328,11 @@ static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
 	}
 }
 
+//	printf ("packet %p lock\n", (p));
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
 
+//	printf ("packet %p unlock\n", (p));
 #define RRR_MQTT_P_UNLOCK(p)	\
 	pthread_mutex_unlock(&((p)->data_lock))
 
@@ -412,7 +414,7 @@ struct rrr_mqtt_p_publish {
 	RRR_MQTT_P_PACKET_HEADER;
 
 	char *topic;
-	struct rrr_mqtt_topic_token *token_tree;
+	struct rrr_mqtt_topic_token *token_tree_;
 
 	/* These three are also accessible through packet type flags but we cache them here */
 	//uint8_t dup; <-- defined in header

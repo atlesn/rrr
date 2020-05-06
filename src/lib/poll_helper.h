@@ -28,23 +28,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "linked_list.h"
 
-#define RRR_POLL_POLL			(1<<0)
-#define RRR_POLL_POLL_DELETE	(1<<1)
-#define RRR_POLL_POLL_DELETE_IP	(1<<2)
-#define RRR_POLL_PRINT			(1<<3)
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
 #define RRR_POLL_NO_SENDERS_OK	(1<<11)
 
 #define RRR_POLL_ERR 1
 #define RRR_POLL_NOT_FOUND 2
 
+typedef void rrr_message_broker_costumer_handle;
+
 struct poll_collection_entry {
 	RRR_LL_NODE(struct poll_collection_entry);
-	int (*poll)(RRR_MODULE_POLL_SIGNATURE);
-	int (*poll_delete)(RRR_MODULE_POLL_SIGNATURE);
-	int (*print)(RRR_MODULE_PRINT_SIGNATURE);
 	struct rrr_instance_thread_data *thread_data;
-	unsigned int flags;
 };
 
 struct poll_collection {
@@ -62,76 +56,36 @@ int poll_collection_has (struct poll_collection *collection, struct rrr_instance
 int poll_collection_add (
 		unsigned int *flags_result,
 		struct poll_collection *collection,
-		unsigned int flags,
 		struct instance_metadata *instance
 );
 
 int poll_collection_add_from_senders (
 		struct poll_collection *poll_collection,
 		struct instance_metadata **faulty_instance,
-		struct rrr_instance_collection *senders,
-		unsigned int flags
+		struct rrr_instance_collection *senders
 );
 
 int poll_do_poll (
+		struct rrr_instance_thread_data *thread_data,
 		struct poll_collection *collection,
-		struct rrr_instance_thread_data **faulty_instance,
-		unsigned int flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct rrr_fifo_callback_args *poll_data,
 		unsigned int wait_milliseconds
 );
 
 int poll_do_poll_delete (
+		struct rrr_instance_thread_data *thread_data,
 		struct poll_collection *collection,
-		struct rrr_instance_thread_data **faulty_instance,
-		unsigned int flags,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		const struct rrr_fifo_callback_args *poll_data,
 		unsigned int wait_milliseconds
 );
 
-int poll_do_poll_delete_simple_final (
-		struct poll_collection *poll,
-		struct rrr_instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int flags,
-		unsigned int wait_milliseconds
+int poll_collection_count (
+		struct poll_collection *collection
 );
 
-static inline int poll_do_poll_delete_simple (
-		struct poll_collection *poll,
-		struct rrr_instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE, wait_milliseconds); }
-
-static inline int poll_do_poll_delete_ip_simple (
-		struct poll_collection *poll,
-		struct rrr_instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP, wait_milliseconds); }
-
-static inline int poll_do_poll_delete_combined_simple (
-		struct poll_collection *poll,
-		struct rrr_instance_thread_data *thread_data,
-		int (*poll_callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
-		unsigned int wait_milliseconds
-) { return poll_do_poll_delete_simple_final(poll, thread_data, poll_callback, RRR_POLL_POLL_DELETE_IP|RRR_POLL_POLL_DELETE, wait_milliseconds); }
-
-int poll_collection_count (struct poll_collection *collection);
-
-int poll_add_from_thread_senders_and_count (
+void poll_add_from_thread_senders (
 		struct poll_collection *collection,
-		struct rrr_instance_thread_data *thread_data,
-		unsigned int flags
-);
-
-void poll_add_from_thread_senders_ignore_error (
-		struct poll_collection *collection,
-		struct rrr_instance_thread_data *thread_data,
-		unsigned int flags
+		struct rrr_instance_thread_data *thread_data
 );
 
 void poll_remove_senders_also_in (

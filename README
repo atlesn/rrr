@@ -433,7 +433,6 @@ The basic state flow of a module/thread is like this (see `threads.h` for intern
    this state, we tell them to start.
 4. `RUNNING` - Thread sets this state after receiving start signal.
 5. `RUNNING FORKED` - Thread sets this state after being started and any process forks are done (used by python).
-6. `STOPPING` - A thread should set this state if it detected `ENCOURAGE STOP` and is about to exit.
 
 It is very important that a thread does not read from other threads before it has received the start signal.
 

@@ -38,15 +38,18 @@ int rrr_message_addr_to_host (struct rrr_message_addr *msg) {
 	return 0;
 }
 
-void rrr_message_addr_init (struct rrr_message_addr *target) {
-	memset(target, '\0', sizeof(*target));
-
+void rrr_message_addr_init_head (struct rrr_message_addr *target) {
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) target,
 			RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR,
 			sizeof(struct rrr_message_addr),
 			0
 	);
+}
+
+void rrr_message_addr_init (struct rrr_message_addr *target) {
+	memset(target, '\0', sizeof(*target));
+	rrr_message_addr_init_head(target);
 }
 
 int rrr_message_addr_new (struct rrr_message_addr **target) {
