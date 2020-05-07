@@ -1194,17 +1194,21 @@ int rrr_perl5_message_to_hv (
 		sv_setuv(ip_addr_len, 0);
 	}
 
-	switch (message_addr->protocol) {
-		case RRR_IP_UDP:
-			sv_setpv(ip_so_type, "udp");
-			break;
-		case RRR_IP_TCP:
-			sv_setpv(ip_so_type, "tcp");
-			break;
-		default:
-			sv_setpv(ip_so_type, "");
-			break;
-	};
+	// Default value for protocol type is empty
+	sv_setpv(ip_so_type, "");
+
+	if (message_addr != NULL) {
+		switch (message_addr->protocol) {
+			case RRR_IP_UDP:
+				sv_setpv(ip_so_type, "udp");
+				break;
+			case RRR_IP_TCP:
+				sv_setpv(ip_so_type, "tcp");
+				break;
+			default:
+				break;
+		};
+	}
 
     out:
 	return ret;
