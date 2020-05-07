@@ -1161,12 +1161,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		}
 
 		if (data->do_ordered_send) {
-			int count_before = RRR_LL_COUNT(&data->send_buffer);
 			rrr_ip_buffer_entry_collection_sort(&data->send_buffer, rrr_message_timestamp_compare_void);
-			RRR_LL_VERIFY_HEAD(&data->send_buffer);
-			if (RRR_LL_COUNT(&data->send_buffer) != count_before) {
-				RRR_BUG("Count mismatch after sorting in ip\n");
-			}
 		}
 
 //		printf ("TCP connect count: %i\n", RRR_LL_COUNT(&tcp_connect_data));
