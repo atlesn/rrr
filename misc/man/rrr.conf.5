@@ -163,6 +163,8 @@ contents sent as is.
 .It ip_ordered_send={yes|no}
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
 like when a remote TCP host is unavailable, IP will store the messages to send in order. Defaults is no.
+.It ip_send_timeout=SECONDS
+If messages are not succesfully sent within this time, drop them. Default is not timeout (same as 0).
 .It ip_target_host=HOST
 .It ip_target_port=PORT
 .It ip_target_protocol=PROTOCOL

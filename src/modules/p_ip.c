@@ -66,6 +66,7 @@ struct ip_data {
 	int do_force_target;
 	int do_extract_rrr_messages;
 	int do_ordered_send;
+	rrr_setting_uint message_send_timeout_s;
 	char *default_topic;
 	char *target_host;
 	unsigned int target_port;
@@ -338,6 +339,24 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		goto out;
 	}
 	RRR_DBG_1("%i blob write columns specified for ip instance %s\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
+
+	// Message send timeout
+	rrr_setting_uint tmp_uint = 0;
+
+	ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, "ip_send_timeout");
+	if (ret != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			// No timeout
+			ret = 0;
+			tmp_uint = 0;
+		}
+		else {
+			RRR_MSG_ERR("Could not parse ip_send_timeout for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	data->message_send_timeout_s = tmp_uint;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
@@ -1040,8 +1059,10 @@ static int ip_send_message (
 		RRR_BUG("Invalid target_port/target_host configuration in ip input_callback\n");
 	}
 
-	// Used to check for succesive send attempts
-	entry->send_time = rrr_time_get_64();
+	// Used to check for succesive send attempts and timeout
+	if (entry->send_time == 0) {
+		entry->send_time = rrr_time_get_64();
+	}
 
 	if ((ret = ip_send_message_raw (
 			do_destroy,
@@ -1182,11 +1203,19 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 			node->custom_data = 0;
 		RRR_LL_ITERATE_END_CHECK_DESTROY(&tcp_connect_data, 0; rrr_ip_accept_data_close_and_destroy(node));
 
+		uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
+
+		int timeout_count = 0;
 		int ret_tmp = 0;
 		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_ip_buffer_entry);
 			int do_destroy = 0;
 			rrr_ip_buffer_entry_lock_(node);
-			if ((ret_tmp = ip_send_message(&do_destroy, data, &tcp_connect_data, node)) != 0) {
+
+			if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
+				timeout_count++;
+				do_destroy = 1;
+			}
+			else if ((ret_tmp = ip_send_message(&do_destroy, data, &tcp_connect_data, node)) != 0) {
 				RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 				RRR_LL_ITERATE_LAST();
 			}
@@ -1198,6 +1227,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				rrr_ip_buffer_entry_unlock_(node);
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
+
+		if (timeout_count > 0) {
+			RRR_MSG_ERR("Send timeout for %i messages in ip instance %s\n",
+					timeout_count, INSTANCE_D_NAME(thread_data));
+		}
 
 		if (ret_tmp != 0) {
 			break;
