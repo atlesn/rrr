@@ -197,15 +197,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		}
 	}
 
-	// Default target host
-	if ((ret = rrr_settings_get_string_noconvert_silent(&data->target_host, config->settings, "ip_target_host")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing configuration parameter ip_target_host in ip instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_target_host", target_host);
 
 	if (data->target_port != 0 && (data->target_host == NULL || *(data->target_host) == '\0')) {
 		RRR_MSG_ERR("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name);
@@ -238,64 +230,16 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 
 	// Message default topic
-	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "ip_default_topic")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing configuration parameter ip_default_topic in ip instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_ERR("ip_default_topic for instance %s was not valid UTF-8\n", config->name);
-			ret = 1;
-			goto out;
-		}
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
+
+	if (data->default_topic != NULL) {
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
 	// Sync byte by byte if parsing fails
-	int yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ip_sync_byte_by_byte")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ip_sync_byte_by_byte for ip instance %s, please use yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		data->do_sync_byte_by_byte = yesno;
-	}
-
-	// Send complete RRR message
-	yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ip_send_rrr_message")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ip_send_rrr_message for ip instance %s, please use yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		data->do_send_rrr_message = yesno;
-	}
-
-	// Force target
-	yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ip_force_target")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ip_force_target for ip instance %s, please use yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		data->do_force_target = yesno;
-	}
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_send_rrr_message", do_send_rrr_message, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
 
 	if (data->do_force_target != 0 && data->target_port == 0) {
 		RRR_MSG_ERR("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
@@ -304,33 +248,8 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		goto out;
 	}
 
-	// Extract RRR messages from arrays
-	yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ip_extract_rrr_messages")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ip_extract_rrr_messages for ip instance %s, please use yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		data->do_extract_rrr_messages = yesno;
-	}
-
-	// Sort send buffer - ordered send
-	yesno = 0;
-	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "ip_do_preserve_order")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ip_ordered_send for ip instance %s, please use yes or no\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		ret = 0;
-	}
-	else {
-		data->do_ordered_send = yesno;
-	}
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_do_preserve_order", do_ordered_send, 0);
 
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
@@ -340,23 +259,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 	RRR_DBG_1("%i blob write columns specified for ip instance %s\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
 
-	// Message send timeout
-	rrr_setting_uint tmp_uint = 0;
-
-	ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, "ip_send_timeout");
-	if (ret != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			// No timeout
-			ret = 0;
-			tmp_uint = 0;
-		}
-		else {
-			RRR_MSG_ERR("Could not parse ip_send_timeout for instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	data->message_send_timeout_s = tmp_uint;
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
