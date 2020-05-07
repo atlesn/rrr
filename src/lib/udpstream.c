@@ -306,7 +306,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_create_and_add_stream (
 	}
 	memcpy(new_stream->remote_addr, addr, new_stream->remote_addr_len);
 
-	RRR_LL_PUSH(&data->streams, new_stream);
+	RRR_LL_UNSHIFT(&data->streams, new_stream);
 
 	out:
 	return new_stream;

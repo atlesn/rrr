@@ -80,6 +80,10 @@ void rrr_ip_buffer_entry_collection_clear (
 void rrr_ip_buffer_entry_collection_clear_void (
 		void *arg
 );
+void rrr_ip_buffer_entry_collection_sort (
+		struct rrr_ip_buffer_entry_collection *target,
+		int (*compare)(void *message_a, void *message_b)
+);
 int rrr_ip_buffer_entry_new (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,

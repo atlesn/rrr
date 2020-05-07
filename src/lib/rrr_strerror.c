@@ -102,7 +102,7 @@ static const char *__rrr_strerror_find_error_or_register (int find_num) {
 		goto out;
 	}
 
-	RRR_LL_PUSH(&errors, new_node);
+	RRR_LL_UNSHIFT(&errors, new_node);
 	result = new_node->str;
 	new_node = NULL;
 

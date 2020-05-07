@@ -77,7 +77,7 @@ static void __rrr_mqtt_broker_listen_fd_remove_unlocked (
 ) {
 	int old_count = RRR_LL_COUNT(fds);
 
-	RRR_LL_REMOVE_NODE(fds, struct rrr_mqtt_listen_fd, fd, __rrr_mqtt_broker_destroy_listen_fd(node));
+	RRR_LL_REMOVE_NODE_IF_EXISTS(fds, struct rrr_mqtt_listen_fd, fd, __rrr_mqtt_broker_destroy_listen_fd(node));
 
 	if (old_count == RRR_LL_COUNT(fds)) {
 		RRR_BUG("FD not found in __rrr_mqtt_broker_listen_fd_destroy_unlocked\n");

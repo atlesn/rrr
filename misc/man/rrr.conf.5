@@ -1,4 +1,4 @@
-.Dd 2020-04-28
+.Dd 2020-05-07
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -160,6 +160,9 @@ Defaults to no, which means to only sync on boundaries of incoming messages.
 If set to yes, we will send complete RRR messages encoded for network. If set to no or left unset,
 messages with arrays will have their array packed and sent, and messages with other data will simply have their
 contents sent as is.
+.It ip_ordered_send={yes|no}
+Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
+like when a remote TCP host is unavailable, IP will store the messages to send in order. Defaults is no.
 .It ip_target_host=HOST
 .It ip_target_port=PORT
 .It ip_target_protocol=PROTOCOL

@@ -139,6 +139,27 @@ void rrr_ip_buffer_entry_collection_clear_void (
 	rrr_ip_buffer_entry_collection_clear(arg);
 }
 
+void rrr_ip_buffer_entry_collection_sort (
+		struct rrr_ip_buffer_entry_collection *target,
+		int (*compare)(void *message_a, void *message_b)
+) {
+	struct rrr_ip_buffer_entry_collection tmp = {0};
+
+	while (RRR_LL_COUNT(target) != 0) {
+		struct rrr_ip_buffer_entry *smallest = RRR_LL_FIRST(target);
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_ip_buffer_entry);
+			if (compare(node->message, smallest->message) < 0) {
+				smallest = node;
+			}
+		RRR_LL_ITERATE_END();
+
+		RRR_LL_REMOVE_NODE_NO_FREE(target, smallest);
+		RRR_LL_APPEND(&tmp, smallest);
+	}
+
+	*target = tmp;
+}
+
 int rrr_ip_buffer_entry_new (
 		struct rrr_ip_buffer_entry **result,
 		ssize_t data_length,

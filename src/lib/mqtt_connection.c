@@ -532,7 +532,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 		goto out_nolock;
 	}
 
-	RRR_LL_PUSH(connections, res);
+	RRR_LL_UNSHIFT(connections, res);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_unlock(connections)) != RRR_MQTT_CONN_OK) {
 		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");

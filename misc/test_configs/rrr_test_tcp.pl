@@ -18,6 +18,19 @@ sub push_host {
 	push @{$message->{'array_types'}}, "h";
 }
 
+sub get_from_tag {
+	my $message = shift;
+	my $tag = shift;
+
+	for (my $i = 0; $i < @{$message->{'array_tags'}}; $i++) {
+		if (@{$message->{'array_tags'}}[$i] eq $tag) {
+			return @{$message->{'array_values'}}[$i];
+		}
+	}
+
+	return undef;
+}
+
 sub source {
 	my $message = shift;
 
@@ -25,7 +38,19 @@ sub source {
 
 	push_host($message, "counter", $global_counter++);
 
+	$message->{'timestamp'} = rand(10000);
+
 	$message->send();
+
+	return 1;
+}
+
+sub process {
+	my $message = shift;
+
+	my $counter = get_from_tag($message, "counter");
+
+	print "\tReceive counter " . @{$counter}[0] . " timestamp " . $message->{'timestamp'} . "\n";
 
 	return 1;
 }

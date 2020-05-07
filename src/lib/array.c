@@ -458,7 +458,7 @@ int rrr_array_push_value_64_with_tag (
 		return 1;
 	}
 
-	RRR_LL_PUSH(collection, new_value);
+	RRR_LL_UNSHIFT(collection, new_value);
 
 	ssize_t parsed_bytes = 0;
 	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
@@ -493,7 +493,7 @@ int rrr_array_push_value_str_with_tag (
 		return 1;
 	}
 
-	RRR_LL_PUSH(collection, new_value);
+	RRR_LL_UNSHIFT(collection, new_value);
 
 	// Don't use the import function, it reads strings with quotes around it
 	memcpy(new_value->data, value, str_size);

@@ -312,7 +312,7 @@ void rrr_net_transport_ctx_handle_close (
 	int did_destroy = 0;
 
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
-	RRR_LL_REMOVE_NODE(collection, struct rrr_net_transport_handle, handle, did_destroy = 1; __rrr_net_transport_handle_destroy(node, 1));
+	RRR_LL_REMOVE_NODE_IF_EXISTS(collection, struct rrr_net_transport_handle, handle, did_destroy = 1; __rrr_net_transport_handle_destroy(node, 1));
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	if (did_destroy != 1) {

@@ -228,7 +228,7 @@ static int __rrr_socket_add_unlocked (
 		goto out;
 	}
 
-	RRR_LL_PUSH(&socket_list,holder);
+	RRR_LL_UNSHIFT(&socket_list,holder);
 	holder = NULL;
 
 	if (RRR_DEBUGLEVEL_7) {

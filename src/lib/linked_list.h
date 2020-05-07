@@ -86,7 +86,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	target->ptr_prev = prev_preserve;										\
 	} while (0)
 
-#define RRR_LL_PUSH(head,node) do {						\
+#define RRR_LL_UNSHIFT(head,node) do {					\
 	(node)->ptr_next = NULL;							\
 	(node)->ptr_prev = NULL;							\
 	if ((head)->ptr_first == NULL) {					\
@@ -147,7 +147,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		}											\
 		(head)->node_count--
 
-#define RRR_LL_REMOVE_NODE(head, type, find, destroy_func) do {				\
+#define RRR_LL_REMOVE_NODE_IF_EXISTS(head, type, find, destroy_func) do {	\
 	type *node = (head)->ptr_first;											\
 	type *next = NULL;														\
 	type *prev = NULL;														\
@@ -162,6 +162,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		prev = node;														\
 		node = next;														\
 	}} while (0)
+
+#define RRR_LL_REMOVE_NODE_NO_FREE(head, find) do {				\
+	if ((find)->ptr_prev == NULL) {								\
+		(head)->ptr_first = (find)->ptr_next;					\
+	}															\
+	else {														\
+		(find)->ptr_prev->ptr_next = (find)->ptr_next;			\
+	}															\
+	if ((find)->ptr_next == NULL) {								\
+		(head)->ptr_last = (find)->ptr_prev;					\
+	}															\
+	else {														\
+		(find)->ptr_next->ptr_prev = (find)->ptr_prev;			\
+	}															\
+	(head)->node_count--; } while(0)
 
 #define RRR_LL_SHIFT(head)													\
 	RRR_LL_FIRST(head);	/* Shift is used with assignment */					\

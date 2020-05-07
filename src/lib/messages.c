@@ -328,3 +328,15 @@ int rrr_message_set_topic (
 
 	return 0;
 }
+
+int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
+	// Assume network order if crc32 is set
+	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? be64toh(message_b->timestamp) : message_b->timestamp);
+
+	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
+}
+
+int rrr_message_timestamp_compare_void (void *message_a, void *message_b) {
+	return rrr_message_timestamp_compare(message_a, message_b);
+}

@@ -169,7 +169,7 @@ int rrr_socket_client_collection_accept (
 
 	RRR_DBG_1("Statistics client connected with fd %i\n", temp.connected_fd);
 
-	RRR_LL_PUSH(collection, client_new);
+	RRR_LL_UNSHIFT(collection, client_new);
 
 	return 0;
 }

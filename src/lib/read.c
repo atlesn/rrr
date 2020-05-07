@@ -121,7 +121,7 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 			goto out;
 		}
 
-		RRR_LL_PUSH(collection,res);
+		RRR_LL_UNSHIFT(collection,res);
 	}
 
 	out:
@@ -132,7 +132,7 @@ void rrr_read_session_collection_remove_session (
 		struct rrr_read_session_collection *collection,
 		struct rrr_read_session *read_session
 ) {
-	RRR_LL_REMOVE_NODE(
+	RRR_LL_REMOVE_NODE_IF_EXISTS(
 			collection,
 			struct rrr_read_session,
 			read_session,
@@ -236,7 +236,7 @@ int rrr_read_message_using_callbacks (
 			read_session->target_size = read_session->rx_buf_wpos;
 		}
 		else {
-			RRR_MSG_ERR("Read returned 0 in rrr_socket_read_message, possible close of connection\n");
+			RRR_DBG_3("Read returned 0 in rrr_read_message_using_callbacks, possible close of connection\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -276,7 +276,7 @@ int rrr_read_message_using_callbacks (
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
 			if (new_buf == NULL) {
-				RRR_MSG_ERR("Could not re-allocate memory in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -310,14 +310,14 @@ int rrr_read_message_using_callbacks (
 		// The function may choose to skip bytes in the buffer. If it does, we must align the data here (costly).
 		if (read_session->rx_buf_skip != 0) {
 			if (read_session->rx_buf_skip < 0) {
-				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_socket_read_message\n");
+				RRR_BUG("read_session rx_data_pos out of range after get_target_size in rrr_read_message_using_callbacks\n");
 			}
 
 			RRR_DBG_1("Aligning buffer, skipping %li bytes while reading from socket\n", read_session->rx_buf_skip);
 
 			char *new_buf = malloc(read_session->rx_buf_size);
 			if (new_buf == NULL) {
-				RRR_MSG_ERR("Could not allocate memory while aligning buffer in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -332,7 +332,7 @@ int rrr_read_message_using_callbacks (
 		if (read_session->target_size == 0 &&
 				read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_TARGET_LENGTH
 		) {
-			RRR_BUG("target_size was still zero after get_target_size in rrr_socket_read_message\n");
+			RRR_BUG("target_size was still zero after get_target_size in rrr_read_message_using_callbacks\n");
 		}
 	}
 
@@ -348,7 +348,7 @@ int rrr_read_message_using_callbacks (
 
 		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
 		if (read_session->rx_overshoot == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for overshoot in rrr_socket_read_message\n");
+			RRR_MSG_ERR("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;
 			goto out;
 		}
@@ -361,7 +361,7 @@ int rrr_read_message_using_callbacks (
 		if (function_complete_callback != NULL) {
 			ret = function_complete_callback (read_session, functions_callback_arg);
 			if (ret != 0) {
-				RRR_MSG_ERR("Error from callback in rrr_socket_read_message\n");
+				RRR_MSG_ERR("Error from callback in rrr_read_message_using_callbacks\n");
 				goto out;
 			}
 

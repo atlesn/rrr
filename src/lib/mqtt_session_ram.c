@@ -334,7 +334,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 	result->users = 1;
 	result->ram_data = data;
 
-	RRR_LL_PUSH(data,result);
+	RRR_LL_UNSHIFT(data,result);
 
 	*target = result;
 
@@ -427,7 +427,7 @@ static void __rrr_mqtt_session_collection_remove (
 ) {
 	SESSION_COLLECTION_RAM_LOCK(data);
 
-	RRR_LL_REMOVE_NODE (
+	RRR_LL_REMOVE_NODE_IF_EXISTS (
 			data,
 			struct rrr_mqtt_session_ram,
 			session,

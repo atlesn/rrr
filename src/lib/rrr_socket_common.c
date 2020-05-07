@@ -142,7 +142,7 @@ int rrr_socket_common_receive_array (
 			return ret;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_array\n");
+			RRR_DBG_3("Soft error while reading data in rrr_socket_common_receive_array\n");
 			return RRR_SOCKET_SOFT_ERROR;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {

@@ -222,7 +222,7 @@ void rrr_message_broker_costumer_unregister (
 
 	int count_before = RRR_LL_COUNT(broker);
 
-	RRR_LL_REMOVE_NODE(broker, struct rrr_message_broker_costumer, handle, __rrr_message_broker_costumer_decref(node));
+	RRR_LL_REMOVE_NODE_IF_EXISTS(broker, struct rrr_message_broker_costumer, handle, __rrr_message_broker_costumer_decref(node));
 
 	if (count_before == RRR_LL_COUNT(broker)) {
 		RRR_MSG_ERR("Warning: Attempted to remove broker costumer which was not registered in rrr_message_broker_costumer_unregister\n");

@@ -443,7 +443,7 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 			RRR_LL_APPEND(target, *subscription);
 		}
 		else {
-			RRR_LL_PUSH(target, *subscription);
+			RRR_LL_UNSHIFT(target, *subscription);
 		}
 	}
 

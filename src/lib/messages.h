@@ -130,5 +130,7 @@ int rrr_message_set_topic (
 		const char *topic,
 		ssize_t topic_len
 );
+int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b);
+int rrr_message_timestamp_compare_void (void *message_a, void *message_b);
 
 #endif

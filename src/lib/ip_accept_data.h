@@ -32,6 +32,7 @@ struct rrr_ip_accept_data {
 	struct rrr_sockaddr addr;
 	socklen_t len;
 	struct rrr_ip_data ip_data;
+	int custom_data;
 };
 
 struct rrr_ip_accept_data_collection {
