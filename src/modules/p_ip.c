@@ -57,7 +57,6 @@ struct ip_data {
 	struct rrr_ip_data ip_udp;
 	struct rrr_ip_data ip_tcp_listen;
 	int ip_tcp_default_target_fd;
-	int ip_tcp_preserve_connections;
 	struct rrr_array definitions;
 	struct rrr_read_session_collection read_sessions_udp;
 	struct rrr_read_session_collection read_sessions_tcp;
@@ -66,6 +65,8 @@ struct ip_data {
 	int do_force_target;
 	int do_extract_rrr_messages;
 	int do_ordered_send;
+	int do_drop_on_error;
+	int do_persistent_connections;
 	rrr_setting_uint message_send_timeout_s;
 	char *default_topic;
 	char *target_host;
@@ -229,19 +230,17 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		// Listening disabled
 	}
 
-	// Message default topic
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
 
 	if (data->default_topic != NULL) {
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
-	// Sync byte by byte if parsing fails
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_send_rrr_message", do_send_rrr_message, 0);
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
 
-	if (data->do_force_target != 0 && data->target_port == 0) {
+	if (data->do_force_target == 1 && data->target_port == 0) {
 		RRR_MSG_ERR("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
 				config->name);
 		ret = 1;
@@ -249,7 +248,9 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_do_preserve_order", do_ordered_send, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_ordered_send, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_drop_on_error", do_drop_on_error, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
@@ -602,6 +603,7 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 static int ip_send_message_tcp (
 		int *put_back,
+		int *close_connection_now,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data *accept_data,
 		const void *send_data,
@@ -611,16 +613,22 @@ static int ip_send_message_tcp (
 
 	int ret = 0;
 
-	// Always close if message was sent unless preserve connections is set
-	int do_close_connection = (ip_data->ip_tcp_preserve_connections ? 0 : 1);
 	int err;
 
+	// Always close if message was sent unless preserve connections is set
+	*close_connection_now = (ip_data->do_persistent_connections ? 0 : 1);
+
+	// Default flow is that message was successfully sent
 	*put_back = 0;
 
-	if (accept_data->custom_data != 0) {
+	if (accept_data->custom_data == 1) {
 		// Connection tagged for destruction or should not be used due to
 		// earlier error this round
 		goto out_put_back;
+	}
+	else if (accept_data->custom_data == -1) {
+		// Properly handle putback or drop
+		goto out_close_connection_error;
 	}
 
 	if ((ret = rrr_socket_connect_nonblock_postcheck(accept_data->ip_data.fd)) != 0) {
@@ -630,23 +638,27 @@ static int ip_send_message_tcp (
 			goto out_put_back;
 		}
 
-		RRR_DBG_1("Connection problem with TCP connection, dropping message in ip instance %s\n",
+		RRR_DBG_1("Connection problem with TCP connection in ip instance %s\n",
 				INSTANCE_D_NAME(thread_data));
-		ret = 0;
-		goto out_close_connection;
+		goto out_close_connection_error;
 	}
 	else if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			if (err == EAGAIN || err == EWOULDBLOCK) {
 				RRR_DBG_1("Sending of message to remote blocked for ip instance %s, putting message back into send queue\n",
 						INSTANCE_D_NAME(thread_data));
-				goto out_put_back;
+
+				if (ip_data->do_ordered_send) {
+					goto out_put_back;
+				}
+				else {
+					goto out_put_back_retry_immediately;
+				}
 			}
 
-			RRR_MSG_ERR("Connection problem with TCP connection while sending, dropping message in ip instance %s\n",
+			RRR_DBG_1("Connection problem with TCP connection while sending in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
-			ret = 0;
-			goto out_close_connection;
+			goto out_close_connection_error;
 		}
 		else {
 			RRR_MSG_ERR("Error while sending tcp message in ip instance %s\n",
@@ -656,21 +668,44 @@ static int ip_send_message_tcp (
 		}
 	}
 
-	goto out_close_connection_check;
-	out_close_connection:
-		do_close_connection = 1;
+	goto out;
 
-	out_close_connection_check:
-		if (do_close_connection) {
-			accept_data->custom_data = -1;
+	out_close_connection_error:
+		// This connection is not to be used any more this round due
+		// to errors. Afterwards, it should be removed.
+		accept_data->custom_data = -1;
+
+		// To preserve send order, do not remove the connection from the list now. This
+		// would otherwise cause packets later in the queue to re-connect
+		*close_connection_now = 0;
+
+		if (ip_data->do_drop_on_error == 1) {
+			RRR_DBG_1("Dropping message following error in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			*put_back = 0;
+		}
+		else {
+			*put_back = 1;
 		}
 
-	goto out;
-	out_put_back:
-		// Don't use this connection anymore this round
-		accept_data->custom_data = 1;
+		// Any error is now handled
 		ret = 0;
+
+		goto out;
+
+	out_put_back:
+		// Don't use this connection anymore this round (for instance when waiting for establishment)
+		accept_data->custom_data = 1;
+
+	out_put_back_retry_immediately:
+		// Preserve send order
+		*close_connection_now = 0;
+
+		// Don't delete this message from queue
 		*put_back = 1;
+
+		// Any error is now handled
+		ret = 0;
+
 	out:
 		return ret;
 }
@@ -689,6 +724,7 @@ static int ip_send_message_raw (
 	
 	int ret = 0;
 	int put_back = 0;
+	int close_connection_now = 0;
 
 	struct rrr_ip_accept_data *accept_data_to_free = NULL;
 
@@ -803,6 +839,7 @@ static int ip_send_message_raw (
 	ip_tcp_send:
 		if ((ret = ip_send_message_tcp (
 				&put_back,
+				&close_connection_now,
 				ip_data,
 				(struct rrr_ip_accept_data *) accept_data_to_use, // Cast away const OK
 				send_data,
@@ -822,6 +859,15 @@ static int ip_send_message_raw (
 		*do_destroy = 0;
 
 	out:
+		if (close_connection_now) {
+			RRR_LL_REMOVE_NODE_IF_EXISTS (
+					tcp_connect_data,
+					struct rrr_ip_accept_data,
+					accept_data_to_use,
+					rrr_ip_accept_data_close_and_destroy(node)
+			);
+		}
+
 		if (accept_data_to_free != NULL) {
 			rrr_ip_accept_data_close_and_destroy_void(accept_data_to_free);
 		}
@@ -1071,6 +1117,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	uint64_t prev_read_count = 0;
 	uint64_t prev_polled_count = 0;
 
+	unsigned int consecutive_nothing_happened = 0;
 	uint64_t next_stats_time = 0;
 	unsigned int tick = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
@@ -1108,6 +1155,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
 
+		int max_iterations = 500;
+		int did_do_something = 0;
 		int timeout_count = 0;
 		int ret_tmp = 0;
 		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_ip_buffer_entry);
@@ -1123,8 +1172,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				RRR_LL_ITERATE_LAST();
 			}
 
+			if (--max_iterations == 0) {
+				RRR_LL_ITERATE_LAST();
+			}
+
 			if (do_destroy) {
 				RRR_LL_ITERATE_SET_DESTROY();
+				did_do_something = 1;
 			}
 			else {
 				rrr_ip_buffer_entry_unlock_(node);
@@ -1152,9 +1206,16 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		// Sleep if nothing happened
 		if (prev_read_count == data->messages_count_read &&
 			prev_polled_count == data->messages_count_polled &&
-			prev_read_error_count == data->read_error_count
+			prev_read_error_count == data->read_error_count &&
+			did_do_something == 0
 		) {
-			usleep(25000);
+			if (++consecutive_nothing_happened > 10) {
+//				printf ("Sleep: %u\n", consecutive_nothing_happened);
+				usleep(25000);
+			}
+		}
+		else {
+			consecutive_nothing_happened = 0;
 		}
 
 		uint64_t time_now = rrr_time_get_64();

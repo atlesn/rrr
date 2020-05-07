@@ -160,11 +160,15 @@ Defaults to no, which means to only sync on boundaries of incoming messages.
 If set to yes, we will send complete RRR messages encoded for network. If set to no or left unset,
 messages with arrays will have their array packed and sent, and messages with other data will simply have their
 contents sent as is.
-.It ip_ordered_send={yes|no}
+.It ip_preserve_order={yes|no}
 Attempt to send messages in order according to their timestamp. The order is not in any way guaranteed, but upon error conditions,
-like when a remote TCP host is unavailable, IP will store the messages to send in order. Defaults is no.
+like when a remote TCP host is unavailable, IP will store the messages to send in order. This will impact performance. Defaults is no.
+.It ip_drop_on_error={yes|no}
+When a TCP connection is refused or times out, drop messages. Defaults to no.
+.It do_persistent_connections
+After a packet is sent, don't close the TCP connection causing it to be re-used. Defaults to no.
 .It ip_send_timeout=SECONDS
-If messages are not succesfully sent within this time, drop them. Default is not timeout (same as 0).
+If messages are not successfully sent within this time, drop them. Default is not timeout (same as 0).
 .It ip_target_host=HOST
 .It ip_target_port=PORT
 .It ip_target_protocol=PROTOCOL

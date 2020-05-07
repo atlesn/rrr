@@ -425,7 +425,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
 		int ret_tmp = 0;
 
-		RRR_DBG_3("message broker costumer %s write non-zero from callback: %i\n", callback_data->costumer->name, ret);
+//		RRR_DBG_3("message broker costumer %s write non-zero from callback: %i\n", callback_data->costumer->name, ret);
 
 		if ((ret & RRR_MESSAGE_BROKER_AGAIN) == RRR_MESSAGE_BROKER_AGAIN) {
 			if ((ret & ~(RRR_MESSAGE_BROKER_AGAIN|RRR_MESSAGE_BROKER_DROP)) != 0) {
@@ -462,7 +462,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 		}
 	}
 	else {
-		RRR_DBG_3("message broker costumer %s write return from callback was OK\n", callback_data->costumer->name);
+//		RRR_DBG_3("message broker costumer %s write return from callback was OK\n", callback_data->costumer->name);
 	}
 
 	if (entry->usercount != 1) {

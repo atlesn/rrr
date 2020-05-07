@@ -54,7 +54,7 @@ do {int yesno = default_yesno;																				\
 			ret = 1; goto out;																				\
 		}																									\
 		ret = 0;																							\
-	} data->target = yesno; } while(0)
+	} data->target = (yesno >= 0 ? yesno : default_yesno); } while(0)
 
 
 #define RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)										\
