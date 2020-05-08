@@ -468,6 +468,9 @@ is started. Any settings from the instance definition in the configuration file 
 this object, also custom settings. Settings may also be modified and new settings can be added. The
 settings object may also be stored in the script to be read from or modified from the source- and 
 generate-subroutines.
+.It perl5_drop_on_error={yes|no}
+Drop or retry a message when the processing function fails, like if it calls die(). Default is 'no'
+which means to retry indefinitely.
 .PP
 .B NOTE:
 Any modified settings will currently not be visible in the perl5 RRR module, only in the perl5 script.

@@ -71,6 +71,8 @@ struct perl5_data {
 	char *process_sub;
 	char *config_sub;
 
+	int do_drop_on_error;
+
 	struct rrr_message_addr latest_message_addr;
 
 	int mmap_full_counter;
@@ -484,6 +486,8 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	}
 
 	data->spawn_interval_ms = uint_tmp;
+
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_drop_on_error", do_drop_on_error, 0);
 
 	out:
 	return ret;

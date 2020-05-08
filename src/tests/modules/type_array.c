@@ -23,13 +23,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#ifdef RRR_WITH_MYSQL
 #include <mysql/mysql.h>
+#endif
 
 #include "type_array.h"
 #include "../test.h"
 #include "../../global.h"
 #include "../../lib/array.h"
+#ifdef RRR_WITH_MYSQL
 #include "../../lib/rrr_mysql.h"
+#endif
 #include "../../lib/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
@@ -680,6 +684,7 @@ int test_type_array (
 	return ret;
 }
 
+#ifdef RRR_WITH_MYSQL
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
@@ -911,3 +916,5 @@ int test_type_array_mysql_and_network (
 
 	return ret;
 }
+
+#endif
