@@ -1186,7 +1186,8 @@ int rrr_perl5_message_to_hv (
 	}
 
 	if (message_addr != NULL && message_addr->addr_len > 0) {
-		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(message_addr->addr));
+		// Perl needs size of sockaddr struct which is smaller than our internal size
+		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(struct sockaddr));
 		sv_setuv(ip_addr_len, message_addr->addr_len);
 	}
 	else {
@@ -1197,7 +1198,7 @@ int rrr_perl5_message_to_hv (
 	// Default value for protocol type is empty
 	sv_setpv(ip_so_type, "");
 
-	if (message_addr != NULL) {
+	if (message_addr != NULL && message_addr->protocol != 0) {
 		switch (message_addr->protocol) {
 			case RRR_IP_UDP:
 				sv_setpv(ip_so_type, "udp");
@@ -1206,6 +1207,7 @@ int rrr_perl5_message_to_hv (
 				sv_setpv(ip_so_type, "tcp");
 				break;
 			default:
+				RRR_MSG_ERR("Warning: Unknown IP protocol type %i in message to perl5\n", message_addr->protocol);
 				break;
 		};
 	}
