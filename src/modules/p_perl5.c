@@ -614,7 +614,7 @@ int perl5_input_callback (int *count, struct perl5_data *perl5_data, struct rrr_
 		rrr_ip_buffer_entry_incref_while_locked(entry);
 		RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
 	out:
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 		return ret;
 }
 
@@ -630,7 +630,7 @@ int perl5_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_ip_buffer_entry_incref_while_locked(entry);
 	RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	return 0;
 }
@@ -976,7 +976,7 @@ int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	out:
 	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&data->latest_message_addr, '\0', sizeof(data->latest_message_addr));
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
@@ -1054,7 +1054,7 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 static void *thread_entry_perl5(struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll_ip;
+	struct rrr_poll_collection poll_ip;
 	struct rrr_ip_buffer_entry_collection input_buffer_tmp = {0};
 
 	if (data_init(data, thread_data) != 0) {
@@ -1062,9 +1062,9 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	poll_collection_init(&poll_ip);
+	rrr_poll_collection_init(&poll_ip);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &input_buffer_tmp);
 
@@ -1085,9 +1085,9 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
 	int no_polling = 1;
-	if (poll_collection_count (&poll_ip) > 0) {
+	if (rrr_poll_collection_count (&poll_ip) > 0) {
 		if (!data->process_sub) {
 			RRR_MSG_ERR("Perl5 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
@@ -1125,13 +1125,13 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 			// Callback might add entries back into input buffer
 			RRR_LL_ITERATE_BEGIN(&input_buffer_tmp, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock_(node);
+				rrr_ip_buffer_entry_lock(node);
 
 				int old_count = input_count;
 
 				int ret_tmp = perl5_input_callback(&input_count, data, node);
 				if (ret_tmp != 0) {
-					rrr_ip_buffer_entry_unlock_(node);
+					rrr_ip_buffer_entry_unlock(node);
 					RRR_LL_ITERATE_BREAK();
 				}
 
@@ -1151,7 +1151,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			}
 		}
 		else if (no_polling == 0) {
-			if (poll_do_poll_delete (thread_data, &poll_ip, perl5_poll_callback, 0) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, &poll_ip, perl5_poll_callback, 0) != 0) {
 				break;
 			}
 		}

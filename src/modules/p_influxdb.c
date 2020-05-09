@@ -487,7 +487,7 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 
 	discard:
 	rrr_array_clear(&array);
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
@@ -591,7 +591,7 @@ int parse_config (struct influxdb_data *data, struct rrr_instance_config *config
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 	struct rrr_ip_buffer_entry_collection error_buf_tmp = {0};
 
 	if (data_init(influxdb_data, thread_data) != 0) {
@@ -602,8 +602,8 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_destroy, influxdb_data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &error_buf_tmp);
 
@@ -619,7 +619,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders (&poll, thread_data);
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
@@ -627,7 +627,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -644,11 +644,11 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 			// The callback might add entries back into data->error_buf
 			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock_(node);
+				rrr_ip_buffer_entry_lock(node);
 				if (common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
-					rrr_ip_buffer_entry_unlock_(node);
+					rrr_ip_buffer_entry_unlock(node);
 					goto out_message;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();

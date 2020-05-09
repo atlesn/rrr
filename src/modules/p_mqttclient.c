@@ -796,7 +796,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -1007,7 +1007,7 @@ static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *
 	entry->data_length = msg_size;
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
@@ -1390,7 +1390,7 @@ static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instan
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
@@ -1401,8 +1401,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
@@ -1441,9 +1441,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
-	poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
-	if (poll_collection_count(&poll) == 0) {
+	if (rrr_poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {
 			RRR_MSG_ERR("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
@@ -1510,7 +1510,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-			poll_do_poll_delete (thread_data, &poll, poll_callback, 50);
+			rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50);
 
 			startup_time = 0;
 		}

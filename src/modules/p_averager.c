@@ -87,7 +87,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				goto out;
 			}
 
-			rrr_ip_buffer_entry_lock_(dup_entry);
+			rrr_ip_buffer_entry_lock(dup_entry);
 
 			dup_message = dup_entry->message;
 			dup_entry->message = NULL;
@@ -107,7 +107,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			// Due to linked list
 			rrr_ip_buffer_entry_incref_while_locked(dup_entry);
 
-			rrr_ip_buffer_entry_unlock_(dup_entry);
+			rrr_ip_buffer_entry_unlock(dup_entry);
 
 			RRR_LL_APPEND(&averager_data->output_list, dup_entry);
 		}
@@ -128,7 +128,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			rrr_ip_buffer_entry_decref(dup_entry);
 		}
 		RRR_FREE_IF_NOT_NULL(dup_message);
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 		return ret;
 }
 
@@ -138,13 +138,13 @@ void averager_maintain_buffer(struct averager_data *data) {
 	uint64_t min_time = time_now - timespan_useconds;
 
 	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock_(node);
+		rrr_ip_buffer_entry_lock(node);
 		struct rrr_message *message = node->message;
 		if (message->timestamp < min_time) {
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 		else {
-			rrr_ip_buffer_entry_unlock_(node);
+			rrr_ip_buffer_entry_unlock(node);
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(&data->input_list, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 }
@@ -285,7 +285,7 @@ int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock_(new_entry);
+	rrr_ip_buffer_entry_unlock(new_entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -360,9 +360,9 @@ int averager_calculate_average(struct averager_data *data) {
 	int ret = 0;
 
 	RRR_LL_ITERATE_BEGIN(&data->input_list, struct rrr_ip_buffer_entry);
-		rrr_ip_buffer_entry_lock_(node);
+		rrr_ip_buffer_entry_lock(node);
 		if ((ret = averager_process_message(data, &calculation, node)) != 0) {
-			rrr_ip_buffer_entry_unlock_(node);
+			rrr_ip_buffer_entry_unlock(node);
 			RRR_LL_ITERATE_LAST();
 		}
 		RRR_LL_ITERATE_SET_DESTROY();
@@ -497,12 +497,12 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -521,7 +521,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
 	RRR_DBG_1 ("Averager started thread %p\n", thread_data);
 
@@ -533,7 +533,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -546,7 +546,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		}
 
 		if (RRR_LL_COUNT(&data->output_list) > 0) {
-			if (rrr_message_broker_write_entries_from_collection (
+			if (rrr_message_broker_write_entries_from_collection_unsafe (
 					INSTANCE_D_BROKER(thread_data),
 					INSTANCE_D_HANDLE(thread_data),
 					&data->output_list

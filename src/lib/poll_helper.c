@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -28,27 +28,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "message_broker.h"
 
-static int __poll_collection_entry_destroy(struct poll_collection_entry *entry) {
+static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);
 	return 0;
 }
 
-void poll_collection_clear(struct poll_collection *collection) {
-	RRR_LL_DESTROY(collection,struct poll_collection_entry, __poll_collection_entry_destroy(node));
+void rrr_poll_collection_clear(struct rrr_poll_collection *collection) {
+	RRR_LL_DESTROY(collection,struct rrr_poll_collection_entry, __poll_collection_entry_destroy(node));
 }
 
-void poll_collection_clear_void(void *data) {
-	poll_collection_clear((struct poll_collection *) data);
+void rrr_poll_collection_clear_void(void *data) {
+	rrr_poll_collection_clear((struct rrr_poll_collection *) data);
 }
 
-void poll_collection_init(struct poll_collection *collection) {
+void rrr_poll_collection_init(struct rrr_poll_collection *collection) {
 	memset(collection, '\0', sizeof(*collection));
 }
 
 
-void poll_collection_remove (struct poll_collection *collection, struct rrr_instance_thread_data *find) {
+void rrr_poll_collection_remove (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find) {
 	int found = 0;
-	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
 		if (node->thread_data == find) {
 			RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_LAST();
@@ -61,10 +61,10 @@ void poll_collection_remove (struct poll_collection *collection, struct rrr_inst
 	}
 }
 
-int poll_collection_has (struct poll_collection *collection, struct rrr_instance_thread_data *find) {
+int rrr_poll_collection_has (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
 		if (node->thread_data == find) {
 			RRR_LL_ITERATE_LAST();
 			ret = 1;
@@ -74,17 +74,17 @@ int poll_collection_has (struct poll_collection *collection, struct rrr_instance
 	return ret;
 }
 
-int poll_collection_add (
+int rrr_poll_collection_add (
 		unsigned int *flags_result,
-		struct poll_collection *collection,
+		struct rrr_poll_collection *collection,
 		struct instance_metadata *instance
 ) {
 	int ret = 0;
 	*flags_result = 0;
 
-	struct poll_collection_entry *entry = malloc(sizeof(*entry));
+	struct rrr_poll_collection_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory inn poll_collection_add\n");
+		RRR_MSG_ERR("Could not allocate memory inn rrr_poll_collection_add\n");
 		ret = RRR_POLL_ERR;
 		goto out;
 	}
@@ -105,7 +105,7 @@ int poll_collection_add (
 }
 
 struct poll_callback_data {
-	struct poll_collection *collection;
+	struct rrr_poll_collection *collection;
 	struct instance_metadata *faulty_instance;
 };
 
@@ -116,7 +116,7 @@ int __poll_collection_add_from_senders_callback (struct instance_metadata *insta
 
 	unsigned int flags_result;
 
-	ret = poll_collection_add (&flags_result, data->collection, instance);
+	ret = rrr_poll_collection_add (&flags_result, data->collection, instance);
 
 	if (ret == RRR_POLL_NOT_FOUND) {
 		data->faulty_instance = instance;
@@ -130,8 +130,8 @@ int __poll_collection_add_from_senders_callback (struct instance_metadata *insta
 	return ret;
 }
 
-int poll_collection_add_from_senders (
-		struct poll_collection *poll_collection,
+int rrr_poll_collection_add_from_senders (
+		struct rrr_poll_collection *poll_collection,
 		struct instance_metadata **faulty_instance,
 		struct rrr_instance_collection *senders
 ) {
@@ -156,18 +156,20 @@ int poll_collection_add_from_senders (
 		struct fifo_callback_args *poll_data
 */
 
+/*
+ * DISABLED, NOT USED
 int poll_do_poll (
 		struct rrr_instance_thread_data *thread_data,
-		struct poll_collection *collection,
+		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
 		int ret_tmp;
 
-		struct poll_collection_entry *entry = node;
+		struct rrr_poll_collection_entry *entry = node;
 
 		ret_tmp = rrr_message_broker_poll (
 				INSTANCE_D_BROKER_ARGS(entry->thread_data),
@@ -184,19 +186,19 @@ int poll_do_poll (
 
 	return ret;
 }
-
-int poll_do_poll_delete (
+*/
+int rrr_poll_do_poll_delete (
 		struct rrr_instance_thread_data *thread_data,
-		struct poll_collection *collection,
+		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(collection, struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
 		int ret_tmp;
 
-		struct poll_collection_entry *entry = node;
+		struct rrr_poll_collection_entry *entry = node;
 
 		ret_tmp = rrr_message_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(entry->thread_data),
@@ -220,25 +222,25 @@ int poll_do_poll_delete (
 	return ret;
 }
 
-int poll_collection_count (struct poll_collection *collection) {
+int rrr_poll_collection_count (struct rrr_poll_collection *collection) {
 	return collection->node_count;
 }
 
-void poll_add_from_thread_senders (
-		struct poll_collection *collection,
+void rrr_poll_add_from_thread_senders (
+		struct rrr_poll_collection *collection,
 		struct rrr_instance_thread_data *thread_data
 ) {
 	struct instance_metadata *faulty_sender;
-	poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders);
+	rrr_poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders);
 }
 
-void poll_remove_senders_also_in (
-		struct poll_collection *target,
-		const struct poll_collection *source
+void rrr_poll_remove_senders_also_in (
+		struct rrr_poll_collection *target,
+		const struct rrr_poll_collection *source
 ) {
-	RRR_LL_ITERATE_BEGIN(source, const struct poll_collection_entry);
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_poll_collection_entry);
 		const struct rrr_instance_thread_data *to_find = node->thread_data;
-		RRR_LL_ITERATE_BEGIN(target, struct poll_collection_entry);
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_poll_collection_entry);
 			if (node->thread_data == to_find) {
 				RRR_LL_ITERATE_SET_DESTROY();
 			}

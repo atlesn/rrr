@@ -726,7 +726,7 @@ int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_ip_buffer_entry_incref_while_locked(entry);
 	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	return 0;
 }
@@ -861,7 +861,7 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 
 	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_ip_buffer_entry);
 		RRR_LL_VERIFY_NODE(source_buffer);
-		rrr_ip_buffer_entry_lock_(node);
+		rrr_ip_buffer_entry_lock(node);
 		process_callback(node, stmt, column_count, thread_data);
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
@@ -875,7 +875,7 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll_ip;
+	struct rrr_poll_collection poll_ip;
 	struct rrr_ip_buffer_entry_collection process_buffer_tmp = {0};
 
 	if (data_init(data) != 0) {
@@ -885,8 +885,8 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	poll_collection_init(&poll_ip);
-	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
+	rrr_poll_collection_init(&poll_ip);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &process_buffer_tmp);
@@ -905,7 +905,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
@@ -914,7 +914,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 		int err = 0;
 
-		if (poll_do_poll_delete (thread_data, &poll_ip, poll_callback_ip, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &poll_ip, poll_callback_ip, 50) != 0) {
 			break;
 		}
 

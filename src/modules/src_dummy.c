@@ -168,7 +168,7 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 	entry->data_length = MSG_TOTAL_SIZE(reading);
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 

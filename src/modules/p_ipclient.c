@@ -213,7 +213,7 @@ static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		RRR_LL_VERIFY_NODE(&private_data->send_queue_intermediate);
 	RRR_LL_ITERATE_END();
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return 0;
 }
 
@@ -244,7 +244,7 @@ static int receive_messages_callback_final(struct rrr_ip_buffer_entry *entry, vo
 	callback_data->count++;
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
@@ -320,10 +320,10 @@ int queue_or_delete_messages(int *send_count, struct ipclient_data *data) {
 		RRR_LL_VERIFY_HEAD(&data->send_queue_intermediate);
 		RRR_LL_VERIFY_NODE(&data->send_queue_intermediate);
 
-		rrr_ip_buffer_entry_lock_(node);
+		rrr_ip_buffer_entry_lock(node);
 
 		if ((ret = data->queue_method(node, data)) != 0) {
-			rrr_ip_buffer_entry_unlock_(node);
+			rrr_ip_buffer_entry_unlock(node);
 			RRR_LL_ITERATE_BREAK();
 		}
 
@@ -391,7 +391,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 		goto out;
 	}
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 
 	joined_data = entry->message;
 
@@ -450,7 +450,7 @@ static int ipclient_udpstream_allocator (
 static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll_ip;
+	struct rrr_poll_collection poll_ip;
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -459,8 +459,8 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ipclient thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll_ip);
-	pthread_cleanup_push(poll_collection_clear_void, &poll_ip);
+	rrr_poll_collection_init(&poll_ip);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -475,9 +475,9 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
 
-	int no_polling = poll_collection_count(&poll_ip) > 0 ? 0 : 1;
+	int no_polling = rrr_poll_collection_count(&poll_ip) > 0 ? 0 : 1;
 
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -508,7 +508,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
-			if (poll_do_poll_delete (thread_data, &poll_ip, poll_callback, 25) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, &poll_ip, poll_callback, 25) != 0) {
 				break;
 			}
 		} while (RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&

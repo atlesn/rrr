@@ -404,7 +404,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry
 	message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -486,7 +486,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 	}
 
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 

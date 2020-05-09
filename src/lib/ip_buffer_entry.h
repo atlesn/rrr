@@ -47,10 +47,10 @@ struct rrr_ip_buffer_entry_collection {
 
 extern pthread_mutex_t rrr_ip_buffer_master_lock;
 
-void rrr_ip_buffer_entry_lock_ (
+void rrr_ip_buffer_entry_lock (
 		struct rrr_ip_buffer_entry *entry
 );
-void rrr_ip_buffer_entry_unlock_ (
+void rrr_ip_buffer_entry_unlock (
 		struct rrr_ip_buffer_entry *entry
 );
 void rrr_ip_buffer_entry_incref_while_locked (
@@ -60,9 +60,9 @@ void rrr_ip_buffer_entry_incref_while_locked (
 static inline void rrr_ip_buffer_entry_incref (
 		struct rrr_ip_buffer_entry *entry
 ) {
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 	rrr_ip_buffer_entry_incref_while_locked (entry);
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 }
 
 void rrr_ip_buffer_entry_decref (

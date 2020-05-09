@@ -348,7 +348,7 @@ int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBA
 	long int max_expected_usercount = (locked_entry != NULL ? 2 : 1);
 
 	if (entry != locked_entry) {
-		rrr_ip_buffer_entry_lock_(entry);
+		rrr_ip_buffer_entry_lock(entry);
 	}
 	if (entry->usercount > max_expected_usercount) {
 		RRR_BUG("Buffer entry %p had usercount %i > expected %li in __rrr_message_broker_buffer_consistency_check_callback\n",
@@ -359,7 +359,7 @@ int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBA
 				entry);
 	}
 	if (entry != locked_entry) {
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 	}
 	return RRR_FIFO_OK;
 }
@@ -420,7 +420,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	}
 
 	// Callback must ALWAYS unlock
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 
 	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
 		int ret_tmp = 0;
@@ -566,7 +566,7 @@ int rrr_message_broker_clone_and_write_entry (
 
 	out:
 	// Cast away const OK
-	rrr_ip_buffer_entry_unlock_((struct rrr_ip_buffer_entry *) entry);
+	rrr_ip_buffer_entry_unlock((struct rrr_ip_buffer_entry *) entry);
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
 	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
 #endif
@@ -660,8 +660,8 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_
 // This function removes entries one by one from the given collection. All refcounts passed in
 // must equal exactly 1. No entries may be locked prior to calling this function. If this function
 // fails, entries might still reside inside the collection which have not yet been added to the
-// buffer. The caller owns these.
-int rrr_message_broker_write_entries_from_collection (
+// buffer. The caller owns these. Read about 'unsafe' above.
+int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry_collection *collection
@@ -693,7 +693,7 @@ static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK
 
 	int ret = 0;
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 	if (pthread_mutex_trylock(&entry->lock) == 0) {
 		RRR_BUG("Trylock was 0 in __rrr_message_broker_poll_delete_intermediate\n");
 	}

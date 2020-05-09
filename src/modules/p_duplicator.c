@@ -64,14 +64,14 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry
 	);
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
 static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct duplicator_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initalize thread_data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -80,8 +80,8 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("duplicator thread thread_data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -91,7 +91,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders (&poll, thread_data);
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
 	RRR_DBG_1 ("duplicator instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
@@ -101,7 +101,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete (thread_data, &poll, duplicator_poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &poll, duplicator_poll_callback, 50) != 0) {
 			break;
 		}
 	}

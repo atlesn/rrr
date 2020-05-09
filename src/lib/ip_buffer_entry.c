@@ -48,7 +48,7 @@ static void __rrr_ip_buffer_entry_lock_destroy (struct rrr_ip_buffer_entry *entr
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 }
 
-void rrr_ip_buffer_entry_lock_ (struct rrr_ip_buffer_entry *entry) {
+void rrr_ip_buffer_entry_lock (struct rrr_ip_buffer_entry *entry) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_ip_buffer_entry_lock_\n");
 	}
@@ -62,7 +62,7 @@ void rrr_ip_buffer_entry_lock_ (struct rrr_ip_buffer_entry *entry) {
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 }
 
-void rrr_ip_buffer_entry_unlock_ (struct rrr_ip_buffer_entry *entry) {
+void rrr_ip_buffer_entry_unlock (struct rrr_ip_buffer_entry *entry) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_ip_buffer_entry_unlock_\n");
 	}
@@ -83,13 +83,13 @@ void rrr_ip_buffer_entry_decref_while_locked_and_unlock (
 	else if (--(entry->usercount) == 0) {
 		RRR_FREE_IF_NOT_NULL(entry->message);
 		entry->usercount = 1; // Avoid bug trap
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 		__rrr_ip_buffer_entry_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
 		free(entry);
 	}
 	else {
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 	}
 }
 
@@ -111,7 +111,7 @@ void rrr_ip_buffer_entry_incref_while_locked (
 void rrr_ip_buffer_entry_decref (
 		struct rrr_ip_buffer_entry *entry
 ) {
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 #ifdef RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 	printf ("ip buffer entry decref %p from %i\n", entry, entry->usercount);
 #endif
@@ -188,7 +188,7 @@ int rrr_ip_buffer_entry_new (
 	// Avoid usercount bug trap, write once again while holding the lock below
 	entry->usercount = 99999;
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 
 	RRR_LL_NODE_INIT(entry);
 
@@ -210,7 +210,7 @@ int rrr_ip_buffer_entry_new (
 	entry->protocol = protocol;
 	entry->usercount = 1;
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 #ifdef RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 	printf ("ip buffer entry new %p usercount %i\n", entry, entry->usercount);
@@ -257,9 +257,9 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 		goto out;
 	}
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 	memset(message, '\0', message_size);
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	message = NULL;
 
@@ -283,10 +283,10 @@ int rrr_ip_buffer_entry_clone_no_locking (
 	);
 
 	if (ret == 0) {
-		rrr_ip_buffer_entry_lock_(*result);
+		rrr_ip_buffer_entry_lock(*result);
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
-		rrr_ip_buffer_entry_unlock_(*result);
+		rrr_ip_buffer_entry_unlock(*result);
 	}
 
 	return ret;

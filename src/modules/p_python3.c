@@ -347,7 +347,7 @@ int python3_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return (ret == 0 ? 0 : RRR_FIFO_SEARCH_STOP|RRR_FIFO_CALLBACK_ERR);
 }
 /*
@@ -514,7 +514,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -710,12 +710,12 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
 	struct python3_preload_data *preload_data = thread_data->preload_data;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(python3_stop, data);
 	// Reader threads MUST be stopped before we clean up other data
@@ -737,10 +737,10 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
 	int no_polling = 1;
-	if (poll_collection_count (&poll) > 0) {
+	if (rrr_poll_collection_count (&poll) > 0) {
 		if (!data->process_function) {
 			RRR_MSG_ERR("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
 			goto out_message;
@@ -793,7 +793,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 			usleep (10000);
 		}
 		else {
-			if ((res = poll_do_poll_delete(thread_data, &poll, python3_poll_callback, 50)) != 0) {
+			if ((res = rrr_poll_do_poll_delete(thread_data, &poll, python3_poll_callback, 50)) != 0) {
 				RRR_MSG_ERR("python3 return from read from processor was not 0 but %i in instance %s\n",
 						res, INSTANCE_D_NAME(thread_data));
 				break;

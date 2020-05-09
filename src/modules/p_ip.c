@@ -293,7 +293,7 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 		goto out;
 	}
 
-	rrr_ip_buffer_entry_lock_(new_entry);
+	rrr_ip_buffer_entry_lock(new_entry);
 
 	RRR_DBG_3("ip instance %s created a message with timestamp %llu size %lu\n",
 			INSTANCE_D_NAME(data->thread_data), (long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
@@ -469,7 +469,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			ret |= RRR_MESSAGE_BROKER_DROP;
 		}
 
-		rrr_ip_buffer_entry_unlock_(entry);
+		rrr_ip_buffer_entry_unlock(entry);
 		return ret;
 }
 
@@ -578,7 +578,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 			message
 	);
 
-	rrr_ip_buffer_entry_unlock_(message);
+	rrr_ip_buffer_entry_unlock(message);
 
 	return ret;
 }
@@ -596,7 +596,7 @@ static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	entry->send_time = 0;
 	RRR_LL_APPEND(&data->send_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	return 0;
 }
@@ -1038,7 +1038,7 @@ static int ip_send_message (
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
@@ -1050,9 +1050,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
+	rrr_poll_collection_init(&poll);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -1067,9 +1067,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
-	int has_senders = (poll_collection_count(&poll) > 0 ? 1 : 0);
+	int has_senders = (rrr_poll_collection_count(&poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_ERR("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1126,7 +1126,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 //		printf ("IP ticks: %u\n", tick);
 
 		if (has_senders != 0) {
-			if (poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
 				break;
 			}
 		}
@@ -1161,7 +1161,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		int ret_tmp = 0;
 		RRR_LL_ITERATE_BEGIN(&data->send_buffer, struct rrr_ip_buffer_entry);
 			int do_destroy = 0;
-			rrr_ip_buffer_entry_lock_(node);
+			rrr_ip_buffer_entry_lock(node);
 
 			if (data->message_send_timeout_s > 0 && node->send_time > 0 && node->send_time < timeout_limit) {
 				timeout_count++;
@@ -1181,7 +1181,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				did_do_something = 1;
 			}
 			else {
-				rrr_ip_buffer_entry_unlock_(node);
+				rrr_ip_buffer_entry_unlock(node);
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 

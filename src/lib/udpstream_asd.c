@@ -1049,7 +1049,7 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 					node->message_id, node->send_time);
 
 			// Callback must ALWAYS unlock
-			rrr_ip_buffer_entry_lock_(message);
+			rrr_ip_buffer_entry_lock(message);
 			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
 				RRR_MSG_ERR("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 				ret = 1;

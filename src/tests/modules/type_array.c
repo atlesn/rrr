@@ -313,7 +313,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		entry->message = NULL;
 	}
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 
 	return ret;
 }
@@ -459,7 +459,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -517,7 +517,7 @@ int test_averager (
 			goto out;
 		}
 		message = NULL;
-		rrr_ip_buffer_entry_lock_(entry);
+		rrr_ip_buffer_entry_lock(entry);
 
 		// Inject should not decref, but must unlock
 		if (inject(input->thread_data, entry)) {
@@ -634,7 +634,7 @@ int test_type_array (
 	}
 	data = NULL;
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 
 	ret = inject(input->thread_data, entry);
 	if (ret != 0) {
@@ -698,7 +698,7 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 	test_result->result = 0;
 	entry->message = NULL;
 
-	rrr_ip_buffer_entry_unlock_(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
@@ -873,7 +873,7 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	rrr_ip_buffer_entry_lock_(entry);
+	rrr_ip_buffer_entry_lock(entry);
 	ret = inject(input_buffer->thread_data, entry);
 	if (ret != 0) {
 		RRR_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");

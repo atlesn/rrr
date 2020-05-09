@@ -115,7 +115,7 @@ int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry *entry
 );
-int rrr_message_broker_write_entries_from_collection (
+int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
 		struct rrr_ip_buffer_entry_collection *collection
