@@ -114,6 +114,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	}
 
 	/* Test which sets up the MySQL database */
+#ifdef RRR_ENABLE_DB_TESTING
 	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
 			"instance_dummy_input",
 			"instance_buffer_msg",
@@ -121,6 +122,9 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 			array_message_perl5
 	);
 	TEST_MSG("Result from MySQL test: %i\n", ret);
+#else
+	TEST_MSG("MySQL test not enabled in configuration with --enable-database-testing\n");
+#endif
 
 	configtest_done:
 	set_test_module_result(ret);
