@@ -68,6 +68,8 @@ struct voltmonitor_data {
 	float usb_calibration;
 	int usb_channel;
 
+	int do_inject_only;
+
 	char *msg_topic;
 
 	pthread_mutex_t cleanup_lock;
@@ -380,6 +382,9 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	data->usb_calibration = calibration;
 	data->usb_channel = channel;
 
+	// Undocumentet parameter, used in test suite
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
+
 	out:
 
 	if (vm_calibration != NULL) {
@@ -552,10 +557,12 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 			continue;
 		}
 
-		if (volmonitor_spawn_message(data, abs(millivolts)) != 0) {
-			RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
-					INSTANCE_D_NAME(thread_data));
-			break;
+		if (!data->do_inject_only) {
+			if (volmonitor_spawn_message(data, abs(millivolts)) != 0) {
+				RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				break;
+			}
 		}
 
 		usleep (250000); // 250 ms

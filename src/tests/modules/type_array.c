@@ -414,18 +414,15 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out;
 		}
 
-		if (rrr_array_value_get_by_tag(&array_tmp, "measurement") != NULL) {
+//		printf ("== Averager test dump received array ========================================\n");
+//		rrr_array_dump(&array_tmp);
+
+		const struct rrr_type_value *value = NULL;
+		if ((value = rrr_array_value_get_by_tag(&array_tmp, "measurement")) != NULL) {
 			// Copies of the original four point measurements should arrive first
 			result->result++;
 		}
 		else {
-			// Average message arrives later
-			if (result->result != 4) {
-				TEST_MSG("Received average result in test_averager_callback but not all four point measurements were received prior to that\n");
-				ret = 1;
-				goto out;
-			}
-
 			uint64_t value_average;
 			uint64_t value_max;
 			uint64_t value_min;
@@ -433,6 +430,13 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_average, &array_tmp, "average", 0);
 			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_max, &array_tmp, "max", 0);
 			ret |= rrr_array_get_value_unsigned_64_by_tag(&value_min, &array_tmp, "min", 0);
+
+			// Average message arrives later
+			if (result->result != 4) {
+				TEST_MSG("Received average result in test_averager_callback but not all four point measurements were received prior to that\n");
+				ret = 1;
+				goto out;
+			}
 
 			if (ret != 0) {
 				TEST_MSG("Could not retrieve 64-values from array in test_averager_callback\n");
