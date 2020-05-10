@@ -39,6 +39,7 @@ AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the pyt
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
+AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for RRR GNU Debug])
@@ -325,6 +326,14 @@ AS_IF([test "x$enable_mysql" = xno], [
 		echo "Test returned: `cat conftest.out`";
 		AC_MSG_ERROR([Size test of integers failed, cannot compile with MySQL on this system.])
 	])
+])
+
+AC_MSG_CHECKING([enabled database testing])
+AS_IF([test "x$enable_database_testing" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_DB_TESTING], [1], [Enable database testing in test suite])
+],[
+	AC_MSG_RESULT([no])
 ])
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
