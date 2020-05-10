@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@ struct socket_data {
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
+	uint64_t message_count;
 };
 
 void data_cleanup(void *arg) {
@@ -175,6 +176,8 @@ int read_rrr_message_callback (struct rrr_message **message, void *arg) {
 	callback_data->entry->data_length = MSG_TOTAL_SIZE(*message);
 	*message = NULL;
 
+	data->message_count++;
+
 	return 0;
 }
 
@@ -230,8 +233,8 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				0,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_READ_F_NO_SLEEPING,
+				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_read_common_receive_message_callback,
@@ -249,7 +252,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				0,
+				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_read_common_get_session_target_length_from_array,
 				&callback_data,
@@ -266,8 +269,11 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		ret = RRR_MESSAGE_BROKER_DROP;
 	}
 	else {
-		RRR_DBG_3("socket created a message with timestamp %llu size %lu\n",
-				(long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
+		RRR_DBG_3("socket instance %s created a message with timestamp %llu size %lu\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(long long unsigned int) message->timestamp,
+				(long unsigned int) sizeof(*message)
+		);
 	}
 
 	out:
@@ -357,6 +363,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	RRR_DBG_2("socket instance %s listening on socket %s\n",
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
+	unsigned int consecutive_nothing_happened = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
@@ -365,6 +372,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 		}
 
 		int err = 0;
+		uint64_t prev_message_count = data->message_count;
 		if ((err = socket_read_data(data)) != 0) {
 			if (err == RRR_SOCKET_SOFT_ERROR) {
 				// Upon receival of invalid data, we must close the socket as sizes of
@@ -377,6 +385,13 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 						INSTANCE_D_NAME(thread_data), err);
 			}
 			break;
+		}
+
+		if (prev_message_count != data->message_count) {
+			consecutive_nothing_happened = 0;
+		}
+		else if (++consecutive_nothing_happened > 100) {
+			usleep(25000); // 25ms
 		}
 	}
 

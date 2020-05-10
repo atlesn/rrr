@@ -333,7 +333,7 @@ int rrr_ip_send (
 	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
 		*err = errno;
 		if (errno == ECONNREFUSED || errno == ECONNRESET) {
-			RRR_MSG_ERR ("Connection refused in ip_send_raw\n");
+			RRR_MSG_ERR ("Connection refused in rrr_ip_send\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -343,7 +343,7 @@ int rrr_ip_send (
 			goto out;
 		}
 		else if (--max_retries == 0) {
-			RRR_MSG_ERR("Max retries for sendto reached in ip_send_raw for socket %i pid %i\n",
+			RRR_MSG_ERR("Max retries for sendto reached in rrr_ip_send for socket %i pid %i\n",
 					fd, getpid());
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -355,13 +355,14 @@ int rrr_ip_send (
 		else if (errno == EINTR) {
 			goto retry;
 		}
-		RRR_MSG_ERR ("Error from sendto in ip_send_raw: %s\n", rrr_strerror(errno));
+		// Sometimes caller tests for many addresses when looking destination up by hostname
+		RRR_DBG_1 ("Note: Error from sendto in rrr_ip_send, address family was %u: %s\n", sockaddr->sa_family, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	if (bytes != data_size) {
-		RRR_MSG_ERR("All bytes were not sent in sendto in ip_send_raw\n");
+		RRR_MSG_ERR("All bytes were not sent in sendto in rrr_ip_send\n");
 		ret = 1;
 		goto out;
 	}
