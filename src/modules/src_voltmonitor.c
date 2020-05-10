@@ -40,7 +40,10 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include <inttypes.h>
 #include <unistd.h>
 #include <stdlib.h>
+
+#ifdef RRR_WITH_USB
 #include <usb.h>
+#endif
 
 #include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
@@ -57,8 +60,10 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;
 
+#ifdef RRR_WITH_USB
 	usb_dev_handle *usb_handle;
 	struct usb_device *usb_device;
+#endif
 
 	float usb_calibration;
 	int usb_channel;
@@ -68,7 +73,11 @@ struct voltmonitor_data {
 	pthread_mutex_t cleanup_lock;
 };
 
-
+#ifndef RRR_WITH_USB
+static void usb_cleanup(void *arg) {
+	(void)(arg);
+}
+#else
 static void usb_cleanup(void *arg) {
 	struct voltmonitor_data *data = (struct voltmonitor_data *) arg;
 
@@ -99,7 +108,9 @@ static void usb_cleanup(void *arg) {
 
 	return;
 }
+#endif
 
+#ifdef RRR_WITH_USB
 static int usb_connect(struct voltmonitor_data *data) {
 	struct usb_device *founddev = NULL;
 
@@ -194,7 +205,15 @@ static int usb_connect(struct voltmonitor_data *data) {
 
 	return 1;
 }
+#endif
 
+#ifndef RRR_WITH_USB
+static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
+	(void)(data);
+	*millivolts = 0;
+	return 0;
+}
+#else
 static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 	if (data->usb_channel > 2 || data->usb_channel < 1) {
 		RRR_MSG_ERR ("voltmonitor: Channel must be 1 or 2, got %i\n", data->usb_channel);
@@ -283,6 +302,7 @@ static int usb_read_voltage(struct voltmonitor_data *data, int *millivolts) {
 
 	return 1;
 }
+#endif
 
 int data_init(struct voltmonitor_data *data, struct rrr_instance_thread_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
@@ -504,6 +524,9 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	RRR_DBG_1 ("voltmonitor thread data is %p\n", thread_data);
+#ifndef RRR_WITH_USB
+	RRR_MSG_ERR("Warning: voltmonitor compiled without USB support. All readings will be 0.\n");
+#endif
 
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -516,8 +539,6 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-
-	usb_init();
 
 	pthread_cleanup_push(usb_cleanup, data);
 
@@ -576,6 +597,9 @@ static struct rrr_module_operations module_operations = {
 static const char *module_name = "voltmonitor";
 
 __attribute__((constructor)) void load(void) {
+#ifdef RRR_WITH_USB
+	usb_init();
+#endif
 }
 
 void init(struct rrr_instance_dynamic_data *data) {

@@ -15,11 +15,13 @@ python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_LDFLAGS = ${module_ldflags}
 endif
 
+# A non-working version of voltmonitor is compiled if usb is disabled 
 if RRR_WITH_USB
+libusb=-lusb
+endif
 voltmonitor = voltmonitor.la
 voltmonitor_la_SOURCES = src_voltmonitor.c
-voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
-endif
+voltmonitor_la_LDFLAGS = ${module_ldflags} ${libusb}
 
 if RRR_WITH_PERL5
 perl5 = perl5.la
