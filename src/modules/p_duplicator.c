@@ -58,6 +58,13 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct duplicator_data *data = thread_data->private_data;
 	(void)(data);
 
+	const struct rrr_message *message = entry->message;
+
+	RRR_DBG_3("duplicator instance %s received a message with timestamp %llu\n",
+			INSTANCE_D_NAME(data->thread_data),
+			(long long unsigned int) message->timestamp
+	);
+
 	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),

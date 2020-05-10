@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -266,8 +266,11 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		ret = RRR_MESSAGE_BROKER_DROP;
 	}
 	else {
-		RRR_DBG_3("socket created a message with timestamp %llu size %lu\n",
-				(long long unsigned int) message->timestamp, (long unsigned int) sizeof(*message));
+		RRR_DBG_3("socket instance %s created a message with timestamp %llu size %lu\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(long long unsigned int) message->timestamp,
+				(long unsigned int) sizeof(*message)
+		);
 	}
 
 	out:
