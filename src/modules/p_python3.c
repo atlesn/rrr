@@ -468,7 +468,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 
 	ret = fork->recv(&message, fork->socket_main);
 	if (ret != 0) {
-		RRR_MSG_ERR("Error while receiving message from python3 child\n");
+		RRR_MSG_ERR("Error while receiving message from python3 child: %s\n", (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		ret = 1;
 		goto out;
 	}
