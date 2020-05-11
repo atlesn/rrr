@@ -345,12 +345,11 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	AC_CONFIG_FILES([misc/systemd/rrr.service])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
 
-	tmp=SYSTEMD_SYSTEM_UNIT_DIR
-	tmp=$(echo "$tmp" | tr -d '\n')
-	AC_MSG_RESULT([yes, unit directory is ${tmp}])
+	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
 ],[
 	AC_MSG_RESULT([no])
 ])
+AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
