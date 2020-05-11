@@ -644,7 +644,8 @@ int rrr_socket_connect_nonblock (
 		goto out;
 	}
 	else {
-		RRR_MSG_ERR("Error while connecting: %s\n", rrr_strerror(errno));
+		RRR_MSG_ERR("Error while connecting, address family was %u: %s\n",
+				addr->sa_family, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}

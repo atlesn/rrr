@@ -830,6 +830,13 @@ static int ip_send_message_raw (
 		send_size
 	);
 
+	if (ret != 0) {
+		RRR_MSG_ERR("Warning: Sending of a message failed in ip instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		// Ignore errors
+		ret	= 0;
+	}
+
 	goto out;
 
 	//////////////////////////////////////////////////////

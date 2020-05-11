@@ -31,19 +31,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_message_addr {
 	RRR_SOCKET_MSG_HEAD;
-	uint64_t addr_len;
 	uint8_t protocol;
-	union {
-		struct rrr_sockaddr addr;
-	};
+	struct rrr_sockaddr addr;
 } __attribute((packed));
 
+#define RRR_MSG_ADDR_SIZE_OK(msg) \
+	((msg)->msg_size >= sizeof(*(msg)) - sizeof ((msg)->addr))
+
+#define RRR_MSG_ADDR_GET_ADDR_LEN(msg) \
+	(msg)->msg_size - sizeof(*(msg)) + sizeof ((msg)->addr)
+
+#define RRR_MSG_ADDR_SET_ADDR_LEN(msg, len) \
+	(msg)->msg_size = sizeof(*(msg)) - sizeof((msg)->addr) + (len)
+
 static inline void rrr_message_addr_prepare_for_network (struct rrr_message_addr *msg) {
-	msg->addr_len = htobe64(msg->addr_len);
+	// Nothing to flip
+	(void)(msg);
 }
 
 int rrr_message_addr_to_host (struct rrr_message_addr *msg);
-void rrr_message_addr_init_head (struct rrr_message_addr *target);
+void rrr_message_addr_init_head (struct rrr_message_addr *target, uint64_t addr_len);
 void rrr_message_addr_init (struct rrr_message_addr *target);
 int rrr_message_addr_new (struct rrr_message_addr **target);
 

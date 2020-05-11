@@ -421,13 +421,14 @@ int read_from_source_or_processor_finalize (
 		entry->data_length = MSG_TOTAL_SIZE(message);
 		message = NULL;
 
-		if (previous_address_msg->addr_len > 0) {
-			if (previous_address_msg->addr_len > sizeof(previous_address_msg->addr)) {
+		uint64_t addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(previous_address_msg);
+		if (addr_len_tmp > 0) {
+			if (addr_len_tmp > sizeof(previous_address_msg->addr)) {
 				RRR_BUG("BUG: Address length too long in read_from_source_or_processor_finalize\n");
 			}
-			memcpy(&entry->addr, &previous_address_msg->addr, previous_address_msg->addr_len);
-			entry->addr_len = previous_address_msg->addr_len;
-			previous_address_msg->addr_len = 0;
+			memcpy(&entry->addr, &previous_address_msg->addr, addr_len_tmp);
+			entry->addr_len = addr_len_tmp;
+			RRR_MSG_ADDR_SET_ADDR_LEN(previous_address_msg, 0);
 		}
 	}
 	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {

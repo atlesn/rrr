@@ -861,7 +861,7 @@ int rrr_py_persistent_process_message (
 	rrr_message_addr_init(&message_addr);
 	if (entry->addr_len > 0) {
 		memcpy(&message_addr.addr, &entry->addr, entry->addr_len);
-		message_addr.addr_len = entry->addr_len;
+		RRR_MSG_ADDR_SET_ADDR_LEN(&message_addr, entry->addr_len);
 	}
 
 	ret = fork->send(fork->socket_main, (struct rrr_socket_msg *) &message_addr);

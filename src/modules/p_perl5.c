@@ -578,7 +578,7 @@ int perl5_input_callback (int *count, struct perl5_data *perl5_data, struct rrr_
 	rrr_message_addr_init(&addr_msg);
 	if (entry->addr_len > 0) {
 		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
-		addr_msg.addr_len = entry->addr_len;
+		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, entry->addr_len);
 	}
 
 	struct mmap_channel_callback_data channel_callback_data = {
@@ -966,7 +966,7 @@ int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
 			(struct sockaddr *) &data->latest_message_addr.addr,
-			data->latest_message_addr.addr_len,
+			RRR_MSG_ADDR_GET_ADDR_LEN(&data->latest_message_addr),
 			data->latest_message_addr.protocol
 	);
 	message_new = NULL;
