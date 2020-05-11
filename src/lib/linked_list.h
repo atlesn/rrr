@@ -297,6 +297,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
 
+#define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(destroy_func)		\
+		if (linked_list_iterate_destroy) {								\
+			destroy_func;												\
+			linked_list_iterate_destroy = 0;							\
+		}																\
+	RRR_LL_ITERATE_END()
+
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, 0, asm(""), 0, 0, asm(""))
 

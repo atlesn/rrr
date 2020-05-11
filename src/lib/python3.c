@@ -44,14 +44,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "message_addr.h"
 #include "ip_buffer_entry.h"
+#include "linked_list.h"
+#include "fork.h"
 #include "../global.h"
 
-struct python3_fork_zombie {
-	struct python3_fork_zombie *next;
-	pid_t pid;
-};
-
-static struct python3_fork_zombie *first_zombie = NULL;
 static pthread_mutex_t fork_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static PyThreadState *main_python_tstate = NULL;
@@ -126,81 +122,28 @@ int python3_swap_thread_out(struct python3_thread_state *tstate_holder) {
 	return ret;
 }
 
-void rrr_py_handle_sigchld (void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg) {
-	struct python3_fork_zombie *zombie = NULL;
-	struct python3_fork_zombie *prev = NULL;
+void rrr_py_handle_sigchld (pid_t pid, void *exit_notify_arg) {
+	struct python3_fork *fork_data = exit_notify_arg;
 
-	pthread_mutex_lock (&fork_lock);
-
-	prev = NULL;
-	zombie = first_zombie;
-	while (zombie != NULL) {
-		struct python3_fork_zombie *next = zombie->next;
-
-		int wstatus;
-		pid_t res = waitpid(zombie->pid, &wstatus, WNOHANG);
-		if (res == 0) {
-			// No state change
-		}
-		else if (res > 0) {
-			if (WIFSIGNALED(wstatus)) {
-				int signal = WTERMSIG(wstatus);
-				RRR_DBG_1("python3 child %i has was terminated by signal %i\n", res, signal);
-
-				goto remove_and_next;
-			}
-
-			if (WIFEXITED(wstatus)) {
-				int child_status = WEXITSTATUS(wstatus);
-				RRR_DBG_1("python3 child %i has exited with status %i\n", res, child_status);
-
-				goto remove_and_next;
-			}
-		}
-		else if (errno == ECHILD) {
-			RRR_MSG_ERR("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? removing it.\n", zombie->pid);
-			goto remove_and_next;
-		}
-		else {
-			// TODO : Maybe SIGCHLD is for a child of another instance
-			RRR_MSG_ERR("Warning: python3 waitpid error for fork %i: %s\n", zombie->pid, rrr_strerror(errno));
-		}
-
-		goto next;
-
-		remove_and_next:
-			if (prev == NULL) {
-				first_zombie = next;
-			}
-			else {
-				prev->next = next;
-			}
-
-			child_exit_callback(zombie->pid, callback_arg);
-
-			free(zombie);
-
-			zombie = next;
-			continue; // <--- IMPORTANT
-
-		next:
-			prev = zombie;
-			zombie = next;
+	if (pid != fork_data->pid) {
+		RRR_BUG("PID mismatch in rrr_py_handle_sigchld: %i <> %i\n", pid, fork_data->pid);
 	}
 
+	pthread_mutex_lock (&fork_lock);
+	fork_data->invalid = 1;
 	pthread_mutex_unlock (&fork_lock);
 }
 
-static void __rrr_py_push_zombie_unlocked (pid_t pid) {
-	struct python3_fork_zombie *zombie = malloc(sizeof(*zombie));
-	zombie->pid = pid;
-	zombie->next = first_zombie;
-	first_zombie = zombie;
+void rrr_py_call_fork_notifications_if_needed (struct rrr_fork_handler *handler) {
+	rrr_fork_handle_sigchld_and_notify_if_needed(handler);
 }
 
-static void __rrr_py_fork_destroy_unlocked (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
+static void __rrr_py_fork_destroy_unlocked (struct python3_fork *fork) {
+	RRR_DBG_1("Terminating/destroying fork %i tin python3 terminate fork\n", fork->pid);
+
 	if (fork->pid > 0) {
-		kill(fork->pid, SIGTERM);
+		rrr_fork_unregister_exit_handler(fork->fork_handler, fork->pid);
+		kill(fork->pid, SIGUSR1);
 	}
 
 	if (fork->socket_main != NULL) {
@@ -216,103 +159,22 @@ static void __rrr_py_fork_destroy_unlocked (struct python3_rrr_objects *rrr_obje
 		RRR_Py_XDECREF(fork->socket_child);
 	}
 
-	int found = 0;
-	if (rrr_objects->first_fork == fork) {
-		rrr_objects->first_fork = fork->next;
-		found = 1;
-	}
-	else {
-		for (struct python3_fork *test = rrr_objects->first_fork; test != NULL; test = test->next) {
-			if (test->next == fork) {
-				test->next = fork->next;
-				found = 1;
-				break;
-			}
-		}
-	}
-
-	if (found == 0) {
-		RRR_BUG("Bug: Fork not found in rrr_py_fork_destroy\n");
-	}
-
 	free(fork);
 }
 
-static void rrr_py_fork_destroy (struct python3_rrr_objects *rrr_objects, struct python3_fork *fork) {
+void rrr_py_fork_terminate_and_destroy (struct python3_fork *fork) {
 	if (fork == NULL) {
 		return;
 	}
 
 	pthread_mutex_lock (&fork_lock);
-	RRR_DBG_1 ("Python3 terminate fork %p pid %i (while terminating single fork)\n", fork, fork->pid);
-	__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
+	__rrr_py_fork_destroy_unlocked(fork);
 	pthread_mutex_unlock (&fork_lock);
 }
 
-int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid) {
-	int ret = 1;
-
-	for (struct python3_fork *test = rrr_objects->first_fork; test != NULL; test = test->next) {
-		if (test->pid == pid) {
-			RRR_DBG_1 ("Python3 invalidate fork %p pid %i\n", test, pid);
-			test->invalid = 1;
-			ret = 0;
-			break;
-		}
-	}
-
-	return ret;
-}
-
-void rrr_py_terminate_forks (struct python3_rrr_objects *rrr_objects) {
-	int count = 0;
-
-	struct python3_fork *fork = NULL;
-
-	// First, send soft signal (child may stop voluntarily)
-	pthread_mutex_lock (&fork_lock);
-	fork = rrr_objects->first_fork;
-	while (fork != NULL) {
-		if (fork->pid > 0) {
-			kill(fork->pid, SIGUSR1);
-		}
-		fork = fork->next;
-	}
-	pthread_mutex_unlock (&fork_lock);
-	usleep(500000);
-
-	// Then, send kill signal
-	pthread_mutex_lock (&fork_lock);
-	fork = rrr_objects->first_fork;
-	while (fork != NULL) {
-// TODO : Enable?
-//		kill(fork->pid, SIGKILL);
-		fork = fork->next;
-	}
-	pthread_mutex_unlock (&fork_lock);
-	usleep(100000);
-
-	pthread_mutex_lock (&fork_lock);
-	fork = rrr_objects->first_fork;
-	while (fork != NULL) {
-		struct python3_fork *next = fork->next;
-
-		RRR_DBG_1("Python3 terminate fork %p pid %i (while terminating all)\n", fork, fork->pid);
-		__rrr_py_fork_destroy_unlocked(rrr_objects, fork);
-
-		fork = next;
-		count++;
-	}
-
-	if (rrr_objects->first_fork != NULL) {
-		RRR_BUG("Not all forks went away in rrr_py_terminate_threads");
-	}
-	pthread_mutex_unlock (&fork_lock);
-
-	RRR_DBG_1("Terminated %i threads in python3 terminate threads\n", count);
-}
-
-static struct python3_fork *rrr_py_fork_new (struct python3_rrr_objects *rrr_objects) {
+static struct python3_fork *rrr_py_fork_new (
+		struct rrr_fork_handler *fork_handler
+) {
 	struct python3_fork *ret = malloc(sizeof(*ret));
 	PyObject *socket_main = NULL;
 	PyObject *socket_child = NULL;
@@ -346,17 +208,7 @@ static struct python3_fork *rrr_py_fork_new (struct python3_rrr_objects *rrr_obj
 
 	ret->socket_main = socket_main;
 	ret->socket_child = socket_child;
-
-	pthread_mutex_lock (&fork_lock);
-	if (rrr_objects->first_fork == NULL) {
-		rrr_objects->first_fork = ret;
-	}
-	else {
-		ret->next = rrr_objects->first_fork;
-		rrr_objects->first_fork = ret;
-	}
-
-	pthread_mutex_unlock (&fork_lock);
+	ret->fork_handler = fork_handler;
 
 	return ret;
 
@@ -594,12 +446,13 @@ void __rrr_py_start_persistent_thread_rw_child (PyObject *function, PyObject *co
 		__rrr_py_persistent_thread_source(function, fork);
 	}
 }
+
 // This function must only be called with main thread state active and lock held
 static int __fork_main_tstate_callback(void *arg, PyThreadState *tstate_orig) {
-	(void)(arg);
+	struct python3_fork *fork_data = arg;
 	PyOS_BeforeFork();
 
-	int ret = fork();
+	pid_t ret = rrr_fork(fork_data->fork_handler, rrr_py_handle_sigchld, fork_data);
 
 	if (ret == 0) {
 		// PyOS_AfterFork_Child causes deadlock in 3.8.2. Workaround is to delete thread
@@ -626,7 +479,8 @@ static int __fork_main_tstate_callback(void *arg, PyThreadState *tstate_orig) {
 }
 
 static int __fork_callback(void *arg) {
-	return rrr_py_with_global_tstate_do(__fork_main_tstate_callback, arg, 0);
+	struct python3_fork *fork_data = arg;
+	return rrr_py_with_global_tstate_do(__fork_main_tstate_callback, fork_data, 0);
 }
 
 static pid_t __rrr_py_fork_intermediate (
@@ -640,7 +494,7 @@ static pid_t __rrr_py_fork_intermediate (
 	RRR_DBG_1("Before fork child socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_child));
 	RRR_DBG_1("Before fork main  socket is %i\n", rrr_python3_socket_get_connected_fd(fork_data->socket_main));
 
-	ret = rrr_socket_with_lock_do(__fork_callback, NULL);
+	ret = rrr_socket_with_lock_do(__fork_callback, fork_data);
 
 	if (ret != 0) {
 		if (ret < 0) {
@@ -667,6 +521,7 @@ static pid_t __rrr_py_fork_intermediate (
 	RRR_DBG_1("Child closing sockets of main\n");
 	RRR_Py_XDECREF(fork_data->socket_main);
 
+	// This looks like it's global but each fork gets it's own copy
 	rrr_py_fork_running = 1;
 
 	struct sigaction action;
@@ -703,9 +558,6 @@ static pid_t __rrr_py_fork_intermediate (
 
 	pthread_mutex_lock(&fork_lock);
 	fork_data->pid = ret;
-
-	// Prepare to accept SIGCHLD when this fork exits
-	__rrr_py_push_zombie_unlocked(ret);
 	pthread_mutex_unlock(&fork_lock);
 
 	return ret;
@@ -740,7 +592,7 @@ static int __rrr_py_start_persistent_rw_thread_intermediate (
 
 static int __rrr_py_start_thread (
 		struct python3_fork **result_fork,
-		struct python3_rrr_objects *rrr_objects,
+		struct rrr_fork_handler *fork_handler,
 		const char *module_name,
 		const char *function_name,
 		const char *config_function_name,
@@ -759,7 +611,7 @@ static int __rrr_py_start_thread (
 	RRR_DBG_3("Start thread of module %s function %s config function %s\n",
 			module_name, function_name, config_function_name);
 
-	fork = rrr_py_fork_new(rrr_objects);
+	fork = rrr_py_fork_new(fork_handler);
 	if (fork == NULL) {
 		RRR_MSG_ERR("Could not start thread.\n");
 		ret = 1;
@@ -823,21 +675,21 @@ static int __rrr_py_start_thread (
 	RRR_Py_XDECREF(function);
 	RRR_Py_XDECREF(module);
 	if (ret != 0) {
-		rrr_py_fork_destroy(rrr_objects, fork);
+		rrr_py_fork_terminate_and_destroy(fork);
 	}
 	return ret;
 }
 
 int rrr_py_start_persistent_rw_thread (
 		struct python3_fork **result_fork,
-		struct python3_rrr_objects *rrr_objects,
+		struct rrr_fork_handler *fork_handler,
 		const char *module_name,
 		const char *function_name,
 		const char *config_function_name
 ) {
 	return __rrr_py_start_thread (
 			result_fork,
-			rrr_objects,
+			fork_handler,
 			module_name,
 			function_name,
 			config_function_name,
@@ -892,10 +744,6 @@ int rrr_py_persistent_start_sourcing (
 	return 0;
 }
 
-void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *rrr_objects) {
-	memset (rrr_objects, '\0', sizeof(*rrr_objects));
-}
-
 int __rrr_py_import_function_or_print_error(PyObject **target, PyObject *dictionary, const char *name) {
 	*target = NULL;
 	PyObject *res = rrr_py_import_function(dictionary, name);
@@ -915,7 +763,6 @@ int __rrr_py_import_function_or_print_error(PyObject **target, PyObject *diction
 		}} while(0)
 
 int rrr_py_get_rrr_objects (
-		struct python3_rrr_objects *target,
 		PyObject *dictionary,
 		const char **extra_module_paths,
 		int module_paths_length
@@ -970,8 +817,6 @@ int rrr_py_get_rrr_objects (
 	rrr_py_import_final = malloc(strlen(rrr_py_import_template) + strlen(extra_module_paths_concat) + 1);
 	sprintf(rrr_py_import_final, rrr_py_import_template, extra_module_paths_concat);
 
-	memset (target, '\0', sizeof(*target));
-
 	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);
 	if (res == NULL) {
 		RRR_MSG_ERR("Could not run initial python3 code to set up RRR environment: \n");
@@ -996,9 +841,6 @@ int rrr_py_get_rrr_objects (
 
 	out:
 	RRR_FREE_IF_NOT_NULL(rrr_py_import_final);
-	if (ret != 0) {
-		rrr_py_destroy_rrr_objects(target);
-	}
 
 	return ret;
 }

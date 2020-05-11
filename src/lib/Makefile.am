@@ -52,5 +52,10 @@ librrr_strerror_la_SOURCES = rrr_strerror.c
 librrr_strerror_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_STRERROR ${AM_CFLAGS}
 librrr_strerror_la_LDFLAGS = -lpthread -ldl -lm
 
-noinst_LTLIBRARIES = ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror}
-librrr_la_LIBADD =  ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror}
+libadd_rrr_fork = librrr_fork.la
+librrr_fork_la_SOURCES = fork.c
+librrr_fork_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_FORK ${AM_CFLAGS}
+librrr_fork_la_LDFLAGS = -lpthread -ldl -lm
+
+noinst_LTLIBRARIES = ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror} ${libadd_rrr_fork}
+librrr_la_LIBADD =  ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror} ${libadd_rrr_fork}

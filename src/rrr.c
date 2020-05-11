@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "main.h"
 #include "global.h"
@@ -40,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/stats_message.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
+#include "lib/fork.h"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -64,13 +67,14 @@ const char *module_library_paths[] = {
 // on the stack correctly
 // #define RRR_NO_MODULE_UNLOAD
 
+static int some_fork_has_stopped = 0;
 static int main_running = 1;
 int rrr_signal_handler(int s, void *arg) {
 	return rrr_signal_default_handler(&main_running, s, arg);
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",				"{CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
@@ -165,108 +169,74 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
-int main (int argc, const char *argv[]) {
-	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	rrr_strerror_init();
-
-	struct rrr_signal_handler *signal_handler = NULL;
-	struct rrr_thread_collection *collection = NULL;
-	struct instance_metadata_collection *instances = NULL;
-	const char *config_string = NULL;
-	struct rrr_config *config = NULL;
+static int main_loop (
+		struct cmd_data *cmd,
+		const char *config_file,
+		struct rrr_signal_functions *signal_functions,
+		struct rrr_fork_handler *fork_handler
+) {
 	int ret = EXIT_SUCCESS;
-	int count = 0;
 
 	struct stats_data stats_data = {0};
 	struct rrr_message_broker message_broker = {0};
 
-	struct cmd_data cmd;
-	cmd_init(&cmd, cmd_rules, argc, argv);
+	struct rrr_config *config = NULL;
+	struct instance_metadata_collection *instances = NULL;
+	struct rrr_thread_collection *collection = NULL;
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
-
-	if (rrr_message_broker_init(&message_broker) != 0) {
+	if ((config = rrr_config_parse_file(config_file)) == NULL) {
+		RRR_MSG_ERR("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
+		goto out;
 	}
 
-	if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
-		ret = EXIT_FAILURE;
-		goto out_cleanup_message_broker;
-	}
-
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
-		goto out_destroy_metadata_collection;
-	}
-
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
-		goto out_destroy_metadata_collection;
-	}
-
-	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
-
-	// Start statistics engine
-	if (cmd_exists(&cmd, "stats", 0)) {
-		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
-			RRR_MSG_ERR("Could not initialize statistics engine\n");
-			goto out_destroy_metadata_collection;
-		}
-	}
-
-	// Load configuration
-	config_string = cmd_get_value(&cmd, "config", 0);
-	if (config_string != NULL && *config_string != '\0') {
-		config = rrr_config_parse_file(config_string);
-
-		if (config == NULL) {
-			ret = EXIT_FAILURE;
-			RRR_MSG_ERR("Configuration file parsing failed\n");
-			goto out_unload_modules;
-		}
-
-		RRR_DBG_1("found %d instances\n", config->module_count);
-
-		ret = rrr_instance_process_from_config(instances, config, module_library_paths);
-
-		if (ret != 0) {
-			goto out_unload_modules;
-		}
-	}
+	RRR_DBG_1("RRR  found %d instances in configuration file %s\n",
+			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
 		if (config != NULL && rrr_config_dump(config) != 0) {
+			ret = EXIT_FAILURE;
 			RRR_MSG_ERR("Error occured while dumping configuration\n");
+			goto out_destroy_config;
 		}
+	}
+
+	if (rrr_instance_metadata_collection_new (&instances, signal_functions) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_config;
+	}
+
+	if (rrr_instance_process_from_config(instances, config, module_library_paths) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_instance_metadata;
+	}
+
+	if (cmd_exists(cmd, "stats", 0)) {
+		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
+			RRR_MSG_ERR("Could not initialize statistics engine\n");
+			ret = EXIT_FAILURE;
+			goto out_destroy_instance_metadata;
+		}
+	}
+
+	if (rrr_message_broker_init(&message_broker) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_destroy_instance_metadata;
 	}
 
 	threads_restart:
 
 	rrr_socket_close_all_except(stats_data.engine.socket);
 
-	// During preload stage, signals are temporarily deactivated. Activate now.
-	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
-
-	// Initialize signal handling
-	rrr_signal_default_signal_actions_register();
-
 	rrr_set_debuglevel_orig();
 	if ((ret = main_start_threads (
 			&collection,
 			instances,
 			config,
-			&cmd,
+			cmd,
 			&stats_data.engine,
-			&message_broker
+			&message_broker,
+			fork_handler
 	)) != 0) {
 		goto out_stop_threads;
 	}
@@ -288,7 +258,7 @@ int main (int argc, const char *argv[]) {
 		usleep (50000);
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
-			RRR_DBG_1 ("One or more threads have finished or do hard restart. Restart.\n");
+			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
 
 			rrr_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
@@ -313,9 +283,10 @@ int main (int argc, const char *argv[]) {
 				rrr_stats_engine_tick(&stats_data.engine);
 		}
 
+		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop)\n", count);
+			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
 	}
 
@@ -329,6 +300,7 @@ int main (int argc, const char *argv[]) {
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
 		main_threads_stop(collection, instances);
 		rrr_thread_destroy_collection (collection, 0);
+		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
 			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
@@ -336,23 +308,150 @@ int main (int argc, const char *argv[]) {
 		rrr_socket_close_all();
 
 	out_unload_modules:
-#ifndef RRR_NO_MODULE_UNLOAD
-		rrr_instance_unload_all(instances);
-#endif
-		if (config != NULL) {
-			rrr_config_destroy(config);
-		}
+#		ifndef RRR_NO_MODULE_UNLOAD
+			rrr_instance_unload_all(instances);
+#		endif
 
 		rrr_stats_engine_cleanup(&stats_data.engine);
-
-	out_destroy_metadata_collection:
-		rrr_instance_metadata_collection_destroy(instances);
-
-	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
+	out_destroy_instance_metadata:
+		rrr_instance_metadata_collection_destroy(instances);
+	out_destroy_config:
+		rrr_config_destroy(config);
+	out:
+		return ret;
+}
+
+int main (int argc, const char *argv[]) {
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	rrr_strerror_init();
+
+	int is_child = 0;
+
+	const char *config_string = NULL;
+	int ret = EXIT_SUCCESS;
+
+	struct rrr_signal_handler *signal_handler_fork = NULL;
+	struct rrr_signal_handler *signal_handler = NULL;
+
+	struct rrr_fork_handler *fork_handler = NULL;
+
+	struct rrr_fork_default_exit_notification_data exit_notification_data = {
+			&some_fork_has_stopped
+	};
+
+	struct cmd_data cmd;
+	cmd_init(&cmd, cmd_rules, argc, argv);
+
+	struct rrr_signal_functions signal_functions = {
+			rrr_signal_handler_set_active,
+			rrr_signal_handler_push,
+			rrr_signal_handler_remove
+	};
+
+	if (rrr_fork_handler_new (&fork_handler) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_signal;
+	}
+
+	// The fork signal handler must be first
+	signal_handler_fork = signal_functions.push_handler(rrr_fork_signal_handler, fork_handler);
+	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
+
+	rrr_signal_default_signal_actions_register();
+
+	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	if (cmd_get_value(&cmd, "config", 0) == NULL) {
+		RRR_MSG_ERR("No configuration file specified\n");
+		ret = 1;
+		goto out_cleanup_signal;
+	}
+
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
+
+	// Load configuration and fork
+	int config_i = 0;
+	while ((config_string = cmd_get_value(&cmd, "config", config_i)) != NULL) {
+		if (*config_string == '\0') {
+			break;
+		}
+
+		// We fork one child for every specified config file
+
+		pid_t pid = rrr_fork (
+				fork_handler,
+				rrr_fork_default_exit_notification,
+				&exit_notification_data
+		);
+		if (pid < 0) {
+			RRR_MSG_ERR("Could not fork child process in main(): %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out_cleanup_signal;
+		}
+		else if (pid > 0) {
+			goto increment;
+		}
+
+		// CHILD CODE
+		is_child = 1;
+		signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+
+		ret = main_loop (
+				&cmd,
+				config_string,
+				&signal_functions,
+				fork_handler
+		);
+
+		if (is_child) {
+			goto out_cleanup_signal;
+		}
+
+		increment:
+		config_i++;
+	}
+
+	while (main_running) {
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+
+		if (some_fork_has_stopped) {
+			RRR_MSG_ERR("One or more forks has exited\n");
+			goto out_cleanup_signal;
+		}
+
+		usleep(250000); // 250 ms
+	}
 
 	out_cleanup_signal:
-		rrr_signal_handler_remove(signal_handler);
+		signal_functions.remove_handler(signal_handler);
+		signal_functions.remove_handler(signal_handler_fork);
+
+		signal_functions.set_active(RRR_SIGNALS_NOT_ACTIVE);
+
+		if (is_child) {
+			goto out_cleanup_free_fork_handler;
+		}
+
+		// Child forks must skip this
+		rrr_fork_send_sigusr1_and_wait(fork_handler);
+
+	out_cleanup_free_fork_handler:
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handler_free(fork_handler);
+
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
 			RRR_DBG_1("Exiting program without errors\n");

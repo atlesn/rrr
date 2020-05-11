@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_mmap.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/message_broker.h"
+#include "../lib/fork.h"
 #include "../global.h"
 
 #include <EXTERN.h>
@@ -64,7 +65,6 @@ struct perl5_data {
 	// Protects the pid, accessed from many contexes
 	pthread_mutex_t child_mutex;
 	pid_t child_pid_;
-	int sigchld_pending;
 
 	uint64_t spawn_interval_ms;
 
@@ -118,7 +118,7 @@ int deferred_message_push (struct perl5_child_deferred_message_collection *colle
 struct perl5_child_data {
 	struct perl5_data *parent_data;
 	int child_fd;
-	int received_sigterm;
+	int received_sigusr1;
 	struct rrr_perl5_ctx *ctx;
 	struct rrr_message_addr latest_message_addr;
 	struct perl5_child_deferred_message_collection deferred_messages;
@@ -358,18 +358,6 @@ int perl5_start(struct perl5_child_data *data) {
 	return ret;
 }
 
-int parent_signal_handler (int signal, void *private_arg) {
-	struct instance_metadata *meta = private_arg;
-	struct rrr_instance_thread_data *thread_data = meta->thread_data;
-	struct perl5_data *perl5_data = thread_data->private_data;
-
-	if (signal == SIGCHLD) {
-		perl5_data->sigchld_pending = 1;
-	}
-
-	return 1;
-}
-
 #define CHILD_PID_LOCK_IN						\
 	do {pthread_mutex_lock(&data->child_mutex);	\
 	if (data->child_pid_ <= 0)					\
@@ -381,8 +369,6 @@ int parent_signal_handler (int signal, void *private_arg) {
 
 void terminate_child (struct perl5_data *data) {
 	// Just do our ting disregarding return values
-	int status = 0;
-
 	pid_t pid = 0;
 
 	CHILD_PID_LOCK_IN;
@@ -390,43 +376,15 @@ void terminate_child (struct perl5_data *data) {
 		data->child_pid_ = 0;
 	CHILD_PID_LOCK_OUT;
 
-	RRR_DBG_1("perl5 instance %s SIGTERM to child process %i\n",
+	RRR_DBG_1("perl5 instance %s SIGUSR1 to child process %i\n",
 			INSTANCE_D_NAME(data->thread_data), pid);
-	kill(pid, SIGTERM);
+	kill(pid, SIGUSR1);
 
 	usleep(100000); // 100 ms
 
 	RRR_DBG_1("perl5 instance %s SIGKILL to child process %i\n",
 			INSTANCE_D_NAME(data->thread_data), pid);
 	kill(pid, SIGKILL);
-
-	RRR_DBG_1("perl5 instance %s waitpid on child process %i\n",
-			INSTANCE_D_NAME(data->thread_data), pid);
-	waitpid(pid, &status, 0);
-
-	RRR_DBG_1("perl5 instance %s waitpid complete status is %i\n",
-			INSTANCE_D_NAME(data->thread_data), status);
-
-	if (WIFEXITED(status)) {
-		RRR_DBG_1("perl5 instance %s child exited, status is %d\n",
-				INSTANCE_D_NAME(data->thread_data), WEXITSTATUS(status)
-		);
-	}
-	else if (WIFSIGNALED(status)) {
-		RRR_DBG_1("perl5 instance %s child killed by signal %d\n",
-				INSTANCE_D_NAME(data->thread_data), WTERMSIG(status)
-		);
-	}
-	else if (WIFSTOPPED(status)) {
-		RRR_DBG_1("perl5 instance %s child stopped by signal %d\n",
-				INSTANCE_D_NAME(data->thread_data), WSTOPSIG(status)
-		);
-	}
-	else if (WIFCONTINUED(status)) {
-		RRR_DBG_1("perl5 instance %s child continued\n",
-				INSTANCE_D_NAME(data->thread_data)
-		);
-	}
 
 	goto out;
 	out_unlock:
@@ -804,7 +762,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 
 	uint64_t prev_stats_time = 0;
 
-	while (child_data->received_sigterm == 0) {
+	while (child_data->received_sigusr1 == 0) {
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
 			usleep_hits_a++;
@@ -897,7 +855,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 
 	RRR_DBG_1("perl5 instance %s child worker loop complete, received_sigterm is %i ret is %i\n",
 			INSTANCE_D_NAME(child_data->parent_data->thread_data),
-			child_data->received_sigterm,
+			child_data->received_sigusr1,
 			ret
 	);
 
@@ -913,18 +871,30 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 int worker_fork_signal_handler (int signal, void *private_arg) {
 	struct perl5_child_data *child_data = private_arg;
 
-	if (signal == SIGTERM) {
-		RRR_DBG_1("perl5 child of instance %s received SIGTERM\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
-		child_data->received_sigterm = 1;
+	if (signal == SIGUSR1 || signal == SIGINT) {
+		RRR_DBG_1("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		child_data->received_sigusr1 = 1;
 	}
 
 	return 0;
 }
 
+static void perl5_handle_sigchld (pid_t pid, void *arg) {
+	struct perl5_data *data = arg;
+
+	RRR_MSG_ERR("Child fork %i in perl5 instance %s exited\n",
+			pid, INSTANCE_D_NAME(data->thread_data));
+
+	pthread_mutex_lock(&data->child_mutex);
+	pid = data->child_pid_;
+	data->child_pid_ = 0;
+	pthread_mutex_unlock(&data->child_mutex);
+}
+
 int start_worker_fork (struct perl5_data *data) {
 	int ret = 0;
 
-	int pid = fork();
+	pid_t pid = rrr_fork(INSTANCE_D_FORK(data->thread_data), perl5_handle_sigchld, data);
 
 	if (pid < 0) {
 		RRR_MSG_ERR("Could not fork in start_worker_fork of perl5 instance %s: %s\n",
@@ -1094,11 +1064,16 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
+	struct rrr_fork_unregister_exit_handler_data fork_unregister_data = {
+			INSTANCE_D_FORK(thread_data), &data->child_pid_
+	};
+
 	rrr_poll_collection_init(&poll_ip);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &input_buffer_tmp);
+	pthread_cleanup_push(rrr_fork_unregister_exit_handler_void, &fork_unregister_data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -1251,27 +1226,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			usleep_hits_a = usleep_hits_b = tick = input_counter = data->mmap_full_counter = from_child_counter = 0;
 
 			next_stats_time = time_now + 1000000;
-		}
 
-		if (data->sigchld_pending != 0) {
-			int status;
-			pid_t pid;
-
-			pthread_mutex_lock(&data->child_mutex);
-			pid = data->child_pid_;
-			data->child_pid_ = 0;
-			pthread_mutex_unlock(&data->child_mutex);
-
-			if (waitpid(pid, &status, 0) == pid) {
-				RRR_MSG_ERR("Child of perl5 instance %s exited with status %i\n",
-						INSTANCE_D_NAME(thread_data), status);
-			}
-			else {
-				pthread_mutex_lock(&data->child_mutex);
-				data->child_pid_ = pid;
-				pthread_mutex_unlock(&data->child_mutex);
-			}
-			data->sigchld_pending = 0;
+			rrr_fork_handle_sigchld_and_notify_if_needed(INSTANCE_D_FORK(thread_data));
 		}
 
 		tick++;
@@ -1280,6 +1236,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n", INSTANCE_D_NAME(thread_data), thread_data->thread);
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -1323,7 +1280,6 @@ void init(struct rrr_instance_dynamic_data *data) {
 	data->operations = module_operations;
 	data->start_priority = RRR_THREAD_START_PRIORITY_FORK;
 	data->dl_ptr = NULL;
-	data->signal_handler = parent_signal_handler;
 }
 
 void unload(void) {

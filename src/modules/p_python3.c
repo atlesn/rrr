@@ -42,8 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip_buffer_entry.h"
 #include "../global.h"
 
-// TODO : This should NOT be here, allocate inside python3_data
-static sig_atomic_t sigchld_pending = 0;
+struct rrr_fork_handler;
 
 struct python3_preload_data {
 	PyThreadState *istate;
@@ -78,8 +77,6 @@ struct python3_data {
 	struct python3_fork *processing_fork;
 	struct python3_fork *source_fork;
 
-	struct python3_rrr_objects rrr_objects;
-
 	struct rrr_thread_collection *thread_collection;
 	struct python3_reader_data source_thread;
 	struct python3_reader_data process_thread;
@@ -100,7 +97,11 @@ static int thread_preload_python3 (struct rrr_thread *thread) {
 	return 0;
 }
 
-int data_init(struct python3_data *data, struct python3_preload_data *preload_data, struct rrr_instance_thread_data *thread_data) {
+int data_init (
+		struct python3_data *data,
+		struct python3_preload_data *preload_data,
+		struct rrr_instance_thread_data *thread_data
+) {
 	int ret = 0;
 	memset (data, '\0', sizeof(*data));
 
@@ -200,7 +201,7 @@ int python3_start(struct python3_data *data) {
 		module_path[0] = data->module_path;
 		module_path_length = 1;
 	}
-	if (rrr_py_get_rrr_objects(&data->rrr_objects, data->py_main_dict, (const char **) module_path, module_path_length) != 0) {
+	if (rrr_py_get_rrr_objects(data->py_main_dict, (const char **) module_path, module_path_length) != 0) {
 		RRR_MSG_ERR("Could not get rrr objects function in python3 instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		PyErr_Print();
@@ -212,7 +213,7 @@ int python3_start(struct python3_data *data) {
 	if (data->process_function != NULL) {
 		if ((ret = rrr_py_start_persistent_rw_thread (
 				&data->processing_fork,
-				&data->rrr_objects,
+				INSTANCE_D_FORK(data->thread_data),
 				data->python3_module,
 				data->process_function,
 				data->config_function
@@ -233,7 +234,7 @@ int python3_start(struct python3_data *data) {
 	if (data->source_function != NULL) {
 		if ((ret = rrr_py_start_persistent_rw_thread (
 				&data->source_fork,
-				&data->rrr_objects,
+				INSTANCE_D_FORK(data->thread_data),
 				data->python3_module,
 				data->source_function,
 				data->config_function
@@ -266,13 +267,11 @@ void python3_stop(void *arg) {
 
 	python3_swap_thread_in(&data->python3_thread_ctx, data->tstate);
 
-	// This will invalidate the forks
-	rrr_py_terminate_forks(&data->rrr_objects);
+	rrr_py_fork_terminate_and_destroy(data->processing_fork);
+	rrr_py_fork_terminate_and_destroy(data->source_fork);
 
 	data->processing_fork = NULL;
 	data->source_fork = NULL;
-
-	rrr_py_destroy_rrr_objects(&data->rrr_objects);
 
 	data->py_main = NULL;
 	data->py_main_dict = NULL;
@@ -384,14 +383,6 @@ static int thread_cancel_python3 (struct rrr_thread *thread) {
 	return 0;
 }
 */
-// Fork system is locked in this context
-void child_exit_handler (pid_t pid, void *arg) {
-	struct python3_data *data = arg;
-	int res = rrr_py_invalidate_fork_unlocked(&data->rrr_objects, pid);
-	if (res == 0) {
-		RRR_DBG_1("A fork was invalidated in child_exit_handler\n");
-	}
-}
 
 struct read_from_processor_callback_data {
 	struct python3_data *data;
@@ -785,11 +776,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 			check_settings_used_time = 0;
 		}
 
-		if (sigchld_pending) {
-			rrr_py_handle_sigchld(child_exit_handler, data);
-			sigchld_pending = 0;
-		}
-
 		if (no_polling) {
 			usleep (10000);
 		}
@@ -820,6 +806,8 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 			}
 
 			prev_stats_time = rrr_time_get_64();
+
+			rrr_py_call_fork_notifications_if_needed(INSTANCE_D_FORK(thread_data));
 		}
 
 		tick++;
@@ -827,8 +815,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	out_message:
 	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
-
-	rrr_py_handle_sigchld(child_exit_handler, data);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
@@ -862,22 +848,6 @@ static struct rrr_module_operations module_operations = {
 
 static const char *module_name = "python3";
 
-int signal_handler(int signal, void *private_arg) {
-	int ret = 1;
-
-	(void)(private_arg);
-
-	RRR_DBG_1("Python got signal %i\n", signal);
-	if (signal == SIGCHLD) {
-		sigchld_pending = 1;
-		RRR_DBG_1("Python SIGCHLD check pending\n");
-	}
-	else {
-		RRR_DBG_1("Python did not take signal\n");
-	}
-
-	return ret;
-}
 __attribute__((constructor)) void load(void) {
 }
 
@@ -888,7 +858,6 @@ void init(struct rrr_instance_dynamic_data *data) {
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 	data->start_priority = RRR_THREAD_START_PRIORITY_FORK;
-	data->signal_handler = signal_handler;
 }
 
 void unload(void) {

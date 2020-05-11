@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fixed_point.h"
 #include "../lib/stats_engine.h"
 #include "../lib/message_broker.h"
+#include "../lib/fork.h"
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -220,7 +221,8 @@ int main (int argc, const char **argv) {
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker message_broker = {0};
-	struct rrr_config *config;
+	struct rrr_config *config = NULL;
+	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -238,10 +240,15 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_signal;
 	}
 
+	if (rrr_fork_handler_new (&fork_handler) != 0) {
+		ret = EXIT_FAILURE;
+		goto out_cleanup_message_broker;
+	}
+
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		RRR_MSG_ERR("Library build version mismatch.\n");
 		ret = 1;
-		goto out_cleanup_message_broker;
+		goto out_cleanup_fork_handler;
 	}
 
 	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
@@ -320,7 +327,8 @@ int main (int argc, const char **argv) {
 				config,
 				&cmd,
 				&stats_engine,
-				&message_broker
+				&message_broker,
+				fork_handler
 		) != 0) {
 			ret = 1;
 		}
@@ -375,6 +383,11 @@ int main (int argc, const char **argv) {
 
 	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
+
+	out_cleanup_fork_handler:
+		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_handle_sigchld_if_needed (fork_handler);
+		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);

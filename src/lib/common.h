@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "settings.h"
+#include "linked_list.h"
 
 #ifndef RRR_COMMON_H
 #define RRR_COMMON_H
@@ -31,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SIGNALS_NOT_ACTIVE 0
 
 struct rrr_signal_handler {
-	struct rrr_signal_handler *next;
+	RRR_LL_NODE(struct rrr_signal_handler);
 	int (*handler)(int signal, void *private_arg);
 	void *private_arg;
 };

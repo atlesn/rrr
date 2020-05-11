@@ -202,7 +202,6 @@ static int __rrr_stats_instance_post_text (
 	return ret;
 }
 
-
 int rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,
 		const char *text

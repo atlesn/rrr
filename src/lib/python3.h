@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_socket_msg;
 struct rrr_ip_buffer_entry;
+struct rrr_fork_handler;
 
 #define RRR_PYTHON3_OBJECT_CACHE_FULL 2
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
@@ -45,19 +46,18 @@ struct python3_thread_state {
 };
 
 struct python3_fork {
-	struct python3_fork *next;
+	RRR_LL_NODE(struct python3_fork);
 	PyObject *socket_main;
 	PyObject *socket_child;
 	pid_t pid;
 	int invalid;
 
+	struct rrr_fork_handler *fork_handler;
+	struct python3_rrr_objects *rrr_objects;
+
 	int (*poll)(PyObject *socket, int timeout);
 	int (*recv)(struct rrr_socket_msg **result, PyObject *socket);
 	int (*send)(PyObject *socket, struct rrr_socket_msg *message);
-};
-
-struct python3_rrr_objects {
-	struct python3_fork *first_fork;
 };
 
 /* GIL functions */
@@ -65,12 +65,12 @@ int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyTh
 int python3_swap_thread_out(struct python3_thread_state *tstate_holder);
 
 /* Asynchronous functions */
-int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid);
-void rrr_py_handle_sigchld(void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg);
-void rrr_py_terminate_forks (struct python3_rrr_objects *rrr_objects);
+void rrr_py_handle_sigchld (pid_t pid, void *exit_notify_arg);
+void rrr_py_call_fork_notifications_if_needed (struct rrr_fork_handler *handler);
+void rrr_py_fork_terminate_and_destroy (struct python3_fork *fork);
 int rrr_py_start_persistent_rw_thread (
 		struct python3_fork **result_fork,
-		struct python3_rrr_objects *rrr_objects,
+		struct rrr_fork_handler *fork_handler,
 		const char *module_name,
 		const char *function_name,
 		const char *config_function_name
@@ -109,7 +109,6 @@ int rrr_py_persistent_start_sourcing (
 void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);
 //void rrr_py_dump_dict_entries (PyObject *dict);
 int rrr_py_get_rrr_objects (
-		struct python3_rrr_objects *target,
 		PyObject *dictionary,
 		const char **extra_module_paths,
 		int module_paths_length

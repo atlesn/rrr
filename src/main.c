@@ -77,7 +77,8 @@ int main_start_threads (
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
-		struct rrr_message_broker *message_broker
+		struct rrr_message_broker *message_broker,
+		struct rrr_fork_handler *fork_handler
 ) {
 	/*
 #ifdef VL_WITH_OPENSSL
@@ -101,6 +102,7 @@ int main_start_threads (
 		init_data.instance_config = instance->config;
 		init_data.stats = stats;
 		init_data.message_broker = message_broker;
+		init_data.fork_handler = fork_handler;
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 

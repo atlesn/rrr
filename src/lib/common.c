@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 
 #include "../global.h"
+#include "linked_list.h"
 #include "common.h"
 
 struct rrr_exit_cleanup_method {
@@ -62,8 +63,12 @@ void rrr_exit_cleanup_methods_run_and_free(void) {
 	pthread_mutex_unlock(&exit_cleanup_lock);
 }
 
+struct rrr_signal_handler_collection {
+	RRR_LL_HEAD(struct rrr_signal_handler);
+};
+
 static int signal_handlers_active = 0;
-static struct rrr_signal_handler *first_handler = NULL;
+static struct rrr_signal_handler_collection signal_handlers = {0};
 pthread_mutex_t signal_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void rrr_signal_handler_set_active (int active) {
@@ -78,73 +83,39 @@ struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, vo
 	h->private_arg = private_arg;
 
 	pthread_mutex_lock(&signal_lock);
-	h->next = first_handler;
-	first_handler = h;
+	RRR_LL_APPEND(&signal_handlers, h);
 	pthread_mutex_unlock(&signal_lock);
 	return h;
 }
 
 void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 	pthread_mutex_lock(&signal_lock);
-	int did_remove = 0;
-	if (first_handler == handler) {
-		first_handler = first_handler->next;
-		free(handler);
-		did_remove = 1;
-	}
-	else {
-		struct rrr_signal_handler *test = first_handler;
-		while (test) {
-			if (test->next == handler) {
-				test->next = test->next->next;
-				free(handler);
-				did_remove = 1;
-				break;
-			}
-			test = test->next;
-		}
-	}
-	if (did_remove != 1) {
-		RRR_BUG("Attempted to remove signal handler which did not exist\n");
-	}
+	RRR_LL_REMOVE_NODE_IF_EXISTS(&signal_handlers, struct rrr_signal_handler, handler, free(node));
 	pthread_mutex_unlock(&signal_lock);
 }
 
 // Done in child forks
 void rrr_signal_handler_remove_all(void) {
 	pthread_mutex_lock(&signal_lock);
-
-	struct rrr_signal_handler *test = first_handler;
-
-	while (test) {
-		struct rrr_signal_handler *next = test->next;
-		free(test);
-		test = next;
-	}
-
-	first_handler = NULL;
-
+	RRR_LL_DESTROY(&signal_handlers, struct rrr_signal_handler, free(node));
 	pthread_mutex_unlock(&signal_lock);
 }
 
 void rrr_signal (int s) {
     RRR_DBG_1("Received signal %i\n", s);
 
-	struct rrr_signal_handler *test = first_handler;
-
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;
-		while (test) {
-			int ret = test->handler(s, test->private_arg);
-			if (ret == 0) {
+		RRR_LL_ITERATE_BEGIN(&signal_handlers, struct rrr_signal_handler);
+			int ret = node->handler(s, node->private_arg);
+			if (ret == RRR_SIGNAL_HANDLED) {
 				// Handlers may also return non-zero for signal to continue
 				handler_res = 0;
-				break;
+				RRR_LL_ITERATE_LAST();
 			}
-			test = test->next;
-		}
+		RRR_LL_ITERATE_END();
 
-		if (handler_res == 0) {
+		if (handler_res == RRR_SIGNAL_HANDLED) {
 			return;
 		}
 	}
@@ -174,14 +145,14 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 	(void)(arg);
 
 	if (s == SIGCHLD) {
-		RRR_DBG_1("Received SIGCHLD\n");
+		RRR_DBG_1("Received SIGCHLD in default handler\n");
 	}
 	else if (s == SIGUSR1) {
 		*main_running = 0;
 		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
+		RRR_MSG_ERR("Received SIGPIPE in default handler, ignoring\n");
 	}
 	else if (s == SIGTERM) {
 		exit(EXIT_FAILURE);
@@ -189,7 +160,7 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 	else if (s == SIGINT) {
 		// Allow double ctrl+c to close program
 		if (s == SIGINT) {
-			RRR_MSG_ERR("Received SIGINT\n");
+			RRR_MSG_ERR("Received SIGINT in default handler\n");
 			signal(SIGINT, SIG_DFL);
 		}
 

@@ -34,4 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define strerror(x) RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_STRERROR
 #endif
 
+// Only main() is allowed to do this, others through access functions
+#ifndef RRR_INTERCEPT_ALLOW_FORK
+#	define waitpid(x,y,z)	RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAITPID
+#	define wait(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_WAIT
+#	define fork(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_FORK
+#endif
+
 #endif /* RRR_INTERCEPT_H */
