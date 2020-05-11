@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <inttypes.h>
 
-#include "../global.h"
+#include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_strerror.h"
 #include "vl_time.h"

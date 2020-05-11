@@ -55,7 +55,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/array.h"
 #include "../lib/message_broker.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;

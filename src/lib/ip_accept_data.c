@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/socket.h>
 
-#include "../global.h"
+#include "log.h"
 #include "ip.h"
 #include "ip_accept_data.h"
 

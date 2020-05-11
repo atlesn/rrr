@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/stats_instance.h"
 #include "../lib/array.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct raw_data {
 	int message_count;

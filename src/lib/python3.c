@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_buffer_entry.h"
 #include "linked_list.h"
 #include "fork.h"
-#include "../global.h"
+#include "log.h"
 
 static pthread_mutex_t fork_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;

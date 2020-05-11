@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_endian.h"
 #include "rrr_socket.h"
 #include "messages.h"
-#include "../global.h"
+#include "log.h"
 
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,

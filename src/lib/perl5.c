@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
-#include "../global.h"
+#include "log.h"
 #include "../../build_directory.h"
 #include "common.h"
 #include "perl5.h"

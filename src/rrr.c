@@ -184,6 +184,8 @@ static int main_loop (
 	struct instance_metadata_collection *instances = NULL;
 	struct rrr_thread_collection *collection = NULL;
 
+	rrr_global_config_set_log_prefix(config_file);
+
 	if ((config = rrr_config_parse_file(config_file)) == NULL) {
 		RRR_MSG_ERR("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
@@ -255,7 +257,7 @@ static int main_loop (
 
 	// Main loop
 	while (main_running) {
-		usleep (50000);
+		usleep (250000); // 250ms
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
@@ -271,7 +273,7 @@ static int main_loop (
 			rrr_message_broker_unregister_all_hard(&message_broker);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
-				usleep(1000000);
+				usleep(1000000); // 1s
 				goto threads_restart;
 			}
 			else {
@@ -359,7 +361,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	// The fork signal handler must be first
-	signal_handler_fork = signal_functions.push_handler(rrr_fork_signal_handler, fork_handler);
+	signal_handler_fork = signal_functions.push_handler(rrr_fork_signal_handler, NULL);
 	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();

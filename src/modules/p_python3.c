@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/message_addr.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct rrr_fork_handler;
 

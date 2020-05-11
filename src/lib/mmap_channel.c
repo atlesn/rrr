@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/shm.h>
 
 #include "rrr_strerror.h"
-#include "../global.h"
+#include "log.h"
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"

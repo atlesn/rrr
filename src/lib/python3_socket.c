@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <read.h>
 
-#include "../global.h"
+#include "log.h"
 #include "vl_time.h"
 #include "python3_common.h"
 #include "python3_module_common.h"

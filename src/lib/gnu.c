@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "../../config.h"
-#include "../global.h"
+#include "log.h"
 #include "gnu.h"
 
 int rrr_vasprintf (char **resultp, const char *format, va_list args) {

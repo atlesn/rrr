@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX 65535
 
-#include "../global.h"
+#include "log.h"
 #include "net_transport.h"
 #include "net_transport_tls.h"
 #include "net_transport_plain.h"

@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "../global.h"
+#include "log.h"
 #include "linked_list.h"
 #include "http_fields.h"
 #include "http_util.h"

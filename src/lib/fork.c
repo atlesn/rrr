@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/wait.h>
 
 #include "fork.h"
-#include "../global.h"
+#include "log.h"
 #include "rrr_strerror.h"
 #include "common.h"
 
@@ -48,8 +48,6 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	pthread_mutexattr_t attr;
 
 	*result = NULL;
-
-	printf ("Total size: %li\n",  RRR_FORK_HANDLER_ALLOCATION_SIZE);
 
 	if (pthread_mutexattr_init(&attr) != 0)  {
 		RRR_MSG_ERR("Could not initialize mutexattr in rrr_fork_handler_init\n");
@@ -106,8 +104,7 @@ void rrr_fork_handler_destroy (struct rrr_fork_handler *handler) {
 static int rrr_fork_handler_signal_pending = 0;
 
 int rrr_fork_signal_handler (int s, void *arg) {
-	struct rrr_fork_handler *handler = arg;
-
+	(void)(arg);
 	if (s == SIGCHLD) {
 		RRR_MSG_ERR("Fork signal handler received SIGCHLD\n");
 		// Do not lock, only call from main context
@@ -202,7 +199,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			printf("Waiting for pid %i with parent pid %i, we are pid %i\n",
+			RRR_DBG_1("Waiting for pid %i with parent pid %i, we are pid %i\n",
 					node->pid, node->parent_pid, getpid());
 
 			pid_t pid = 0;
@@ -244,7 +241,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		printf("Notification for exited pid %i in parent pid %i\n",
+		RRR_DBG_1("Notification for exited pid %i in parent pid %i\n",
 				node->pid, self);
 
 		RRR_LL_ITERATE_SET_DESTROY();

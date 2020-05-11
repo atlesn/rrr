@@ -363,6 +363,7 @@ int main (int argc, const char **argv) {
 
 		main_threads_stop(collection, instances);
 
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);
@@ -386,7 +387,7 @@ int main (int argc, const char **argv) {
 
 	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_if_needed (fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:

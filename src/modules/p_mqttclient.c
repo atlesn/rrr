@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/stats_instance.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT 1883
 #define RRR_MQTT_DEFAULT_QOS 1

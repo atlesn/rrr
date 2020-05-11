@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_accept_data.h"
 #include "buffer.h"
 #include "vl_time.h"
-#include "../global.h"
+#include "log.h"
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 #include "mqtt_packet.h"

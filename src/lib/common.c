@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <signal.h>
 
-#include "../global.h"
+#include "log.h"
 #include "linked_list.h"
 #include "common.h"
 

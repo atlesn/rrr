@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 
-#include "../global.h"
+#include "log.h"
 #include "instances.h"
 
 int rrr_instance_collection_check_empty (struct rrr_instance_collection *collection) {

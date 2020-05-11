@@ -25,9 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
 #include "global.h"
+#include "lib/log.h"
 
 struct rrr_global_config rrr_global_config;
 pthread_mutex_t global_config_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static const char *rrr_default_log_prefix = "main";
 
 void rrr_set_debuglevel_on_exit(void) {
 	pthread_mutex_lock(&global_config_mutex);
@@ -55,6 +58,16 @@ void rrr_init_global_config (
 	rrr_global_config.debuglevel_on_exit = debuglevel_on_exit;
 	rrr_global_config.no_watchdog_timers = no_watcdog_timers;
 	rrr_global_config.no_thread_restart = no_thread_restart;
+	rrr_global_config.log_prefix = rrr_default_log_prefix;
+	pthread_mutex_unlock(&global_config_mutex);
+}
+
+// Usually done per fork
+void rrr_global_config_set_log_prefix (
+		const char *log_prefix
+) {
+	pthread_mutex_lock(&global_config_mutex);
+	rrr_global_config.log_prefix = log_prefix;
 	pthread_mutex_unlock(&global_config_mutex);
 }
 

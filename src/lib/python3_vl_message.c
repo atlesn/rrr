@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "fixed_point.h"
 #include "vl_time.h"
 #include "message_addr.h"
-#include "../global.h"
+#include "log.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;

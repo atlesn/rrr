@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 #define INFLUXDB_DEFAULT_PORT 8086
 #define INFLUXDB_USER_AGENT "RRR/" PACKAGE_VERSION

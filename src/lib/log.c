@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,29 +19,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <pthread.h>
-#include <mysql/mysql.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "log.h"
-#include "rrr_mysql.h"
 
-static pthread_mutex_t mysql_global_lock = PTHREAD_MUTEX_INITIALIZER;
-static int mysql_users = 0;
+void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+	va_list args;
+	va_start(args, __format);
 
-void rrr_mysql_library_init(void) {
-	pthread_mutex_lock(&mysql_global_lock);
-	if (mysql_users == 0) {
-		mysql_library_init(0, NULL, NULL);
-	}
-	mysql_users++;
-	pthread_mutex_unlock(&mysql_global_lock);
+	printf("<%u> <%s> ", loglevel, prefix);
+	vprintf(__format, args);
+
+	va_end(args);
 }
 
-void rrr_mysql_library_end(void) {
-	pthread_mutex_lock(&mysql_global_lock);
-	mysql_users--;
-	if (mysql_users == 0) {
-		mysql_library_end();
-	}
-	pthread_mutex_unlock(&mysql_global_lock);
+void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+	va_list args;
+	va_start(args, __format);
+
+	fprintf(file, "<%u> <%s> ", loglevel, prefix);
+	vfprintf(file, __format, args);
+
+	va_end(args);
 }

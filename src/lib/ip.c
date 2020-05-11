@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_accept_data.h"
-#include "../global.h"
+#include "log.h"
 #include "messages.h"
 #include "array.h"
 #include "rrr_socket.h"

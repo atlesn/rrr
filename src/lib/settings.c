@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_endian.h"
 #include "rrr_socket.h"
 #include "settings.h"
-#include "../global.h"
+#include "log.h"
 
 struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;

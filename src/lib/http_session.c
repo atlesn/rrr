@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <unistd.h>
 
-#include "../global.h"
+#include "log.h"
 #include "gnu.h"
 #include "base64.h"
 #include "linked_list.h"
