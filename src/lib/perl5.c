@@ -1187,8 +1187,8 @@ int rrr_perl5_message_to_hv (
 		goto out;
 	}
 
-	uint64_t addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
-	if (message_addr != NULL && addr_len_tmp > 0) {
+	uint64_t addr_len_tmp;
+	if (message_addr != NULL && (addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr)) > 0) {
 		// Perl needs size of sockaddr struct which is smaller than our internal size
 		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(struct sockaddr));
 		sv_setuv(ip_addr_len, addr_len_tmp);
