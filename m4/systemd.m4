@@ -1,3 +1,22 @@
+dnl 
+dnl Read Route Record
+dnl 
+dnl Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+dnl 
+dnl This program is free software: you can redistribute it and/or modify
+dnl it under the terms of the GNU General Public License as published by
+dnl the Free Software Foundation, either version 3 of the License, or
+dnl (at your option) any later version.
+dnl 
+dnl This program is distributed in the hope that it will be useful,
+dnl but WITHOUT ANY WARRANTY; without even the implied warranty of
+dnl MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+dnl GNU General Public License for more details.
+dnl 
+dnl You should have received a copy of the GNU General Public License
+dnl along with this program.  If not, see <http://www.gnu.org/licenses/>.
+dnl  
+
 # SYSTEMD_INIT()
 # --------------
 AC_DEFUN([SYSTEMD_INIT], [[
@@ -24,7 +43,7 @@ fi
 # SYSTEMD_DUMP_VARIABLES()
 # ------------------------
 AC_DEFUN([SYSTEMD_DUMP_VARIABLES], [[
-	if [ "x$SYSTEMD_init" -ne "x1" ]; then
+	if [ "x$SYSTEMD_init" != "x1" ]; then
 		] AC_MESSAGE([error: SYSTEMD_@&t@DUMP_VARIABLES used before SYSTEMD_@&t@INIT]) [
 		exit 1
 	fi
@@ -37,7 +56,7 @@ AC_DEFUN([SYSTEMD_DUMP_VARIABLES], [[
 # SYSTEMD_SYSTEM_UNIT_DIR()
 # -------------------------
 AC_DEFUN([SYSTEMD_SYSTEM_UNIT_DIR], [[$(
-	if [ "x$SYSTEMD_init" -ne "x1" ]; then
+	if [ "x$SYSTEMD_init" != "x1" ]; then
 		>&2 echo "SYSTEMD_@&t@SYSTEM_UNIT_DIR used before SYSTEMD_@&t@INIT";
 		exit 1
 	fi;

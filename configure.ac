@@ -339,13 +339,15 @@ AS_IF([test "x$enable_database_testing" = xyes], [
 
 AC_MSG_CHECKING([for systemd usage])
 AS_IF([test "x$enable_systemd" = xyes], [
-	AC_MSG_RESULT([yes])
-
 	SYSTEMD_INIT
 	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
 
 	AC_CONFIG_FILES([misc/systemd/rrr.service])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
+
+	tmp=SYSTEMD_SYSTEM_UNIT_DIR
+	tmp=$(echo "$tmp" | tr -d '\n')
+	AC_MSG_RESULT([yes, unit directory is ${tmp}])
 ],[
 	AC_MSG_RESULT([no])
 ])
