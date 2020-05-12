@@ -26,6 +26,6 @@ typedef struct PyObject Pyobject;
 struct rrr_socket_msg;
 
 struct rrr_setting_packed *rrr_python3_setting_get_setting (PyObject *self);
-PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg);
+PyObject *rrr_python3_setting_new_from_setting (const struct rrr_socket_msg *msg);
 
 #endif /* RRR_PYTHON3_SETTING_H */

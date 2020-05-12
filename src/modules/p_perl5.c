@@ -270,7 +270,7 @@ int preload_perl5 (struct rrr_thread *thread) {
 	return ret;
 }
 
-int data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_data) {
+int perl5_data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
@@ -1059,7 +1059,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	struct rrr_poll_collection poll_ip;
 	struct rrr_ip_buffer_entry_collection input_buffer_tmp = {0};
 
-	if (data_init(data, thread_data) != 0) {
+	if (perl5_data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}

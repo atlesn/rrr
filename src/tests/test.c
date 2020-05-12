@@ -48,7 +48,7 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
+int main_get_test_result(struct instance_metadata_collection *instances) {
 	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
@@ -87,8 +87,9 @@ int signal_interrupt (int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{1, 'd',	"debuglevel", ""},
-		{0, '\0',	NULL, ""}
+		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",		"{CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",	"-d|--debuglevel DEBUGLEVEL"},
+		{0,							'\0',	NULL, 			""}
 };
 
 static int test_fixp(void) {
@@ -216,6 +217,12 @@ int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
 
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
+		ret = 1;
+		goto out_cleanup_fork_handler;
+	}
+
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
@@ -245,12 +252,6 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_message_broker;
 	}
 
-	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
-		ret = 1;
-		goto out_cleanup_fork_handler;
-	}
-
 	TEST_MSG("Starting test with module path %s\n", RRR_MODULE_PATH);
 	TEST_MSG("Change to directory %s\n", RRR_TEST_PATH);
 
@@ -265,11 +266,17 @@ int main (int argc, const char **argv) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
+	if (ret == 1) {
+		// Some data might have been stored also upon error
+		goto out_cleanup_cmd;
+	}
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
-	if (ret == 1) {
-		// Some data might have been stored also upon error
+	const char *config_file = cmd_get_value(&cmd, "config", 0);
+	if (config_file == NULL) {
+		RRR_MSG_ERR("No configuration file specified for test program\n");
+		ret = 1;
 		goto out_cleanup_cmd;
 	}
 
@@ -290,7 +297,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("true configuration loading") {
-		config = rrr_config_parse_file("test.conf");
+		config = rrr_config_parse_file(config_file);
 	} TEST_RESULT(config != NULL);
 
 	if (config == NULL) {
@@ -350,12 +357,12 @@ int main (int argc, const char **argv) {
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
-	TEST_BEGIN("testing type array parsing") {
+	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			usleep(10000);
 		}
 
-		ret = main_get_configuration_test_result(instances);
+		ret = main_get_test_result(instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		usleep (3600000000); // 3600 seconds
@@ -394,5 +401,6 @@ int main (int argc, const char **argv) {
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
+	out:
 		return ret;
 }

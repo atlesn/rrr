@@ -1060,15 +1060,16 @@ int rrr_array_new_message_from_collection (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
+		// TODO : Data must be put in a buffer and then printed
+/*		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(message); i++) {
 			char c = MSG_DATA_PTR(message)[i];
 			if (c < 0x10) {
-				RRR_DBG("0");
+				RRR_DBG_NOPREFIX("0");
 			}
-			RRR_DBG("%x", c);
+			RRR_DBG_NOPREFIX("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG_NOPREFIX("\n");*/
 	}
 
 	*final_message = (struct rrr_message *) message;

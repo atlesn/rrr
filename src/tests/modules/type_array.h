@@ -25,28 +25,16 @@ struct rrr_message;
 struct instance_metadata_collection;
 
 int test_averager (
-		struct rrr_message **result_message,
 		struct instance_metadata_collection *instances,
-		const char *input_name_voltmonitor,
 		const char *output_name_averager
 );
 
-int test_type_array (
-		struct rrr_message **result_message_1,
-		struct rrr_message **result_message_2,
-		struct rrr_message **result_message_3,
+int test_array (
 		struct instance_metadata_collection *instances,
-		const char *input_name,
-		const char *input_socket_name,
-		const char *output_name_1,
-		const char *output_name_2,
-		const char *output_name_3
+		const char *output_name
 );
 
-int test_type_array_mysql_and_network (
+int test_type_array_mysql (
 		struct instance_metadata_collection *instances,
-		const char *input_buffer_name,
-		const char *tag_buffer_name,
-		const char *mysql_name,
-		const struct rrr_message *message
+		const char *tag_buffer_name
 );

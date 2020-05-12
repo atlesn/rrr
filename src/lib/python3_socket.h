@@ -32,15 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_SOCKET_MSG_CTRL_F_USR_A
 
 struct rrr_socket_msg;
+struct rrr_mmap_channel;
 
-int rrr_python3_socket_get_fd (PyObject *self);
-int rrr_python3_socket_get_connected_fd (PyObject *self);
-const char *rrr_python3_socket_get_filename(PyObject *self);
-PyObject *rrr_python3_socket_new (const char *filename);
-int rrr_python3_socket_poll (PyObject *socket, int timeout);
-int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message);
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket);
-int rrr_python3_socket_accept (PyObject *self);
-void rrr_python3_socket_close (PyObject *self);
+PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel);
+int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message);
 
 #endif /* RRR_PYTHON3_SOCKET_H */

@@ -66,11 +66,6 @@ int rrr_mmap_channel_write (
 		const void *data,
 		size_t data_size
 );
-int rrr_mmap_channel_read (
-		void **target,
-		size_t *target_size,
-		struct rrr_mmap_channel *source
-);
 int rrr_mmap_channel_read_with_callback (
 		struct rrr_mmap_channel *source,
 		int (*callback)(const void *data, size_t data_size, void *arg),
@@ -80,6 +75,11 @@ int rrr_mmap_channel_read_all (
 		struct rrr_mmap_channel *source,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
+);
+int rrr_mmap_channel_read (
+		void **target,
+		size_t *target_size,
+		struct rrr_mmap_channel *source
 );
 void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted);
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target);

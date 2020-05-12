@@ -38,8 +38,9 @@ struct rrr_message_addr {
 #define RRR_MSG_ADDR_SIZE_OK(msg) \
 	((msg)->msg_size >= sizeof(*(msg)) - sizeof ((msg)->addr))
 
+// NOTE ! This will underflow and wrap around if msg_size is small. We only check for 0 here.
 #define RRR_MSG_ADDR_GET_ADDR_LEN(msg) \
-	(msg)->msg_size - sizeof(*(msg)) + sizeof ((msg)->addr)
+	((msg)->msg_size == 0 ? 0 : (msg)->msg_size - sizeof(*(msg)) + sizeof ((msg)->addr))
 
 #define RRR_MSG_ADDR_SET_ADDR_LEN(msg, len) \
 	(msg)->msg_size = sizeof(*(msg)) - sizeof((msg)->addr) + (len)
