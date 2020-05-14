@@ -5,3 +5,5 @@ make_test_data
 send_ip
 .test_data.tmp
 .rrr_test.sock
+test.sh
+.test_composite.sh

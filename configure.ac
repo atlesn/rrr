@@ -64,7 +64,23 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
+SHELL_VARS_INIT([variables.sh])
+
+SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
+SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
+SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_encryption)
+SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
+SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
+
+SHELL_VARS_OUTPUT
+
+AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
+AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
+AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+
 AC_MSG_CHECKING([for OpenSSL usage])
 AS_IF([test "x$enable_encryption" = xno], [
        AC_MSG_RESULT([Not compiling with OpenSSL])
@@ -83,7 +99,6 @@ AS_IF([test "x$enable_encryption" = xno], [
        AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
 ])
 
-AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -172,7 +187,6 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_SUBST([PERL5_INTERPRETER])
 ])
 
-AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" = "xyes"])
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
 	AC_MSG_RESULT([Not compiling with python3])
@@ -256,7 +270,6 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 ])
 
-AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AC_MSG_CHECKING([for USB enabled])
 AS_IF([test "x$enable_usb" = xno], [
 	AC_MSG_RESULT([Not compiling with USB])
@@ -286,7 +299,6 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
-AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
@@ -349,10 +361,11 @@ AS_IF([test "x$enable_systemd" = xyes], [
 ],[
 	AC_MSG_RESULT([no])
 ])
-AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
+
+AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
@@ -360,3 +373,4 @@ AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 )
 
 AC_OUTPUT
+SHELL_VARS_CLEANUP

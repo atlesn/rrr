@@ -48,6 +48,7 @@ Makefile
 src/vlogger
 *.lai
 .dirstamp
+variables.sh
 
 # code coverage
 *.gcov
