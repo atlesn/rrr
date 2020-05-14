@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
+#include "../lib/rrr_endian.h"
 #include "../lib/messages_head.h"
 #include "../lib/rrr_socket_msg_checksum.h"
 #include "../lib/rrr_socket_msg_head.h"

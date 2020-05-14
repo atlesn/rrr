@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+
 /*
  * This file must be compiled with -DRRR_INTERCEPT_ALLOW_READDIR prior to inclusion
  * of intercept.h, or intercept.h must not be included. If this is done incorrectly,
@@ -37,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "rrr_readdir.h"
 #include "rrr_strerror.h"
+#include "rrr_path_max.h"
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
