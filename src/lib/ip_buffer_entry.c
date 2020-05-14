@@ -195,8 +195,11 @@ int rrr_ip_buffer_entry_new (
 	if (addr == NULL) {
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
+	else if (addr_len > sizeof(entry->addr)) {
+		RRR_BUG("Address too long (%u > %u) in rrr_ip_buffer_entry_new\n", addr_len, sizeof(entry->addr));
+	}
 	else {
-		entry->addr = *((struct rrr_sockaddr *) addr);
+		memcpy(&entry->addr, addr, addr_len);
 	}
 
 	if (addr_len > sizeof(entry->addr)) {

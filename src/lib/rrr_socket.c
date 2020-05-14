@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "crc32.h"
 #include "rrr_strerror.h"
 #include "rrr_socket.h"
+#include "log.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -250,7 +251,7 @@ static int __rrr_socket_add_unlocked_basic (
 
 int rrr_socket_accept (
 		int fd_in,
-		struct rrr_sockaddr *addr,
+		struct sockaddr *addr,
 		socklen_t *__restrict addr_len,
 		const char *creator
 ) {
@@ -748,6 +749,9 @@ int rrr_socket_sendto_nonblock (
 		goto out;
 	}
 
+	RRR_DBG_4("Non-blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
+			fd, size, done_bytes_total);
+
 	if (addr == NULL) {
 		done_bytes = send(fd, data + done_bytes_total, size - done_bytes_total, flags);
 	}
@@ -807,7 +811,9 @@ int rrr_socket_sendto_blocking (
 	ssize_t written_bytes = 0;
 	ssize_t written_bytes_total = 0;
 
-	while (ret != 0) {
+	while (written_bytes_total < size) {
+		RRR_DBG_4("Blocking send on fd %i starting, writing %i bytes (where of %i is complete)\n",
+				fd, size, written_bytes_total);
 		if ((ret = rrr_socket_sendto_nonblock (
 				&written_bytes,
 				fd,
@@ -822,6 +828,8 @@ int rrr_socket_sendto_blocking (
 			}
 		}
 		written_bytes_total += written_bytes;
+		RRR_DBG_4("Blocking send on fd %i, written bytes total is %i (this round was %i)\n",
+				fd, written_bytes_total, written_bytes);
 	}
 
 	out:

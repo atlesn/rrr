@@ -343,7 +343,8 @@ int rrr_array_parse_data_from_definition (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("rrr_types_parse_data input: 0x");
+		// TODO : This needs to be put into a buffer then written out
+/*		RRR_DBG("rrr_types_parse_data input: 0x");
 		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
 			if (c < 0x10) {
@@ -351,7 +352,7 @@ int rrr_array_parse_data_from_definition (
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	int i = 0;
@@ -1105,6 +1106,7 @@ int rrr_array_message_to_collection (
 	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
 
 	if (RRR_DEBUGLEVEL_3) {
+		/* TODO : This needs to be put in a buffer then written out
 		RRR_DBG("rrr_array_message_to_collection input (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(array); i++) {
 			char c = MSG_DATA_PTR(array)[i];
@@ -1114,6 +1116,7 @@ int rrr_array_message_to_collection (
 			RRR_DBG("%x", c);
 		}
 		RRR_DBG("\n");
+		*/
 	}
 
 	int i = 0;

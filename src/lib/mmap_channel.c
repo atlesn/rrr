@@ -211,7 +211,7 @@ int rrr_mmap_channel_write_using_callback (
 
 	block->size_data = data_size;
 
-	RRR_DBG_4("mmap channel %p wr blk %i size %li\n", target, target->wpos, data_size);
+	RRR_DBG_4("mmap channel %p %s wr blk %i size %li\n", target, target->name, target->wpos, data_size);
 
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
@@ -280,7 +280,7 @@ int rrr_mmap_channel_read_with_callback (
 		goto out_unlock;
 	}
 
-	RRR_DBG_4("mmap channel %p rd blk %i size %li\n", source, source->rpos, block->size_data);
+	RRR_DBG_4("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
 
 	if (block->shmid != 0) {
 		const char *data_pointer = NULL;
@@ -478,7 +478,7 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 	pthread_mutex_unlock(&target->index_lock);
 }
 
-int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap) {
+int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name) {
 	int ret = 0;
 
 	struct rrr_mmap_channel *result = NULL;
@@ -515,6 +515,9 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 			goto out_destroy_mutexes;
 		}
 	}
+
+    strncpy(result->name, name, sizeof(result->name));
+    result->name[sizeof(result->name) - 1] = '\0';
 
 	result->mmap = mmap;
 

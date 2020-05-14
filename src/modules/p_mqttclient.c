@@ -614,19 +614,25 @@ static int process_suback_unsuback (
 }
 
 static int message_data_to_payload (
-		char **payload,
-		ssize_t *payload_size,
+		char **result,
+		ssize_t *result_size,
+
 		struct rrr_message *reading
 ) {
-	char *result = malloc(MSG_DATA_LENGTH(reading));
+	*result = NULL;
+	*result_size = 0;
 
-	if (result == NULL) {
+	char *payload = malloc(MSG_DATA_LENGTH(reading));
+
+	if (payload == NULL) {
 		RRR_MSG_ERR ("could not allocate memory for PUBLISH payload in message_data_to_payload \n");
 		return 1;
 	}
 
 	memcpy(payload, MSG_DATA_PTR(reading), MSG_DATA_LENGTH(reading));
-	*payload_size = MSG_DATA_LENGTH(reading);
+
+	*result = payload;
+	*result_size = MSG_DATA_LENGTH(reading);
 
 	return 0;
 }
@@ -726,34 +732,35 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			goto out_free;
 		}
 
-		if (*private_data->publish_values_from_array == '*') {
-			if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
-				RRR_MSG_ERR("Error while creating payload from message array data in mqtt client poll_callback of mqtt client instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				goto out_free;
-			}
-		}
-		else {
-			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-				RRR_MSG_ERR("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				ret = 1;
-				goto out_free;
-			}
+		const struct rrr_map *tags_to_use = (*(private_data->publish_values_from_array) == '*'
+				? NULL
+				: &private_data->publish_values_from_array_list
+		);
 
-			int found_tags = 0;
-			if ((ret = rrr_array_selected_tags_export (
-					&payload,
-					&payload_size,
-					&found_tags,
-					&array_tmp,
-					&private_data->publish_values_from_array_list)
-			) != 0) {
-				RRR_MSG_ERR("Could not create payload data from selected array tags in mqtt client instance %s\n",
-						INSTANCE_D_NAME(thread_data));
-				ret = 1;
-				goto out_free;
-			}
+		if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
+			RRR_MSG_ERR("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+
+		int found_tags = 0;
+		if ((ret = rrr_array_selected_tags_export (
+				&payload,
+				&payload_size,
+				&found_tags,
+				&array_tmp,
+				tags_to_use
+		)) != 0) {
+			RRR_MSG_ERR("Could not create payload data from selected array tags in mqtt client instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 1;
+			goto out_free;
+		}
+
+		if (tags_to_use != NULL && found_tags != RRR_MAP_COUNT(&private_data->publish_values_from_array_list)) {
+			RRR_DBG_1("Note: Only %i tags out of %i specified in configuration was found in message when sending array data in mqtt instance %s\n",
+					found_tags, RRR_MAP_COUNT(&private_data->publish_values_from_array_list), INSTANCE_D_NAME(thread_data));
 		}
 	}
 	else if (MSG_DATA_LENGTH(reading) > 0) {
@@ -960,8 +967,8 @@ static int __try_create_array_message_from_publish (
 			&data->array_definition
 	)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			RRR_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data\n",
-					INSTANCE_D_NAME(data->thread_data));
+			RRR_MSG_ERR("Could not parse data array from received PUBLISH message in MQTT client instance %s, invalid data of length %i\n",
+					INSTANCE_D_NAME(data->thread_data), publish->payload->length);
 			ret = 0;
 		}
 		else if (ret == RRR_ARRAY_PARSE_INCOMPLETE) {
@@ -1052,8 +1059,8 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	struct rrr_mqtt_property *property = NULL;
 	const char *content_type = NULL;
 
-	RRR_DBG_2 ("mqtt client %s: Receive PUBLISH payload length %li\n",
-			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0));
+	RRR_DBG_2 ("mqtt client %s: Receive PUBLISH payload length %li topic %s\n",
+			INSTANCE_D_NAME(data->thread_data), (publish->payload != NULL ? publish->payload->length : 0), (publish->topic));
 
 	if ((property = rrr_mqtt_property_collection_get_property(&publish->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0)) != NULL) {
 		ssize_t length = 0;

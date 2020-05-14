@@ -32,8 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_message_addr {
 	RRR_SOCKET_MSG_HEAD;
 	uint8_t protocol;
-	struct rrr_sockaddr addr;
-} __attribute((packed));
+	char addr[128];
+} __attribute((__packed__));
 
 #define RRR_MSG_ADDR_SIZE_OK(msg) \
 	((msg)->msg_size >= sizeof(*(msg)) - sizeof ((msg)->addr))

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "utf8.h"
 #include "rrr_endian.h"
 #include "rrr_socket.h"
+#include "rrr_socket_msg.h"
 #include "messages.h"
 #include "log.h"
 
@@ -242,8 +243,7 @@ int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expecte
 }
 
 void rrr_message_prepare_for_network (struct rrr_message *message) {
-	message->timestamp = htobe64(message->timestamp);
-	message->topic_length = htobe16(message->topic_length);
+	MSG_TO_BE(message);
 
 	if (RRR_DEBUGLEVEL_6) {
 		RRR_DBG("Message prepared for network: ");

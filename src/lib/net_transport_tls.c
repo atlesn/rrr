@@ -46,11 +46,11 @@ struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;
 	BIO *web;
 	struct rrr_ip_data ip_data;
-	struct rrr_sockaddr sockaddr;
+	struct sockaddr_storage sockaddr;
 	socklen_t socklen;
 	int handshake_complete;
 };
-
+struct in6_addr;
 static void __rrr_net_transport_tls_ssl_data_destroy (struct rrr_net_transport_tls_ssl_data *ssl_data) {
 	if (ssl_data != NULL) {
 /*		if (ssl_data->out != NULL) {

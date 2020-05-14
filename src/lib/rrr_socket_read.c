@@ -62,6 +62,7 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
+	RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
 	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;
@@ -85,7 +86,7 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 	}
 
 	if ((pollfd.revents & POLLHUP) != 0) {
-		RRR_DBG_3("Socket POLLHUP in rrr_socket_read_message, read EOF imminent\n");
+		RRR_DBG_3("Socket %i POLLHUP in rrr_socket_read_message_default_poll, read EOF imminent\n", callback_data->fd);
 	}
 
 	out:
@@ -190,6 +191,8 @@ static int __rrr_socket_read_message_default_read (
 	else {
 		RRR_BUG("Unknown read method %i in __rrr_socket_read_message_default_read\n", callback_data->socket_read_flags);
 	}
+
+	RRR_DBG_4("Socket %i recvfrom/recv/read %i bytes\n", callback_data->fd, bytes);
 
 	if (bytes == -1) {
 		if (errno == EINTR) {

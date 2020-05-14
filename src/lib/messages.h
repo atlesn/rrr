@@ -22,69 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGES_H
 #define RRR_MESSAGES_H
 
-#include "rrr_socket_msg.h"
+#include "rrr_socket_msg_head.h"
+#include "messages_head.h"
 
-#define MSG_TYPE_MSG 1
-//#define MSG_TYPE_ACK 2
-#define MSG_TYPE_TAG 2
-
-#define MSG_CLASS_DATA 1
-#define MSG_CLASS_ARRAY 11
-
-#define MSG_TYPE_MSG_STRING "MSG"
-#define MSG_TYPE_TAG_STRING "TAG"
-
-#define MSG_CLASS_DATA_STRING "DATA"
-#define MSG_CLASS_ARRAY_STRING "ARRAY"
-
-#define MSG_TYPE(message)			((message)->type_and_class & 0x0f)
-#define MSG_CLASS(message)			(((message)->type_and_class & 0xf0) >> 4)
-
-#define MSG_SET_TYPE(message,n)		(message)->type_and_class = ((message)->type_and_class & 0xf0) | (n & 0x0f)
-#define MSG_SET_CLASS(message,n)	(message)->type_and_class = ((message)->type_and_class & 0x0f) | (n << 4)
-
-#define MSG_CLASS_OK(message) \
-	((MSG_CLASS(message) == MSG_CLASS_DATA || MSG_CLASS(message) == MSG_CLASS_ARRAY))
-
-#define MSG_TYPE_OK(message) \
-	(MSG_TYPE(message) >= MSG_TYPE_MSG && MSG_TYPE(message) <= MSG_TYPE_TAG)
-
-#define MSG_IS_MSG(message)			(MSG_TYPE(message) == MSG_TYPE_MSG)
-//#define MSG_IS_ACK(message)			((message)->type == MSG_TYPE_ACK)
-#define MSG_IS_TAG(message)			(MSG_TYPE(message) == MSG_TYPE_TAG)
-
-#define MSG_IS_DATA(message)		(MSG_CLASS(message) == MSG_CLASS_DATA)
-#define MSG_IS_ARRAY(message)		(MSG_CLASS(message) == MSG_CLASS_ARRAY)
-
-#define MSG_IS_MSG_DATA(message)	(MSG_IS_MSG(message) && MSG_IS_DATA(message))
-#define MSG_IS_MSG_ARRAY(message)	(MSG_IS_MSG(message) && MSG_IS_ARRAY(message))
-
-#define MSG_MIN_SIZE(message)		(sizeof(*(message))-1)
-#define MSG_TOTAL_SIZE(message)		((message)->msg_size)
-#define MSG_TOPIC_LENGTH(message)	((message)->topic_length)
-#define MSG_TOPIC_PTR(message)		((message)->data + 0)
-#define MSG_DATA_LENGTH(message)	((message)->msg_size - (sizeof(*message) - 1) - (message)->topic_length)
-#define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
-
-#define RRR_MESSAGE_HEAD 	\
-	rrr_u64 timestamp;		\
-	rrr_u8 type_and_class;	\
-	rrr_u8 version;			\
-	rrr_u16 topic_length
-
-struct rrr_message {
-	RRR_SOCKET_MSG_HEAD;
-	RRR_MESSAGE_HEAD;
-	char data[1];
-} __attribute__((packed));
-
-static inline struct rrr_socket_msg *rrr_message_safe_cast (struct rrr_message *message) {
-	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
-	ret->msg_size = MSG_TOTAL_SIZE(message);
-	ret->msg_value = 0;
-	return ret;
-}
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
@@ -133,4 +73,4 @@ int rrr_message_set_topic (
 int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b);
 int rrr_message_timestamp_compare_void (void *message_a, void *message_b);
 
-#endif
+#endif /* RRR_MESSAGES_H */

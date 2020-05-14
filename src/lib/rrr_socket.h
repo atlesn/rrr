@@ -32,15 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
 
-#ifndef SOCK_MAXADDRLEN
-	#define SOCK_MAXADDRLEN 255
-#endif
-
-struct rrr_sockaddr {
-	struct sockaddr sockaddr;
-	char filler[SOCK_MAXADDRLEN - sizeof(struct sockaddr)];
-};
-
 struct rrr_socket_options {
 	int fd;
 	int domain;
@@ -63,7 +54,7 @@ int rrr_socket_with_lock_do (
 );
 int rrr_socket_accept (
 		int fd_in,
-		struct rrr_sockaddr *addr,
+		struct sockaddr *addr,
 		socklen_t *__restrict addr_len,
 		const char *creator
 );

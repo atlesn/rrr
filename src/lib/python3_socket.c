@@ -92,10 +92,16 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	struct rrr_socket_msg *message = NULL;
 	if (rrr_python3_rrr_message_check(arg)) {
 		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (&message_addr, arg);
+
 		if (rrr_message == NULL) {
+			RRR_MSG_ERR("Could not get RRR message from python3 object in rrr_python3_socket_f_send\n");
 			ret = 1;
 			goto out;
 		}
+
+		RRR_DBG_3("python3 socket sending message with timestamp %" PRIu64 " from application\n",
+				rrr_message->timestamp);
+
 		message = rrr_message_safe_cast(rrr_message);
 	}
 	else if (rrr_python3_setting_check(arg)) {
@@ -104,6 +110,10 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 			ret = 1;
 			goto out;
 		}
+
+		RRR_DBG_3("python3 socket sending setting %s from application\n",
+				setting->name);
+
 		message = rrr_setting_safe_cast(setting);
 	}
 	else {

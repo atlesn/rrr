@@ -118,7 +118,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("dump message: 0x");
+// TODO : Needs to be put in a buffer then written out
+/*		RRR_DBG("dump message: 0x");
 		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			char c = ((char*)message)[i];
 			if (c < 0x10) {
@@ -126,7 +127,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	if (!MSG_IS_ARRAY(message)) {
@@ -216,10 +217,16 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	final_data_raw->be2 = *((int64_t*) (types[2]->data));
 	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
 
+	TEST_MSG("Result for BE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
+			final_data_raw->be4, final_data_raw->be3, final_data_raw->be2, final_data_raw->be1);
+
 	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
 	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
 	final_data_raw->le2 = *((int64_t*) (types[7]->data));
 	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
+
+	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
+			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
 
 	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
 	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
@@ -257,7 +264,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("dump final_data_raw: 0x");
+		// TODO : This needs to be put in a buffer then written out
+/*		RRR_DBG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
 			char c = ((char*)final_data_raw)[i];
 			if (c < 0x10) {
@@ -265,7 +273,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	if (final_data_raw->be1 != final_data_raw->le1 ||

@@ -335,7 +335,7 @@ int rrr_mmap_heap_reallocate (struct rrr_mmap *mmap, uint64_t heap_size) {
 	return ret;
 }
 
-int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size) {
+int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name) {
 	int ret = 0;
 
 	*target = NULL;
@@ -376,6 +376,9 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size) {
     	ret = 1;
     	goto out_munmap_heap;
     }
+
+    strncpy(result->name, name, sizeof(result->name));
+    result->name[sizeof(result->name) - 1] = '\0';
 
     result->usercount++;
 

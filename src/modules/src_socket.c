@@ -146,7 +146,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		return 1;
 	}
 	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
+		RRR_MSG_ERR("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		return 1;
 	}

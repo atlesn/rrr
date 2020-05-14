@@ -49,9 +49,12 @@ def process(socket: rrr_socket, message: rrr_message):
 
 	print ("python3 array has " + str(array_old.count()) + " members, persistent settings are " + persistent_setting_a + " and " + persistent_setting_b)
 
+	for item in array_old:
+		print ("\titem in array with tag " + item.get_tag())
+
 	message.discard_array()
 
-	blob_item = array_old.get("blob8")
+	blob_item = array_old.get("blob")
 	blob_item.set_type(blob_item.TYPE_STR)
 
 	for i in range(blob_item.count()):
@@ -73,4 +76,5 @@ def process(socket: rrr_socket, message: rrr_message):
 	message.set_array(array_new)
 
 	socket.send(message)
+
 	return True

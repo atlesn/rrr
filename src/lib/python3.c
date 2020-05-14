@@ -59,6 +59,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_mmap.h"
 #include "mmap_channel.h"
 #include "log.h"
+#include "gnu.h"
 
 struct python3_fork_runtime {
 	PyThreadState *istate;
@@ -374,36 +375,52 @@ void rrr_py_fork_terminate_and_destroy (struct python3_fork *fork) {
 	pthread_mutex_unlock (&fork_lock);
 }
 
-static struct python3_fork *rrr_py_fork_new (
-		struct rrr_fork_handler *fork_handler
-) {
-	struct python3_fork *ret = malloc(sizeof(*ret));
+#define ALLOCATE_TMP_NAME(target, name1, name2)															\
+	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
+		RRR_MSG_ERR("Could not allocate temporary string for name in rrr_py_fork_new\n");				\
+		goto err_free;																					\
+	}
 
-	if (ret == NULL) {
+static struct python3_fork *__rrr_py_fork_new (
+		struct rrr_fork_handler *fork_handler,
+		const char *name
+) {
+	struct python3_fork *ret = NULL;
+
+	// These are for debug messages
+	char *mmap_name = NULL;
+	char *mmap_channel_to_name = NULL;
+	char *mmap_channel_from_name = NULL;
+
+	ALLOCATE_TMP_NAME(mmap_name, name, "mmap");
+	ALLOCATE_TMP_NAME(mmap_channel_to_name, name, "ch-to");
+	ALLOCATE_TMP_NAME(mmap_channel_from_name, name, "ch-from");
+
+	if ((ret = malloc(sizeof(*ret))) == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_py_fork_new\n");
-		return NULL;
+		goto err_free;
 	}
 
 	memset(ret, '\0', sizeof(*ret));
 
-	if (rrr_mmap_new(&ret->mmap, PYTHON3_MMAP_SIZE) != 0) {
+	if (rrr_mmap_new(&ret->mmap, PYTHON3_MMAP_SIZE, mmap_name) != 0) {
 		RRR_MSG_ERR("Could not create mmap in rrr_py_fork_new\n");
 		goto err_free;
 	}
 
-	if (rrr_mmap_channel_new(&ret->channel_to_fork, ret->mmap) != 0) {
+	if (rrr_mmap_channel_new(&ret->channel_to_fork, ret->mmap, mmap_channel_to_name) != 0) {
 		RRR_MSG_ERR("Could not create mmap channel in rrr_py_fork_new\n");
 		goto err_destroy_mmap;
 	}
 
-	if (rrr_mmap_channel_new(&ret->channel_from_fork, ret->mmap) != 0) {
+	if (rrr_mmap_channel_new(&ret->channel_from_fork, ret->mmap, mmap_channel_from_name) != 0) {
 		RRR_MSG_ERR("Could not create mmap channel in rrr_py_fork_new\n");
 		goto err_destroy_mmap_channel_to_fork;
 	}
 
 	ret->fork_handler = fork_handler;
 
-	return ret;
+	goto out;
 
 //	err_destroy_mmap_channel_from_fork:
 //		rrr_mmap_channel_destroy(ret->channel_from_fork);
@@ -413,7 +430,11 @@ static struct python3_fork *rrr_py_fork_new (
 		rrr_mmap_destroy(ret->mmap);
 	err_free:
 		RRR_FREE_IF_NOT_NULL(ret);
-		return NULL;
+	out:
+		RRR_FREE_IF_NOT_NULL(mmap_name);
+		RRR_FREE_IF_NOT_NULL(mmap_channel_to_name);
+		RRR_FREE_IF_NOT_NULL(mmap_channel_from_name);
+		return ret;
 }
 
 PyObject *__rrr_py_socket_message_to_pyobject (const struct rrr_socket_msg *message, struct rrr_message_addr *message_addr) {
@@ -767,7 +788,7 @@ int rrr_py_start_persistent_rw_fork (
 
 	*result_fork = NULL;
 
-	if ((fork = rrr_py_fork_new(fork_handler)) == NULL) {
+	if ((fork = __rrr_py_fork_new(fork_handler, function_name)) == NULL) {
 		RRR_MSG_ERR("Could not start thread.\n");
 		ret = 1;
 		goto out;

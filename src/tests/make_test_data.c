@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -29,7 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-#include "../lib/messages.h"
+#include "../lib/messages_head.h"
+#include "../lib/rrr_socket_msg_checksum.h"
+#include "../lib/rrr_socket_msg_head.h"
 
 /* Remember to disable compiler alignment */
 struct test_data {
@@ -66,8 +68,9 @@ void test_data_init (struct test_data *data) {
 
 	data->sep1 = ';';
 
-//	data->le4[1] = 2;
-	data->le4[1] = 5;
+// Put an incorrect number to check if test fails
+	data->le4[1] = 2;
+//	data->le4[1] = 5;
 	data->le4[3] = 1;
 
 	data->le3[1] = 2;
@@ -88,6 +91,9 @@ void test_data_init (struct test_data *data) {
 	data->msg.topic_length = 0;
 	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);
 	MSG_SET_CLASS(&data->msg, MSG_CLASS_DATA);
+
+	MSG_TO_BE(&data->msg);
+	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
 }
 
 int main (int argc, char **argv) {

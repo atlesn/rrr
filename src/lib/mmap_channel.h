@@ -49,6 +49,7 @@ struct rrr_mmap_channel {
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+	char name[64];
 //	char *tmpfile;
 //	int tmp_fd;
 };
@@ -84,6 +85,6 @@ int rrr_mmap_channel_read (
 void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted);
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target);
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target);
-int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap);
+int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name);
 
 #endif /* RRR_MMAP_CHANNEL_H */

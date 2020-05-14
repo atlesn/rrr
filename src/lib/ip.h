@@ -111,11 +111,6 @@ int rrr_ip_send (
 	void *data,
 	ssize_t data_size
 );
-int rrr_ip_send_message (
-		const struct rrr_message* message,
-		struct rrr_ip_send_packet_info* info,
-		struct ip_stats *stats
-);
 
 // TODO : Rename functions
 

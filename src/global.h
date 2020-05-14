@@ -19,14 +19,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <stdio.h>
-#include <pthread.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <limits.h>
-
 #ifndef RRR_GLOBAL_H
 #define RRR_GLOBAL_H
+
+#include <pthread.h>
 
 /* Compile time checks */
 #define RRR_ASSERT_DEBUG
@@ -37,7 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ASSERT(predicate,name)
 #endif
 
-extern pthread_mutex_t global_config_mutex;
+#define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
+
+struct cmd_data;
 
 /* Runtime globals */
 struct rrr_global_config {
@@ -50,51 +48,7 @@ struct rrr_global_config {
 };
 
 extern struct rrr_global_config rrr_global_config;
-
-/* Common structures */
-#if UCHAR_MAX == 0xff
-typedef unsigned char rrr_u8;
-#endif
-
-#if USHRT_MAX == 0xffff
-typedef unsigned short rrr_u16;
-#endif
-
-#if UINT_MAX == 4294967295UL
-typedef unsigned int rrr_u32;
-#define RRR_SOCKET_32_IS_UINT 1
-#elif ULONG_MAX == 4294967295UL
-typedef unsigned long int rrr_u32;
-#define RRR_SOCKET_32_IS_LONG 1
-#endif
-
-#if ULONG_MAX == 18446744073709551615ULL
-typedef unsigned long int rrr_u64;
-#define RRR_SOCKET_64_IS_LONG 1
-#elif ULLONG_MAX == 18446744073709551615ULL
-typedef unsigned long long int rrr_u64;
-#define RRR_SOCKET_64_IS_LONG_LONG 1
-#endif
-
-#ifdef RRR_SOCKET_32_IS_UINT
-    typedef unsigned int rrr_u32;
-#elif defined (RRR_SOCKET_32_IS_LONG)
-    typedef unsigned long int rrr_u32;
-#else
-#  error "Could not get size of 32 bit unsigned integer"
-#endif
-
-#ifdef RRR_SOCKET_64_IS_LONG
-    typedef unsigned long int rrr_u64;
-#elif defined (RRR_SOCKET_64_IS_LONG_LONG)
-    typedef unsigned long long int rrr_u64;
-#else
-#  error "Could not get size of 64 bit unsigned integer"
-#endif
-
-#define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
-
-struct cmd_data;
+extern pthread_mutex_t global_config_mutex;
 
 void rrr_set_debuglevel_orig(void);
 void rrr_set_debuglevel_on_exit(void);

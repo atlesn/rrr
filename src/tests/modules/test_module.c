@@ -131,7 +131,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	}
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
-		ret = test_type_array_mysql_and_network(
+		ret = test_type_array_mysql (
 				thread_data->init_data.module->all_instances,
 				data->test_output_instance
 		);

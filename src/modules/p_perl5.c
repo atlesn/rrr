@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/log.h"
+#include "../lib/gnu.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -270,26 +271,42 @@ int preload_perl5 (struct rrr_thread *thread) {
 	return ret;
 }
 
+#define ALLOCATE_TMP_NAME(target, name1, name2)															\
+	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
+		RRR_MSG_ERR("Could not allocate temporary string for name in perl5_data_init\n");				\
+		ret = 1;																						\
+		goto out;																						\
+	}
+
 int perl5_data_init(struct perl5_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
+
+	// These are for debug messages
+	char *mmap_name = NULL;
+	char *mmap_channel_to_name = NULL;
+	char *mmap_channel_from_name = NULL;
+
+	ALLOCATE_TMP_NAME(mmap_name, INSTANCE_D_NAME(thread_data), "mmap");
+	ALLOCATE_TMP_NAME(mmap_channel_to_name, INSTANCE_D_NAME(thread_data), "ch-to");
+	ALLOCATE_TMP_NAME(mmap_channel_from_name, INSTANCE_D_NAME(thread_data), "ch-from");
 
 	memset (data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
-	if (rrr_mmap_new(&data->mmap, PERL5_MMAP_SIZE) != 0) {
+	if (rrr_mmap_new(&data->mmap, PERL5_MMAP_SIZE, mmap_name) != 0) {
 		RRR_MSG_ERR("Could not allocate mmap in perl5\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_mmap_channel_new(&data->channel_from_child, data->mmap) != 0) {
+	if (rrr_mmap_channel_new(&data->channel_from_child, data->mmap, mmap_channel_to_name) != 0) {
 		RRR_MSG_ERR("Could not allocate mmap channel in perl5\n");
 		ret = 1;
 		goto out_destroy_mmap;
 	}
 
-	if (rrr_mmap_channel_new(&data->channel_to_child, data->mmap) != 0) {
+	if (rrr_mmap_channel_new(&data->channel_to_child, data->mmap, mmap_channel_from_name) != 0) {
 		RRR_MSG_ERR("Could not allocate mmap channel in perl5\n");
 		ret = 1;
 		goto out_destroy_channel_from_child;
@@ -314,6 +331,9 @@ int perl5_data_init(struct perl5_data *data, struct rrr_instance_thread_data *th
 	out_destroy_mmap:
 		rrr_mmap_destroy(data->mmap);
 	out:
+		RRR_FREE_IF_NOT_NULL(mmap_name);
+		RRR_FREE_IF_NOT_NULL(mmap_channel_to_name);
+		RRR_FREE_IF_NOT_NULL(mmap_channel_from_name);
 		return ret;
 }
 

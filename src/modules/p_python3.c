@@ -299,7 +299,7 @@ int read_from_source_or_processor_finalize (
 		struct rrr_ip_buffer_entry *entry,
 		struct read_from_processor_callback_data *callback_data
 ) {
-	// Entry must be pre-filled with RRR message
+	// Entry must be pre-filled with socket message
 
 	struct rrr_message *message = entry->message;
 
@@ -334,6 +334,7 @@ int read_from_source_or_processor_finalize (
 	}
 	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
 		*(callback_data->previous_addr_msg) = *((struct rrr_message_addr *) message);
+		goto out_clear_message;
 	}
 	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
 		struct rrr_setting_packed *setting = (struct rrr_setting_packed *) message;
@@ -343,15 +344,19 @@ int read_from_source_or_processor_finalize (
 				setting->was_used,
 				rrr_settings_iterate_nolock
 		);
+		goto out_clear_message;
 	}
 	else {
-		RRR_MSG_ERR("Warning: Received non rrr_message and non rrr_settigns from python3 processor function, discarding it.\n");
+		RRR_MSG_ERR("Warning: Received non rrr_message, non rrr_settings and non address msg from python3 source/processor function, discarding it.\n");
 		ret = 1;
 		goto out;
 	}
 
 	out:
-	return ret;
+		return ret;
+	out_clear_message:
+		RRR_FREE_IF_NOT_NULL(entry->message);
+		return ret;
 }
 
 int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
@@ -392,6 +397,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 
 	RRR_DBG_3("rrr_py_persistent_receive_message got a message\n");
 
+	// Might remove the message from the entry, checked for below
 	ret = read_from_source_or_processor_finalize(entry, &callback_data);
 	if (ret != 0) {
 		RRR_MSG_ERR("Error from callback function while receiving message from python3 child\n");
