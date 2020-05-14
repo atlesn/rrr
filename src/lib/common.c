@@ -102,7 +102,7 @@ void rrr_signal_handler_remove_all(void) {
 }
 
 void rrr_signal (int s) {
-    RRR_DBG_1("Received signal %i\n", s);
+	RRR_DBG_SIGNAL("Received signal %i\n", s);
 
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;

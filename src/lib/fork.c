@@ -106,7 +106,7 @@ static int rrr_fork_handler_signal_pending = 0;
 int rrr_fork_signal_handler (int s, void *arg) {
 	(void)(arg);
 	if (s == SIGCHLD) {
-		RRR_MSG_ERR("Fork signal handler received SIGCHLD\n");
+		RRR_DBG_SIGNAL("Fork signal handler received SIGCHLD\n");
 		// Do not lock, only call from main context
 		rrr_fork_handler_signal_pending = 1;
 
