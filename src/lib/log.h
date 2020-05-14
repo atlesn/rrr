@@ -64,6 +64,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_ERR(...) \
 	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_global_config.log_prefix, __VA_ARGS__);}while(0)
 
+#define RRR_DBG_SIGNAL(...) \
+	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+
 #define RRR_DBG_1(...) \
 	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
 
@@ -115,6 +118,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_BUG(...) \
 	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
 
+void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 

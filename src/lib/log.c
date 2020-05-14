@@ -29,6 +29,16 @@ static pthread_mutex_t rrr_log_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // TODO : Locking does not work across forks
 
+void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
+	va_list args;
+	va_start(args, __format);
+
+	printf("<%u> <%s> ", loglevel, prefix);
+	vprintf(__format, args);
+
+	va_end(args);
+}
+
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
 	va_list args;
 	va_start(args, __format);
