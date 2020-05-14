@@ -488,7 +488,8 @@ int rrr_socket_unix_create_bind_and_listen (
 		const char *filename_orig,
 		int num_clients,
 		int nonblock,
-		int do_mkstemp
+		int do_mkstemp,
+		int do_unlink_if_exists
 ) {
 	int ret = 0;
 
@@ -508,6 +509,10 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
+	if (do_unlink_if_exists != 0 && do_mkstemp != 0) {
+		RRR_BUG("BUG: Both do_unlink_if_exists and do_mkstemp was set in rrr_socket_unix_create_bind_and_listen\n");
+	}
+
 	if (do_mkstemp != 0) {
 		fd = rrr_socket_mkstemp(filename_tmp, creator);
 		if (fd < 0) {
@@ -517,8 +522,16 @@ int rrr_socket_unix_create_bind_and_listen (
 		}
 		rrr_socket_close(fd);
 	}
-	else {
-		if (access (filename_tmp, F_OK) == 0) {
+	else if (access (filename_tmp, F_OK) == 0) {
+		if (do_unlink_if_exists != 0) {
+			if ((ret = unlink(filename_tmp)) != 0) {
+				RRR_MSG_ERR("Could not unlink file '%s' before creating socket: %s\n",
+						filename_tmp, rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
 			RRR_MSG_ERR("Filename '%s' already exists while creating socket, please delete it first or use another filename\n",
 					filename_tmp);
 			ret = 1;

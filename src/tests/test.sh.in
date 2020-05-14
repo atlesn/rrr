@@ -60,7 +60,6 @@ do_test_simple () {
 do_test_socket() {
 	conf=$1
 	print_test_header SOCKET $conf
-	rm $TEST_SOCKET
  	do_rrr_post &
 	echo \$ $TEST $conf
 	$TEST $conf

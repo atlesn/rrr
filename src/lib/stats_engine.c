@@ -119,7 +119,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 
 	unlink(filename); // OK to ignore errors
 
-	if (rrr_socket_unix_create_bind_and_listen(&stats->socket, "rrr_stats_engine", filename, 2, 1, 0) != 0) {
+	if (rrr_socket_unix_create_bind_and_listen(&stats->socket, "rrr_stats_engine", filename, 2, 1, 0, 0) != 0) {
 		RRR_MSG_ERR("Could not create socket for statistics engine with filename '%s'\n", filename);
 		ret = 1;
 		goto out_destroy_mutex;

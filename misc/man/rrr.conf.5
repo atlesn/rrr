@@ -1,4 +1,4 @@
-.Dd 2020-05-07
+.Dd 2020-05-15
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -601,7 +601,10 @@ The socket module listens on a UNIX socket for RRR messages or custom data recor
 .PP
 .Bl -tag -width -indent
 .It socket_path=FILENAME
-Path and file name to use for the socket. The file cannot exist when the program starts. 
+Path and file name to use for the socket. The file cannot exist when the program starts.
+.It socket_unlink_if_exists={yes|no}
+If set to yes and the socket defined in `socket_path` exists when we start, unlink it. If set to no, we produce an error if
+the socket exists. Defaults to no.
 .It socket_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
 .It socket_receive_rrr_message={yes|no}
