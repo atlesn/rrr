@@ -48,6 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/random.h"
 #include "lib/net_transport.h"
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_server");
+
 #define RRR_HTTP_SERVER_USER_AGENT "RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_WORKER_THREADS 10
 

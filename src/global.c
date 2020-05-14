@@ -27,10 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 #include "lib/log.h"
 
-
 pthread_mutex_t global_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static const char *rrr_default_log_prefix = "main";
 struct rrr_global_config rrr_global_config = {
 	0,
 	0,

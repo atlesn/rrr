@@ -44,6 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/message_broker.h"
 #include "lib/fork.h"
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr");
+
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
 		"/usr/lib/rrr",

@@ -35,6 +35,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
 
+
+#define RRR_GLOBAL_SET_LOG_PREFIX(str) \
+	const char *rrr_default_log_prefix = str
+
+// Must be initialized in main c-file using the macro
+extern const char *rrr_default_log_prefix;
+
 struct cmd_data;
 
 /* Runtime globals */

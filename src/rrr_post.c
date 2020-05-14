@@ -46,6 +46,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages.h"
 #include "lib/gnu.h"
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_post");
+
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
 static volatile int rrr_post_abort = 0;

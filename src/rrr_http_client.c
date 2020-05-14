@@ -43,6 +43,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/ip.h"
 #include "lib/rrr_strerror.h"
 #include "lib/gnu.h"
+
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_client");
+
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {

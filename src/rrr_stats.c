@@ -62,6 +62,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_KEEPALIVE_INTERVAL_MS			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000
 #define RRR_STATS_MESSAGE_LIFETIME_MS			1500
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_stats");
+
 static volatile int rrr_stats_abort = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
