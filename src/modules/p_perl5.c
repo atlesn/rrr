@@ -692,8 +692,15 @@ int worker_socket_read_callback_msg (const struct rrr_message *message, void *ar
 	if ((ret = worker_process_message(data, message, &data->latest_message_addr)) != 0) {
 		RRR_MSG_ERR("Error from message processing in perl5 child fork of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
-		ret = 1;
-		goto out;
+		if (data->parent_data->do_drop_on_error) {
+			RRR_MSG_ERR("Dropping message per configuration in perl5 instance %s\n",
+					INSTANCE_D_NAME(data->parent_data->thread_data));
+			ret = 0;
+		}
+		else {
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
