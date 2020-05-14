@@ -391,7 +391,7 @@ static PyMethodDef rrr_message_methods[] = {
 		{ NULL, NULL, 0, NULL }
 };
 
-struct rrr_python3_rrr_message_data dummy;
+static struct rrr_python3_rrr_message_data dummy;
 #define RRR_PY_RRR_MESSAGE_OFFSET(member) \
 	(((void*) &(dummy.message_static.member)) - ((void*) &(dummy)))
 #define RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(member) \

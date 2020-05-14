@@ -432,7 +432,7 @@ static PyMethodDef array_value_methods[] = {
 		{ NULL, NULL, 0, NULL }
 };
 
-struct rrr_python3_array_value_data dummy;
+static struct rrr_python3_array_value_data dummy;
 
 #define RRR_PY_ARRAY_VALUE_CONSTANT_OFFSET(member) \
 	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
