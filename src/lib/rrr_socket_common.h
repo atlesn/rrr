@@ -23,8 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_COMMON_H
 
 struct rrr_array;
+struct rrr_message;
 struct rrr_read_session;
 struct rrr_read_session_collection;
+
+struct rrr_socket_common_in_flight_counter {
+	int in_flight_to_remote_count;
+	int not_acknowledged_count;
+};
 
 int rrr_socket_common_receive_array (
 		struct rrr_read_session_collection *read_session_collection,
@@ -41,8 +47,14 @@ int rrr_socket_common_receive_socket_msg (
 		int fd,
 		int read_flags,
 		int socket_read_flags,
+		struct rrr_socket_common_in_flight_counter *in_flight,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
+);
+int rrr_socket_common_prepare_and_send_socket_msg_blocking (
+		struct rrr_socket_msg *socket_msg,
+		int fd,
+		struct rrr_socket_common_in_flight_counter *in_flight
 );
 
 #endif /* RRR_SOCKET_COMMON_H */

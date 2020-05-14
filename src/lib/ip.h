@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,7 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#define RRR_IP_DEFAULT_PORT 5555
+#include "rrr_socket.h"
+#include "linked_list.h"
 
 #define RRR_IP_RECEIVE_OK 0
 #define RRR_IP_RECEIVE_ERR 1
@@ -36,10 +37,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Print/reset stats every X seconds
 #define RRR_IP_STATS_DEFAULT_PERIOD 3
 
+#define RRR_IP_AUTO	0
+#define RRR_IP_UDP	1
+#define RRR_IP_TCP	2
+
 struct rrr_message;
 struct rrr_array;
 struct rrr_read_session_collection;
 struct rrr_read_session;
+struct rrr_ip_buffer_entry;
+struct rrr_ip_accept_data;
 
 struct ip_stats {
 	pthread_mutex_t lock;
@@ -56,14 +63,6 @@ struct ip_stats_twoway {
 	struct ip_stats receive;
 };
 
-struct rrr_ip_buffer_entry {
-	ssize_t data_length;
-	struct sockaddr addr;
-	socklen_t addr_len;
-	uint64_t send_time;
-	void *message;
-};
-
 struct rrr_ip_send_packet_info {
 	void *data;
 	int fd;
@@ -76,44 +75,11 @@ struct rrr_ip_data {
 	unsigned int port;
 };
 
-struct rrr_ip_accept_data {
-	struct sockaddr addr;
-	socklen_t len;
-	struct rrr_ip_data ip_data;
-};
-
 #define RRR_IP_STATS_UPDATE_OK 0		// Stats was updated
 #define RRR_IP_STATS_UPDATE_ERR 1	// Error
 #define RRR_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
-void rrr_ip_buffer_entry_destroy (
-		struct rrr_ip_buffer_entry *entry
-);
-void rrr_ip_buffer_entry_destroy_void (
-		void *entry
-);
-void rrr_ip_buffer_entry_set_message (
-		struct rrr_ip_buffer_entry *entry,
-		void *message,
-		ssize_t data_length
-);
-int rrr_ip_buffer_entry_new (
-		struct rrr_ip_buffer_entry **result,
-		ssize_t data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		void *message
-);
-int rrr_ip_buffer_entry_new_with_empty_message (
-		struct rrr_ip_buffer_entry **result,
-		ssize_t message_data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len
-);
-int rrr_ip_buffer_entry_clone (
-		struct rrr_ip_buffer_entry **result,
-		const struct rrr_ip_buffer_entry *source
-);
+
 int rrr_ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );
@@ -126,32 +92,19 @@ int rrr_ip_stats_update (
 int rrr_ip_stats_print_reset (
 		struct ip_stats *stats, int do_reset
 );
-int rrr_ip_receive_socket_msg (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-);
 int rrr_ip_receive_array (
+		struct rrr_ip_buffer_entry *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
+		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
 );
-int rrr_ip_receive_rrr_message (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-);
-int rrr_ip_send_raw (
+int rrr_ip_send (
+	int *err,
 	int fd,
 	const struct sockaddr *sockaddr,
 	socklen_t addrlen,
@@ -163,8 +116,24 @@ int rrr_ip_send_message (
 		struct rrr_ip_send_packet_info* info,
 		struct ip_stats *stats
 );
+
+// TODO : Rename functions
+
 void rrr_ip_network_cleanup (void *arg);
+int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data);
 int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data);
+int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
+		struct rrr_ip_data *ip_data,
+		unsigned int port,
+		const char *host,
+		void *data,
+		ssize_t size
+);
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
+		struct rrr_ip_accept_data **accept_data,
+		struct sockaddr *addr,
+		socklen_t addr_len
+);
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host);
 int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections);
 int rrr_ip_close (struct rrr_ip_data *data);

@@ -130,7 +130,7 @@ int cmd_check_all_args_used(struct cmd_data *data) {
 			fprintf (stderr, "Error: Argument %lu ('%s') was not used\n", i, node->rule->longname);
 		}
 		i++;
-	RRR_LL_ITERATE_END(data);
+	RRR_LL_ITERATE_END();
 	return err;
 }
 
@@ -141,7 +141,7 @@ struct cmd_arg_pair *cmd_find_pair(struct cmd_data *data, const char *key, cmd_a
 			node->was_used = 1;
 			return node;
 		}
-	RRR_LL_ITERATE_END(data);
+	RRR_LL_ITERATE_END();
 	return NULL;
 }
 
@@ -235,7 +235,7 @@ int cmd_exists(struct cmd_data *data, const char *key, cmd_arg_count index) {
 			}
 			i++;
 		}
-	RRR_LL_ITERATE_END(data);
+	RRR_LL_ITERATE_END();
 	return 0;
 }
 
@@ -251,7 +251,7 @@ const char *cmd_get_subvalue(struct cmd_data *data, const char *key, cmd_arg_cou
 			return node->value;
 		}
 		i++;
-	RRR_LL_ITERATE_END(pair);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }
@@ -272,7 +272,7 @@ int cmd_iterate_subvalues (
 		if (callback(node->value, callback_arg) != 0) {
 			return 1;
 		}
-	RRR_LL_ITERATE_END(pair);
+	RRR_LL_ITERATE_END();
 
 	return 0;
 }

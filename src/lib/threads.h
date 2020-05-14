@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "vl_time.h"
+#include "linked_list.h"
 #include "../global.h"
 
 // #define RRR_THREADS_MAX 32
@@ -64,7 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_THREAD_STATE_RUNNING_FORKED 5
 
 /* Thread has to do a few cleanup operations before stopping */
-#define RRR_THREAD_STATE_STOPPING 6
+// #define RRR_THREAD_STATE_STOPPING 6
 
 /* Priority 0 threads are started first. They have no wait points. This need not to be set, zero is default. */
 #define RRR_THREAD_START_PRIORITY_NORMAL 0
@@ -115,12 +116,13 @@ struct rrr_thread_ghost_data {
 };
 
 struct rrr_thread {
-	struct rrr_thread *next;
+	RRR_LL_NODE(struct rrr_thread);
 	pthread_t thread;
 	uint64_t watchdog_time;
 	pthread_mutex_t mutex;
 	int signal;
 	int state;
+	int start_signal_sent;
 	int is_watchdog;
 	int start_priority;
 	char name[RRR_THREAD_NAME_MAX_LENGTH];
@@ -132,6 +134,13 @@ struct rrr_thread {
 	// If the thread is a ghost, we can't free this struct. Ghost does it.
 	int free_by_ghost;
 	int free_private_data_by_ghost;
+	void (*private_data_destroy_function)(void *private_data);
+
+	// If the thread is to be destroy without stopping the program, both
+	// the thread and it's watchdog must be destroyed at the same time, after
+	// both being stopped. This value is set when both have reached STOPPED,
+	// tagging them to be freed.
+	int ready_to_destroy;
 
 	// Start/stop routines
 	int (*cancel_function)(struct rrr_thread *);
@@ -143,25 +152,9 @@ struct rrr_thread {
 };
 
 struct rrr_thread_collection {
-	struct rrr_thread *first;
+	RRR_LL_HEAD(struct rrr_thread);
 	pthread_mutex_t threads_mutex;
 };
-
-#define RRR_THREADS_LOOP(target,collection) \
-	for(struct rrr_thread *target = collection->first; target != NULL; target = target->next)
-
-
-void rrr_thread_clear_ghosts(void);
-int rrr_thread_has_ghosts(void);
-int rrr_thread_run_ghost_cleanup(int *count);
-void rrr_thread_set_state(struct rrr_thread *thread, int state);
-int rrr_thread_new_collection (struct rrr_thread_collection **target);
-void rrr_thread_destroy_collection (struct rrr_thread_collection *collection);
-int rrr_thread_start_all_after_initialized (struct rrr_thread_collection *collection);
-void rrr_threads_stop_and_join (
-		struct rrr_thread_collection *collection,
-		void (*upstream_ghost_handler)(struct rrr_thread *thread)
-);
 
 static inline void rrr_thread_lock(struct rrr_thread *thread) {
 //	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
@@ -201,6 +194,19 @@ static inline void rrr_thread_signal_wait(struct rrr_thread *thread, int signal)
 	}
 }
 
+static inline void rrr_thread_signal_wait_with_watchdog_update(struct rrr_thread *thread, int signal) {
+	while (1) {
+		rrr_thread_lock(thread);
+		int signal_test = thread->signal;
+		thread->watchdog_time = rrr_time_get_64();
+		rrr_thread_unlock(thread);
+		if ((signal_test & signal) == signal) {
+			break;
+		}
+		usleep (10000); // 10ms
+	}
+}
+
 /* Watchdog checks if thread should be killed */
 static inline int rrr_thread_check_kill_signal(struct rrr_thread *thread) {
 	return rrr_thread_check_signal(thread, RRR_THREAD_SIGNAL_KILL);
@@ -217,7 +223,7 @@ static inline int rrr_thread_check_encourage_stop(struct rrr_thread *thread) {
 }
 
 /* Threads need to update this once in a while, if not it get's killed by watchdog */
-static inline void rrr_update_watchdog_time(struct rrr_thread *thread) {
+static inline void rrr_thread_update_watchdog_time(struct rrr_thread *thread) {
 	rrr_thread_lock(thread);
 	thread->watchdog_time = rrr_time_get_64();
 	rrr_thread_unlock(thread);;
@@ -264,42 +270,75 @@ static inline int rrr_thread_check_state(struct rrr_thread *thread, int state) {
 	return (rrr_thread_get_state(thread) == state);
 }
 
-static inline void rrr_thread_set_running(void *arg) {
-	struct rrr_thread *thread = arg;
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
-}
+void rrr_thread_set_state(struct rrr_thread *thread, int state);
 
-static inline void rrr_thread_set_running_forked(void *arg) {
-	struct rrr_thread *thread = arg;
-	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
-}
-
-static inline void rrr_thread_set_stopping(void *arg) {
+/*static inline void rrr_thread_set_stopping(void *arg) {
 	struct rrr_thread *thread = arg;
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_STOPPING);
-}
+}*/
 
 static inline void rrr_thread_set_stopped(void *arg) {
 	struct rrr_thread *thread = arg;
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_STOPPED);
 }
 
+int rrr_thread_run_ghost_cleanup(int *count);
+static inline int rrr_thread_collection_count (
+		struct rrr_thread_collection *collection
+) {
+	int count = 0;
+
+	pthread_mutex_lock(&collection->threads_mutex);
+	count = RRR_LL_COUNT(collection);
+	pthread_mutex_unlock(&collection->threads_mutex);
+
+	return count;
+}
+int rrr_thread_new_collection (
+		struct rrr_thread_collection **target
+);
+void rrr_thread_destroy_collection (
+		struct rrr_thread_collection *collection,
+		int do_destroy_private_data
+);
+int rrr_thread_start_all_after_initialized (
+		struct rrr_thread_collection *collection,
+		int (*start_check_callback)(int *do_start, struct rrr_thread *thread, void *arg),
+		void *callback_arg
+);
+void rrr_thread_stop_and_join_all (
+		struct rrr_thread_collection *collection,
+		void (*upstream_ghost_handler)(struct rrr_thread *thread)
+);
 int rrr_thread_start (
 		struct rrr_thread *thread
 );
-
 struct rrr_thread *rrr_thread_preload_and_register (
 		struct rrr_thread_collection *collection,
 		void *(*start_routine) (struct rrr_thread *),
 		int (*preload_routine) (struct rrr_thread *),
 		void (*poststop_routine) (const struct rrr_thread *),
 		int (*cancel_function) (struct rrr_thread *),
+		void (*private_data_destroy_function)(void *),
 		int start_priority,
-		void *arg, const char *name
+		void *private_data,
+		const char *name
 );
-int rrr_thread_check_any_stopped (struct rrr_thread_collection *collection);
+int rrr_thread_check_any_stopped (
+		struct rrr_thread_collection *collection
+);
+void rrr_thread_join_and_destroy_stopped_threads (
+		int *count,
+		struct rrr_thread_collection *collection,
+		int do_destroy_private_data
+);
+int rrr_thread_iterate_by_state (
+		struct rrr_thread_collection *collection,
+		int state,
+		int (*callback)(struct rrr_thread *locked_thread, void *arg),
+		void *callback_data
+);
 void rrr_thread_free_double_pointer(void *arg);
-void rrr_thread_free_single_pointer(void *arg);
 
 //void thread_destroy (struct rrr_thread_collection *collection, struct rrr_thread *thread);
 

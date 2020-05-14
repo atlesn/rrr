@@ -37,7 +37,6 @@ void rrr_socket_msg_populate_head (
 		RRR_BUG("Size was too small in rrr_socket_msg_head_to_network\n");
 	}
 
-	message->network_size = msg_size;
 	message->msg_type = type;
 	message->msg_size = msg_size;
 	message->msg_value = value;
@@ -74,7 +73,7 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	message->data_crc32 = 0;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	ssize_t data_size = message->network_size - sizeof(*message);
+	ssize_t data_size = message->msg_size - sizeof(*message);
 
 	if (data_size > 0) {
 		message->data_crc32 = crc32buf(data_begin, data_size);
@@ -82,10 +81,9 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 
 //	printf ("Put crc32 %lu data size %li\n", message->data_crc32, message->network_size - sizeof(*message));
 
-	message->network_size = htobe32(message->network_size);
 	message->msg_type = htobe16(message->msg_type);
 	message->msg_size = htobe32(message->msg_size);
-	message->msg_value = htobe64(message->msg_value);
+	message->msg_value = htobe32(message->msg_value);
 	message->data_crc32 = htobe32(message->data_crc32);
 
 	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
@@ -100,7 +98,7 @@ static int __rrr_socket_msg_head_validate (
 ) {
 	int ret = 0;
 
-	if ((ssize_t) message->network_size != expected_size) {
+	if ((ssize_t) message->msg_size != expected_size) {
 		RRR_MSG_ERR("Message network size mismatch in __rrr_socket_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
 				expected_size, message->msg_size);
 		ret = 1;
@@ -117,7 +115,7 @@ static int __rrr_socket_msg_head_validate (
 			goto out;
 		}
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
+	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
 		// OK
 	}
 	else {
@@ -135,11 +133,10 @@ int rrr_socket_msg_head_to_host_and_verify (
 		ssize_t expected_size
 ) {
 	message->header_crc32 = 0;
-	message->network_size = be32toh(message->network_size);
 	message->data_crc32 = be32toh(message->data_crc32);
 	message->msg_type = be16toh(message->msg_type);
 	message->msg_size = be32toh(message->msg_size);
-	message->msg_value = be64toh(message->msg_value);
+	message->msg_value = be32toh(message->msg_value);
 
 	if (__rrr_socket_msg_head_validate (message, expected_size) != 0) {
 		RRR_MSG_ERR("Received socket message was invalid in rrr_socket_msg_head_to_host\n");
@@ -168,7 +165,7 @@ int rrr_socket_msg_get_target_size_and_check_checksum (
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
-	*target_size = be32toh(socket_msg->network_size);
+	*target_size = be32toh(socket_msg->msg_size);
 
 	return RRR_SOCKET_OK;
 }

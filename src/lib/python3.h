@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../build_directory.h"
 
 struct rrr_socket_msg;
+struct rrr_ip_buffer_entry;
 
 #define RRR_PYTHON3_OBJECT_CACHE_FULL 2
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
@@ -66,7 +67,7 @@ int python3_swap_thread_out(struct python3_thread_state *tstate_holder);
 /* Asynchronous functions */
 int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid);
 void rrr_py_handle_sigchld(void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg);
-void rrr_py_terminate_threads (struct python3_rrr_objects *rrr_objects);
+void rrr_py_terminate_forks (struct python3_rrr_objects *rrr_objects);
 int rrr_py_start_persistent_rw_thread (
 		struct python3_fork **result_fork,
 		struct python3_rrr_objects *rrr_objects,
@@ -97,7 +98,7 @@ int rrr_py_persistent_receive_message (
 );
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
-		struct rrr_socket_msg *message
+		struct rrr_ip_buffer_entry *entry
 );
 // Stop sending data to the fork and call the function continuously
 int rrr_py_persistent_start_sourcing (
@@ -113,6 +114,8 @@ int rrr_py_get_rrr_objects (
 		const char **extra_module_paths,
 		int module_paths_length
 );
-int rrr_py_with_global_tstate_do(int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg);
+int rrr_py_with_global_tstate_do(
+		int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg, int force_gil_release
+);
 void rrr_py_destroy_thread_state(PyThreadState *tstate);
 PyThreadState *rrr_py_new_thread_state(void);

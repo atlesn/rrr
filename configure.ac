@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 0.16-8)
-AC_DEFINE([RRR_CONFIG_VERSION], "0.16-8", [Full version])
+AC_INIT([Read Route Record], 0.18)
+AC_DEFINE([RRR_CONFIG_VERSION], "0.18", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 0, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 16, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 8, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 18, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 5, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -34,11 +34,12 @@ AC_ARG_WITH([code-coverage], [AS_HELP_STRING([--with-code-coverage], [Enable cod
 AC_ARG_WITH([encryption], [AS_HELP_STRING([--without-encryption], [Disable OpenSSL/TLS support in network modules])], [enable_encryption=no], [enable_encryption=yes])
 AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL bindings])],[enable_mysql=no],[enable_mysql=yes])
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
-AC_ARG_WITH([usb],[AS_HELP_STRING([--without-usb],[build without the USB bindings])],[enable_usb=no],[enable_usb=yes])
+AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
+AC_ARG_ENABLE([database-testing],[AS_HELP_STRING([--enable-database-testing],[enable checks requiring custom setup of databases])],[enable_database_testing=yes],[enable_database_testing=no])
 AC_ARG_VAR([PYTHON3_FORCE_VERSION], [Force a specific python version to be used, e.g. 3.6])
 
 AC_MSG_CHECKING([for RRR GNU Debug])
@@ -62,9 +63,9 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
-AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$with_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
 AC_MSG_CHECKING([for OpenSSL usage])
-AS_IF([test "x$with_encryption" = xno], [
+AS_IF([test "x$enable_encryption" = xno], [
        AC_MSG_RESULT([Not compiling with OpenSSL])
 ], [
        AC_MSG_RESULT([yes])
@@ -254,9 +255,9 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 ])
 
-AM_CONDITIONAL([RRR_WITH_USB], [test "x$with_usb" != xno])
+AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AC_MSG_CHECKING([for USB enabled])
-AS_IF([test "x$with_usb" = xno], [
+AS_IF([test "x$enable_usb" = xno], [
 	AC_MSG_RESULT([Not compiling with USB])
 ], [
 	AC_MSG_RESULT([yes])
@@ -284,9 +285,9 @@ AS_IF([test "x$with_usb" = xno], [
 	])
 ])
 
-AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$with_mysql" != xno])
+AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])
-AS_IF([test "x$with_mysql" = xno], [
+AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
 ], [
 	AC_MSG_RESULT([yes])
@@ -325,6 +326,14 @@ AS_IF([test "x$with_mysql" = xno], [
 		echo "Test returned: `cat conftest.out`";
 		AC_MSG_ERROR([Size test of integers failed, cannot compile with MySQL on this system.])
 	])
+])
+
+AC_MSG_CHECKING([enabled database testing])
+AS_IF([test "x$enable_database_testing" = xyes], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([RRR_ENABLE_DB_TESTING], [1], [Enable database testing in test suite])
+],[
+	AC_MSG_RESULT([no])
 ])
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])

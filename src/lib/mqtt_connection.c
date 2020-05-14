@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "ip.h"
+#include "ip_accept_data.h"
 #include "buffer.h"
 #include "vl_time.h"
 #include "../global.h"
@@ -319,7 +320,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 		__rrr_mqtt_connection_close (connection);
 	}
 
-	rrr_fifo_buffer_invalidate(&connection->receive_queue.buffer);
+	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
 
 	__rrr_mqtt_connection_read_session_destroy(&connection->read_session);
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
@@ -518,7 +519,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 	if ((ret = __rrr_mqtt_connection_new (
 			&res,
 			&accept_data->ip_data,
-			&accept_data->addr,
+			(struct sockaddr *) &accept_data->addr,
 			connections->close_wait_time_usec,
 			connections
 	)) != RRR_MQTT_CONN_OK) {
@@ -531,7 +532,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 		goto out_nolock;
 	}
 
-	RRR_LL_PUSH(connections, res);
+	RRR_LL_UNSHIFT(connections, res);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_unlock(connections)) != RRR_MQTT_CONN_OK) {
 		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");
@@ -636,7 +637,7 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 
 			RRR_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
-	RRR_LL_ITERATE_END(connections);
+	RRR_LL_ITERATE_END();
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
 		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
@@ -970,7 +971,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	struct rrr_mqtt_conn_read_session *read_session = &connection->read_session;
@@ -1190,7 +1191,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	if (connection->read_session.rx_buf == NULL) {
@@ -1264,10 +1265,18 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 	return ret;
 }
 
-int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
-		struct rrr_mqtt_conn *connection
+int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
+		struct rrr_mqtt_conn *connection,
+		int (*handler_callback)(
+				struct rrr_mqtt_conn *connection,
+				struct rrr_mqtt_p *packet,
+				void *arg
+		),
+		void *callback_arg
 ) {
 	int ret = RRR_MQTT_CONN_OK;
+
+	struct rrr_mqtt_p *packet = NULL;
 
 	/* There can be multiple parse threads, make sure we do not block */
 	if (RRR_MQTT_CONN_TRYLOCK(connection) != 0) {
@@ -1276,7 +1285,7 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 	}
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out_nolock;
+		goto out_unlock;
 	}
 
 	if (connection->read_complete == 1) {
@@ -1286,25 +1295,28 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize (
 			goto out_unlock;
 		}
 
-		struct rrr_mqtt_p *packet;
 		ret = rrr_mqtt_packet_parse_finalize(&packet, &connection->parse_session);
 		if (rrr_mqtt_p_standardized_get_refcount(packet) != 1) {
 			RRR_BUG("Refcount was not 1 while finalizing mqtt packet and adding to receive buffer\n");
 		}
-
-		rrr_fifo_buffer_write(&connection->receive_queue.buffer, (char*) packet, RRR_MQTT_P_GET_SIZE(packet));
 
 		rrr_mqtt_parse_session_destroy(&connection->parse_session);
 		rrr_mqtt_parse_session_init(&connection->parse_session);
 
 		connection->read_complete = 0;
 		connection->parse_complete = 0;
+
+		if ((ret = handler_callback(connection, packet, callback_arg))) {
+			RRR_MSG_ERR("Error from handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
+			ret = 1;
+			goto out_unlock;
+		}
 	}
 
 	out_unlock:
 		RRR_MQTT_CONN_UNLOCK(connection);
-
 	out_nolock:
+		RRR_MQTT_P_DECREF_IF_NOT_NULL(packet);
 		return ret;
 }
 

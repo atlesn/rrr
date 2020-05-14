@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "../global.h"
 #include "common.h"
@@ -109,6 +110,23 @@ void rrr_signal_handler_remove(struct rrr_signal_handler *handler) {
 	pthread_mutex_unlock(&signal_lock);
 }
 
+// Done in child forks
+void rrr_signal_handler_remove_all(void) {
+	pthread_mutex_lock(&signal_lock);
+
+	struct rrr_signal_handler *test = first_handler;
+
+	while (test) {
+		struct rrr_signal_handler *next = test->next;
+		free(test);
+		test = next;
+	}
+
+	first_handler = NULL;
+
+	pthread_mutex_unlock(&signal_lock);
+}
+
 void rrr_signal (int s) {
     RRR_DBG_1("Received signal %i\n", s);
 
@@ -130,4 +148,54 @@ void rrr_signal (int s) {
 			return;
 		}
 	}
+}
+
+void rrr_signal_default_signal_actions_register(void) {
+	// Initialize signal handling
+	struct sigaction action;
+	action.sa_handler = rrr_signal;
+	sigemptyset (&action.sa_mask);
+	action.sa_flags = 0;
+
+	// Handle forked children exiting
+	sigaction (SIGCHLD, &action, NULL);
+	// We generally ignore sigpipe and use NONBLOCK on all sockets
+	sigaction (SIGPIPE, &action, NULL);
+	// Used to set main_running = 0. The signal is set to default afterwards
+	// so that a second SIGINT will terminate the process
+	sigaction (SIGINT, &action, NULL);
+	// Used to set main_running = 0;
+	sigaction (SIGUSR1, &action, NULL);
+	// Exit immediately with EXIT_FAILURE
+	sigaction (SIGTERM, &action, NULL);
+}
+
+int rrr_signal_default_handler(int *main_running, int s, void *arg) {
+	(void)(arg);
+
+	if (s == SIGCHLD) {
+		RRR_DBG_1("Received SIGCHLD\n");
+	}
+	else if (s == SIGUSR1) {
+		*main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
+	else if (s == SIGPIPE) {
+		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
+	}
+	else if (s == SIGTERM) {
+		exit(EXIT_FAILURE);
+	}
+	else if (s == SIGINT) {
+		// Allow double ctrl+c to close program
+		if (s == SIGINT) {
+			RRR_MSG_ERR("Received SIGINT\n");
+			signal(SIGINT, SIG_DFL);
+		}
+
+		*main_running = 0;
+		return RRR_SIGNAL_HANDLED;
+	}
+
+	return RRR_SIGNAL_NOT_HANDLED;
 }

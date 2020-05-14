@@ -1,3 +1,52 @@
+rrr (0.18) unstable; urgency=medium
+
+  * New message broker to transfer messages between modules with proper
+    memory fencing
+  * Interface for users should remain the same
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 05 May 2020 13:57:17 +0200
+
+rrr (0.17-5) unstable; urgency=medium
+
+  * Fix bug causing rrr_post not to work because we called getsockopts on files
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 05 May 2020 14:15:32 +0200
+
+rrr (0.17-4) unstable; urgency=medium
+
+  * Rename UDP-module to "ip", make it support both TCP and UDP
+  * Possible to choose between udp and tcp for messages inside perl module,
+    ip module may then send the message to the chosen destination.
+  * TCP or UDP flag is otherwise preserved across modules
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 29 Apr 2020 07:17:23 +0200
+
+rrr (0.17-3) unstable; urgency=medium
+
+  * Remove noisy printf from perl5 module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 21 Apr 2020 22:47:46 +0200
+
+rrr (0.17-2) unstable; urgency=medium
+
+  * Fix misc. build problems
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 21 Apr 2020 22:33:39 +0200
+
+rrr (0.17-1) unstable; urgency=medium
+
+  * rrr messages simplifed. Header has now no values and voltage type is removed.
+  * voltmonitor and avarager use data array messages
+  * perl5 no longer use socket to communicate with child fork, but a mmap channel
+  * perl5 supports IP-data
+  * perl5 supports data arrays
+  * New udp module can both send and receive data
+  * New NSEP data type in arrays
+  * Support HTTP TLS
+  * Other fixes and internal housekeeping
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Apr 2020 20:29:32 +0200
+
 rrr (0.16-8) unstable; urgency=medium
 
   * New preliminary statistics engine, works with MQTT, raw and dummy

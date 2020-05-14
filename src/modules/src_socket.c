@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/vl_time.h"
 #include "../lib/threads.h"
-#include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/rrr_socket_client.h"
@@ -41,12 +40,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/utf8.h"
+#include "../lib/message_broker.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../global.h"
 
 struct socket_data {
 	struct rrr_instance_thread_data *thread_data;
-	struct rrr_fifo_buffer buffer;
-	struct rrr_fifo_buffer inject_buffer;
 	char *socket_path;
 	char *default_topic;
 	ssize_t default_topic_length;
@@ -55,12 +54,11 @@ struct socket_data {
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
+	uint64_t message_count;
 };
 
 void data_cleanup(void *arg) {
 	struct socket_data *data = (struct socket_data *) arg;
-	rrr_fifo_buffer_invalidate(&data->buffer);
-	rrr_fifo_buffer_invalidate(&data->inject_buffer);
 	rrr_array_clear(&data->definitions);
 	rrr_socket_client_collection_clear(&data->clients);
 	RRR_FREE_IF_NOT_NULL(data->socket_path);
@@ -72,26 +70,7 @@ int data_init(struct socket_data *data, struct rrr_instance_thread_data *thread_
 
 	data->thread_data = thread_data;
 
-	int ret = 0;
-
-	ret |= rrr_fifo_buffer_init(&data->buffer);
-	ret |= rrr_fifo_buffer_init(&data->inject_buffer);
-
-	if (ret != 0) {
-		data_cleanup(data);
-	}
-
-	return ret;
-}
-
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct socket_data *socket_data = data->private_data;
-	return rrr_fifo_read_clear_forward(&socket_data->buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll (RRR_MODULE_POLL_SIGNATURE) {
-	struct socket_data *socket_data = data->private_data;
-	return rrr_fifo_search(&socket_data->buffer, callback, poll_data, wait_milliseconds);
+	return 0;
 }
 
 int parse_config (struct socket_data *data, struct rrr_instance_config *config) {
@@ -176,76 +155,141 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int read_data_receive_message_callback (struct rrr_message *message, void *arg) {
-	struct socket_data *data = arg;
+struct read_data_receive_message_callback_data {
+	struct socket_data *data;
+	struct rrr_ip_buffer_entry *entry;
+};
 
-	if (MSG_TOPIC_LENGTH(message) == 0 && data->default_topic != NULL) {
-		if (rrr_message_set_topic(&message, data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_ERR("Could not set topic of message in read_data_receive_message_callback of instance %s\n",
+int read_rrr_message_callback (struct rrr_message **message, void *arg) {
+	struct read_data_receive_message_callback_data *callback_data = arg;
+	struct socket_data *data = callback_data->data;
+
+	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
+		if (rrr_message_set_topic(message, data->default_topic, strlen(data->default_topic)) != 0) {
+			RRR_MSG_ERR("Could not set topic of message in rread_data_receive_callback of instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
-			goto out_err;
+			return 1;
 		}
 	}
 
-	rrr_fifo_buffer_write(&data->buffer, (char*)message, MSG_TOTAL_SIZE(message));
-	RRR_DBG_3("socket created a message with timestamp %llu size %lu\n",
-			(long long unsigned int) message->timestamp_from, (long unsigned int) sizeof(*message));
+	callback_data->entry->message = *message;
+	callback_data->entry->data_length = MSG_TOTAL_SIZE(*message);
+	*message = NULL;
+
+	data->message_count++;
 
 	return 0;
-
-	out_err:
-		free(message);
-		return 1;
 }
 
-int read_raw_data_callback(struct rrr_read_session *read_session, void *arg) {
-	struct socket_data *data = arg;
+int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
+	struct read_data_receive_message_callback_data *callback_data = arg;
+	struct socket_data *data = callback_data->data;
 
-	return rrr_array_new_message_from_buffer_with_callback (
+	int ret = 0;
+
+	struct rrr_message *message = NULL;
+
+	ssize_t parsed_bytes;
+	if ((ret = rrr_array_new_message_from_buffer (
+			&message,
+			&parsed_bytes,
 			read_session->rx_buf_ptr,
 			read_session->rx_buf_wpos,
 			data->default_topic,
 			data->default_topic_length,
-			&data->definitions,
-			read_data_receive_message_callback,
-			data
-	);
+			&data->definitions
+	)) != 0) {
+		RRR_MSG_ERR("Could not create array message in read_data_receive_message_callback of socket instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
+
+	callback_data->entry->message = message;
+	callback_data->entry->data_length = MSG_TOTAL_SIZE(message);
+	message = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message);
+	return ret;
 }
 
-int read_data(struct socket_data *data) {
+int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct socket_data *data = arg;
+
+	int ret = 0;
+
+	struct read_data_receive_message_callback_data socket_callback_data = {
+			data,
+			entry
+	};
+
 	if (data->receive_rrr_message != 0) {
-		struct rrr_read_common_receive_message_callback_data callback_data = {
-				read_data_receive_message_callback, data
+		struct rrr_read_common_receive_message_callback_data read_callback_data = {
+				read_rrr_message_callback,
+				NULL,
+				&socket_callback_data
 		};
-		return rrr_socket_client_collection_read (
+		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				0,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_READ_F_NO_SLEEPING,
+				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_read_common_get_session_target_length_from_message_and_checksum,
 				NULL,
 				rrr_read_common_receive_message_callback,
-				&callback_data
-		);
+				&read_callback_data
+		)) != 0) {
+			goto out;
+		}
 	}
 	else {
 		struct rrr_read_common_get_session_target_length_from_array_data callback_data = {
 				&data->definitions,
 				data->do_sync_byte_by_byte
 		};
-		return rrr_socket_client_collection_read (
+		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
 				sizeof(struct rrr_socket_msg),
 				4096,
-				0,
+				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				rrr_read_common_get_session_target_length_from_array,
 				&callback_data,
 				read_raw_data_callback,
-				data
+				&socket_callback_data
+		)) != 0) {
+			goto out;
+		}
+	}
+
+	struct rrr_message *message = entry->message;
+
+	if (message == NULL) {
+		ret = RRR_MESSAGE_BROKER_DROP;
+	}
+	else {
+		RRR_DBG_3("socket instance %s created a message with timestamp %llu size %lu\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(long long unsigned int) message->timestamp,
+				(long unsigned int) sizeof(*message)
 		);
 	}
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
+int socket_read_data(struct socket_data *data) {
+	return rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER_ARGS(data->thread_data),
+			NULL,
+			0,
+			0,
+			read_data_receive_callback,
+			data
+	);
 }
 
 static int socket_start (struct socket_data *data) {
@@ -256,7 +300,7 @@ static int socket_start (struct socket_data *data) {
 	socket_name[64] = '\0';
 
 	int fd = 0;
-	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1) != 0) {
+	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1, 0) != 0) {
 		RRR_MSG_ERR("Could not create socket in socket_start of instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -295,7 +339,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Socket thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 	pthread_cleanup_push(socket_stop, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -319,15 +363,17 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	RRR_DBG_2("socket instance %s listening on socket %s\n",
 			INSTANCE_D_NAME(thread_data), data->socket_path);
 
+	unsigned int consecutive_nothing_happened = 0;
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
 			break;
 		}
 
 		int err = 0;
-		if ((err = read_data(data)) != 0) {
+		uint64_t prev_message_count = data->message_count;
+		if ((err = socket_read_data(data)) != 0) {
 			if (err == RRR_SOCKET_SOFT_ERROR) {
 				// Upon receival of invalid data, we must close the socket as sizes of
 				// the messages and boundaries might be out of sync
@@ -340,6 +386,13 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			}
 			break;
 		}
+
+		if (prev_message_count != data->message_count) {
+			consecutive_nothing_happened = 0;
+		}
+		else if (++consecutive_nothing_happened > 100) {
+			usleep(25000); // 25ms
+		}
 	}
 
 	out_message:
@@ -347,7 +400,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }
@@ -367,10 +420,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 	NULL,
 	thread_entry_socket,
-	NULL,
-	poll,
-	NULL,
-	poll_delete,
 	NULL,
 	test_config,
 	NULL,

@@ -41,13 +41,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
+#include "../lib/message_broker.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
+#include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/stats_instance.h"
 #include "../global.h"
@@ -83,7 +86,7 @@ struct mqtt_client_data {
 	char *version_str;
 	char *client_identifier;
 	char *publish_values_from_array;
-	struct rrr_linked_list publish_values_from_array_list;
+	struct rrr_map publish_values_from_array_list;
 	struct rrr_array array_definition;
 	uint8_t qos;
 	uint8_t version;
@@ -100,14 +103,14 @@ struct mqtt_client_data {
 
 static void data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->output_buffer);
+	rrr_fifo_buffer_clear(&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->publish_topic);
 	RRR_FREE_IF_NOT_NULL(data->version_str);
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
-	rrr_linked_list_clear(&data->publish_values_from_array_list);
+	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
@@ -170,7 +173,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	int ret = 0;
 
-	struct rrr_linked_list_node *node = malloc(sizeof(*node));
+	struct rrr_map_item *node = malloc(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in parse_publish_value_tag\n");
 		ret = 1;
@@ -178,8 +181,8 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 	}
 	memset(node, '\0', sizeof(*node));
 
-	node->data = strdup(value);
-	if (node->data == NULL) {
+	node->tag = strdup(value);
+	if (node->tag == NULL) {
 		RRR_MSG_ERR("Could not allocate memory for data in parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
@@ -190,7 +193,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	out:
 	if (node != NULL) {
-		rrr_linked_list_destroy_node(node);
+		rrr_map_item_destroy(node);
 	}
 	return ret;
 }
@@ -480,16 +483,6 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	return ret;
 }
 
-static int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_read_clear_forward(&client_data->output_buffer, NULL, callback, poll_data, wait_milliseconds);
-}
-
-static int poll_keep (RRR_MODULE_POLL_SIGNATURE) {
-	struct mqtt_client_data *client_data = data->private_data;
-	return rrr_fifo_search(&client_data->output_buffer, callback, poll_data, wait_milliseconds);
-}
-
 static int process_unsuback (
 		struct mqtt_client_data *data,
 		const struct rrr_mqtt_subscription *subscription,
@@ -638,13 +631,10 @@ static int message_data_to_payload (
 	return 0;
 }
 
-static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
+static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct mqtt_client_data *private_data = thread_data->private_data;
 	struct rrr_mqtt_p_publish *publish = NULL;
-	struct rrr_message *reading = (struct rrr_message *) data;
-
-	(void)(size);
+	struct rrr_message *reading = (struct rrr_message *) entry->message;
 
 	char *payload = NULL;
 	ssize_t payload_size = 0;
@@ -652,8 +642,8 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 
 	struct rrr_array array_tmp = {0};
 
-	RRR_DBG_2 ("mqtt client %s: Result from buffer: measurement %" PRIu64 " size %lu, creating PUBLISH\n",
-			INSTANCE_D_NAME(thread_data), reading->data_numeric, size);
+	RRR_DBG_2 ("mqtt client %s: Result from buffer: timestamp %" PRIu64 ", creating PUBLISH\n",
+			INSTANCE_D_NAME(thread_data), reading->timestamp);
 
 	if (private_data->mqtt_client_data->protocol_version == NULL) {
 		RRR_MSG_ERR("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
@@ -705,9 +695,9 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 	publish->qos = private_data->qos;
 
 	if (private_data->publish_rrr_message != 0) {
-		ssize_t network_size = MSG_TOTAL_SIZE(reading);
+		ssize_t msg_size = MSG_TOTAL_SIZE(reading);
 
-		reading->network_size = network_size;
+		reading->msg_size = msg_size;
 
 		rrr_message_prepare_for_network(reading);
 
@@ -724,9 +714,9 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 			ret = 1;
 			goto out_free;
 		}
-		payload = data;
-		payload_size = network_size;
-		data = NULL;
+		payload = entry->message;
+		payload_size = msg_size;
+		entry->message = NULL;
 	}
 	else if (private_data->publish_values_from_array != NULL) {
 		if (!MSG_IS_ARRAY(reading)) {
@@ -751,9 +741,11 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 				goto out_free;
 			}
 
-			if ((ret = rrr_array_selected_tags_to_raw (
+			int found_tags = 0;
+			if ((ret = rrr_array_selected_tags_export (
 					&payload,
 					&payload_size,
+					&found_tags,
 					&array_tmp,
 					&private_data->publish_values_from_array_list)
 			) != 0) {
@@ -804,7 +796,7 @@ static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, u
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	RRR_FREE_IF_NOT_NULL(data);
+	rrr_ip_buffer_entry_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -835,11 +827,8 @@ static int __try_create_rrr_message_with_publish_data (
 	if (rrr_message_new_empty (
 			result,
 			MSG_TYPE_MSG,
-			0,
-			MSG_CLASS_POINT,
+			MSG_CLASS_DATA,
 			publish->create_time,
-			publish->create_time,
-			0,
 			topic_len,
 			publish->payload->length
 	) != 0) {
@@ -995,10 +984,64 @@ static int __try_create_array_message_from_publish (
 	return ret;
 }
 
+struct receive_publish_create_entry_callback_data {
+	struct mqtt_client_data *data;
+	const struct rrr_message *message;
+};
 
-#define WRITE_TO_BUFFER_AND_SET_TO_NULL(msg)								\
-	rrr_fifo_buffer_write(&data->output_buffer, (char*) msg, sizeof(*msg));		\
-	msg = NULL
+static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct receive_publish_create_entry_callback_data *data = arg;
+
+	int ret = 0;
+
+	size_t msg_size = MSG_TOTAL_SIZE(data->message);
+
+	if ((entry->message = malloc(msg_size)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in __receive_publish_create_entry_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Data must be copied to have the write happening while the locks are held
+	memcpy(entry->message, data->message, msg_size);
+	entry->data_length = msg_size;
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
+static int __receive_publish_create_and_save_entry (const struct rrr_message *message, struct mqtt_client_data *data) {
+	int ret = 0;
+
+	struct receive_publish_create_entry_callback_data callback_data = {
+			data,
+			message
+	};
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER(data->thread_data),
+			INSTANCE_D_HANDLE(data->thread_data),
+			NULL,
+			0,
+			0,
+			__receive_publish_create_entry_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_ERR("Error while writing entry to output buffer in __receive_publish_create_entry of mqtt client instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+#define WRITE_TO_BUFFER_AND_SET_TO_NULL(message)								\
+	if ((ret = __receive_publish_create_and_save_entry(message, data)) != 0) {	\
+		goto out;																\
+	}	RRR_FREE_IF_NOT_NULL(message)
 
 static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
@@ -1114,11 +1157,8 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	if (rrr_message_new_with_data (
 			&message_final,
 			MSG_TYPE_MSG,
-			0,
-			MSG_CLASS_POINT,
+			MSG_CLASS_DATA,
 			publish->create_time,
-			publish->create_time,
-			0,
 			publish->topic,
 			strlen(publish->topic) + 1,
 			publish->topic,
@@ -1288,7 +1328,7 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 	reconnect:
 
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(data->thread_data->thread) != 1; i--) {
-		rrr_update_watchdog_time(data->thread_data->thread);
+		rrr_thread_update_watchdog_time(data->thread_data->thread);
 
 		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
 				INSTANCE_D_NAME(data->thread_data), data->server, data->server_port, i, i_first);
@@ -1350,7 +1390,7 @@ static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instan
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
@@ -1361,11 +1401,11 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -1401,9 +1441,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE);
+	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
-	if (poll_collection_count(&poll) == 0) {
+	if (rrr_poll_collection_count(&poll) == 0) {
 		if (data->publish_topic != NULL) {
 			RRR_MSG_ERR("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
@@ -1453,7 +1493,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
 		int send_allowed = 0;
@@ -1470,9 +1510,8 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-				goto out_destroy_client;
-			}
+			rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50);
+
 			startup_time = 0;
 		}
 
@@ -1501,7 +1540,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
-		pthread_cleanup_pop(1);
+//		pthread_cleanup_pop(1);
 		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
@@ -1511,10 +1550,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_mqtt_client,
-		NULL,
-		poll_keep,
-		NULL,
-		poll_delete,
 		NULL,
 		NULL,
 		NULL,

@@ -415,7 +415,7 @@ int rrr_mqtt_property_collection_iterate (
 		if (ret != 0) {
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -430,7 +430,7 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 		if (RRR_MQTT_PROPERTY_GET_ID(node) == RRR_MQTT_PROPERTY_GET_ID(self) && node != self) {
 			ret += 1;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 
@@ -453,7 +453,7 @@ struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 			}
 			match_count++;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -510,7 +510,7 @@ int rrr_mqtt_property_collection_calculate_size (
 			ret = 1;
 			goto out;
 		}
-	RRR_LL_ITERATE_END(collection);
+	RRR_LL_ITERATE_END();
 
 	*size = result;
 	*count = result_count;
@@ -539,7 +539,7 @@ int rrr_mqtt_property_collection_add_from_collection (
 			goto out_destroy;
 		}
 		rrr_mqtt_property_collection_add(target, new_node);
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 
 	goto out;
 	out_destroy:

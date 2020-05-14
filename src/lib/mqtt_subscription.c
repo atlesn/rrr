@@ -183,7 +183,7 @@ static int __rrr_mqtt_subscription_match_publish (
 		RRR_BUG("Topic name of packet was not valid in __rrr_mqtt_subscription_match_publish, should be checked at parsing\n");
 	}
 
-	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree);
+	ret = rrr_mqtt_topic_match_tokens_recursively(subscription->token_tree, publish->token_tree_);
 
 	return ret;
 }
@@ -220,7 +220,7 @@ int rrr_mqtt_subscription_collection_match_publish_callback (
 		else {
 			ret = RRR_MQTT_SUBSCRIPTION_OK;
 		}
-	RRR_LL_ITERATE_END(subscriptions);
+	RRR_LL_ITERATE_END();
 
 	*match_count_final = match_count;
 
@@ -244,7 +244,7 @@ int rrr_mqtt_subscription_collection_match_publish (
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			RRR_LL_ITERATE_LAST();
 		}
-	RRR_LL_ITERATE_END(subscriptions);
+	RRR_LL_ITERATE_END();
 
 	return ret;
 }
@@ -263,7 +263,7 @@ void rrr_mqtt_subscription_collection_dump (
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		i++;
 		RRR_MSG("%i: %s\n", i, node->topic_filter);
-	RRR_LL_ITERATE_END(subscriptions);
+	RRR_LL_ITERATE_END();
 	RRR_MSG("===\n");
 }
 
@@ -346,7 +346,7 @@ int rrr_mqtt_subscription_collection_clone (
 			RRR_MSG_ERR("Error while appending subscriptions while cloning in rrr_mqtt_subscription_collection_clone\n");
 			goto out_destroy_collection;
 		}
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 
 	*target = res;
 
@@ -443,7 +443,7 @@ static int __rrr_mqtt_subscription_collection_add_unique (
 			RRR_LL_APPEND(target, *subscription);
 		}
 		else {
-			RRR_LL_PUSH(target, *subscription);
+			RRR_LL_UNSHIFT(target, *subscription);
 		}
 	}
 
@@ -465,7 +465,7 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 			return node;
 		}
 		i++;
-	RRR_LL_ITERATE_END(target);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }
@@ -484,7 +484,7 @@ const struct rrr_mqtt_subscription *rrr_mqtt_subscription_collection_get_subscri
 			return node;
 		}
 		i++;
-	RRR_LL_ITERATE_END(target);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }
@@ -592,7 +592,7 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 		else {
 			rrr_mqtt_subscription_destroy(node);
 		}
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 
 	RRR_LL_DANGEROUS_CLEAR_HEAD(source);
 
@@ -674,7 +674,7 @@ int rrr_mqtt_subscription_collection_remove_topics_matching_and_set_reason (
 			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_OK;
 			(*removed_count)++;
 		}
-	RRR_LL_ITERATE_END(source);
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;

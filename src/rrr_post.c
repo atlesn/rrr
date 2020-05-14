@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/read.h"
 #include "lib/vl_time.h"
 #include "lib/messages.h"
+#include "lib/gnu.h"
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
 
@@ -329,12 +330,7 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_message *message) {
 	int ret = 0;
 
-	ssize_t msg_size = MSG_TOTAL_SIZE(message);
-
-	rrr_message_prepare_for_network((struct rrr_message *) message);
-	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message);
-
-	if ((ret = rrr_socket_sendto(data->output_fd, message, msg_size, NULL, 0)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_socket_msg_blocking((struct rrr_socket_msg *) message, data->output_fd, NULL)) != 0) {
 		RRR_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}
@@ -346,16 +342,26 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_messag
 static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_reading *reading) {
 	int ret = 0;
 
-	struct rrr_message *message = rrr_message_new_reading(reading->value, rrr_time_get_64());
-	if (message == NULL) {
+	char *text = NULL;
+	if (rrr_asprintf(&text, "%" PRIu64, reading->value) <= 0) {
+		RRR_MSG_ERR("Could not create reading text in __rrr_post_send_reading\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_message *message = NULL;
+	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
 
+	memcpy(MSG_DATA_PTR(message), text, strlen(text) + 1);
+
 	ret = __rrr_post_send_message(data, message);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(text);
 	RRR_FREE_IF_NOT_NULL(message);
 	return ret;
 }
@@ -367,7 +373,7 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 		if ((ret = __rrr_post_send_reading(data, node)) != 0) {
 			goto out;
 		}
-	RRR_LL_ITERATE_END(&data->readings);
+	RRR_LL_ITERATE_END();
 
 	out:
 	return ret;
@@ -435,9 +441,9 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 		goto out;
 	}
 
-	int read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_USE_TIMEOUT;
+	int socket_read_flags = RRR_SOCKET_READ_METHOD_READ_FILE | RRR_SOCKET_READ_USE_TIMEOUT | RRR_SOCKET_READ_NO_GETSOCKOPTS;
 	if (data->max_elements == 0 && strcmp (data->filename, "-") != 0) {
-		read_flags |= RRR_SOCKET_READ_CHECK_EOF;
+		socket_read_flags |= RRR_SOCKET_READ_CHECK_EOF;
 	}
 
 	while (	ret == 0 &&
@@ -448,12 +454,17 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				&read_sessions,
 				data->input_fd,
 				0,
-				read_flags,
+				socket_read_flags,
 				&data->definition,
 				data->sync_byte_by_byte,
 				__rrr_post_read_callback,
 				data
 		);
+
+		if (ret == RRR_SOCKET_SOFT_ERROR) {
+			RRR_MSG_ERR("Warning: Invalid or unexpected data received\n");
+			ret = 0;
+		}
 
 		if (rrr_post_print_stats != 0) {
 			__rrr_post_print_statistics(data);

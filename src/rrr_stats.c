@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
 #include "lib/linked_list.h"
+#include "lib/map.h"
 #include "lib/rrr_socket.h"
 #include "lib/rrr_socket_msg.h"
 #include "lib/rrr_socket_read.h"
@@ -84,7 +85,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 
 struct rrr_stats_data {
 	struct rrr_read_session_collection read_sessions;
-	struct rrr_linked_list socket_prefixes;
+	struct rrr_map socket_prefixes;
 	struct rrr_stats_tree message_tree;
 	char *socket_path_active;
 	int socket_fd;
@@ -121,7 +122,7 @@ static int __rrr_stats_data_init (struct rrr_stats_data *data) {
 
 static void __rrr_stats_data_cleanup (struct rrr_stats_data *data) {
 	rrr_read_session_collection_clear(&data->read_sessions);
-	rrr_linked_list_clear(&data->socket_prefixes);
+	rrr_map_clear(&data->socket_prefixes);
 	rrr_stats_tree_clear(&data->message_tree);
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 }
@@ -129,7 +130,7 @@ static void __rrr_stats_data_cleanup (struct rrr_stats_data *data) {
 static int __rrr_stats_socket_prefix_register (struct rrr_stats_data *data, const char *prefix) {
 	int ret = 0;
 
-	struct rrr_linked_list_node *node = malloc(sizeof(*node));
+	struct rrr_map_item *node = malloc(sizeof(*node));
 	if (node == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
@@ -137,21 +138,21 @@ static int __rrr_stats_socket_prefix_register (struct rrr_stats_data *data, cons
 	}
 	memset(node, '\0', sizeof(*node));
 
-	node->data = malloc(strlen(prefix) + 1);
-	if (node->data == NULL) {
+	node->tag = malloc(strlen(prefix) + 1);
+	if (node->tag == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
 		goto out;
 	}
 
-	strcpy(node->data, prefix);
+	strcpy(node->tag, prefix);
 
 	RRR_LL_APPEND(&data->socket_prefixes, node);
 	node = NULL;
 
 	out:
 	if (node != NULL) {
-		rrr_linked_list_destroy_node(node);
+		rrr_map_item_destroy(node);
 	}
 	return ret;
 }
@@ -456,19 +457,19 @@ static int __rrr_stats_attempt_connect (struct rrr_stats_data *data) {
 		}
 	}
 
-	RRR_LL_ITERATE_BEGIN(&data->socket_prefixes, struct rrr_linked_list_node);
+	RRR_MAP_ITERATE_BEGIN(&data->socket_prefixes);
 		if (data->socket_fd != 0) {
-			RRR_DBG_1("Not attempting to use prefix %s, already connected\n", (char *) node->data);
+			RRR_DBG_1("Not attempting to use prefix %s, already connected\n", node_tag);
 		}
 		else {
-			RRR_DBG_1("Attempting to use prefix %s\n", (char *) node->data);
-			if (__rrr_stats_attempt_connect_prefix(data, node->data) != 0) {
-				RRR_MSG_ERR("Error while attempting to connect to socket prefix %s\n", (char *) node->data);
+			RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
+			if (__rrr_stats_attempt_connect_prefix(data, node->tag) != 0) {
+				RRR_MSG_ERR("Error while attempting to connect to socket prefix %s\n", node_tag);
 				ret = 1;
 				goto out;
 			}
 		}
-	RRR_LL_ITERATE_END();
+	RRR_MAP_ITERATE_END();
 
 	out:
 	// NOTE : Connection failure is not always an error
@@ -502,7 +503,7 @@ static int __rrr_stats_send_message (int fd, const struct rrr_stats_message *mes
 			message->path
 	);
 
-	return rrr_socket_send(fd, &message_packed, total_size);
+	return rrr_socket_send_blocking(fd, &message_packed, total_size);
 }
 
 static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {

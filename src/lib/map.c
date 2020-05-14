@@ -141,7 +141,7 @@ const char *rrr_map_get_value (const struct rrr_map *map, const char *tag) {
 		if (strcmp (node->tag, tag) == 0) {
 			return node->value;
 		}
-	RRR_LL_ITERATE_END(map);
+	RRR_LL_ITERATE_END();
 
 	return NULL;
 }

@@ -24,6 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_message;
 struct instance_metadata_collection;
 
+int test_averager (
+		struct rrr_message **result_message,
+		struct instance_metadata_collection *instances,
+		const char *input_name_voltmonitor,
+		const char *output_name_averager
+);
+
 int test_type_array (
 		struct rrr_message **result_message_1,
 		struct rrr_message **result_message_2,

@@ -50,6 +50,7 @@ struct rrr_stats_engine {
 	pthread_mutex_t main_lock;
 	struct rrr_stats_named_message_list_collection named_message_list;
 	struct rrr_socket_client_collection client_collection;
+	uint64_t next_send_time;
 };
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats);

@@ -25,10 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "modules.h"
 #include "configuration.h"
-#include "senders.h"
+#include "instance_collection.h"
 #include "threads.h"
 
 struct rrr_stats_engine;
+struct rrr_message_broker;
+typedef void rrr_message_broker_costumer_handle;
 
 // TODO : Many pointers in different structs are probably redundant
 
@@ -36,7 +38,8 @@ struct instance_metadata {
 	struct instance_metadata *next;
 	struct rrr_instance_dynamic_data *dynamic_data;
 	struct rrr_instance_thread_data *thread_data;
-	struct instance_sender_collection senders;
+	struct rrr_instance_collection senders;
+	struct rrr_instance_collection wait_for;
 	struct rrr_instance_config *config;
 	struct rrr_signal_handler *signal_handler;
 	unsigned long int senders_count;
@@ -73,8 +76,9 @@ struct instance_thread_init_data {
 	struct rrr_instance_config *instance_config;
 	struct rrr_config *global_config;
 	struct rrr_instance_dynamic_data *module;
-	struct instance_sender_collection *senders;
+	struct rrr_instance_collection *senders;
 	struct rrr_stats_engine *stats;
+	struct rrr_message_broker *message_broker;
 };
 
 struct rrr_instance_thread_data {
@@ -83,6 +87,8 @@ struct rrr_instance_thread_data {
 	int used_by_ghost;
 
 	struct rrr_thread *thread;
+	rrr_message_broker_costumer_handle *message_broker_handle;
+
 	void *private_data;
 	void *preload_data;
 	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
@@ -90,10 +96,18 @@ struct rrr_instance_thread_data {
 };
 
 #define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
+#define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
+#define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
+#define INSTANCE_D_BROKER_ARGS(thread_data) \
+		thread_data->init_data.message_broker, thread_data->message_broker_handle
 
 #define RRR_INSTANCE_LOOP(target,collection) \
 	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
 
+struct instance_metadata *rrr_instance_find_by_thread (
+		struct instance_metadata_collection *collection,
+		struct rrr_thread *thread
+);
 int rrr_instance_check_threads_stopped(struct instance_metadata_collection *target);
 void rrr_instance_free_all_thread_data(struct instance_metadata_collection *target);
 int rrr_instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
@@ -103,32 +117,39 @@ int rrr_instance_metadata_collection_new (
 		struct instance_metadata_collection **target,
 		struct rrr_signal_functions *signal_functions
 );
-
 int rrr_instance_add_senders (
 		struct instance_metadata_collection *instances,
 		struct instance_metadata *instance
 );
-
+int rrr_instance_add_wait_for_instances (
+		struct instance_metadata_collection *instances,
+		struct instance_metadata *instance
+);
 int rrr_instance_load_and_save (
 		struct instance_metadata_collection *instances,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 );
-
 struct instance_metadata *rrr_instance_find (
 		struct instance_metadata_collection *target,
 		const char *name
 );
-
 unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection);
-void rrr_instance_free_thread(struct rrr_instance_thread_data *data);
-struct rrr_instance_thread_data *rrr_instance_init_thread(struct instance_thread_init_data *init_data);
+void rrr_instance_destroy_thread(struct rrr_instance_thread_data *data);
+void rrr_instance_destroy_thread_by_ghost (void *private_data);
+struct rrr_instance_thread_data *rrr_instance_new_thread(struct instance_thread_init_data *init_data);
 int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);
 int rrr_instance_start_thread (struct rrr_instance_thread_data *data);
 int rrr_instance_process_from_config(
 		struct instance_metadata_collection *instances,
 		struct rrr_config *config,
 		const char **library_paths
+);
+int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self);
+int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
+		int *delivery_entry_count,
+		int *delivery_ratelimit_active,
+		struct rrr_instance_thread_data *thread_data
 );
 
 #endif /* RRR_INSTANCES_H */

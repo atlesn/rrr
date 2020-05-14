@@ -28,10 +28,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { RRR_LL_ITERATE_BEGIN(map,struct rrr_map_item);				\
 		const char *node_tag = node->tag;							\
 		const char *node_value = node->value;						\
-		(void)(node_tag); (void)(node_value)
+		const long long int value_size = node->value_size;			\
+		(void)(node_tag); (void)(node_value); (void)(value_size)
 
-#define RRR_MAP_ITERATE_END(map)									\
-	RRR_LL_ITERATE_END(map); } while (0)
+#define RRR_MAP_ITERATE_BEGIN_CONST(map)							\
+	do { RRR_LL_ITERATE_BEGIN(map,const struct rrr_map_item);		\
+		const char *node_tag = node->tag;							\
+		const char *node_value = node->value;						\
+		const long long int value_size = node->value_size;			\
+		(void)(node_tag); (void)(node_value); (void)(value_size)
+
+#define RRR_MAP_ITERATE_END()										\
+	RRR_LL_ITERATE_END(); } while (0)
 
 #define RRR_MAP_ITERATE_IS_FIRST()									\
 	RRR_LL_ITERATE_IS_FIRST()
@@ -39,21 +47,44 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MAP_COUNT(map)											\
 	RRR_LL_COUNT(map)
 
-#define RRR_MAP_ITERATOR_CREATE(name,list) \
-	RRR_LL_ITERATOR_CREATE(name,list)
+#define RRR_MAP_ITERATOR_CREATE(name,map) \
+	struct rrr_map_iterator name = { 0, map, NULL }
 
 #define RRR_MAP_ITERATOR_NEXT(iterator) \
-	((struct rrr_map_item *) RRR_LL_ITERATOR_NEXT(iterator))
+	rrr_map_iterator_next(iterator)
 
+// Make sure this is EQUAL to rrr_linked_list_node. Different
+// pointer types are OK.
 struct rrr_map_item {
 	RRR_LL_NODE(struct rrr_map_item);
 	char *tag;
 	char *value;
+	ssize_t value_size;
 };
 
 struct rrr_map {
 	RRR_LL_HEAD(struct rrr_map_item);
 };
+
+struct rrr_map_iterator {
+	ssize_t rpos;
+	struct rrr_map *source;
+	struct rrr_map_item *cur;
+};
+
+static inline struct rrr_map_item *rrr_map_iterator_next (struct rrr_map_iterator *iterator) {
+	if (iterator->cur == NULL) {
+		if (iterator->rpos == 0) {
+			iterator->cur = iterator->source->ptr_first;
+		}
+	}
+	else {
+		iterator->cur = iterator->cur->ptr_next;
+		iterator->rpos++;
+	}
+
+	return iterator->cur;
+}
 
 void rrr_map_item_destroy (struct rrr_map_item *item);
 void rrr_map_clear (struct rrr_map *map);

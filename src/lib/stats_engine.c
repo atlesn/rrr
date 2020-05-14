@@ -40,6 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "random.h"
 
+#define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
+
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
 };
@@ -117,7 +119,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 
 	unlink(filename); // OK to ignore errors
 
-	if (rrr_socket_unix_create_bind_and_listen(&stats->socket, "rrr_stats_engine", filename, 2, 1) != 0) {
+	if (rrr_socket_unix_create_bind_and_listen(&stats->socket, "rrr_stats_engine", filename, 2, 1, 0) != 0) {
 		RRR_MSG_ERR("Could not create socket for statistics engine with filename '%s'\n", filename);
 		ret = 1;
 		goto out_destroy_mutex;
@@ -209,7 +211,7 @@ static int __rrr_stats_engine_send_message_to_clients (struct rrr_stats_engine *
 			message->path
 	);
 
-	return rrr_socket_client_collection_multicast_send (
+	return rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 			&stats->client_collection,
 			(struct rrr_socket_msg *) &message_packed,
 			total_size
@@ -310,11 +312,16 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 		goto out_unlock;
 	}
 
-	// Send data to clients
-	if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
-		RRR_MSG_ERR("Error while sending messages in rrr_stats_engine_tick\n");
-		ret = 1;
-		goto out_unlock;
+	uint64_t time_now = rrr_time_get_64();
+
+	if (time_now > stats->next_send_time) {
+		// Send data to clients
+		if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
+			RRR_MSG_ERR("Error while sending messages in rrr_stats_engine_tick\n");
+			ret = 1;
+			goto out_unlock;
+		}
+		stats->next_send_time = time_now + RRR_STATS_ENGINE_SEND_INTERVAL_MS * 1000;
 	}
 
 	out_unlock:

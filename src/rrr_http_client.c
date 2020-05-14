@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/http_session.h"
 #include "lib/http_part.h"
 #include "lib/http_util.h"
+#include "lib/net_transport.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
 #include "lib/rrr_strerror.h"
@@ -68,7 +69,9 @@ struct rrr_http_client_data {
 	int plain_force;
 	int ssl_force;
 	int ssl_no_cert_verify;
-	struct rrr_http_session *session;
+
+	int http_session_ret;
+	int do_retry;
 };
 
 struct rrr_http_client_response {
@@ -90,9 +93,6 @@ static void __rrr_http_client_data_cleanup (struct rrr_http_client_data *data) {
 	RRR_FREE_IF_NOT_NULL(data->hostname);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->query);
-	if (data->session != NULL) {
-		rrr_http_session_destroy(data->session);
-	}
 }
 
 static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, struct cmd_data *cmd) {
@@ -176,14 +176,14 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// HTTP port
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 0;
-	if (cmd_get_value (cmd, "count", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'count' argument may be specified\n");
+	if (cmd_get_value (cmd, "port", 1) != NULL) {
+		RRR_MSG_ERR("Error: Only one 'port' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
+			RRR_MSG_ERR("Could not understand argument 'port', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -246,23 +246,58 @@ static int __rrr_http_client_update_target_if_not_null (
 }
 
 static int __rrr_http_client_receive_callback (
-		struct rrr_http_session *session,
-		const char *start,
-		const char *end,
+		int chunk_idx,
+		int chunk_total,
+		const char *data_start,
+		ssize_t data_size,
 		void *arg
 ) {
 	struct rrr_http_client_response *response = arg;
-	struct rrr_http_part *part = session->response_part;
 
 	int ret = 0;
 
-	// If transfer encoding is chunked, we get called multiple times
-	if (response->code != 0 || response->argument != NULL) {
-		if (part->response_code < 200 || part->response_code > 299) {
-			RRR_BUG("Multiple calls to __rrr_http_client_receive_callback with non-200 response code\n");
+	(void)(response);
+	(void)(chunk_idx);
+	(void)(chunk_total);
+
+	if (data_start != NULL && data_size > 0) {
+//		const char *separator_line = "=============================";
+//		size_t separator_line_length = strlen(separator_line);
+
+		int bytes;
+
+//		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
+
+		retry:
+
+		bytes = write (STDOUT_FILENO, data_start, data_size);
+		if (bytes < data_size) {
+			if (bytes > 0) {
+				data_start += bytes;
+				data_size -= bytes;
+				goto retry;
+			}
+			else {
+				RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
 		}
-		goto print_data;
+
+		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
 	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_http_client_receive_callback_intermediate (
+		struct rrr_http_part *part,
+		void *arg
+) {
+	struct rrr_http_client_response *response = arg;
+
+	int ret = 0;
 
 	response->code = part->response_code;
 
@@ -294,38 +329,30 @@ static int __rrr_http_client_receive_callback (
 		goto out;
 	}
 
-	print_data:
-	if (start != NULL && end != NULL) {
-//		const char *separator_line = "=============================";
-//		size_t separator_line_length = strlen(separator_line);
-
-		int bytes;
-
-//		bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
-
-		bytes = write (STDOUT_FILENO, start, end - start);
-		if (bytes != end - start) {
-			RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback\n");
-			ret = 1;
-			goto out;
-		}
-
-		//bytes = write (STDOUT_FILENO, separator_line, separator_line_length);
+	if ((ret = rrr_http_part_iterate_chunks (
+			part,
+			__rrr_http_client_receive_callback,
+			response
+	) != 0)) {
+		RRR_MSG_ERR("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
+		goto out;
 	}
 
 	out:
 	return ret;
 }
 
-static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
+#define RRR_HTTP_CLIENT_TRANSPORT_ANY 0
+#define RRR_HTTP_CLIENT_TRANSPORT_HTTP 1
+#define RRR_HTTP_CLIENT_TRANSPORT_HTTPS 2
+
+static void __rrr_http_client_send_request_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	struct rrr_http_client_data *data = arg;
+
 	int ret = 0;
 
 	char *endpoint_and_query = NULL;
-
-	if (data->session != NULL) {
-		rrr_http_session_destroy(data->session);
-		data->session = NULL;
-	}
+	struct rrr_http_client_response response = {0};
 
 	if (data->endpoint == NULL || *(data->endpoint) == '\0') {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
@@ -351,128 +378,29 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 		}
 	}
 
-	int transport = RRR_HTTP_TRANSPORT_ANY;
-
-	if (data->protocol != NULL) {
-		if (strcasecmp(data->protocol, "http") == 0) {
-			transport = RRR_HTTP_TRANSPORT_HTTP;
-		}
-		else if (strcasecmp(data->protocol, "https") == 0) {
-			transport = RRR_HTTP_TRANSPORT_HTTPS;
-		}
-		else {
-			RRR_MSG_ERR("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if (data->ssl_force != 0) {
-		RRR_DBG_1("Forcing SSL/TLS\n");
-		if (transport != RRR_HTTP_TRANSPORT_HTTPS && transport != RRR_HTTP_TRANSPORT_ANY) {
-			RRR_MSG_ERR("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
-			ret = 1;
-			goto out;
-		}
-		transport = RRR_HTTP_TRANSPORT_HTTPS;
-	}
-	if (data->plain_force != 0) {
-		RRR_DBG_1("Forcing plaintext non-SSL/TLS\n");
-		if (transport != RRR_HTTP_TRANSPORT_HTTPS && transport != RRR_HTTP_TRANSPORT_ANY) {
-			RRR_MSG_ERR("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
-			ret = 1;
-			goto out;
-		}
-		transport = RRR_HTTP_TRANSPORT_HTTP;
-	}
-
-	RRR_DBG_1("Using server %s port %u transport %i\n", data->hostname, data->http_port, transport);
 	RRR_DBG_1("Using endpoint and query: '%s'\n", endpoint_and_query);
 
-	int tls_flags = 0;
-	if (data->ssl_no_cert_verify != 0) {
-		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
-	}
-
-	if ((ret = rrr_http_session_new (
-			&data->session,
-			transport,
+	if ((ret = rrr_http_session_transport_ctx_client_new (
+			handle,
 //			RRR_HTTP_METHOD_POST_URLENCODED,
 			RRR_HTTP_METHOD_GET,
-			data->hostname,
-			data->http_port,
 			endpoint_and_query,
-			RRR_HTTP_CLIENT_USER_AGENT,
-			tls_flags
+			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
-		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		RRR_MSG_ERR("Could not create HTTP session in _rrr_http_client_send_request\n");
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_connect(data->session)) != 0) {
-		RRR_MSG_ERR("Could not connect to server in __rrr_http_client_send_request\n");
-		goto out;
-	}
-
-//	rrr_http_session_add_query_field(data->session, "a", "1");
-//	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
-//	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
-
-	if ((ret = rrr_http_session_send_request(data->session)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_send_request(handle, data->hostname)) != 0) {
 		RRR_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
-	out:
-	RRR_FREE_IF_NOT_NULL(endpoint_and_query);
-	return ret;
-}
-
-int main (int argc, const char *argv[]) {
-	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	rrr_strerror_init();
-
-	int ret = EXIT_SUCCESS;
-
-	struct cmd_data cmd;
-	struct rrr_http_client_data data;
-	struct rrr_http_client_response response = {0};
-
-	cmd_init(&cmd, cmd_rules, argc, argv);
-	__rrr_http_client_data_init(&data);
-
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
-		goto out;
-	}
-
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
-		goto out;
-	}
-
-	if ((ret = __rrr_http_client_parse_config(&data, &cmd)) != 0) {
-		goto out;
-	}
-
-	int retry_max = 10;
-
-	retry:
-	if (--retry_max == 0) {
-		RRR_MSG_ERR("Maximum number of retries reached\n");
-		ret = 1;
-		goto out;
-	}
-
-	__rrr_http_client_response_cleanup(&response);
-
-	if ((ret = __rrr_http_client_send_request(&data)) != 0) {
-		goto out;
-	}
-
-	if ((ret = rrr_http_session_receive(data.session, __rrr_http_client_receive_callback, &response)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_receive(
+			handle,
+			__rrr_http_client_receive_callback_intermediate,
+			&response
+	)) != 0) {
 		goto out;
 	}
 
@@ -498,7 +426,7 @@ int main (int argc, const char *argv[]) {
 		);
 
 		if (__rrr_http_client_update_target_if_not_null (
-				&data,
+				data,
 				uri->protocol,
 				uri->host,
 				uri->endpoint,
@@ -514,8 +442,148 @@ int main (int argc, const char *argv[]) {
 		goto retry;
 	}
 
+	goto out;
+	retry:
+		data->do_retry = 1;
 	out:
-	__rrr_http_client_response_cleanup(&response);
+		RRR_FREE_IF_NOT_NULL(endpoint_and_query);
+		__rrr_http_client_response_cleanup(&response);
+		data->http_session_ret = ret;
+}
+
+static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
+	int ret = 0;
+
+	struct rrr_net_transport *transport = NULL;
+
+	int transport_code = RRR_HTTP_CLIENT_TRANSPORT_ANY;
+
+	if (data->protocol != NULL) {
+		if (strcasecmp(data->protocol, "http") == 0) {
+			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
+		}
+		else if (strcasecmp(data->protocol, "https") == 0) {
+			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
+		}
+		else {
+			RRR_MSG_ERR("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (data->ssl_force != 0) {
+		RRR_DBG_1("Forcing SSL/TLS\n");
+		if (transport_code != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport_code != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
+			RRR_MSG_ERR("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
+			ret = 1;
+			goto out;
+		}
+		transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
+	}
+	if (data->plain_force != 0) {
+		RRR_DBG_1("Forcing plaintext non-SSL/TLS\n");
+		if (transport_code != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport_code != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
+			RRR_MSG_ERR("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
+			ret = 1;
+			goto out;
+		}
+		transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
+	}
+
+	RRR_DBG_1("Using server %s port %u transport %i\n", data->hostname, data->http_port, transport_code);
+
+	int tls_flags = 0;
+	if (data->ssl_no_cert_verify != 0) {
+		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+	}
+
+	if (transport_code == RRR_HTTP_CLIENT_TRANSPORT_HTTPS) {
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL);
+	}
+	else {
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Could not create transport in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+	ret |= rrr_net_transport_connect_and_close_after_callback (
+			transport,
+			data->http_port,
+			data->hostname,
+			__rrr_http_client_send_request_callback,
+			data
+	);
+
+	ret |= data->http_session_ret;
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		goto out;
+	}
+
+//	rrr_http_session_add_query_field(data->session, "a", "1");
+//	rrr_http_session_add_query_field(data->session, "b", "2/(&(&%\"¤&!        #Q¤#!¤&/");
+//	rrr_http_session_add_query_field(data->session, "\\\\\\\\", "\\\\");
+
+	out:
+	if (transport != NULL) {
+		rrr_net_transport_destroy(transport);
+	}
+	return ret;
+}
+
+int main (int argc, const char *argv[]) {
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
+	}
+
+	rrr_strerror_init();
+
+	int ret = EXIT_SUCCESS;
+
+	struct cmd_data cmd;
+	struct rrr_http_client_data data;
+
+	cmd_init(&cmd, cmd_rules, argc, argv);
+	__rrr_http_client_data_init(&data);
+
+	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+		goto out;
+	}
+
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_client_parse_config(&data, &cmd)) != 0) {
+		goto out;
+	}
+
+	int retry_max = 10;
+
+	retry:
+	if (--retry_max == 0) {
+		RRR_MSG_ERR("Maximum number of retries reached\n");
+		ret = 1;
+		goto out;
+	}
+
+	data.do_retry = 0;
+
+	if ((ret = __rrr_http_client_send_request(&data)) != 0) {
+		goto out;
+	}
+
+	if (data.do_retry) {
+		goto retry;
+	}
+
+	out:
 	rrr_set_debuglevel_on_exit();
 	__rrr_http_client_data_cleanup(&data);
 	cmd_destroy(&cmd);

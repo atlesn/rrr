@@ -106,14 +106,29 @@ static struct rrr_read_session *__rrr_socket_read_message_default_get_read_sessi
 	);
 }
 
+static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read_session *read_session, void *private_arg) {
+	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
+
+	int so_type = 0;
+	socklen_t optlen = sizeof(so_type);
+
+	int ret = getsockopt(callback_data->fd, SOL_SOCKET, SO_TYPE, &so_type, &optlen);
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Error from getsockopt on fd %i: %s\n", callback_data->fd, rrr_strerror(errno));
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+
+	read_session->socket_options = so_type;
+
+	out:
+	return ret;
+}
+
 static void __rrr_socket_read_message_default_remove_read_session(struct rrr_read_session *read_session, void *private_arg) {
 	struct rrr_socket_read_message_default_callback_data *callback_data = private_arg;
-	RRR_LL_REMOVE_NODE(
-			callback_data->read_sessions,
-			struct rrr_read_session,
-			read_session,
-			rrr_read_session_destroy(node)
-	);
+	rrr_read_session_collection_remove_session(callback_data->read_sessions, read_session);
 }
 
 static int __rrr_socket_read_message_default_get_target_size(struct rrr_read_session *read_session, void *private_arg) {
@@ -173,7 +188,7 @@ static int __rrr_socket_read_message_default_read (
 		);
 	}
 	else {
-		RRR_BUG("Unknown read method %i in rrr_socket_read_message\n", callback_data->socket_read_flags);
+		RRR_BUG("Unknown read method %i in __rrr_socket_read_message_default_read\n", callback_data->socket_read_flags);
 	}
 
 	if (bytes == -1) {
@@ -186,7 +201,7 @@ static int __rrr_socket_read_message_default_read (
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in rrr_socket_read_message: %s\n", rrr_strerror(errno));
+		RRR_MSG_ERR("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -236,6 +251,10 @@ int rrr_socket_read_message_default (
 			__rrr_socket_read_message_default_get_read_session_with_overshoot,
 			__rrr_socket_read_message_default_get_read_session,
 			__rrr_socket_read_message_default_remove_read_session,
+			((socket_read_flags & RRR_SOCKET_READ_NO_GETSOCKOPTS) != RRR_SOCKET_READ_NO_GETSOCKOPTS
+				? __rrr_socket_read_message_default_get_socket_options
+				: NULL
+			),
 			&callback_data
 	);
 }

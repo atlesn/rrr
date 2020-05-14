@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,17 +25,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../global.h"
+#include "../macro_utils.h"
 #include "type.h"
 #include "fixed_point.h"
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "messages.h"
 #include "rrr_endian.h"
-
-#define PASTER(x,y) x ## _ ## y
-
-#define RRR_TYPES_MATCH_RETURN(str,name) \
-	if (strcmp(str,PASTER(RRR_TYPE_NAME,name)) == 0){return PASTER(RRR_TYPE,name);}
 
 static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
 	if (*value == '\0') {
@@ -234,18 +230,10 @@ static int __rrr_type_import_blob (RRR_TYPE_IMPORT_ARGS) {
 	return RRR_TYPE_PARSE_OK;
 }
 
-static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
-	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_ustr\n");
-	}
-	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_ustr\n");
-	}
-	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_ustr\n");
-	}
-
+int rrr_type_import_ustr_raw (uint64_t *target, ssize_t *parsed_bytes, const char *start, const char *end) {
 	CHECK_END_AND_RETURN(1);
+
+	*parsed_bytes = 0;
 
 	ssize_t max = end - start;
 	if (max > 30) {
@@ -278,35 +266,49 @@ static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
-	node->data = malloc(sizeof(rrr_type_ustr));
-	if (node->data == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in import_ustr\n");
-		return RRR_TYPE_PARSE_HARD_ERR;
-	}
-
-	memcpy(node->data, &result, sizeof(rrr_type_ustr));
-
-	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
-	node->total_stored_length = sizeof(rrr_type_h);
-	RRR_TYPE_FLAG_SET_UNSIGNED(node->flags);
+	memcpy(target, &result, sizeof(rrr_type_ustr));
 
 	*parsed_bytes = convert_end - tmp;
 
 	return RRR_TYPE_PARSE_OK;
 }
 
-static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
+static int __rrr_type_import_ustr (RRR_TYPE_IMPORT_ARGS) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_istr\n");
+		RRR_BUG("data was not NULL in import_ustr\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in import_istr\n");
+		RRR_BUG("array size was not 1 in import_ustr\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in import_istr\n");
+		RRR_BUG("length was not 0 in import_ustr\n");
 	}
 
+	int ret = RRR_TYPE_PARSE_OK;
+
+	node->data = malloc(sizeof(rrr_type_ustr));
+	if (node->data == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in import_ustr\n");
+		ret = RRR_TYPE_PARSE_HARD_ERR;
+		goto out;
+	}
+
+	if ((ret = rrr_type_import_ustr_raw ((uint64_t *) node->data, parsed_bytes, start, end)) != 0) {
+		goto out;
+	}
+
+	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
+	node->total_stored_length = sizeof(rrr_type_h);
+	RRR_TYPE_FLAG_SET_UNSIGNED(node->flags);
+
+	out:
+	return ret;
+}
+
+int rrr_type_import_istr_raw (int64_t *target, ssize_t *parsed_bytes, const char *start, const char *end) {
 	CHECK_END_AND_RETURN(1);
+
+	*parsed_bytes = 0;
 
 	ssize_t max = end - start;
 	if (max > 30) {
@@ -339,21 +341,43 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
+	memcpy(target, &result, sizeof(rrr_type_ustr));
+
+	*parsed_bytes = convert_end - tmp;
+
+	return RRR_TYPE_PARSE_OK;
+}
+
+static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
+	if (node->data != NULL) {
+		RRR_BUG("data was not NULL in import_istr\n");
+	}
+	if (node->element_count != 1) {
+		RRR_BUG("array size was not 1 in import_istr\n");
+	}
+	if (node->import_length != 0) {
+		RRR_BUG("length was not 0 in import_istr\n");
+	}
+
+	int ret = RRR_TYPE_PARSE_OK;
+
 	node->data = malloc(sizeof(rrr_type_istr));
 	if (node->data == NULL) {
 		RRR_MSG_ERR("Could not allocate memory in import_istr\n");
-		return RRR_TYPE_PARSE_HARD_ERR;
+		ret = RRR_TYPE_PARSE_HARD_ERR;
+		goto out;
 	}
 
-	memcpy(node->data, &result, sizeof(rrr_type_istr));
+	if ((ret = rrr_type_import_istr_raw ((int64_t*) node->data, parsed_bytes, start, end)) != 0) {
+		goto out;
+	}
 
 	node->definition = rrr_type_get_from_id(RRR_TYPE_H);
 	node->total_stored_length = sizeof(rrr_type_h);
 	RRR_TYPE_FLAG_SET_SIGNED(node->flags);
 
-	*parsed_bytes = convert_end - tmp;
-
-	return RRR_TYPE_PARSE_OK;
+	out:
+	return ret;
 }
 
 static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
@@ -459,7 +483,7 @@ static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 			goto out;
 		}
 
-		pos += msg->network_size;
+		pos += msg->msg_size;
 		count++;
 	}
 
@@ -569,9 +593,9 @@ static int __rrr_type_fixp_unpack (RRR_TYPE_UNPACK_ARGS) {
 	return __rrr_type_64_unpack (node, RRR_TYPE_FIXP);
 }
 
-static int __rrr_type_64_pack (RRR_TYPE_PACK_ARGS, uint8_t target_type) {
+static int __rrr_type_64_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
 	if (node->total_stored_length % sizeof(rrr_type_be) != 0) {
-		RRR_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_type_64_pack\n");
+		RRR_MSG_ERR("Size of 64 type was not 8 bytes in __rrr_type_64_export_or_pack\n");
 		return 1;
 	}
 
@@ -585,38 +609,114 @@ static int __rrr_type_64_pack (RRR_TYPE_PACK_ARGS, uint8_t target_type) {
 		pos += sizeof(rrr_type_be);
 	}
 
-	*new_type_id = target_type;
 	*written_bytes = node->total_stored_length;
 
 	return 0;
 }
 
+static int __rrr_type_host_export (RRR_TYPE_EXPORT_ARGS) {
+	return __rrr_type_64_export_or_pack (target, written_bytes, node);
+}
+
 static int __rrr_type_host_pack (RRR_TYPE_PACK_ARGS) {
-	return __rrr_type_64_pack (target, written_bytes, new_type_id, node, RRR_TYPE_BE);
+	*new_type_id = RRR_TYPE_BE;
+	return __rrr_type_64_export_or_pack (target, written_bytes, node);
 }
 
 static int __rrr_type_fixp_pack (RRR_TYPE_PACK_ARGS) {
-	return __rrr_type_64_pack (target, written_bytes, new_type_id, node, RRR_TYPE_FIXP);
+	*new_type_id = RRR_TYPE_FIXP;
+	return __rrr_type_64_export_or_pack (target, written_bytes, node);
+}
+
+static int __rrr_type_fixp_export (RRR_TYPE_EXPORT_ARGS) {
+	RRR_BUG("__rrr_type_fixp_export not implemented");
+	return 0;
 }
 
 static int __rrr_type_blob_unpack (RRR_TYPE_UNPACK_ARGS) {
 	if (node->total_stored_length == 0) {
-		RRR_MSG_ERR("Length of blob type was 0 in __rrr_array_convert_blob_to_host\n");
+		RRR_MSG_ERR("Length of blob type was 0 in __rrr_type_blob_unpack\n");
 		return 1;
 	}
 	return 0;
 }
 
-static int __rrr_type_blob_pack (RRR_TYPE_PACK_ARGS) {
+static int __rrr_type_blob_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
 	if (node->total_stored_length == 0) {
-		RRR_MSG_ERR("Length of blob type was 0 in __rrr_array_convert_blob_to_host\n");
+		RRR_MSG_ERR("Length of blob type was 0 in __rrr_type_blob_export_or_pack\n");
 		return 1;
 	}
 
 	memcpy(target, node->data, node->total_stored_length);
 
-	*new_type_id = node->definition->type;
+
 	*written_bytes = node->total_stored_length;
+
+	return 0;
+}
+
+static int __rrr_type_blob_pack (RRR_TYPE_PACK_ARGS) {
+	*new_type_id = node->definition->type;
+	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
+}
+
+static int __rrr_type_blob_export (RRR_TYPE_EXPORT_ARGS) {
+	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
+}
+
+static int __rrr_type_msg_export (RRR_TYPE_EXPORT_ARGS) {
+	memcpy(target, node->data, node->total_stored_length);
+	struct rrr_message *msg = (struct rrr_message *) target;
+
+	if (msg->msg_size != node->total_stored_length) {
+		RRR_MSG_ERR("Invalid size of message in __rrr_type_msg_export\n");
+		return 1;
+	}
+	if (msg->msg_size < sizeof(struct rrr_message) - 1) {
+		RRR_MSG_ERR("Message too short in __rrr_type_msg_export\n");
+		return 1;
+	}
+
+	rrr_message_prepare_for_network(msg);
+	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) msg);
+
+	*written_bytes = node->total_stored_length;
+
+	return 0;
+}
+
+static void __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
+	ssize_t escape_count = 0;
+	const char *end = node->data + node->total_stored_length;
+	for (const char *pos = node->data; pos < end; pos++) {
+		if ((*pos) == '\\' || (*pos) == '"') {
+			escape_count++;
+		}
+	}
+	*bytes = node->total_stored_length + 2 + escape_count;
+}
+
+static int __rrr_type_str_export (RRR_TYPE_EXPORT_ARGS) {
+	char *write_pos = target;
+
+	(*write_pos) = '"';
+	write_pos++;
+
+	const char *read_end = node->data + node->total_stored_length;
+
+	for (const char *read_pos = node->data; read_pos < read_end; read_pos++) {
+		if (*read_pos == '\\' || *read_pos == '"') {
+			(*write_pos) = '\\';
+			write_pos++;
+		}
+		(*write_pos) = *read_pos;
+		write_pos++;
+	}
+
+	(*write_pos) = '"';
+	write_pos++;
+
+	*written_bytes = write_pos - target;
 
 	return 0;
 }
@@ -631,16 +731,16 @@ static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
 		struct rrr_socket_msg *head = rpos;
 		struct rrr_message *msg = rpos;
 
-		if (pos + msg->network_size > node->total_stored_length) {
+		if (pos + msg->msg_size > node->total_stored_length) {
 			RRR_BUG("Size mismatch in __rrr_type_msg_pack A\n");
 		}
 
-		memcpy(wpos, rpos, msg->network_size);
+		memcpy(wpos, rpos, msg->msg_size);
 
 		head = wpos;
 		msg = wpos;
 
-		pos += msg->network_size;
+		pos += msg->msg_size;
 
 		rrr_message_prepare_for_network(msg);
 		rrr_socket_msg_checksum_and_to_network_endian(head);
@@ -850,17 +950,84 @@ static int __get_import_length_str (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	return ret;
 }
 
+static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
+	const char *start = buf;
+	const char *end = buf + buf_size;
+
+	(void)(node);
+
+	int ret = RRR_TYPE_PARSE_INCOMPLETE;
+
+	ssize_t length = 0;
+
+	// Parse any number of bytes until a separator is found.
+	for (const char *pos = start; pos < end; pos++) {
+		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)) {
+			if (length == 0) {
+				RRR_MSG_ERR("No characters found for array nsep-field, only separator found\n");
+				ret = RRR_TYPE_PARSE_SOFT_ERR;
+			}
+			else {
+				ret = RRR_TYPE_PARSE_OK;
+			}
+			break;
+		}
+
+		length++;
+	}
+
+	*import_length = length;
+
+
+	return ret;
+}
+
+static int __rrr_type_import_nsep (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+
+	if (node->data != NULL) {
+		RRR_BUG("data was not NULL in __rrr_type_import_nsep\n");
+	}
+	if (node->element_count != 1) {
+		RRR_BUG("array size was not 1 in __rrr_type_import_nsep\n");
+	}
+	if (node->import_length != 0) {
+		RRR_BUG("length was not 0 in __rrr_type_import_nsep\n");
+	}
+
+	ssize_t import_length = 0;
+	if ((ret = __get_import_length_nsep(&import_length, node, start, end - start)) != 0) {
+		goto out;
+	}
+
+	node->import_length = import_length;
+	ssize_t parsed_bytes_tmp = 0;
+	if ((ret = __rrr_type_import_blob(node, &parsed_bytes_tmp, start, end)) != 0) {
+		return ret;
+	}
+
+	if (parsed_bytes_tmp != import_length) {
+		RRR_BUG("Parsed bytes vs import length mismatch in __rrr_type_import_nsep\n");
+	}
+
+	node->import_length = import_length;
+	*parsed_bytes = parsed_bytes_tmp;
+
+	out:
+	return ret;
+}
+
 static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	int ret = RRR_TYPE_PARSE_OK;
 
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in __rrr_type_import_dec\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_str\n");
 	}
 	if (node->element_count != 1) {
-		RRR_BUG("array size was not 1 in __rrr_type_import_dec\n");
+		RRR_BUG("array size was not 1 in __rrr_type_import_str\n");
 	}
 	if (node->import_length != 0) {
-		RRR_BUG("length was not 0 in __rrr_type_import_dec\n");
+		RRR_BUG("length was not 0 in __rrr_type_import_str\n");
 	}
 
 	ssize_t import_length = 0;
@@ -887,19 +1054,79 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
+int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
+	int ret = 0;
+
+	ssize_t output_size = node->total_stored_length * 2 + 1;
+
+	// Valgrind complains about invalid writes for some reason
+	if (output_size < 32) {
+		output_size = 32;
+	}
+
+	char *result = malloc(output_size);
+	if (result == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in__rrr_type_bin_to_str\n");
+		return 1;
+	}
+
+	char *wpos = result;
+	for (int i = 0; i < (int) node->total_stored_length; i++) {
+		sprintf(wpos, "%02x", *(node->data + i));
+		wpos += 2;
+	}
+	result[output_size - 1] = '\0';
+
+	*target = result;
+
+	return ret;
+}
+
+int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
+	char *result = malloc(node->total_stored_length + 1);
+	if (result == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in __rrr_type_str_to_str\n");
+		return 1;
+	}
+
+	memcpy(result, node->data, node->total_stored_length);
+	(*(result + node->total_stored_length)) = '\0';
+
+	*target = result;
+
+	return 0;
+}
+
+#define RRR_TYPE_DEFINE(name,type,max,import_length,import,export_length,export,unpack,pack,to_str,name_str) \
+	const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name) = {type, max, import_length, import, export_length, export, unpack, pack, to_str, name_str}
+
+RRR_TYPE_DEFINE(be, RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	NULL,								NULL,					__rrr_type_be_unpack,		NULL,					NULL,					RRR_TYPE_NAME_BE);
+RRR_TYPE_DEFINE(h, RRR_TYPE_H,			RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,								__rrr_type_host_export,	NULL,						__rrr_type_host_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_H);
+RRR_TYPE_DEFINE(le, RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__get_import_length_default,	__rrr_type_import_le,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_LE);
+RRR_TYPE_DEFINE(blob, RRR_TYPE_BLOB,	RRR_TYPE_MAX_BLOB,	__get_import_length_default,	__rrr_type_import_blob,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_BLOB);
+RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_USTR);
+RRR_TYPE_DEFINE(istr, RRR_TYPE_ISTR,	RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_ISTR);
+RRR_TYPE_DEFINE(sep, RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_SEP);
+RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	NULL,								__rrr_type_msg_export,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_MSG);
+RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_FIXP);
+RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_STR);
+RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_NSEP);
+RRR_TYPE_DEFINE(null, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
 // If there are types which begin with the same letters, the longest names must be first in the array
-static const struct rrr_type_definition type_templates[] = {
-		{RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	__rrr_type_be_unpack,		NULL,					RRR_TYPE_NAME_BE},
-		{RRR_TYPE_H,		RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,						__rrr_type_host_pack,	RRR_TYPE_NAME_H},
-		{RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__get_import_length_default,	__rrr_type_import_le,	NULL,						NULL,					RRR_TYPE_NAME_LE},
-		{RRR_TYPE_BLOB,		RRR_TYPE_MAX_BLOB,	__get_import_length_default,	__rrr_type_import_blob,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_BLOB},
-		{RRR_TYPE_USTR,		RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,						NULL,					RRR_TYPE_NAME_USTR},
-		{RRR_TYPE_ISTR,		RRR_TYPE_MAX_ISTR,	__get_import_length_istr,		__rrr_type_import_istr,	NULL,						NULL,					RRR_TYPE_NAME_ISTR},
-		{RRR_TYPE_SEP,		RRR_TYPE_MAX_SEP,	__get_import_length_default,	__rrr_type_import_sep,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_SEP},
-		{RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		__rrr_type_import_msg,	__rrr_type_msg_unpack,		__rrr_type_msg_pack,	RRR_TYPE_NAME_MSG},
-		{RRR_TYPE_FIXP,		RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	RRR_TYPE_NAME_FIXP},
-		{RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	RRR_TYPE_NAME_STR},
-		{0,					0,					NULL,							NULL,					NULL,						NULL,					NULL}
+static const struct rrr_type_definition *type_templates[] = {
+		&rrr_type_definition_be,
+		&rrr_type_definition_h,
+		&rrr_type_definition_le,
+		&rrr_type_definition_blob,
+		&rrr_type_definition_ustr,
+		&rrr_type_definition_istr,
+		&rrr_type_definition_sep,
+		&rrr_type_definition_msg,
+		&rrr_type_definition_fixp,
+		&rrr_type_definition_str,
+		&rrr_type_definition_nsep,
+		&rrr_type_definition_null
 };
 
 const struct rrr_type_definition *rrr_type_parse_from_string (
@@ -911,7 +1138,7 @@ const struct rrr_type_definition *rrr_type_parse_from_string (
 
 	int i = 0;
 	do {
-		const struct rrr_type_definition *type = &type_templates[i];
+		const struct rrr_type_definition *type = type_templates[i];
 		ssize_t len = strlen(type->identifier);
 		if (start + len > end) {
 			goto next;
@@ -923,17 +1150,16 @@ const struct rrr_type_definition *rrr_type_parse_from_string (
 
 		next:
 		i++;
-	} while(type_templates[i].type != 0);
+	} while(type_templates[i]->type != 0);
 
 	return NULL;
 }
-
 
 const struct rrr_type_definition *rrr_type_get_from_id (
 		uint8_t type_in
 ) {
 	for (unsigned int i = 0; i < sizeof(type_templates) / sizeof(type_templates[0]) - 1; i++) {
-		const struct rrr_type_definition *type = &type_templates[i];
+		const struct rrr_type_definition *type = type_templates[i];
 		if (type->type == type_in) {
 			return type;
 		}
@@ -948,6 +1174,25 @@ void rrr_type_value_destroy (
 	RRR_FREE_IF_NOT_NULL(template->tag);
 	RRR_FREE_IF_NOT_NULL(template->data);
 	free(template);
+}
+
+int rrr_type_value_set_tag (
+		struct rrr_type_value *value,
+		const char *tag,
+		ssize_t tag_length
+) {
+	RRR_FREE_IF_NOT_NULL(value->tag);
+	if (tag_length > 0) {
+		value->tag = malloc(tag_length + 1);
+		if (value->tag == NULL) {
+			RRR_MSG_ERR("Could not allocate tag in rrr_type_value_set_tag\n");
+			return 1;
+		}
+		memcpy(value->tag, tag, tag_length);
+		value->tag[tag_length] = '\0';
+	}
+	value->tag_length = tag_length;
+	return 0;
 }
 
 int rrr_type_value_new (
@@ -988,15 +1233,9 @@ int rrr_type_value_new (
 		}
 	}
 
-	if (tag_length > 0) {
-		value->tag = malloc(tag_length + 1);
-		if (value->tag == NULL) {
-			RRR_MSG_ERR("Could not allocate tag for template in rrr_type_value_new\n");
-			ret = 1;
-			goto out;
-		}
-		memcpy(value->tag, tag, tag_length);
-		value->tag[tag_length] = '\0';
+	if (rrr_type_value_set_tag(value, tag, tag_length) != 0) {
+		ret = 1;
+		goto out;
 	}
 
 	*result = value;

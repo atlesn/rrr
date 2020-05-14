@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_GNU_H
 #define RRR_GNU_H
 
+#include <stdarg.h>
+
+int rrr_vasprintf (char **resultp, const char *format, va_list args);
 int rrr_asprintf (char **resultp, const char *format, ...);
 char *rrr_strcasestr (const char *haystack, const char *needle);
 

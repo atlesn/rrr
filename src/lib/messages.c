@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,31 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "../global.h"
 
-// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-
-struct rrr_message *rrr_message_new_reading (
-		rrr_u64 reading_millis,
-		rrr_u64 time
-) {
-	struct rrr_message *res;
-
-	if (rrr_message_new_empty (
-			&res,
-			MSG_TYPE_MSG,
-			0,
-			MSG_CLASS_POINT,
-			time,
-			time,
-			reading_millis,
-			0,
-			0
-	) != 0) {
-		return NULL;
-	}
-
-	return res;
-}
-
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
@@ -66,11 +41,8 @@ struct rrr_message *rrr_message_new_array (
 	if (rrr_message_new_empty (
 			(struct rrr_message **) &res,
 			MSG_TYPE_MSG,
-			0,
 			MSG_CLASS_ARRAY,
 			time,
-			time,
-			0,
 			topic_length,
 			data_length
 	) != 0) {
@@ -82,12 +54,9 @@ struct rrr_message *rrr_message_new_array (
 
 int rrr_message_new_empty (
 		struct rrr_message **final_result,
-		rrr_u16 type,
-		rrr_u16 type_flags,
-		rrr_u32 class,
-		rrr_u64 timestamp_from,
-		rrr_u64 timestamp_to,
-		rrr_u64 data_numeric,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 ) {
@@ -103,17 +72,15 @@ int rrr_message_new_empty (
 
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_RRR_MESSAGE,
+			RRR_SOCKET_MSG_TYPE_MESSAGE,
 			total_size,
 			0
 	);
 
-	result->type = type;
-	result->type_flags = type_flags;
-	result->class = class;
-	result->timestamp_from = timestamp_from;
-	result->timestamp_to = timestamp_to;
-	result->data_numeric = data_numeric;
+	MSG_SET_TYPE(result, type);
+	MSG_SET_CLASS(result, class);
+
+	result->timestamp = timestamp;
 	result->topic_length = topic_length;
 
 	*final_result = result;
@@ -123,12 +90,9 @@ int rrr_message_new_empty (
 
 int rrr_message_new_with_data (
 		struct rrr_message **final_result,
-		rrr_u16 type,
-		rrr_u16 type_flags,
-		rrr_u32 class,
-		rrr_u64 timestamp_from,
-		rrr_u64 timestamp_to,
-		rrr_u64 data_numeric,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
 		const char *topic,
 		rrr_u16 topic_length,
 		const char *data,
@@ -137,11 +101,8 @@ int rrr_message_new_with_data (
 	if (rrr_message_new_empty (
 			final_result,
 			type,
-			type_flags,
 			class,
-			timestamp_from,
-			timestamp_to,
-			data_numeric,
+			timestamp,
 			topic_length,
 			data_length
 	) != 0) {
@@ -168,7 +129,7 @@ int rrr_message_to_string (
 	}
 
 	const char *type;
-	switch (message->type) {
+	switch (MSG_TYPE(message)) {
 	case MSG_TYPE_MSG:
 		type = MSG_TYPE_MSG_STRING;
 		break;
@@ -176,43 +137,29 @@ int rrr_message_to_string (
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		RRR_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
+		RRR_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", MSG_TYPE(message));
 		ret = 1;
 		goto out;
 	}
 
 	const char *class;
-	switch (message->class) {
-	case MSG_CLASS_POINT:
-		class = MSG_CLASS_POINT_STRING;
-		break;
-	case MSG_CLASS_AVG:
-		class = MSG_CLASS_AVG_STRING;
-		break;
-	case MSG_CLASS_MAX:
-		class = MSG_CLASS_MAX_STRING;
-		break;
-	case MSG_CLASS_MIN:
-		class = MSG_CLASS_MIN_STRING;
-		break;
-	case MSG_CLASS_INFO:
-		class = MSG_CLASS_INFO_STRING;
+	switch (MSG_CLASS(message)) {
+	case MSG_CLASS_DATA:
+		class = MSG_CLASS_DATA_STRING;
 		break;
 	case MSG_CLASS_ARRAY:
 		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
-		RRR_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
+		RRR_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", MSG_CLASS(message));
 		ret = 1;
 		goto out;
 	}
 
-	sprintf(target, "%s:%s:%" PRIu64 ":%" PRIu64 ":%" PRIu64,
+	sprintf(target, "%s:%s:%" PRIu64,
 			type,
 			class,
-			message->timestamp_from,
-			message->timestamp_to,
-			message->data_numeric
+			message->timestamp
 	);
 
 	*final_target = target;
@@ -261,11 +208,11 @@ static int __message_validate (const struct rrr_message *message){
 		goto out;
 	}
 	if (!MSG_CLASS_OK(message)) {
-		RRR_MSG_ERR("Invalid class %u in message to message_validate\n", message->class);
+		RRR_MSG_ERR("Invalid class %u in message to message_validate\n", MSG_CLASS(message));
 		ret = 1;
 	}
 	if (!MSG_TYPE_OK(message)) {
-		RRR_MSG_ERR("Invalid type %u in message to message_validate\n", message->type);
+		RRR_MSG_ERR("Invalid type %u in message to message_validate\n", MSG_TYPE(message));
 		ret = 1;
 	}
 	if (rrr_utf8_validate(MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message)) != 0) {
@@ -282,13 +229,7 @@ int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expecte
 		RRR_MSG_ERR("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
-	message->type = be16toh(message->type);
-	message->type_flags = be16toh(message->type_flags);
-	message->class = be16toh(message->class);
-	message->version = be16toh(message->version);
-	message->timestamp_from = be64toh(message->timestamp_from);
-	message->timestamp_to = be64toh(message->timestamp_to);
-	message->data_numeric = be64toh(message->data_numeric);
+	message->timestamp = be64toh(message->timestamp);
 	message->topic_length = be16toh(message->topic_length);
 
 	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
@@ -301,13 +242,7 @@ int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expecte
 }
 
 void rrr_message_prepare_for_network (struct rrr_message *message) {
-	message->type = htobe16(message->type);
-	message->type_flags = htobe16(message->type_flags);
-	message->class = htobe16(message->class);
-	message->version = htobe16(message->version);
-	message->timestamp_from = htobe64(message->timestamp_from);
-	message->timestamp_to = htobe64(message->timestamp_to);
-	message->data_numeric = htobe64(message->data_numeric);
+	message->timestamp = htobe64(message->timestamp);
 	message->topic_length = htobe16(message->topic_length);
 
 	if (RRR_DEBUGLEVEL_6) {
@@ -343,7 +278,6 @@ struct rrr_message *rrr_message_duplicate_no_data_with_size (
 	memcpy(ret, message, sizeof(*ret) - 2);
 
 	ret->topic_length = topic_length;
-	ret->network_size = new_total_size;
 	ret->msg_size = new_total_size;
 
 	return ret;
@@ -371,7 +305,6 @@ struct rrr_message *rrr_message_duplicate_no_data (
 		return NULL;
 	}
 	memcpy(ret, message, new_size);
-	ret->network_size = new_size;
 	ret->msg_size = new_size;
 	return ret;
 }
@@ -394,4 +327,16 @@ int rrr_message_set_topic (
 	*message = ret;
 
 	return 0;
+}
+
+int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
+	// Assume network order if crc32 is set
+	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? be64toh(message_b->timestamp) : message_b->timestamp);
+
+	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
+}
+
+int rrr_message_timestamp_compare_void (void *message_a, void *message_b) {
+	return rrr_message_timestamp_compare(message_a, message_b);
 }

@@ -27,12 +27,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
 struct buffer_data {
@@ -40,39 +42,48 @@ struct buffer_data {
 	struct rrr_instance_thread_data *data;
 };
 
-int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct buffer_data *buffer_data = data->private_data;
+int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+//	printf ("buffer got entry %p\n", entry);
 
-	if (rrr_fifo_read_clear_forward(&buffer_data->storage, NULL, callback, poll_data, wait_milliseconds) == RRR_FIFO_GLOBAL_ERR) {
+	struct rrr_message *message = entry->message;
+
+	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), message->timestamp);
+
+	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			entry
+	);
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Error while adding message to buffer in buffer instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+	}
+
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
+static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
+
+	// This will also unlock
+	if (rrr_message_broker_clone_and_write_entry (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			message
+	) != 0) {
+		RRR_MSG_ERR("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		return 1;
 	}
 
 	return 0;
 }
 
-int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = caller_data->private_data;
-	struct buffer_data *buffer_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
-
-	RRR_DBG_3 ("buffer instance %s: Result from buffer: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(buffer_data->data), message->data_numeric, size);
-
-	rrr_fifo_buffer_write(&buffer_data->storage, data, size);
-
-	return 0;
-}
-
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
-	struct buffer_data *data = thread_data->private_data;
-	RRR_DBG_2("buffer: writing data from inject function\n");
-	rrr_fifo_buffer_write(&data->storage, (char*)message, sizeof(*message));
-	return 0;
-}
-
 void data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->storage);
+	rrr_fifo_buffer_clear(&data->storage);
 }
 
 int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
@@ -88,7 +99,7 @@ int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_
 static void *thread_entry_buffer (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_ERR("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -97,10 +108,10 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("buffer thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -108,25 +119,21 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
-		RRR_MSG_ERR("buffer instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
 	RRR_DBG_1 ("buffer started thread %p\n", thread_data);
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
 			break;
 		}
 	}
 
-	out_message:
 	RRR_DBG_1 ("Thread buffer %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
+	//pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -140,10 +147,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_buffer,
-		NULL,
-		NULL,
-		NULL,
-		poll_delete,
 		NULL,
 		test_config,
 		inject,

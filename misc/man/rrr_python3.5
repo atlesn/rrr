@@ -32,51 +32,13 @@ Below follows detailed description of methods and members of the RRR objects.
 .SS rrr_message
 Structure which contain a single RRR messsage which it is possible to mangle. A message may or may not contain a data
 array.
-.TP
-.B rrr_message.set(type,class,timestamp_from,timestamp_to,data_numeric)
-Set metadata of the message. The timestamps are times in epoch microseconds. The
-.B data_numeric
-parameter is an unsigned value
-of the actual measurement. To validation is performed on the values other than them being positive integers.
-.PP
-Possible values for
-.B type
-are:
-.Bl -ohang
-.It Sy rrr message.TYPE_MSG
-.It Sy rrr_message.TYPE_ACK
-.It Sy rrr_message.TYPE_TAG
-.El
-.PP
-Possible values for
-.B class
-are:
-.PP
-
-.TP
-.B rrr_message.CLASS_POINT
-Point measurement, timestamp_from and timestamp_to are normally equal
-.TP
-.B rrr_message.CLASS_AVG
-Average measurement, starts at timestamp_from and ends at timestamp_to
-.TP
-.B rrr_message.CLASS_MAX
-Maximum measurement betweeen timestamp_from and timestamp_to
-.TP
-.B rrr_message.CLASS_MIN
-Minimum measurement betweeen timestamp_from and timestamp_to
-.TP
-.B rrr_message.CLASS_INFO
-Informational message, text might be put in the message body.
-.TP
-.B rrr_message.CLASS_ARRAY
-Message body contains a data array.
-.El
 .PP
 The type
 .B CLASS_ARRAY
 is automatically set if the message contains an array, and any other data set in the message apart from in the header
-is deleted.
+is deleted. If there is no array in the message,
+.B CLASS_POINT
+is used.
 .TP
 .B rrr_message.set_data(data : bytearray|str)
 Set the body of a message. If the message contains an array,

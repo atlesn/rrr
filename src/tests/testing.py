@@ -36,9 +36,9 @@ def process(socket: rrr_socket, message: rrr_message):
 		print("python3 configuration error, persistent_setting_b was not touched during config, value was '" + persistent_setting_b + "'")
 		return False
 
-	print ("python3 timestamp before: " + str(message.timestamp_from))
-	message.timestamp_from = message.timestamp_from + 1
-	print ("python3 timestamp after : " + str(message.timestamp_from))
+	print ("python3 timestamp before: " + str(message.timestamp))
+	message.timestamp = message.timestamp + 1
+	print ("python3 timestamp after : " + str(message.timestamp))
 
 	if (not message.has_array()):
 		print ("python3 message did not have an array\n")

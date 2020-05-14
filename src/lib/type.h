@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "linked_list.h"
+#include "../macro_utils.h"
 
 static const union type_system_endian {
 	uint16_t two;
@@ -39,7 +40,7 @@ static const union type_system_endian {
 #define RRR_TYPE_PARSE_SOFT_ERR		2
 #define RRR_TYPE_PARSE_INCOMPLETE	3
 
-// Remember to update convert function pointers in types.c
+// Remember to update convert function pointers in type.c
 // Highest possible ID is 255 (uint8_t)
 #define RRR_TYPE_MIN		2
 #define RRR_TYPE_LE			2 // Little endian number
@@ -52,7 +53,8 @@ static const union type_system_endian {
 #define RRR_TYPE_MSG		9 // Type which holds an RRR message
 #define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
-#define RRR_TYPE_MAX		11
+#define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
+#define RRR_TYPE_MAX		12
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -64,6 +66,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_MSG	"msg"
 #define RRR_TYPE_NAME_FIXP	"fixp"
 #define RRR_TYPE_NAME_STR	"str"
+#define RRR_TYPE_NAME_NSEP	"nsep"
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
@@ -75,16 +78,18 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_MSG	0
 #define RRR_TYPE_MAX_FIXP	0
 #define RRR_TYPE_MAX_STR	0
+#define RRR_TYPE_MAX_NSEP	0
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR)
+#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP)
 #define RRR_TYPE_IS_FIXP(type)		((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)		((type) == RRR_TYPE_MSG)
 #define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP)
 #define RRR_TYPE_IS_SEP(type)		((type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_NSEP(type)		((type) == RRR_TYPE_SEP)
 #define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
@@ -127,6 +132,15 @@ static const union type_system_endian {
 		const char *start,					\
 		const char *end
 
+#define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
+		ssize_t *bytes,						\
+		const struct rrr_type_value *node
+
+#define RRR_TYPE_EXPORT_ARGS				\
+		char *target,						\
+		ssize_t *written_bytes,				\
+		const struct rrr_type_value *node
+
 #define RRR_TYPE_UNPACK_ARGS				\
 		struct rrr_type_value *node
 
@@ -134,6 +148,10 @@ static const union type_system_endian {
 		char *target,						\
 		ssize_t *written_bytes,				\
 		uint8_t *new_type_id,				\
+		const struct rrr_type_value *node
+
+#define RRR_TYPE_TO_STR_ARGS				\
+		char **target,						\
 		const struct rrr_type_value *node
 
 typedef uint8_t rrr_type;
@@ -155,8 +173,11 @@ struct rrr_type_definition {
 	rrr_type_length max_length;
 	int (*get_import_length)(RRR_TYPE_GET_IMPORT_LENGTH_ARGS);
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
+	void (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
+	int (*export)(RRR_TYPE_EXPORT_ARGS);
 	int (*unpack)(RRR_TYPE_UNPACK_ARGS);
 	int (*pack)(RRR_TYPE_PACK_ARGS);
+	int (*to_str)(RRR_TYPE_TO_STR_ARGS);
 	const char *identifier;
 };
 
@@ -173,6 +194,25 @@ struct rrr_type_value {
 	char *data;
 };
 
+#define RRR_TYPE_DEFINE_EXTERN(name) \
+	extern const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name)
+
+RRR_TYPE_DEFINE_EXTERN(be);
+RRR_TYPE_DEFINE_EXTERN(h);
+RRR_TYPE_DEFINE_EXTERN(le);
+RRR_TYPE_DEFINE_EXTERN(blob);
+RRR_TYPE_DEFINE_EXTERN(ustr);
+RRR_TYPE_DEFINE_EXTERN(istr);
+RRR_TYPE_DEFINE_EXTERN(sep);
+RRR_TYPE_DEFINE_EXTERN(msg);
+RRR_TYPE_DEFINE_EXTERN(fixp);
+RRR_TYPE_DEFINE_EXTERN(str);
+RRR_TYPE_DEFINE_EXTERN(nsep);
+RRR_TYPE_DEFINE_EXTERN(null);
+
+int rrr_type_import_ustr_raw (uint64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_istr_raw (int64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
+
 const struct rrr_type_definition *rrr_type_parse_from_string (
 		ssize_t *parsed_bytes,
 		const char *start,
@@ -183,6 +223,11 @@ const struct rrr_type_definition *rrr_type_get_from_id (
 );
 void rrr_type_value_destroy (
 		struct rrr_type_value *template
+);
+int rrr_type_value_set_tag (
+		struct rrr_type_value *value,
+		const char *tag,
+		ssize_t tag_length
 );
 int rrr_type_value_new (
 		struct rrr_type_value **result,

@@ -7,6 +7,7 @@
 /src/rrr
 /src/rrr_post
 /src/rrr_http_client
+/src/rrr_http_server
 /src/rrr_stats
 /build_timestamp.h
 /build_directory.h

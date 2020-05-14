@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -27,309 +27,70 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/message_broker.h"
 #include "../global.h"
 
-#define DUPLICATOR_MAX_SENDERS RRR_MODULE_MAX_SENDERS
-
-struct duplicator_reader {
-	const struct rrr_instance_thread_data *identifier;
-	struct rrr_fifo_buffer buffer;
-	uint64_t read_position;
-};
-
 struct duplicator_data {
-	pthread_mutex_t readers_lock;
-	struct duplicator_reader readers[DUPLICATOR_MAX_SENDERS];
-	struct rrr_instance_thread_data *data;
-	struct rrr_fifo_buffer input_buffer;
-	int readers_count;
-	int registering_active;
-	int readers_active;
+	struct rrr_instance_thread_data *thread_data;
 };
-
-inline void readers_read_lock(struct duplicator_data *data) {
-	int ok = 0;
-
-	while (!ok) {
-		pthread_mutex_lock(&data->readers_lock);
-		if (!data->registering_active) {
-			data->readers_active++;
-			ok = 1;
-		}
-		pthread_mutex_unlock(&data->readers_lock);
-	}
-}
-
-inline void readers_read_unlock(struct duplicator_data *data) {
-	pthread_mutex_lock(&data->readers_lock);
-	data->readers_active--;
-	pthread_mutex_unlock(&data->readers_lock);
-}
-
-inline void readers_register_lock(struct duplicator_data *data) {
-	int ok = 0;
-	while (ok != 2) {
-		if (ok == 0) {
-			pthread_mutex_lock(&data->readers_lock);
-			if (data->registering_active == 0) {
-				ok = 1;
-				data->registering_active = 1;
-			}
-			pthread_mutex_unlock(&data->readers_lock);
-		}
-		if (ok == 1) {
-			pthread_mutex_lock(&data->readers_lock);
-			if (data->readers_active == 0) {
-				ok = 2;
-			}
-			pthread_mutex_unlock(&data->readers_lock);
-		}
-	}
-}
-
-inline void readers_register_unlock(struct duplicator_data *data) {
-	pthread_mutex_lock(&data->readers_lock);
-	data->registering_active = 0;
-	pthread_mutex_unlock(&data->readers_lock);
-}
-
-struct duplicator_reader *find_reader (struct duplicator_data *data, const struct rrr_instance_thread_data *identifier) {
-	struct duplicator_reader *result = NULL;
-
-	readers_read_lock(data);
-
-	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-		struct duplicator_reader *test = &data->readers[i];
-		if (test->identifier == identifier) {
-			result = test;
-			break;
-		}
-	}
-
-	readers_read_unlock(data);
-
-	return result;
-}
-
-struct duplicator_reader *register_reader (struct duplicator_data *data, const struct rrr_instance_thread_data *identifier) {
-	struct duplicator_reader *result = NULL;
-
-	readers_register_lock(data);
-
-	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-		struct duplicator_reader *test = &data->readers[i];
-		if (test->identifier == NULL) {
-			if (rrr_fifo_buffer_init(&test->buffer) != 0) {
-				RRR_MSG_ERR("Could not initialize fifo buffer for sender %s in duplicator\n", INSTANCE_D_NAME(identifier));
-				break;
-			}
-			test->identifier = identifier;
-			data->readers_count++;
-			result = test;
-			break;
-		}
-	}
-
-	readers_register_unlock(data);
-
-	if (result == NULL) {
-		RRR_MSG_ERR("Maximum number of readers reached: %i\n", DUPLICATOR_MAX_SENDERS);
-	}
-
-	return result;
-}
-
-struct read_minimum_data {
-	int (*callback)(struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size);
-	struct rrr_fifo_callback_args *poll_data;
-	uint64_t result_timestamp;
-};
-
-/* Callback must free or take care of memory even in case of an error */
-int read_minimum_callback (struct rrr_fifo_callback_args *args, char *data, unsigned long int size) {
-	int ret = 0;
-
-	(void)(size);
-
-	struct read_minimum_data *minimum_callback_data = args->private_data;
-	struct rrr_fifo_callback_args *fifo_callback_data_orig = minimum_callback_data->poll_data;
-
-	struct rrr_message *message_new = rrr_message_duplicate((struct rrr_message *) data);
-	if (message_new == NULL) {
-		RRR_MSG_ERR("Could not allocate data in duplicator read_minimum_callback\n");
-		return 1;
-	}
-
-	uint64_t timestamp = message_new->timestamp_from;
-
-	int res = minimum_callback_data->callback(fifo_callback_data_orig, (char*) message_new, MSG_TOTAL_SIZE(message_new));
-
-	if (res == 0) {
-		if (timestamp > minimum_callback_data->result_timestamp) {
-			minimum_callback_data->result_timestamp = timestamp;
-		}
-	}
-	else {
-		ret = 1;
-	}
-
-	return ret;
-}
-
-int poll_delete (RRR_MODULE_POLL_SIGNATURE) {
-	struct duplicator_data *duplicator_data = data->private_data;
-	struct rrr_instance_thread_data *instance_reader = poll_data->source;
-	struct duplicator_reader *reader = find_reader(duplicator_data, instance_reader);
-
-	if (reader == NULL) {
-		reader = register_reader(duplicator_data, instance_reader);
-		if (reader == NULL) {
-			RRR_MSG_ERR("Could not register reader %p in duplicator instance %s\n", instance_reader, INSTANCE_D_NAME(data));
-			return 1;
-		}
-		else {
-			RRR_DBG_2("Duplicator instance %s registered reader %s\n", INSTANCE_D_NAME(data), INSTANCE_D_NAME(instance_reader));
-		}
-	}
-
-	struct read_minimum_data minimum_callback_data = {callback, poll_data, 0};
-	struct rrr_fifo_callback_args fifo_callback_data = {NULL, &minimum_callback_data, 0};
-
-	int res = rrr_fifo_read_minimum (
-			&duplicator_data->input_buffer,
-			NULL,
-			read_minimum_callback,
-			&fifo_callback_data,
-			reader->read_position,
-			wait_milliseconds
-	);
-
-	if (minimum_callback_data.result_timestamp > 0) {
-		RRR_DBG_3("Duplicator %s New read position for reader %s: %lu\n",
-				INSTANCE_D_NAME(duplicator_data->data),
-				INSTANCE_D_NAME(reader->identifier),
-				minimum_callback_data.result_timestamp
-		);
-
-		readers_read_lock(duplicator_data);
-		reader->read_position = minimum_callback_data.result_timestamp;
-		readers_read_unlock(duplicator_data);
-	}
-
-	if (res == RRR_FIFO_GLOBAL_ERR) {
-		return 1;
-	}
-
-	return 0;
-}
-
-int poll_callback(struct rrr_fifo_callback_args *caller_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = caller_data->private_data;
-	struct duplicator_data *duplicator_data = thread_data->private_data;
-	struct rrr_message *message = (struct rrr_message *) data;
-
-	int ret = 0;
-
-	RRR_DBG_3 ("duplicator %s: Result from duplicator: measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(thread_data), message->data_numeric, size);
-
-	rrr_update_watchdog_time(thread_data->thread);
-	rrr_fifo_buffer_write_ordered(&duplicator_data->input_buffer, message->timestamp_from, data, size);
-
-	return ret;
-}
-// TODO : Support IP modules when polling
-/*
-static int poll_callback_ip (struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->source;
-	struct ipclient_data *private_data = thread_data->private_data;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-
-	RRR_DBG_3 ("duplicator instance %s: Result from buffer ip: size %lu\n",
-			INSTANCE_D_NAME(thread_data), size);
-
-	if (size < sizeof(struct rrr_message)) {
-
-	}
-
-	return poll_callback_final(private_data, entry);
-}
-*/
-
-int maintain_input_buffer(struct duplicator_data *data) {
-	int ret = 0;
-
-	uint64_t lowest_timestamp = 0xffffffffffffffff;
-
-	readers_read_lock(data);
-	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-		struct duplicator_reader *test = &data->readers[i];
-		if (test->identifier != NULL) {
-			if (lowest_timestamp > test->read_position) {
-				lowest_timestamp = test->read_position;
-			}
-		}
-	}
-	readers_read_unlock(data);
-
-	if (rrr_fifo_clear_order_lt(&data->input_buffer, lowest_timestamp) == RRR_FIFO_GLOBAL_ERR) {
-		RRR_MSG_ERR("Duplicator got error from fifo_clear_order_lt\n");
-		ret = 1;
-	}
-
-	return ret;
-}
 
 void data_cleanup(void *arg) {
 	struct duplicator_data *data = arg;
-	rrr_fifo_buffer_invalidate(&data->input_buffer);
-	pthread_mutex_lock(&data->readers_lock);
-	for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-		for (int i = 0; i < DUPLICATOR_MAX_SENDERS; i++) {
-			struct duplicator_reader *test = &data->readers[i];
-			if (test != NULL) {
-				rrr_fifo_buffer_invalidate(&test->buffer);
-			}
-		}
-	}
-	data->readers_count = 0;
-	pthread_mutex_unlock(&data->readers_lock);
+	(void)(data);
 }
 
 int data_init(struct duplicator_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
-	memset(data, '\0', sizeof(*data));
-	data->data = thread_data;
-	ret |= pthread_mutex_init(&data->readers_lock, NULL);
-	ret |= rrr_fifo_buffer_init(&data->input_buffer);
-	if (ret != 0) {
-		data_cleanup(data);
-	}
+
+	data->thread_data = thread_data;
+
+	return ret;
+}
+
+static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct duplicator_data *data = thread_data->private_data;
+	(void)(data);
+
+	const struct rrr_message *message = entry->message;
+
+	RRR_DBG_3("duplicator instance %s received a message with timestamp %llu\n",
+			INSTANCE_D_NAME(data->thread_data),
+			(long long unsigned int) message->timestamp
+	);
+
+	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			entry
+	);
+
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
 static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct duplicator_data *data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initalize data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initalize thread_data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	RRR_DBG_1 ("duplicator thread data is %p\n", thread_data);
+	RRR_DBG_1 ("duplicator thread thread_data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -337,45 +98,24 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (poll_add_from_thread_senders_and_count(&poll, thread_data, RRR_POLL_POLL_DELETE) != 0) {
-		RRR_MSG_ERR("duplicator instance %s requires poll_delete from senders\n", INSTANCE_D_NAME(thread_data));
-		goto out_message;
-	}
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
-	poll_add_from_thread_senders_ignore_error(&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_NO_SENDERS_OK);
-
-	RRR_DBG_1 ("duplicator instance %s started thread, waiting a bit for readers to register\n",
+	RRR_DBG_1 ("duplicator instance %s started thread\n",
 			INSTANCE_D_NAME(thread_data));
 
-	usleep (500000); // 500ms
-
-	RRR_DBG_1 ("duplicator instance %s detected %i readers for now\n",
-			INSTANCE_D_NAME(thread_data), data->readers_count);
+	// NOTE : The duplicating is handled by the message broker. See our preload() function.
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		int input_buffer_size = rrr_fifo_buffer_get_entry_count(&data->input_buffer);
-
-		if (input_buffer_size > 5000) {
-			usleep(1000);
-		}
-		else {
-			if (poll_do_poll_delete_simple (&poll, thread_data, poll_callback, 50) != 0) {
-				break;
-			}
-		}
-
-		if (maintain_input_buffer(data) != 0) {
-			RRR_MSG_ERR("Duplicator instance %s got error from maintain function\n", INSTANCE_D_NAME(thread_data));
+		if (rrr_poll_do_poll_delete (thread_data, &poll, duplicator_poll_callback, 50) != 0) {
 			break;
 		}
 	}
 
-	out_message:
 	RRR_DBG_1 ("Thread duplicator %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
+//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
@@ -386,13 +126,39 @@ static int test_config (struct rrr_instance_config *config) {
 	return 0;
 }
 
+static int duplicator_preload (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	int ret = 0;
+
+	int slots = rrr_instance_count_receivers_of_self(thread_data);
+
+	RRR_DBG_1("Duplicator instance %s detected %i readers\n",
+			INSTANCE_D_NAME(thread_data), slots);
+
+	if (slots == 0) {
+		RRR_MSG_ERR("Warning: 0 readers found for duplicator instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	if ((ret = rrr_message_broker_setup_split_output_buffer (
+			INSTANCE_D_BROKER(thread_data),
+			INSTANCE_D_HANDLE(thread_data),
+			slots
+	)) != 0) {
+		RRR_MSG_ERR("Could not setup split buffer in duplicator instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 static struct rrr_module_operations module_operations = {
-		NULL,
+		duplicator_preload,
 		thread_entry_duplicator,
-		NULL,
-		NULL,
-		NULL,
-		poll_delete,
 		NULL,
 		test_config,
 		NULL,

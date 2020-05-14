@@ -49,6 +49,9 @@ struct rrr_read_session {
 //	struct rrr_socket_client *client;
 	uint64_t last_read_time;
 
+	// This is set if get socket options callback is used
+	int socket_options;
+
 	// Used to distinguish clients from each other
 	struct sockaddr src_addr;
 	socklen_t src_addr_len;
@@ -86,6 +89,10 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 struct rrr_read_session *rrr_read_session_collection_get_session_with_overshoot (
 		struct rrr_read_session_collection *collection
 );
+void rrr_read_session_collection_remove_session (
+		struct rrr_read_session_collection *collection,
+		struct rrr_read_session *read_session
+);
 int rrr_read_session_cleanup (
 		struct rrr_read_session *read_session
 );
@@ -114,28 +121,34 @@ int rrr_read_message_using_callbacks (
 													ssize_t read_step_max_size,
 													void *private_arg
 	 	 	 	 	 	 	 	 	 	 	 ),
-		struct rrr_read_session		*(*function_get_read_session_with_overshoot) (
+		struct rrr_read_session				*(*function_get_read_session_with_overshoot) (
 													void *private_arg
 											 ),
-		struct rrr_read_session		*(*function_get_read_session) (
+		struct rrr_read_session				*(*function_get_read_session) (
 													void *private_arg
 											 ),
 		void								 (*function_read_session_remove) (
 													struct rrr_read_session *read_session,
 													void *private_arg
 											 ),
+		int									 (*function_get_socket_options) (
+													struct rrr_read_session *read_session,
+													void *private_arg
+											 ),
 		void *functions_callback_arg
 );
 
+struct rrr_message_addr;
 struct rrr_message;
 struct rrr_array;
 
 struct rrr_read_common_receive_message_callback_data {
-	int (*callback)(struct rrr_message *message, void *arg);
+	int (*callback_msg)(struct rrr_message **message, void *arg);
+	int (*callback_addr_msg)(const struct rrr_message_addr *message, void *arg);
 	void *callback_arg;
 };
 int rrr_read_common_receive_message_raw_callback (
-		void *data,
+		void **data,
 		ssize_t data_size,
 		struct rrr_read_common_receive_message_callback_data *callback_data
 );

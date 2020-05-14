@@ -28,14 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_GLOBAL_H
 #define RRR_GLOBAL_H
 
-#define RRR_UNUSED(x) \
-	((void)(x))
-
 /* Compile time checks */
 #define RRR_ASSERT_DEBUG
 #ifdef RRR_ASSERT_DEBUG
 #define RRR_ASSERT(predicate,name) \
-	do{char _assertion_failed_##name##_[2*!!(predicate)-1];_assertion_failed_##name##_[0]='\0';RRR_UNUSED(_assertion_failed_##name##_);}while(0);
+	do{char _assertion_failed_##name##_[2*!!(predicate)-1];_assertion_failed_##name##_[0]='\0';(void)(_assertion_failed_##name##_);}while(0);
 #else
 #define RRR_ASSERT(predicate,name)
 #endif
@@ -138,7 +135,7 @@ extern struct rrr_global_config rrr_global_config;
 
 /* Common structures */
 #if UCHAR_MAX == 0xff
-typedef unsigned char vl_u8;
+typedef unsigned char rrr_u8;
 #endif
 
 #if USHRT_MAX == 0xffff

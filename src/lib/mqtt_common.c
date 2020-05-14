@@ -555,7 +555,6 @@ int rrr_mqtt_common_handle_properties (
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = RRR_MQTT_CONN_OK;
-	RRR_MQTT_P_LOCK(packet);
 
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 	struct rrr_mqtt_p *ack = NULL;
@@ -588,7 +587,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			goto out_generate_ack
 	);
 
-	RRR_MQTT_P_UNLOCK(packet);
+//	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_INCREF(packet);
 	unsigned int dummy;
 	int ret_from_receive_publish = mqtt_data->sessions->methods->receive_packet(
@@ -598,7 +597,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			&dummy
 	);
 	RRR_MQTT_P_DECREF(packet);
-	RRR_MQTT_P_LOCK(packet);
+//	RRR_MQTT_P_LOCK(packet);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			ret_from_receive_publish,
@@ -655,16 +654,17 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 					&connection->session,
 					ack
 			),
-			goto out_nolock,
+			goto out_relock,
 			" in session send packet function in rrr_mqtt_common_handle_publish"
 		);
 
 		RRR_MQTT_P_LOCK(packet);
 	}
 
+	goto out;
+	out_relock:
+		RRR_MQTT_P_LOCK(packet);
 	out:
-		RRR_MQTT_P_UNLOCK(packet);
-	out_nolock:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(ack);
 		return ret;
 }
@@ -716,8 +716,6 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			packet
 	);
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if (ret != 0) {
 		if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
 			goto out;
@@ -738,7 +736,6 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	out:
-	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
@@ -763,8 +760,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			connection,
 			packet
 	);
-
-	RRR_MQTT_P_LOCK(packet);
 
 	if (ret != 0) {
 		if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
@@ -816,7 +811,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 
 	out:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(next_ack);
-		RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
@@ -843,8 +837,6 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	(void)(mqtt_data);
 
-	RRR_MQTT_P_LOCK(packet);
-
 	if ((ret = rrr_mqtt_conn_iterator_ctx_update_state (
 			connection,
 			packet,
@@ -855,112 +847,66 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	out:
-	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
 }
 
-struct handle_packets_callback {
-	struct rrr_mqtt_data *data;
-	struct rrr_mqtt_conn *connection;
-};
+static int __rrr_mqtt_common_handle_packet_callback (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	int ret = 0;
 
-static int __rrr_mqtt_common_handle_packets_callback (struct rrr_fifo_callback_args *callback_data, char *data, unsigned long int size) {
-	// Remember to ALWAYS return FIFO_SEARCH_FREE
-	int ret = RRR_FIFO_SEARCH_FREE;
+	struct rrr_mqtt_data *mqtt_data = arg;
 
-	(void)(size);
+	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
+		RRR_BUG("Connection was not locked in __rrr_mqtt_common_handle_packet\n");
+	}
 
-	struct handle_packets_callback *handle_packets_data = callback_data->private_data;
-	struct rrr_mqtt_data *mqtt_data = handle_packets_data->data;
-	struct rrr_mqtt_conn *connection = handle_packets_data->connection;
-	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+	RRR_MQTT_P_LOCK(packet);
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
 			RRR_MSG_ERR("Received a CONNECT packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
-			ret |= RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP;
+			ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNACK) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)) {
 			RRR_MSG_ERR("Received a CONNACK packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
-			ret |= RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP;
+			ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 	}
 	else if (!RRR_MQTT_CONN_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
 		RRR_MSG_ERR("Received a %s packet while only CONNECT was allowed in __rrr_mqtt_common_handle_packets_callback\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet));
-		ret |= RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP;
+		ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
 
 	if (mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler == NULL) {
 		RRR_MSG_ERR("No handler specified for packet type %i\n", RRR_MQTT_P_GET_TYPE(packet));
-		ret |= RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP;
+		ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
 
 	RRR_DBG_3 ("Handling packet of type %s id %u dup %u\n",
 			RRR_MQTT_P_GET_TYPE_NAME(packet), RRR_MQTT_P_GET_IDENTIFIER(packet), packet->dup);
 
-	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS_GENERAL(
+	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
 			mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler(mqtt_data, connection, packet),
 			goto out,
 			"while handing packet in __rrr_mqtt_common_handle_packets_callback"
 	);
 
 	out:
-	return ret | RRR_FIFO_SEARCH_FREE;
+		RRR_MQTT_P_UNLOCK(packet);
+		return ret;
 }
 
-static int __rrr_mqtt_common_handle_packets (
-		struct rrr_mqtt_conn *connection,
-		void *arg
-) {
-	int ret = RRR_MQTT_CONN_OK;
-
-	/* There can be multiple parse threads, make sure we do not block */
-	if (RRR_MQTT_CONN_TRYLOCK(connection) != 0) {
-		ret = RRR_MQTT_CONN_BUSY;
-		goto out_nolock;
-	}
-
-	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {
-		goto out;
-	}
-
-	struct rrr_mqtt_data *data = arg;
-
-	struct handle_packets_callback callback_data = {
-			data, connection
-	};
-
-	struct rrr_fifo_callback_args fifo_callback_data = {
-			NULL, &callback_data, 0
-	};
-
-	RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			rrr_fifo_read_clear_forward (
-					&connection->receive_queue.buffer,
-					NULL,
-					__rrr_mqtt_common_handle_packets_callback,
-					&fifo_callback_data,
-					0
-			),
-			goto out,
-			"while handling packets from MQTT remote"
-	);
-
-	out:
-	RRR_MQTT_CONN_UNLOCK(connection);
-
-	out_nolock:
-	return ret;
-}
-
-static int __rrr_mqtt_common_read_and_parse (
+static int __rrr_mqtt_common_read_parse_handle (
 		struct rrr_mqtt_conn *connection,
 		void *arg
 ) {
@@ -990,7 +936,11 @@ static int __rrr_mqtt_common_read_and_parse (
 				"while parsing data from mqtt client"
 		);
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(
-				rrr_mqtt_conn_iterator_ctx_check_parse_finalize (connection),
+				rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
+						connection,
+						__rrr_mqtt_common_handle_packet_callback,
+						data
+				),
 				goto out,
 				"while finalizing data from mqtt client"
 		);
@@ -1015,15 +965,15 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	struct rrr_mqtt_send_from_sessions_callback_data *callback_data = arg;
 	struct rrr_mqtt_conn *connection = callback_data->connection;
 
-	RRR_MQTT_P_LOCK(packet);
+	if (RRR_MQTT_P_TRYLOCK(packet) == 0) {
+		RRR_BUG("BUG: Packet %p was not locked in rrr_mqtt_common_send_from_sessions_callback\n", packet);
+	}
 
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(connection, packet) != 0) {
 		RRR_MSG_ERR("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
 	}
-
-	RRR_MQTT_P_UNLOCK(packet);
 
 	return ret;
 }
@@ -1086,19 +1036,11 @@ int rrr_mqtt_common_read_parse_handle (
 	};
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
-			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_and_parse, data),
+			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_read_parse_handle, data),
 			ret = preserve_ret,
 			goto housekeeping,
 			goto out,
 			"in rrr_mqtt_common_read_parse_handle while reading and parsing"
-	);
-
-	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
-			rrr_mqtt_conn_collection_iterate(&data->connections, __rrr_mqtt_common_handle_packets, data),
-			ret = preserve_ret,
-			goto housekeeping,
-			goto out,
-			"in rrr_mqtt_common_read_parse_handle while handling packets"
 	);
 
 	RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(

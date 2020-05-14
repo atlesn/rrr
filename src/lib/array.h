@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -23,13 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_ARRAY_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "cmdlineparser/cmdline.h"
 #include "instance_config.h"
 #include "linked_list.h"
 #include "type.h"
 
-#define RRR_ARRAY_VERSION 6
+#define RRR_ARRAY_VERSION 7
 
 #define RRR_ARRAY_OK 				RRR_TYPE_PARSE_OK
 #define RRR_ARRAY_PARSE_HARD_ERR	RRR_TYPE_PARSE_HARD_ERR
@@ -83,7 +84,23 @@ int rrr_array_parse_data_from_definition (
 int rrr_array_definition_collection_clone (
 		struct rrr_array *target,
 		const struct rrr_array *source
-) ;
+);
+int rrr_array_push_value_64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		uint64_t value
+);
+int rrr_array_push_value_str_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value
+);
+int rrr_array_get_value_unsigned_64_by_tag (
+		uint64_t *result,
+		struct rrr_array *array,
+		const char *tag,
+		int index
+);
 void rrr_array_clear (
 		struct rrr_array *collection
 );
@@ -100,6 +117,20 @@ int rrr_array_get_packed_length_from_buffer (
 		const struct rrr_array *definition,
 		const char *buf,
 		ssize_t buf_length
+);
+int rrr_array_parse_from_buffer (
+		struct rrr_array *target,
+		ssize_t *parsed_bytes,
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition
+);
+int rrr_array_parse_from_buffer_with_callback (
+		const char *buf,
+		ssize_t buf_len,
+		const struct rrr_array *definition,
+		int (*callback)(const struct rrr_array *array, void *arg),
+		void *callback_arg
 );
 int rrr_array_new_message_from_buffer (
 		struct rrr_message **target,
@@ -119,11 +150,15 @@ int rrr_array_new_message_from_buffer_with_callback (
 		int (*callback)(struct rrr_message *message, void *arg),
 		void *callback_arg
 );
-int rrr_array_selected_tags_to_raw (
+int rrr_array_selected_tags_export (
 		char **target,
 		ssize_t *target_size,
+		int *found_tags,
 		const struct rrr_array *definition,
-		const struct rrr_linked_list *tags
+		const struct rrr_map *tags
+);
+ssize_t rrr_array_new_message_estimate_size (
+		const struct rrr_array *definition
 );
 int rrr_array_new_message_from_collection (
 		struct rrr_message **final_message,
@@ -135,6 +170,9 @@ int rrr_array_new_message_from_collection (
 int rrr_array_message_to_collection (
 		struct rrr_array *target,
 		const struct rrr_message *message_orig
+);
+int rrr_array_dump (
+		const struct rrr_array *definition
 );
 
 #endif /* RRR_ARRAY_H */

@@ -15,11 +15,13 @@ python3_la_CFLAGS = ${PYTHON3_CFLAGS} ${AM_CFLAGS}
 python3_la_LDFLAGS = ${module_ldflags}
 endif
 
+# A non-working version of voltmonitor is compiled if usb is disabled 
 if RRR_WITH_USB
+libusb=-lusb
+endif
 voltmonitor = voltmonitor.la
 voltmonitor_la_SOURCES = src_voltmonitor.c
-voltmonitor_la_LDFLAGS = ${module_ldflags}  -lusb 
-endif
+voltmonitor_la_LDFLAGS = ${module_ldflags} ${libusb}
 
 if RRR_WITH_PERL5
 perl5 = perl5.la
@@ -29,11 +31,12 @@ perl5_la_CFLAGS = ${PERL5_CFLAGS} ${AM_CFLAGS}
 perl5_la_LDFLAGS = ${module_ldflags}
 endif
 
-lib_LTLIBRARIES = dummy.la raw.la averager.la buffer.la \
-	ipclient.la udpreader.la \
+lib_LTLIBRARIES = dummy.la raw.la buffer.la \
+	ipclient.la ip.la averager.la \
 	duplicator.la mqttbroker.la mqttclient.la socket.la \
 	influxdb.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
+
 
 module_ldflags=-module -avoid-version -shared -L../lib -lrrr 
 
@@ -61,8 +64,8 @@ buffer_la_SOURCES = p_buffer.c
 duplicator_la_LDFLAGS = ${module_ldflags}
 duplicator_la_SOURCES = p_duplicator.c
 
-udpreader_la_LDFLAGS = ${module_ldflags}
-udpreader_la_SOURCES = src_udpreader.c
+ip_la_LDFLAGS = ${module_ldflags}
+ip_la_SOURCES = p_ip.c
 
 socket_la_LDFLAGS = ${module_ldflags}
 socket_la_SOURCES = src_socket.c

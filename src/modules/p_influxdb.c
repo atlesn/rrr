@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/fixed_point.h"
@@ -40,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/gnu.h"
 #include "../lib/map.h"
 #include "../lib/string_builder.h"
+#include "../lib/net_transport.h"
+#include "../lib/message_broker.h"
+#include "../lib/ip_buffer_entry.h"
 #include "../global.h"
 
 #define INFLUXDB_DEFAULT_PORT 8086
@@ -60,21 +62,31 @@ struct influxdb_data {
 	struct rrr_map fields;
 	struct rrr_map fixed_tags;
 	struct rrr_map fixed_fields;
-	struct rrr_fifo_buffer error_buf;
+	struct rrr_ip_buffer_entry_collection error_buf;
+	struct rrr_net_transport *transport;
 };
 
 int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
+	int ret = 0;
+
 	memset (data, '\0', sizeof(*data));
-	data->thread_data = thread_data;
-	if (rrr_fifo_buffer_init(&data->error_buf) != 0) {
-		RRR_MSG_ERR("Could not initialize buffer in influxdb data_init\n");
-		return 1;
+
+	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL) != 0) {
+		RRR_MSG_ERR("Could not create transport in influxdb data_init\n");
+		ret = 1;
+		goto out;
 	}
+
+	data->thread_data = thread_data;
+
 	rrr_map_init(&data->tags);
 	rrr_map_init(&data->fields);
 	rrr_map_init(&data->fixed_tags);
 	rrr_map_init(&data->fixed_fields);
-	return 0;
+
+	goto out;
+	out:
+		return ret;
 }
 
 void data_destroy (void *arg) {
@@ -86,8 +98,10 @@ void data_destroy (void *arg) {
 	rrr_map_clear(&data->fields);
 	rrr_map_clear(&data->fixed_tags);
 	rrr_map_clear(&data->fixed_fields);
-	rrr_fifo_buffer_clear(&data->error_buf);
-	// TODO : Destroy buffer locks
+	rrr_ip_buffer_entry_collection_clear(&data->error_buf);
+	if (data->transport != NULL) {
+		rrr_net_transport_destroy(data->transport);
+	}
 }
 
 static int __escape_field (char **target, const char *source, ssize_t length, int add_double_quotes) {
@@ -147,8 +161,8 @@ static int __query_append_values_from_array (
 				array->version, 6);
 	}
 
-	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
-		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node->tag);
+	RRR_MAP_ITERATE_BEGIN(columns);
+		struct rrr_type_value *value = rrr_array_value_get_by_tag(array, node_tag);
 		if (value == NULL) {
 			RRR_MSG_ERR("Warning: Could not find value with tag %s in incoming message, discarding message\n",
 					node->tag);
@@ -166,11 +180,11 @@ static int __query_append_values_from_array (
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (*(node->value) != '\0') {
-			ret = __escape_field(&name_tmp, node->value, strlen(node->value), 0);
+		if (*node_value != '\0') {
+			ret = __escape_field(&name_tmp, node_value, strlen(node_value), 0);
 		}
 		else {
-			ret = __escape_field(&name_tmp, node->tag, strlen(node->tag), 0);
+			ret = __escape_field(&name_tmp, node->tag, strlen(node_tag), 0);
 		}
 		if (ret != 0) {
 			RRR_MSG_ERR("Could not escape field in influxdb __query_append_values_from_array\n");
@@ -221,7 +235,7 @@ static int __query_append_values_from_array (
 		}
 
 		first = 0;
-	RRR_LL_ITERATE_END(columns);
+	RRR_MAP_ITERATE_END();
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);
@@ -241,11 +255,11 @@ static int __query_append_values (
 
 	int first = 1;
 
-	RRR_LL_ITERATE_BEGIN(columns, struct rrr_map_item);
+	RRR_MAP_ITERATE_BEGIN(columns);
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (__escape_field(&name_tmp, node->tag, strlen(node->tag), 0) != 0) {
+		if (__escape_field(&name_tmp, node_tag, strlen(node_tag), 0) != 0) {
 			RRR_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 			ret = INFLUXDB_HARD_ERR;
 			goto out;
@@ -256,10 +270,10 @@ static int __query_append_values (
 		}
 		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, name_tmp, "Could not append name to query buffer in influxdb __query_append_values\n");
 
-		if (*(node->value) != '\0') {
+		if (*node_value != '\0') {
 			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
 
-			if (__escape_field(&value_tmp, node->value, strlen(node->value), 0) != 0) {
+			if (__escape_field(&value_tmp, node_value, strlen(node_value), 0) != 0) {
 				RRR_MSG_ERR("Could not escape field in influxdb __query_append_values\n");
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
@@ -269,7 +283,7 @@ static int __query_append_values (
 		}
 
 		first = 0;
-	RRR_LL_ITERATE_END(columns);
+	RRR_MAP_ITERATE_END();
 
 	out:
 	RRR_FREE_IF_NOT_NULL(name_tmp);
@@ -297,14 +311,8 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int __receive_http_response (struct rrr_http_session *session, const char *start, const char *end, void *arg) {
+static int __receive_http_response (struct rrr_http_part *part, void *arg) {
 	struct response_callback_data *data = arg;
-
-	(void)(data);
-	(void)(start);
-	(void)(end);
-
-	struct rrr_http_part *part = session->response_part;
 
 	int ret = 0;
 
@@ -323,8 +331,17 @@ static int __receive_http_response (struct rrr_http_session *session, const char
 	return ret;
 }
 
-static int send_data (struct influxdb_data *data, struct rrr_array *array) {
-	struct rrr_http_session *session = NULL;
+struct send_data_callback_data {
+	struct influxdb_data *data;
+	struct rrr_array *array;
+	int ret;
+};
+
+static void __send_data_callback (struct rrr_net_transport_handle *handle, void *arg) {
+	struct send_data_callback_data *callback_data = arg;
+
+	struct influxdb_data *data = callback_data->data;
+	struct rrr_array *array = callback_data->array;
 
 	int ret = INFLUXDB_OK;
 
@@ -338,15 +355,11 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_new (
-			&session,
-			RRR_HTTP_TRANSPORT_HTTP,
+	if ((ret = rrr_http_session_transport_ctx_client_new (
+			handle,
 			RRR_HTTP_METHOD_POST_URLENCODED_NO_QUOTING,
-			data->server,
-			data->server_port,
 			uri,
-			INFLUXDB_USER_AGENT,
-			0
+			INFLUXDB_USER_AGENT
 	)) != 0) {
 		RRR_MSG_ERR("Could not create HTTP session in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
@@ -376,34 +389,28 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 
 	// TODO : Better distingushing of soft/hard errors from HTTP layer
 
-	if ((ret = rrr_http_session_connect(session)) != 0) {
-		RRR_MSG_ERR("Could not connect to influxdb server in instance %s\n", INSTANCE_D_NAME(data->thread_data));
-		ret = INFLUXDB_SOFT_ERR;
-		goto out;
-	}
-
-	if ((ret = rrr_http_session_add_query_field(session, NULL, string_builder.buf)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_add_query_field(handle, NULL, string_builder.buf)) != 0) {
 		RRR_MSG_ERR("Could not add data to HTTP query in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	if ((ret = rrr_http_session_send_request(session)) != 0) {
+	if ((ret = rrr_http_session_transport_ctx_send_request(handle, data->server)) != 0) {
 		RRR_MSG_ERR("Could not send HTTP request in influxdb instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	struct response_callback_data callback_data = {
+	struct response_callback_data response_callback_data = {
 			data, 0
 	};
 
-	if (rrr_http_session_receive(session, __receive_http_response, &callback_data) != 0) {
+	if (rrr_http_session_transport_ctx_receive(handle, __receive_http_response, &response_callback_data) != 0) {
 		RRR_MSG_ERR("Could not receive HTTP response in influxdb instance %sd\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = INFLUXDB_HARD_ERR;
 		goto out;
 	}
 
-	if (callback_data.save_ok != 1) {
+	if (response_callback_data.save_ok != 1) {
 		RRR_MSG_ERR("Warning: Error in HTTP response in influxdb instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = INFLUXDB_SOFT_ERR;
@@ -411,24 +418,41 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	}
 
 	out:
-	if (session != NULL) {
-		rrr_http_session_destroy(session);
-	}
-
 	rrr_string_builder_clear(&string_builder);
 	RRR_FREE_IF_NOT_NULL(uri);
+	callback_data->ret = ret;
+}
+
+static int send_data (struct influxdb_data *data, struct rrr_array *array) {
+	struct send_data_callback_data callback_data = {
+			data,
+			array,
+			0
+	};
+
+	int ret = 0;
+
+	ret |= rrr_net_transport_connect_and_close_after_callback (
+			data->transport,
+			data->server_port,
+			data->server,
+			__send_data_callback,
+			&callback_data
+	);
+	ret |= callback_data.ret;
+
 	return ret;
 }
 
-static int common_callback(struct influxdb_data *influxdb_data, char *data, unsigned long int size) {
-	struct rrr_message *reading = (struct rrr_message *) data;
+static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_data *influxdb_data) {
+	struct rrr_message *reading = entry->message;
 
 	int ret = 0;
 
 	struct rrr_array array = {0};
 
-	RRR_DBG_2 ("InfluxDB %s: Result from buffer: length %u timestamp from %" PRIu64 " measurement %" PRIu64 " size %lu\n",
-			INSTANCE_D_NAME(influxdb_data->thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp_from, reading->data_numeric, size);
+	RRR_DBG_2 ("InfluxDB %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
+			INSTANCE_D_NAME(influxdb_data->thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
 	if (!MSG_IS_ARRAY(reading)) {
 		RRR_MSG_ERR("Warning: Non-array message received in influxdb instance %s, discarding\n",
@@ -449,8 +473,9 @@ static int common_callback(struct influxdb_data *influxdb_data, char *data, unsi
 		if (ret == INFLUXDB_SOFT_ERR) {
 			RRR_MSG_ERR("Storing message with error in buffer for later retry in influxdb instance %s\n",
 					INSTANCE_D_NAME(influxdb_data->thread_data));
-			rrr_fifo_buffer_write(&influxdb_data->error_buf, data, size);
-			data = NULL;
+
+			rrr_ip_buffer_entry_incref_while_locked(entry);
+			RRR_LL_APPEND(&influxdb_data->error_buf, entry);
 			ret = 0;
 			goto discard;
 		}
@@ -462,19 +487,12 @@ static int common_callback(struct influxdb_data *influxdb_data, char *data, unsi
 
 	discard:
 	rrr_array_clear(&array);
-	RRR_FREE_IF_NOT_NULL(data);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 
-static int error_buf_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct influxdb_data *influxdb_data = poll_data->private_data;
-	return common_callback(influxdb_data, data, size);
-}
-
-static int poll_callback(struct rrr_fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct rrr_instance_thread_data *thread_data = poll_data->private_data;
-	struct influxdb_data *influxdb_data = thread_data->private_data;
-	return common_callback(influxdb_data, data, size);
+static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	return common_callback(entry, thread_data->private_data);
 }
 
 int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) {
@@ -573,19 +591,21 @@ int parse_config (struct influxdb_data *data, struct rrr_instance_config *config
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct poll_collection poll;
+	struct rrr_poll_collection poll;
+	struct rrr_ip_buffer_entry_collection error_buf_tmp = {0};
 
 	if (data_init(influxdb_data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initialize data in influxdb instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_ERR("Could not initialize data in influxdb instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 		goto out_exit;
 	}
 
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
-	poll_collection_init(&poll);
-	pthread_cleanup_push(poll_collection_clear_void, &poll);
-	pthread_cleanup_push(rrr_thread_set_stopping, thread);
+	rrr_poll_collection_init(&poll);
+	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_destroy, influxdb_data);
+	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -599,20 +619,15 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	if (poll_add_from_thread_senders_and_count(
-			&poll, thread_data, RRR_POLL_POLL_DELETE|RRR_POLL_POLL_DELETE_IP
-	) != 0) {
-		RRR_MSG_ERR("InfluxDB requires poll_delete or poll_delete_ip from senders\n");
-		goto out_message;
-	}
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
 	uint64_t timer_start = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
-		rrr_update_watchdog_time(thread_data->thread);
+		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (poll_do_poll_delete_combined_simple (&poll, thread_data, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
 			break;
 		}
 
@@ -625,26 +640,33 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 			influxdb_data->message_count = 0;
 
-			struct rrr_fifo_callback_args callback_args = {
-				thread_data, influxdb_data, 0
-			};
+			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&error_buf_tmp, &influxdb_data->error_buf);
 
-			if (rrr_fifo_read_clear_forward(&influxdb_data->error_buf, NULL, error_buf_callback, &callback_args, 0) != 0) {
-				RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n", INSTANCE_D_NAME(thread_data));
-				goto out_message;
-			}
+			// The callback might add entries back into data->error_buf
+			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
+				rrr_ip_buffer_entry_lock(node);
+				if (common_callback(node, influxdb_data) != 0) {
+					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
+							INSTANCE_D_NAME(thread_data));
+					rrr_ip_buffer_entry_unlock(node);
+					goto out_message;
+				}
+				RRR_LL_ITERATE_SET_DESTROY();
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 		}
 	}
 
 	out_message:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
+			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	out_exit:
-	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 2 state is %i\n",
+			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
 	pthread_exit(0);
 }
@@ -657,10 +679,6 @@ static int test_config (struct rrr_instance_config *config) {
 static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_influxdb,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
 		NULL,
 		test_config,
 		NULL,
