@@ -75,17 +75,18 @@ int main_get_test_result(struct instance_metadata_collection *instances) {
 static volatile int main_running = 1;
 
 int signal_interrupt (int s, void *arg) {
-    main_running = 0;
-
     (void)(arg);
 
-    RRR_DBG_1("Received signal %i\n", s);
+    RRR_DBG_SIGNAL("Received signal %i\n", s);
 
+    if (s == SIGINT) {
+    	main_running = 0;
 	signal(SIGTERM, SIG_DFL);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGUSR1, SIG_DFL);
-
-	return 0;
+    }
+    
+    return 0;
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -243,6 +244,8 @@ int main (int argc, const char **argv) {
 	};
 
 	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
+
+	rrr_signal_default_signal_actions_register();
 
 	if (rrr_message_broker_init(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
@@ -403,6 +406,5 @@ int main (int argc, const char **argv) {
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
-	out:
 		return ret;
 }

@@ -131,7 +131,7 @@ void rrr_signal_default_signal_actions_register(void) {
 	// Handle forked children exiting
 	sigaction (SIGCHLD, &action, NULL);
 	// We generally ignore sigpipe and use NONBLOCK on all sockets
-	sigaction (SIGPIPE, &action, NULL);
+	signal (SIGPIPE, SIG_IGN);
 	// Used to set main_running = 0. The signal is set to default afterwards
 	// so that a second SIGINT will terminate the process
 	sigaction (SIGINT, &action, NULL);
