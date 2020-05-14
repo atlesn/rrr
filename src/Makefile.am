@@ -8,7 +8,7 @@ perl5_ldflags=$(PERL5_LDFLAGS)
 endif
 
 rrr_SOURCES = rrr.c global.c main.c
-rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\""
+rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\"" -DRRR_INTERCEPT_ALLOW_WAITPID
 rrr_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 
 rrr_post_SOURCES = rrr_post.c global.c main.c

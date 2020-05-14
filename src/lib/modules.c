@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "../global.h"
+#include "log.h"
 #include "modules.h"
 #include "rrr_strerror.h"
 

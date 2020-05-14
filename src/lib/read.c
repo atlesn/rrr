@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <string.h>
 
-#include "../global.h"
+#include "log.h"
 #include "read.h"
 #include "read_constants.h"
 #include "linked_list.h"

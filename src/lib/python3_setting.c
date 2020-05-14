@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <structmember.h>
 
-#include "../global.h"
+#include "log.h"
 #include "settings.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
@@ -210,7 +210,7 @@ struct rrr_setting_packed *rrr_python3_setting_get_setting (PyObject *self) {
 	return &data->setting;
 }
 
-PyObject *rrr_python3_setting_new_from_setting (struct rrr_socket_msg *msg) {
+PyObject *rrr_python3_setting_new_from_setting (const struct rrr_socket_msg *msg) {
 	struct rrr_python3_setting_data *new_setting = NULL;
 
 	int ret = 0;

@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <sys/types.h>
 
-#include "../global.h"
+#include "log.h"
 #include "modules.h"
 #include "linked_list.h"
 #include "message_broker.h"
@@ -50,7 +50,6 @@ static void __rrr_message_broker_costumer_decref (struct rrr_message_broker_cost
 		rrr_fifo_buffer_get_stats(&stats, &costumer->main_queue);
 		RRR_DBG_1 ("Message broker destroy costumer '%s', buffer stats: %" PRIu64 "/%" PRIu64 "\n",
 				costumer->name, stats.total_entries_deleted, stats.total_entries_written);
-		RRR_FREE_IF_NOT_NULL(costumer->name);
 		RRR_LL_DESTROY (
 				&costumer->split_buffers,
 				struct rrr_message_broker_split_buffer_node,
@@ -58,6 +57,8 @@ static void __rrr_message_broker_costumer_decref (struct rrr_message_broker_cost
 		);
 		rrr_fifo_buffer_destroy(&costumer->main_queue);
 		pthread_mutex_destroy(&costumer->split_buffers.lock);
+		// Do this at the end in case we need to read the name in a debugger
+		RRR_FREE_IF_NOT_NULL(costumer->name);
 		free(costumer);
 	}
 }

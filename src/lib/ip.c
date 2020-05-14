@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_accept_data.h"
-#include "../global.h"
+#include "log.h"
 #include "messages.h"
 #include "array.h"
 #include "rrr_socket.h"
@@ -315,12 +315,12 @@ int rrr_ip_receive_rrr_message (
 */
 
 int rrr_ip_send (
-	int *err,
-	int fd,
-	const struct sockaddr *sockaddr,
-	socklen_t addrlen,
-	void *data,
-	ssize_t data_size
+		int *err,
+		int fd,
+		const struct sockaddr *sockaddr,
+		socklen_t addrlen,
+		void *data,
+		ssize_t data_size
 ) {
 	int ret = 0;
 	ssize_t bytes = 0;
@@ -356,7 +356,8 @@ int rrr_ip_send (
 			goto retry;
 		}
 		// Sometimes caller tests for many addresses when looking destination up by hostname
-		RRR_DBG_1 ("Note: Error from sendto in rrr_ip_send, address family was %u: %s\n", sockaddr->sa_family, rrr_strerror(errno));
+		RRR_DBG_1 ("Note: Error from sendto in rrr_ip_send, address family was %u: %s\n",
+				sockaddr->sa_family, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -371,6 +372,8 @@ int rrr_ip_send (
 	return ret;
 }
 
+/*
+ * Currently not used
 int rrr_ip_send_message (
 	const struct rrr_message *input_message,
 	struct rrr_ip_send_packet_info *info,
@@ -433,7 +436,7 @@ int rrr_ip_send_message (
 	RRR_FREE_IF_NOT_NULL(final_message);
 	return ret;
 }
-
+*/
 void rrr_ip_network_cleanup (void *arg) {
 	struct rrr_ip_data *data = arg;
 	if (data->fd != 0) {
@@ -745,13 +748,13 @@ int rrr_ip_close (struct rrr_ip_data *data) {
 int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay) {
 	int ret = 0;
 
-	struct rrr_sockaddr sockaddr_tmp = {0};
+	struct sockaddr_storage sockaddr_tmp = {0};
 	socklen_t socklen_tmp = sizeof(sockaddr_tmp);
 	struct rrr_ip_accept_data *res = NULL;
 
 	*accept_data = NULL;
 
-	ret = rrr_socket_accept(listen_data->fd, &sockaddr_tmp, &socklen_tmp, creator);
+	ret = rrr_socket_accept(listen_data->fd, (struct sockaddr *) &sockaddr_tmp, &socklen_tmp, creator);
 	if (ret == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = 0;

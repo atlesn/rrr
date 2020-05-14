@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/utf8.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct socket_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -146,7 +146,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		return 1;
 	}
 	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_ERR("No data types defined in socket_input_types for instance %s\n",
+		RRR_MSG_ERR("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		return 1;
 	}

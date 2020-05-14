@@ -36,6 +36,7 @@ AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL b
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
+AC_ARG_WITH([systemd],[AS_HELP_STRING([--without-systemd],[build without the sytemd bindings])],[enable_systemd=no],[enable_systemd=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -63,7 +64,23 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
+SHELL_VARS_INIT([variables.sh])
+
+SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
+SHELL_VARS_EXPORT([RRR_WITH_PYTHON3], $enable_python3)
+SHELL_VARS_EXPORT([RRR_WITH_OPENSSL], $enable_encryption)
+SHELL_VARS_EXPORT([RRR_WITH_PERL5], $enable_perl5)
+SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
+
+SHELL_VARS_OUTPUT
+
+AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
+AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
+AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
 AM_CONDITIONAL([RRR_WITH_OPENSSL], [test "x$enable_encryption" != xno])
+AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" != xno])
+AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
+
 AC_MSG_CHECKING([for OpenSSL usage])
 AS_IF([test "x$enable_encryption" = xno], [
        AC_MSG_RESULT([Not compiling with OpenSSL])
@@ -82,7 +99,6 @@ AS_IF([test "x$enable_encryption" = xno], [
        AC_DEFINE([OPENSSL_API_COMPAT], [0x10100000L], "Use OpenSSL version >= 1.1.0")
 ])
 
-AM_CONDITIONAL([RRR_WITH_PERL5], [test "x$enable_perl5" = "xyes"])
 AC_MSG_CHECKING([for perl5 enabled])
 AS_IF([test "x$enable_perl5" = xno], [
 	AC_MSG_RESULT([Not compiling with perl5])
@@ -171,7 +187,6 @@ AS_IF([test "x$enable_perl5" = xno], [
 	AC_SUBST([PERL5_INTERPRETER])
 ])
 
-AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" = "xyes"])
 AC_MSG_CHECKING([for python3 enabled])
 AS_IF([test "x$enable_python3" = xno], [
 	AC_MSG_RESULT([Not compiling with python3])
@@ -255,7 +270,6 @@ AS_IF([test "x$enable_python3" = xno], [
 	fi
 ])
 
-AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AC_MSG_CHECKING([for USB enabled])
 AS_IF([test "x$enable_usb" = xno], [
 	AC_MSG_RESULT([Not compiling with USB])
@@ -285,7 +299,6 @@ AS_IF([test "x$enable_usb" = xno], [
 	])
 ])
 
-AM_CONDITIONAL([RRR_WITH_MYSQL], [test "x$enable_mysql" != xno])
 AC_MSG_CHECKING([MySQL module inclusion])
 AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([Not compiling with MySQL module])
@@ -336,11 +349,28 @@ AS_IF([test "x$enable_database_testing" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AC_MSG_CHECKING([for systemd usage])
+AS_IF([test "x$enable_systemd" = xyes], [
+	SYSTEMD_INIT
+	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_CONFIG_FILES([misc/systemd/rrr.service])
+	AC_CONFIG_FILES([misc/systemd/Makefile])
+
+	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
+],[
+	AC_MSG_RESULT([no])
+])
+
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
 
+AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
+
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				misc/Makefile
+				misc/Makefile 
 )
+
 AC_OUTPUT
+SHELL_VARS_CLEANUP

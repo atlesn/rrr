@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/fixed_point.h"
 #include "../lib/stats_engine.h"
 #include "../lib/message_broker.h"
+#include "../lib/fork.h"
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -47,7 +48,7 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_configuration_test_result(struct instance_metadata_collection *instances) {
+int main_get_test_result(struct instance_metadata_collection *instances) {
 	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
@@ -86,8 +87,9 @@ int signal_interrupt (int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{1, 'd',	"debuglevel", ""},
-		{0, '\0',	NULL, ""}
+		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",		"{CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",	"-d|--debuglevel DEBUGLEVEL"},
+		{0,							'\0',	NULL, 			""}
 };
 
 static int test_fixp(void) {
@@ -215,12 +217,19 @@ int main (int argc, const char **argv) {
 	struct rrr_signal_handler *signal_handler = NULL;
 	int ret = 0;
 
+	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
+		RRR_MSG_ERR("Library build version mismatch.\n");
+		ret = 1;
+		goto out_cleanup_fork_handler;
+	}
+
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
 	struct rrr_message_broker message_broker = {0};
-	struct rrr_config *config;
+	struct rrr_config *config = NULL;
+	struct rrr_fork_handler *fork_handler = NULL;
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -238,9 +247,8 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_signal;
 	}
 
-	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
-		ret = 1;
+	if (rrr_fork_handler_new (&fork_handler) != 0) {
+		ret = EXIT_FAILURE;
 		goto out_cleanup_message_broker;
 	}
 
@@ -258,11 +266,17 @@ int main (int argc, const char **argv) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
+	if (ret == 1) {
+		// Some data might have been stored also upon error
+		goto out_cleanup_cmd;
+	}
 
 	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
-	if (ret == 1) {
-		// Some data might have been stored also upon error
+	const char *config_file = cmd_get_value(&cmd, "config", 0);
+	if (config_file == NULL) {
+		RRR_MSG_ERR("No configuration file specified for test program\n");
+		ret = 1;
 		goto out_cleanup_cmd;
 	}
 
@@ -283,7 +297,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("true configuration loading") {
-		config = rrr_config_parse_file("test.conf");
+		config = rrr_config_parse_file(config_file);
 	} TEST_RESULT(config != NULL);
 
 	if (config == NULL) {
@@ -320,7 +334,8 @@ int main (int argc, const char **argv) {
 				config,
 				&cmd,
 				&stats_engine,
-				&message_broker
+				&message_broker,
+				fork_handler
 		) != 0) {
 			ret = 1;
 		}
@@ -342,12 +357,12 @@ int main (int argc, const char **argv) {
 	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 
-	TEST_BEGIN("testing type array parsing") {
+	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			usleep(10000);
 		}
 
-		ret = main_get_configuration_test_result(instances);
+		ret = main_get_test_result(instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
 		usleep (3600000000); // 3600 seconds
@@ -355,6 +370,7 @@ int main (int argc, const char **argv) {
 
 		main_threads_stop(collection, instances);
 
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);
@@ -376,9 +392,15 @@ int main (int argc, const char **argv) {
 	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
 
+	out_cleanup_fork_handler:
+		rrr_fork_send_sigusr1_and_wait(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handler_destroy (fork_handler);
+
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
+	out:
 		return ret;
 }

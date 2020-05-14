@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/messages.h"
+#include "../../lib/instance_config.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;
@@ -41,6 +42,8 @@ void set_test_module_result(int result) {
 
 struct test_module_data {
 	int dummy;
+	char *test_method;
+	char *test_output_instance;
 };
 
 
@@ -51,31 +54,55 @@ void data_init(struct test_module_data *data) {
 void data_cleanup(void *_data) {
 	struct test_module_data *data = _data;
 	data->dummy = 0;
+	RRR_FREE_IF_NOT_NULL(data->test_method);
+	RRR_FREE_IF_NOT_NULL(data->test_output_instance);
+}
+
+int parse_config (struct test_module_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
+	if (data->test_method == NULL) {
+		RRR_MSG_ERR("test_method not set for test module instance %s\n", config->name);
+		ret = 1;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
+	if (data->test_output_instance == NULL) {
+		RRR_MSG_ERR("test_method not set for test module instance %s\n", config->name);
+		ret = 1;
+	}
+
+	out:
+	if (ret != 0) {
+		RRR_FREE_IF_NOT_NULL(data->test_method);
+		RRR_FREE_IF_NOT_NULL(data->test_output_instance);
+	}
+	return ret;
 }
 
 static void *thread_entry_test_module (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct test_module_data *data = thread_data->private_data = thread_data->private_memory;
-	int ret = 0;
-	struct rrr_message *array_message_perl5 = NULL;
-	struct rrr_message *array_message_python3 = NULL;
-	struct rrr_message *array_message_mqtt_raw = NULL;
-	struct rrr_message *average_message = NULL;
 
+	int ret = 0;
 	data_init(data);
 
 	RRR_DBG_1 ("configuration test thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,average_message);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_mqtt_raw);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_python3);
-	RRR_THREAD_CLEANUP_PUSH_FREE_DOUBLE_POINTER(array_message,array_message_perl5);
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
+	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+		goto out_message;
+	}
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
+	// Uncomment to make test module halt before it runs
 /*	while (thread_check_encourage_stop(thread_data->thread) != 1) {
 		update_watchdog_time(thread_data->thread);
 		usleep (20000); // 20 ms
@@ -83,59 +110,48 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 
 	rrr_thread_update_watchdog_time(thread_data->thread);
 
-	/* Test array type and data endian conversion */
-	ret = test_type_array (
-			&array_message_perl5,
-			&array_message_python3,
-			&array_message_mqtt_raw,
-			thread_data->init_data.module->all_instances,
-			"instance_ip",
-			"instance_socket",
-			"instance_buffer_from_perl5",
-			"instance_buffer_from_python3",
-			"instance_buffer_from_mqtt_raw"
-	);
-	TEST_MSG("Result from array test: %i %p, %p and %p\n", ret, array_message_perl5, array_message_python3, array_message_mqtt_raw);
-	rrr_thread_update_watchdog_time(thread_data->thread);
-	if (ret != 0) {
-		goto configtest_done;
+	if (strcmp(data->test_method, "test_dummy") == 0) {
+		usleep(1000000); // 1s
+		ret = 0;
 	}
-
-	ret = test_averager (
-			&average_message,
-			thread_data->init_data.module->all_instances,
-			"instance_voltmonitor",
-			"instance_averager"
-	);
-	TEST_MSG("Result from averager test: %i\n", ret);
-	rrr_thread_update_watchdog_time(thread_data->thread);
-	if (ret != 0) {
-		goto configtest_done;
+	else if (strcmp(data->test_method, "test_array") == 0) {
+		/* Test array type and data endian conversion */
+		ret = test_array (
+				thread_data->init_data.module->all_instances,
+				data->test_output_instance
+		);
+		TEST_MSG("Result from array test: %i\n", ret);
 	}
-
-	/* Test which sets up the MySQL database */
+	else if (strcmp(data->test_method, "test_averager") == 0) {
+		ret = test_averager (
+				thread_data->init_data.module->all_instances,
+				data->test_output_instance
+		);
+		TEST_MSG("Result from averager test: %i\n", ret);
+	}
+	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
-	ret = test_type_array_mysql_and_network(thread_data->init_data.module->all_instances,
-			"instance_dummy_input",
-			"instance_buffer_msg",
-			"instance_mysql",
-			array_message_perl5
-	);
-	TEST_MSG("Result from MySQL test: %i\n", ret);
+		ret = test_type_array_mysql (
+				thread_data->init_data.module->all_instances,
+				data->test_output_instance
+		);
+		TEST_MSG("Result from MySQL test: %i\n", ret);
 #else
-	TEST_MSG("MySQL test not enabled in configuration with --enable-database-testing\n");
+		TEST_MSG("MySQL test not enabled in configuration with --enable-database-testing\n");
 #endif
+	}
+	else {
+		RRR_MSG_ERR("Unknown test type '%s' in test module\n", data->test_method);
+		ret = 1;
+		goto out_message;
+	}
 
-	configtest_done:
 	set_test_module_result(ret);
 
 	/* We exit without looping which also makes the other loaded modules exit */
 
+	out_message:
 	RRR_DBG_1 ("Thread configuration test instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_PYTHON3_H
+#define RRR_PYTHON3_H
+
 #define PY_SSIZE_T_CLEAN
 
 #include <sys/types.h>
@@ -27,9 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 
 #include "../../build_directory.h"
+#include "linked_list.h"
 
 struct rrr_socket_msg;
+struct rrr_setting_packed;
 struct rrr_ip_buffer_entry;
+struct rrr_fork_handler;
 
 #define RRR_PYTHON3_OBJECT_CACHE_FULL 2
 #define RRR_PYTHON3_OBJECT_CACHE_ERR 1
@@ -40,37 +46,44 @@ struct rrr_ip_buffer_entry;
 
 #define RRR_PY_PASTE(a,b,c) a ## b ## v
 
-struct python3_thread_state {
-	PyThreadState *tstate;
-};
+struct python3_fork_runtime;
 
 struct python3_fork {
-	struct python3_fork *next;
-	PyObject *socket_main;
-	PyObject *socket_child;
+	RRR_LL_NODE(struct python3_fork);
 	pid_t pid;
 	int invalid;
 
-	int (*poll)(PyObject *socket, int timeout);
-	int (*recv)(struct rrr_socket_msg **result, PyObject *socket);
-	int (*send)(PyObject *socket, struct rrr_socket_msg *message);
-};
+	struct rrr_fork_handler *fork_handler;
 
-struct python3_rrr_objects {
-	struct python3_fork *first_fork;
+	struct rrr_mmap *mmap;
+	struct rrr_mmap_channel *channel_to_fork;
+	struct rrr_mmap_channel *channel_from_fork;
 };
 
 /* GIL functions */
-int python3_swap_thread_in(struct python3_thread_state *python3_thread_ctx, PyThreadState *tstate);
-int python3_swap_thread_out(struct python3_thread_state *tstate_holder);
+/*int python3_swap_thread_in (
+		struct python3_thread_state *python3_thread_ctx,
+		PyThreadState *tstate
+);
+int python3_swap_thread_out (
+		struct python3_thread_state *tstate_holder
+);*/
 
 /* Asynchronous functions */
-int rrr_py_invalidate_fork_unlocked (struct python3_rrr_objects *rrr_objects, pid_t pid);
-void rrr_py_handle_sigchld(void (*child_exit_callback)(pid_t pid, void *callback_arg), void *callback_arg);
-void rrr_py_terminate_forks (struct python3_rrr_objects *rrr_objects);
-int rrr_py_start_persistent_rw_thread (
+void rrr_py_handle_sigchld (
+		pid_t pid,
+		void *exit_notify_arg
+);
+void rrr_py_call_fork_notifications_if_needed (
+		struct rrr_fork_handler *handler
+);
+void rrr_py_fork_terminate_and_destroy (
+		struct python3_fork *fork
+);
+int rrr_py_start_persistent_rw_fork (
 		struct python3_fork **result_fork,
-		struct python3_rrr_objects *rrr_objects,
+		struct rrr_fork_handler *fork_handler,
+		const char *module_path,
 		const char *module_name,
 		const char *function_name,
 		const char *config_function_name
@@ -96,9 +109,18 @@ int rrr_py_persistent_receive_message (
 		int (*callback)(struct rrr_socket_msg *message, void *arg),
 		void *callback_arg
 );
+int rrr_py_persistent_process_read_from_fork (
+		void **target,
+		size_t *target_size,
+		struct python3_fork *fork
+);
+int rrr_py_persistent_process_setting (
+		struct python3_fork *fork,
+		const struct rrr_setting_packed *setting
+);
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
-		struct rrr_ip_buffer_entry *entry
+		const struct rrr_ip_buffer_entry *entry
 );
 // Stop sending data to the fork and call the function continuously
 int rrr_py_persistent_start_sourcing (
@@ -106,16 +128,17 @@ int rrr_py_persistent_start_sourcing (
 );
 
 /* State holder functions */
-void rrr_py_destroy_rrr_objects (struct python3_rrr_objects *message_maker);
-//void rrr_py_dump_dict_entries (PyObject *dict);
-int rrr_py_get_rrr_objects (
-		struct python3_rrr_objects *target,
+/*int rrr_py_get_rrr_objects (
 		PyObject *dictionary,
 		const char **extra_module_paths,
 		int module_paths_length
 );
-int rrr_py_with_global_tstate_do(
+int rrr_py_with_global_tstate_do (
 		int (*callback)(void *arg, PyThreadState *tstate_orig), void *arg, int force_gil_release
 );
-void rrr_py_destroy_thread_state(PyThreadState *tstate);
-PyThreadState *rrr_py_new_thread_state(void);
+void rrr_py_destroy_thread_state (
+		PyThreadState *tstate
+);
+PyThreadState *rrr_py_new_thread_state(void);*/
+
+#endif /* RRR_PYTHON3_H */

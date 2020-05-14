@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <inttypes.h>
 
-#include "../global.h"
+#include "log.h"
 #include "../macro_utils.h"
 #include "type.h"
 #include "fixed_point.h"

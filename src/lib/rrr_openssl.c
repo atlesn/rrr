@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#include <openssl/crypto.h>
 //#include <openssl/err.h>
 
-#include "../global.h"
+#include "log.h"
 #include "rrr_openssl.h"
 
 pthread_mutex_t rrr_openssl_global_lock = PTHREAD_MUTEX_INITIALIZER;

@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/time.h>
 
-#include "../global.h"
+#include "log.h"
 #include "rrr_strerror.h"
 
 static inline uint64_t rrr_time_get_64(void) {

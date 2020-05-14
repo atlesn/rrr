@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 
 #include "rrr_endian.h"
-#include "../global.h"
+#include "log.h"
 #include "stats_message.h"
 #include "read.h"
 #include "read_constants.h"

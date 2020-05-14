@@ -383,7 +383,9 @@ static int __rrr_post_read_message_callback (struct rrr_message *message, void *
 	struct rrr_post_data *data = arg;
 	int ret = 0;
 
-	ret = __rrr_post_send_message(data, message);
+	if ((ret = __rrr_post_send_message(data, message)) != 0) {
+		// Message printed in called function
+	}
 
 	data->elements_count++;
 

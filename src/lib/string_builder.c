@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdio.h>
 
-#include "../global.h"
+#include "log.h"
 #include "string_builder.h"
 
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {

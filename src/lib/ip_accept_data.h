@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_ip_accept_data {
 	RRR_LL_NODE(struct rrr_ip_accept_data);
-	struct rrr_sockaddr addr;
+	struct sockaddr_storage addr;
 	socklen_t len;
 	struct rrr_ip_data ip_data;
 	int custom_data;

@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "fixed_point.h"
 #include "vl_time.h"
 #include "message_addr.h"
-#include "../global.h"
+#include "log.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;
@@ -58,7 +58,8 @@ struct rrr_python3_rrr_message_data {
 	struct rrr_message *message_dynamic;
 	PyObject *rrr_array;
 	struct rrr_python3_rrr_message_constants constants;
-	struct rrr_message_addr ip_addr;
+	struct sockaddr ip_addr;
+	socklen_t ip_addr_len;
 };
 
 static int __rrr_python3_rrr_message_set_topic_and_data (
@@ -1139,7 +1140,8 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 				MSG_TYPE(ret));
 	}
 
-	*message_addr = data->ip_addr;
+	memcpy (&message_addr->addr, &data->ip_addr, data->ip_addr_len);
+	RRR_MSG_ADDR_SET_ADDR_LEN(message_addr, data->ip_addr_len);
 
 	goto out;
 	out_err:
@@ -1151,14 +1153,17 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 		return ret;
 }
 
-PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socket_msg *msg, struct rrr_message_addr *message_addr) {
+PyObject *rrr_python3_rrr_message_new_from_message_and_address (
+		const struct rrr_socket_msg *msg,
+		const struct rrr_message_addr *message_addr
+) {
 	struct rrr_python3_rrr_message_data *ret = NULL;
 	struct rrr_array array_tmp = {0};
 	PyObject *node_list = NULL;
 	PyObject *node_element_value = NULL;
 	PyObject *node_tag = NULL;
 
-	struct rrr_message *rrr_message = (struct rrr_message *) msg;
+	const struct rrr_message *rrr_message = (struct rrr_message *) msg;
 
 	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
 		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message_and_address was not a rrr_message\n");
@@ -1173,7 +1178,8 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (struct rrr_socke
 		goto out_err;
 	}
 
-	ret->ip_addr = *message_addr;
+	memcpy(&ret->ip_addr, &message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
+	ret->ip_addr_len = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
 
 	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 

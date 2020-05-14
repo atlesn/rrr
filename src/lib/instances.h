@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_collection.h"
 #include "threads.h"
 
+struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 typedef void rrr_message_broker_costumer_handle;
@@ -79,6 +80,7 @@ struct instance_thread_init_data {
 	struct rrr_instance_collection *senders;
 	struct rrr_stats_engine *stats;
 	struct rrr_message_broker *message_broker;
+	struct rrr_fork_handler *fork_handler;
 };
 
 struct rrr_instance_thread_data {
@@ -95,6 +97,7 @@ struct rrr_instance_thread_data {
 	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
 };
 
+#define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
 #define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle

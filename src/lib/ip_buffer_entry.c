@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
-#include "../global.h"
+#include "log.h"
 #include "ip_buffer_entry.h"
 #include "messages.h"
 #include "linked_list.h"
@@ -195,8 +195,11 @@ int rrr_ip_buffer_entry_new (
 	if (addr == NULL) {
 		memset(&entry->addr, '\0', sizeof(entry->addr));
 	}
+	else if (addr_len > sizeof(entry->addr)) {
+		RRR_BUG("Address too long (%u > %u) in rrr_ip_buffer_entry_new\n", addr_len, sizeof(entry->addr));
+	}
 	else {
-		entry->addr = *((struct rrr_sockaddr *) addr);
+		memcpy(&entry->addr, addr, addr_len);
 	}
 
 	if (addr_len > sizeof(entry->addr)) {

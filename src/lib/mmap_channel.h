@@ -49,6 +49,7 @@ struct rrr_mmap_channel {
 	int wpos;
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
+	char name[64];
 //	char *tmpfile;
 //	int tmp_fd;
 };
@@ -66,11 +67,6 @@ int rrr_mmap_channel_write (
 		const void *data,
 		size_t data_size
 );
-int rrr_mmap_channel_read (
-		void **target,
-		size_t *target_size,
-		struct rrr_mmap_channel *source
-);
 int rrr_mmap_channel_read_with_callback (
 		struct rrr_mmap_channel *source,
 		int (*callback)(const void *data, size_t data_size, void *arg),
@@ -81,9 +77,14 @@ int rrr_mmap_channel_read_all (
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 );
+int rrr_mmap_channel_read (
+		void **target,
+		size_t *target_size,
+		struct rrr_mmap_channel *source
+);
 void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted);
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target);
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target);
-int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap);
+int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name);
 
 #endif /* RRR_MMAP_CHANNEL_H */

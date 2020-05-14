@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <inttypes.h>
 #include <src/lib/array.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
 #include "../lib/settings.h"
@@ -43,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/stats_instance.h"
 #include "../lib/message_broker.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 #define IP_DEFAULT_PORT		2222
 #define IP_DEFAULT_PROTOCOL	RRR_IP_UDP
@@ -258,7 +260,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		RRR_MSG_ERR("Error while parsing ip_array_send_tags of instance %s\n", config->name);
 		goto out;
 	}
-	RRR_DBG_1("%i blob write columns specified for ip instance %s\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
+	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
 
@@ -789,14 +791,14 @@ static int ip_send_message_raw (
 	if (protocol == RRR_IP_TCP) {
 		accept_data_to_use = rrr_ip_accept_data_collection_find (
 				tcp_connect_data,
-				(struct sockaddr *) &addr,
+				(struct sockaddr *) addr,
 				addr_len
 		);
 
 		if (accept_data_to_use == NULL) {
 			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw(
 					&accept_data_to_free,
-					(struct sockaddr *) &addr,
+					(struct sockaddr *) addr,
 					addr_len
 			) != 0) {
 				RRR_MSG_ERR("Could not connect to remote in ip instance %s, dropping message\n",
@@ -824,11 +826,18 @@ static int ip_send_message_raw (
 	ret = rrr_ip_send (
 		&err,
 		ip_data->ip_udp.fd,
-		(struct sockaddr *) &addr,
+		(struct sockaddr *) addr,
 		addr_len,
 		(void *) send_data, // Cast away const OK
 		send_size
 	);
+
+	if (ret != 0) {
+		RRR_MSG_ERR("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
+				INSTANCE_D_NAME(thread_data), addr->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
+		// Ignore errors
+		ret	= 0;
+	}
 
 	goto out;
 
@@ -1062,7 +1071,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_ERR("Configuration parsing failed for ip instance %s\n", thread_data->init_data.module->instance_name);
-		goto out_message;
+		goto out_message_no_network_cleanup;
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
@@ -1074,13 +1083,13 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_ERR("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
 				INSTANCE_D_NAME(thread_data));
-		goto out_message;
+		goto out_message_no_network_cleanup;
 	}
 
 	if (data->source_udp_port == 0) {
 		if (rrr_ip_network_start_udp_ipv4_nobind(&data->ip_udp) != 0) {
 			RRR_MSG_ERR("Could not initialize network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto out_message_no_network_cleanup;
 		}
 		RRR_DBG_1("ip instance %s started, not listening on any UDP port\n", INSTANCE_D_NAME(thread_data));
 	}
@@ -1088,23 +1097,24 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		data->ip_udp.port = data->source_udp_port;
 		if (rrr_ip_network_start_udp_ipv4(&data->ip_udp) != 0) {
 			RRR_MSG_ERR("Could not initialize UDP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto out_message_no_network_cleanup;
 		}
 		RRR_DBG_1("ip instance %s listening on and/or sending from UDP port %d\n",
 				INSTANCE_D_NAME(thread_data), data->source_udp_port);
 	}
 
+	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_udp);
+
 	if (data->source_tcp_port > 0) {
 		data->ip_tcp_listen.port = data->source_tcp_port;
 		if (rrr_ip_network_start_tcp_ipv4_and_ipv6(&data->ip_tcp_listen, 10) != 0) {
 			RRR_MSG_ERR("Could not initialize TCP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
+			goto out_cleanup_udp;
 		}
 		RRR_DBG_1("ip instance %s listening on TCP port %d\n",
 				INSTANCE_D_NAME(thread_data), data->source_tcp_port);
 	}
 
-	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_udp);
 	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_tcp_listen);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_accept_data);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_connect_data);
@@ -1269,9 +1279,12 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
+
+	out_cleanup_udp:
+
 	pthread_cleanup_pop(1);
 
-	out_message:
+	out_message_no_network_cleanup:
 
 	RRR_DBG_1 ("ip instance %s stopping\n", thread_data->init_data.instance_config->name);
 	// Set running in case we failed before getting around to do that

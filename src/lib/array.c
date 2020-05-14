@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 
-#include "../global.h"
+#include "log.h"
 #include "array.h"
 #include "rrr_endian.h"
 #include "cmdlineparser/cmdline.h"
@@ -343,7 +343,8 @@ int rrr_array_parse_data_from_definition (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("rrr_types_parse_data input: 0x");
+		// TODO : This needs to be put into a buffer then written out
+/*		RRR_DBG("rrr_types_parse_data input: 0x");
 		for (rrr_type_length i = 0; i < length; i++) {
 			char c = data[i];
 			if (c < 0x10) {
@@ -351,7 +352,7 @@ int rrr_array_parse_data_from_definition (
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	int i = 0;
@@ -1060,15 +1061,16 @@ int rrr_array_new_message_from_collection (
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
+		// TODO : Data must be put in a buffer and then printed
+/*		RRR_DBG("rrr_array_new_message output (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(message); i++) {
 			char c = MSG_DATA_PTR(message)[i];
 			if (c < 0x10) {
-				RRR_DBG("0");
+				RRR_DBG_NOPREFIX("0");
 			}
-			RRR_DBG("%x", c);
+			RRR_DBG_NOPREFIX("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG_NOPREFIX("\n");*/
 	}
 
 	*final_message = (struct rrr_message *) message;
@@ -1104,6 +1106,7 @@ int rrr_array_message_to_collection (
 	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
 
 	if (RRR_DEBUGLEVEL_3) {
+		/* TODO : This needs to be put in a buffer then written out
 		RRR_DBG("rrr_array_message_to_collection input (data of message only): 0x");
 		for (rrr_type_length i = 0; i < MSG_DATA_LENGTH(array); i++) {
 			char c = MSG_DATA_PTR(array)[i];
@@ -1113,6 +1116,7 @@ int rrr_array_message_to_collection (
 			RRR_DBG("%x", c);
 		}
 		RRR_DBG("\n");
+		*/
 	}
 
 	int i = 0;

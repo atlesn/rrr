@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
-#include "../global.h"
+#include "log.h"
 #include "../../build_directory.h"
 #include "common.h"
 #include "perl5.h"
@@ -934,19 +934,21 @@ int rrr_perl5_hv_to_message (
 
 	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
 
-	target_addr->addr_len = SvUV(ip_addr_len);
-	if (target_addr->addr_len > 0) {
-		if (target_addr->addr_len > sizeof(target_addr->addr)) {
+	uint64_t addr_len_tmp = SvUV(ip_addr_len);
+	RRR_MSG_ADDR_SET_ADDR_LEN(target_addr, addr_len_tmp);
+
+	if (addr_len_tmp > 0) {
+		if (addr_len_tmp > sizeof(target_addr->addr)) {
 			RRR_MSG_ERR("Address length field from message hash was too big (%" PRIu64 " > %lu)\n",
-					target_addr->addr_len, sizeof(target_addr->addr));
+					addr_len_tmp, sizeof(target_addr->addr));
 			ret = 1;
 			goto out;
 		}
 
 		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
 		SvUTF8_off(ip_addr);
-		char *data_str = SvPVbyte_force(ip_addr, target_addr->addr_len);
-		memcpy(&target_addr->addr, data_str, target_addr->addr_len);
+		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp);
+		memcpy(&target_addr->addr, data_str, addr_len_tmp);
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
@@ -1185,10 +1187,11 @@ int rrr_perl5_message_to_hv (
 		goto out;
 	}
 
-	if (message_addr != NULL && message_addr->addr_len > 0) {
+	uint64_t addr_len_tmp;
+	if (message_addr != NULL && (addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr)) > 0) {
 		// Perl needs size of sockaddr struct which is smaller than our internal size
 		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(struct sockaddr));
-		sv_setuv(ip_addr_len, message_addr->addr_len);
+		sv_setuv(ip_addr_len, addr_len_tmp);
 	}
 	else {
 		sv_setpv(ip_addr, "");

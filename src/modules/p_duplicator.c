@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct duplicator_data {
 	struct rrr_instance_thread_data *thread_data;

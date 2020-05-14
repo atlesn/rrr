@@ -34,7 +34,7 @@ struct rrr_ip_buffer_entry {
 	pthread_mutex_t lock;
 	int usercount;
 	ssize_t data_length;
-	struct rrr_sockaddr addr;
+	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	int protocol;
 	uint64_t send_time;

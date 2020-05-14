@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <math.h>
 
-#include "../global.h"
+#include "log.h"
 #include "fixed_point.h"
 
 static const double decimal_fractions_base2[24] = {

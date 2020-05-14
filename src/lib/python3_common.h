@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PYTHON3_COMMON_H
 
 #include "../global.h"
+#include "log.h"
 
 // #define RRR_PYTHON3_DEBUG_REFCOUNT
 

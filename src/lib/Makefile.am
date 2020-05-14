@@ -8,7 +8,7 @@ endif
 
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_socket.c python3_setting.c \
+librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_setting.c python3_socket.c \
 							python3_array.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
@@ -32,7 +32,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
 					mqtt_topic.c mqtt_id_pool.c mqtt_client.c \
 					message_broker.c \
-					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c \
+					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
 					read.c message_addr.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c rrr_socket.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
@@ -52,5 +52,22 @@ librrr_strerror_la_SOURCES = rrr_strerror.c
 librrr_strerror_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_STRERROR ${AM_CFLAGS}
 librrr_strerror_la_LDFLAGS = -lpthread -ldl -lm
 
-noinst_LTLIBRARIES = ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror}
-librrr_la_LIBADD =  ${libadd_perl5} ${libadd_python3} ${libadd_rrr_readdir} ${libadd_rrr_strerror}
+libadd_rrr_fork = librrr_fork.la
+librrr_fork_la_SOURCES = fork.c
+librrr_fork_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_FORK ${AM_CFLAGS}
+librrr_fork_la_LDFLAGS = -lpthread -ldl -lm
+
+libadd_rrr_log = librrr_log.la
+librrr_log_la_SOURCES = log.c
+librrr_log_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PRINTF ${AM_CFLAGS}
+librrr_log_la_LDFLAGS = -lpthread -ldl -lm
+
+libadd_all =	${libadd_perl5}			\
+				${libadd_python3}		\
+				${libadd_rrr_readdir}	\
+				${libadd_rrr_strerror}	\
+				${libadd_rrr_fork}		\
+				${libadd_rrr_log}
+
+noinst_LTLIBRARIES = ${libadd_all}
+librrr_la_LIBADD =  ${libadd_all}

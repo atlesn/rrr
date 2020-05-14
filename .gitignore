@@ -48,6 +48,7 @@ Makefile
 src/vlogger
 *.lai
 .dirstamp
+variables.sh
 
 # code coverage
 *.gcov
@@ -99,7 +100,6 @@ src/lib/perl5_xsi.c
 /config.h
 /config.status
 /libtool
-/m4
 
 # https://www.gnu.org/software/libtool/
 

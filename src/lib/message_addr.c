@@ -22,34 +22,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "../global.h"
+#include "log.h"
 #include "message_addr.h"
 #include "rrr_socket_msg.h"
 
 int rrr_message_addr_to_host (struct rrr_message_addr *msg) {
-	msg->addr_len = be64toh(msg->addr_len);
-
-	if (	msg->addr_len > sizeof(msg->addr) ||
-			msg->msg_size != sizeof(struct rrr_message_addr)
-	) {
+	if (!RRR_MSG_ADDR_SIZE_OK(msg)) {
 		return 1;
 	}
 
 	return 0;
 }
 
-void rrr_message_addr_init_head (struct rrr_message_addr *target) {
+void rrr_message_addr_init_head (struct rrr_message_addr *target, uint64_t addr_len) {
 	rrr_socket_msg_populate_head (
 			(struct rrr_socket_msg *) target,
 			RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR,
-			sizeof(struct rrr_message_addr),
+			sizeof(*target),
 			0
 	);
+	RRR_MSG_ADDR_SET_ADDR_LEN(target, addr_len);
 }
 
 void rrr_message_addr_init (struct rrr_message_addr *target) {
 	memset(target, '\0', sizeof(*target));
-	rrr_message_addr_init_head(target);
+	rrr_message_addr_init_head(target, 0);
 }
 
 int rrr_message_addr_new (struct rrr_message_addr **target) {

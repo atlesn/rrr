@@ -118,7 +118,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("dump message: 0x");
+// TODO : Needs to be put in a buffer then written out
+/*		RRR_DBG("dump message: 0x");
 		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
 			char c = ((char*)message)[i];
 			if (c < 0x10) {
@@ -126,7 +127,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	if (!MSG_IS_ARRAY(message)) {
@@ -216,10 +217,16 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	final_data_raw->be2 = *((int64_t*) (types[2]->data));
 	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
 
+	TEST_MSG("Result for BE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
+			final_data_raw->be4, final_data_raw->be3, final_data_raw->be2, final_data_raw->be1);
+
 	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
 	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
 	final_data_raw->le2 = *((int64_t*) (types[7]->data));
 	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
+
+	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
+			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
 
 	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
 	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
@@ -257,7 +264,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
 
 	if (RRR_DEBUGLEVEL_3) {
-		RRR_DBG("dump final_data_raw: 0x");
+		// TODO : This needs to be put in a buffer then written out
+/*		RRR_DBG("dump final_data_raw: 0x");
 		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
 			char c = ((char*)final_data_raw)[i];
 			if (c < 0x10) {
@@ -265,7 +273,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			}
 			RRR_DBG("%x", c);
 		}
-		RRR_DBG("\n");
+		RRR_DBG("\n");*/
 	}
 
 	if (final_data_raw->be1 != final_data_raw->le1 ||
@@ -469,222 +477,64 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 int test_averager (
-		struct rrr_message **result_message,
 		struct instance_metadata_collection *instances,
-		const char *input_name_voltmonitor,
 		const char *output_name_averager
 ) {
-	struct instance_metadata *input = rrr_instance_find(instances, input_name_voltmonitor);
-	struct instance_metadata *output = rrr_instance_find(instances, output_name_averager);
-	struct rrr_message *message = NULL;
-	struct rrr_ip_buffer_entry *entry = NULL;
-	struct rrr_array array_tmp = {0};
+
+	// Preconditions for this test:
+	// - Sender of the averager module is a voltmonitor module with configuration
+	//   parameter vm_do_spawn_test_messages
 
 	int ret = 0;
 
-	if (input == NULL || output == NULL) {
-		TEST_MSG("Could not find input and output instances %s and %s in test_averager\n",
-				input_name_voltmonitor, output_name_averager);
+	struct test_result test_result = {0, NULL};
+
+	struct instance_metadata *output = rrr_instance_find(instances, output_name_averager);
+	if (output == NULL) {
+		TEST_MSG("Could not find output instances %s in test_averager\n",
+				output_name_averager);
 		ret = 1;
 		goto out;
-	}
-
-	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-
-	inject = input->dynamic_data->operations.inject;
-
-	// Inject four messages to be averaged
-	for (int i = 2; i <= 8; i += 2) {
-		if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", i) != 0) {
-			TEST_MSG("Could not push value to array in test_averager\n");
-			ret = 1;
-			goto out;
-		}
-
-
-		RRR_FREE_IF_NOT_NULL(message);
-		if (rrr_array_new_message_from_collection(
-				&message,
-				&array_tmp,
-				rrr_time_get_64(),
-				"test/measurement",
-				strlen("test/measurement"
-		)) != 0) {
-			TEST_MSG("Could not create message in test_averager\n");
-			ret = 1;
-			goto out;
-		}
-
-		if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(message), NULL, 0, 0, message) != 0) {
-			TEST_MSG("Could not create ip buffer entry in test_averager\n");
-			ret = 1;
-			goto out;
-		}
-		message = NULL;
-		rrr_ip_buffer_entry_lock(entry);
-
-		// Inject should not decref, but must unlock
-		if (inject(input->thread_data, entry)) {
-			TEST_MSG("Error from inject function in test_averager\n");
-			ret = 1;
-			goto out;
-		}
-		rrr_ip_buffer_entry_decref(entry);
-		entry = NULL;
 	}
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
-	struct test_result test_result = {0, NULL};
 	ret |= test_do_poll_loop(&test_result, output->thread_data, test_averager_callback);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
-	*result_message = test_result.message;
 
 	out:
-	if (entry != NULL) {
-		rrr_ip_buffer_entry_decref(entry);
-	}
-	rrr_array_clear(&array_tmp);
-	RRR_FREE_IF_NOT_NULL(message);
+	RRR_FREE_IF_NOT_NULL(test_result.message);
 	return ret;
 }
 
-int test_type_array (
-		struct rrr_message **result_message_1,
-		struct rrr_message **result_message_2,
-		struct rrr_message **result_message_3,
+int test_array (
 		struct instance_metadata_collection *instances,
-		const char *input_name,
-		const char *input_socket_name,
-		const char *output_name_1,
-		const char *output_name_2,
-		const char *output_name_3
+		const char *output_name
 ) {
 	int ret = 0;
-	*result_message_1 = NULL;
-	*result_message_2 = NULL;
-	*result_message_3 = NULL;
 
-	struct rrr_ip_buffer_entry *entry = NULL;
-	struct test_data *data = NULL;
+	struct test_result test_result_1 = {1, NULL};
 
-	struct instance_metadata *input = rrr_instance_find(instances, input_name);
-	struct instance_metadata *input_buffer_socket = rrr_instance_find(instances, input_socket_name);
-	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name_1);
-	struct instance_metadata *output_2 = rrr_instance_find(instances, output_name_2);
-	struct instance_metadata *output_3 = rrr_instance_find(instances, output_name_3);
-
-	if (input == NULL || input_buffer_socket == NULL || output_1 == NULL || output_2 == NULL || output_3 == NULL) {
-		TEST_MSG("Could not find input and output instances %s and %s in test_type_array\n",
-				input_name, output_name_1);
+	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	if (output_1 == NULL) {
+		TEST_MSG("Could not find output instance %s in test_type_array\n",
+				output_name);
 		return 1;
-	}
-
-	int (*inject)(RRR_MODULE_INJECT_SIGNATURE) = input->dynamic_data->operations.inject;
-
-	// Allocate more bytes as we need to pass ip_buffer_entry around (although we are actually not an rrr_message)
-
-	data = malloc(sizeof(*data));
-	memset(data, '\0', sizeof(*data));
-
-	data->be4[0] = 1;
-	data->be4[2] = 2;
-
-	data->be3[0] = 1;
-	data->be3[1] = 2;
-
-	data->be2 = htobe16(-33);
-
-	data->be1 = 1;
-
-	data->sep1 = ';';
-
-	data->le4[1] = 2;
-	data->le4[3] = 1;
-
-	data->le3[1] = 2;
-	data->le3[2] = 1;
-
-	data->le2 = htole16(-33);
-
-	data->le1 = 1;
-
-	data->sep2[0] = '|';
-	data->sep2[1] = '|';
-
-	sprintf(data->blob_a, "abcdefg");
-	sprintf(data->blob_b, "gfedcba");
-
-	data->msg.msg_size = sizeof(struct rrr_message) - 1;
-	data->msg.msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
-	data->msg.topic_length = 0;
-	MSG_SET_TYPE(&data->msg, MSG_TYPE_MSG);
-	MSG_SET_CLASS(&data->msg, MSG_CLASS_DATA);
-
-	rrr_message_prepare_for_network(&data->msg);
-	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) &data->msg);
-
-	ret = test_type_array_write_to_socket(data, input_buffer_socket);
-	if (ret != 0) {
-		TEST_MSG("Could not write to socket in test_type_array\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_ip_buffer_entry_new(&entry, sizeof(struct test_data) - 1, NULL, 0, 0, data) != 0) {
-		TEST_MSG("Could not create ip buffer entry in test_type_array\n");
-		ret = 1;
-		goto out;
-	}
-	data = NULL;
-
-	rrr_ip_buffer_entry_lock(entry);
-
-	ret = inject(input->thread_data, entry);
-	if (ret != 0) {
-		TEST_MSG("Error from inject function in test_type_array\n");
-		ret = 1;
-		goto out;
 	}
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
-	struct test_result test_result_1 = {1, NULL};
 	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_type_array_callback);
 	if (ret != 0) {
 		goto out;
 	}
-	TEST_MSG("Result of test_type_array 1/3, should be 2: %i\n", test_result_1.result);
-	*result_message_1 = test_result_1.message;
-
-	// Poll from second output
-	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_2->thread_data));
-	struct test_result test_result_2 = {1, NULL};
-	ret |= test_do_poll_loop(&test_result_2, output_2->thread_data, test_type_array_callback);
-	if (ret != 0) {
-		goto out;
-	}
-	TEST_MSG("Result of test_type_array 2/3, should be 2: %i\n", test_result_2.result);
-	*result_message_2 = test_result_2.message;
-
-	// Poll from third output
-	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_3->thread_data));
-	struct test_result test_result_3 = {1, NULL};
-	ret |= test_do_poll_loop(&test_result_3, output_3->thread_data, test_type_array_callback);
-	if (ret != 0) {
-		goto out;
-	}
-	TEST_MSG("Result of test_type_array 3/3, should be 2: %i\n", test_result_3.result);
-	*result_message_3 = test_result_3.message;
+	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result_1.result);
 
 	// Error if result is not two from both polls
-	ret |= (test_result_1.result != 2) | (test_result_2.result != 2) | (test_result_3.result != 2);
+	ret |= (test_result_1.result != 2);
 
 	out:
-	RRR_FREE_IF_NOT_NULL(data);
-	if (entry != NULL) {
-		rrr_ip_buffer_entry_decref(entry);
-	}
+	RRR_FREE_IF_NOT_NULL(test_result_1.message);
 	return ret;
 }
 
@@ -812,42 +662,34 @@ void test_type_array_mysql_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->mysql_db);
 }
 
-int test_type_array_mysql_and_network (
+int test_type_array_mysql (
 		struct instance_metadata_collection *instances,
-		const char *input_buffer_name,
-		const char *tag_buffer_name,
-		const char *mysql_name,
-		const struct rrr_message *message
+		const char *tag_buffer_name
 ) {
 	int ret = 0;
 
 	struct test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_message *new_message = NULL;
 	struct rrr_ip_buffer_entry *entry = NULL;
-	uint64_t expected_ack_timestamp = message->timestamp;
 
-	new_message = rrr_message_duplicate(message);
-	if (new_message == NULL) {
-		RRR_MSG_ERR("Could not duplicate message in test_type_array_mysql_and_network\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_ip_buffer_entry_new(&entry, MSG_TOTAL_SIZE(new_message), NULL, 0, 0, new_message) != 0) {
-		TEST_MSG("Could not allocate ip buffer entry in test_type_array_mysql_and_network\n");
-		ret = 1;
-		goto out;
-	}
-	new_message = NULL;
-
-	struct instance_metadata *input_buffer = rrr_instance_find(instances, input_buffer_name);
 	struct instance_metadata *tag_buffer = rrr_instance_find(instances, tag_buffer_name);
-	struct instance_metadata *mysql = rrr_instance_find(instances, mysql_name);
 
-	if (input_buffer == NULL || tag_buffer == NULL || mysql == NULL) {
-		TEST_MSG("Could not find input, tag and mysql instances %s, %s and %s in test_type_array_mysql_and_network\n",
-				input_buffer_name, tag_buffer_name, mysql_name);
+	if (tag_buffer == NULL) {
+		TEST_MSG("Could not find output instance %s in test_type_array_mysql_and_network\n",
+				tag_buffer_name);
+		ret = 1;
+		goto out;
+	}
+
+	struct instance_metadata *mysql = NULL;
+	RRR_INSTANCE_LOOP(instance, instances) {
+		if (strcmp(INSTANCE_M_MODULE_NAME(instance), "mysql") == 0) {
+			mysql = instance;
+		}
+	}
+
+	if (mysql == NULL) {
+		TEST_MSG("Could not find any MySQL instance from which to get configuration to setup database in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
@@ -867,24 +709,6 @@ int test_type_array_mysql_and_network (
 		goto out;
 	}
 
-	int (*inject)(RRR_MODULE_INJECT_SIGNATURE);
-
-	inject = input_buffer->dynamic_data->operations.inject;
-
-	if (inject == NULL) {
-		TEST_MSG("Could not find inject in modules in test_type_array_mysql_and_network\n");
-		ret = 1;
-		goto out;
-	}
-
-	rrr_ip_buffer_entry_lock(entry);
-	ret = inject(input_buffer->thread_data, entry);
-	if (ret != 0) {
-		RRR_MSG_ERR("Error from inject function in test_type_array_mysql_and_network\n");
-		ret = 1;
-		goto out;
-	}
-
 	TEST_MSG("Polling MySQL\n");
 	ret |= test_do_poll_loop(&test_result, tag_buffer->thread_data, test_type_array_mysql_and_network_callback);
 	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
@@ -898,21 +722,13 @@ int test_type_array_mysql_and_network (
 
 	struct rrr_message *result_message = test_result.message;
 	if (!MSG_IS_TAG(result_message)) {
-		RRR_MSG_ERR("Message from MySQL was not a TAG message_1\n");
+		RRR_MSG_ERR("Message from MySQL was not a TAG message\n");
 		ret = 1;
 		goto out;
 	};
 
-	if (result_message->timestamp != expected_ack_timestamp) {
-		RRR_MSG_ERR("Timestamp of TAG message_1 from MySQL did not match original message_1 (%" PRIu64 " vs %" PRIu64 ")\n",
-				result_message->timestamp, expected_ack_timestamp);
-		ret = 1;
-		goto out;
-	}
-
 	out:
 	test_type_array_mysql_data_cleanup(&mysql_data);
-	RRR_FREE_IF_NOT_NULL(new_message);
 	if (entry != NULL) {
 		rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
 	}

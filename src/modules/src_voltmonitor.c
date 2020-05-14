@@ -55,7 +55,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/array.h"
 #include "../lib/message_broker.h"
-#include "../global.h"
+#include "../lib/log.h"
 
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -69,6 +69,7 @@ struct voltmonitor_data {
 	int usb_channel;
 
 	int do_inject_only;
+	int do_spawn_test_measurements;
 
 	char *msg_topic;
 
@@ -382,8 +383,9 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	data->usb_calibration = calibration;
 	data->usb_channel = channel;
 
-	// Undocumentet parameter, used in test suite
+	// Undocumented parameters, used in test suite
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
 
 	out:
 
@@ -434,7 +436,7 @@ static int voltmonitor_spawn_message_callback (struct rrr_ip_buffer_entry *entry
 	return ret;
 }
 
-static int volmonitor_spawn_message (struct voltmonitor_data *data, uint64_t value) {
+static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t value) {
 	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
@@ -481,6 +483,16 @@ static int volmonitor_spawn_message (struct voltmonitor_data *data, uint64_t val
 	return ret;
 }
 
+static int voltmonitor_spawn_test_messages (struct voltmonitor_data *data) {
+	int ret = 0;
+	for (int i = 2; i <= 8; i += 2) {
+		if ((ret = voltmonitor_spawn_message(data, i)) != 0) {
+			break;
+		}
+	}
+	return ret;
+}
+
 int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_entry *entry) {
 	struct voltmonitor_data *data = thread_data->private_data = thread_data->private_memory;
 
@@ -506,7 +518,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 	RRR_DBG_1("voltmonitor instance %s inject value %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), value);
 
-	if (volmonitor_spawn_message(data, value) != 0) {
+	if (voltmonitor_spawn_message(data, value) != 0) {
 		RRR_BUG("Error while spawning message in voltmonitor inject\n");
 	}
 
@@ -547,6 +559,14 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(usb_cleanup, data);
 
+	if (data->do_spawn_test_measurements) {
+		if (voltmonitor_spawn_test_messages(data) != 0) {
+			RRR_MSG_ERR("Could not spawn test messages in voltmonitor instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out_message;
+		}
+	}
+
 	while (!rrr_thread_check_encourage_stop(thread_data->thread)) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
@@ -558,7 +578,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 		}
 
 		if (!data->do_inject_only) {
-			if (volmonitor_spawn_message(data, abs(millivolts)) != 0) {
+			if (voltmonitor_spawn_message(data, abs(millivolts)) != 0) {
 				RRR_MSG_ERR("Error when spawning message in averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -569,6 +589,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 
 	}
 
+	out_message:
 	RRR_DBG_1 ("voltmonitor received encourage stop\n");
 
 //	pthread_cleanup_pop(1);

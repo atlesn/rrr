@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_engine.h"
 #include "stats_instance.h"
 #include "stats_message.h"
-#include "../global.h"
+#include "log.h"
 #include "vl_time.h"
 #include "linked_list.h"
 
@@ -201,7 +201,6 @@ static int __rrr_stats_instance_post_text (
 	out:
 	return ret;
 }
-
 
 int rrr_stats_instance_post_text (
 		RRR_INSTANCE_POST_ARGUMENTS,

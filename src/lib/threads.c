@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 #include "vl_time.h"
 #include "rrr_strerror.h"
-#include "../global.h"
+#include "log.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
 //#define VL_THREAD_INCAPACITATE_WATCHDOGS
@@ -974,7 +974,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		if (node->ready_to_destroy) {
 			(*count)++;
 			void *thread_ret;
-			printf ("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			RRR_DBG_1("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
 			if (node->is_watchdog) {
 				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);

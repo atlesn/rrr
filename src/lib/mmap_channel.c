@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/shm.h>
 
 #include "rrr_strerror.h"
-#include "../global.h"
+#include "log.h"
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
@@ -211,7 +211,7 @@ int rrr_mmap_channel_write_using_callback (
 
 	block->size_data = data_size;
 
-//	printf ("mmap channel write to %p size %li\n", block->ptr, data_size);
+	RRR_DBG_4("mmap channel %p %s wr blk %i size %li\n", target, target->name, target->wpos, data_size);
 
 	pthread_mutex_unlock(&block->block_lock);
 	do_unlock_block = 0;
@@ -280,6 +280,8 @@ int rrr_mmap_channel_read_with_callback (
 		goto out_unlock;
 	}
 
+	RRR_DBG_4("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
+
 	if (block->shmid != 0) {
 		const char *data_pointer = NULL;
 
@@ -344,6 +346,51 @@ int rrr_mmap_channel_read_all (
 	do {
 		ret = rrr_mmap_channel_read_with_callback(source, callback, callback_arg);
 	} while(ret == 0 && --i > 0);
+
+	return ret;
+}
+
+struct rrr_mmap_channel_read_callback_data {
+	void *data;
+	size_t data_size;
+};
+
+static int __rrr_mmap_channel_read_callback (const void *data, size_t data_size, void *arg) {
+	struct rrr_mmap_channel_read_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	if ((callback_data->data = malloc(data_size)) == NULL) {
+		RRR_MSG_ERR("Could not allocate memory in __rrr_mmap_channel_read_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(callback_data->data, data, data_size);
+	callback_data->data_size = data_size;
+
+	out:
+	return ret;
+}
+
+int rrr_mmap_channel_read (
+		void **target,
+		size_t *target_size,
+		struct rrr_mmap_channel *source
+) {
+	struct rrr_mmap_channel_read_callback_data callback_data = {0};
+
+	int ret = 0;
+
+	*target = NULL;
+	*target_size = 0;
+
+	if ((ret = rrr_mmap_channel_read_with_callback(source, __rrr_mmap_channel_read_callback, &callback_data)) != 0) {
+		return ret;
+	}
+
+	*target = callback_data.data;
+	*target_size = callback_data.data_size;
 
 	return ret;
 }
@@ -431,7 +478,7 @@ void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target) {
 	pthread_mutex_unlock(&target->index_lock);
 }
 
-int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap) {
+int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name) {
 	int ret = 0;
 
 	struct rrr_mmap_channel *result = NULL;
@@ -468,6 +515,9 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 			goto out_destroy_mutexes;
 		}
 	}
+
+    strncpy(result->name, name, sizeof(result->name));
+    result->name[sizeof(result->name) - 1] = '\0';
 
 	result->mmap = mmap;
 

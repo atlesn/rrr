@@ -35,7 +35,7 @@ struct rrr_socket_client {
 	RRR_LL_NODE(struct rrr_socket_client);
 	struct rrr_read_session_collection read_sessions;
 	int connected_fd;
-	struct rrr_sockaddr addr;
+	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	uint64_t last_seen;
 	void *private_data;

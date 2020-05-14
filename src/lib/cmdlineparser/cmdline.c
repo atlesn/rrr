@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdline.h"
 #include "../../global.h"
+#include "../../lib/log.h"
 
 //#define CMD_DBG_CMDLINE
 

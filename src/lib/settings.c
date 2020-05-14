@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_endian.h"
 #include "rrr_socket.h"
 #include "settings.h"
-#include "../global.h"
+#include "log.h"
 
 struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
@@ -111,7 +111,7 @@ void __rrr_settings_lock(struct rrr_instance_settings *settings) {
 		RRR_MSG_ERR("BUG: Tried to lock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
 	}
-	RRR_DBG_4 ("Settings %p lock\n", settings);
+//	RRR_DBG_4 ("Settings %p lock\n", settings);
 	pthread_mutex_lock(&settings->mutex);
 }
 
@@ -120,7 +120,7 @@ void __rrr_settings_unlock(struct rrr_instance_settings *settings) {
 		RRR_MSG_ERR("BUG: Tried to unlock destroyed settings structure\n");
 		exit(EXIT_FAILURE);
 	}
-	RRR_DBG_4 ("Settings %p unlock\n", settings);
+//	RRR_DBG_4 ("Settings %p unlock\n", settings);
 	pthread_mutex_unlock(&settings->mutex);
 }
 
@@ -767,6 +767,13 @@ int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *s
 	result->data_size = source->data_size;
 	memcpy(result->name, source->name, sizeof(result->name));
 	memcpy(result->data, source->data, source->data_size);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) result,
+			RRR_SOCKET_MSG_TYPE_SETTING,
+			sizeof(*result),
+			0
+	);
 
 	*target = result;
 	result = NULL;

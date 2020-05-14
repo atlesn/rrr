@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
-#include "../global.h"
+#include "log.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
 #include "rrr_socket_client.h"
@@ -142,7 +142,7 @@ int rrr_socket_client_collection_accept (
 	struct rrr_socket_client temp = {0};
 	temp.addr_len = sizeof(temp.addr);
 
-	int ret = rrr_socket_accept(collection->listen_fd, &temp.addr, &temp.addr_len, collection->creator);
+	int ret = rrr_socket_accept(collection->listen_fd, (struct sockaddr *) &temp.addr, &temp.addr_len, collection->creator);
 	if (ret == -1) {
 		if (errno != EWOULDBLOCK) {
 			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
@@ -167,7 +167,7 @@ int rrr_socket_client_collection_accept (
 		return 1;
 	}
 
-	RRR_DBG_1("Statistics client connected with fd %i\n", temp.connected_fd);
+	RRR_DBG_1("Client connection accepted into collection with fd %i\n", temp.connected_fd);
 
 	RRR_LL_UNSHIFT(collection, client_new);
 

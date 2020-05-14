@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <read.h>
 
-#include "../global.h"
+#include "log.h"
 #include "vl_time.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
@@ -43,19 +43,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_addr.h"
 #include "settings.h"
 #include "read.h"
+#include "mmap_channel.h"
 #include "../../config.h"
-
-#define RRR_PYTHON3_IN_FLIGHT_ACK_INTERVAL 10
-#define RRR_PYTHON3_MAX_IN_FLIGHT 50
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
-	int socket_fd;
-	int connected_fd;
-	char *filename;
-	int send_stats;
+	struct rrr_mmap_channel *channel;
 	uint64_t time_start;
-	pthread_mutex_t stats_lock;
+	// Protects sending in case we have threads in the pythond program
 	pthread_mutex_t send_lock;
 	struct rrr_read_session_collection read_sessions;
 };
@@ -63,19 +58,7 @@ struct rrr_python3_socket_data {
 static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
 
-	if (socket_data->connected_fd > 0) {
-		rrr_socket_close(socket_data->connected_fd);
-		socket_data->connected_fd = 0;
-	}
-	if (socket_data->socket_fd > 0) {
-		rrr_socket_close(socket_data->socket_fd);
-		socket_data->socket_fd = 0;
-	}
-	if (socket_data->filename != NULL) {
-		unlink (socket_data->filename);
-		free(socket_data->filename);
-		socket_data->filename = NULL;
-	}
+	socket_data->channel = NULL;
 
 	rrr_read_session_collection_clear(&socket_data->read_sessions);
 }
@@ -101,138 +84,6 @@ static int rrr_python3_socket_f_init (PyObject *self, PyObject *args, PyObject *
 	return 0;
 }
 
-static PyObject *rrr_python3_socket_f_accept (PyObject *self, PyObject *args) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-	int ret = 0;
-
-	(void)(args);
-
-	if (socket_data->socket_fd == 0) {
-		RRR_MSG_ERR("Cannot accept connection in python3 socket, no listen socket created\n");
-		ret = 1;
-		goto out;
-	}
-
-	struct rrr_sockaddr addr;
-	socklen_t len = sizeof(addr);
-	int new_fd = rrr_socket_accept(socket_data->socket_fd, &addr, &len, "rrr_python3_socket_f_accept");
-
-	if (new_fd == -1) {
-		RRR_MSG_ERR("Could not accept connection on python3 socket: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	socket_data->connected_fd = new_fd;
-
-	out:
-	if (ret != 0) {
-		Py_RETURN_FALSE;
-	}
-	Py_RETURN_TRUE;
-}
-
-static PyObject *rrr_python3_socket_f_start (PyObject *self, PyObject *args, PyObject *kwds) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-	int ret = 0;
-
-	char *arg_filename = "";
-	char *valid_keys[] = {"filename", NULL};
-
-	__rrr_python3_socket_dealloc_internals(self);
-
-	if (args != NULL) {
-		if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", valid_keys, &arg_filename)) {
-			RRR_MSG_ERR("Could not parse arguments to socket __init__ python3 module: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-	}
-
-	int new_socket = rrr_socket (
-			AF_UNIX,
-			SOCK_SEQPACKET|SOCK_NONBLOCK,
-			0,
-			"rrr_python3_socket_f_start - socket",
-			NULL // We unlink the file ourselves after closing
-	);
-
-	if (new_socket == -1) {
-		RRR_MSG_ERR("Could not create UNIX socket in python3 module socket __init__: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out;
-	}
-
-	char *filename = NULL;
-	if (*arg_filename != '\0') {
-		// Connect to existing socket
-		socket_data->connected_fd = new_socket;
-
-		filename = arg_filename;
-	}
-	else {
-		// Create new socket for listening
-		socket_data->socket_fd = new_socket;
-
-		char filename_template[128];
-		sprintf(filename_template, "%s%s", RRR_TMP_PATH, "/rrr-py-socket-XXXXXX");
-
-		filename = filename_template;
-
-		int fd = rrr_socket_mkstemp (filename, "rrr_python3_socket_f_start - mkstemp");
-		if (fd == -1) {
-			RRR_MSG_ERR("Could not create temporary filename for UNIX socket in python3 module in socket __init_: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		rrr_socket_close(fd);
-	}
-
-	socket_data->filename = malloc(strlen(filename)+1);
-	strcpy(socket_data->filename, filename);
-
-	struct sockaddr_un addr;
-	memset(&addr, '\0', sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, socket_data->filename, sizeof(addr.sun_path)-1);
-
-	if (socket_data->socket_fd > 0) {
-		if (rrr_socket_bind_and_listen(socket_data->socket_fd, (struct sockaddr *) &addr, sizeof(addr), 0, 1) != 0) {
-			RRR_MSG_ERR("Could not bind and listen on socket %s in python3 module in socket __init_: %s\n", socket_data->filename, rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		if (rrr_socket_connect_nonblock(socket_data->connected_fd, (struct sockaddr *) &addr, sizeof(addr)) != 0) {
-			RRR_MSG_ERR("Could not connect to existing socket %s in python3 module in socket __init_: %s\n", socket_data->filename, rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-	}
-
-	RRR_DBG_7 ("New python3 AF_UNIX socket filename is %s pid %i\n", socket_data->filename, getpid());
-
-	out:
-	if (ret != 0) {
-		__rrr_python3_socket_dealloc_internals(self);
-		Py_RETURN_FALSE;
-	}
-	Py_RETURN_TRUE;
-}
-
-static PyObject *rrr_python3_socket_f_get_filename (PyObject *self, PyObject *args) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-
-	(void)(args);
-
-	if (socket_data->filename == NULL) {
-		RRR_MSG_ERR("Could not get filename as socket is not initialized in python3 module\n");
-		return NULL;
-	}
-	return (PyUnicode_FromString(socket_data->filename));
-}
-
 static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	int ret = 0;
 
@@ -241,10 +92,16 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	struct rrr_socket_msg *message = NULL;
 	if (rrr_python3_rrr_message_check(arg)) {
 		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (&message_addr, arg);
+
 		if (rrr_message == NULL) {
+			RRR_MSG_ERR("Could not get RRR message from python3 object in rrr_python3_socket_f_send\n");
 			ret = 1;
 			goto out;
 		}
+
+		RRR_DBG_3("python3 socket sending message with timestamp %" PRIu64 " from application\n",
+				rrr_message->timestamp);
+
 		message = rrr_message_safe_cast(rrr_message);
 	}
 	else if (rrr_python3_setting_check(arg)) {
@@ -253,6 +110,10 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 			ret = 1;
 			goto out;
 		}
+
+		RRR_DBG_3("python3 socket sending setting %s from application\n",
+				setting->name);
+
 		message = rrr_setting_safe_cast(setting);
 	}
 	else {
@@ -261,8 +122,8 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 		goto out;
 	}
 
-	if (message_addr.addr_len > 0) {
-		rrr_message_addr_init_head(&message_addr);
+	if (MSG_TOTAL_SIZE(&message_addr) > 0 && RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr) > 0) {
+		rrr_message_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
 		if ((ret = rrr_python3_socket_send(self, (struct rrr_socket_msg *)  &message_addr)) != 0) {
 			RRR_MSG_ERR("Received error in python3 socket send function\n");
 			ret = 1;
@@ -285,28 +146,10 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 
 static PyMethodDef socket_methods[] = {
 		{
-				.ml_name	= "get_filename",
-				.ml_meth	= (PyCFunction) rrr_python3_socket_f_get_filename,
-				.ml_flags	= METH_NOARGS,
-				.ml_doc		= "Get filename of socket"
-		},
-		{
 				.ml_name	= "send",
 				.ml_meth	= (PyCFunction) rrr_python3_socket_f_send,
 				.ml_flags	= METH_O,
 				.ml_doc		= "Send an rrr_message object on the socket"
-		},
-		{
-				.ml_name	= "start",
-				.ml_meth	= (PyCFunction) rrr_python3_socket_f_start,
-				.ml_flags	= METH_VARARGS | METH_KEYWORDS,
-				.ml_doc		= "Start a new socket or connect to existing if filename provided"
-		},
-		{
-				.ml_name	= "accept",
-				.ml_meth	= (PyCFunction) rrr_python3_socket_f_accept,
-				.ml_flags	= METH_NOARGS,
-				.ml_doc		= "Accept a connection on the socket"
 		},
 		{ NULL, NULL, 0, NULL }
 };
@@ -332,7 +175,7 @@ PyTypeObject rrr_python3_socket_type = {
 	    .tp_setattro	= NULL,
 	    .tp_as_buffer	= NULL,
 	    .tp_flags		= Py_TPFLAGS_DEFAULT,
-	    .tp_doc			= "ReadRouteRecord type for UNIX socket IPC",
+	    .tp_doc			= "ReadRouteRecord type for MMAP channel IPC",
 	    .tp_traverse	= NULL,
 	    .tp_clear		= NULL,
 	    .tp_richcompare	= NULL,
@@ -362,28 +205,8 @@ PyTypeObject rrr_python3_socket_type = {
 	    .tp_finalize	= NULL
 };
 
-const char *rrr_python3_socket_get_filename(PyObject *self) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-	if (socket_data->filename == NULL) {
-		RRR_BUG("rrr_python3_socket_get_filename called with filename being NULL, socket it probably not initialized\n");
-	}
-	return socket_data->filename;
-}
-
-int rrr_python3_socket_get_fd (PyObject *self) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-	return socket_data->socket_fd;
-}
-
-int rrr_python3_socket_get_connected_fd (PyObject *self) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-	return socket_data->connected_fd;
-}
-
-PyObject *rrr_python3_socket_new (const char *filename) {
+PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel) {
 	struct rrr_python3_socket_data *new_socket = NULL;
-	PyObject *args = NULL;
-	PyObject *res = NULL;
 
 	int ret = 0;
 
@@ -395,116 +218,25 @@ PyObject *rrr_python3_socket_new (const char *filename) {
 		goto out;
 	}
 
-	new_socket->filename = NULL;
-	new_socket->socket_fd = 0;
-	new_socket->connected_fd = 0;
-	new_socket->send_stats = 0;
+	new_socket->channel = channel;
 	memset (&new_socket->read_sessions, '\0', sizeof(new_socket->read_sessions));
-	pthread_mutex_init(&new_socket->stats_lock, 0);
 	pthread_mutex_init(&new_socket->send_lock, 0);
 
 	new_socket->time_start = rrr_time_get_64();
-
-	args = PyTuple_New(1);
-	if (args == NULL) {
-		RRR_MSG_ERR("Could not create tuple in rrr_python3_socket_new:\n");
-		PyErr_Print();
-		ret = 1;
-		goto out;
-	}
-
-	if (filename != NULL && *filename != '\0') {
-		PyObject *str = PyUnicode_FromString(filename);
-		if (str == NULL) {
-			RRR_MSG_ERR("Could not create unicode object from filename '%s' while creating new python3 socket:\n",
-					filename);
-			PyErr_Print();
-			ret = 1;
-			goto out;
-		}
-		PyTuple_SET_ITEM(args, 0, str);
-	}
-
-	res = rrr_python3_socket_f_start((PyObject *) new_socket, args, NULL);
-	if (!PyObject_IsTrue(res)) {
-		RRR_MSG_ERR("Could not start socket with filename '%s' while creating new python3 socket:\n",
-				(filename != NULL ? filename : ""));
-		ret = 1;
-		goto out;
-	}
 
 	out:
 	if (ret != 0) {
 		RRR_Py_XDECREF((PyObject *) new_socket);
 		new_socket = NULL;
 	}
-	RRR_Py_XDECREF(args);
-	RRR_Py_XDECREF(res);
 	return (PyObject *) new_socket;
 }
 
-int rrr_python3_socket_poll (PyObject *socket, int timeout) {
+int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
-	if (socket_data->connected_fd == 0) {
-		RRR_MSG_ERR("Cannot poll in python3 socket: Not connected\n");
-		ret = -1;
-		goto out;
-	}
-
-	struct pollfd poll_data = {
-			socket_data->connected_fd,
-			POLLIN,
-			0
-	};
-
-	int max_retries = 100;
-
-	retry:
-	if ((ret = poll(&poll_data, 1, timeout)) == -1) {
-		if (--max_retries == 100) {
-			RRR_MSG_ERR("Max retries reached in rrr_python3_socket_poll for socket %i pid %i\n",
-					socket_data->connected_fd, getpid());
-			ret = -1;
-			goto out;
-		}
-		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			goto retry;
-		}
-		else if (errno == EINTR) {
-			goto retry;
-		}
-		RRR_MSG_ERR("Error from poll function in python3 unix socket fd %i pid %i: %s\n",
-				socket_data->connected_fd, getpid(), rrr_strerror(errno));
-		ret = -1;
-	}
-/* TODO : Implement check of pollfd.revents
-	if ((pollfd.revents & (POLLERR|POLLNVAL)) > 0) {
-		VL_MSG_ERR("Poll error in rrr_mqtt_connection_read\n");
-		ret = 1;
-		goto out_unlock;
-	}
-*/
-	if (ret != 0) {
-		RRR_DBG_7 ("python3 socket poll on socket %s fd %i pid %i result %i\n",
-				rrr_python3_socket_get_filename(socket),
-				rrr_python3_socket_get_fd(socket),
-				getpid(), ret
-		);
-	}
-
-	out:
-	return ret;
-}
-
-int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
-	int ret = 0;
-
-	RRR_DBG_7 ("python3 socket send on socket %s fd %i pid %i size %u\n",
-			rrr_python3_socket_get_filename(socket),
-			rrr_python3_socket_get_fd(socket),
+	RRR_DBG_3 ("python3 socket send from application in pid %i size %u\n",
 			getpid(), message->msg_size
 	);
 
@@ -512,280 +244,14 @@ int rrr_python3_socket_send (PyObject *socket, struct rrr_socket_msg *message) {
 		RRR_BUG("Received a socket message of wrong size in rrr_python3_socket_send (it says %u bytes)\n", message->msg_size);
 	}
 
-	if (socket_data->connected_fd == 0) {
-		RRR_MSG_ERR("Cannot send in python3 socket: Not connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	uint16_t msg_type = 0;
-	uint32_t msg_size = 0;
-	uint64_t msg_value = 0;
-
-	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
-		if (message->msg_size < MSG_MIN_SIZE(message)) {
-			RRR_BUG("Received an rrr_message with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
-		}
-
-		msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
-		msg_size = MSG_TOTAL_SIZE((struct rrr_message *) message);
-
-		rrr_message_prepare_for_network((struct rrr_message *) message);
-	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
-		msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR;
-		msg_size = sizeof(struct rrr_message_addr);
-
-		rrr_message_addr_prepare_for_network((struct rrr_message_addr *) message);
-	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
-		if (message->msg_size != sizeof(struct rrr_setting_packed)) {
-			RRR_BUG("Received a setting with wrong size parameter %u in  rrr_python3_socket_send\n", message->msg_size);
-		}
-
-		msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
-		msg_size = sizeof(struct rrr_setting_packed);
-
-		rrr_settings_packed_prepare_for_network((struct rrr_setting_packed*) message);
-	}
-	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
-		msg_type = message->msg_type;
-		msg_size = message->msg_size;
-		msg_value = message->msg_value;
-	}
-	else {
-		RRR_MSG_ERR("Received socket message of unkown type %u in rrr_python3_socket_send\n", message->msg_type);
-		ret = 1;
-		goto out;
-	}
-
-	rrr_socket_msg_populate_head (
-			message,
-			msg_type,
-			msg_size,
-			msg_value
-	);
-	rrr_socket_msg_checksum_and_to_network_endian (
-			message
-	);
-
-	pthread_mutex_lock(&socket_data->stats_lock);
-	uint64_t time_send_start = rrr_time_get_64();
-	if (time_send_start - socket_data->time_start > 1000000) {
-		RRR_DBG_1 ("python3 socket send on socket %s fd %i pid %i messages %i\n",
-				rrr_python3_socket_get_filename(socket),
-				rrr_python3_socket_get_fd(socket),
-				getpid(),
-				socket_data->send_stats
-		);
-		socket_data->time_start = time_send_start;
-		socket_data->send_stats = 0;
-	}
-	pthread_mutex_unlock(&socket_data->stats_lock);
-
-	int max_retries = 1000000;
-
-	retry:
 	pthread_mutex_lock(&socket_data->send_lock);
-	ret = sendto(socket_data->connected_fd, message, msg_size, MSG_EOR|MSG_DONTWAIT, NULL, 0);
+
+	if (rrr_mmap_channel_write(socket_data->channel, message, MSG_TOTAL_SIZE(message)) != 0) {
+		RRR_MSG_ERR("Could not write to mmap channel in python3 socket\n");
+		ret = 1;
+	}
+
 	pthread_mutex_unlock(&socket_data->send_lock);
-	if (ret != (ssize_t) msg_size) {
-		if (ret == -1) {
-			if (--max_retries == 0) {
-				RRR_MSG_ERR("Max retries reached in rrr_python3_socket_send for socket %i pid %i\n",
-						socket_data->connected_fd, getpid()
-				);
-				ret = 1;
-				goto out;
-			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-				usleep(10);
-				goto retry;
-			}
-			else if (errno == EINTR) {
-				usleep(10);
-				goto retry;
-			}
-			else {
-				RRR_MSG_ERR("Error from send function in python3 unix socket fd %i pid %i: %s\n",
-						socket_data->connected_fd, getpid(), rrr_strerror(errno));
-				ret = 1;
-				goto out;
-			}
-		}
-		else {
-			RRR_MSG_ERR("Error while sending message in python3 socket, sent %i of %" PRIu32 " bytes\n",
-					ret, msg_size);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	pthread_mutex_lock(&socket_data->stats_lock);
-	socket_data->send_stats++;
-	pthread_mutex_unlock(&socket_data->stats_lock);
-	ret = 0;
-
-	out:
-	return ret;
-}
-
-struct socket_recv_callback_data {
-	struct rrr_socket_msg *result;
-	PyObject *socket;
-};
-
-static int __rrr_python3_socket_recv_callback (struct rrr_read_session *read_session, void *arg) {
-	int ret = 0;
-
-	struct socket_recv_callback_data *callback_data = arg;
-
-	struct rrr_socket_msg *tmp_head = (struct rrr_socket_msg *) read_session->rx_buf_ptr;
-
-	if (rrr_socket_msg_head_to_host_and_verify(tmp_head, read_session->rx_buf_wpos) != 0) {
-		RRR_MSG_ERR("Error while converting message head in python3 socket receive\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_socket_msg_check_data_checksum_and_length (tmp_head, read_session->rx_buf_wpos) != 0) {
-		RRR_MSG_ERR("Received message in python3 socket receive function with wrong checksum\n");
-		ret = 1;
-		goto out;
-	}
-
-	RRR_DBG_7 ("python3 socket recv on socket %s fd %i pid %i size %u\n",
-			rrr_python3_socket_get_filename(callback_data->socket),
-			rrr_python3_socket_get_fd(callback_data->socket),
-			getpid(), tmp_head->msg_size
-	);
-
-/*
-	if (ret != (int)tmp_head.msg_size) {
-		VL_MSG_ERR("Received a message in python3 socket receive function which says it has %u bytes, but we have read %i\n", tmp_head.msg_size, ret);
-		ret = 1;
-		goto out;
-	}
-*/
-	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(tmp_head)) {
-		struct rrr_message *message = (struct rrr_message *) read_session->rx_buf_ptr;
-		if (tmp_head->msg_size < sizeof(*message) - 1) {
-			RRR_MSG_ERR("Received an rrr_message in python3 socket receive function which was too short (%u < %lu)\n",
-					tmp_head->msg_size, sizeof(*message) - 1);
-			ret = 1;
-			goto out;
-		}
-		if (rrr_message_to_host_and_verify (message, tmp_head->msg_size)) {
-			RRR_MSG_ERR("Received an rrr_message in python3 socket receive function which could not be validated\n");
-			ret = 1;
-			goto out;
-		}
-	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(tmp_head)) {
-		rrr_message_addr_to_host((struct rrr_message_addr *) tmp_head);
-	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(tmp_head)) {
-		struct rrr_setting_packed *message = (struct rrr_setting_packed *) read_session->rx_buf_ptr;
-		rrr_settings_packed_to_host (message);
-		if (rrr_settings_packed_validate (message)) {
-			RRR_MSG_ERR("Received a setting message in python3 socket receive function which could not be validated\n");
-			ret = 1;
-			goto out;
-		}
-	}
-	else if (RRR_SOCKET_MSG_IS_CTRL(tmp_head)) {
-		rrr_u16 flags = RRR_SOCKET_MSG_CTRL_FLAGS(tmp_head);
-		flags &= ~(RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING|RRR_SOCKET_MSG_CTRL_F_RESERVED);
-		if (flags != 0) {
-			RRR_MSG_ERR("Received unknown flags %u in python3 socket control message\n", flags);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		RRR_MSG_ERR("Received a message in python3 socket receive function  of unknown type %u\n", tmp_head->msg_type);
-		ret = 1;
-		goto out;
-	}
-
-	callback_data->result = tmp_head;
-	read_session->rx_buf_ptr = NULL;
-
-	out:
-	return ret;
-}
-
-int rrr_python3_socket_recv (struct rrr_socket_msg **result, PyObject *socket) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
-	int ret = 0;
-
-	*result = NULL;
-
-	if (socket_data->connected_fd == 0) {
-		RRR_MSG_ERR("Cannot receive in python3 socket: Not connected\n");
-		ret = 1;
-		goto out;
-	}
-
-	struct socket_recv_callback_data callback_data = { NULL, socket };
-
-	ret = rrr_socket_read_message_default (
-			&socket_data->read_sessions,
-			socket_data->connected_fd,
-			sizeof(struct rrr_socket_msg),
-			4096,
-			0,
-			RRR_SOCKET_READ_METHOD_RECVFROM,
-			rrr_read_common_get_session_target_length_from_message_and_checksum,
-			NULL,
-			__rrr_python3_socket_recv_callback,
-			&callback_data
-	);
-
-	if (ret != RRR_SOCKET_OK) {
-		if (ret == RRR_SOCKET_READ_INCOMPLETE) {
-			ret = 0;
-			goto out;
-		}
-		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Soft error from python3 socket\n");
-			ret = 1;
-			goto out;
-		}
-		else {
-			RRR_MSG_ERR("Hard error from python3 socket\n");
-			ret = 1;
-			goto out;
-		}
-	}
-
-	*result = callback_data.result;
-
-	out:
-	return ret;
-}
-
-int rrr_python3_socket_accept (PyObject *self) {
-	PyObject *res = NULL;
-	int ret = 0;
-
-	res = rrr_python3_socket_f_accept(self, NULL);
-
-	ret = (PyObject_IsTrue(res) ? 0 : 1);
-	RRR_Py_XDECREF(res);
 
 	return ret;
-}
-
-void rrr_python3_socket_close (PyObject *self) {
-	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
-
-	if (socket_data->connected_fd > 0) {
-		rrr_socket_close(socket_data->connected_fd);
-		socket_data->connected_fd = 0;
-	}
-	if (socket_data->socket_fd > 0) {
-		rrr_socket_close(socket_data->socket_fd);
-		socket_data->socket_fd = 0;
-	}
 }

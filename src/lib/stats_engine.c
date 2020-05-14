@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netdb.h>
 #include <read.h>
 
-#include "../global.h"
+#include "log.h"
 #include "gnu.h"
 #include "stats_engine.h"
 #include "stats_message.h"

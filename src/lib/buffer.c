@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "buffer.h"
-#include "../global.h"
+#include "log.h"
 
 #define RRR_FIFO_BUFFER_DEBUG 1
 
