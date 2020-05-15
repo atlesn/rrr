@@ -345,13 +345,29 @@ int rrr_mqtt_client_connect (
 		goto out;
 	}
 
-	if (rrr_mqtt_conn_with_iterator_ctx_do (
-			&data->mqtt_data.connections,
-			*connection,
-			(struct rrr_mqtt_p *) connect,
-			rrr_mqtt_conn_iterator_ctx_send_packet
-	) != 0) {
-		RRR_MSG_ERR("Could not send CONNECT packet in rrr_mqtt_client_connect");
+	int connect_send_retry_attempts = 10;
+
+	while (--connect_send_retry_attempts > 0) {
+		if (rrr_mqtt_conn_with_iterator_ctx_do (
+				&data->mqtt_data.connections,
+				*connection,
+				(struct rrr_mqtt_p *) connect,
+				rrr_mqtt_conn_iterator_ctx_send_packet
+		) != 0) {
+			RRR_MSG_ERR("Could not send CONNECT packet in rrr_mqtt_client_connect");
+			ret = 1;
+			goto out;
+		}
+		usleep(200000); // 200ms
+
+		// This is set to non-zero when the packet has actually been sent
+		if (connect->last_attempt != 0) {
+			break;
+		}
+	}
+
+	if (connect->last_attempt == 0) {
+		RRR_MSG_ERR("Could not send CONNECT packet in rrr_mqtt_client_connect after multiple attempts, giving up\n");
 		ret = 1;
 		goto out;
 	}

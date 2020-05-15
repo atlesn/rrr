@@ -1378,7 +1378,9 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 			if (errno == EINTR) {
 				goto retry;
 			}
-			else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			else if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EPIPE) {
+				// EAGAIN and EWOULDBLOCK usually means TCP send buffer is full
+				// EPIPE usually means new connection not ready
 				ret = RRR_MQTT_CONN_BUSY;
 				goto out;
 			}
@@ -1387,6 +1389,7 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 		}
 		else if (bytes != data_size) {
+			// TODO : Should we recover from this?
 			RRR_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write, only %li of %li bytes were sent\n",
 					bytes, data_size);
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
@@ -1530,13 +1533,20 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 	);
 
 	if ((ret = __rrr_mqtt_connection_write (connection, (char*) &header, sizeof(header.type) + variable_int_length)) != 0) {
+		if (ret == RRR_MQTT_CONN_BUSY) {
+			RRR_DBG_3("Note: Connection busy while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+			goto out;
+		}
+
 		RRR_MSG_ERR("Error while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
 
 	if (packet->assembled_data_size > 0) {
 		if ((ret = __rrr_mqtt_connection_write (connection, packet->_assembled_data, packet->assembled_data_size)) != 0) {
-			RRR_MSG_ERR("Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+			// TODO : Recover from this?
+			RRR_MSG_ERR("Error: Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet. Fixed data was already sent, cannot recover from this.\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR;
 			goto out;
 		}
 	}
