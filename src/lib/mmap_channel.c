@@ -128,7 +128,7 @@ static int __rrr_mmap_channel_allocate (
 		do {
 			new_key = rrr_rand();
 //			printf("allocate shmget key %i pos %i size %lu\n", new_key, block_pos, data_size);
-			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) <= 0) {
+			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) == -1) {
 				if (errno == EEXIST) {
 					// OK, try another key
 				}
