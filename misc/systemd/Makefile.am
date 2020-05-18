@@ -1,2 +1,16 @@
 systemddir = @SYSTEMD_DIR@
+
+if RRR_SYSTEMD_NO_INSTALL
+else
 systemd_DATA = rrr.service
+endif
+
+install-data-local:
+	chmod +x make-service.sh && ./make-service.sh rrr.service @bindir@
+
+clean-local:
+	rm -f rrr.service
+
+confdir = @sysconfdir@/rrr.conf.d
+conf_DATA = rrr-dummy.conf
+

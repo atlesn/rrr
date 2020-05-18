@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #include "main.h"
 #include "global.h"
@@ -42,9 +43,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/stats_message.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
+#include "lib/map.h"
 #include "lib/fork.h"
+#include "lib/rrr_readdir.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr");
+
+#define RRR_CONFIG_FILE_SUFFIX ".conf"
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -76,7 +81,7 @@ int rrr_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE}"},
+		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
@@ -326,6 +331,123 @@ static int main_loop (
 		return ret;
 }
 
+static int get_config_files_test_open (const char *path) {
+	int fd_tmp = open(path, O_RDONLY);
+	if (fd_tmp == -1) {
+		return 1;
+	}
+	close(fd_tmp);
+	return 0;
+}
+
+static int get_config_files_suffix_ok (const char *check_path) {
+	const char *suffix = RRR_CONFIG_FILE_SUFFIX;
+
+	const char *check_pos = check_path + strlen(check_path) - 1;
+	const char *suffix_pos = suffix + strlen(suffix) - 1;
+
+	while (check_pos >= check_path && suffix_pos >= suffix) {
+		if (*check_pos != *suffix_pos) {
+				return 1;
+		}
+		check_pos--;
+		suffix_pos--;
+	}
+
+	return 0;
+}
+
+static int get_config_files_callback (struct dirent *entry, const char *resolved_path, unsigned char type, void *private_data) {
+	struct rrr_map *target = private_data;
+
+	(void)(entry);
+	(void)(type);
+
+	int ret = 0;
+
+	if (get_config_files_suffix_ok(resolved_path) != 0) {
+		RRR_DBG_1("Note: File '%s' found in a configuration directory did not have the correct suffix '%s', ignoring it.\n",
+				resolved_path, RRR_CONFIG_FILE_SUFFIX);
+		ret = 0;
+		goto out;
+	}
+
+	if (get_config_files_test_open(resolved_path) != 0) {
+		RRR_MSG_ERR("Configuration file %s could not be opened: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_map_item_add_new(target, resolved_path, "")) != 0) {
+		RRR_MSG_ERR("Could not add configuration file to list in get_config_files_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
+	int ret = 0;
+
+	const char *config_string;
+	int config_i = 0;
+	while ((config_string = cmd_get_value(cmd, "config", config_i)) != NULL) {
+		if (*config_string == '\0') {
+			break;
+		}
+
+		char cwd[PATH_MAX];
+		if (getcwd(cwd, sizeof(cwd)) == NULL) {
+			RRR_MSG_ERR("getcwd() failed in get_config_files: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+
+		if (chdir(config_string) == 0) {
+			if (chdir(cwd) != 0) {
+				RRR_MSG_ERR("Could not chdir() to original directory %s: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+			if ((ret = rrr_readdir_foreach (
+					config_string,
+					get_config_files_callback,
+					target
+			)) != 0) {
+				RRR_MSG_ERR("Error while reading configuration files in directory %s\n", config_string);
+				ret = 1;
+				goto out;
+			}
+		}
+		else if (errno == ENOTDIR) {
+			// OK (for now), not a directory
+			if (get_config_files_test_open(config_string) != 0) {
+				goto out_print_errno;
+			}
+			if ((ret = rrr_map_item_add_new(target, config_string, "")) != 0) {
+				RRR_MSG_ERR("Could not add configuration file to list in get_config_files\n");
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			goto out_print_errno;
+		}
+
+		config_i++;
+	}
+
+	goto out;
+	out_print_errno:
+		RRR_MSG_ERR("Error while accessing configuration file or directory %s: %s\n",
+				config_string, rrr_strerror(errno));
+		ret = 1;
+	out:
+		return ret;
+}
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		RRR_MSG_ERR("Library build version mismatch.\n");
@@ -336,7 +458,6 @@ int main (int argc, const char *argv[]) {
 
 	int is_child = 0;
 
-	const char *config_string = NULL;
 	int ret = EXIT_SUCCESS;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
@@ -347,6 +468,8 @@ int main (int argc, const char *argv[]) {
 	struct rrr_fork_default_exit_notification_data exit_notification_data = {
 			&some_fork_has_stopped
 	};
+
+	struct rrr_map config_file_map = {0};
 
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
@@ -374,8 +497,12 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
-	if (cmd_get_value(&cmd, "config", 0) == NULL) {
-		RRR_MSG_ERR("No configuration file specified\n");
+	if (get_config_files (&config_file_map, &cmd) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	if (RRR_MAP_COUNT(&config_file_map) == 0) {
+		RRR_MSG_ERR("No configuration files were found\n");
 		ret = 1;
 		goto out_cleanup_signal;
 	}
@@ -388,12 +515,10 @@ int main (int argc, const char *argv[]) {
 
 	// Load configuration and fork
 	int config_i = 0;
-	while ((config_string = cmd_get_value(&cmd, "config", config_i)) != NULL) {
-		if (*config_string == '\0') {
-			break;
-		}
+	RRR_MAP_ITERATE_BEGIN(&config_file_map);
+	 	 // We fork one child for every specified config file
 
-		// We fork one child for every specified config file
+		const char *config_string = node->tag;
 
 		pid_t pid = rrr_fork (
 				fork_handler,
@@ -426,7 +551,7 @@ int main (int argc, const char *argv[]) {
 
 		increment:
 		config_i++;
-	}
+	RRR_MAP_ITERATE_END();
 
 	while (main_running) {
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
@@ -461,9 +586,10 @@ int main (int argc, const char *argv[]) {
 			RRR_DBG_1("Exiting program without errors\n");
 		}
 		else {
-			RRR_DBG_1("Exiting program with errors\n");
+			RRR_DBG_1("Exiting program following one or more errors\n");
 		}
 		cmd_destroy(&cmd);
+		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
 		return ret;
 }

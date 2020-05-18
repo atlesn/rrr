@@ -79,6 +79,37 @@ int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item) {
 	return 0;
 }
 
+int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	// Remember + 1 and minimum size 1
+	size_t tag_size = (tag != NULL ? strlen(tag) + 1 : 1);
+	size_t value_size = (value != NULL ? strlen(value) + 1 : 1);
+	size_t max_size = (tag_size > value_size ? tag_size : value_size);
+
+	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
+		goto out;
+	}
+
+	if (tag != NULL) {
+		memcpy(item_new->tag, tag, tag_size);
+	}
+	if (value != NULL) {
+		memcpy(item_new->value, value, value_size);
+	}
+
+	RRR_LL_APPEND(map, item_new);
+	item_new = NULL;
+
+	out:
+	if (item_new != NULL) {
+		rrr_map_item_destroy(item_new);
+	}
+	return ret;
+}
+
 int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter) {
 	int ret = 0;
 	struct rrr_map_item *column = NULL;

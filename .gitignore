@@ -26,6 +26,7 @@ input_data
 /debian/debhelper-build-stamp
 /debian/files
 /debian/.debhelper/
+/debian/*.debhelper
 /debian/tmp/
 # http://www.gnu.org/software/automake
 

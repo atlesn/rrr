@@ -64,6 +64,11 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
+AC_MSG_CHECKING([for RRR config file directory])
+RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
+AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
+AC_SUBST(RRR_CONF_DIR)
+
 SHELL_VARS_INIT([variables.sh])
 
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
@@ -354,13 +359,32 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	SYSTEMD_INIT
 	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
 
-	AC_CONFIG_FILES([misc/systemd/rrr.service])
+	AC_CONFIG_FILES([misc/systemd/make-service.sh])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
 
 	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
 ],[
 	AC_MSG_RESULT([no])
 ])
+
+AC_MSG_CHECKING([for systemd service file no installation command])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
+	AC_MSG_RESULT([yes])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for systemd username])
+AS_IF([test "x$RRR_SYSTEMD_USERNAME" != "x"] , [
+	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME}])
+], [
+	RRR_SYSTEMD_USERNAME=daemon
+	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME} (by default)])
+])
+AC_SUBST(RRR_SYSTEMD_USERNAME)
+
+
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
