@@ -9,7 +9,7 @@ install-data-local:
 	chmod +x make-service.sh && ./make-service.sh rrr.service @bindir@
 
 clean-local:
-	rm -f rrr.service
+	echo "# DO NOT DELETE THIS FILE" > rrr.service
 
 confdir = @sysconfdir@/rrr.conf.d
 conf_DATA = rrr-dummy.conf
