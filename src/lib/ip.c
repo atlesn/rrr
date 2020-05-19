@@ -589,6 +589,12 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		goto out_free_accept;
 	}
 
+	uint64_t timeout = 3000000; // 3s
+	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) != 0) {
+		RRR_MSG_ERR("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
+		goto out_free_accept;
+	}
+
     accept_result->ip_data.fd = fd;
     accept_result->len = addr_len;
     memcpy (&accept_result->addr, addr, addr_len);
@@ -638,6 +644,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     	goto out_error;
     }
 
+    int i = 1;
     struct addrinfo *rp;
     for (rp = addrinfo_result; rp != NULL; rp = rp->ai_next) {
     	fd = rrr_socket (
@@ -652,17 +659,25 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     		continue;
     	}
 
+    	RRR_DBG_1("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
+    			i, host, port, rp->ai_addr->sa_family);
+
     	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
     		break;
     	}
 
+    	uint64_t timeout = 3000000; // 3s
+    	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
+    		break;
+    	}
     	rrr_socket_close(fd);
+    	i++;
     }
 
     freeaddrinfo(addrinfo_result);
 
     if (fd < 0 || rp == NULL) {
-		RRR_MSG_ERR ("Could not create socket for host '%s'\n", host);
+		RRR_MSG_ERR ("Could not create socket for host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		goto out_error;
     }
 

@@ -638,6 +638,25 @@ int rrr_socket_connect_nonblock_postcheck (
 	return ret;
 }
 
+int rrr_socket_connect_nonblock_postcheck_loop (
+		int fd,
+		uint64_t timeout_ms
+) {
+	int ret = 0;
+
+	uint64_t time_end = rrr_time_get_64() + timeout_ms;
+
+	while (rrr_time_get_64() < time_end) {
+		if ((ret = rrr_socket_connect_nonblock_postcheck(fd)) == 0) {
+			goto out;
+		}
+		usleep(10000); // 10 ms
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_socket_connect_nonblock (
 		int fd,
 		struct sockaddr *addr,

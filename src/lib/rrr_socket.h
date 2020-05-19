@@ -100,6 +100,10 @@ int rrr_socket_unix_create_bind_and_listen (
 int rrr_socket_connect_nonblock_postcheck (
 		int fd
 );
+int rrr_socket_connect_nonblock_postcheck_loop (
+		int fd,
+		uint64_t timeout_ms
+);
 int rrr_socket_connect_nonblock (
 		int fd,
 		struct sockaddr *addr,
