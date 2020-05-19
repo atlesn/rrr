@@ -2,6 +2,7 @@
 
 OUTPUT=$1
 BINDIR=$2
+CONFDIR=$3
 
 rm -f $OUTPUT
 
@@ -11,7 +12,7 @@ echo "Description=@PACKAGE_STRING@" >> $OUTPUT
 echo >> $OUTPUT
 
 echo "[Service]" >> $OUTPUT
-echo "ExecStart=${BINDIR}/rrr @RRR_CONF_DIR@/" >> $OUTPUT
+echo "ExecStart=${BINDIR}/rrr ${CONFDIR}/" >> $OUTPUT
 echo "KillSignal=SIGINT" >> $OUTPUT
 echo "User=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
 echo "Group=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
