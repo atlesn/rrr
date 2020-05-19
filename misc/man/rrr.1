@@ -1,10 +1,10 @@
-.Dd 2020-01-22
+.Dd 2020-05-19
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .SH SYNOPSIS
-.B rrr {CONFIGURATION FILE}
+.B rrr {CONFIGURATION FILES OR DIRECTORIES}
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-W|--no_watchdog_timers]
@@ -40,7 +40,18 @@ usually does not make
 .B rrr
 quit, all instances are simply restarted.
 .PP
+If
+.B rrr
+is started with multiple configuration files, one fork is created for each of the files. Note that
+all forks will be stopped and the program will exit if a single one of them fails.
+.PP
+When multiple configuration files are loaded by the same program, the name of the configuration file
+of a fork is included in the logging output when it prints something.
+.PP
 .SH OPTIONS
+One or more configuration files or directories must always be specified. If a directory is specified,
+all files inside it with names ending in .conf will be loaded. Subdirectories are not checked.
+.PP
 .IP -d|--debuglevel[=]FLAGS
 .IP -D|--debuglevel_on_exit[=]FLAGS
 A debuglevel may be specified at command line making
