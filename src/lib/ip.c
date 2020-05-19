@@ -663,13 +663,15 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     			i, host, port, rp->ai_addr->sa_family);
 
     	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
-    		break;
+        	uint64_t timeout = 3000000; // 3s
+        	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
+        		break;
+        	}
+    	}
+    	else {
+    		// This means connection refused or some other error, skip to next
     	}
 
-    	uint64_t timeout = 3000000; // 3s
-    	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
-    		break;
-    	}
     	rrr_socket_close(fd);
     	i++;
     }

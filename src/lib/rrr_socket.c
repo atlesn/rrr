@@ -650,6 +650,13 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 		if ((ret = rrr_socket_connect_nonblock_postcheck(fd)) == 0) {
 			goto out;
 		}
+		else if (ret == RRR_SOCKET_HARD_ERROR) {
+			// Connection refused or some other error
+			goto out;
+		}
+		else {
+			// Soft error, try again
+		}
 		usleep(10000); // 10 ms
 	}
 
