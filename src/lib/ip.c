@@ -668,9 +668,8 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
         		break;
         	}
     	}
-    	else {
-    		// This means connection refused or some other error, skip to next
-    	}
+
+    	// This means connection refused or some other error, skip to next
 
     	rrr_socket_close(fd);
     	i++;
