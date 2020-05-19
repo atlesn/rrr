@@ -1,3 +1,18 @@
+rrr (0.18-1) unstable; urgency=medium
+
+  * Create new global fork and signal handling.
+  * Rewrite of python3 and test suite, python code only run in forks.
+  * Load multiple configuration files in same program
+  * New logging output style
+  * Optional systemd integration available with rrr.conf.d directory for configs
+  * Fix bugs after previous rewrite and build on different systems
+  * Disable MySQL test by default as this needs database setup
+  * By default disable USB
+  * Misc new configuration options
+  * Package for archlinux
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 19 May 2020 12:38:58 +0200
+
 rrr (0.18) unstable; urgency=medium
 
   * New message broker to transfer messages between modules with proper
