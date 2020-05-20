@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 
 #include "linked_list.h"
 #include "rrr_endian.h"
@@ -40,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "rrr_socket.h"
 #include "log.h"
+#include "rrr_umask.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -50,6 +52,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * main process can be added later, but they are not visible to
  * the fork. Also, new sockets in the fork are not visible to main.
  */
+
+// Allow read/write from self and group (mask away others)
+// (Should sockets have executable flag?)
+#define RRR_SOCKET_UNIX_DEFAULT_UMASK \
+	S_IROTH | S_IWOTH | S_IXOTH
 
 struct rrr_socket_holder {
 	RRR_LL_NODE(struct rrr_socket_holder);
@@ -169,7 +176,6 @@ int rrr_socket_get_filename_from_fd (
 	pthread_mutex_unlock(&socket_lock);
 	return ret;
 }
-
 
 int rrr_socket_get_options_from_fd (
 		struct rrr_socket_options *target,
@@ -482,6 +488,19 @@ int rrr_socket_close_all_no_unlink (void) {
 	return __rrr_socket_close_all_except(0, 1);
 }
 
+struct rrr_socket_bind_and_listen_umask_callback_data {
+	int fd;
+	struct sockaddr *addr;
+	socklen_t addr_len;
+	int num_clients;
+};
+
+static int __rrr_socket_bind_and_listen_umask_callback (void *callback_arg) {
+	struct rrr_socket_bind_and_listen_umask_callback_data *data = callback_arg;
+
+	return rrr_socket_bind_and_listen(data->fd, data->addr, data->addr_len, 0, data->num_clients);
+}
+
 int rrr_socket_unix_create_bind_and_listen (
 		int *fd_result,
 		const char *creator,
@@ -550,14 +569,23 @@ int rrr_socket_unix_create_bind_and_listen (
 		goto out;
 	}
 
-	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &addr, addr_len, 0, num_clients) != 0) {
+	struct rrr_socket_bind_and_listen_umask_callback_data callback_data = {
+		fd,
+		(struct sockaddr *) &addr,
+		addr_len,
+		num_clients
+	};
+
+	// The umask wrap is overkill as the global umask should have been set already, but
+	// maybe the umask needs to be configurable at a later time
+	if (rrr_umask_with_umask_lock_do(RRR_SOCKET_UNIX_DEFAULT_UMASK, __rrr_socket_bind_and_listen_umask_callback, &callback_data)) {
 		RRR_MSG_ERR("Could not bind an listen to socket in rrr_socket_unix_create_bind_and_listen\n");
 		ret = 1;
 		goto out;
 	}
 
-	RRR_DBG_7("rrr_socket_unix_create_bind_and_listen fd %i file %s pid %i clients %i\n",
-			fd, addr.sun_path, getpid(), num_clients);
+	RRR_DBG_7("rrr_socket_unix_create_bind_and_listen complete fd %i file %s pid %i clients %i umask %i\n",
+			fd, addr.sun_path, getpid(), num_clients, RRR_SOCKET_UNIX_DEFAULT_UMASK);
 
 	*fd_result = fd;
 	fd = 0;

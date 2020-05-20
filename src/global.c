@@ -21,6 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
@@ -57,6 +59,7 @@ void rrr_init_global_config (
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart
+
 ) {
 	pthread_mutex_lock(&global_config_mutex);
 	rrr_global_config.debuglevel = debuglevel;

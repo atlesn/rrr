@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 
@@ -46,10 +47,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/map.h"
 #include "lib/fork.h"
 #include "lib/rrr_readdir.h"
+#include "lib/rrr_umask.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr");
 
-#define RRR_CONFIG_FILE_SUFFIX ".conf"
+#define RRR_CONFIG_FILE_SUFFIX	".conf"
+#define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -472,6 +475,7 @@ int main (int argc, const char *argv[]) {
 	struct rrr_map config_file_map = {0};
 
 	struct cmd_data cmd;
+
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
@@ -493,9 +497,13 @@ int main (int argc, const char *argv[]) {
 
 	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
 
+	// Everything which might print debug stuff must be called after this
+	// as the global debuglevel is 0 up to now
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out_cleanup_signal;
 	}
+
+	rrr_umask_onetime_set_global(RRR_GLOBAL_UMASK);
 
 	if (get_config_files (&config_file_map, &cmd) != 0) {
 		goto out_cleanup_signal;

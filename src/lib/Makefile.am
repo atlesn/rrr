@@ -62,12 +62,18 @@ librrr_log_la_SOURCES = log.c
 librrr_log_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PRINTF ${AM_CFLAGS}
 librrr_log_la_LDFLAGS = -lpthread -ldl -lm
 
+libadd_rrr_umask = librrr_umask.la
+librrr_umask_la_SOURCES = rrr_umask.c
+librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
+librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
+
 libadd_all =	${libadd_perl5}			\
 				${libadd_python3}		\
 				${libadd_rrr_readdir}	\
 				${libadd_rrr_strerror}	\
 				${libadd_rrr_fork}		\
-				${libadd_rrr_log}
+				${libadd_rrr_log}		\
+				${libadd_rrr_umask}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD =  ${libadd_all}
