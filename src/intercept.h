@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // umask calls must be wrapped in global umask lock
 #ifndef RRR_INTERCEPT_ALLOW_UMASK
-#	define uname(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
+#	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
 #endif
 
 #endif /* RRR_INTERCEPT_H */
