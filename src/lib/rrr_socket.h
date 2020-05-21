@@ -22,7 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_H
 #define RRR_SOCKET_H
 
+// Allow SOCK_NONBLOCK on BSD
+#define __BSD_VISIBLE 1
 #include <sys/socket.h>
+#undef __BSD_VISIBLE
+
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>

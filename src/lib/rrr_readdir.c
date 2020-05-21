@@ -26,10 +26,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * we will not be able to use readdir()
  */
 
+// Allow S_IFDIR etc. on BSD
+#undef __XSI_VISIBLE
+#define __XSI_VISIBLE 1
+#	include <sys/stat.h>
+#undef __XSI_VISIBLE
+
 #include <errno.h>
 #include <dirent.h>
 #include <pthread.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>

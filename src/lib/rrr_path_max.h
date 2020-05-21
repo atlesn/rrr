@@ -25,8 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #if defined(__linux__) 
 #include <linux/limits.h>
 #elif defined(__OpenBSD__) || defined(__FreeBSD__)
-#include <sys/cdefs.h>
-#include <sys/syslimits.h>
+#	undef __POSIX_VISIBLE
+#	define __POSIX_VISIBLE 1
+#	include <limits.h>
+//#	include <sys/cdefs.h>
+//#	include <sys/syslimits.h>
+#	undef __POSIX_VISIBLE
 #endif
 
 #endif /* RRR_PATH_MAX_H */

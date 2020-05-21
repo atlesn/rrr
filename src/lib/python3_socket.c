@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Put first to avoid problems with other files including sys/time.h
+#include "vl_time.h"
+
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <fcntl.h>
@@ -31,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <read.h>
 
 #include "log.h"
-#include "vl_time.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
 #include "python3_vl_message.h"

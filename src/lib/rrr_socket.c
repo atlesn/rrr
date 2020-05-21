@@ -19,6 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Allow SOCK_NONBLOCK on BSD
+#define __BSD_VISIBLE 1
+#include <sys/socket.h>
+#undef __BSD_VISIBLE
+
 #include <stddef.h>
 #include <pthread.h>
 #include <errno.h>
@@ -27,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>

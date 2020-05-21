@@ -19,6 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Allow u_int which being used when including Perl.h
+#undef __BSD_VISIBLE
+#define __BSD_VISIBLE 1
+#include <sys/types.h>
+#undef __BSD_VISIBLE
+
 #include <pthread.h>
 #include <errno.h>
 #include <string.h>

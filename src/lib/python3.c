@@ -19,26 +19,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Put first to avoid problems with other files including sys/time.h
+#include "vl_time.h"
+
 #include <string.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <signal.h>
-
-//#include <ceval.h>
-//#include <cpython/pystate.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-//#include <pystate.h>
 #include <signal.h>
 
-#include <src/global.h>
 #include <stdlib.h>
-//#include <string.h>
 
+// Due to warnings in python (which defines this)
+#undef _POSIX_C_SOURCE
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#undef _POSIX_C_SOURCE
 
+#include "../global.h"
 #include "posix.h"
 #include "python3.h"
 #include "python3_common.h"
