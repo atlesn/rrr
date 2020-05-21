@@ -129,3 +129,4 @@ char *rrr_strcasestr (const char *haystack, const char *needle) {
 #endif
 	return ret;
 }
+

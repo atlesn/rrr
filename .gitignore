@@ -12,6 +12,9 @@
 /build_timestamp.h
 /build_directory.h
 input_data
+/src/tests/test.core
+/src/lib/test.core
+/src/test.core
 
 # debian
 /debian/rrr/
@@ -109,3 +112,6 @@ src/lib/perl5_xsi.c
 # http://www.gnu.org/software/texinfo
 
 /texinfo.tex
+
+# FreeBSD
+*~
