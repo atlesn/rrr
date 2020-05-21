@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 
+#include "slow_noop.h"
+
 #define RRR_LL_DID_DESTROY		0
 #define RRR_LL_DESTROY_ERR		1
 #define RRR_LL_DIDNT_DESTROY	2
@@ -295,7 +297,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	}} while(0)
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
-	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, asm(""), 0, 0, asm(""))
+	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(destroy_func)		\
 		if (linked_list_iterate_destroy) {								\
@@ -305,6 +307,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	RRR_LL_ITERATE_END()
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)	\
-	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, 0, asm(""), 0, 0, asm(""))
+	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())
 
 #endif /* RRR_LINKED_LIST_H */

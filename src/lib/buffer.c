@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "buffer.h"
 #include "log.h"
+#include "slow_noop.h"
 
 #define RRR_FIFO_BUFFER_DEBUG 1
 
@@ -944,7 +945,7 @@ void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 		uint64_t time_start = rrr_time_get_64();
 		long long int spin_time_orig = spin_time;
 		while (--spin_time > 0) {
-			asm("");
+			rrr_slow_noop();
 		}
 		uint64_t time_end = rrr_time_get_64();
 		uint64_t time_diff = (time_end - time_start) + 1; // +1 to prevent division by zero

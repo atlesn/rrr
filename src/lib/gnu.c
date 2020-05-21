@@ -129,3 +129,7 @@ char *rrr_strcasestr (const char *haystack, const char *needle) {
 #endif
 	return ret;
 }
+
+int rrr_slow_noop (void) {
+	return 0;
+}

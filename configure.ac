@@ -15,6 +15,20 @@ AC_CONFIG_MACRO_DIRS([m4])
 
 AC_CONFIG_SUBDIRS([src/blockdevlogger])
 
+dnl OpenBSD check for egcc
+AC_CHECK_PROG([EGCC], egcc, egcc)
+AC_MSG_CHECKING([for OpenBSD EGCC])
+AS_IF([test "x${EGCC}" != "x"], [
+       	AS_IF([test "x${CC}" != "x" ], [
+		AC_MSG_RESULT([found, but CC was already set to something (else)])
+	], [
+		CC=${EGCC}
+		AC_MSG_RESULT([${EGCC}])
+	])
+], [
+	AC_MSG_RESULT([no])
+])
+
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
 AC_PROG_CC
@@ -65,7 +79,7 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
 AC_MSG_CHECKING([for RRR config file directory])
