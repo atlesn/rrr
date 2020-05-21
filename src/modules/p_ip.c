@@ -187,10 +187,10 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		data->target_protocol = IP_DEFAULT_PROTOCOL;
 	}
 	else {
-		if (strcasecmp(protocol, "udp") == 0) {
+		if (rrr_posix_strcasecmp(protocol, "udp") == 0) {
 			data->target_protocol = RRR_IP_UDP;
 		}
-		else if (strcasecmp(protocol, "tcp") == 0) {
+		else if (rrr_posix_strcasecmp(protocol, "tcp") == 0) {
 			data->target_protocol = RRR_IP_TCP;
 		}
 		else {
@@ -923,7 +923,7 @@ static int ip_send_message (
 			final_size = entry->data_length;
 
 			RRR_DBG_3 ("ip instance %s sends packet (new attempt) with rrr message timestamp from %" PRIu64 " size %li\n",
-					INSTANCE_D_NAME(thread_data), be64toh(message->timestamp), final_size);
+					INSTANCE_D_NAME(thread_data), rrr_be64toh(message->timestamp), final_size);
 		}
 		else {
 			final_size = MSG_TOTAL_SIZE(message);
@@ -1222,7 +1222,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		) {
 			if (++consecutive_nothing_happened > 10) {
 //				printf ("Sleep: %u\n", consecutive_nothing_happened);
-				usleep(25000);
+				rrr_posix_usleep(25000);
 			}
 		}
 		else {

@@ -251,7 +251,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		}
 
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
-			usleep (50000); // 50 ms
+			rrr_posix_usleep (50000); // 50 ms
 		}
 	}
 

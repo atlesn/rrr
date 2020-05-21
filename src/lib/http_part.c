@@ -48,7 +48,7 @@ static int __rrr_http_part_check_content_type (
 		return 0;
 	}
 
-	if (strcasecmp(content_type->value, content_type_test) == 0) {
+	if (rrr_posix_strcasecmp(content_type->value, content_type_test) == 0) {
 		return 1;
 	}
 
@@ -161,9 +161,9 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
 		if (RRR_LL_FIRST(&field->fields) == node) {
-			if (strcasecmp(node->name, "form-data") != 0 &&
-					strcasecmp(node->name, "attachment") != 0 &&
-					strcasecmp(node->name, "inline") != 0
+			if (rrr_posix_strcasecmp(node->name, "form-data") != 0 &&
+					rrr_posix_strcasecmp(node->name, "attachment") != 0 &&
+					rrr_posix_strcasecmp(node->name, "inline") != 0
 			) {
 				RRR_DBG_1("Warning: Unknown content-disposition type '%s'\n", node->name);
 				RRR_LL_ITERATE_BREAK();
@@ -176,7 +176,7 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (strcasecmp(node->name, "name") || strcasecmp(node->name, "filename")) {
+		if (rrr_posix_strcasecmp(node->name, "name") || rrr_posix_strcasecmp(node->name, "filename")) {
 			if (rrr_http_util_unquote_string(node->value) != 0) {
 				RRR_DBG_1("Warning: Syntax error in 'name' or 'filename' field of content-disposition header\n");
 				RRR_LL_ITERATE_NEXT();
@@ -308,7 +308,7 @@ const struct rrr_http_field *__rrr_http_part_get_header_field_subvalue (
 	}
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		if (node->name != NULL && node->value != NULL && strcasecmp(node->name, subvalue_name) == 0) {
+		if (node->name != NULL && node->value != NULL && rrr_posix_strcasecmp(node->name, subvalue_name) == 0) {
 			return node;
 		}
 	RRR_LL_ITERATE_END();
@@ -1224,7 +1224,7 @@ int rrr_http_part_parse (
 				RRR_BUG("Numeric request method was non zero in rrr_http_part_parse\n");
 			}
 
-			if (strcasecmp(result->request_method_str, "GET") == 0) {
+			if (rrr_posix_strcasecmp(result->request_method_str, "GET") == 0) {
 				if (content_length != NULL && content_length->value_unsigned != 0) {
 					RRR_MSG_ERR("Content-length was non-zero for GET request\n");
 					ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -1233,17 +1233,17 @@ int rrr_http_part_parse (
 
 				result->request_method = RRR_HTTP_METHOD_GET;
 			}
-			else if (strcasecmp(result->request_method_str, "POST") == 0) {
-				if (content_type == NULL || strcasecmp(content_type->name, "application/octet-stream")) {
+			else if (rrr_posix_strcasecmp(result->request_method_str, "POST") == 0) {
+				if (content_type == NULL || rrr_posix_strcasecmp(content_type->name, "application/octet-stream")) {
 					result->request_method = RRR_HTTP_METHOD_POST_APPLICATON_OCTET_STREAM;
 				}
-				else if (strcasecmp(content_type->name, "multipart/form-data")) {
+				else if (rrr_posix_strcasecmp(content_type->name, "multipart/form-data")) {
 					result->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
 				}
-				else if (strcasecmp(content_type->name, "application/x-www-form-urlencoded")) {
+				else if (rrr_posix_strcasecmp(content_type->name, "application/x-www-form-urlencoded")) {
 					result->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
 				}
-				else if (strcasecmp(content_type->name, "text/plain")) {
+				else if (rrr_posix_strcasecmp(content_type->name, "text/plain")) {
 					result->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
 				}
 				else {
@@ -1273,7 +1273,7 @@ int rrr_http_part_parse (
 
 			goto out;
 		}
-		else if (transfer_encoding != NULL && strcasecmp(transfer_encoding->value, "chunked") == 0) {
+		else if (transfer_encoding != NULL && rrr_posix_strcasecmp(transfer_encoding->value, "chunked") == 0) {
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			result->is_chunked = 1;
 			RRR_DBG_3("HTTP chunked transfer encoding specified\n");

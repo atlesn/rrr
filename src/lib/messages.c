@@ -230,8 +230,8 @@ int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expecte
 		RRR_MSG_ERR("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
-	message->timestamp = be64toh(message->timestamp);
-	message->topic_length = be16toh(message->topic_length);
+	message->timestamp = rrr_be64toh(message->timestamp);
+	message->topic_length = rrr_be16toh(message->topic_length);
 
 	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
 		RRR_MSG_ERR("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
@@ -331,8 +331,8 @@ int rrr_message_set_topic (
 
 int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
 	// Assume network order if crc32 is set
-	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? be64toh(message_b->timestamp) : message_b->timestamp);
+	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
 
 	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
 }

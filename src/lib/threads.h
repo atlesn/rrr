@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
+#include "posix.h"
 #include "vl_time.h"
 #include "linked_list.h"
 #include "../global.h"
@@ -190,7 +191,7 @@ static inline void rrr_thread_signal_wait(struct rrr_thread *thread, int signal)
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		usleep (10000); // 10ms
+		rrr_posix_usleep (10000); // 10ms
 	}
 }
 
@@ -203,7 +204,7 @@ static inline void rrr_thread_signal_wait_with_watchdog_update(struct rrr_thread
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		usleep (10000); // 10ms
+		rrr_posix_usleep (10000); // 10ms
 	}
 }
 

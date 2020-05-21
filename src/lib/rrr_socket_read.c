@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "posix.h"
 #include "log.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
@@ -200,7 +201,7 @@ static int __rrr_socket_read_message_default_read (
 		}
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			if ((callback_data->socket_read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
-				usleep(10 * 1000);
+				rrr_posix_usleep(10 * 1000);
 			}
 			goto out;
 		}

@@ -819,15 +819,15 @@ int rrr_settings_iterate_packed (
 }
 
 void rrr_settings_packed_to_host (struct rrr_setting_packed *setting_packed) {
-	setting_packed->type = be32toh(setting_packed->type);
-	setting_packed->was_used = be32toh(setting_packed->was_used);
-	setting_packed->data_size = be32toh(setting_packed->data_size);
+	setting_packed->type = rrr_be32toh(setting_packed->type);
+	setting_packed->was_used = rrr_be32toh(setting_packed->was_used);
+	setting_packed->data_size = rrr_be32toh(setting_packed->data_size);
 }
 
 void rrr_settings_packed_prepare_for_network (struct rrr_setting_packed *message) {
-	message->type = htobe32(message->type);
-	message->was_used = htobe32(message->was_used);
-	message->data_size = htobe32(message->data_size);
+	message->type = rrr_htobe32(message->type);
+	message->was_used = rrr_htobe32(message->was_used);
+	message->data_size = rrr_htobe32(message->data_size);
 }
 
 

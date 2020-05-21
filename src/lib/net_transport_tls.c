@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
+#include "posix.h"
 #include "log.h"
 #include "net_transport.h"
 #include "net_transport_tls.h"
@@ -294,7 +295,7 @@ static int __rrr_net_transport_tls_connect (
 	retry_handshake:
 	if (BIO_do_handshake(ssl_data->web) != 1) {
 		if (BIO_should_retry(ssl_data->web)) {
-			usleep(1000);
+			rrr_posix_usleep(1000);
 			goto retry_handshake;
 		}
 		RRR_SSL_ERR("Could not do TLS handshake");

@@ -134,7 +134,7 @@ int main ( int argc, char** argv ) {
 	// just make only 1 measurement. If you want to do more just increase i to the wanted value
 	while ( i-- ) {
                 // wait for approx. 500ms for the next measruement
-		usleep ( 250000 );
+		rrr_posix_usleep ( 250000 );
 		
 		// trigger measurement
 		unsigned char outbuf[64];

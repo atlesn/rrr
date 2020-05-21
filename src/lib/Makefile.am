@@ -39,7 +39,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					stats_engine.c stats_instance.c stats_message.c stats_tree.c \
 					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c \
-					fixed_point.c slow_noop.c \
+					fixed_point.c slow_noop.c rrr_endian.c posix.c \
 					${mysql} ${encryption}
 
 libadd_rrr_readdir = librrr_readdir.la

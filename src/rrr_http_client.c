@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/posix.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/rrr_socket.h"
@@ -462,10 +463,10 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	int transport_code = RRR_HTTP_CLIENT_TRANSPORT_ANY;
 
 	if (data->protocol != NULL) {
-		if (strcasecmp(data->protocol, "http") == 0) {
+		if (rrr_posix_strcasecmp(data->protocol, "http") == 0) {
 			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
 		}
-		else if (strcasecmp(data->protocol, "https") == 0) {
+		else if (rrr_posix_strcasecmp(data->protocol, "https") == 0) {
 			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
 		}
 		else {

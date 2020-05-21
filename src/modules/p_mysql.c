@@ -925,7 +925,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 		if (data->mysql_connected != 1) {
 			// Sleep a little if we can't connect to the server
-			usleep (1000000);
+			rrr_posix_usleep (1000000);
 		}
 
 		if (err != 0) {

@@ -1318,7 +1318,7 @@ static int subscription_loop (struct mqtt_client_data *data) {
 			return 1;
 		}
 
-		usleep (5000); // 50 ms
+		rrr_posix_usleep (5000); // 50 ms
 	}
 
 	return 0;
@@ -1364,7 +1364,7 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 
 				return 1;
 			}
-			usleep (100 * 1000);
+			rrr_posix_usleep (100 * 1000);
 		}
 		else {
 			break;
@@ -1539,7 +1539,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			prev_stats_time = rrr_time_get_64();
 		}
 
-		usleep (5000); // 50 ms
+		rrr_posix_usleep (5000); // 50 ms
 	}
 
 	out_destroy_client:

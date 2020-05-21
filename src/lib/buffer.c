@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
+#include "posix.h"
 #include "buffer.h"
 #include "log.h"
 #include "slow_noop.h"
@@ -35,7 +36,7 @@ static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
 //	printf ("buffer %p write lock wait thread %lu\n", buffer, pthread_self());
 	while (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 	}
 //	printf ("buffer %p write lock done thread %lu\n", buffer, pthread_self());
 }
@@ -52,7 +53,7 @@ static inline void rrr_fifo_read_lock(struct rrr_fifo_buffer *buffer) {
 //	printf ("buffer %p read lock wait thread %lu\n", buffer, pthread_self());
 	while (pthread_rwlock_tryrdlock(&buffer->rwlock) != 0) {
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 	}
 //	printf ("buffer %p read lock done thread %lu\n", buffer, pthread_self());
 }
@@ -950,7 +951,7 @@ void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 		uint64_t time_end = rrr_time_get_64();
 		uint64_t time_diff = (time_end - time_start) + 1; // +1 to prevent division by zero
 		if (do_usleep) {
-			usleep(do_usleep);
+			rrr_posix_usleep(do_usleep);
 		}
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
 

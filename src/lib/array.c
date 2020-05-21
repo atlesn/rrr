@@ -881,9 +881,9 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 
 	head->type = new_type;
 	head->flags = node->flags;
-	head->tag_length = htobe32(node->tag_length);
-	head->elements = htobe32(node->element_count);
-	head->total_length = htobe32(written_bytes);
+	head->tag_length = rrr_htobe32(node->tag_length);
+	head->elements = rrr_htobe32(node->element_count);
+	head->total_length = rrr_htobe32(written_bytes);
 
 	if (written_bytes < node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_pack_callback, too few bytes written\n");
@@ -1131,9 +1131,9 @@ int rrr_array_message_to_collection (
 
 		rrr_type type = data_packed->type;
 		rrr_type_flags flags = data_packed->flags;
-		rrr_type_length tag_length = be32toh(data_packed->tag_length);
-		rrr_type_length total_length = be32toh(data_packed->total_length);
-		rrr_type_length elements = be32toh(data_packed->elements);
+		rrr_type_length tag_length = rrr_be32toh(data_packed->tag_length);
+		rrr_type_length total_length = rrr_be32toh(data_packed->total_length);
+		rrr_type_length elements = rrr_be32toh(data_packed->elements);
 
 		if (pos + tag_length + total_length > end) {
 			RRR_MSG_ERR("Length of type %u index %i in array message exceeds total length (%u > %li)\n",

@@ -361,7 +361,7 @@ int rrr_thread_start_all_after_initialized (
 				RRR_MSG_ERR ("Bug: Thread %s did not wait for start signal.\n", node->name);
 				exit (EXIT_FAILURE);
 			}
-			usleep (10000);
+			rrr_posix_usleep (10000);
 		}
 		if (was_initialized != 1) {
 			RRR_MSG_ERR ("Thread %s did not initialize itself in time\n", node->name);
@@ -385,7 +385,7 @@ int rrr_thread_start_all_after_initialized (
 	int must_retry = 0;
 	do {
 		if (must_retry == 1) {
-			usleep(5000); // 5 ms
+			rrr_posix_usleep(5000); // 5 ms
 		}
 		must_retry = 0;
 
@@ -452,7 +452,7 @@ int rrr_thread_start_all_after_initialized (
 	must_retry = 0;
 	do {
 		if (must_retry == 1) {
-			usleep(5000); // 5 ms
+			rrr_posix_usleep(5000); // 5 ms
 		}
 		must_retry = 0;
 
@@ -523,7 +523,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	RRR_DBG_1 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 
 	// Wait a bit in case main thread does stuff
-	usleep(20000);
+	rrr_posix_usleep(20000);
 
 	RRR_DBG_1 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
 
@@ -536,7 +536,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 #ifdef VL_THREAD_INCAPACITATE_WATCHDOGS
 	while (1) {
-		usleep(5000000);
+		rrr_posix_usleep(5000000);
 	}
 #endif
 
@@ -574,7 +574,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		}
 
 		prev_loop_time = rrr_time_get_64();
-		usleep (50000); // 50 ms
+		rrr_posix_usleep (50000); // 50 ms
 	}
 
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_STOPPED)) {
@@ -590,7 +590,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		int limit = 10;
 		while (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED) && limit > 0) {
 			RRR_DBG_1("Thread %s/%p wasn't finished starting, wait for it to initialize (try %i)\n", thread->name, thread, limit);
-			usleep (50000); // 50 ms (x 10)
+			rrr_posix_usleep (50000); // 50 ms (x 10)
 			limit--;
 		}
 		if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
@@ -615,7 +615,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			if (thread->cancel_function != NULL) {
 				int res = thread->cancel_function(thread);
 				RRR_MSG_ERR ("Thread %s/%p result from custom cancel function: %i\n", thread->name, thread, res);
-				usleep(1000000); // 1 s
+				rrr_posix_usleep(1000000); // 1 s
 			}
 			else {
 				pthread_cancel(thread->thread);
@@ -623,7 +623,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			break;
 		}
 
-		usleep (10000); // 10 ms
+		rrr_posix_usleep (10000); // 10 ms
 	}
 #else
 	RRR_DBG_1 ("Thread watchdog cancelling disabled, soft stop signals only\n");
@@ -664,7 +664,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			break;
 		}
 
-		usleep (10000); // 10 ms
+		rrr_posix_usleep (10000); // 10 ms
 	}
 
 	RRR_DBG_1 ("Thread %s/%p finished.\n", thread->name, thread);

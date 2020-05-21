@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
+#include "posix.h"
 #include "log.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
@@ -218,7 +219,7 @@ int rrr_socket_client_collection_read (
 	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000);
 
 	if (RRR_LL_COUNT(collection) == 0 && (read_flags_socket & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
-		usleep(10 * 1000);
+		rrr_posix_usleep(10 * 1000);
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);

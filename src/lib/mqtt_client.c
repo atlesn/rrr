@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <stdlib.h>
 
+#include "posix.h"
 #include "log.h"
 #include "mqtt_client.h"
 #include "mqtt_common.h"
@@ -226,7 +227,7 @@ int rrr_mqtt_client_connect (
 	struct rrr_mqtt_session *session = NULL;
 
 	// Sleep a bit in case server runs in the same RRR program
-	usleep(500000); // 500ms
+	rrr_posix_usleep(500000); // 500ms
 
 	if (rrr_mqtt_conn_collection_connect(connection, &data->mqtt_data.connections, port, server) != 0) {
 		RRR_MSG_ERR("Could not connect to mqtt server '%s'\n", server);
@@ -358,7 +359,7 @@ int rrr_mqtt_client_connect (
 			ret = 1;
 			goto out;
 		}
-		usleep(200000); // 200ms
+		rrr_posix_usleep(200000); // 200ms
 
 		// This is set to non-zero when the packet has actually been sent
 		if (connect->last_attempt != 0) {

@@ -59,8 +59,8 @@ int rrr_stats_message_unpack_callback (
 		goto out;
 	}
 
-	uint16_t path_size = be16toh(source->path_size);
-	uint32_t flags = be32toh(source->flags);
+	uint16_t path_size = rrr_be16toh(source->path_size);
+	uint32_t flags = rrr_be32toh(source->flags);
 	uint8_t type = source->type;
 
 	if ((flags & ~(RRR_STATS_MESSAGE_FLAGS_ALL)) != 0) {
@@ -132,8 +132,8 @@ void rrr_stats_message_pack_and_flip (
 	*total_size = sizeof(*target) - sizeof(target->path_and_data) + path_and_data_size;
 
 	target->type = source->type;
-	target->flags = htobe32(source->flags);
-	target->path_size = htobe16(path_size);
+	target->flags = rrr_htobe32(source->flags);
+	target->path_size = rrr_htobe16(path_size);
 
 	memcpy(target->path_and_data, source->path, path_size);
 	memcpy(target->path_and_data + path_size, source->data, source->data_size);

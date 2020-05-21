@@ -13,7 +13,7 @@ int main (int argc, char **argv) {
 	} num;
 
 	for (int i = 0; i < 27; i++) {
-		num.num = htobe32(i + 1);
+		num.num = rrr_htobe32(i + 1);
 
 //		printf("%02x-%02x-%02x-%02x\n", num.bytes[0], num.bytes[1], num.bytes[2], num.bytes[3]);
 		write(1, &num, sizeof(num));

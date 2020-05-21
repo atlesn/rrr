@@ -50,12 +50,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		} while (0)
 
 #define PUT_U16(byte) do {					\
-		uint16_t data = htobe16(byte);		\
+		uint16_t data = rrr_htobe16(byte);		\
 		PUT_RAW(&data, sizeof(uint16_t));	\
 		} while (0)
 
 #define PUT_U32(byte) do {					\
-		uint32_t data = htobe32(byte);		\
+		uint32_t data = rrr_htobe32(byte);		\
 		PUT_RAW(&data, sizeof(uint32_t));	\
 		} while (0)
 

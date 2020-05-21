@@ -394,7 +394,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			consecutive_nothing_happened = 0;
 		}
 		else if (++consecutive_nothing_happened > 100) {
-			usleep(25000); // 25ms
+			rrr_posix_usleep(25000); // 25ms
 		}
 	}
 

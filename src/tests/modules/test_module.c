@@ -111,7 +111,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	rrr_thread_update_watchdog_time(thread_data->thread);
 
 	if (strcmp(data->test_method, "test_dummy") == 0) {
-		usleep(1000000); // 1s
+		rrr_posix_usleep(1000000); // 1s
 		ret = 0;
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {

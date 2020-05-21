@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <unistd.h>
 
+#include "posix.h"
 #include "log.h"
 #include "gnu.h"
 #include "base64.h"
@@ -628,7 +629,7 @@ int rrr_http_session_transport_ctx_receive (
 				: __rrr_http_session_receive_request_callback,
 			&callback_data
 	)) == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
-		usleep(500);
+		rrr_posix_usleep(500);
 	}
 
 	if (ret != 0) {

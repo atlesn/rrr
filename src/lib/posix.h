@@ -19,24 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_ENDIAN_H
-#define RRR_ENDIAN_H
+#ifndef RRR_POSIX_H
+#define RRR_POSIX_H
 
-#include <inttypes.h>
+#include <sys/types.h>
 
-uint16_t rrr_htobe16(uint16_t x);
-uint16_t rrr_htole16(uint16_t x);
-uint16_t rrr_be16toh(uint16_t x);
-uint16_t rrr_le16toh(uint16_t x);
+int rrr_posix_usleep(int useconds);
+void *rrr_posix_mmap (size_t size);
+int rrr_posix_strcasecmp (const char *a, const char *b);
+int rrr_posix_strncasecmp (const char *a, const char *b, size_t n);
 
-uint32_t rrr_htobe32(uint32_t x);
-uint32_t rrr_htole32(uint32_t x);
-uint32_t rrr_be32toh(uint32_t x);
-uint32_t rrr_le32toh(uint32_t x);
-
-uint64_t rrr_htobe64(uint64_t x);
-uint64_t rrr_htole64(uint64_t x);
-uint64_t rrr_be64toh(uint64_t x);
-uint64_t rrr_le64toh(uint64_t x);
-
-#endif /* RRR_ENDIAN_H */
+#endif /* RRR_POSIX_H */

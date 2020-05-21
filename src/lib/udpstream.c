@@ -251,17 +251,17 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	// A packed frame created locally has the payload stored separately
 	if (data_size > 0) {
-		frame->data_crc32 = htobe32(crc32buf((char *) data, data_size));
-		frame->data_size = htobe16(data_size);
+		frame->data_crc32 = rrr_htobe32(crc32buf((char *) data, data_size));
+		frame->data_size = rrr_htobe16(data_size);
 	}
 
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
-	frame->header_crc32 = htobe32(crc32buf(crc32_start_pos, crc32_size));
+	frame->header_crc32 = rrr_htobe32(crc32buf(crc32_start_pos, crc32_size));
 
 	RRR_DBG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
-			frame->header_crc32, be16toh(frame->data_size), frame->flags_and_type, be32toh(frame->connect_handle), be16toh(frame->stream_id));
+			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
 
 	memcpy(udpstream_data->send_buffer, frame, sizeof(*frame) - 1);
 	memcpy(udpstream_data->send_buffer + sizeof(*frame) - 1, data, data_size);
@@ -353,13 +353,13 @@ static int __rrr_udpstream_send_frame_ack (
 			stream_id, ack_id_first, ack_id_last, copies);
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_FRAME_ACK;
-	frame.stream_id = htobe16(stream_id);
-	frame.ack_data.ack_id_first = htobe32(ack_id_first);
-	frame.ack_data.ack_id_last = htobe32(ack_id_last);
+	frame.stream_id = rrr_htobe16(stream_id);
+	frame.ack_data.ack_id_first = rrr_htobe32(ack_id_first);
+	frame.ack_data.ack_id_last = rrr_htobe32(ack_id_last);
 
 	if (window_size != 0) {
 		frame.flags_and_type |= (RRR_UDPSTREAM_FRAME_FLAGS_WINDOW_SIZE << 4);
-		frame.window_size = htobe32(window_size);
+		frame.window_size = rrr_htobe32(window_size);
 	}
 
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, copies);
@@ -375,11 +375,11 @@ static int __rrr_udpstream_send_reset (
 	struct rrr_udpstream_frame_packed frame = {0};
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_RESET;
-	frame.stream_id = htobe16(stream_id);
+	frame.stream_id = rrr_htobe16(stream_id);
 
 	// If frame ID is zero, remote should perform a hard reset which implies creating a
 	// new connection and sending any data in send buffers again
-	frame.frame_id = htobe32(frame_id);
+	frame.frame_id = rrr_htobe32(frame_id);
 
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, 3);
 }
@@ -394,8 +394,8 @@ static int __rrr_udpstream_send_connect_response (
 	struct rrr_udpstream_frame_packed frame = {0};
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
-	frame.stream_id = htobe16(stream_id);
-	frame.connect_handle = htobe32(connect_handle);
+	frame.stream_id = rrr_htobe16(stream_id);
+	frame.connect_handle = rrr_htobe32(connect_handle);
 
 	return __rrr_udpstream_checksum_and_send_packed_frame(data, addr, socklen, &frame, NULL, 0, 3);
 }
@@ -450,7 +450,7 @@ static int __rrr_udpstream_send_connect (
 	struct rrr_udpstream_frame_packed frame = {0};
 
 	frame.flags_and_type = RRR_UDPSTREAM_FRAME_TYPE_CONNECT;
-	frame.connect_handle = htobe32(connect_handle);
+	frame.connect_handle = rrr_htobe32(connect_handle);
 
 	struct rrr_udpstream_stream *stream = NULL;
 	if ((stream = __rrr_udpstream_create_and_add_stream(data, addr, addr_len)) == NULL) {
@@ -836,11 +836,11 @@ static int __rrr_udpstream_handle_received_frame (
 	struct rrr_udpstream_frame *new_frame = NULL;
 
 	RRR_DBG_3("UDP-stream RX %u-%u crc32: %" PRIu32 " S: %u F/T: %u CH: %u\n",
-			be16toh(frame->stream_id),
-			be32toh(frame->frame_id),
+			rrr_be16toh(frame->stream_id),
+			rrr_be32toh(frame->frame_id),
 			frame->header_crc32,
-			be16toh(frame->data_size),
-			frame->flags_and_type, be32toh(frame->connect_handle)
+			rrr_be16toh(frame->data_size),
+			frame->flags_and_type, rrr_be32toh(frame->connect_handle)
 	);
 
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
@@ -1544,10 +1544,10 @@ static int __rrr_udpstream_send_frame_to_remote (
 	struct rrr_udpstream_frame_packed frame_packed = {0};
 
 	frame_packed.version = RRR_UDPSTREAM_VERSION;
-	frame_packed.frame_id = htobe32(frame->frame_id);
+	frame_packed.frame_id = rrr_htobe32(frame->frame_id);
 	frame_packed.flags_and_type = frame->flags_and_type;
-	frame_packed.stream_id = htobe16(stream->stream_id);
-	frame_packed.application_data = htobe64(frame->application_data);
+	frame_packed.stream_id = rrr_htobe16(stream->stream_id);
+	frame_packed.application_data = rrr_htobe64(frame->application_data);
 
 	return __rrr_udpstream_checksum_and_send_packed_frame (
 			data,

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
+#include "posix.h"
 #include "log.h"
 #include "../../build_directory.h"
 #include "common.h"
@@ -916,10 +917,10 @@ int rrr_perl5_hv_to_message (
 		// Not specified
 	}
 	else if (ip_so_type_len >= 3) {
-		if (strncasecmp("udp", so_type_str, 3) == 0) {
+		if (rrr_posix_strncasecmp("udp", so_type_str, 3) == 0) {
 			protocol = RRR_IP_UDP;
 		}
-		else if (strncasecmp("tcp", so_type_str, 3) == 0) {
+		else if (rrr_posix_strncasecmp("tcp", so_type_str, 3) == 0) {
 			protocol = RRR_IP_TCP;
 		}
 		else {

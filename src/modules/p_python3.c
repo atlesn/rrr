@@ -459,7 +459,7 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 //		printf("python3 reader tick: %u write done\n", tick);
 
 		if (data->message_counter == message_counter_old) {
-			usleep(10000);
+			rrr_posix_usleep(10000);
 		}
 
 		uint64_t now_time = rrr_time_get_64();
@@ -683,7 +683,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 		}
 
 		if (no_polling) {
-			usleep (10000);
+			rrr_posix_usleep (10000);
 		}
 		else {
 			if ((res = rrr_poll_do_poll_delete(thread_data, &poll, python3_poll_callback, 50)) != 0) {

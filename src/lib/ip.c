@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <read.h>
 
+#include "posix.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_accept_data.h"
@@ -349,7 +350,7 @@ int rrr_ip_send (
 			goto out;
 		}
 		else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			usleep(10);
+			rrr_posix_usleep(10);
 			goto retry;
 		}
 		else if (errno == EINTR) {

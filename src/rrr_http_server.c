@@ -485,7 +485,7 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 			break;
 		}
 
-		usleep(1000);
+		rrr_posix_usleep(1000);
 	}
 
 	printf ("Worker thread %p exiting\n", thread);
@@ -676,7 +676,7 @@ int main (int argc, const char *argv[]) {
 			}
 		}
 
-		usleep(500);
+		rrr_posix_usleep(500);
 	}
 
 	out:

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
+#include "posix.h"
 #include "fork.h"
 #include "log.h"
 #include "rrr_strerror.h"
@@ -56,7 +57,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 
 	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
-	if ((handler = mmap(NULL, RRR_FORK_HANDLER_ALLOCATION_SIZE, PROT_WRITE|PROT_READ, MAP_ANON|MAP_SHARED, -1, 0)) == MAP_FAILED) {
+	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
 		RRR_MSG_ERR("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_destroy_mutexattr;
@@ -179,7 +180,7 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
 
 		pthread_mutex_unlock (&handler->lock);
-		usleep(100000); // 100ms
+		rrr_posix_usleep(100000); // 100ms
 		pthread_mutex_lock (&handler->lock);
 	} while (active_forks > 0);
 

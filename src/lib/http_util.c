@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <stdarg.h>
 
+#include "posix.h"
 #include "log.h"
 #include "http_util.h"
 #include "gnu.h"
@@ -666,10 +667,10 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	}
 	else if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "://") == 0) {
 		ssize_t protocol_name_length = new_pos - pos;
-		if (protocol_name_length > 0 && strncasecmp(pos, "https", 5) == 0) {
+		if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "https", 5) == 0) {
 			uri_new->protocol = strdup("https");
 		}
-		else if (protocol_name_length > 0 && strncasecmp(pos, "http", 4) == 0) {
+		else if (protocol_name_length > 0 && rrr_posix_strncasecmp(pos, "http", 4) == 0) {
 			uri_new->protocol = strdup("http");
 		}
 		else {
@@ -785,10 +786,10 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	}
 
 	if (uri_new->port == 0 && uri_new->protocol != NULL) {
-		if (strcasecmp(uri_new->protocol, "https") == 0) {
+		if (rrr_posix_strcasecmp(uri_new->protocol, "https") == 0) {
 			uri_new->port = 443;
 		}
-		else if (strcasecmp(uri_new->protocol, "http") == 0) {
+		else if (rrr_posix_strcasecmp(uri_new->protocol, "http") == 0) {
 			uri_new->port = 80;
 		}
 	}

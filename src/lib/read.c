@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <string.h>
 
+#include "posix.h"
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
@@ -192,7 +193,7 @@ int rrr_read_message_using_callbacks (
 	if ((ret = function_poll(read_flags, functions_callback_arg)) != RRR_READ_OK) {
 		if (ret == RRR_READ_INCOMPLETE) {
 			if ((read_flags & RRR_READ_F_NO_SLEEPING) == 0) {
-				usleep(10 * 1000);
+				rrr_posix_usleep(10 * 1000);
 			}
 		}
 		else {

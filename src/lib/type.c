@@ -106,7 +106,7 @@ static uint64_t __rrr_type_expand_be (
 	}
 
 	temp.temp_b[0] |= sign;
-	temp.temp_f = be64toh(temp.temp_f);
+	temp.temp_f = rrr_be64toh(temp.temp_f);
 	return temp.temp_f;
 }
 
@@ -141,7 +141,7 @@ static uint64_t __rrr_type_expand_le (
 		pos++;
 	}
 
-	temp.temp_f = le64toh(temp.temp_f);
+	temp.temp_f = rrr_le64toh(temp.temp_f);
 
 	return temp.temp_f;
 }
@@ -576,7 +576,7 @@ static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
 	const char *pos = node->data;
 	for (unsigned int i = 0; i < array_size; i++) {
 		rrr_type_be tmp = *((rrr_type_be *) pos);
-		*((rrr_type_be *) pos) = be64toh(tmp);
+		*((rrr_type_be *) pos) = rrr_be64toh(tmp);
 		pos += sizeof(rrr_type_be);
 	}
 
@@ -604,7 +604,7 @@ static int __rrr_type_64_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
 	for (unsigned int i = 0; i < array_size; i++) {
 		const char *rpos = node->data + pos;
 		char *wpos = target + pos;
-		*((rrr_type_be *) wpos) = htobe64(*((rrr_type_be *) rpos));
+		*((rrr_type_be *) wpos) = rrr_htobe64(*((rrr_type_be *) rpos));
 
 		pos += sizeof(rrr_type_be);
 	}

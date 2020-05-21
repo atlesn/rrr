@@ -152,10 +152,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // This CRC32 verifies the header only and is used to make sure the data length specified in
 // a frame is valid.
 #define RRR_UDPSTREAM_FRAME_PACKED_HEADER_CRC32(frame) \
-	(be32toh((frame)->header_crc32))
+	(rrr_be32toh((frame)->header_crc32))
 
 #define RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) \
-	(be16toh((frame)->data_size))
+	(rrr_be16toh((frame)->data_size))
 #define RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame) \
 	(sizeof(*(frame)) - 1 + RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame))
 
@@ -169,19 +169,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // checked when frames are received, and it is not a problem if this changes
 // as long as the same stream ID is used and the connection does not time out.
 #define RRR_UDPSTREAM_FRAME_PACKED_STREAM_ID(frame) \
-	(be16toh((frame)->stream_id))
+	(rrr_be16toh((frame)->stream_id))
 
 // Number to identify each frame. Begins with 1 for each new stream. The IDs
 // may become exhausted if there are a lot of traffic or for long-lasting streams,
 // after which a new stream must be initiated.
 #define RRR_UDPSTREAM_FRAME_PACKED_FRAME_ID(frame) \
-	(be32toh((frame)->frame_id))
+	(rrr_be32toh((frame)->frame_id))
 
 // Identifier chosen randomly to match sent CONNECT frames with received ones. It
 // is possible to have collisions (although unlikely), and a client might reject
 // a connection if a connect handle is already taken.
 #define RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(frame) \
-	(be32toh((frame)->connect_handle))
+	(rrr_be32toh((frame)->connect_handle))
 
 // Frame ACK messages contain an ACK range which specifies a low and high frame ID
 // for frames which are received. ACK frames are sent constantly for all messages
@@ -198,16 +198,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // window size to be reduced slightly. If there are no holes, the window size is carefully
 // increased.
 #define RRR_UDPSTREAM_FRAME_PACKED_ACK_FIRST(frame) \
-	(be32toh((frame)->ack_data.ack_id_first))
+	(rrr_be32toh((frame)->ack_data.ack_id_first))
 #define RRR_UDPSTREAM_FRAME_PACKED_ACK_LAST(frame) \
-	(be32toh((frame)->ack_data.ack_id_last))
+	(rrr_be32toh((frame)->ack_data.ack_id_last))
 
 #define RRR_UDPSTREAM_FRAME_PACKED_APPLICATION_DATA(frame) \
-	(be64toh((frame)->application_data))
+	(rrr_be64toh((frame)->application_data))
 
 // After a full frame with data is received, this checksum is verified
 #define RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame) \
-	(be32toh((frame)->data_crc32))
+	(rrr_be32toh((frame)->data_crc32))
 
 #define RRR_UDPSTREAM_FRAME_IS_BOUNDARY(frame) \
 	((RRR_UDPSTREAM_FRAME_FLAGS(frame) & RRR_UDPSTREAM_FRAME_FLAGS_BOUNDARY) != 0)

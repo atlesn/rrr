@@ -524,7 +524,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		int queue_count = 0;
 		rrr_thread_update_watchdog_time(thread_data->thread);
 		if (queue_or_delete_messages(&queue_count, data) != 0) {
-			usleep (10000); // 10 ms
+			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;
 		}
 		queued_total += queue_count;
@@ -540,7 +540,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		) != 0) {
 			RRR_MSG_ERR("UDP-stream regular tasks failed in send_packets of ipclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
-			usleep (10000); // 10 ms
+			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;
 		}
 		send_total += send_count;
@@ -550,12 +550,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 			if (consecutive_zero_recv_and_send > 1000) {
 /*				RRR_DEBUG_MSG_2("ipclient instance %s long sleep send buffer %i\n",
 						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_queue_intermediate));*/
-				usleep (100000); // 100 ms
+				rrr_posix_usleep (100000); // 100 ms
 			}
 			else {
 				sched_yield();
 				if (consecutive_zero_recv_and_send++ > 10) {
-					usleep(10);
+					rrr_posix_usleep(10);
 				}
 //				printf("ipclient instance %s yield\n", INSTANCE_D_NAME(thread_data));
 			}

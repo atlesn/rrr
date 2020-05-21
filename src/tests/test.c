@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../main.h"
 #include "../global.h"
 #include "../../build_timestamp.h"
+#include "../lib/posix.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
 #include "../lib/version.h"
@@ -364,13 +365,13 @@ int main (int argc, const char **argv) {
 
 	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
-			usleep(10000);
+			rrr_posix_usleep(10000);
 		}
 
 		ret = main_get_test_result(instances);
 
 #ifdef RRR_TEST_DELAYED_EXIT
-		usleep (3600000000); // 3600 seconds
+		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
 		main_threads_stop(collection, instances);

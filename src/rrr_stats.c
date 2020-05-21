@@ -19,19 +19,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Allow S_IFMT etc.
+#define _DEFAULT_SOURCE
+#include <sys/stat.h>
+#undef _DEFAULT_SOURCE
+
+#include <sys/types.h>
+#include <dirent.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <libgen.h>
 #include <errno.h>
-#include <sys/types.h>
 #include <limits.h>
-#include <dirent.h>
-#include <sys/stat.h>
 
 #include "global.h"
 #include "main.h"
+#include "lib/posix.h"
 #include "lib/vl_time.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -51,6 +56,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef _GNU_SOURCE
 #	error "Cannot use _GNU_SOURCE, would cause use of incorrect basename() function"
 #endif
+
 
 #define RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH \
 	RRR_TMP_PATH "/" RRR_STATS_SOCKET_PREFIX
@@ -268,7 +274,7 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 			}
 		}
 
-		usleep(50000); // 50ms
+		rrr_posix_usleep(50000); // 50ms
 	}
 
 	if (callback_data.message_count_ok == 0) {
@@ -692,11 +698,11 @@ int main (int argc, const char *argv[]) {
 				next_keep_alive = rrr_time_get_64() + (RRR_STATS_KEEPALIVE_INTERVAL_MS * 1000);
 			}
 
-			usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
+			rrr_posix_usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
 		}
 
 		if (rrr_stats_abort != 1 && data.socket_fd == 0) {
-			usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
+			rrr_posix_usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
 		}
 	}
 

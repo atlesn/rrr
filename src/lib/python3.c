@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "posix.h"
 #include "python3.h"
 #include "python3_common.h"
 #include "python3_setting.h"
@@ -662,7 +663,7 @@ void __rrr_py_persistent_process_loop (
 				goto out;
 			}
 		}
-		usleep (25000);
+		rrr_posix_usleep (25000);
 	}
 
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {

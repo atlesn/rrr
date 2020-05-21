@@ -100,10 +100,10 @@ int rrr_socket_msg_head_to_host_and_verify (
 		ssize_t expected_size
 ) {
 	message->header_crc32 = 0;
-	message->data_crc32 = be32toh(message->data_crc32);
-	message->msg_type = be16toh(message->msg_type);
-	message->msg_size = be32toh(message->msg_size);
-	message->msg_value = be32toh(message->msg_value);
+	message->data_crc32 = rrr_be32toh(message->data_crc32);
+	message->msg_type = rrr_be16toh(message->msg_type);
+	message->msg_size = rrr_be32toh(message->msg_size);
+	message->msg_value = rrr_be32toh(message->msg_value);
 
 	if (__rrr_socket_msg_head_validate (message, expected_size) != 0) {
 		RRR_MSG_ERR("Received socket message was invalid in rrr_socket_msg_head_to_host\n");
@@ -127,12 +127,12 @@ int rrr_socket_msg_get_target_size_and_check_checksum (
 	if (crc32cmp (
 			((char*) socket_msg) + sizeof(socket_msg->header_crc32),
 			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
-			be32toh(socket_msg->header_crc32)
+			rrr_be32toh(socket_msg->header_crc32)
 	) != 0) {
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
-	*target_size = be32toh(socket_msg->msg_size);
+	*target_size = rrr_be32toh(socket_msg->msg_size);
 
 	return RRR_SOCKET_OK;
 }

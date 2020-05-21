@@ -99,7 +99,7 @@ struct parse_state {
 	do {parse_state->start = parse_state->end;								\
 	parse_state->end = parse_state->start + 2;								\
 	PARSE_CHECK_END_AND_RETURN(parse_state->end,session);					\
-	(target)->packet_identifier = be16toh(*((uint16_t *) parse_state->start));\
+	(target)->packet_identifier = rrr_be16toh(*((uint16_t *) parse_state->start));\
 	if ((target)->packet_identifier == 0) {									\
 		RRR_MSG_ERR("Packet ID was zero while parsing packet of type %s\n",	\
 			session->type_properties->name);								\
@@ -121,7 +121,7 @@ struct parse_state {
 
 #define PARSE_U16_RAW(start,end,target)				\
 	PARSE_PREPARE_RAW(start,end,2);					\
-	(target) = be16toh(*((uint16_t*) (start)));
+	(target) = rrr_be16toh(*((uint16_t*) (start)));
 
 #define PARSE_U8(type,target)						\
 	PARSE_U8_RAW(parse_state->start,parse_state->end,(type)->target)
@@ -394,7 +394,7 @@ static int __rrr_mqtt_parse_blob (
 	*bytes_parsed = 2;
 
 	PARSE_CHECK_END_AND_RETURN_RAW(end,final_end);
-	*blob_length = be16toh(*((uint16_t *) start));
+	*blob_length = rrr_be16toh(*((uint16_t *) start));
 
 	*target = malloc((*blob_length) + 1);
 	if (*target == NULL){
@@ -487,7 +487,7 @@ static int __rrr_mqtt_parse_property_integer (struct rrr_mqtt_property *target, 
 		rpos--;
 	}
 
-	int_merged.result = be32toh(int_merged.result);
+	int_merged.result = rrr_be32toh(int_merged.result);
 
 	if ((ret = rrr_mqtt_property_save_uint32(target, int_merged.result)) != 0) {
 		return ret;
@@ -722,7 +722,7 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	PARSE_BEGIN(connect);
 
 	PARSE_PREPARE(2);
-	uint16_t protocol_name_length = be16toh(*((uint16_t *) parse_state->start));
+	uint16_t protocol_name_length = rrr_be16toh(*((uint16_t *) parse_state->start));
 
 	if (protocol_name_length > 6) {
 		RRR_MSG_ERR("Protocol name in connect packet was too long\n");

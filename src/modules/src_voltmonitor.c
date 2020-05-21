@@ -573,7 +573,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 		int millivolts;
 		if (usb_read_voltage(data, &millivolts) != 0) {
 			RRR_MSG_ERR ("voltmonitor: Voltage reading failed\n");
-			usleep (1000000); // 1000 ms
+			rrr_posix_usleep (1000000); // 1000 ms
 			continue;
 		}
 
@@ -585,7 +585,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 			}
 		}
 
-		usleep (250000); // 250 ms
+		rrr_posix_usleep (250000); // 250 ms
 
 	}
 

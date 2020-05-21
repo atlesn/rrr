@@ -63,7 +63,7 @@ void test_data_init (struct test_data *data) {
 	data->be3[0] = 1;
 	data->be3[1] = 2;
 
-	data->be2 = htobe16(-33);
+	data->be2 = rrr_htobe16(-33);
 
 	data->be1 = 1;
 

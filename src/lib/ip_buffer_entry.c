@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
+#include "posix.h"
 #include "log.h"
 #include "ip_buffer_entry.h"
 #include "messages.h"
@@ -56,7 +57,7 @@ void rrr_ip_buffer_entry_lock (struct rrr_ip_buffer_entry *entry) {
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
 		pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 		pthread_mutex_lock(&rrr_ip_buffer_master_lock);
 	}
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);

@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 
+#include "posix.h"
 #include "linked_list.h"
 #include "rrr_endian.h"
 #include "log.h"
@@ -685,7 +686,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 		else {
 			// Soft error, try again
 		}
-		usleep(10000); // 10 ms
+		rrr_posix_usleep(10000); // 10 ms
 	}
 
 	out:
@@ -757,7 +758,7 @@ int rrr_socket_unix_create_and_connect (
 		if (rrr_socket_connect_nonblock(socket_fd, (struct sockaddr *) &addr, addr_len) != 0) {
 			RRR_MSG_ERR("Could not connect to socket %s try %i of %i: %s\n",
 					filename, i, 10, rrr_strerror(errno));
-			usleep(25000);
+			rrr_posix_usleep(25000);
 		}
 		else {
 			connected = 1;
@@ -833,11 +834,11 @@ int rrr_socket_sendto_nonblock (
 	if (done_bytes_total != size) {
 		if (done_bytes <= 0) {
 			if (done_bytes == 0 || errno == EAGAIN || errno == EWOULDBLOCK) {
-				usleep(10);
+				rrr_posix_usleep(10);
 				goto retry;
 			}
 			else if (errno == EINTR) {
-				usleep(10);
+				rrr_posix_usleep(10);
 				goto retry;
 			}
 			else {
@@ -853,7 +854,7 @@ int rrr_socket_sendto_nonblock (
 			}
 		}
 		else {
-			usleep(10);
+			rrr_posix_usleep(10);
 			goto retry;
 		}
 	}

@@ -400,7 +400,7 @@ void terminate_child (struct perl5_data *data) {
 			INSTANCE_D_NAME(data->thread_data), pid);
 	kill(pid, SIGUSR1);
 
-	usleep(100000); // 100 ms
+	rrr_posix_usleep(100000); // 100 ms
 
 	RRR_DBG_1("perl5 instance %s SIGKILL to child process %i\n",
 			INSTANCE_D_NAME(data->thread_data), pid);
@@ -793,7 +793,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 		if (RRR_LL_COUNT(&child_data->deferred_messages) > 0) {
 			usleep_hits_a++;
-			usleep(5000); // 5 ms
+			rrr_posix_usleep(5000); // 5 ms
 			// Stop other sleep from running
 			consecutive_nothing_happend = 0;
 			RRR_LL_ITERATE_BEGIN(&child_data->deferred_messages, struct perl5_child_deferred_message);
@@ -864,7 +864,7 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 
 		if (++consecutive_nothing_happend > 250) {
 			usleep_hits_b++;
-			usleep(sleep_interval_us);
+			rrr_posix_usleep(sleep_interval_us);
 //			if (usleep_hits_b % 10 == 0) {
 //				printf("usleep hits child: %i/%i\n", usleep_hits_a, usleep_hits_b);
 //			}
@@ -1180,7 +1180,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 			if (prev_mmap_full_counter != data->mmap_full_counter) {
 				consecutive_nothing_happend = 0;
-				usleep(5000); // 5 ms
+				rrr_posix_usleep(5000); // 5 ms
 				usleep_hits_a++;
 			}
 		}
@@ -1196,11 +1196,11 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 		if (++consecutive_nothing_happend > 1000) {
 //			printf ("Nothing happened  1 000: %i\n", consecutive_nothing_happend);
-			usleep(250); // 250 us
+			rrr_posix_usleep(250); // 250 us
 		}
 		if (++consecutive_nothing_happend > 10000) {
 //			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
-			usleep (50000); // 50 ms
+			rrr_posix_usleep (50000); // 50 ms
 			usleep_hits_b++;
 		}
 

@@ -281,12 +281,12 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 			prev_stats_time = rrr_time_get_64();
 		}
 
-		usleep (5000); // 50 ms
+		rrr_posix_usleep (5000); // 50 ms
 	}
 
 	// If clients run on the same machine, we hope they close the connection first
 	// to await TCP timeout
-	usleep(500000); // 500 ms
+	rrr_posix_usleep(500000); // 500 ms
 
 	out_destroy_broker:
 		pthread_cleanup_pop(1);

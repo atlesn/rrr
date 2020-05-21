@@ -267,7 +267,7 @@ static int main_loop (
 
 	// Main loop
 	while (main_running) {
-		usleep (250000); // 250ms
+		rrr_posix_usleep (250000); // 250ms
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
@@ -283,7 +283,7 @@ static int main_loop (
 			rrr_message_broker_unregister_all_hard(&message_broker);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
-				usleep(1000000); // 1s
+				rrr_posix_usleep(1000000); // 1s
 				goto threads_restart;
 			}
 			else {
@@ -569,7 +569,7 @@ int main (int argc, const char *argv[]) {
 			goto out_cleanup_signal;
 		}
 
-		usleep(250000); // 250 ms
+		rrr_posix_usleep(250000); // 250 ms
 	}
 
 	out_cleanup_signal:
