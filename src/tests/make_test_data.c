@@ -77,7 +77,7 @@ void test_data_init (struct test_data *data) {
 	data->le3[1] = 2;
 	data->le3[2] = 1;
 
-	data->le2 = htole16(-33);
+	data->le2 = rrr_htole16(-33);
 
 	data->le1 = 1;
 

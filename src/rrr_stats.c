@@ -20,9 +20,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Allow S_IFMT etc.
-#define _DEFAULT_SOURCE
-#include <sys/stat.h>
 #undef _DEFAULT_SOURCE
+#undef __XSI_VISIBLE
+#define _DEFAULT_SOURCE
+#define __XSI_VISIBLE 1
+#	include <sys/stat.h>
+#undef _DEFAULT_SOURCE
+#undef __XSI_VISIBLE
 
 #include <sys/types.h>
 #include <dirent.h>

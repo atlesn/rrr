@@ -24,6 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Allow MAP_ANONYMOUS and strcasecmp
 #define _DEFAULT_SOURCE
 
+// Allow functions on BSD
+#define __BSD_VISIBLE 1
+
 #include <sys/mman.h>
 #include <time.h>
 #include <string.h>

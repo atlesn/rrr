@@ -20,6 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #define _GNU_SOURCE
+#define __BSD_VISIBLE 1
 
 #include <stdio.h>
 #include <stdarg.h>
