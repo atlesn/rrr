@@ -1,0 +1,80 @@
+Copyright 2020 Atle Solbakken <atle@goliathdns.no>
+
+1. RRR MODULE LICENSE VERSION 1
+
+This license applies to extensions of the software package
+"Read Route Record (RRR) initially created by Atle Solbakken. Other
+licenses may apply in addition to this licence. The authors of
+extensions may under certain conditions choose to have this license
+apply to their code.
+
+The RRR libraries are a collection of common functions used by the RRR
+executables and modules. Linking is the process of using these functions
+and making a binary file dependant on functions from the libraries.
+
+A module is an extension of RRR. When certain conditions are made, new
+modules may be linked with RRR libraries without any restrictions or
+requirements from in other licenses used by RRR.
+
+This license DOES NOT cover the situtation where a separate new
+executable is created which directly or indirectly is linked to
+the RRR libraries.
+
+The RRR libraries themselves are linked to other libraries. These
+libraries may have licenses which are incompatible with this licence,
+depending on which functions in the RRR which are utilized. When
+applying this license, care must be taken so that other licences are
+not violated. Most code in the RRR library however only depends on
+"C standard library" functions.
+
+Any newer version of this license may be used instead of this
+license even when not explicitly stated. However, any new restrictions
+or requirements imposed by a version does not apply to code licensed
+with this license unless explicitly accepted by copyright owners.
+
+2. LICENCE APPLICATION AND REQUIREMENTS
+
+Any code using this license must contain "RRR MODULE LICENCE VERSION 1"
+clearly visible at the top, and this full license document must be 
+distributed along with the code.
+
+If a module does not contain this header, the license does not apply,
+and other licenses used by RRR applies.
+
+Code licensed with this licence may have other licences applying
+simultaneously without any restrictions as long as they don't conflict
+with this license.
+
+3. LINKING COSTUM MODULES WITH RRR LIBRARIES
+
+A module is an object loaded into RRR, by RRR, and is interacting with
+RRR and other existing modules using functions provided in the RRR
+libraries.
+
+When the following conditions are met, the module may be linked with
+the RRR libraries, also by integrating it into the existing build system,
+without any restrictions or requirements.
+
+3.1. NEW FUNCTIONALLITY
+The module MUST provide completely new functionallity which RRR does not
+already have and MUST NOT be a rewrite of an existing module. The basic
+structure of a module, like how it starts and shuts down, MAY be copied
+from existing modules without restrictions or requirements.
+
+If another module providing similar or equal functionallity as the new
+module is added to RRR at a later time, this will not affect the already
+granted rights.
+
+3.2 MODIFICATIONS TO THE RRR LIBRARY
+If the RRR libraries are modified in any way to allow for the new module
+to function correctly, this license MAY NOT be used in the module.
+
+4. NON-COMPILED SCRIPTS RUN BY RRR
+
+A script is code which is run (to the user apparently) directly without
+the need of a compile stage. Some RRR modules may run such scripts
+directly, and provide RRR-functionallity inside those scripts.
+
+Such scripts may be used with RRR without any restrictions or
+requirements.
+
