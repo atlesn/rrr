@@ -51,10 +51,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
 #endif
 
-// Instead of using asm(""), use rrr_slow_noop() or something else
-#define asm(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_ASM
-#define __asm__(x)		RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_ASM
-// Don't intercept __asm which is used by for instance OpenBSD system headers
-
-
 #endif /* RRR_INTERCEPT_H */
