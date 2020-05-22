@@ -51,14 +51,14 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	*result = NULL;
 
 	if (pthread_mutexattr_init(&attr) != 0)  {
-		RRR_MSG_ERR("Could not initialize mutexattr in rrr_fork_handler_init\n");
+		RRR_MSG_0("Could not initialize mutexattr in rrr_fork_handler_init\n");
 		goto out;
 	}
 
 	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
 	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_destroy_mutexattr;
 	}
@@ -69,7 +69,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	handler->self_p = getpid();
 
 	if (pthread_mutex_init(&handler->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in rrr_fork_handler_init\n");
+		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
 
@@ -223,7 +223,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 				outwaited_children++;
 			}
 			else if (errno == ECHILD) {
-				RRR_MSG_ERR("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? Removing it.\n", node->pid);
+				RRR_MSG_0("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? Removing it.\n", node->pid);
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
@@ -273,7 +273,7 @@ pid_t rrr_fork (
 
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	if (result == NULL) {
-		RRR_MSG_ERR("No available fork slot while forking in rrr_fork\n");
+		RRR_MSG_0("No available fork slot while forking in rrr_fork\n");
 		ret = -1;
 		goto out_unlock;
 	}
@@ -281,7 +281,7 @@ pid_t rrr_fork (
 	ret = fork();
 
 	if (ret < 0) {
-		RRR_MSG_ERR("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));
 		ret = -1;
 		goto out_unlock;
 	}

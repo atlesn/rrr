@@ -72,7 +72,7 @@ static void __rrr_net_transport_handle_unlock(void *arg) {
 #define RRR_NET_TRANSPORT_HANDLE_GET_AND_LOCK(error_source) 											\
 	do {struct rrr_net_transport_handle *handle = NULL;													\
 	if ((handle = __rrr_net_transport_handle_get_and_lock(transport, transport_handle)) == NULL) {		\
-		RRR_MSG_ERR("Could not find transport handle %i in " error_source "\n", transport_handle);		\
+		RRR_MSG_0("Could not find transport handle %i in " error_source "\n", transport_handle);		\
 		return 1;																						\
 	}																									\
 	pthread_cleanup_push(__rrr_net_transport_handle_unlock, handle)
@@ -97,7 +97,7 @@ static int __rrr_net_transport_handle_create_and_push_return_locked (
 	struct rrr_net_transport_handle *new_handle = NULL;
 
 	if ((new_handle = malloc(sizeof(*new_handle))) == NULL) {
-		RRR_MSG_ERR("Could not allocate handle in __rrr_net_transport_handle_collection_handle_add_unlocked\n");
+		RRR_MSG_0("Could not allocate handle in __rrr_net_transport_handle_collection_handle_add_unlocked\n");
 		ret = 1;
 		goto out;
 	}
@@ -105,7 +105,7 @@ static int __rrr_net_transport_handle_create_and_push_return_locked (
 	memset(new_handle, '\0', sizeof(*new_handle));
 
 	if (pthread_mutex_init(&new_handle->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in __rrr_net_transport_handle_collection_handle_add_unlocked\n");
+		RRR_MSG_0("Could not initialize lock in __rrr_net_transport_handle_collection_handle_add_unlocked\n");
 		goto out_free;
 	}
 
@@ -148,7 +148,7 @@ int rrr_net_transport_handle_allocate_and_add_return_locked (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	if (RRR_LL_COUNT(collection) >= RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX) {
-		RRR_MSG_ERR("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
+		RRR_MSG_0("Error: Max number of handles (%i) reached in rrr_net_transport_handle_allocate_and_add\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = 1;
 		goto out;
@@ -175,7 +175,7 @@ int rrr_net_transport_handle_allocate_and_add_return_locked (
 	}
 
 	if (new_handle_id == 0) {
-		RRR_MSG_ERR("Max attempts reached while allocating handle in rrr_net_transport_handle_allocate_and_add\n");
+		RRR_MSG_0("Max attempts reached while allocating handle in rrr_net_transport_handle_allocate_and_add\n");
 		ret = 1;
 		goto out;
 	}
@@ -183,7 +183,7 @@ int rrr_net_transport_handle_allocate_and_add_return_locked (
 	collection->next_handle_position = new_handle_id + 1;
 
 	if (new_handle_id == 0) {
-		RRR_MSG_ERR("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
+		RRR_MSG_0("No free handles in rrr_net_transport_handle_collection_allocate_and_add_handle, max is %i\n",
 				RRR_NET_TRANSPORT_AUTOMATIC_HANDLE_MAX);
 		ret = 1;
 		goto out;
@@ -277,13 +277,13 @@ int rrr_net_transport_new (
 	};
 
 	if (new_transport == NULL) {
-		RRR_MSG_ERR("Could not allocate transport method in rrr_net_transport_new\n");
+		RRR_MSG_0("Could not allocate transport method in rrr_net_transport_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (pthread_mutex_init (&new_transport->handles.lock, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize handle collection lock in rrr_net_transport_new\n");
+		RRR_MSG_0("Could not initialize handle collection lock in rrr_net_transport_new\n");
 		ret = 1;
 		goto out_destroy;
 	}
@@ -345,7 +345,7 @@ int rrr_net_transport_handle_close (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 
 	if (did_destroy != 1) {
-		RRR_MSG_ERR("Could not find transport handle %i in rrr_net_transport_close\n", transport_handle);
+		RRR_MSG_0("Could not find transport handle %i in rrr_net_transport_close\n", transport_handle);
 		ret = 1;
 		goto out;
 	}
@@ -460,7 +460,7 @@ int rrr_net_transport_ctx_send_blocking (
 				size - written_bytes_total
 		)) != 0) {
 			if (ret != RRR_NET_TRANSPORT_SEND_SOFT_ERROR) {
-				RRR_MSG_ERR("Error from submodule send() in rrr_net_transport_send_blocking\n");
+				RRR_MSG_0("Error from submodule send() in rrr_net_transport_send_blocking\n");
 				break;
 			}
 		}
@@ -567,7 +567,7 @@ int rrr_net_transport_read_message_all_handles (
 				RRR_LL_ITERATE_NEXT(); // Skips unlock() at the bottom
 			}
 			else {
-				RRR_MSG_ERR("Error %i from read function in rrr_net_transport_read_message_all_handles\n", ret);
+				RRR_MSG_0("Error %i from read function in rrr_net_transport_read_message_all_handles\n", ret);
 				ret = 1;
 				RRR_LL_ITERATE_LAST();
 			}

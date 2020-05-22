@@ -115,7 +115,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 	}
 
 	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
-		RRR_MSG_ERR("Could not post main statistics message\n");
+		RRR_MSG_0("Could not post main statistics message\n");
 		return EXIT_FAILURE;
 	}
 
@@ -125,7 +125,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct instance_metadata_collection *instances) {
 	int ret = 0;
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
-		RRR_MSG_ERR("Error while obtaining statistics handle in main\n");
+		RRR_MSG_0("Error while obtaining statistics handle in main\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -197,7 +197,7 @@ static int main_loop (
 	rrr_global_config_set_log_prefix(config_file);
 
 	if ((config = rrr_config_parse_file(config_file)) == NULL) {
-		RRR_MSG_ERR("Configuration file parsing failed for %s\n", config_file);
+		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -208,7 +208,7 @@ static int main_loop (
 	if (RRR_DEBUGLEVEL_1) {
 		if (config != NULL && rrr_config_dump(config) != 0) {
 			ret = EXIT_FAILURE;
-			RRR_MSG_ERR("Error occured while dumping configuration\n");
+			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
 		}
 	}
@@ -225,7 +225,7 @@ static int main_loop (
 
 	if (cmd_exists(cmd, "stats", 0)) {
 		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
-			RRR_MSG_ERR("Could not initialize statistics engine\n");
+			RRR_MSG_0("Could not initialize statistics engine\n");
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
@@ -298,7 +298,7 @@ static int main_loop (
 		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
+			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
 	}
 
@@ -315,7 +315,7 @@ static int main_loop (
 		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
+			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
 		rrr_socket_close_all();
 
@@ -376,13 +376,13 @@ static int get_config_files_callback (struct dirent *entry, const char *resolved
 	}
 
 	if (get_config_files_test_open(resolved_path) != 0) {
-		RRR_MSG_ERR("Configuration file %s could not be opened: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Configuration file %s could not be opened: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_map_item_add_new(target, resolved_path, "")) != 0) {
-		RRR_MSG_ERR("Could not add configuration file to list in get_config_files_callback\n");
+		RRR_MSG_0("Could not add configuration file to list in get_config_files_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -403,14 +403,14 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 		char cwd[PATH_MAX];
 		if (getcwd(cwd, sizeof(cwd)) == NULL) {
-			RRR_MSG_ERR("getcwd() failed in get_config_files: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("getcwd() failed in get_config_files: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 
 		if (chdir(config_string) == 0) {
 			if (chdir(cwd) != 0) {
-				RRR_MSG_ERR("Could not chdir() to original directory %s: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("Could not chdir() to original directory %s: %s\n", rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -419,7 +419,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 					get_config_files_callback,
 					target
 			)) != 0) {
-				RRR_MSG_ERR("Error while reading configuration files in directory %s\n", config_string);
+				RRR_MSG_0("Error while reading configuration files in directory %s\n", config_string);
 				ret = 1;
 				goto out;
 			}
@@ -430,7 +430,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 				goto out_print_errno;
 			}
 			if ((ret = rrr_map_item_add_new(target, config_string, "")) != 0) {
-				RRR_MSG_ERR("Could not add configuration file to list in get_config_files\n");
+				RRR_MSG_0("Could not add configuration file to list in get_config_files\n");
 				ret = 1;
 				goto out;
 			}
@@ -444,7 +444,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 	goto out;
 	out_print_errno:
-		RRR_MSG_ERR("Error while accessing configuration file or directory %s: %s\n",
+		RRR_MSG_0("Error while accessing configuration file or directory %s: %s\n",
 				config_string, rrr_strerror(errno));
 		ret = 1;
 	out:
@@ -453,7 +453,7 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -510,7 +510,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if (RRR_MAP_COUNT(&config_file_map) == 0) {
-		RRR_MSG_ERR("No configuration files were found\n");
+		RRR_MSG_0("No configuration files were found\n");
 		ret = 1;
 		goto out_cleanup_signal;
 	}
@@ -534,7 +534,7 @@ int main (int argc, const char *argv[]) {
 				&exit_notification_data
 		);
 		if (pid < 0) {
-			RRR_MSG_ERR("Could not fork child process in main(): %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not fork child process in main(): %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_cleanup_signal;
 		}
@@ -565,7 +565,7 @@ int main (int argc, const char *argv[]) {
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 
 		if (some_fork_has_stopped) {
-			RRR_MSG_ERR("One or more forks has exited\n");
+			RRR_MSG_0("One or more forks has exited\n");
 			goto out_cleanup_signal;
 		}
 
@@ -591,10 +591,10 @@ int main (int argc, const char *argv[]) {
 
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
-			RRR_DBG_1("Exiting program without errors\n");
+			RRR_MSG_0("Exiting program without errors\n");
 		}
 		else {
-			RRR_DBG_1("Exiting program following one or more errors\n");
+			RRR_MSG_ERR("Exiting program following one or more errors\n");
 		}
 		cmd_destroy(&cmd);
 		rrr_map_clear(&config_file_map);

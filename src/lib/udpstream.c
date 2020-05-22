@@ -54,7 +54,7 @@ static int __rrr_udpstream_frame_new_from_data (
 
 	struct rrr_udpstream_frame *res = malloc(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_frame_new_from_data A\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_frame_new_from_data A\n");
 		ret = 1;
 		goto out;
 	}
@@ -67,7 +67,7 @@ static int __rrr_udpstream_frame_new_from_data (
 	if (data_size > 0) {
 		res->data = malloc(data_size);
 		if (res->data == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_frame_new_from_data B\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_udpstream_frame_new_from_data B\n");
 			ret = 1;
 			goto out;
 		}
@@ -103,7 +103,7 @@ static int __rrr_udpstream_frame_new_from_packed (
 
 	if (addr_len > 0) {
 		if ((result->source_addr = malloc(addr_len)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for address in __rrr_udpstream_frame_new_from_packed\n");
+			RRR_MSG_0("Could not allocate memory for address in __rrr_udpstream_frame_new_from_packed\n");
 			ret = 1;
 			goto out;
 		}
@@ -155,7 +155,7 @@ static int __rrr_udpstream_stream_new(struct rrr_udpstream_stream **target) {
 
 	struct rrr_udpstream_stream *res = malloc(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_stream_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_stream_new\n");
 		return 1;
 	}
 	memset(res, '\0', sizeof(*res));
@@ -234,7 +234,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 	if (udpstream_data->send_buffer == NULL) {
 		udpstream_data->send_buffer = malloc(RRR_UDPSTREAM_MESSAGE_SIZE_MAX);
 		if (udpstream_data->send_buffer == NULL) {
-			RRR_MSG_ERR("Could not allocate send buffer in __rrr_udpstream_checksum_and_send_packed_frame\n");
+			RRR_MSG_0("Could not allocate send buffer in __rrr_udpstream_checksum_and_send_packed_frame\n");
 			ret = 1;
 			goto out;
 		}
@@ -275,7 +275,7 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 #endif
 		int err;
 		if ((ret = rrr_ip_send(&err, udpstream_data->ip.fd, addr, addrlen, udpstream_data->send_buffer, sizeof(*frame) - 1 + data_size)) != 0) {
-			RRR_MSG_ERR("Could not send packed frame header in __rrr_udpstream_send_packed_frame\n");
+			RRR_MSG_0("Could not send packed frame header in __rrr_udpstream_send_packed_frame\n");
 			ret = 1;
 			goto out;
 		}
@@ -299,7 +299,7 @@ static struct rrr_udpstream_stream *__rrr_udpstream_create_and_add_stream (
 	new_stream->remote_addr_len = addr_len;
 	new_stream->remote_addr = malloc(new_stream->remote_addr_len);
 	if (new_stream->remote_addr == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for address in __rrr_udpstream_send_connect\n");
+		RRR_MSG_0("Could not allocate memory for address in __rrr_udpstream_send_connect\n");
 		__rrr_udpstream_stream_destroy(new_stream);
 		new_stream = NULL;
 		goto out;
@@ -441,7 +441,7 @@ static int __rrr_udpstream_send_connect (
 		*connect_handle_result = 0;
 		connect_handle = __rrr_udpstream_allocate_connect_handle(data);
 		if (connect_handle == 0) {
-			RRR_MSG_ERR("Could not allocate connect handle in __rrr_udpstream_send_connect\n");
+			RRR_MSG_0("Could not allocate connect handle in __rrr_udpstream_send_connect\n");
 			ret = 1;
 			goto out;
 		}
@@ -454,7 +454,7 @@ static int __rrr_udpstream_send_connect (
 
 	struct rrr_udpstream_stream *stream = NULL;
 	if ((stream = __rrr_udpstream_create_and_add_stream(data, addr, addr_len)) == NULL) {
-		RRR_MSG_ERR("Could not add stream to collection in __rrr_udpstream_send_connect\n");
+		RRR_MSG_0("Could not add stream to collection in __rrr_udpstream_send_connect\n");
 		ret = 1;
 		goto out;
 	}
@@ -462,7 +462,7 @@ static int __rrr_udpstream_send_connect (
 	stream->connect_handle = connect_handle;
 
 	if (__rrr_udpstream_checksum_and_send_packed_frame(data, stream->remote_addr, stream->remote_addr_len, &frame, NULL, 0, 3) != 0) {
-		RRR_MSG_ERR("Could not send CONNECT packet in __rrr_udpstream_send_connect\n");
+		RRR_MSG_0("Could not send CONNECT packet in __rrr_udpstream_send_connect\n");
 		ret = 1;
 		goto out;
 	}
@@ -510,7 +510,7 @@ static int __rrr_udpstream_frame_packed_validate (
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
 	if (crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
-		RRR_MSG_ERR("Header CRC32 mismatch in __rrr_udpstream_frame_pack_validate\n");
+		RRR_MSG_0("Header CRC32 mismatch in __rrr_udpstream_frame_pack_validate\n");
 		if (RRR_DEBUGLEVEL_2) {
 			__rrr_udpstream_frame_packed_dump(frame);
 		}
@@ -536,7 +536,7 @@ static int __rrr_udpstream_read_get_target_size (
 	}
 
 	if (__rrr_udpstream_frame_packed_validate(frame) != 0) {
-		RRR_MSG_ERR("Could not validate received frame in __rrr_udpstream_read_get_target_size\n");
+		RRR_MSG_0("Could not validate received frame in __rrr_udpstream_read_get_target_size\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -545,7 +545,7 @@ static int __rrr_udpstream_read_get_target_size (
 	ssize_t total_size = RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame);
 
 	if (RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame) > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT) {
-		RRR_MSG_ERR("UDP-stream received data size exceeded maximum (%li > %i)\n", total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
+		RRR_MSG_0("UDP-stream received data size exceeded maximum (%li > %i)\n", total_size, RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -608,7 +608,7 @@ static int __rrr_udpstream_update_stream_remote (
 		if (stream->remote_addr_len != addr_len || stream->remote_addr == NULL) {
 			RRR_FREE_IF_NOT_NULL(stream->remote_addr);
 			if ((stream->remote_addr = malloc(sizeof(*(stream->remote_addr)))) == NULL) {
-				RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_update_stream_remote\n");
+				RRR_MSG_0("Could not allocate memory in __rrr_udpstream_update_stream_remote\n");
 				ret = 1;
 				goto out;
 			}
@@ -639,12 +639,12 @@ static int __rrr_udpstream_handle_received_connect (
 	if (stream != NULL && stream->stream_id == 0) {
 		// We are expecting CONNECT response
 		if (stream->remote_addr_len != addr_len || memcmp(stream->remote_addr, src_addr, addr_len) != 0) {
-			RRR_MSG_ERR("Received CONNECT response from unexpected remote host\n");
+			RRR_MSG_0("Received CONNECT response from unexpected remote host\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 		if (frame->stream_id == 0) {
-			RRR_MSG_ERR("Received zero stream ID in CONNECT response in __rrr_udpstream_handle_received_connect, connection was rejected\n");
+			RRR_MSG_0("Received zero stream ID in CONNECT response in __rrr_udpstream_handle_received_connect, connection was rejected\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -670,7 +670,7 @@ static int __rrr_udpstream_handle_received_connect (
 		uint16_t stream_id = 0;
 
 		if ((data->flags & RRR_UDPSTREAM_FLAGS_ACCEPT_CONNECTIONS) == 0) {
-			RRR_MSG_ERR("Received CONNECT packet with handle %u in __rrr_udpstream_handle_received_connect, but we are neither expecting CONNECT response nor accepting connections\n",
+			RRR_MSG_0("Received CONNECT packet with handle %u in __rrr_udpstream_handle_received_connect, but we are neither expecting CONNECT response nor accepting connections\n",
 					RRR_UDPSTREAM_FRAME_PACKED_CONNECT_HANDLE(frame));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -682,7 +682,7 @@ static int __rrr_udpstream_handle_received_connect (
 		else {
 			if ((stream = __rrr_udpstream_find_stream_by_connect_handle(data, frame->connect_handle)) != NULL) {
 				if (__rrr_udpstream_update_stream_remote(stream, src_addr, addr_len) != 0) {
-					RRR_MSG_ERR("Could not update stream remote in __rrr_udpstream_handle_received_connect\n");
+					RRR_MSG_0("Could not update stream remote in __rrr_udpstream_handle_received_connect\n");
 					ret = RRR_SOCKET_HARD_ERROR;
 					goto out;
 				}
@@ -700,7 +700,7 @@ static int __rrr_udpstream_handle_received_connect (
 		stream_id = __rrr_udpstream_allocate_stream_id(data);
 		if (stream_id > 0) {
 			if ((stream = __rrr_udpstream_create_and_add_stream(data, src_addr, addr_len)) == NULL) {
-				RRR_MSG_ERR("Could not push new connection to buffer collections in __rrr_udpstream_handle_received_connect\n");
+				RRR_MSG_0("Could not push new connection to buffer collections in __rrr_udpstream_handle_received_connect\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -723,7 +723,7 @@ static int __rrr_udpstream_handle_received_connect (
 		RRR_DBG_2("Sending UDP-stream CONNECT response stream id %u connect handle %u\n",
 				stream_id, stream->connect_handle);
 		if (__rrr_udpstream_send_connect_response(data, src_addr, addr_len, stream_id, frame->connect_handle) != 0) {
-			RRR_MSG_ERR("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
+			RRR_MSG_0("Could not send connect response in __rrr_udpstream_handle_received_connect\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -797,7 +797,7 @@ static int __rrr_udpstream_handle_received_frame_control (
 			new_frame->application_data,
 			control_frame_listener_arg
 	)) != 0) {
-		RRR_MSG_ERR("Error from control frame listener in __rrr_udpstream_handle_received_frame_control\n");
+		RRR_MSG_0("Error from control frame listener in __rrr_udpstream_handle_received_frame_control\n");
 		goto out;
 	}
 
@@ -844,7 +844,7 @@ static int __rrr_udpstream_handle_received_frame (
 	);
 
 	if (__rrr_udpstream_frame_new_from_packed(&new_frame, frame, src_addr, addr_len) != 0) {
-		RRR_MSG_ERR("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
+		RRR_MSG_0("Could not allocate internal frame in __rrr_udpstream_handle_received_frame\n");
 		ret = RRR_SOCKET_HARD_ERROR;
 		goto out;
 	}
@@ -867,7 +867,7 @@ static int __rrr_udpstream_handle_received_frame (
 		if (!RRR_UDPSTREAM_FRAME_IS_RESET(frame)) {
 			RRR_DBG_2("Received UDP-stream packet with unknown stream ID %u, sending hard reset\n", new_frame->stream_id);
 			if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
-				RRR_MSG_ERR("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
+				RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 				ret = RRR_SOCKET_HARD_ERROR;
 				goto out;
 			}
@@ -883,7 +883,7 @@ static int __rrr_udpstream_handle_received_frame (
 	}
 	else {
 		if ((ret = __rrr_udpstream_update_stream_remote(stream, src_addr, addr_len)) != 0) {
-			RRR_MSG_ERR("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
+			RRR_MSG_0("Could not update remote stream address in __rrr_udpstream_handle_received_frame\n");
 			goto out;
 		}
 	}
@@ -942,7 +942,7 @@ static int __rrr_udpstream_handle_received_frame (
 				new_frame->stream_id, new_frame->frame_id);
 
 		if (__rrr_udpstream_send_reset(data, src_addr, addr_len, new_frame->stream_id, 0) != 0) {
-			RRR_MSG_ERR("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
+			RRR_MSG_0("Could not send UDP-stream hard reset in __rrr_udpstream_handle_received_frame\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -975,7 +975,7 @@ static int __rrr_udpstream_handle_received_frame (
 		}
 		if (node->frame_id < frame_id_max) {
 			RRR_LL_ITERATE_BEGIN(&stream->receive_buffer, struct rrr_udpstream_frame);
-				RRR_MSG_ERR("udpstream stream-id %u frame id %u dump recv buffer\n",
+				RRR_MSG_0("udpstream stream-id %u frame id %u dump recv buffer\n",
 						stream->stream_id, node->frame_id);
 			RRR_LL_ITERATE_END();
 			RRR_BUG("Order error in receive buffer in __rrr_udpstream_handle_received_frame\n");
@@ -1016,7 +1016,7 @@ static int __rrr_udpstream_read_callback (
 	callback_data->receive_count++;
 
 	if (read_session->rx_buf_wpos != (ssize_t) RRR_UDPSTREAM_FRAME_PACKED_TOTAL_SIZE(frame)) {
-		RRR_MSG_ERR("Size mismatch in __rrr_udpstream_read_callback, packet was invalid\n");
+		RRR_MSG_0("Size mismatch in __rrr_udpstream_read_callback, packet was invalid\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -1024,7 +1024,7 @@ static int __rrr_udpstream_read_callback (
 	ssize_t data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
 	if (data_size > 0) {
 		if (crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
-			RRR_MSG_ERR("CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
+			RRR_MSG_0("CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
@@ -1038,7 +1038,7 @@ static int __rrr_udpstream_read_callback (
 			callback_data->control_frame_listener,
 			callback_data->control_frame_listener_arg
 	)) != 0) {
-		RRR_MSG_ERR("Error while pushing received frame to buffer in __rrr_udpstream_read_callback\n");
+		RRR_MSG_0("Error while pushing received frame to buffer in __rrr_udpstream_read_callback\n");
 		goto out;
 	}
 
@@ -1107,14 +1107,14 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 						data->accumulated_data_size,
 						data->callback_validator_arg
 				)) != 0) {
-					RRR_MSG_ERR("Header validation failed of message in UDP-stream %u, data will be lost\n",
+					RRR_MSG_0("Header validation failed of message in UDP-stream %u, data will be lost\n",
 							data->stream->stream_id);
 					ret = 0;
 					goto loop_bottom_clenaup;
 				}
 
 				if (target_size != data->accumulated_data_size) {
-					RRR_MSG_ERR("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
+					RRR_MSG_0("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
 							data->stream->stream_id);
 					goto loop_bottom_clenaup;
 				}
@@ -1133,7 +1133,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 
 				// This function must always take care of or free memory in callback_data->data
 				if (data->receive_callback (joined_data, &callback_data, data->receive_callback_arg) != 0) {
-					RRR_MSG_ERR("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
+					RRR_MSG_0("Error from callback in __rrr_udpstream_process_receive_buffer, data might have been lost\n");
 					ret = 1;
 					goto out;
 				}
@@ -1164,7 +1164,7 @@ int rrr_udpstream_default_allocator (
 	void *joined_data = NULL;
 
 	if ((joined_data = malloc(size)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
+		RRR_MSG_0("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
 		ret = 1;
 		goto out;
 	}
@@ -1274,7 +1274,7 @@ static int __rrr_udpstream_process_receive_buffer (
 		add_ack:
 			ack_node = malloc(sizeof(*ack_node));
 			if (ack_node == NULL) {
-				RRR_MSG_ERR("Could not allocate ACK node in __rrr_udpstream_process_receive_buffer\n");
+				RRR_MSG_0("Could not allocate ACK node in __rrr_udpstream_process_receive_buffer\n");
 				ret = 1;
 				goto out;
 			}
@@ -1311,7 +1311,7 @@ static int __rrr_udpstream_process_receive_buffer (
 				(window_size_adjust != 0 ? stream->window_size_to_remote : 0),
 				1
 		) != 0) {
-			RRR_MSG_ERR("Error while sending UDP-stream ACK in __rrr_udpstream_process_receive_buffer\n");
+			RRR_MSG_0("Error while sending UDP-stream ACK in __rrr_udpstream_process_receive_buffer\n");
 			ret = 1;
 			goto out;
 		}
@@ -1392,7 +1392,7 @@ static int __rrr_udpstream_process_receive_buffer (
 			&callback_data,
 			allocator_callback_arg
 	)) != 0) {
-		RRR_MSG_ERR("Error from allocator in __rrr_udpstream_process_receive_buffer\n");
+		RRR_MSG_0("Error from allocator in __rrr_udpstream_process_receive_buffer\n");
 		goto out;
 	}
 
@@ -1434,7 +1434,7 @@ int rrr_udpstream_do_process_receive_buffers (
 				receive_callback,
 				receive_callback_arg
 		)) != 0) {
-			RRR_MSG_ERR("Destroying UDP-stream with ID %u following error condition\n", node->stream_id);
+			RRR_MSG_0("Destroying UDP-stream with ID %u following error condition\n", node->stream_id);
 			RRR_LL_ITERATE_SET_DESTROY();
 			ret = 0;
 		}
@@ -1484,7 +1484,7 @@ int rrr_udpstream_do_read_tasks (
 	pthread_mutex_lock(&data->lock);
 
 	if ((ret = __rrr_udpstream_maintain(data)) != 0) {
-		RRR_MSG_ERR("Error while maintaining streams in rrr_udpstream_do_read_tasks\n");
+		RRR_MSG_0("Error while maintaining streams in rrr_udpstream_do_read_tasks\n");
 		goto out;
 	}
 
@@ -1519,7 +1519,7 @@ int rrr_udpstream_do_read_tasks (
 				ret = 0;
 			}
 			else {
-				RRR_MSG_ERR("Error while reading from socket in rrr_udpstream_read, return was %i\n", ret);
+				RRR_MSG_0("Error while reading from socket in rrr_udpstream_read, return was %i\n", ret);
 				ret = 1;
 				goto out;
 			}
@@ -1602,7 +1602,7 @@ static int __rrr_udpstream_send_loop (
 
 		if (do_send != 0) {
 			if ((ret = __rrr_udpstream_send_frame_to_remote(data, stream, node)) != 0) {
-				RRR_MSG_ERR("Could not send frame in __rrr_udpstream_send_loop\n");
+				RRR_MSG_0("Could not send frame in __rrr_udpstream_send_loop\n");
 				ret = 1;
 				goto out;
 			}
@@ -1774,7 +1774,7 @@ int rrr_udpstream_send_control_frame (
 	frame.application_data = application_data;
 
 	if ((ret = __rrr_udpstream_send_frame_to_remote (udpstream_data, stream, &frame)) != 0) {
-		RRR_MSG_ERR("Could not send control frame in rrr_udpstream_send_control_frame for stream with connect handle %u\n",
+		RRR_MSG_0("Could not send control frame in rrr_udpstream_send_control_frame for stream with connect handle %u\n",
 				connect_handle);
 		goto out;
 	}
@@ -1830,7 +1830,7 @@ int rrr_udpstream_queue_outbound_data (
 		uint16_t chunk_size = (data_size > RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT ? RRR_UDPSTREAM_FRAME_DATA_SIZE_LIMIT : data_size);
 		new_frame = NULL;
 		if ((ret = __rrr_udpstream_frame_new_from_data(&new_frame, pos, chunk_size)) != 0) {
-			RRR_MSG_ERR("Could not allocate frame in rrr_udpstream_queue_outbound_data\n");
+			RRR_MSG_0("Could not allocate frame in rrr_udpstream_queue_outbound_data\n");
 			ret = RRR_UDPSTREAM_ERR;
 			goto out;
 		}
@@ -1878,7 +1878,7 @@ int rrr_udpstream_bind (
 	data->ip.port = local_port;
 
 	if (rrr_ip_network_start_udp_ipv4 (&data->ip) != 0) {
-		RRR_MSG_ERR("Could not start IP in rrr_udpstream_bind\n");
+		RRR_MSG_0("Could not start IP in rrr_udpstream_bind\n");
 		ret = 1;
 		goto out;
 	}
@@ -1903,7 +1903,7 @@ int rrr_udpstream_connect_raw (
 	}
 
 	if ((ret = __rrr_udpstream_send_connect(connect_handle, data, addr, socklen)) != 0) {
-		RRR_MSG_ERR("Could not send connect packet in rrr_udpstream_connect_raw\n");
+		RRR_MSG_0("Could not send connect packet in rrr_udpstream_connect_raw\n");
 		goto out;
 	}
 
@@ -1934,14 +1934,14 @@ int rrr_udpstream_connect (
 
 	ret = getaddrinfo(remote_host, remote_port, &hints, &res);
 	if (ret != 0) {
-		RRR_MSG_ERR ("Could not get address info of server %s port %s in rrr_udpstream_connect: %s\n",
+		RRR_MSG_0 ("Could not get address info of server %s port %s in rrr_udpstream_connect: %s\n",
 				remote_host, remote_port, gai_strerror(ret));
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_udpstream_connect_raw(connect_handle, data, res->ai_addr, res->ai_addrlen)) != 0) {
-		RRR_MSG_ERR("Could not send connect packet in rrr_udpstream_connect\n");
+		RRR_MSG_0("Could not send connect packet in rrr_udpstream_connect\n");
 		goto out;
 	}
 

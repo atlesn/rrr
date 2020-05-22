@@ -175,13 +175,13 @@ int rrr_ip_buffer_entry_new (
 
 	struct rrr_ip_buffer_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
+		RRR_MSG_0("Could not allocate memory in ip_buffer_entry_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (__rrr_ip_buffer_entry_lock_init(entry) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in rrr_ip_buffer_entry_new\n");
+		RRR_MSG_0("Could not initialize lock in rrr_ip_buffer_entry_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -244,7 +244,7 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 
 	message = malloc(message_size);
 	if (message == NULL) {
-		RRR_MSG_ERR("Could not allocate message in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate message in ip_buffer_entry_new_with_message\n");
 		goto out;
 	}
 
@@ -256,7 +256,7 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 			protocol,
 			message
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
 		ret = 1;
 		goto out;
 	}

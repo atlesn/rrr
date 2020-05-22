@@ -39,6 +39,19 @@ void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const c
 	va_end(args);
 }
 
+void rrr_log_printf_plain (const char *__restrict __format, ...) {
+	va_list args;
+	va_start(args, __format);
+
+	pthread_mutex_lock (&rrr_log_lock);
+
+	vprintf(__format, args);
+
+	pthread_mutex_unlock (&rrr_log_lock);
+
+	va_end(args);
+}
+
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
 	va_list args;
 	va_start(args, __format);

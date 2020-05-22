@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
-		RRR_MSG_ERR("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
+		RRR_MSG_0("Warning: Error from rrr_socket_close in __rrr_net_transport_plain_close\n");
 		return 1;
 	}
 	return 0;
@@ -65,7 +65,7 @@ static int __rrr_net_transport_plain_connect (
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
-		RRR_MSG_ERR("Could not connect to server '%s' port '%u'\n", host, port);
+		RRR_MSG_0("Could not connect to server '%s' port '%u'\n", host, port);
 		ret = 1;
 		goto out;
 	}
@@ -78,7 +78,7 @@ static int __rrr_net_transport_plain_connect (
 			NULL,
 			accept_data->ip_data.fd
 	)) != 0) {
-		RRR_MSG_ERR("Could not register handle in __rrr_net_transport_plain_connect\n");
+		RRR_MSG_0("Could not register handle in __rrr_net_transport_plain_connect\n");
 		ret = 1;
 		goto out_disconnect;
 	}
@@ -154,7 +154,7 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Error while reading from server in __rrr_net_transport_plain_read_message\n");
+			RRR_MSG_0("Error while reading from server in __rrr_net_transport_plain_read_message\n");
 			ret = 1;
 			goto out;
 		}
@@ -176,7 +176,7 @@ static int __rrr_net_transport_plain_send (
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			goto out;
 		}
-		RRR_MSG_ERR("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
+		RRR_MSG_0("Could not send data in  __rrr_net_transport_plain_send error was %i\n", ret);
 		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
@@ -211,7 +211,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 			NULL,
 			ip_data.fd
 	)) != 0) {
-		RRR_MSG_ERR("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
+		RRR_MSG_0("Could not add handle in __rrr_net_transport_plain_bind_and_listen\n");
 		goto out_destroy_ip;
 	}
 
@@ -241,7 +241,7 @@ int __rrr_net_transport_plain_accept (
 	ip_data.fd = listen_handle->submodule_private_fd;
 
 	if ((ret = rrr_ip_accept(&accept_data, &ip_data, "net_transport_plain", 0)) != 0) {
-		RRR_MSG_ERR("Error while accepting connection in plain server\n");
+		RRR_MSG_0("Error while accepting connection in plain server\n");
 		ret = 1;
 		goto out;
 	}
@@ -257,7 +257,7 @@ int __rrr_net_transport_plain_accept (
 			NULL,
 			accept_data->ip_data.fd
 	)) != 0) {
-		RRR_MSG_ERR("Could not get handle in __rrr_net_transport_plain_accept\n");
+		RRR_MSG_0("Could not get handle in __rrr_net_transport_plain_accept\n");
 		ret = 1;
 		goto out_destroy_ip;
 	}
@@ -292,7 +292,7 @@ int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target) {
 	int ret = 0;
 
 	if ((result = malloc(sizeof(*result))) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_net_transport_plain_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_net_transport_plain_new\n");
 		ret = 1;
 		goto out;
 	}

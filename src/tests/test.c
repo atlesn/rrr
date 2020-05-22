@@ -55,7 +55,7 @@ int main_get_test_result(struct instance_metadata_collection *instances) {
 	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
-		RRR_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
+		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
@@ -66,7 +66,7 @@ int main_get_test_result(struct instance_metadata_collection *instances) {
 	int (*get_test_result)(void) = dlsym(handle, "get_test_module_result");
 
 	if (get_test_result == NULL) {
-		RRR_MSG_ERR("Could not find test result function in test module: %s\n", dlerror());
+		RRR_MSG_0("Could not find test result function in test module: %s\n", dlerror());
 		return 1;
 	}
 
@@ -222,7 +222,7 @@ int main (int argc, const char **argv) {
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		ret = 1;
 		goto out_cleanup_fork_handler;
 	}
@@ -281,7 +281,7 @@ int main (int argc, const char **argv) {
 
 	const char *config_file = cmd_get_value(&cmd, "config", 0);
 	if (config_file == NULL) {
-		RRR_MSG_ERR("No configuration file specified for test program\n");
+		RRR_MSG_0("No configuration file specified for test program\n");
 		ret = 1;
 		goto out_cleanup_cmd;
 	}

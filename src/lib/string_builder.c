@@ -43,7 +43,7 @@ int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize
 		ssize_t new_size = bytes + 1 + string_builder->size + 1024;
 		char *new_buf = realloc(string_builder->buf, new_size);
 		if (new_buf == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in rrr_string_builder_reserve\n");
+			RRR_MSG_0("Could not allocate memory in rrr_string_builder_reserve\n");
 			return 1;
 		}
 		string_builder->size = new_size;

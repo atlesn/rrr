@@ -57,7 +57,7 @@ static int __rrr_socket_common_receive_callback_and_check_ctrl (
 
 	if (RRR_SOCKET_MSG_IS_CTRL_NETWORK_ENDIAN(msg)) {
 		if (read_session->target_size != sizeof(*msg)) {
-			RRR_MSG_ERR("Unknown message size of control message %li vs %lu in __rrr_socket_common_receive_callback_and_check_ctrl\n",
+			RRR_MSG_0("Unknown message size of control message %li vs %lu in __rrr_socket_common_receive_callback_and_check_ctrl\n",
 					read_session->target_size, sizeof(*msg));
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -68,7 +68,7 @@ static int __rrr_socket_common_receive_callback_and_check_ctrl (
 
 		if (RRR_SOCKET_MSG_CTRL_F_HAS(msg, RRR_SOCKET_MSG_CTRL_F_ACK)) {
 			if (data->in_flight == NULL) {
-				RRR_MSG_ERR("Received an ACK message in __rrr_socket_common_receive_callback_and_check_ctrl but no in flight counter was set\n");
+				RRR_MSG_0("Received an ACK message in __rrr_socket_common_receive_callback_and_check_ctrl but no in flight counter was set\n");
 				ret = RRR_READ_SOFT_ERROR;
 				goto out;
 			}
@@ -77,7 +77,7 @@ static int __rrr_socket_common_receive_callback_and_check_ctrl (
 		RRR_SOCKET_MSG_CTRL_F_CLEAR(msg, RRR_SOCKET_MSG_CTRL_F_RESERVED);
 
 		if (msg->msg_type != 0) {
-			RRR_MSG_ERR("Unknown flags %i received in control message in __rrr_socket_common_receive_callback_and_check_ctrl\n",
+			RRR_MSG_0("Unknown flags %i received in control message in __rrr_socket_common_receive_callback_and_check_ctrl\n",
 					msg->msg_type);
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
@@ -146,7 +146,7 @@ int rrr_socket_common_receive_array (
 			return RRR_SOCKET_SOFT_ERROR;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_array\n");
+			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_array\n");
 			return 1;
 		}
 	}
@@ -206,7 +206,7 @@ int rrr_socket_common_receive_socket_msg (
 					if (ret == RRR_SOCKET_SOFT_ERROR) {
 						goto out;
 					}
-					RRR_MSG_ERR("Error while sending ACK message in rrr_socket_common_receive_socket_msg\n");
+					RRR_MSG_0("Error while sending ACK message in rrr_socket_common_receive_socket_msg\n");
 					goto out;
 				}
 
@@ -219,10 +219,10 @@ int rrr_socket_common_receive_socket_msg (
 			ret = 0;
 		}
 		else if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Warning: Soft error while reading data in rrr_socket_common_receive_socket_msg\n");
+			RRR_MSG_0("Warning: Soft error while reading data in rrr_socket_common_receive_socket_msg\n");
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
-			RRR_MSG_ERR("Hard error while reading data in rrr_socket_common_receive_socket_msg\n");
+			RRR_MSG_0("Hard error while reading data in rrr_socket_common_receive_socket_msg\n");
 		}
 		else {
 			RRR_BUG("Unknown return value %i from read in rrr_socket_common_receive_socket_msg\n", ret);
@@ -254,7 +254,7 @@ int rrr_socket_common_prepare_and_send_socket_msg_blocking (
 				message ,
 				msg_size
 		)) != 0) {
-			RRR_MSG_ERR("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
+			RRR_MSG_0("Error while sending message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}
 	}
@@ -269,7 +269,7 @@ int rrr_socket_common_prepare_and_send_socket_msg_blocking (
 				message,
 				sizeof(struct rrr_message_addr)
 		)) != 0) {
-			RRR_MSG_ERR("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_message\n");
+			RRR_MSG_0("Error while sending address message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}
 	}
@@ -281,7 +281,7 @@ int rrr_socket_common_prepare_and_send_socket_msg_blocking (
 				socket_msg,
 				sizeof(*socket_msg)
 		)) != 0) {
-			RRR_MSG_ERR("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_message\n");
+			RRR_MSG_0("Error while sending control message in rrr_socket_common_prepare_and_send_rrr_message\n");
 			goto out;
 		}
 	}

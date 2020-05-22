@@ -183,7 +183,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	ssize_t total_size = 0;
 	ssize_t count = 0;
 	if (rrr_mqtt_property_collection_calculate_size (&total_size, &count, properties) != 0) {
-		RRR_MSG_ERR("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
+		RRR_MSG_0("Could not calculate size of properties in __rrr_mqtt_assemble_put_properties\n");
 		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 		goto out;
 	}
@@ -201,7 +201,7 @@ static int __rrr_mqtt_assemble_put_properties (
 	const char *begin = session->wpos;
 
 	if (rrr_mqtt_property_collection_iterate(properties, __rrr_mqtt_assemble_put_properties_callback, session) != 0) {
-		RRR_MSG_ERR("Error while iterating properties in __rrr_mqtt_assemble_put_properties\n");
+		RRR_MSG_0("Error while iterating properties in __rrr_mqtt_assemble_put_properties\n");
 		ret = RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 		goto out;
 	}
@@ -408,7 +408,7 @@ static int __rrr_mqtt_assemble_sub_usub (
 			&callback_data
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_ERR("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_suback\n");
+		RRR_MSG_0("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_suback\n");
 		goto out;
 	}
 
@@ -454,7 +454,7 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			session
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
+		RRR_MSG_0("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
 		goto out;
 	}
 
@@ -482,7 +482,7 @@ int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 				session
 		);
 		if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-			RRR_MSG_ERR("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
+			RRR_MSG_0("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
 			goto out;
 		}
 	}
@@ -518,6 +518,6 @@ int rrr_mqtt_assemble_disconnect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 }
 
 int rrr_mqtt_assemble_auth (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
-	RRR_MSG_ERR("Assemble function not implemented\n");
+	RRR_MSG_0("Assemble function not implemented\n");
 	return RRR_MQTT_ASSEMBLE_INTERNAL_ERR;
 }

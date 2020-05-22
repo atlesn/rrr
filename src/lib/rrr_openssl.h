@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do {												\
 		char buf[256];									\
 		ERR_error_string_n(ERR_get_error(), buf, 256); 	\
-		RRR_MSG_ERR(msg ": %s\n", buf);					\
+		RRR_MSG_0(msg ": %s\n", buf);					\
 	} while(0)
 
 void rrr_openssl_global_register_user(void);

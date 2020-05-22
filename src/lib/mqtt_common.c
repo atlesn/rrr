@@ -113,7 +113,7 @@ static int __rrr_mqtt_common_connection_event_handler (
 		ret_tmp = ret_tmp & ~(RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION);
 
 		if (ret_tmp != 0) {
-			RRR_MSG_ERR("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
+			RRR_MSG_0("Internal error while calling downstream event handler in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
 					event, ret_tmp);
 			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
@@ -134,19 +134,19 @@ static int __rrr_mqtt_common_connection_event_handler (
 		if ((ret_tmp & RRR_MQTT_SESSION_DELETED) != 0) {
 			// It is normal to return DELETED from disconnect event
 			if (event != RRR_MQTT_CONN_EVENT_DISCONNECT) {
-				RRR_MSG_ERR("Session was deleted while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
+				RRR_MSG_0("Session was deleted while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
 			}
 			ret |= RRR_MQTT_CONN_DESTROY_CONNECTION;
 		}
 		if ((ret_tmp & RRR_MQTT_SESSION_ERROR) != 0) {
-			RRR_MSG_ERR("Session error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
+			RRR_MSG_0("Session error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i\n", event);
 			ret |= RRR_MQTT_CONN_SOFT_ERROR;
 		}
 
 		ret_tmp = ret_tmp & ~(RRR_MQTT_SESSION_ERROR|RRR_MQTT_SESSION_DELETED);
 
 		if (ret_tmp != 0) {
-			RRR_MSG_ERR("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
+			RRR_MSG_0("Internal error while calling session storage engine in __rrr_mqtt_common_connection_event_handler with event %i return was %i\n",
 					event, ret_tmp);
 			ret |= RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
@@ -172,7 +172,7 @@ int rrr_mqtt_common_data_init (
 
 	data->client_name = malloc(strlen(init_data->client_name) + 1);
 	if (data->client_name == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_data_init\n");
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
 		ret = 1;
 		goto out;
 	}
@@ -191,13 +191,13 @@ int rrr_mqtt_common_data_init (
 			__rrr_mqtt_common_connection_event_handler,
 			data
 	) != 0) {
-		RRR_MSG_ERR("Could not initialize connection collection in rrr_mqtt_data_new\n");
+		RRR_MSG_0("Could not initialize connection collection in rrr_mqtt_data_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (session_initializer (&data->sessions, session_initializer_arg) != 0) {
-		RRR_MSG_ERR("Could not initialize session data in rrr_mqtt_data_new\n");
+		RRR_MSG_0("Could not initialize session data in rrr_mqtt_data_new\n");
 		ret = 1;
 		goto out_destroy_connections;
 	}
@@ -217,7 +217,7 @@ int rrr_mqtt_common_data_init (
 			RRR_MQTT_PROPERTY_GET_ID(property) != RRR_MQTT_PROPERTY_SUBSCRIPTION_ID &&							\
 			(dup_count = rrr_mqtt_property_collection_count_duplicates(callback_data->source, property)) != 0	\
 	) {																											\
-		RRR_MSG_ERR("Property '%s' was specified more than once (%u times) in packet\n",							\
+		RRR_MSG_0("Property '%s' was specified more than once (%u times) in packet\n",							\
 				RRR_MQTT_PROPERTY_GET_NAME(property), dup_count + 1);											\
 		goto out_reason_protocol_error;																			\
 	}} while (0)
@@ -240,7 +240,7 @@ int rrr_mqtt_common_data_init (
 		case id:															\
 			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
 			if (tmp_u32 == 0) {												\
-				RRR_MSG_ERR(error_msg "\n");									\
+				RRR_MSG_0(error_msg "\n");									\
 				goto out_reason_protocol_error;								\
 			}																\
 			(target) = tmp_u32;												\
@@ -250,7 +250,7 @@ int rrr_mqtt_common_data_init (
 		case id:															\
 			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
 			if (tmp_u32 > 2) {												\
-				RRR_MSG_ERR(error_msg "\n");									\
+				RRR_MSG_0(error_msg "\n");									\
 				goto out_reason_protocol_error;								\
 			}																\
 			(target) = tmp_u32;												\
@@ -260,7 +260,7 @@ int rrr_mqtt_common_data_init (
 		case id:															\
 			tmp_u32 = rrr_mqtt_property_get_uint32(property);				\
 			if (tmp_u32 > 1) {												\
-				RRR_MSG_ERR(error_msg "\n");									\
+				RRR_MSG_0(error_msg "\n");									\
 				goto out_reason_protocol_error;								\
 			}																\
 			(target) = tmp_u32;												\
@@ -288,7 +288,7 @@ int rrr_mqtt_common_data_init (
 		case id:																					\
 			ret = rrr_mqtt_property_collection_add_cloned((target), property);						\
 			if (ret != 0) {																			\
-				RRR_MSG_ERR("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
+				RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
 				goto out_internal_error;															\
 			}																						\
 			break
@@ -297,12 +297,12 @@ int rrr_mqtt_common_data_init (
 		case id:																					\
 			tmp_u32 = rrr_mqtt_property_get_uint32(property);										\
 			if (tmp_u32 == 0) {																		\
-				RRR_MSG_ERR(error_msg "\n");															\
+				RRR_MSG_0(error_msg "\n");															\
 				goto out_reason_protocol_error;														\
 			}																						\
 			ret = rrr_mqtt_property_collection_add_cloned((target), property);						\
 			if (ret != 0) {																			\
-				RRR_MSG_ERR("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
+				RRR_MSG_0("Error while cloning property in HANDLE_PROPERTY_TO_COLLECTION\n");		\
 				goto out_internal_error;															\
 			}																						\
 			break
@@ -310,7 +310,7 @@ int rrr_mqtt_common_data_init (
 #define HANDLE_PROPERTY_CLONE(target,id)															\
 		case id:																					\
 			if (rrr_mqtt_property_clone((target), property) != 0) {									\
-				RRR_MSG_ERR("Could not clone property HANDLE_PROPERTY_USER_PROPERTY\n");				\
+				RRR_MSG_0("Could not clone property HANDLE_PROPERTY_USER_PROPERTY\n");				\
 				goto out_internal_error;															\
 			}																						\
 			break;
@@ -324,7 +324,7 @@ int rrr_mqtt_common_data_init (
 // for more errors. Caller checks for non-zero reason.
 #define HANDLE_PROPERTY_SWITCH_END_AND_RETURN() 													\
 		default:																					\
-			RRR_MSG_ERR("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));			\
+			RRR_MSG_0("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));			\
 			goto out_reason_protocol_error;															\
 	};																								\
 	goto out;																						\
@@ -532,12 +532,12 @@ int rrr_mqtt_common_handle_properties (
 		callback_data
 	)) != 0 || callback_data->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {
-			RRR_MSG_ERR("Soft error while iterating properties\n");
+			RRR_MSG_0("Soft error while iterating properties\n");
 			ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);
 		}
 		if (ret != 0) {
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
-			RRR_MSG_ERR("Internal error while iterating properties, return was %i\n", ret);
+			RRR_MSG_0("Internal error while iterating properties, return was %i\n", ret);
 			goto out;
 		}
 
@@ -562,12 +562,12 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		if (publish->qos == 0) {
-			RRR_MSG_ERR("Closing connection due to malformed PUBLISH packet with QoS 0\n");
+			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 
-		RRR_MSG_ERR("Sending ACK for malformed PUBLISH packet with QoS %u, reason was %u\n",
+		RRR_MSG_0("Sending ACK for malformed PUBLISH packet with QoS %u, reason was %u\n",
 				publish->qos, publish->reason_v5);
 
 		reason_v5 = publish->reason_v5;
@@ -612,7 +612,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 		ack = (struct rrr_mqtt_p *) puback;
 		if (puback == NULL) {
-			RRR_MSG_ERR("Could not allocate PUBACK in __rrr_mqtt_broker_handle_publish\n");
+			RRR_MSG_0("Could not allocate PUBACK in __rrr_mqtt_broker_handle_publish\n");
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
 		}
@@ -628,7 +628,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		);
 		ack = (struct rrr_mqtt_p *) pubrec;
 		if (pubrec == NULL) {
-			RRR_MSG_ERR("Could not allocate PUBREC in __rrr_mqtt_broker_handle_publish\n");
+			RRR_MSG_0("Could not allocate PUBREC in __rrr_mqtt_broker_handle_publish\n");
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out;
 		}
@@ -724,7 +724,7 @@ int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			RRR_DBG_1("Setting disconnect reason to 0x80 in rrr_mqtt_common_handle_puback_pubcomp\n");
 			reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
 		}
-		RRR_MSG_ERR("Error while handling received %s packet, reason: %u\n",
+		RRR_MSG_0("Error while handling received %s packet, reason: %u\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet), reason_v5);
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
 		goto out;
@@ -790,7 +790,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 			packet->protocol_version
 	);
 	if (next_ack == NULL) {
-		RRR_MSG_ERR("Could not allocate %s in __rrr_mqtt_broker_handle_pubrec_pubrel\n",
+		RRR_MSG_0("Could not allocate %s in __rrr_mqtt_broker_handle_pubrec_pubrel\n",
 				RRR_MQTT_P_GET_TYPE_NAME_RAW(next_ack_type));
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out;
@@ -842,7 +842,7 @@ int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			packet,
 			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
 	)) != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Could not update connection state in rrr_mqtt_p_handler_disconnect\n");
+		RRR_MSG_0("Could not update connection state in rrr_mqtt_p_handler_disconnect\n");
 		goto out;
 	}
 
@@ -867,27 +867,27 @@ static int __rrr_mqtt_common_handle_packet_callback (
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNECT) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(connection)) {
-			RRR_MSG_ERR("Received a CONNECT packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
+			RRR_MSG_0("Received a CONNECT packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
 			ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_CONNACK) {
 		if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)) {
-			RRR_MSG_ERR("Received a CONNACK packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
+			RRR_MSG_0("Received a CONNACK packet while not allowed in __rrr_mqtt_common_handle_packets_callback\n");
 			ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		}
 	}
 	else if (!RRR_MQTT_CONN_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
-		RRR_MSG_ERR("Received a %s packet while only CONNECT was allowed in __rrr_mqtt_common_handle_packets_callback\n",
+		RRR_MSG_0("Received a %s packet while only CONNECT was allowed in __rrr_mqtt_common_handle_packets_callback\n",
 				RRR_MQTT_P_GET_TYPE_NAME(packet));
 		ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
 
 	if (mqtt_data->handler_properties[RRR_MQTT_P_GET_TYPE(packet)].handler == NULL) {
-		RRR_MSG_ERR("No handler specified for packet type %i\n", RRR_MQTT_P_GET_TYPE(packet));
+		RRR_MSG_0("No handler specified for packet type %i\n", RRR_MQTT_P_GET_TYPE(packet));
 		ret |= RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out;
 	}
@@ -970,7 +970,7 @@ int rrr_mqtt_common_send_from_sessions_callback (
 	}
 
 	if (rrr_mqtt_conn_iterator_ctx_send_packet(connection, packet) != 0) {
-		RRR_MSG_ERR("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
+		RRR_MSG_0("Could not send outbound packet in __rrr_mqtt_common_send_from_sessions_callback\n");
 		// Do not delete packet on error, retry with new connection if client reconnects.
 		ret = RRR_FIFO_CALLBACK_ERR | RRR_FIFO_SEARCH_STOP;
 	}

@@ -57,7 +57,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error while adding message to buffer in buffer instance %s\n",
+		RRR_MSG_0("Error while adding message to buffer in buffer instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 	}
 
@@ -74,7 +74,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 			INSTANCE_D_HANDLE(thread_data),
 			message
 	) != 0) {
-		RRR_MSG_ERR("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Error while injecting packet in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		return 1;
 	}
 
@@ -102,7 +102,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -127,6 +127,8 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
+			RRR_MSG_ERR("Error while polling in buffer instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 	}

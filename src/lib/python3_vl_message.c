@@ -73,7 +73,7 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 
 	struct rrr_message *new_message = rrr_message_duplicate_no_data_with_size(data->message_dynamic, topic_length, data_length);
 	if (new_message == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_python3_rrr_message_set_topic_and_data\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_python3_rrr_message_set_topic_and_data\n");
 		ret = 1;
 		goto out;
 	}
@@ -94,7 +94,7 @@ static PyObject *rrr_python3_rrr_message_f_set_data (PyObject *self, PyObject *a
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 
 	if (data->rrr_array != NULL) {
-		RRR_MSG_ERR("rrr_message.set_data() called while the message contained an array. discard_array() must be called first.\n");
+		RRR_MSG_0("rrr_message.set_data() called while the message contained an array. discard_array() must be called first.\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -108,7 +108,7 @@ static PyObject *rrr_python3_rrr_message_f_set_data (PyObject *self, PyObject *a
 		str = PyUnicode_AsUTF8AndSize(args, &len);
 	}
 	else {
-		RRR_MSG_ERR("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
+		RRR_MSG_0("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -134,7 +134,7 @@ static PyObject *rrr_python3_rrr_message_f_set_topic (PyObject *self, PyObject *
 		str = PyUnicode_AsUTF8AndSize(args, &len);
 	}
 	else {
-		RRR_MSG_ERR("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
+		RRR_MSG_0("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -157,7 +157,7 @@ static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *a
 	int ret = 0;
 
 	if (!PyLong_Check(arg)) {
-		RRR_MSG_ERR("Argument to rrr_python3_rrr_message_f_set_type was not a number.\n");
+		RRR_MSG_0("Argument to rrr_python3_rrr_message_f_set_type was not a number.\n");
 		ret = 1;
 		goto out;
 	}
@@ -170,7 +170,7 @@ static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *a
 			ret = 0;
 			break;
 		default:
-			RRR_MSG_ERR("Unknown type %lu to rrr_python3_rrr_message_f_set_type\n");
+			RRR_MSG_0("Unknown type %lu to rrr_python3_rrr_message_f_set_type\n");
 			ret = 1;
 			goto out;
 	}
@@ -197,7 +197,7 @@ static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *ar
 
 	data->message_dynamic = malloc(sizeof(*(data->message_dynamic)) - 1);
 	if (data->message_dynamic == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for message in rrr_python3_rrr_message_f_new\n");
+		RRR_MSG_0("Could not allocate memory for message in rrr_python3_rrr_message_f_new\n");
 		return NULL;
 	}
 
@@ -216,7 +216,7 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 	memset (data->message_dynamic, '\0', sizeof(*(data->message_dynamic)) - 1);
 
 	if (kwds != NULL && PyDict_Size(kwds) != 0) {
-		RRR_MSG_ERR("Keywords not supported in rrr_message init\n");
+		RRR_MSG_0("Keywords not supported in rrr_message init\n");
 		return 1;
 	}
 
@@ -225,13 +225,13 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 	Py_ssize_t argc = PyTuple_Size(args);
 	if (argc != 0) {
 		if (argc != 1) {
-			RRR_MSG_ERR("Wrong number of parameters to rrr_messag init. Got %li but expected 1 or 0.\n", argc);
+			RRR_MSG_0("Wrong number of parameters to rrr_messag init. Got %li but expected 1 or 0.\n", argc);
 			return 1;
 		}
 
 		PyObject *args_timestamp = PyTuple_GetItem(args, 0);
 		if (!PyLong_Check(args_timestamp)) {
-			RRR_MSG_ERR("Timestamp argument to rrr_message init was not a number.\n");
+			RRR_MSG_0("Timestamp argument to rrr_message init was not a number.\n");
 			return 1;
 		}
 
@@ -259,7 +259,7 @@ static PyObject *rrr_python3_rrr_message_f_get_data(PyObject *self, PyObject *ar
 	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), MSG_DATA_LENGTH(data->message_dynamic));
 
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not create bytearray object for topic in rrr_python3_rrr_message_f_get_data\n");
+		RRR_MSG_0("Could not create bytearray object for topic in rrr_python3_rrr_message_f_get_data\n");
 		PyErr_Print();
 		Py_RETURN_FALSE;
 	}
@@ -274,7 +274,7 @@ static PyObject *rrr_python3_rrr_message_f_get_array(PyObject *self, PyObject *a
 	if (data->rrr_array == NULL) {
 		data->rrr_array = rrr_python3_array_new();
 		if (data->rrr_array == NULL) {
-			RRR_MSG_ERR("Could not create new array in rrr_message.get_array()");
+			RRR_MSG_0("Could not create new array in rrr_message.get_array()");
 			Py_RETURN_NONE;
 		}
 	}
@@ -308,7 +308,7 @@ static PyObject *rrr_python3_rrr_message_f_set_array (PyObject *self, PyObject *
 	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
 
 	if (!rrr_python3_array_check(arg)) {
-		RRR_MSG_ERR("Argument to rrr_message.set_array() must be an rrr_array\n");
+		RRR_MSG_0("Argument to rrr_message.set_array() must be an rrr_array\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -331,7 +331,7 @@ static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *a
 		ret = PyUnicode_FromString("");
 	}
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not create unicode object for topic in rrr_python3_rrr_message_f_get_topic\n");
+		RRR_MSG_0("Could not create unicode object for topic in rrr_python3_rrr_message_f_get_topic\n");
 		PyErr_Print();
 		Py_RETURN_FALSE;
 	}
@@ -496,7 +496,7 @@ static int __allocate_64 (ALLOCATE_DEF) {
 			elements,
 			sizeof(rrr_type_h) * elements
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate 64 bit value in __allocate_64\n");
+		RRR_MSG_0("Could not allocate 64 bit value in __allocate_64\n");
 		return 1;
 	}
 
@@ -514,7 +514,7 @@ static int __allocate_blob (ALLOCATE_DEF) {
 			elements,
 			item_size * elements
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate blob value in __allocate_64\n");
+		RRR_MSG_0("Could not allocate blob value in __allocate_64\n");
 		return 1;
 	}
 
@@ -557,7 +557,7 @@ static int __convert_str (CONVERT_DEF) {
 	ssize_t new_size = 0;
 	const char *str = PyUnicode_AsUTF8AndSize(item, &new_size);
 	if (str == NULL) {
-		RRR_MSG_ERR("Could not convert string in  __convert_str\n");
+		RRR_MSG_0("Could not convert string in  __convert_str\n");
 		return 1;
 	}
 
@@ -570,7 +570,7 @@ static int __convert_blob (CONVERT_DEF) {
 	ssize_t new_size = PyByteArray_Size(item);
 	const char *str = PyByteArray_AsString(item);
 	if (str == NULL) {
-		RRR_MSG_ERR("Could not convert byte array to string in  __convert_blob\n");
+		RRR_MSG_0("Could not convert byte array to string in  __convert_blob\n");
 		return 1;
 	}
 
@@ -593,43 +593,43 @@ static int __preliminary_check_fixp (PRELIMINARY_CHECK_DEF) {
 		if (PyFloat_Check(subject)) {
 			test_d = PyFloat_AsDouble(subject);
 			if (test_d == -1.0 && PyErr_Occurred()) {
-				RRR_MSG_ERR("Error while converting double in __convert_preliminary_check_long\n");
+				RRR_MSG_0("Error while converting double in __convert_preliminary_check_long\n");
 				ret = 1;
 				goto out;
 			}
 			if ((ret = rrr_fixp_ldouble_to_fixp(&test_f, test_d)) != 0) {
-				RRR_MSG_ERR("Could not convert double to fixed pointer in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Could not convert double to fixed pointer in __convert_preliminary_check_fixp\n");
 				goto out;
 			}
 		}
 		else if (PyUnicode_Check(subject)) {
 			const char *str = PyUnicode_AsUTF8(subject);
 			if (str == NULL) {
-				RRR_MSG_ERR("Could not convert unicode to string in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Could not convert unicode to string in __convert_preliminary_check_fixp\n");
 				ret = 1;
 				goto out;
 			}
 
 			const char *endptr;
 			if ((ret = rrr_fixp_str_to_fixp(&test_f, str, PyUnicode_GetLength(subject), &endptr)) != 0) {
-				RRR_MSG_ERR("Error while converting string to fixed pointer in __convert_preliminary_check_fixp\n");
+				RRR_MSG_0("Error while converting string to fixed pointer in __convert_preliminary_check_fixp\n");
 				goto out;
 			}
 
 			if (endptr == str) {
-				RRR_MSG_ERR("Could not understand supposed fixed point string '%s' while converting\n", str);
+				RRR_MSG_0("Could not understand supposed fixed point string '%s' while converting\n", str);
 				ret = 1;
 				goto out;
 			}
 		}
 		else {
-			RRR_MSG_ERR("Unknown type '%s' while converting to fixed point\n", subject->ob_type->tp_name);
+			RRR_MSG_0("Unknown type '%s' while converting to fixed point\n", subject->ob_type->tp_name);
 			ret = 1;
 			goto out;
 		}
 
 		if ((replacement_subject = PyLong_FromLongLong(test_f)) == NULL) {
-			RRR_MSG_ERR("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_fixp\n",
+			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_fixp\n",
 					subject->ob_type->tp_name);
 			return 1;
 		}
@@ -659,17 +659,17 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 	if (PyFloat_Check(subject)) {
 		test_d = PyFloat_AsDouble(subject);
 		if (test_d == -1.0 && PyErr_Occurred()) {
-			RRR_MSG_ERR("Error while converting double in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Error while converting double in __convert_preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
 		if (test_d > INT64_MAX || test_d < INT64_MIN) {
-			RRR_MSG_ERR("Double value was out of range in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Double value was out of range in __convert_preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
 		if (!isfinite(test_d)) {
-			RRR_MSG_ERR("Double value was not finite in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Double value was not finite in __convert_preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -707,7 +707,7 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 
 	do_signed_and_convert:
 		if ((replacement_subject = PyLong_FromLongLong(test_i)) == NULL) {
-			RRR_MSG_ERR("Could not create long object in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Could not create long object in __convert_preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -718,7 +718,7 @@ static int __preliminary_check_long (PRELIMINARY_CHECK_DEF) {
 
 	do_unsigned_and_convert:
 		if ((replacement_subject = PyLong_FromUnsignedLongLong(test_u)) == NULL) {
-			RRR_MSG_ERR("Could not create long object in __convert_preliminary_check_long\n");
+			RRR_MSG_0("Could not create long object in __convert_preliminary_check_long\n");
 			ret = 1;
 			goto out;
 		}
@@ -763,7 +763,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 				PyErr_Clear();
 				long long int temp_i = PyLong_AsLongLong(subject);
 				if (PyErr_Occurred()) {
-					RRR_MSG_ERR("Could not convert long to string in __convert_preliminary_check_stringish\n");
+					RRR_MSG_0("Could not convert long to string in __convert_preliminary_check_stringish\n");
 					ret = 1;
 					goto out;
 				}
@@ -776,7 +776,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 		else if (PyFloat_Check(subject)) {
 			double temp_d = PyFloat_AsDouble(subject);
 			if (PyErr_Occurred()) {
-				RRR_MSG_ERR("Could not convert double to string in __convert_preliminary_check_stringish\n");
+				RRR_MSG_0("Could not convert double to string in __convert_preliminary_check_stringish\n");
 				ret = 1;
 				goto out;
 			}
@@ -796,14 +796,14 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 			replacement_subject = PyUnicode_FromStringAndSize(str, new_size);
 		}
 		else {
-			RRR_MSG_ERR("Unsupported type '%s' while converting to string in __convert_preliminary_check_stringish\n",
+			RRR_MSG_0("Unsupported type '%s' while converting to string in __convert_preliminary_check_stringish\n",
 					subject->ob_type->tp_name);
 			ret = 1;
 			goto out;
 		}
 
 		if (replacement_subject == NULL) {
-			RRR_MSG_ERR("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_stringish\n",
+			RRR_MSG_0("Could not allocate replacement unicode string for type %s in __convert_preliminary_check_stringish\n",
 					subject->ob_type->tp_name);
 			return 1;
 		}
@@ -814,7 +814,7 @@ static int __preliminary_check_stringish (PRELIMINARY_CHECK_DEF) {
 	}
 
 	if (*size != 0 && *size != new_size) {
-		RRR_MSG_ERR("Size of strings in array was not of equal length, which is required.\n");
+		RRR_MSG_0("Size of strings in array was not of equal length, which is required.\n");
 		return 1;
 	}
 
@@ -852,14 +852,14 @@ static int __preliminary_check_sep (PRELIMINARY_CHECK_DEF) {
 
 	const char *str = PyUnicode_AsUTF8(*new_subject != NULL ? *new_subject : subject);
 	if (str == NULL) {
-		RRR_MSG_ERR("Could not get string from unicode in __convert_preliminary_check_sep\n");
+		RRR_MSG_0("Could not get string from unicode in __convert_preliminary_check_sep\n");
 		return 1;
 	}
 
 	for (int i = 0; i < *size; i++) {
 		unsigned char c = str[i];
 		if (!RRR_TYPE_CHAR_IS_SEP(c)) {
-			RRR_MSG_ERR("Found non-separator character 0x%02x in supposed separator string while converting\n", c);
+			RRR_MSG_0("Found non-separator character 0x%02x in supposed separator string while converting\n", c);
 			ret = 1;
 			// Don't break, report all errors
 		}
@@ -885,19 +885,19 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 		else if (PyUnicode_Check(subject)) {
 			const char *str = PyUnicode_AsUTF8AndSize(subject, &new_size);
 			if (str == NULL) {
-				RRR_MSG_ERR("Could not get string from unicode object in __convert_preliminary_check_blob\n");
+				RRR_MSG_0("Could not get string from unicode object in __convert_preliminary_check_blob\n");
 			}
 			replacement_subject = PyByteArray_FromStringAndSize(str, new_size);
 		}
 		else {
-			RRR_MSG_ERR("Could not convert type %s to bytearray in __convert_preliminary_check_blob\n",
+			RRR_MSG_0("Could not convert type %s to bytearray in __convert_preliminary_check_blob\n",
 					subject->ob_type->tp_name);
 			ret = 1;
 			goto out;
 		}
 
 		if (replacement_subject == NULL) {
-			RRR_MSG_ERR("Could not create replacement bytearray in __convert_preliminary_check_blob\n");
+			RRR_MSG_0("Could not create replacement bytearray in __convert_preliminary_check_blob\n");
 			ret = 1;
 			goto out;
 		}
@@ -944,13 +944,13 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	}
 	else {
 		if (!PyUnicode_Check(tag)) {
-			RRR_MSG_ERR("Tag of array element was not a string\n");
+			RRR_MSG_0("Tag of array element was not a string\n");
 			ret = 1;
 			goto out;
 		}
 
 		if ((tag_str = PyUnicode_AsUTF8AndSize(tag, &tag_length)) == NULL) {
-			RRR_MSG_ERR("Could not convert tag object to string in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+			RRR_MSG_0("Could not convert tag object to string in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
 			ret = 1;
 			goto out;
 		}
@@ -1016,7 +1016,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	}
 
 	if (preliminary_check_function == NULL) {
-		RRR_MSG_ERR("Type '%s' is not supported and cannot be used in arrays\n", first_item->ob_type->tp_name);
+		RRR_MSG_0("Type '%s' is not supported and cannot be used in arrays\n", first_item->ob_type->tp_name);
 		ret = 1;
 		goto out;
 	}
@@ -1034,7 +1034,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 				&replacement_item,
 				item
 		)) != 0) {
-			RRR_MSG_ERR("Could not convert item of type '%s' in array, preliminary check failed\n", item->ob_type->tp_name);
+			RRR_MSG_0("Could not convert item of type '%s' in array, preliminary check failed\n", item->ob_type->tp_name);
 			goto out;
 		}
 
@@ -1044,7 +1044,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		}
 
 		if (convert_function == NULL) {
-			RRR_MSG_ERR("Could not convert item of type '%s' to type '%u' in array, item is not convertible to target type\n",
+			RRR_MSG_0("Could not convert item of type '%s' to type '%u' in array, item is not convertible to target type\n",
 					item->ob_type->tp_name, target_type);
 			goto out;
 		}
@@ -1059,7 +1059,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 			tag_length,
 			count
 	)) != 0) {
-		RRR_MSG_ERR("Could not allocate memory for type %u in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n",
+		RRR_MSG_0("Could not allocate memory for type %u in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n",
 				target_type);
 		goto out;
 	}
@@ -1067,7 +1067,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	for (int i = 0; i < count; i++) {
 		PyObject *item = PyList_GET_ITEM(list, i);
 		if ((ret = convert_function(new_value, item, i, item_size)) != 0) {
-			RRR_MSG_ERR("Error while converting value of type '%s' to %u\n",
+			RRR_MSG_0("Error while converting value of type '%s' to %u\n",
 					item->ob_type->tp_name, target_type);
 			goto out;
 		}
@@ -1092,7 +1092,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 	struct rrr_message *new_msg = NULL;
 
 	if (MSG_CLASS(ret) != MSG_TYPE(&data->message_static)) {
-		RRR_MSG_ERR("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed.\n");
+		RRR_MSG_0("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed.\n");
 	}
 
 	// Overwrite header fields
@@ -1107,7 +1107,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 				__rrr_python3_array_rrr_message_get_message_store_array_node_callback,
 				&array_tmp
 		) != 0) {
-			RRR_MSG_ERR("Error while iterating array in rrr_python3_rrr_message_get_message\n");
+			RRR_MSG_0("Error while iterating array in rrr_python3_rrr_message_get_message\n");
 			goto out_err;
 		}
 
@@ -1118,7 +1118,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 				MSG_TOPIC_PTR(ret),
 				MSG_TOPIC_LENGTH(ret)
 		) != 0) {
-			RRR_MSG_ERR("Could not create new array message in rrr_python3_rrr_message_get_message\n");
+			RRR_MSG_0("Could not create new array message in rrr_python3_rrr_message_get_message\n");
 			goto out_err;
 		}
 
@@ -1136,7 +1136,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 	MSG_SET_TYPE(ret, type_orig);
 
 	if (!MSG_TYPE_OK(ret)) {
-		RRR_MSG_ERR("Warning: Detected unknown message type %u while converting python3 RRR message, this might cause problems in other modules.\n",
+		RRR_MSG_0("Warning: Detected unknown message type %u while converting python3 RRR message, this might cause problems in other modules.\n",
 				MSG_TYPE(ret));
 	}
 
@@ -1185,7 +1185,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1200,12 +1200,12 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	ret->rrr_array = rrr_python3_array_new();
 	if (ret->rrr_array == NULL) {
-		RRR_MSG_ERR("Could not create array in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not create array in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
 	if (rrr_array_message_to_collection(&array_tmp, rrr_message) != 0) {
-		RRR_MSG_ERR("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1216,14 +1216,14 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		else {
 			node_tag = PyUnicode_FromString(node->tag);
 			if (node_tag == NULL) {
-				RRR_MSG_ERR("Could not create node for tag in rrr_python3_rrr_message_new_from_message_and_address\n");
+				RRR_MSG_0("Could not create node for tag in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 		}
 
 		node_list = PyList_New(node->element_count);
 		if (node_list == NULL) {
-			RRR_MSG_ERR("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 
@@ -1235,7 +1235,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
-			RRR_MSG_ERR("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 		for (rrr_type_array_size i = 0; i < node->element_count; i++) {
@@ -1259,13 +1259,13 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
 			}
 			else {
-				RRR_MSG_ERR("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",
+				RRR_MSG_0("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",
 						node->definition->type);
 				goto out_err;
 			}
 
 			if (node_element_value == NULL) {
-				RRR_MSG_ERR("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
+				RRR_MSG_0("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
 				goto out_err;
 			}
 
@@ -1274,7 +1274,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		}
 
 		if (rrr_python3_array_append_value_with_list(ret->rrr_array, node_tag, node_list, node->definition->type) != 0) {
-			RRR_MSG_ERR("Could not append node value to array in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Could not append node value to array in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
 

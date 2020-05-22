@@ -109,7 +109,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_udp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_ERR("Could not parse ip_udp_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_udp_port for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -118,7 +118,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing ip_udp_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_udp_port setting for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -128,7 +128,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_tcp_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_ERR("Could not parse ip_tcp_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_tcp_port for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -137,7 +137,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing ip_tcp_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_tcp_port setting for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -147,7 +147,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 	ret = rrr_instance_config_read_port_number (&tmp_uint, config, "ip_target_port");
 	if (ret != 0) {
 		if (ret == RRR_SETTING_PARSE_ERROR) {
-			RRR_MSG_ERR("Could not parse ip_remote_port for instance %s\n", config->name);
+			RRR_MSG_0("Could not parse ip_remote_port for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -156,7 +156,7 @@ int config_parse_port (struct ip_data *data, struct rrr_instance_config *config)
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing ip_remote_port setting for instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ip_remote_port setting for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -179,7 +179,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	// Default target protocol
 	if ((ret = rrr_settings_get_string_noconvert_silent(&protocol, config->settings, "ip_target_protocol")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing configuration parameter ip_target_protocol in ip instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -194,7 +194,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 			data->target_protocol = RRR_IP_TCP;
 		}
 		else {
-			RRR_MSG_ERR("Unknown protocol '%s' specified in ip_target_protocol in ip instance %s. Must be tcp or udp.\n",
+			RRR_MSG_0("Unknown protocol '%s' specified in ip_target_protocol in ip instance %s. Must be tcp or udp.\n",
 					protocol, config->name);
 			ret = 1;
 			goto out;
@@ -204,13 +204,13 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_target_host", target_host);
 
 	if (data->target_port != 0 && (data->target_host == NULL || *(data->target_host) == '\0')) {
-		RRR_MSG_ERR("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
 	if (data->target_port == 0 && (data->target_host != NULL && *(data->target_host) != '\0')) {
-		RRR_MSG_ERR("ip_target_host was set but ip_target_port was not, both of them must be either set or left unset in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_target_host was set but ip_target_port was not, both of them must be either set or left unset in ip instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -218,14 +218,14 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	// Parse expected input data
 	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "ip_input_types")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Could not parse command line argument ip_input_types in udp\n");
+			RRR_MSG_0("Could not parse command line argument ip_input_types in udp\n");
 			ret = 1;
 			goto out;
 		}
 	}
 
 	if (data->definitions.node_count > 0 && data->source_udp_port == 0 && data->source_tcp_port == 0) {
-		RRR_MSG_ERR("ip_input_types was set but ip_port was not, this is an invalid configuraton in ip instance %s\n", config->name);
+		RRR_MSG_0("ip_input_types was set but ip_port was not, this is an invalid configuraton in ip instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -244,7 +244,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
 
 	if (data->do_force_target == 1 && data->target_port == 0) {
-		RRR_MSG_ERR("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
+		RRR_MSG_0("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
 				config->name);
 		ret = 1;
 		goto out;
@@ -258,7 +258,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
 	if (ret != 0 && ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_ERR("Error while parsing ip_array_send_tags of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing ip_array_send_tags of instance %s\n", config->name);
 		goto out;
 	}
 	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
@@ -291,7 +291,7 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 			callback_data->entry_orig->protocol,
 			message
 	) != 0) {
-		RRR_MSG_ERR("Could not create new ip buffer entry in read_data_receive_message_callback\n");
+		RRR_MSG_0("Could not create new ip buffer entry in read_data_receive_message_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -312,7 +312,7 @@ int ip_read_data_receive_message_callback (struct rrr_message *message, void *ar
 			INSTANCE_D_HANDLE(data->thread_data),
 			new_entry
 	)) != 0) {
-		RRR_MSG_ERR("Could not write message to output buffer in ip instance %s\n",
+		RRR_MSG_0("Could not write message to output buffer in ip instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -339,7 +339,7 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 			const struct rrr_message *message = (struct rrr_message *) node->data;
 			struct rrr_message *message_new = rrr_message_duplicate(message);
 			if (message_new == NULL) {
-				RRR_MSG_ERR("Could not allocate new message in ip read_data_receive_array_callback\n");
+				RRR_MSG_0("Could not allocate new message in ip read_data_receive_array_callback\n");
 				ret = 1;
 				goto out;
 			}
@@ -356,7 +356,7 @@ int read_data_receive_extract_messages_callback (const struct rrr_array *array, 
 			INSTANCE_D_NAME(data->thread_data), found_messages);
 
 	if (found_messages == 0) {
-		RRR_MSG_ERR("No RRR message found in array definition in ip instance %s\n",
+		RRR_MSG_0("No RRR message found in array definition in ip instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -397,12 +397,12 @@ int ip_read_raw_data_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 
 	if (ret != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
-			RRR_MSG_ERR("Could not create message in ip instance %s read_data_callback, soft error probably caused by invalid input data\n",
+			RRR_MSG_0("Could not create message in ip instance %s read_data_callback, soft error probably caused by invalid input data\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Could not create message in ip instance %s read_data_callback\n",
+			RRR_MSG_0("Could not create message in ip instance %s read_data_callback\n",
 					INSTANCE_D_NAME(data->thread_data));
 		}
 		goto out;
@@ -446,7 +446,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 				goto out_no_loop;
 			}
 			else {
-				RRR_MSG_ERR("Received invalid data in ip_receive_packets in ip instance %s\n",
+				RRR_MSG_0("Received invalid data in ip_receive_packets in ip instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				// Don't allow invalid data to stop processing
 				ret = RRR_MESSAGE_BROKER_OK;
@@ -454,7 +454,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			}
 		}
 		else {
-			RRR_MSG_ERR("Error from ip_receive_packets in ip instance %s return was %i\n",
+			RRR_MSG_0("Error from ip_receive_packets in ip instance %s return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
@@ -497,7 +497,7 @@ int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rr
 			ip_read_array_intermediate,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_ERR("Error while writing entries in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Error while writing entries in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -524,7 +524,7 @@ int tcp_read_data (struct ip_data *data, struct rrr_ip_accept_data_collection *a
 			"ip",
 			0
 	) != 0) {
-		RRR_MSG_ERR("Error while accepting TCP connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Error while accepting TCP connection in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -664,7 +664,7 @@ static int ip_send_message_tcp (
 			goto out_close_connection_error;
 		}
 		else {
-			RRR_MSG_ERR("Error while sending tcp message in ip instance %s\n",
+			RRR_MSG_0("Error while sending tcp message in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out;
@@ -742,7 +742,7 @@ static int ip_send_message_raw (
 	// but no target_port/target_host
 	if (ip_data->do_force_target == 1 || addr_len == 0) {
 		if (ip_data->target_port == 0) {
-			RRR_MSG_ERR("Warning: A message from a sender in ip instance %s had no address information and we have no default remote host set, dropping it\n",
+			RRR_MSG_0("Warning: A message from a sender in ip instance %s had no address information and we have no default remote host set, dropping it\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out;
 		}
@@ -755,7 +755,7 @@ static int ip_send_message_raw (
 
 			if (accept_data_to_use == NULL) {
 				if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data_to_free, ip_data->target_port, ip_data->target_host) != 0) {
-					RRR_MSG_ERR("Could not connect with TCP to remote %s port %u in ip instance %s\n",
+					RRR_MSG_0("Could not connect with TCP to remote %s port %u in ip instance %s\n",
 							ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(thread_data));
 					ret = 1;
 					goto out;
@@ -802,7 +802,7 @@ static int ip_send_message_raw (
 					(struct sockaddr *) addr,
 					addr_len
 			) != 0) {
-				RRR_MSG_ERR("Could not connect to remote in ip instance %s, dropping message\n",
+				RRR_MSG_0("Could not connect to remote in ip instance %s, dropping message\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 0;
 				goto out;
@@ -834,7 +834,7 @@ static int ip_send_message_raw (
 	);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
+		RRR_MSG_0("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
 				INSTANCE_D_NAME(thread_data), addr->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
 		// Ignore errors
 		ret	= 0;
@@ -910,7 +910,7 @@ static int ip_send_message (
 	// freed after this function.
 	if (ip_data->do_send_rrr_message != 0) {
 		if (entry->data_length < (long int) sizeof(*message) - 1) {
-			RRR_MSG_ERR("ip instance %s had send_rrr_message set but received a message which was too short (%li<%li), dropping it\n",
+			RRR_MSG_0("ip instance %s had send_rrr_message set but received a message which was too short (%li<%li), dropping it\n",
 					INSTANCE_D_NAME(thread_data), entry->data_length, (long int) sizeof(*message));
 			ret = 0; // Non-critical error
 			goto out;
@@ -959,7 +959,7 @@ static int ip_send_message (
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
 		if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
-			RRR_MSG_ERR("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = 1; // Probably bug in some other module or with array parsing
 			goto out;
 		}
@@ -975,13 +975,13 @@ static int ip_send_message (
 				&array_tmp,
 				tag_map
 		) != 0) {
-			RRR_MSG_ERR("Error while converting array to raw in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Error while converting array to raw in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = 1; // Probably bug in some other module or with array parsing
 			goto out;
 		}
 
 		if (tag_count != 0 && found_tags != tag_count) {
-			RRR_MSG_ERR("Array message to send in ip instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
+			RRR_MSG_0("Array message to send in ip instance %s did not contain all tags specified in configuration, dropping it (%i tags missing)\n",
 					INSTANCE_D_NAME(thread_data), tag_count - found_tags);
 			ret = 0; // Non-critical
 			goto out;
@@ -994,7 +994,7 @@ static int ip_send_message (
 		send_size = target_size;
 	}
 	else if (RRR_MAP_COUNT(&ip_data->array_send_tags) > 0) {
-		RRR_MSG_ERR("ip instance %s received a non-array message while setting ip_array_send_tags was defined, dropping it\n",
+		RRR_MSG_0("ip instance %s received a non-array message while setting ip_array_send_tags was defined, dropping it\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 0; // Non-critical error
 		goto out;
@@ -1033,7 +1033,7 @@ static int ip_send_message (
 			send_data,
 			send_size
 	)) != 0) {
-		RRR_MSG_ERR("Could not send data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not send data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -1054,7 +1054,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initalize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initalize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -1071,7 +1071,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	// Don't set running here, wait until listening has started
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Configuration parsing failed for ip instance %s\n", thread_data->init_data.module->instance_name);
+		RRR_MSG_0("Configuration parsing failed for ip instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message_no_network_cleanup;
 	}
 
@@ -1082,14 +1082,14 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	int has_senders = (rrr_poll_collection_count(&poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_ERR("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
+		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message_no_network_cleanup;
 	}
 
 	if (data->source_udp_port == 0) {
 		if (rrr_ip_network_start_udp_ipv4_nobind(&data->ip_udp) != 0) {
-			RRR_MSG_ERR("Could not initialize network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Could not initialize network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_message_no_network_cleanup;
 		}
 		RRR_DBG_1("ip instance %s started, not listening on any UDP port\n", INSTANCE_D_NAME(thread_data));
@@ -1097,7 +1097,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	else {
 		data->ip_udp.port = data->source_udp_port;
 		if (rrr_ip_network_start_udp_ipv4(&data->ip_udp) != 0) {
-			RRR_MSG_ERR("Could not initialize UDP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Could not initialize UDP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_message_no_network_cleanup;
 		}
 		RRR_DBG_1("ip instance %s listening on and/or sending from UDP port %d\n",
@@ -1109,7 +1109,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	if (data->source_tcp_port > 0) {
 		data->ip_tcp_listen.port = data->source_tcp_port;
 		if (rrr_ip_network_start_tcp_ipv4_and_ipv6(&data->ip_tcp_listen, 10) != 0) {
-			RRR_MSG_ERR("Could not initialize TCP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+			RRR_MSG_0("Could not initialize TCP network in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			goto out_cleanup_udp;
 		}
 		RRR_DBG_1("ip instance %s listening on TCP port %d\n",
@@ -1138,6 +1138,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		if (has_senders != 0) {
 			if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
+				RRR_MSG_ERR("Error while polling in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 		}
@@ -1179,7 +1181,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				do_destroy = 1;
 			}
 			else if ((ret_tmp = ip_send_message(&do_destroy, data, &tcp_connect_data, node)) != 0) {
-				RRR_MSG_ERR("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 				RRR_LL_ITERATE_LAST();
 			}
 
@@ -1197,19 +1199,25 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		RRR_LL_ITERATE_END_CHECK_DESTROY(&data->send_buffer, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 
 		if (timeout_count > 0) {
-			RRR_MSG_ERR("Send timeout for %i messages in ip instance %s\n",
+			RRR_MSG_0("Send timeout for %i messages in ip instance %s\n",
 					timeout_count, INSTANCE_D_NAME(thread_data));
 		}
 
 		if (ret_tmp != 0) {
+			RRR_MSG_ERR("Error while sending messages in ip instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
 		if (RRR_LL_COUNT(&data->definitions) > 0) {
 			if (udp_read_data(data) != 0) {
+				RRR_MSG_ERR("Error while reading udp data in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 			if (tcp_read_data(data, &tcp_accept_data) != 0) {
+				RRR_MSG_ERR("Error while reading tcp data in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 		}
@@ -1240,6 +1248,8 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 					&delivery_ratelimit_active,
 					thread_data
 			) != 0) {
+				RRR_MSG_ERR("Error while setting ratelimit in ip instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 

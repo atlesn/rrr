@@ -46,14 +46,14 @@ int rrr_instance_collection_append (struct rrr_instance_collection *collection, 
 	int ret = 0;
 
 	if (rrr_instance_collection_check_exists(collection,sender)) {
-		RRR_MSG_ERR("Sender %s was specified twice\n", sender->dynamic_data->instance_name);
+		RRR_MSG_0("Sender %s was specified twice\n", sender->dynamic_data->instance_name);
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_instance_collection_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in senders_add_sender\n");
+		RRR_MSG_0("Could not allocate memory in senders_add_sender\n");
 		ret = 1;
 		goto out;
 	}

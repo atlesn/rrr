@@ -44,14 +44,14 @@ int rrr_http_field_new_no_value (
 
 	struct rrr_http_field *field = malloc(sizeof(*field));
 	if (field == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_new_no_value\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
 		goto out;
 	}
 	memset (field, '\0', sizeof(*field));
 
 	if ((field->name = malloc(name_length + 1)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_new_no_value\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_field_new_no_value\n");
 		ret = 1;
 		goto out;
 	}
@@ -78,7 +78,7 @@ int rrr_http_field_set_value (
 
 	char *value_tmp = malloc(value_length + 1);
 	if (value_tmp == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_field_set_value\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_field_set_value\n");
 		ret = 1;
 		goto out;
 	}
@@ -127,7 +127,7 @@ static int __rrr_http_field_collection_add_field_raw (
 
 	struct rrr_http_field *field = malloc(sizeof(*field));
 	if (field == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_collection_add_field_raw A\n");
 		ret = 1;
 		goto out;
 	}
@@ -136,7 +136,7 @@ static int __rrr_http_field_collection_add_field_raw (
 	if (name != NULL && strlen(name) > 0) {
 		field->name = strdup(name);
 		if (field->name == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
+			RRR_MSG_0("Could not allocate memory for name in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
 		}
@@ -145,7 +145,7 @@ static int __rrr_http_field_collection_add_field_raw (
 	if (value != NULL && size > 0) {
 		field->value = malloc(size);
 		if (field->value == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
+			RRR_MSG_0("Could not allocate memory for value in __rrr_http_fields_collection_add_field_raw B\n");
 			ret = 1;
 			goto out;
 		}
@@ -224,7 +224,7 @@ static char *__rrr_http_field_collection_to_form_data (
 	;
 
 	if ((result = malloc(result_max_length)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_http_fields_to_form_data\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_to_form_data\n");
 		err = 1;
 		goto out;
 	}
@@ -247,7 +247,7 @@ static char *__rrr_http_field_collection_to_form_data (
 				name = rrr_http_util_encode_uri(node->name);
 
 				if (name == NULL) {
-					RRR_MSG_ERR("Could not encode parameter '%s' name '%s' in __rrr_http_fields_to_form_data\n",
+					RRR_MSG_0("Could not encode parameter '%s' name '%s' in __rrr_http_fields_to_form_data\n",
 							node->name, node->value);
 					err = 1;
 					goto out;
@@ -268,7 +268,7 @@ static char *__rrr_http_field_collection_to_form_data (
 				value = rrr_http_util_encode_uri(node->value);
 
 				if (value == NULL) {
-					RRR_MSG_ERR("Could not encode parameter '%s' value '%s' in __rrr_http_fields_to_form_data\n",
+					RRR_MSG_0("Could not encode parameter '%s' value '%s' in __rrr_http_fields_to_form_data\n",
 							node->name, node->value);
 					err = 1;
 					goto out;

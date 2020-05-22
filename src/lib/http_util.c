@@ -183,8 +183,8 @@ void rrr_http_util_print_where_message (
 	char buf[21];
 	strncpy(buf, start, 20);
 	buf[20] = '\0';
-	RRR_MSG("Where: %s\n", buf);
-	RRR_MSG("       /\\ <-- HERE\n");
+	RRR_MSG_0("Where: %s\n", buf);
+	RRR_MSG_0("       /\\ <-- HERE\n");
 }
 
 int rrr_http_util_decode_urlencoded_string (
@@ -202,7 +202,7 @@ int rrr_http_util_decode_urlencoded_string (
 
 		if (c == '%') {
 			if (start + 3 > end) {
-				RRR_MSG_ERR("Not enough characters after %% in urlencoded string\n");
+				RRR_MSG_0("Not enough characters after %% in urlencoded string\n");
 				ret = 1;
 				goto out;
 			}
@@ -211,7 +211,7 @@ int rrr_http_util_decode_urlencoded_string (
 			ssize_t result_len = 0;
 
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
-				RRR_MSG("Invalid %%-sequence in urlencoded string\n");
+				RRR_MSG_0("Invalid %%-sequence in urlencoded string\n");
 				rrr_http_util_print_where_message(start);
 				ret = 1;
 				goto out;
@@ -247,7 +247,7 @@ char *rrr_http_util_encode_uri (
 
 	char *result = malloc(result_max_length);
 	if (result == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_util_encode_uri\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_util_encode_uri\n");
 		err = 1;
 		goto out;
 	}
@@ -370,7 +370,7 @@ char *rrr_http_util_quote_header_value (
 	ssize_t result_length = length * 2 + 2 + 1;
 	char *result = malloc(result_length);
 	if (result == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_util_quote_header_value\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_util_quote_header_value\n");
 		err = 1;
 		goto out;
 	}
@@ -394,7 +394,7 @@ char *rrr_http_util_quote_header_value (
 			// OK
 		}
 		else {
-			RRR_MSG_ERR("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
+			RRR_MSG_0("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
 			err = 1;
 			goto out;
 		}
@@ -506,7 +506,7 @@ int rrr_http_util_strtoull (
 	}
 
 	if (numbers_end - start > 63) {
-		RRR_MSG_ERR("Number was too long in __rrr_http_part_strtoull\n");
+		RRR_MSG_0("Number was too long in __rrr_http_part_strtoull\n");
 		return 1;
 	}
 
@@ -642,7 +642,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	}
 
 	if ((uri_new = malloc(sizeof(*uri_new))) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_http_uri_parse\n");
+		RRR_MSG_0("Could not allocate memory in rrr_http_uri_parse\n");
 		ret = 1;
 		goto out;
 	}
@@ -660,7 +660,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	// Parse protocol if present
 	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") && new_pos == pos) {
 		if ((uri_new->protocol = strdup("")) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for protocol in rrr_http_uri_parse\n");
+			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
 			ret = 1;
 			goto out_destroy;
 		}
@@ -674,12 +674,12 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 			uri_new->protocol = strdup("http");
 		}
 		else {
-			RRR_MSG_ERR("Unsupported or missing protocol name in URI '%s'\n", uri);
+			RRR_MSG_0("Unsupported or missing protocol name in URI '%s'\n", uri);
 			ret = 1;
 			goto out_destroy;
 		}
 		if (uri_new->protocol == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for protocol in rrr_http_uri_parse\n");
+			RRR_MSG_0("Could not allocate memory for protocol in rrr_http_uri_parse\n");
 			ret = 1;
 			goto out_destroy;
 		}
@@ -697,7 +697,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 			}
 			else if (*pos == '-') {
 				if (result_len == 0) {
-					RRR_MSG_ERR("Invalid hostname in URI '%s', cannot begin with '-'\n", uri);
+					RRR_MSG_0("Invalid hostname in URI '%s', cannot begin with '-'\n", uri);
 					ret = 1;
 					goto out_destroy;
 				}
@@ -710,7 +710,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 				break;
 			}
 			else {
-				RRR_MSG_ERR("Invalid character %c in URI '%s' hostname\n", *pos, uri);
+				RRR_MSG_0("Invalid character %c in URI '%s' hostname\n", *pos, uri);
 				ret = 1;
 				goto out_destroy;
 			}
@@ -720,7 +720,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 
 		if (result_len > 0) {
 			if ((uri_new->host = malloc(result_len + 1)) == NULL) {
-				RRR_MSG_ERR("Could not allocate memory for hostname in rrr_http_uri_parse\n");
+				RRR_MSG_0("Could not allocate memory for hostname in rrr_http_uri_parse\n");
 				ret = 1;
 				goto out_destroy;
 			}
@@ -732,7 +732,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 			pos++;
 			unsigned long long port = 0;
 			if (rrr_http_util_strtoull(&port, &result_len, pos, end, 10) != 0 || port < 1 || port > 65535) {
-				RRR_MSG_ERR("Invalid port in URL '%s'\n", uri);
+				RRR_MSG_0("Invalid port in URL '%s'\n", uri);
 				ret = 1;
 				goto out_destroy;
 			}
@@ -757,7 +757,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 			result_len++;
 		}
 		else {
-			RRR_MSG_ERR("Invalid character %c in URI endpoint '%s'\n", *pos, uri);
+			RRR_MSG_0("Invalid character %c in URI endpoint '%s'\n", *pos, uri);
 			ret = 1;
 			goto out_destroy;
 		}
@@ -770,14 +770,14 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 
 	if (result_len == 0) {
 		if ((uri_new->endpoint = strdup("")) == 0) {
-			RRR_MSG_ERR("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
+			RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
 			ret = 1;
 			goto out_destroy;
 		}
 	}
 	else {
 		if ((uri_new->endpoint = malloc(result_len + 1)) == 0) {
-			RRR_MSG_ERR("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
+			RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_uri_parse\n");
 			ret = 1;
 			goto out_destroy;
 		}
@@ -811,7 +811,7 @@ void rrr_http_util_nprintf (size_t length, const char *format, ...) {
 	int res = 0;
 
 	if ((res = rrr_vasprintf(&tmp, format, args)) <= 0) {
-		RRR_MSG_ERR("Warning: Could not allocate memory in rrr_http_util_nprintf\n");
+		RRR_MSG_0("Warning: Could not allocate memory in rrr_http_util_nprintf\n");
 	}
 	else {
 		if (res > (int) length) {

@@ -182,8 +182,8 @@ static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigne
 		char buf[1024];
 		buf[0] = '\0';
 		strerror_r(errno, buf, sizeof(buf));
-		VL_MSG_ERR("Could wait on semaphore in buffer: %s\n", buf);
-		VL_MSG_ERR("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
+		VL_MSG_0("Could wait on semaphore in buffer: %s\n", buf);
+		VL_MSG_0("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
 	}
 */
 	return res;
