@@ -1,3 +1,16 @@
+rrr (0.19) unstable; urgency=medium
+
+  * New functionallity in perl5 to print RRR native debug and error messages
+  * Fix some issues with shutdown and startup hangs
+  * Cleanup in error message printing, very little is now printed to STDERR
+  * To some degree adapt code to C11 and POSIX 2008. Attempt to have
+    non-compliant stuff in separate files and use wrappers.
+  * New permissive license for linking costum modules with the library
+  * Improve some buggy IP connect checks
+  * Minor changes in test suite
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 22 May 2020 23:57:07 +0200
+
 rrr (0.18-1) unstable; urgency=medium
 
   * Create new global fork and signal handling.

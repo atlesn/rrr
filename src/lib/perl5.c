@@ -267,7 +267,7 @@ EXTERN_C void xs_init (pTHX);
 //	xs_init(my_perl);
 //}
 
-int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_build_dirs) {
 	int ret = 0;
 
 	PERL_SET_CONTEXT(ctx->interpreter);
@@ -282,7 +282,9 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	}
 	close(fd);
 
-	char *args[] = {
+	// WHEN CHANGING, COUNT ARGC AT LEAST THREE TIMES. THEN COUNT AGAIN.
+
+	char *argv_with_build_dirs[] = {
 			"",
 			"-I" RRR_PERL5_BUILD_LIB_PATH_1,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
@@ -292,8 +294,30 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 			filename,
 			NULL
 	};
+	int argc_with_build_dirs = 7;
 
-	if (perl_parse(ctx->interpreter, xs_init, 6, args, (char**) NULL) != 0) {
+	char *argv_plain[] = {
+			"",
+			filename,
+			NULL
+	};
+	int argc_plain = 2;
+
+	char **argv_to_use = NULL;
+	int argc_to_use = 0;
+
+	if (include_build_dirs) {
+		argv_to_use = argv_with_build_dirs;
+		argc_to_use = argc_with_build_dirs;
+	}
+	else {
+		argv_to_use = argv_plain;
+		argc_to_use = argc_plain;
+	}
+
+	RRR_DBG_1("Parsing perl5 file '%s', argc: %i\n", filename, argc_to_use);
+
+	if (perl_parse(ctx->interpreter, xs_init, argc_to_use, argv_to_use, (char**) NULL) != 0) {
 		RRR_MSG_0("Could not parse perl5 file %s\n", filename);
 		ret = 1;
 		goto out;

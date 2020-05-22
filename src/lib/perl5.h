@@ -67,7 +67,7 @@ int rrr_perl5_new_ctx (
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 );
-int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename);
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_build_dirs);
 int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
 
