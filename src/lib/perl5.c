@@ -53,6 +53,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PERL5_BUILD_LIB_PATH_4 \
 	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/auto/rrr/rrr_helper/rrr_settings/"
 
+#define RRR_PERL5_BUILD_LIB_PATH_5 \
+	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/"
+
 static pthread_mutex_t perl5_init_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t perl5_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static int perl5_users = 0;
@@ -264,7 +267,7 @@ EXTERN_C void xs_init (pTHX);
 //	xs_init(my_perl);
 //}
 
-int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_build_dirs) {
 	int ret = 0;
 
 	PERL_SET_CONTEXT(ctx->interpreter);
@@ -279,17 +282,42 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 	}
 	close(fd);
 
-	char *args[] = {
+	// WHEN CHANGING, COUNT ARGC AT LEAST THREE TIMES. THEN COUNT AGAIN.
+
+	char *argv_with_build_dirs[] = {
 			"",
 			"-I" RRR_PERL5_BUILD_LIB_PATH_1,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_3,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_4,
+			"-I" RRR_PERL5_BUILD_LIB_PATH_5,
 			filename,
 			NULL
 	};
+	int argc_with_build_dirs = 7;
 
-	if (perl_parse(ctx->interpreter, xs_init, 6, args, (char**) NULL) != 0) {
+	char *argv_plain[] = {
+			"",
+			filename,
+			NULL
+	};
+	int argc_plain = 2;
+
+	char **argv_to_use = NULL;
+	int argc_to_use = 0;
+
+	if (include_build_dirs) {
+		argv_to_use = argv_with_build_dirs;
+		argc_to_use = argc_with_build_dirs;
+	}
+	else {
+		argv_to_use = argv_plain;
+		argc_to_use = argc_plain;
+	}
+
+	RRR_DBG_1("Parsing perl5 file '%s', argc: %i\n", filename, argc_to_use);
+
+	if (perl_parse(ctx->interpreter, xs_init, argc_to_use, argv_to_use, (char**) NULL) != 0) {
 		RRR_MSG_0("Could not parse perl5 file %s\n", filename);
 		ret = 1;
 		goto out;
@@ -1314,4 +1342,49 @@ int rrr_perl5_settings_set (HV *settings, const char *key, const char *value) {
 	int ret = ctx->set_setting(key, value, ctx->private_data);
 
 	return (ret == 0 ? TRUE : FALSE);
+}
+
+static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *string, int always_print) {
+	(void)(debug);
+
+	if (!RRR_DEBUGLEVEL_OK(debuglevel)) {
+		RRR_MSG_0("Received unknown debuglevel %i in __rrr_perl5_debug_print\n", debuglevel);
+		return FALSE;
+	}
+
+	// Unsure if error in the script may cause string to become NULL. If not, this should
+	// be an RRR_BUG
+	if (string == NULL) {
+		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
+		return FALSE;
+	}
+
+	if (always_print) {
+		RRR_MSG_X(debuglevel, "%s", string);
+	}
+	else {
+		RRR_DBG_X(debuglevel, "%s", string);
+	}
+
+	return TRUE;
+}
+
+int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string) {
+	return __rrr_perl5_debug_print(debug, debuglevel, string, 1); // Always print
+}
+
+int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string) {
+	return __rrr_perl5_debug_print(debug, debuglevel, string, 0); // Print if debuglevel is active
+}
+
+int rrr_perl5_debug_err (HV *debug, const char *string) {
+	// Unsure if error in the script may cause string to become NULL. If not, this should
+	// be an RRR_BUG
+	if (string == NULL) {
+		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
+		return FALSE;
+	}
+
+	RRR_MSG_ERR("%s", string);
+	return TRUE;
 }

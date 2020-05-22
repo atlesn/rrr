@@ -67,7 +67,7 @@ int rrr_perl5_new_ctx (
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 );
-int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename);
+int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename, int include_build_dirs);
 int rrr_perl5_ctx_run (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_call_blessed_hvref (struct rrr_perl5_ctx *ctx, const char *sub, const char *class, HV *hv);
 
@@ -109,5 +109,9 @@ int rrr_perl5_message_to_new_hv (
 int rrr_perl5_message_send (HV *message);
 SV *rrr_perl5_settings_get (HV *settings, const char *key);
 int rrr_perl5_settings_set (HV *settings, const char *key, const char *value);
+int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string);
+int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string);
+int rrr_perl5_debug_err (HV *debug, const char *string);
+
 
 #endif /* RRR_PERL5_H */

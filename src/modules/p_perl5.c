@@ -82,6 +82,9 @@ struct perl5_data {
 
 	int do_drop_on_error;
 
+	// For test suite, put build dirs in @INC
+	int do_include_build_directories;
+
 	struct rrr_message_addr latest_message_addr;
 
 	int mmap_full_counter;
@@ -363,7 +366,11 @@ int perl5_start(struct perl5_child_data *data) {
 	RRR_DBG_1 ("perl5 instance %s starting perl5 interpreter pointer %p\n",
 			INSTANCE_D_NAME(data->parent_data->thread_data), data->ctx->interpreter);
 
-	ret |= rrr_perl5_ctx_parse(data->ctx, data->parent_data->perl5_file);
+	ret |= rrr_perl5_ctx_parse (
+			data->ctx,
+			data->parent_data->perl5_file,
+			data->parent_data->do_include_build_directories
+	);
 
 	if (ret != 0) {
 		RRR_MSG_0("Could not parse perl5 file in perl5_start of instance %s\n",
@@ -387,7 +394,8 @@ int perl5_start(struct perl5_child_data *data) {
 #define CHILD_PID_LOCK_IN						\
 	do {pthread_mutex_lock(&data->child_mutex);	\
 	if (data->child_pid_ <= 0)					\
-		goto out_unlock							\
+		pthread_mutex_unlock(&data->child_mutex);\
+		goto out								\
 
 #define CHILD_PID_LOCK_OUT						\
 	pthread_mutex_unlock(&data->child_mutex);	\
@@ -412,9 +420,6 @@ void terminate_child (struct perl5_data *data) {
 			INSTANCE_D_NAME(data->thread_data), pid);
 	kill(pid, SIGKILL);
 
-	goto out;
-	out_unlock:
-		pthread_mutex_unlock(&data->child_mutex);
 	out:
 		return;
 }
@@ -502,6 +507,7 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	data->spawn_interval_ms = uint_tmp;
 
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_drop_on_error", do_drop_on_error, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
 
 	out:
 	return ret;
@@ -905,7 +911,7 @@ int worker_fork_signal_handler (int signal, void *private_arg) {
 	struct perl5_child_data *child_data = private_arg;
 
 	if (signal == SIGUSR1 || signal == SIGINT) {
-		RRR_DBG_1("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		RRR_DBG_SIGNAL("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
 		child_data->received_sigusr1 = 1;
 	}
 

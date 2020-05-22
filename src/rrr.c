@@ -486,7 +486,7 @@ int main (int argc, const char *argv[]) {
 
 	if (rrr_fork_handler_new (&fork_handler) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
+		goto out_run_cleanup_methods;
 	}
 
 	// The fork signal handler must be first
@@ -579,16 +579,15 @@ int main (int argc, const char *argv[]) {
 		signal_functions.set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
-			goto out_cleanup_free_fork_handler;
+			// Child forks must skip *ALL* the fork-cleanup stuff
+			goto out_run_cleanup_methods;
 		}
 
-		// Child forks must skip this
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-
-	out_cleanup_free_fork_handler:
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 		rrr_fork_handler_free(fork_handler);
 
+	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
 			RRR_MSG_0("Exiting program without errors\n");
