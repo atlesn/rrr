@@ -11,7 +11,8 @@ SUBDIRS = modules
 noinst_PROGRAMS = test make_test_data send_ip ${python}
 
 test_LDFLAGS = -ldl -lpthread -lm -L../lib -lrrr -O0 ${PYTHON3_LDFLAGS} ${PERL5_LDFLAGS}
-test_SOURCES = test.c ../global.c ../main.c
+test_SOURCES = test.c ../global.c ../main.c \
+	test_usleep.c test_fixp.c
 test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_MODULE_PATH="\"$(top_builddir)/src/modules/.libs\"" \
 	-DRRR_TEST_MODULE_PATH="\"$(top_builddir)/src/tests/modules/.libs\"" \
@@ -25,4 +26,4 @@ make_test_data_CFLAGS =
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = 
 
-TESTS = test.sh
+TESTS = test.sh 
