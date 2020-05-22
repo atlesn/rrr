@@ -81,7 +81,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			dup_entry = NULL;
 
 			if (rrr_ip_buffer_entry_clone_no_locking(&dup_entry, entry) != 0) {
-				RRR_MSG_ERR("Could not duplicate message in poll_callback of averager instance %s\n",
+				RRR_MSG_0("Could not duplicate message in poll_callback of averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
@@ -96,7 +96,7 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			if (averager_data->msg_topic != NULL) {
 				// This will re-allocate the message
 				if (rrr_message_set_topic(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
-					RRR_MSG_ERR("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
+					RRR_MSG_0("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}
 
@@ -170,13 +170,13 @@ static int __averager_get_64_from_array (uint64_t *result, struct averager_data 
 	*result = 0;
 
 	if ((value = rrr_array_value_get_by_tag(array, tag)) == NULL) {
-		RRR_MSG_ERR("Could not find tag '%s' in array message in averager instance %s, dropping message\n",
+		RRR_MSG_0("Could not find tag '%s' in array message in averager instance %s, dropping message\n",
 				tag, INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
 		goto out;
 	}
 	if (!RRR_TYPE_IS_64(value->definition->type)) {
-		RRR_MSG_ERR("Value '%s' from array message in averager instance %s was not of type 64, dropping message\n",
+		RRR_MSG_0("Value '%s' from array message in averager instance %s was not of type 64, dropping message\n",
 				tag, INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
 		goto out;
@@ -210,7 +210,7 @@ int averager_process_message (
 	}
 
 	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
-		RRR_MSG_ERR("Could not create array in averager_callback of instance %s\n",
+		RRR_MSG_0("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
 		goto out;
@@ -274,7 +274,7 @@ int averager_spawn_message_callback (struct rrr_ip_buffer_entry *new_entry, void
 			callback_data->data->msg_topic,
 			(callback_data->data->msg_topic != 0 ? strlen(callback_data->data->msg_topic) : 0)
 	) != 0) {
-		RRR_MSG_ERR ("Could not create message in averager_spawn_message of instance %s\n",
+		RRR_MSG_0 ("Could not create message in averager_spawn_message of instance %s\n",
 				INSTANCE_D_NAME(callback_data->data->thread_data));
 		ret = 1;
 		goto out;
@@ -305,27 +305,27 @@ int averager_spawn_message (
 	int ret = 0;
 
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_from) != 0) {
-		RRR_MSG_ERR("Could not push 64-value onto array in averager_spawn_message\n");
+		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_to) != 0) {
-		RRR_MSG_ERR("Could not push 64-value onto array in averager_spawn_message\n");
+		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "average", average) != 0) {
-		RRR_MSG_ERR("Could not push 64-value onto array in averager_spawn_message\n");
+		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "max", max) != 0) {
-		RRR_MSG_ERR("Could not push 64-value onto array in averager_spawn_message\n");
+		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
 	if (rrr_array_push_value_64_with_tag(&array_tmp, "min", min) != 0) {
-		RRR_MSG_ERR("Could not push 64-value onto array in averager_spawn_message\n");
+		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -343,7 +343,7 @@ int averager_spawn_message (
 			averager_spawn_message_callback,
 			&callback_data
 	) != 0) {
-		RRR_MSG_ERR("Could not create and write array message to output buffer in averager instance %s\n",
+		RRR_MSG_0("Could not create and write array message to output buffer in averager instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -393,7 +393,7 @@ int averager_calculate_average(struct averager_data *data) {
 	);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error when spawning messages in averager_calculate_average\n");
+		RRR_MSG_0("Error when spawning messages in averager_calculate_average\n");
 		return ret;
 	}
 
@@ -429,7 +429,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->msg_topic, config, "avg_message_topic")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in avg_message_topic for instance %s\n", config->name);
+			RRR_MSG_0("Syntax error in avg_message_topic for instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -437,7 +437,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&timespan, config, "avg_timespan")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
+			RRR_MSG_0("Syntax error in avg_timespan for instance %s, must be a number\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -447,7 +447,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&interval, config, "avg_interval")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
+			RRR_MSG_0("Syntax error in avg_interval for instance %s, must be a number\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -457,7 +457,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_check_yesno(&preserve_points, config, "avg_preserve_points")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
+			RRR_MSG_0("Syntax error in avg_preserve_points for instance %s, specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -467,7 +467,7 @@ int parse_config (struct averager_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_check_yesno(&discard_unknowns, config, "avg_discard_unknowns")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Syntax error in avg_discard_unknowns for instance %s, specify yes or no\n", config->name);
+			RRR_MSG_0("Syntax error in avg_discard_unknowns for instance %s, specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -492,7 +492,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
-		RRR_MSG_ERR("Could not initalize data in averager instance %s flags %i\n",
+		RRR_MSG_0("Could not initalize data in averager instance %s flags %i\n",
 				INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
@@ -511,7 +511,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Could parse configuration in averager instance %s\n",
+		RRR_MSG_0("Could parse configuration in averager instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
@@ -534,12 +534,16 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		averager_maintain_buffer(data);
 
 		if (rrr_poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
+			RRR_MSG_ERR("Error while polling in averager instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
 		uint64_t current_time = rrr_time_get_64();
 		if (previous_average_time + average_interval_useconds < current_time) {
 			if (averager_calculate_average(data) != 0) {
+				RRR_MSG_ERR("Error while calculating in averager instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 			previous_average_time = current_time;

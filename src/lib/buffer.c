@@ -192,7 +192,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (struct rrr_fifo_buffer_entry **
 
 	struct rrr_fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
+		RRR_MSG_0("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
 		ret = 1;
 		goto out;
 	}
@@ -200,7 +200,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (struct rrr_fifo_buffer_entry **
 	memset (entry, '\0', sizeof(*entry));
 
 	if (pthread_mutex_init(&entry->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in __rrr_fifo_buffer_entry_new_unlocked\n");
+		RRR_MSG_0("Could not initialize lock in __rrr_fifo_buffer_entry_new_unlocked\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -516,8 +516,7 @@ int rrr_fifo_buffer_search (
 			break;
 		}
 		else if (did_something == 0) {
-			RRR_MSG_ERR ("Bug: Unkown return value %i to fifo_search\n", actions);
-			exit (EXIT_FAILURE);
+			RRR_BUG ("Bug: Unkown return value %i to fifo_search\n", actions);
 		}
 
 		keep:
@@ -1087,7 +1086,7 @@ int rrr_fifo_buffer_write (
 		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
 
 		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
-			RRR_MSG_ERR("Could not allocate entry in rrr_fifo_buffer_write\n");
+			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_write\n");
 			ret = 1;
 			goto loop_out_no_entry_free;
 		}
@@ -1247,7 +1246,7 @@ int rrr_fifo_buffer_write_delayed (
 
 	do {
 		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
-			RRR_MSG_ERR("Could not allocate entry in rrr_fifo_buffer_delayed_write\n");
+			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_delayed_write\n");
 			ret = 1;
 			goto out;
 		}

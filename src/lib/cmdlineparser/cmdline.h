@@ -34,6 +34,7 @@ typedef unsigned long int cmd_conf;
 #define CMD_CONFIG_DEFAULTS			0
 #define CMD_CONFIG_COMMAND			(1<<0)
 
+#define CMD_ARG_FLAG_NO_ARGUMENT	(0)
 #define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
 #define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
 #define CMD_ARG_FLAG_NO_FLAG		(1<<2)

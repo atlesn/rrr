@@ -96,7 +96,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (&message_addr, arg);
 
 		if (rrr_message == NULL) {
-			RRR_MSG_ERR("Could not get RRR message from python3 object in rrr_python3_socket_f_send\n");
+			RRR_MSG_0("Could not get RRR message from python3 object in rrr_python3_socket_f_send\n");
 			ret = 1;
 			goto out;
 		}
@@ -119,7 +119,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 		message = rrr_setting_safe_cast(setting);
 	}
 	else {
-		RRR_MSG_ERR("Received unknown object type in python3 socket send\n");
+		RRR_MSG_0("Received unknown object type in python3 socket send\n");
 		ret = 1;
 		goto out;
 	}
@@ -127,14 +127,14 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	if (MSG_TOTAL_SIZE(&message_addr) > 0 && RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr) > 0) {
 		rrr_message_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
 		if ((ret = rrr_python3_socket_send(self, (struct rrr_socket_msg *)  &message_addr)) != 0) {
-			RRR_MSG_ERR("Received error in python3 socket send function\n");
+			RRR_MSG_0("Received error in python3 socket send function\n");
 			ret = 1;
 			goto out;
 		}
 	}
 
 	if ((ret = rrr_python3_socket_send(self, message)) != 0) {
-		RRR_MSG_ERR("Received error in python3 socket send function\n");
+		RRR_MSG_0("Received error in python3 socket send function\n");
 		ret = 1;
 		goto out;
 	}
@@ -214,7 +214,7 @@ PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel) {
 
 	new_socket = PyObject_New(struct rrr_python3_socket_data, &rrr_python3_socket_type);
 	if (new_socket == NULL) {
-		RRR_MSG_ERR("Could not create new socket:\n");
+		RRR_MSG_0("Could not create new socket:\n");
 		PyErr_Print();
 		ret = 1;
 		goto out;
@@ -249,7 +249,7 @@ int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *mess
 	pthread_mutex_lock(&socket_data->send_lock);
 
 	if (rrr_mmap_channel_write(socket_data->channel, message, MSG_TOTAL_SIZE(message)) != 0) {
-		RRR_MSG_ERR("Could not write to mmap channel in python3 socket\n");
+		RRR_MSG_0("Could not write to mmap channel in python3 socket\n");
 		ret = 1;
 	}
 

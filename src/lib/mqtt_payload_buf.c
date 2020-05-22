@@ -30,7 +30,7 @@ int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));
 	session->buf = malloc(RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
 	if (session->buf == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_init\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(session->buf, '\0', RRR_MQTT_PAYLOAD_BUF_INCREMENT_SIZE);
@@ -83,7 +83,7 @@ int rrr_mqtt_payload_buf_ensure (struct rrr_mqtt_payload_buf_session *session, s
 
 	char *tmp = realloc(session->buf, new_size);
 	if (tmp == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_payload_buf_ensure\n");
 		return RRR_MQTT_PAYLOAD_BUF_ERR;
 	}
 	memset(tmp + session->buf_size, '\0', size_diff);

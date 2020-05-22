@@ -81,7 +81,7 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initalize thread_data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initalize thread_data in duplicator instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -109,6 +109,8 @@ static void *thread_entry_duplicator (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &poll, duplicator_poll_callback, 50) != 0) {
+			RRR_MSG_ERR("Error while polling in duplicator instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 			break;
 		}
 	}
@@ -137,7 +139,7 @@ static int duplicator_preload (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), slots);
 
 	if (slots == 0) {
-		RRR_MSG_ERR("Warning: 0 readers found for duplicator instance %s\n",
+		RRR_MSG_0("Warning: 0 readers found for duplicator instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out;
 	}
@@ -147,7 +149,7 @@ static int duplicator_preload (struct rrr_thread *thread) {
 			INSTANCE_D_HANDLE(thread_data),
 			slots
 	)) != 0) {
-		RRR_MSG_ERR("Could not setup split buffer in duplicator instance %s\n",
+		RRR_MSG_0("Could not setup split buffer in duplicator instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out;
 	}

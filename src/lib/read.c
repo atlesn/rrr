@@ -41,7 +41,7 @@ struct rrr_read_session *rrr_read_session_new (
 ) {
 	struct rrr_read_session *read_session = malloc(sizeof(*read_session));
 	if (read_session == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_read_session_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_read_session_new\n");
 		return NULL;
 	}
 	memset(read_session, '\0', sizeof(*read_session));
@@ -118,7 +118,7 @@ struct rrr_read_session *rrr_read_session_collection_maintain_and_find_or_create
 	if (res == NULL) {
 		res = rrr_read_session_new(src_addr, src_addr_len);
 		if (res == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for read session in rrr_socket_read_message\n");
+			RRR_MSG_0("Could not allocate memory for read session in rrr_socket_read_message\n");
 			goto out;
 		}
 
@@ -197,7 +197,7 @@ int rrr_read_message_using_callbacks (
 			}
 		}
 		else {
-			RRR_MSG_ERR("Error from poll callback in rrr_socket_read_message_using_callbacks\n");
+			RRR_MSG_0("Error from poll callback in rrr_socket_read_message_using_callbacks\n");
 		}
 		goto out;
 	}
@@ -208,7 +208,7 @@ int rrr_read_message_using_callbacks (
 		if (ret == RRR_READ_INCOMPLETE) {
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read callback in rrr_socket_read_message_using_callbacks\n");
+		RRR_MSG_0("Error from read callback in rrr_socket_read_message_using_callbacks\n");
 		goto out;
 	}
 
@@ -221,7 +221,7 @@ int rrr_read_message_using_callbacks (
 	/* Check for socket_options */
 	if (function_get_socket_options != NULL && read_session->socket_options == 0) {
 		if ((ret = function_get_socket_options(read_session, functions_callback_arg)) != 0) {
-			RRR_MSG_ERR("Error while gettings socket options in rrr_socket_read_message_using_callbacks\n");
+			RRR_MSG_0("Error while gettings socket options in rrr_socket_read_message_using_callbacks\n");
 			goto out;
 		}
 	}
@@ -256,7 +256,7 @@ int rrr_read_message_using_callbacks (
 		else {
 			read_session->rx_buf_ptr = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
 			if (read_session->rx_buf_ptr == NULL) {
-				RRR_MSG_ERR("Could not allocate memory in rrr_socket_read_message\n");
+				RRR_MSG_0("Could not allocate memory in rrr_socket_read_message\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -277,7 +277,7 @@ int rrr_read_message_using_callbacks (
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
 			if (new_buf == NULL) {
-				RRR_MSG_ERR("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Could not re-allocate memory in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -318,7 +318,7 @@ int rrr_read_message_using_callbacks (
 
 			char *new_buf = malloc(read_session->rx_buf_size);
 			if (new_buf == NULL) {
-				RRR_MSG_ERR("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Could not allocate memory while aligning buffer in rrr_read_message_using_callbacks\n");
 				ret = RRR_READ_HARD_ERROR;
 				goto out;
 			}
@@ -349,7 +349,7 @@ int rrr_read_message_using_callbacks (
 
 		read_session->rx_overshoot = malloc(read_session->rx_overshoot_size);
 		if (read_session->rx_overshoot == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
+			RRR_MSG_0("Could not allocate memory for overshoot in rrr_read_message_using_callbacks\n");
 			ret = RRR_READ_HARD_ERROR;
 			goto out;
 		}
@@ -362,7 +362,7 @@ int rrr_read_message_using_callbacks (
 		if (function_complete_callback != NULL) {
 			ret = function_complete_callback (read_session, functions_callback_arg);
 			if (ret != 0) {
-				RRR_MSG_ERR("Error from callback in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Error from callback in rrr_read_message_using_callbacks\n");
 				goto out;
 			}
 
@@ -398,27 +398,27 @@ int rrr_read_common_receive_message_raw_callback (
 
 	// Header CRC32 is checked when reading the data from remote and getting size
 	if (rrr_socket_msg_head_to_host_and_verify(socket_msg, data_size) != 0) {
-		RRR_MSG_ERR("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		RRR_MSG_0("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (rrr_socket_msg_check_data_checksum_and_length(socket_msg, data_size) != 0) {
-		RRR_MSG_ERR ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
+		RRR_MSG_0 ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(socket_msg)) {
 		if (callback_data->callback_msg == NULL) {
-			RRR_MSG_ERR("Received an rrr_message in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_message in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		struct rrr_message *message = (struct rrr_message *) socket_msg;
 		if (rrr_message_to_host_and_verify(message, data_size) != 0) {
-			RRR_MSG_ERR("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
+			RRR_MSG_0("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
 					MSG_TOTAL_SIZE(message), message->msg_size);
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
@@ -428,14 +428,14 @@ int rrr_read_common_receive_message_raw_callback (
 	}
 	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(socket_msg)) {
 		if (callback_data->callback_addr_msg == NULL) {
-			RRR_MSG_ERR("Received an rrr_message_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_message_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
 		struct rrr_message_addr *message = (struct rrr_message_addr *) socket_msg;
 		if (rrr_message_addr_to_host(message) != 0) {
-			RRR_MSG_ERR("Invalid data in received address message in rrr_read_common_receive_message_raw_callback\n");
+			RRR_MSG_0("Invalid data in received address message in rrr_read_common_receive_message_raw_callback\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
@@ -443,7 +443,7 @@ int rrr_read_common_receive_message_raw_callback (
 		ret = callback_data->callback_addr_msg(message, callback_data->callback_arg);
 	}
 	else {
-		RRR_MSG_ERR("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",
+		RRR_MSG_0("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",
 				socket_msg->msg_type);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -492,7 +492,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	if (ret != 0) {
 		if (ret != RRR_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
+			RRR_MSG_0("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum_raw\n");
 		}
 		goto out;
 	}
@@ -516,7 +516,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum (
 
 	if (ret != 0) {
 		if (ret != RRR_READ_INCOMPLETE) {
-			RRR_MSG_ERR("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
+			RRR_MSG_0("Warning: Header checksum of message failed in rrr_socket_common_get_session_target_length_from_message_and_checksum\n");
 		}
 		goto out;
 	}

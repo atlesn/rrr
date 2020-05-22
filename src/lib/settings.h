@@ -50,7 +50,7 @@ typedef unsigned long long int rrr_setting_uint;
 do {int yesno = default_yesno;																				\
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\
 		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_ERR("Error while parsing %s in instance %s, please use yes or no\n",					\
+			RRR_MSG_0("Error while parsing %s in instance %s, please use yes or no\n",					\
 				string, config->name);																		\
 			ret = 1; goto out;																				\
 		}																									\
@@ -61,12 +61,12 @@ do {int yesno = default_yesno;																				\
 #define RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)										\
 do {if ((ret = rrr_settings_get_string_noconvert_silent(&data->target, config->settings, string)) != 0) {	\
 		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_ERR("Error while parsing setting %s in instance %s\n", string, config->name);			\
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);			\
 			ret = 1; goto out;																				\
 		} ret = 0;																							\
 	} else {																								\
 		if (rrr_utf8_validate(data->target, strlen(data->target)) != 0) {									\
-			RRR_MSG_ERR("Setting %s in instance %s was not valid UTF-8\n", string, config->name);			\
+			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);			\
 			ret = 1; goto out;																				\
 		}																									\
 	}} while(0)
@@ -77,7 +77,7 @@ do {rrr_setting_uint tmp_uint = default_uint;																\
 		if (ret == RRR_SETTING_NOT_FOUND) {																	\
 			ret = 0;																						\
 		} else {																							\
-			RRR_MSG_ERR("Could not parse setting %s for instance %s\n", string, config->name);				\
+			RRR_MSG_0("Could not parse setting %s for instance %s\n", string, config->name);				\
 			ret = 1; goto out;																				\
 		}																									\
 	} data->target = tmp_uint; } while(0)

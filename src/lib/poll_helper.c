@@ -84,7 +84,7 @@ int rrr_poll_collection_add (
 
 	struct rrr_poll_collection_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory inn rrr_poll_collection_add\n");
+		RRR_MSG_0("Could not allocate memory inn rrr_poll_collection_add\n");
 		ret = RRR_POLL_ERR;
 		goto out;
 	}
@@ -123,7 +123,7 @@ int __poll_collection_add_from_senders_callback (struct instance_metadata *insta
 		ret = 1;
 	}
 	else if (ret != 0) {
-		RRR_MSG_ERR("Error while adding senders to collection in __poll_collection_add_from_senders_callback\n");
+		RRR_MSG_0("Error while adding senders to collection in __poll_collection_add_from_senders_callback\n");
 		ret = 1;
 	}
 

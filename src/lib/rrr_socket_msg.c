@@ -66,7 +66,7 @@ static int __rrr_socket_msg_head_validate (
 	int ret = 0;
 
 	if ((ssize_t) message->msg_size != expected_size) {
-		RRR_MSG_ERR("Message network size mismatch in __rrr_socket_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
+		RRR_MSG_0("Message network size mismatch in __rrr_socket_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
 				expected_size, message->msg_size);
 		ret = 1;
 		goto out;
@@ -77,7 +77,7 @@ static int __rrr_socket_msg_head_validate (
 		rrr_u16 type = message->msg_type;
 		type = type & ~(RRR_SOCKET_MSG_CTRL_F_ALL);
 		if (type != 0) {
-			RRR_MSG_ERR("Unknown control flags in message: %u\n", type);
+			RRR_MSG_0("Unknown control flags in message: %u\n", type);
 			ret = 1;
 			goto out;
 		}
@@ -86,7 +86,7 @@ static int __rrr_socket_msg_head_validate (
 		// OK
 	}
 	else {
-		RRR_MSG_ERR("Received message with invalid type %u in __rrr_socket_msg_head_validate\n", message->msg_type);
+		RRR_MSG_0("Received message with invalid type %u in __rrr_socket_msg_head_validate\n", message->msg_type);
 		ret = 1;
 		goto out;
 	}
@@ -106,7 +106,7 @@ int rrr_socket_msg_head_to_host_and_verify (
 	message->msg_value = rrr_be32toh(message->msg_value);
 
 	if (__rrr_socket_msg_head_validate (message, expected_size) != 0) {
-		RRR_MSG_ERR("Received socket message was invalid in rrr_socket_msg_head_to_host\n");
+		RRR_MSG_0("Received socket message was invalid in rrr_socket_msg_head_to_host\n");
 		return 1;
 	}
 
@@ -145,7 +145,7 @@ int rrr_socket_msg_check_data_checksum_and_length (
 		RRR_BUG("rrr_socket_msg_checksum_check called with too short message\n");
 	}
 	if (message->msg_size != data_size) {
-		RRR_MSG_ERR("Message size mismatch in rrr_socket_msg_checksum_check\n");
+		RRR_MSG_0("Message size mismatch in rrr_socket_msg_checksum_check\n");
 		return 1;
 	}
 	// HEX dumper

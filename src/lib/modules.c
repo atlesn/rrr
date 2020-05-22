@@ -41,10 +41,10 @@ void rrr_module_unload (void *dl_ptr, void (*unload)(void)) {
 
 #ifndef RRR_MODULE_NO_DL_CLOSE
 	if (dlclose(dl_ptr) != 0) {
-		RRR_MSG_ERR ("Warning: Error while unloading module: %s\n", dlerror());
+		RRR_MSG_0 ("Warning: Error while unloading module: %s\n", dlerror());
 	}
 #else
-	RRR_MSG_ERR ("Warning: Not unloading shared object due to configuration RRR_MODULE_NO_DL_CLOSE\n");
+	RRR_MSG_0 ("Warning: Not unloading shared object due to configuration RRR_MODULE_NO_DL_CLOSE\n");
 #endif
 }
 
@@ -62,7 +62,7 @@ int rrr_module_load(struct rrr_module_load_data *target, const char *name, const
 			if (errno == ENOENT) {
 				continue;
 			}
-			RRR_MSG_ERR ("Could not stat %s while loading module: %s\n", path, rrr_strerror(errno));
+			RRR_MSG_0 ("Could not stat %s while loading module: %s\n", path, rrr_strerror(errno));
 			continue;
 		}
 
@@ -70,7 +70,7 @@ int rrr_module_load(struct rrr_module_load_data *target, const char *name, const
 		RRR_DBG_1 ("dlopen handle for %s: %p\n", name, handle);
 
 		if (handle == NULL) {
-			RRR_MSG_ERR ("Error while opening module %s: %s\n", path, dlerror());
+			RRR_MSG_0 ("Error while opening module %s: %s\n", path, dlerror());
 			continue;
 		}
 
@@ -79,7 +79,7 @@ int rrr_module_load(struct rrr_module_load_data *target, const char *name, const
 
 		if (init == NULL || unload == NULL) {
 			dlclose(handle);
-			RRR_MSG_ERR ("Module %s missing init/unload functions\n", path);
+			RRR_MSG_0 ("Module %s missing init/unload functions\n", path);
 			continue;
 		}
 

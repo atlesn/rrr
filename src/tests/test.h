@@ -19,6 +19,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#ifndef RRR_TEST_H
+#define RRR_TEST_H
+
 #define TEST_MSG(...) \
 	do {printf (__VA_ARGS__);}while(0)
 
@@ -27,3 +30,5 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define TEST_RESULT(ok) \
 	while(0); printf("%s\n", (ok) ? "passed" : "failed");} while (0)
+
+#endif /* RRR_TEST_H */

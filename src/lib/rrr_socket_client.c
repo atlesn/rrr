@@ -63,7 +63,7 @@ static int __rrr_socket_client_new (
 
 	struct rrr_socket_client *client = malloc (sizeof(*client));
 	if (client == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_client_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -85,7 +85,7 @@ static int __rrr_socket_client_new (
 		}
 
 		if ((ret = private_data_new(&client->private_data, private_arg)) != 0) {
-			RRR_MSG_ERR("Error while initializing private data in __rrr_socket_client_new\n");
+			RRR_MSG_0("Error while initializing private data in __rrr_socket_client_new\n");
 			ret = 1;
 			goto out_free;
 		}
@@ -121,7 +121,7 @@ int rrr_socket_client_collection_init (
 	memset(collection, '\0', sizeof(*collection));
 	collection->creator = strdup(creator);
 	if (collection->creator == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_init\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_init\n");
 		return 1;
 	}
 	collection->listen_fd = listen_fd;
@@ -146,7 +146,7 @@ int rrr_socket_client_collection_accept (
 	int ret = rrr_socket_accept(collection->listen_fd, (struct sockaddr *) &temp.addr, &temp.addr_len, collection->creator);
 	if (ret == -1) {
 		if (errno != EWOULDBLOCK) {
-			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 		return 0;
@@ -164,7 +164,7 @@ int rrr_socket_client_collection_accept (
 			private_arg,
 			private_data_destroy
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_accept\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_accept\n");
 		return 1;
 	}
 
@@ -241,7 +241,7 @@ int rrr_socket_client_collection_read (
 		}
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				RRR_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
+				RRR_MSG_0("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;

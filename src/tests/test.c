@@ -34,10 +34,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "../lib/fixed_point.h"
 #include "../lib/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
+
+#include "test_usleep.h"
+#include "test_fixp.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("test");
 
@@ -55,7 +57,7 @@ int main_get_test_result(struct instance_metadata_collection *instances) {
 	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
-		RRR_MSG_ERR("Could not find instance for configuration test 'instance_configuration_tester'");
+		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
 		return 1;
 	}
 
@@ -66,7 +68,7 @@ int main_get_test_result(struct instance_metadata_collection *instances) {
 	int (*get_test_result)(void) = dlsym(handle, "get_test_module_result");
 
 	if (get_test_result == NULL) {
-		RRR_MSG_ERR("Could not find test result function in test module: %s\n", dlerror());
+		RRR_MSG_0("Could not find test result function in test module: %s\n", dlerror());
 		return 1;
 	}
 
@@ -93,128 +95,29 @@ int signal_interrupt (int s, void *arg) {
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"config",		"{CONFIGURATION FILE}"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",	"-d|--debuglevel DEBUGLEVEL"},
+		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"library-tests","-l|--library-tests"},
 		{0,							'\0',	NULL, 			""}
 };
 
-static int test_fixp(void) {
+int rrr_test_library_functions (void) {
 	int ret = 0;
+	int ret_tmp = 0;
 
-	rrr_fixp fixp_a = 0;
-	rrr_fixp fixp_b = 0;
-	rrr_fixp fixp_c = 0;
+	// OR all the return values, don't stop if a test fails
 
-	const char *endptr;
+	TEST_BEGIN("rrr_posix_usleep") {
+		ret_tmp = rrr_test_usleep();
+	} TEST_RESULT(ret_tmp == 0);
 
-	const char *a_str = "+1.5yuiyuiyuiyu";
-	const char *b_str = "-1.5##%%¤#";
-	const char *c_str = "15.671875";
+	ret |= ret_tmp;
 
-	ret |= rrr_fixp_str_to_fixp(&fixp_a, a_str, strlen(a_str), &endptr);
-	if (endptr - a_str != 4) {
-		TEST_MSG("End pointer position was incorrect for A\n");
-		ret = 1;
-		goto out;
-	}
+	TEST_BEGIN("fixed point type") {
+		ret_tmp = rrr_test_fixp();
+	} TEST_RESULT(ret_tmp == 0);
 
-	ret |= rrr_fixp_str_to_fixp(&fixp_b, b_str, strlen(b_str), &endptr);
-	if (endptr - b_str != 4) {
-		TEST_MSG("End pointer position was incorrect for B\n");
-		ret = 1;
-		goto out;
-	}
+	ret |= ret_tmp;
 
-	ret |= rrr_fixp_str_to_fixp(&fixp_c, c_str, strlen(c_str), &endptr);
-
-	if (ret != 0) {
-		TEST_MSG("Conversion from string to fixed point failed\n");
-		goto out;
-	}
-
-	if (fixp_a == 0) {
-		TEST_MSG("Zero returned while converting string to fixed point\n");
-		ret = 1;
-		goto out;
-	}
-
-	ret = fixp_a + fixp_b;
-	if (ret != 0) {
-		TEST_MSG("Expected 0 while adding 1.5 and -1.5, got %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	char buf[512];
-	if ((ret = rrr_fixp_to_str(buf, 511, fixp_a)) != 0) {
-		TEST_MSG("Conversion from fixed point to string failed\n");
-		goto out;
-	}
-	if (strncmp(buf, "1.5", 3) != 0) {
-		TEST_MSG("Wrong output while converting fixed point to string, expected '1.5' but got '%s'\n", buf);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_fixp_to_str(buf, 511, fixp_c)) != 0) {
-		TEST_MSG("Conversion from fixed point to string failed\n");
-		goto out;
-	}
-	if (strncmp(buf, "15.671875", 8) != 0) {
-		TEST_MSG("Wrong output while converting fixed point to string, expected '5.671875' but got '%s'\n", buf);
-		ret = 1;
-		goto out;
-	}
-
-	long double dbl = 0;
-	if ((ret = rrr_fixp_to_ldouble(&dbl, fixp_a)) != 0) {
-		TEST_MSG("Conversion from fixed point to ldouble failed\n");
-		goto out;
-	}
-
-	if (dbl != 1.5) {
-		TEST_MSG("Wrong output while converting fixed point to double, expected 1.5 but got %Lf\n", dbl);
-		ret = 1;
-		goto out;
-	}
-
-	if ((ret = rrr_fixp_ldouble_to_fixp(&fixp_a, dbl)) != 0) {
-		TEST_MSG("Conversion from double to fixed point failed\n");
-		goto out;
-	}
-
-	ret = fixp_a + fixp_b;
-	if (ret != 0) {
-		TEST_MSG("Expected 0 while adding 1.5 and -1.5 after conversion from double, got %i\n", ret);
-		ret = 1;
-		goto out;
-	}
-
-	const char *a_hex = "16#+1.8/¤#";
-	if (rrr_fixp_str_to_fixp(&fixp_a, a_hex, strlen(a_hex), &endptr) != 0) {
-		TEST_MSG("Hexadecimal conversion failed\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (endptr - a_hex != 7) {
-		TEST_MSG("End pointer position was incorrect for hex\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (rrr_fixp_to_ldouble(&dbl, fixp_a) != 0) {
-		TEST_MSG("Conversion from fixed point to ldouble failed (hex)\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (dbl != 1.5) {
-		TEST_MSG("Wrong output while converting fixed point to double (hex test), expected 1.5 but got %Lf\n", dbl);
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return (ret != 0);
+	return ret;
 }
 
 int main (int argc, const char **argv) {
@@ -222,7 +125,7 @@ int main (int argc, const char **argv) {
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		ret = 1;
 		goto out_cleanup_fork_handler;
 	}
@@ -277,20 +180,22 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
-
-	const char *config_file = cmd_get_value(&cmd, "config", 0);
-	if (config_file == NULL) {
-		RRR_MSG_ERR("No configuration file specified for test program\n");
-		ret = 1;
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
-	TEST_BEGIN("fixed point type") {
-		ret = test_fixp();
-	} TEST_RESULT(ret == 0);
+	RRR_DBG_1("debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
-	if (ret != 0) {
+	if (cmd_exists(&cmd, "library-tests", 0)) {
+		TEST_MSG("Library tests requested by argument, doing that now.\n");
+		ret = rrr_test_library_functions();
+		goto out_cleanup_cmd;
+	}
+
+	const char *config_file = cmd_get_value(&cmd, "config", 0);
+	if (config_file == NULL) {
+		RRR_MSG_0("No configuration file specified for test program\n");
+		ret = 1;
 		goto out_cleanup_cmd;
 	}
 

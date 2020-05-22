@@ -35,12 +35,12 @@ PyObject *rrr_py_import_function (PyObject *dictionary, const char *symbol) {
 	PyObject *ret = rrr_py_import_object(dictionary, symbol);
 
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not load %s function\n", symbol);
+		RRR_MSG_0("Could not load %s function\n", symbol);
 		goto out_err;
 	}
 
 	if (!PyCallable_Check(ret)) {
-	        RRR_MSG_ERR("%s was not a callable\n", symbol);
+	        RRR_MSG_0("%s was not a callable\n", symbol);
         	goto out_err_cleanup;
 	}
 
@@ -75,7 +75,7 @@ PyObject *rrr_py_import_and_call_function_no_args(PyObject *dictionary, const ch
 	result = PyEval_CallObject(function, args);
 	RRR_Py_XDECREF(args);
 	if (result == NULL) {
-		RRR_MSG_ERR("NULL result from function %s\n", symbol);
+		RRR_MSG_0("NULL result from function %s\n", symbol);
 		PyErr_Print();
 		goto out_cleanup;
 	}
@@ -101,7 +101,7 @@ void rrr_py_dump_global_modules(void) {
 		if (strcmp(obj->ob_type->tp_name, "module") == 0) {
 			PyObject *name_obj  = PyObject_GetAttrString(obj, "__name__");
 			if (name_obj == NULL) {
-				RRR_MSG_ERR("Could not get name of object %s:\n",obj->ob_type->tp_name );
+				RRR_MSG_0("Could not get name of object %s:\n",obj->ob_type->tp_name );
 				PyErr_Print();
 				continue;
 			}
@@ -111,7 +111,7 @@ void rrr_py_dump_global_modules(void) {
 				printf ("-> [%i]: %s\n", i, name);
 			}
 			else {
-				RRR_MSG_ERR ("Warning: __name__ not found in module object with index %i\n", i);
+				RRR_MSG_0 ("Warning: __name__ not found in module object with index %i\n", i);
 			}
 
 			RRR_Py_XDECREF(name_obj);

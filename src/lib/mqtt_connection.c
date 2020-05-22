@@ -240,7 +240,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 			connection->protocol_version
 	);
 	if (disconnect == NULL) {
-		RRR_MSG_ERR("Could not allocate DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect\n");
+		RRR_MSG_0("Could not allocate DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect\n");
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out_nolock;
 	}
@@ -257,7 +257,7 @@ int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		)) != RRR_MQTT_CONN_OK) {
 			ret = ret & ~RRR_MQTT_CONN_DESTROY_CONNECTION;
 			if (ret != RRR_MQTT_CONN_OK) {
-				RRR_MSG_ERR("Error while queuing outbound DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect return was %i\n",
+				RRR_MSG_0("Error while queuing outbound DISCONNECT packet in rrr_mqtt_conn_iterator_ctx_send_disconnect return was %i\n",
 						ret);
 				goto send_disconnect_out;
 			}
@@ -354,7 +354,7 @@ static int __rrr_mqtt_connection_new (
 
 	res = malloc(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_connection_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out;
 	}
@@ -362,7 +362,7 @@ static int __rrr_mqtt_connection_new (
 	memset (res, '\0', sizeof(*res));
 
 	if ((ret = pthread_mutex_init (&res->lock, 0)) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in __rrr_mqtt_connection_new\n");
+		RRR_MSG_0("Could not initialize mutex in __rrr_mqtt_connection_new\n");
 		goto out_free;
 	}
 	RRR_MQTT_CONN_LOCK(res);
@@ -371,7 +371,7 @@ static int __rrr_mqtt_connection_new (
 //	ret |= fifo_buffer_init_custom_free(&res->send_queue.buffer,		rrr_mqtt_p_standardized_decref);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not initialize buffers in __rrr_mqtt_connection_new\n");
+		RRR_MSG_0("Could not initialize buffers in __rrr_mqtt_connection_new\n");
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out_destroy_mutex;
 	}
@@ -475,7 +475,7 @@ int rrr_mqtt_conn_collection_init (
 	connections->close_wait_time_usec = close_wait_time_usec;
 
 	if ((ret = pthread_mutex_init (&connections->lock, 0)) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in __rrr_mqtt_connection_collection_new\n");
+		RRR_MSG_0("Could not initialize mutex in __rrr_mqtt_connection_collection_new\n");
 		goto out;
 	}
 
@@ -510,7 +510,7 @@ static int __rrr_mqtt_conn_collection_new_connection (
 	}
 
 	if (connections->node_count >= connections->max) {
-		RRR_MSG_ERR("Max number of connections (%li) reached in rrr_mqtt_connection_collection_new_connection\n",
+		RRR_MSG_0("Max number of connections (%li) reached in rrr_mqtt_connection_collection_new_connection\n",
 				connections->max);
 		ret = RRR_MQTT_CONN_BUSY;
 		goto out_nolock;
@@ -523,19 +523,19 @@ static int __rrr_mqtt_conn_collection_new_connection (
 			connections->close_wait_time_usec,
 			connections
 	)) != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Could not create new connection in rrr_mqtt_connection_collection_new_connection\n");
+		RRR_MSG_0("Could not create new connection in rrr_mqtt_connection_collection_new_connection\n");
 		goto out_nolock;
 	}
 
 	if ((ret = __rrr_mqtt_connection_collection_write_lock(connections)) != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_new_connection\n");
 		goto out_nolock;
 	}
 
 	RRR_LL_UNSHIFT(connections, res);
 
 	if ((ret = __rrr_mqtt_connection_collection_write_unlock(connections)) != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_new_connection\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_new_connection\n");
 		goto out_nolock;
 	}
 
@@ -557,7 +557,7 @@ int rrr_mqtt_conn_collection_connect (
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (&accept_data, port, host) != 0) {
-		RRR_MSG_ERR("Could not connect to mqtt server '%s'\n", host);
+		RRR_MSG_0("Could not connect to mqtt server '%s'\n", host);
 		ret = 1;
 		goto out;
 	}
@@ -588,7 +588,7 @@ int rrr_mqtt_conn_collection_accept (
 	struct rrr_ip_accept_data *accept_data = NULL;
 
 	if ((ret = rrr_ip_accept(&accept_data, ip, creator, 0)) != 0) {
-		RRR_MSG_ERR("Error from ip_accept in rrr_mqtt_conn_collection_accept\n");
+		RRR_MSG_0("Error from ip_accept in rrr_mqtt_conn_collection_accept\n");
 		goto out;
 	}
 
@@ -615,7 +615,7 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 	int callback_ret = 0;
 
 	if ((ret = __rrr_mqtt_connection_collection_read_to_write_lock(connections)) != 0) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		goto out;
 	}
 
@@ -626,7 +626,7 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 				RRR_BUG("Destroy connection flag not allowed in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 			}
 			if ((ret_tmp & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-				RRR_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+				RRR_MSG_0("Internal error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 				callback_ret |= ret_tmp;
 				RRR_LL_ITERATE_BREAK();
 			}
@@ -635,12 +635,12 @@ int rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
 				RRR_LL_ITERATE_BREAK();
 			}
 
-			RRR_MSG_ERR("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+			RRR_MSG_0("Soft error returned from callback in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		}
 	RRR_LL_ITERATE_END();
 
 	if ((ret = __rrr_mqtt_connection_collection_write_to_read_lock(connections)) != 0) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_iterate_reenter_read_to_write\n");
 		goto out;
 	}
 
@@ -663,7 +663,7 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 	if (!RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(connection)) {
 		ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(connection);
 		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-			RRR_MSG_ERR("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
+			RRR_MSG_0("Internal error sending disconnect packet in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
 			goto out_unlock;
 		}
 		// Ignore soft errors when sending DISCONNECT packet here.
@@ -689,12 +689,12 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 
 	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
 	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_CONN_DESTROY_CONNECTION)) != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Error from event handler in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy, return was %i. ", ret);
+		RRR_MSG_0("Error from event handler in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy, return was %i. ", ret);
 		if ((ret & RRR_MQTT_CONN_INTERNAL_ERROR) != 0) {
-			RRR_MSG_ERR("Error was critical.\n");
+			RRR_MSG_0("Error was critical.\n");
 			goto out_unlock;
 		}
-		RRR_MSG_ERR("Error was non-critical, proceeding with destroy.\n");
+		RRR_MSG_0("Error was non-critical, proceeding with destroy.\n");
 		ret = RRR_MQTT_CONN_OK;
 	}
 
@@ -718,7 +718,7 @@ int rrr_mqtt_conn_collection_iterate (
 	int callback_ret = 0;
 
 	if ((ret = __rrr_mqtt_connection_collection_read_lock(connections)) != 0) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_iterate\n");
 		goto out;
 	}
 
@@ -755,7 +755,7 @@ int rrr_mqtt_conn_collection_iterate (
 			}
 
 			if (ret_tmp != 0) {
-				RRR_MSG_ERR("Internal error returned from callback in rrr_mqtt_connection_collection_iterate return was %i\n", ret_tmp);
+				RRR_MSG_0("Internal error returned from callback in rrr_mqtt_connection_collection_iterate return was %i\n", ret_tmp);
 				callback_ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 				RRR_LL_ITERATE_BREAK();
 			}
@@ -766,12 +766,12 @@ int rrr_mqtt_conn_collection_iterate (
 		}
 
 #define LOCK_ERR \
-			RRR_MSG_ERR("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");			\
+			RRR_MSG_0("Lock error in __rrr_mqtt_connection_collection_in_iterator_destroy_connection\n");			\
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;																		\
 			goto out
 
 #define DESTROY_ERR \
-			RRR_MSG_ERR("Internal error while destroying connection in rrr_mqtt_connection_collection_iterate\n");	\
+			RRR_MSG_0("Internal error while destroying connection in rrr_mqtt_connection_collection_iterate\n");	\
 			callback_ret = RRR_MQTT_CONN_INTERNAL_ERROR;															\
 			RRR_LL_ITERATE_BREAK()
 
@@ -785,7 +785,7 @@ int rrr_mqtt_conn_collection_iterate (
 	);
 
 	if ((ret = __rrr_mqtt_connection_collection_read_unlock(connections)) != 0) {
-		RRR_MSG_ERR("Lock error in rrr_mqtt_connection_collection_iterate\n");
+		RRR_MSG_0("Lock error in rrr_mqtt_connection_collection_iterate\n");
 		goto out;
 	}
 
@@ -837,7 +837,7 @@ int rrr_mqtt_conn_with_iterator_ctx_do_custom (
 	);
 
 	if (callback_data.connection_found != 1) {
-		RRR_MSG_ERR("Connection not found in rrr_mqtt_connection_with_iterator_ctx_do\n");
+		RRR_MSG_0("Connection not found in rrr_mqtt_connection_with_iterator_ctx_do\n");
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
 	}
 
@@ -937,7 +937,7 @@ int rrr_mqtt_conn_check_alive (
 	ret = ret & RRR_MQTT_CONN_INTERNAL_ERROR;
 
 	if (ret != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Internal error while checking keep-alive for connection in rrr_mqtt_check_alive\n");
+		RRR_MSG_0("Internal error while checking keep-alive for connection in rrr_mqtt_check_alive\n");
 		goto out;
 	}
 
@@ -985,7 +985,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	if (read_session->rx_buf_wpos > read_session->target_size && read_session->target_size > 0) {
-		RRR_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_read %li > %li (when starting read tick)\n",
+		RRR_MSG_0("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_read %li > %li (when starting read tick)\n",
 				read_session->rx_buf_wpos, read_session->target_size);
 		ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
@@ -1007,12 +1007,12 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_MSG_ERR("Poll error in rrr_mqtt_connection_read, errno is %i\n", errno);
+		RRR_MSG_0("Poll error in rrr_mqtt_connection_read, errno is %i\n", errno);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_MSG_ERR("Poll error in rrr_mqtt_connection_read, revents are %i\n", pollfd.revents);
+		RRR_MSG_0("Poll error in rrr_mqtt_connection_read, revents are %i\n", pollfd.revents);
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
@@ -1022,7 +1022,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	}
 
 	if (ioctl (connection->ip_data.fd, FIONREAD, &bytes_int) != 0) {
-		RRR_MSG_ERR("Error from ioctl in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error from ioctl in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
@@ -1036,13 +1036,13 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	/* Check for new read session */
 	if (read_session->rx_buf == NULL) {
 		if (bytes < 2) {
-			RRR_MSG_ERR("Received less than 2 bytes in first packet on connection\n");
+			RRR_MSG_0("Received less than 2 bytes in first packet on connection\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out_unlock;
 		}
 		read_session->rx_buf = malloc(bytes > read_step_max_size ? bytes : read_step_max_size);
 		if (read_session->rx_buf == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in rrr_mqtt_connection_read\n");
+			RRR_MSG_0("Could not allocate memory in rrr_mqtt_connection_read\n");
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out_unlock;
 		}
@@ -1060,7 +1060,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 		char *new_buf = realloc(read_session->rx_buf, new_size);
 		if (new_buf == NULL) {
-			RRR_MSG_ERR("Could not re-allocate memory in rrr_mqtt_connection_read\n");
+			RRR_MSG_0("Could not re-allocate memory in rrr_mqtt_connection_read\n");
 			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 			goto out_unlock;
 		}
@@ -1130,13 +1130,13 @@ int rrr_mqtt_conn_iterator_ctx_read (
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			goto out_unlock;
 		}
-		RRR_MSG_ERR("Error from read in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error from read in rrr_mqtt_connection_read: %s\n", rrr_strerror(errno));
 		ret = RRR_MQTT_CONN_SOFT_ERROR;
 		goto out_unlock;
 	}
 
 	if (bytes == 0) {
-		RRR_MSG_ERR("Bytes was 0 after read in rrr_mqtt_connection_read, despite polling first\n");
+		RRR_MSG_0("Bytes was 0 after read in rrr_mqtt_connection_read, despite polling first\n");
 		ret = RRR_MQTT_CONN_SOFT_ERROR | RRR_MQTT_CONN_DESTROY_CONNECTION;
 		goto out_unlock;
 	}
@@ -1219,7 +1219,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 			connection->read_complete = 1;
 		}
 		else if (connection->read_session.rx_buf_wpos > connection->read_session.target_size) {
-			RRR_MSG_ERR("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_parse %li > %li (after fixed header is done)\n",
+			RRR_MSG_0("Invalid message: Actual size of message exceeds stated size in rrr_mqtt_connection_parse %li > %li (after fixed header is done)\n",
 					connection->read_session.rx_buf_wpos, connection->read_session.target_size);
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 			goto out_unlock;
@@ -1239,7 +1239,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 					connection->read_session.rx_buf_wpos - connection->parse_session.payload_pos
 			);
 			if (ret != 0) {
-				RRR_MSG_ERR("Could not move payload to packet in rrr_mqtt_conn_iterator_ctx_parse\n");
+				RRR_MSG_0("Could not move payload to packet in rrr_mqtt_conn_iterator_ctx_parse\n");
 				goto out_unlock;
 			}
 
@@ -1253,7 +1253,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 		__rrr_mqtt_connection_read_session_init(&connection->read_session);
 
 		if ((ret = CALL_EVENT_HANDLER(RRR_MQTT_CONN_EVENT_PACKET_PARSED)) != 0) {
-			RRR_MSG_ERR("Error from event handler in rrr_mqtt_connection_iterator_ctx_parse, return was %i\n", ret);
+			RRR_MSG_0("Error from event handler in rrr_mqtt_connection_iterator_ctx_parse, return was %i\n", ret);
 			goto out_unlock;
 		}
 	}
@@ -1290,7 +1290,7 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
 
 	if (connection->read_complete == 1) {
 		if (connection->parse_complete != 1) {
-			RRR_MSG_ERR("Reading is done for a packet but parsing did not complete. Closing connection.\n");
+			RRR_MSG_0("Reading is done for a packet but parsing did not complete. Closing connection.\n");
 			ret = RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR;
 			goto out_unlock;
 		}
@@ -1307,7 +1307,7 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
 		connection->parse_complete = 0;
 
 		if ((ret = handler_callback(connection, packet, callback_arg))) {
-			RRR_MSG_ERR("Error from handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
+			RRR_MSG_0("Error from handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
 			ret = 1;
 			goto out_unlock;
 		}
@@ -1354,7 +1354,7 @@ int rrr_mqtt_conn_iterator_ctx_housekeeping (
 				connection->last_write_time + limit_ping < rrr_time_get_64()) &&
 				(ret = callback_data->exceeded_keep_alive_callback(connection, callback_data->callback_arg)) != RRR_MQTT_CONN_OK
 		) {
-			RRR_MSG_ERR("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
+			RRR_MSG_0("Error from callback in rrr_mqtt_conn_iterator_ctx_housekeeping after exceeded keep-alive\n");
 			goto out;
 		}
 	}
@@ -1384,13 +1384,13 @@ static int __rrr_mqtt_connection_write (struct rrr_mqtt_conn *connection, const 
 				ret = RRR_MQTT_CONN_BUSY;
 				goto out;
 			}
-			RRR_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write: %s\n",
+			RRR_MSG_0("Error while sending packet in __rrr_mqtt_connection_write: %s\n",
 					rrr_strerror(errno));
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 		}
 		else if (bytes != data_size) {
 			// TODO : Should we recover from this?
-			RRR_MSG_ERR("Error while sending packet in __rrr_mqtt_connection_write, only %li of %li bytes were sent\n",
+			RRR_MSG_0("Error while sending packet in __rrr_mqtt_connection_write, only %li of %li bytes were sent\n",
 					bytes, data_size);
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 			goto out;
@@ -1411,7 +1411,7 @@ int __rrr_mqtt_connection_create_variable_int (
 	*length = 1;
 
 	if (value > 0xfffffff) {
-		RRR_MSG_ERR("Integer value too large in __rrr_mqtt_connection_create_variable_int\n");
+		RRR_MSG_0("Integer value too large in __rrr_mqtt_connection_create_variable_int\n");
 		return RRR_MQTT_CONN_INTERNAL_ERROR;
 	}
 
@@ -1480,7 +1480,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 
 		if (ret_tmp != RRR_MQTT_ASSEMBLE_OK) {
 			if (ret_tmp == RRR_MQTT_ASSEMBLE_INTERNAL_ERR) {
-				RRR_MSG_ERR("Error while assembling packet in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+				RRR_MSG_0("Error while assembling packet in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 				ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 				goto out;
 			}
@@ -1515,7 +1515,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			&variable_int_length,
 			packet->assembled_data_size + payload_length
 	)) != 0) {
-		RRR_MSG_ERR("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+		RRR_MSG_0("Error while creating variable int in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
 	header.type = RRR_MQTT_P_GET_TYPE_AND_FLAGS(packet);
@@ -1538,14 +1538,14 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			goto out;
 		}
 
-		RRR_MSG_ERR("Error while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+		RRR_MSG_0("Error while sending fixed header in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		goto out;
 	}
 
 	if (packet->assembled_data_size > 0) {
 		if ((ret = __rrr_mqtt_connection_write (connection, packet->_assembled_data, packet->assembled_data_size)) != 0) {
 			// TODO : Recover from this?
-			RRR_MSG_ERR("Error: Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet. Fixed data was already sent, cannot recover from this.\n");
+			RRR_MSG_0("Error: Error while sending assembled data in rrr_mqtt_conn_iterator_ctx_send_packet. Fixed data was already sent, cannot recover from this.\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR;
 			goto out;
 		}
@@ -1559,7 +1559,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			RRR_BUG("Payload size was 0 but payload pointer was not NULL in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 		}
 		if ((ret = __rrr_mqtt_connection_write (connection, payload->payload_start, payload->length)) != 0) {
-			RRR_MSG_ERR("Error while sending payload data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
+			RRR_MSG_0("Error while sending payload data in rrr_mqtt_conn_iterator_ctx_send_packet\n");
 			goto out;
 		}
 	}
@@ -1570,7 +1570,7 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_OUT
 	);
 	if (ret != RRR_MQTT_CONN_OK) {
-		RRR_MSG_ERR("Could not update connection state in rrr_mqtt_connection_iterator_ctx_send_packet\n");
+		RRR_MSG_0("Could not update connection state in rrr_mqtt_connection_iterator_ctx_send_packet\n");
 		goto out;
 	}
 
@@ -1629,7 +1629,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 			if (direction == RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_OUT) {
 				RRR_BUG("This CONNECT packet was outbound, it's a bug\n");
 			}
-			RRR_MSG_ERR("Tried to process a CONNECT while not allowed\n");
+			RRR_MSG_0("Tried to process a CONNECT while not allowed\n");
 			return RRR_MQTT_CONN_SOFT_ERROR;
 		}
 
@@ -1646,7 +1646,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 			}
 		}
 		else if (!RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_IS_ALLOWED(connection)) {
-			RRR_MSG_ERR("Received CONNACK while not allowed\n");
+			RRR_MSG_0("Received CONNACK while not allowed\n");
 			return RRR_MQTT_CONN_SOFT_ERROR;
 		}
 
@@ -1663,7 +1663,7 @@ int rrr_mqtt_conn_iterator_ctx_update_state (
 			}
 		}
 		else if (!RRR_MQTT_CONN_STATE_RECEIVE_ANY_IS_ALLOWED(connection)) {
-			RRR_MSG_ERR("Received DISCONNECT while not allowed\n");
+			RRR_MSG_0("Received DISCONNECT while not allowed\n");
 			return RRR_MQTT_CONN_SOFT_ERROR;
 		}
 		RRR_MQTT_CONN_STATE_SET (connection, RRR_MQTT_CONN_STATE_DISCONNECT_WAIT);

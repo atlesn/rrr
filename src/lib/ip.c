@@ -142,7 +142,7 @@ static int __ip_receive_callback (
 			protocol = RRR_IP_TCP;
 			break;
 		default:
-			RRR_MSG_ERR("Unknown SO_TYPE %i in __ip_receive_callback\n", read_session->socket_options);
+			RRR_MSG_0("Unknown SO_TYPE %i in __ip_receive_callback\n", read_session->socket_options);
 			ret = 1;
 			goto out;
 	}
@@ -181,12 +181,12 @@ static int __ip_receive_callback (
 	if (callback_data->stats != NULL) {
 		ret = rrr_ip_stats_update(callback_data->stats, 1, RRR_IP_RECEIVE_MAX_STEP_SIZE);
 		if (ret == RRR_IP_STATS_UPDATE_ERR) {
-			RRR_MSG_ERR("ip: Error returned from stats update function\n");
+			RRR_MSG_0("ip: Error returned from stats update function\n");
 			return 1;
 		}
 		if (ret == RRR_IP_STATS_UPDATE_READY) {
 			if (rrr_stats_print_reset(callback_data->stats, 1) != RRR_IP_STATS_UPDATE_OK) {
-				RRR_MSG_ERR("ip: Error returned from stats print function\n");
+				RRR_MSG_0("ip: Error returned from stats print function\n");
 				return 1;
 			}
 		}
@@ -270,22 +270,22 @@ static int __rrr_ip_receive_rrr_message_callback (
 	struct rrr_message *message = entry->message;
 	const ssize_t count = entry->data_length;
 	if (count < 10) {
-		RRR_MSG_ERR("Received short message/packet from network\n");
+		RRR_MSG_0("Received short message/packet from network\n");
 		goto out_free;
 	}
 	// Header CRC32 is checked when reading the data from remote and getting size
 	if (rrr_socket_msg_head_to_host_and_verify(
 			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
-		RRR_MSG_ERR("Message was invalid in __ip_receive_messages_callback \n");
+		RRR_MSG_0("Message was invalid in __ip_receive_messages_callback \n");
 		goto out_free;
 	}
 	if (rrr_socket_msg_check_data_checksum_and_length(
 			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
-		RRR_MSG_ERR("IP: Message checksum was invalid\n");
+		RRR_MSG_0("IP: Message checksum was invalid\n");
 		goto out_free;
 	}
 	if (rrr_message_to_host_and_verify(entry->message, entry->data_length) != 0) {
-		RRR_MSG_ERR(
+		RRR_MSG_0(
 				"Message verification failed in __ip_receive_messages_callback (size: %u<>%u)\n",
 				MSG_TOTAL_SIZE(message), message->msg_size);
 		ret = 1;
@@ -338,17 +338,17 @@ int rrr_ip_send (
 	if ((bytes = sendto(fd, data, data_size, 0, sockaddr, addrlen)) == -1) {
 		*err = errno;
 		if (errno == ECONNREFUSED || errno == ECONNRESET) {
-			RRR_MSG_ERR ("Connection refused in rrr_ip_send\n");
+			RRR_DBG_1 ("Connection refused in rrr_ip_send\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 		else if (errno == EPIPE) {
-			RRR_MSG_ERR ("Pipe full in ip_send_raw or connection closed by remote\n");
+			RRR_MSG_0 ("Pipe full in ip_send_raw or connection closed by remote\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
 		}
 		else if (--max_retries == 0) {
-			RRR_MSG_ERR("Max retries for sendto reached in rrr_ip_send for socket %i pid %i\n",
+			RRR_MSG_0 ("Max retries for sendto reached in rrr_ip_send for socket %i pid %i\n",
 					fd, getpid());
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -360,6 +360,7 @@ int rrr_ip_send (
 		else if (errno == EINTR) {
 			goto retry;
 		}
+
 		// Sometimes caller tests for many addresses when looking destination up by hostname
 		RRR_DBG_1 ("Note: Error from sendto in rrr_ip_send, address family was %u: %s\n",
 				sockaddr->sa_family, rrr_strerror(errno));
@@ -367,8 +368,9 @@ int rrr_ip_send (
 		goto out;
 	}
 
+	// TODO : Possibly handle this situation
 	if (bytes != data_size) {
-		RRR_MSG_ERR("All bytes were not sent in sendto in rrr_ip_send\n");
+		RRR_MSG_0("All bytes were not sent in sendto in rrr_ip_send\n");
 		ret = 1;
 		goto out;
 	}
@@ -391,7 +393,7 @@ int rrr_ip_send_message (
 
 	struct rrr_message *final_message = malloc(buf_size);
 	if (final_message == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in ip_send_message\n");
+		RRR_MSG_0("Could not allocate memory in ip_send_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -417,20 +419,20 @@ int rrr_ip_send_message (
 
 	int err;
 	if ((ret = rrr_ip_send(&err, info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
-		RRR_MSG_ERR("Data could not be sent in ip_send_message\n");
+		RRR_MSG_0("Data could not be sent in ip_send_message\n");
 		goto out;
 	}
 
 	if (stats != NULL) {
 		int res = rrr_ip_stats_update(stats, 1, final_size);
 		if (res == RRR_IP_STATS_UPDATE_ERR) {
-			RRR_MSG_ERR("ip: Error returned from stats update function\n");
+			RRR_MSG_0("ip: Error returned from stats update function\n");
 			ret = 1;
 			goto out;
 		}
 		if (res == RRR_IP_STATS_UPDATE_READY) {
 			if (rrr_stats_print_reset(stats, 1) != RRR_IP_STATS_UPDATE_OK) {
-				RRR_MSG_ERR("ip: Error returned from stats print function\n");
+				RRR_MSG_0("ip: Error returned from stats print function\n");
 				ret = 1;
 				goto out;
 			}
@@ -459,7 +461,7 @@ int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
 		return 1;
 	}
 
@@ -477,12 +479,12 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
 		goto out_error;
 	}
 
 	if (data->port < 1 || data->port > 65535) {
-		RRR_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		RRR_MSG_0 ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}
 
@@ -493,7 +495,7 @@ int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
 	si.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind (fd, (struct sockaddr *) &si, sizeof(si)) == -1) {
-		RRR_MSG_ERR ("Could not bind to port %d: %s", data->port, rrr_strerror(errno));
+		RRR_MSG_0 ("Could not bind to port %d: %s", data->port, rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -533,7 +535,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 
 	int s = getaddrinfo(host, port_str, &hints, &result);
 	if (s != 0) {
-		RRR_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+		RRR_MSG_0("Failed to get address of '%s': %s\n", host, gai_strerror(s));
 		ret = 1;
 		goto out;
 	}
@@ -551,7 +553,7 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	freeaddrinfo(result);
 
 	if (did_send == 0) {
-		RRR_MSG_ERR("Could not send UDP data to host %s port %u\n", host, port);
+		RRR_MSG_0("Could not send UDP data to host %s port %u\n", host, port);
 		ret = 1;
 		goto out;
 	}
@@ -577,26 +579,26 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR("Error while creating socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
 		goto out_error;
 	}
 
     struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
     if (accept_result == NULL) {
-    	RRR_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+    	RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
     	goto out_close_socket;
     }
 
     memset(accept_result, '\0', sizeof(*accept_result));
 
 	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
-		RRR_MSG_ERR("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		RRR_MSG_0("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		goto out_free_accept;
 	}
 
 	uint64_t timeout = 3000000; // 3s
 	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) != 0) {
-		RRR_MSG_ERR("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
 		goto out_free_accept;
 	}
 
@@ -608,7 +610,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
     accept_result->ip_data.port = ntohs(sockaddr_in->sin_port);
 
 /*    if (getsockname(fd, &accept_result->addr, &accept_result->len) != 0) {
-    	RRR_MSG_ERR("getsockname failed: %s\n", rrr_strerror(errno));
+    	RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
 		goto out_free_accept;
     }*/
 
@@ -645,7 +647,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
 
     int s = getaddrinfo(host, port_str, &hints, &addrinfo_result);
     if (s != 0) {
-    	RRR_MSG_ERR("Failed to get address of '%s': %s\n", host, gai_strerror(s));
+    	RRR_MSG_0("Failed to get address of '%s': %s\n", host, gai_strerror(s));
     	goto out_error;
     }
 
@@ -660,7 +662,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
 				NULL
 		);
     	if (fd == -1) {
-    		RRR_MSG_ERR("Error while creating socket: %s\n", rrr_strerror(errno));
+    		RRR_MSG_0("Error while creating socket: %s\n", rrr_strerror(errno));
     		continue;
     	}
 
@@ -674,7 +676,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
         	}
     	}
 
-    	// This means connection refused or some other error, skip to next
+    	// This means connection refused or some other error, skip to next address suggestion
 
     	rrr_socket_close(fd);
     	i++;
@@ -683,13 +685,13 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     freeaddrinfo(addrinfo_result);
 
     if (fd < 0 || rp == NULL) {
-		RRR_MSG_ERR ("Could not create socket for host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
+		RRR_MSG_0 ("Could not create socket for host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		goto out_error;
     }
 
     struct rrr_ip_accept_data *accept_result = malloc(sizeof(*accept_result));
     if (accept_result == NULL) {
-    	RRR_MSG_ERR("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
+    	RRR_MSG_0("Could not allocate memory in ip_network_connect_tcp_ipv4_or_ipv6\n");
     	goto out_close_socket;
     }
 
@@ -699,7 +701,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     accept_result->ip_data.port = port;
     accept_result->len = sizeof(accept_result->addr);
     if (getsockname(fd, (struct sockaddr *) &accept_result->addr, &accept_result->len) != 0) {
-    	RRR_MSG_ERR("getsockname failed: %s\n", rrr_strerror(errno));
+    	RRR_MSG_0("getsockname failed: %s\n", rrr_strerror(errno));
     	goto out_free_accept;
     }
 
@@ -724,12 +726,12 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 			NULL
 	);
 	if (fd == -1) {
-		RRR_MSG_ERR ("Could not create socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0 ("Could not create socket: %s\n", rrr_strerror(errno));
 		goto out_error;
 	}
 
 	if (data->port < 1 || data->port > 65535) {
-		RRR_MSG_ERR ("BUG: ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
+		RRR_MSG_0 ("ip_network_start: port was not in the range 1-65535 (got '%d')\n", data->port);
 		goto out_close_socket;
 	}
 
@@ -740,7 +742,7 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 	si.sin6_addr = in6addr_any;
 
 	if (rrr_socket_bind_and_listen(fd, (struct sockaddr *) &si, sizeof(si), SO_REUSEADDR, max_connections) != 0) {
-		RRR_MSG_ERR ("Could not listen on port %d: %s\n", data->port, rrr_strerror(errno));
+		RRR_MSG_0 ("Could not listen on port %d: %s\n", data->port, rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
@@ -782,7 +784,7 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 			goto out;
 		}
 		else {
-			RRR_MSG_ERR("Error in ip_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error in ip_accept: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
@@ -794,30 +796,30 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 	int enable = 1;
 	if (tcp_nodelay == 1) {
 		if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable)) != 0) {
-			RRR_MSG_ERR("Could not set TCP_NODELAY for socket in ip_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not set TCP_NODELAY for socket in ip_accept: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_close_socket;
 		}
 	}
 
 	if (setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) != 0) {
-		RRR_MSG_ERR ("Could not set SO_REUSEADDR for accepted connection: %s\n", rrr_strerror(errno));
+		RRR_MSG_0 ("Could not set SO_REUSEADDR for accepted connection: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1) {
-		RRR_MSG_ERR("Error while getting flags with fcntl for socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while getting flags with fcntl for socket: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-		RRR_MSG_ERR("Error while setting O_NONBLOCK on socket: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while setting O_NONBLOCK on socket: %s\n", rrr_strerror(errno));
 		goto out_close_socket;
 	}
 
 	res = malloc(sizeof(*res));
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in ip_accept\n");
+		RRR_MSG_0("Could not allocate memory in ip_accept\n");
 		ret = 1;
 		goto out;
 	}

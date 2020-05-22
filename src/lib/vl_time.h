@@ -45,8 +45,7 @@ static inline uint64_t rrr_time_get_64(void) {
 	struct timeval tv;
 
 	if (gettimeofday(&tv, NULL) != 0) {
-		RRR_MSG_ERR("Error while getting time, cannot recover from this: %s\n", rrr_strerror(errno));
-		exit (EXIT_FAILURE);
+		RRR_BUG("Error while getting time, cannot recover from this: %s\n", rrr_strerror(errno));
 	}
 
 	uint64_t tv_sec = tv.tv_sec;

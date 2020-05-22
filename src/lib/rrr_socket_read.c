@@ -72,12 +72,12 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_MSG_0("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_MSG_0("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -117,7 +117,7 @@ static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read
 	int ret = getsockopt(callback_data->fd, SOL_SOCKET, SO_TYPE, &so_type, &optlen);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error from getsockopt on fd %i: %s\n", callback_data->fd, rrr_strerror(errno));
+		RRR_MSG_0("Error from getsockopt on fd %i: %s\n", callback_data->fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -205,7 +205,7 @@ static int __rrr_socket_read_message_default_read (
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}

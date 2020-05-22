@@ -204,7 +204,7 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 
 	if (entry != NULL) {
 		RRR_LL_ITERATE_BEGIN(queue, struct rrr_udpstream_asd_queue_entry);
-			RRR_MSG_ERR("dump queue boundaries: %" PRIu32 "\n", node->message_id);
+			RRR_MSG_0("dump queue boundaries: %" PRIu32 "\n", node->message_id);
 		RRR_LL_ITERATE_END();
 		RRR_BUG("Entry with boundary %" PRIu32 " was not inserted in __rrr_udpstream_asd_queue_insert_ordered\n", entry->message_id);
 	}
@@ -224,7 +224,7 @@ static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 	}
 
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_asd_queue_insert_entry_or_free\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_insert_entry_or_free\n");
 		ret = 1;
 		goto out;
 	}
@@ -251,7 +251,7 @@ static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **t
 	struct rrr_udpstream_asd_queue_new *queue = malloc(sizeof(*queue));
 
 	if (queue == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_asd_queue_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_new\n");
 		return 1;
 	}
 
@@ -284,7 +284,7 @@ static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 
 	if (target == NULL) {
 		if (__rrr_udpstream_asd_queue_new(&target, connect_handle) != 0) {
-			RRR_MSG_ERR("Could not create new queue in __rrr_udpstream_asd_queue_collection_insert_entry\n");
+			RRR_MSG_0("Could not create new queue in __rrr_udpstream_asd_queue_collection_insert_entry\n");
 			ret = 1;
 			goto out;
 		}
@@ -345,7 +345,7 @@ int rrr_udpstream_asd_new (
 
 	struct rrr_udpstream_asd *session = malloc(sizeof(*session));
 	if (session == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_udpstream_asd_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -353,7 +353,7 @@ int rrr_udpstream_asd_new (
 
 	if (remote_host != NULL && *remote_host != '\0') {
 		if ((session->remote_host = strdup(remote_host)) == NULL) {
-			RRR_MSG_ERR("Could not allocate remote host string in rrr_udpstream_asd_new\n");
+			RRR_MSG_0("Could not allocate remote host string in rrr_udpstream_asd_new\n");
 			ret = 1;
 			goto out_free;
 		}
@@ -361,7 +361,7 @@ int rrr_udpstream_asd_new (
 
 	if (remote_port != NULL && *remote_port != '\0') {
 		if ((session->remote_port = strdup(remote_port)) == NULL) {
-			RRR_MSG_ERR("Could not allocate remote port string in rrr_udpstream_asd_new\n");
+			RRR_MSG_0("Could not allocate remote port string in rrr_udpstream_asd_new\n");
 			ret = 1;
 			goto out_free_remote_host;
 		}
@@ -376,29 +376,29 @@ int rrr_udpstream_asd_new (
 	}
 
 	if ((ret = rrr_udpstream_init (&session->udpstream, udpstream_flags|RRR_UDPSTREAM_FLAGS_FIXED_CONNECT_HANDLE)) != 0) {
-		RRR_MSG_ERR("Could not initialize udpstream in rrr_udpstream_asd_new\n");
+		RRR_MSG_0("Could not initialize udpstream in rrr_udpstream_asd_new\n");
 		goto out_free_remote_port;
 	}
 
 	if ((ret = rrr_udpstream_bind(&session->udpstream, local_port)) != 0) {
-		RRR_MSG_ERR("Could not bind to local port %u in rrr_udpstream_asd_new\n", local_port);
+		RRR_MSG_0("Could not bind to local port %u in rrr_udpstream_asd_new\n", local_port);
 		goto out_clear_udpstream;
 	}
 
 	if (pthread_mutex_init(&session->message_id_lock, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize id lock in rrr_udpstream_asd_new\n");
+		RRR_MSG_0("Could not initialize id lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_close_udpstream;
 	}
 
 	if (pthread_mutex_init(&session->connect_lock, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize connect lock in rrr_udpstream_asd_new\n");
+		RRR_MSG_0("Could not initialize connect lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_destroy_id_lock;
 	}
 
 	if (pthread_mutex_init(&session->queue_lock, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize queue lock in rrr_udpstream_asd_new\n");
+		RRR_MSG_0("Could not initialize queue lock in rrr_udpstream_asd_new\n");
 		ret = 1;
 		goto out_destroy_connect_lock;
 	}
@@ -450,7 +450,7 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 	if (session->remote_host != NULL && *(session->remote_host) != '\0') {
 		if (session->connection_attempt_time > 0) {
 			if (rrr_time_get_64() - session->connection_attempt_time > RRR_UDPSTREAM_ASD_CONNECT_TIMEOUT_MS * 1000) {
-				RRR_MSG_ERR("Connection attempt to remote %s:%s timed out after %i ms in UDP-stream ASD session\n",
+				RRR_MSG_0("Connection attempt to remote %s:%s timed out after %i ms in UDP-stream ASD session\n",
 						session->remote_host, session->remote_port, RRR_UDPSTREAM_ASD_CONNECT_TIMEOUT_MS);
 				session->connection_attempt_time = 0;
 			}
@@ -466,7 +466,7 @@ static int __rrr_udpstream_asd_buffer_connect_if_needed (
 				session->remote_host,
 				session->remote_port
 		)) != 0) {
-			RRR_MSG_ERR("Could not send connect to remote %s:%s in __rrr_udpstream_asd_buffer_connect_if_needed\n",
+			RRR_MSG_0("Could not send connect to remote %s:%s in __rrr_udpstream_asd_buffer_connect_if_needed\n",
 					session->remote_host, session->remote_port);
 			ret = 1;
 			goto out;
@@ -494,7 +494,7 @@ static int __rrr_udpstream_asd_queue_control_frame (
 
 	struct rrr_udpstream_asd_control_queue_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_udpstream_asd_queue_control_frame\n");
 		ret = 1;
 		goto out;
 	}
@@ -634,7 +634,7 @@ int rrr_udpstream_asd_queue_and_incref_message (
 			ip_message,
 			id
 	)) != 0) {
-		RRR_MSG_ERR("Could not insert ASD node into send queue in rrr_udpstream_asd_queue_message\n");
+		RRR_MSG_0("Could not insert ASD node into send queue in rrr_udpstream_asd_queue_message\n");
 		ret = 1;
 		goto out;
 	}
@@ -677,7 +677,7 @@ int __rrr_udpstream_asd_send_message (
 			goto out;
 		}
 		else {
-			RRR_MSG_ERR("Error while queuing message for sending in UDP-stream ASD handle %u\n",
+			RRR_MSG_0("Error while queuing message for sending in UDP-stream ASD handle %u\n",
 					session->connect_handle);
 			ret = RRR_UDPSTREAM_ASD_ERR;
 			goto out;
@@ -824,7 +824,7 @@ static int __rrr_udpstream_asd_do_send_tasks (struct rrr_udpstream_asd *session)
 			__rrr_udpstream_asd_do_release_queue_send_tasks,
 			session
 	)) != 0) {
-		RRR_MSG_ERR("Error while iterating release queues in _rrr_udpstream_asd_do_send_tasks\n");
+		RRR_MSG_0("Error while iterating release queues in _rrr_udpstream_asd_do_send_tasks\n");
 		goto out;
 	}
 
@@ -860,7 +860,7 @@ int rrr_udpstream_asd_default_allocator (
 			RRR_IP_UDP,
 			NULL
 	) != 0) {
-		RRR_MSG_ERR("Could not create ip buffer message in rrr_udpstream_asd_default_allocator\n");
+		RRR_MSG_0("Could not create ip buffer message in rrr_udpstream_asd_default_allocator\n");
 		ret = 1;
 		goto out;
 	}
@@ -868,7 +868,7 @@ int rrr_udpstream_asd_default_allocator (
 	void *joined_data = NULL;
 
 	if ((joined_data = malloc(size)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
+		RRR_MSG_0("Could not allocate memory for joined data in __rrr_udpstream_process_receive_buffer\n");
 		ret = 1;
 		goto out_destroy;
 	}
@@ -908,7 +908,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 
 	// TODO : Make this a soft error?
 	if (receive_data->udpstream_receive_data->application_data > 0xffffffff) {
-		RRR_MSG_ERR("Application data/message ID out of range (%" PRIu64 ") in __rrr_udpstream_asd_receive_messages_callback_final connect handle %" PRIu32 ", message dropped\n",
+		RRR_MSG_0("Application data/message ID out of range (%" PRIu64 ") in __rrr_udpstream_asd_receive_messages_callback_final connect handle %" PRIu32 ", message dropped\n",
 				receive_data->udpstream_receive_data->application_data,
 				session->connect_handle
 		);
@@ -925,7 +925,7 @@ static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_messa
 			receive_data->udpstream_receive_data->connect_handle,
 			receive_data->udpstream_receive_data->application_data
 	)) != 0) {
-		RRR_MSG_ERR("Could not insert ASD message into release queue\n");
+		RRR_MSG_0("Could not insert ASD message into release queue\n");
 		ret = 1;
 		goto out;
 	}
@@ -963,12 +963,12 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 			&socket_callback_data
 	)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Invalid message received in __rrr_udpstream_asd_receive_messages_callback, application data was %" PRIu64 "\n",
+			RRR_MSG_0("Invalid message received in __rrr_udpstream_asd_receive_messages_callback, application data was %" PRIu64 "\n",
 					receive_data->application_data);
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while processing message in __rrr_udpstream_asd_receive_messages_callback return was %i\n",
+			RRR_MSG_0("Error while processing message in __rrr_udpstream_asd_receive_messages_callback return was %i\n",
 					ret);
 			ret = 1;
 			goto out;
@@ -1006,7 +1006,7 @@ static int __rrr_udpstream_asd_do_receive_tasks (
 				__rrr_udpstream_asd_receive_messages_callback,
 				&receive_callback_data
 		)) != 0) {
-			RRR_MSG_ERR("Error from UDP-stream while processing buffers in receive_packets of UDP-stream ASD handle %u\n",
+			RRR_MSG_0("Error from UDP-stream while processing buffers in receive_packets of UDP-stream ASD handle %u\n",
 					session->connect_handle);
 			ret = 1;
 			goto out;
@@ -1052,7 +1052,7 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 			// Callback must ALWAYS unlock
 			rrr_ip_buffer_entry_lock(message);
 			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
-				RRR_MSG_ERR("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
+				RRR_MSG_0("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 				ret = 1;
 				goto out;
 			}
@@ -1137,7 +1137,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 			receive_callback,
 			receive_callback_arg
 	)) != 0) {
-		RRR_MSG_ERR("Error while delivering messages in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		RRR_MSG_0("Error while delivering messages in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
 		goto out;
 	}
 
@@ -1147,7 +1147,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 			queue,
 			delivered_messages_count
 	)) != 0) {
-		RRR_MSG_ERR("Error while updating grace in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		RRR_MSG_0("Error while updating grace in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
 		goto out;
 	}
 
@@ -1157,7 +1157,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 			queue,
 			graced_messages_count
 	)) != 0) {
-		RRR_MSG_ERR("Error while adjusting window sizes in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
+		RRR_MSG_0("Error while adjusting window sizes in __rrr_udpstream_asd_deliver_and_maintain_queue \n");
 		goto out;
 	}
 
@@ -1183,7 +1183,7 @@ int rrr_udpstream_asd_deliver_and_maintain_queues (
 				receive_callback_arg,
 				node
 		)) != 0) {
-			RRR_MSG_ERR("ASD error while maintaining release queue for connect handle %u\n", node->source_connect_handle);
+			RRR_MSG_0("ASD error while maintaining release queue for connect handle %u\n", node->source_connect_handle);
 			ret = 1;
 			goto out;
 		}
@@ -1215,13 +1215,13 @@ int rrr_udpstream_asd_buffer_tick (
 			// Connection not ready yet, this is normal
 			goto out_not_ready;
 		}
-		RRR_MSG_ERR("Error from connect_if_needed in ASD connect handle %" PRIu32 "\n", session->connect_handle);
+		RRR_MSG_0("Error from connect_if_needed in ASD connect handle %" PRIu32 "\n", session->connect_handle);
 		goto out;
 	}
 
 	if ((ret = rrr_udpstream_do_read_tasks(&session->udpstream, __rrr_udpstream_asd_control_frame_listener, session)) != 0) {
 		if (ret != RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
+			RRR_MSG_0("Error from UDP-stream while reading data in receive_packets of UDP-stream ASD handle %u\n",
 					session->connect_handle);
 			ret = 1;
 			goto out;
@@ -1234,7 +1234,7 @@ int rrr_udpstream_asd_buffer_tick (
 			goto out_not_ready;
 		}
 		else {
-			RRR_MSG_ERR("Error from UDP-stream while queuing messages to send of UDP-stream ASD handle %u\n",
+			RRR_MSG_0("Error from UDP-stream while queuing messages to send of UDP-stream ASD handle %u\n",
 					session->connect_handle);
 			ret = 1;
 		}
@@ -1242,7 +1242,7 @@ int rrr_udpstream_asd_buffer_tick (
 	}
 
 	if (rrr_udpstream_do_send_tasks(send_count, &session->udpstream) != 0) {
-		RRR_MSG_ERR("UDP-stream send tasks failed in send_packets ASD\n");
+		RRR_MSG_0("UDP-stream send tasks failed in send_packets ASD\n");
 		ret = 1;
 		goto out;
 	}
@@ -1253,7 +1253,7 @@ int rrr_udpstream_asd_buffer_tick (
 			allocator_callback,
 			allocator_callback_arg
 	)) != 0) {
-		RRR_MSG_ERR("Error from UDP-stream while receiving packets of UDP-stream ASD handle %u\n",
+		RRR_MSG_0("Error from UDP-stream while receiving packets of UDP-stream ASD handle %u\n",
 				session->connect_handle);
 		ret = 1;
 		goto out;

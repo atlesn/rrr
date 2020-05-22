@@ -23,3 +23,4 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, libmysqlclient | libmariadbclient-c
 Replaces: voltage-logger, block-device-logger, libblock-device-logger, libblock-device-logger-dev
 Conflicts: voltage-logger, block-device-logger, libblock-device-logger, libblock-device-logger-dev
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+

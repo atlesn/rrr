@@ -49,7 +49,7 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_collection_entry);
 		struct instance_metadata *check = node->instance;
 		if (check == instance) {
-			RRR_MSG_ERR("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
+			RRR_MSG_0("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
 					INSTANCE_M_NAME(instance));
 			return 1;
 		}
@@ -113,7 +113,7 @@ int main_start_threads (
 
 	// Create thread collection
 	if (rrr_thread_new_collection (thread_collection) != 0) {
-		RRR_MSG_ERR("Could not create thread collection\n");
+		RRR_MSG_0("Could not create thread collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -128,6 +128,7 @@ int main_start_threads (
 		}
 
 		if (rrr_instance_preload_thread(*thread_collection, instance->thread_data) != 0) {
+			// This might actually not be a bug but we cannot recover from preload failure
 			RRR_BUG("Error while preloading thread for instance %s, can't proceed\n",
 					instance->dynamic_data->instance_name);
 		}
@@ -145,7 +146,7 @@ int main_start_threads (
 	}
 
 	if (threads_total == 0) {
-		RRR_MSG_ERR("No instances started, exiting\n");
+		RRR_MSG_0("No instances started, exiting\n");
 		return EXIT_FAILURE;
 	}
 
@@ -156,7 +157,7 @@ int main_start_threads (
 			__main_start_threads_check_wait_for_callback,
 			&callback_data
 	) != 0) {
-		RRR_MSG_ERR("Error while waiting for threads to initialize\n");
+		RRR_MSG_0("Error while waiting for threads to initialize\n");
 		return EXIT_FAILURE;
 	}
 
@@ -184,7 +185,7 @@ void main_threads_stop (struct rrr_thread_collection *collection, struct instanc
 
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (cmd_parse(cmd, config) != 0) {
-		RRR_MSG_ERR("Error while parsing command line\n");
+		RRR_MSG_0("Error while parsing command line\n");
 		return EXIT_FAILURE;
 	}
 
@@ -200,13 +201,13 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 			debuglevel_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
 			return EXIT_FAILURE;
 		}
 		if (debuglevel_tmp < 0 || debuglevel_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
 			return EXIT_FAILURE;
@@ -221,13 +222,13 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 			debuglevel_on_exit_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
 					debuglevel_on_exit_string);
 			return EXIT_FAILURE;
 		}
 		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
 			return EXIT_FAILURE;

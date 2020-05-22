@@ -112,7 +112,7 @@ static int __rrr_instance_metadata_new (
 	struct instance_metadata *meta = malloc(sizeof(*meta));
 
 	if (meta == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for instance_metadata\n");
+		RRR_MSG_0("Could not allocate memory for instance_metadata\n");
 		ret = 1;
 		goto out;
 	}
@@ -140,7 +140,7 @@ static struct instance_metadata *__rrr_instance_save (
 
 	struct instance_metadata *target;
 	if (__rrr_instance_metadata_new (instances, &target, module) != 0) {
-		RRR_MSG_ERR("Could not save instance %s\n", module->instance_name);
+		RRR_MSG_0("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
 
@@ -164,14 +164,14 @@ static struct instance_metadata *__rrr_instance_load_module_and_save (
 	RRR_INSTANCE_LOOP(instance, instances) {
 		struct rrr_instance_dynamic_data *module = instance->dynamic_data;
 		if (module != NULL && strcmp(module->instance_name, instance_config->name) == 0) {
-			RRR_MSG_ERR("Instance '%s' can't be defined more than once\n", module->instance_name);
+			RRR_MSG_0("Instance '%s' can't be defined more than once\n", module->instance_name);
 			ret = NULL;
 			goto out;
 		}
 	}
 
 	if (rrr_instance_config_get_string_noconvert (&module_name, instance_config, "module") != 0) {
-		RRR_MSG_ERR("Could not find module= setting for instance %s\n", instance_config->name);
+		RRR_MSG_0("Could not find module= setting for instance %s\n", instance_config->name);
 		ret = NULL;
 		goto out;
 	}
@@ -180,7 +180,7 @@ static struct instance_metadata *__rrr_instance_load_module_and_save (
 
 	struct rrr_module_load_data start_data;
 	if (rrr_module_load(&start_data, module_name, library_paths) != 0) {
-		RRR_MSG_ERR ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
+		RRR_MSG_0 ("Module %s could not be loaded (in load_instance_module for instance %s)\n",
 				module_name, instance_config->name);
 		ret = NULL;
 		goto out;
@@ -225,7 +225,7 @@ int rrr_instance_load_and_save (
 ) {
 	struct instance_metadata *module = __rrr_instance_load_module_and_save(instances, instance_config, library_paths);
 	if (module == NULL || module->dynamic_data == NULL) {
-		RRR_MSG_ERR("Instance '%s' could not be loaded\n", instance_config->name);
+		RRR_MSG_0("Instance '%s' could not be loaded\n", instance_config->name);
 		return 1;
 	}
 
@@ -245,7 +245,7 @@ static int __rrr_add_instance_callback(const char *value, void *_data) {
 	struct instance_metadata *instance = rrr_instance_find(data->instances, value);
 
 	if (instance == NULL) {
-		RRR_MSG_ERR("Could not find instance '%s'\n", value);
+		RRR_MSG_0("Could not find instance '%s'\n", value);
 		ret = 1;
 		goto out;
 	}
@@ -280,7 +280,7 @@ int rrr_instance_add_wait_for_instances (
 			instance_config->settings, "wait_for",
 			&__rrr_add_instance_callback, &add_data
 	))!= 0) {
-		RRR_MSG_ERR("Error while adding wait for for instance %s\n", instance->dynamic_data->instance_name);
+		RRR_MSG_0("Error while adding wait for for instance %s\n", instance->dynamic_data->instance_name);
 		goto out;
 	}
 
@@ -309,7 +309,7 @@ int rrr_instance_add_senders (
 			instance_config->settings, "senders",
 			&__rrr_add_instance_callback, &add_data
 	))!= 0) {
-		RRR_MSG_ERR("Error while adding senders for instance %s\n", instance->dynamic_data->instance_name);
+		RRR_MSG_0("Error while adding senders for instance %s\n", instance->dynamic_data->instance_name);
 		goto out;
 	}
 
@@ -323,7 +323,7 @@ int rrr_instance_add_senders (
 				ret = 0;
 				goto out;
 			}
-			RRR_MSG_ERR("Sender module must be specified for processor module %s instance %s\n",
+			RRR_MSG_0("Sender module must be specified for processor module %s instance %s\n",
 					instance->dynamic_data->module_name, instance->dynamic_data->instance_name);
 			ret = 1;
 			goto out;
@@ -338,14 +338,14 @@ int rrr_instance_add_senders (
 			);
 
 			if (sender->dynamic_data->type == RRR_MODULE_TYPE_DEADEND) {
-				RRR_MSG_ERR("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
+				RRR_MSG_0("Instance %s cannot use %s as a sender, this is a dead end module with no output\n",
 						instance->dynamic_data->instance_name, sender->dynamic_data->instance_name);
 				ret = 1;
 				goto out;
 			}
 
 			if (sender == instance) {
-				RRR_MSG_ERR("Instance %s set with itself as sender\n",
+				RRR_MSG_0("Instance %s set with itself as sender\n",
 						instance->dynamic_data->instance_name);
 				ret = 1;
 				goto out;
@@ -356,14 +356,14 @@ int rrr_instance_add_senders (
 			instance->dynamic_data->type == RRR_MODULE_TYPE_NETWORK
 	) {
 		if (!rrr_instance_collection_check_empty(&instance->senders)) {
-			RRR_MSG_ERR("Sender module cannot be specified for instance '%s' using module '%s'\n",
+			RRR_MSG_0("Sender module cannot be specified for instance '%s' using module '%s'\n",
 					instance->dynamic_data->instance_name, instance->dynamic_data->module_name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
-		RRR_MSG_ERR ("Unknown module type for %s: %i\n",
+		RRR_MSG_0 ("Unknown module type for %s: %i\n",
 				instance->dynamic_data->module_name, instance->dynamic_data->type
 		);
 		ret = 1;
@@ -400,7 +400,7 @@ int rrr_instance_metadata_collection_new (
 	memset(*target, '\0', sizeof(**target));
 
 	if (*target == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for instance_metadata_collection\n");
+		RRR_MSG_0("Could not allocate memory for instance_metadata_collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -453,7 +453,7 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread
 
 	struct rrr_instance_thread_data *data = malloc(sizeof(*data));
 	if (data == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_init_thread\n");
+		RRR_MSG_0("Could not allocate memory in rrr_init_thread\n");
 		return NULL;
 	}
 
@@ -465,7 +465,7 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread
 			init_data->message_broker,
 			init_data->module->instance_name
 	) != 0) {
-		RRR_MSG_ERR("Could not register with message broker in rrr_instance_new_thread\n");
+		RRR_MSG_0("Could not register with message broker in rrr_instance_new_thread\n");
 		goto out_free;
 	}
 
@@ -482,7 +482,7 @@ int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struc
 
 	RRR_DBG_1 ("Preloading thread %s\n", module->instance_name);
 	if (data->thread != NULL) {
-		RRR_MSG_ERR("BUG: tried to double start thread in rrr_start_thread\n");
+		RRR_MSG_0("BUG: tried to double start thread in rrr_start_thread\n");
 		exit(EXIT_FAILURE);
 	}
 	data->thread = rrr_thread_preload_and_register (
@@ -497,7 +497,7 @@ int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struc
 	);
 
 	if (data->thread == NULL) {
-		RRR_MSG_ERR ("Error while preloading thread for instance %s\n", module->instance_name);
+		RRR_MSG_0 ("Error while preloading thread for instance %s\n", module->instance_name);
 		free(data);
 		return 1;
 	}
@@ -510,7 +510,7 @@ int rrr_instance_start_thread (struct rrr_instance_thread_data *data) {
 
 	RRR_DBG_1 ("Starting thread %s\n", module->instance_name);
 	if (rrr_thread_start(data->thread) != 0) {
-		RRR_MSG_ERR ("Error while starting thread for instance %s\n", module->instance_name);
+		RRR_MSG_0 ("Error while starting thread for instance %s\n", module->instance_name);
 		return 1;
 	}
 
@@ -526,10 +526,10 @@ int rrr_instance_process_from_config (
 	for (int i = 0; i < config->module_count; i++) {
 		ret = rrr_instance_load_and_save(instances, config->configs[i], library_paths);
 		if (ret != 0) {
-			RRR_MSG_ERR("Loading of instance failed for %s. Library paths used:\n",
+			RRR_MSG_0("Loading of instance failed for %s. Library paths used:\n",
 					config->configs[i]->name);
 			for (int j = 0; *library_paths[j] != '\0'; j++) {
-				RRR_MSG_ERR("-> %s\n", library_paths[j]);
+				RRR_MSG_0("-> %s\n", library_paths[j]);
 			}
 			goto out;
 		}
@@ -539,13 +539,13 @@ int rrr_instance_process_from_config (
 	{
 		ret = rrr_instance_add_senders(instances, instance);
 		if (ret != 0) {
-			RRR_MSG_ERR("Adding senders failed for %s\n",
+			RRR_MSG_0("Adding senders failed for %s\n",
 					instance->dynamic_data->instance_name);
 			goto out;
 		}
 		ret = rrr_instance_add_wait_for_instances(instances, instance);
 		if (ret != 0) {
-			RRR_MSG_ERR("Adding wait for instances failed for %s\n",
+			RRR_MSG_0("Adding wait for instances failed for %s\n",
 					instance->dynamic_data->instance_name);
 			goto out;
 		}
@@ -603,7 +603,7 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data)
 	) != 0) {
-		RRR_MSG_ERR("Error while getting output buffer size in %s instance %s\n",
+		RRR_MSG_0("Error while getting output buffer size in %s instance %s\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out;

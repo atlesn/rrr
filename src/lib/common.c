@@ -145,14 +145,14 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 	(void)(arg);
 
 	if (s == SIGCHLD) {
-		RRR_DBG_1("Received SIGCHLD in default handler\n");
+		RRR_DBG_SIGNAL("Received SIGCHLD in default handler\n");
 	}
 	else if (s == SIGUSR1) {
 		*main_running = 0;
 		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE in default handler, ignoring\n");
+		RRR_DBG_SIGNAL("Received SIGPIPE in default handler, ignoring\n");
 	}
 	else if (s == SIGTERM) {
 		exit(EXIT_FAILURE);
@@ -160,7 +160,7 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 	else if (s == SIGINT) {
 		// Allow double ctrl+c to close program
 		if (s == SIGINT) {
-			RRR_MSG_ERR("Received SIGINT in default handler\n");
+			RRR_DBG_SIGNAL("Received SIGINT in default handler\n");
 			signal(SIGINT, SIG_DFL);
 		}
 
