@@ -6,6 +6,8 @@ use Socket qw(:DEFAULT :crlf);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use rrr::rrr_helper::rrr_debug;
+
 use bytes;
 
 my $global_settings = undef;
@@ -78,7 +80,7 @@ sub process {
 	$message->send();
 
 	foreach my $key (sort keys(%{$message})) {
-		print "Key: $key: " . $message->{$key} . "\n";
+		$debug->msg(0, "Key: $key: " . $message->{$key} . "\n");
 	}
 
 	return 1;

@@ -53,6 +53,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PERL5_BUILD_LIB_PATH_4 \
 	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/auto/rrr/rrr_helper/rrr_settings/"
 
+#define RRR_PERL5_BUILD_LIB_PATH_5 \
+	RRR_BUILD_DIR "/src/perl5/xsub/blib/arch/"
+
 static pthread_mutex_t perl5_init_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t perl5_ctx_lock = PTHREAD_MUTEX_INITIALIZER;
 static int perl5_users = 0;
@@ -285,6 +288,7 @@ int rrr_perl5_ctx_parse (struct rrr_perl5_ctx *ctx, char *filename) {
 			"-I" RRR_PERL5_BUILD_LIB_PATH_2,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_3,
 			"-I" RRR_PERL5_BUILD_LIB_PATH_4,
+			"-I" RRR_PERL5_BUILD_LIB_PATH_5,
 			filename,
 			NULL
 	};
@@ -1314,4 +1318,49 @@ int rrr_perl5_settings_set (HV *settings, const char *key, const char *value) {
 	int ret = ctx->set_setting(key, value, ctx->private_data);
 
 	return (ret == 0 ? TRUE : FALSE);
+}
+
+static int __rrr_perl5_debug_print (HV *debug, int debuglevel, const char *string, int always_print) {
+	(void)(debug);
+
+	if (!RRR_DEBUGLEVEL_OK(debuglevel)) {
+		RRR_MSG_0("Received unknown debuglevel %i in __rrr_perl5_debug_print\n", debuglevel);
+		return FALSE;
+	}
+
+	// Unsure if error in the script may cause string to become NULL. If not, this should
+	// be an RRR_BUG
+	if (string == NULL) {
+		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
+		return FALSE;
+	}
+
+	if (always_print) {
+		RRR_MSG_X(debuglevel, "%s", string);
+	}
+	else {
+		RRR_DBG_X(debuglevel, "%s", string);
+	}
+
+	return TRUE;
+}
+
+int rrr_perl5_debug_msg (HV *debug, int debuglevel, const char *string) {
+	return __rrr_perl5_debug_print(debug, debuglevel, string, 1); // Always print
+}
+
+int rrr_perl5_debug_dbg (HV *debug, int debuglevel, const char *string) {
+	return __rrr_perl5_debug_print(debug, debuglevel, string, 0); // Print if debuglevel is active
+}
+
+int rrr_perl5_debug_err (HV *debug, const char *string) {
+	// Unsure if error in the script may cause string to become NULL. If not, this should
+	// be an RRR_BUG
+	if (string == NULL) {
+		RRR_MSG_0("String was NULL in __rrr_perl5_debug_print\n");
+		return FALSE;
+	}
+
+	RRR_MSG_ERR("%s", string);
+	return TRUE;
 }

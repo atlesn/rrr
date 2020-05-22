@@ -1,4 +1,4 @@
-.Dd 2020-05-15
+.Dd 2020-05-22
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -512,6 +512,30 @@ The length of the data.
 Type and class of message, for internal use.
 .El
 .PP
+The
+.B rrr_debug
+class can be used to print out debug messages just like RRR does internally. Use these instead of perl print functions
+if you wish to have your program output messages in a tidy controlled fashion. There are three different functions in this class:
+.PP
+.Bl -tag -width -indent
+.It msg(level, message)
+Messages to this function are always printed prefixed with the specified loglevel (a number 0, 1, 2 etc.).
+.It dbg(level, message)
+Messages to this function are printed only if the specified loglevel (debuglevel) is active. If loglevel is 0 however,
+the message is always printed.
+.It err(message)
+Messages to this function are always printed with loglevel 0 and to STDERR output. Do not overuse this as it might
+cause broadcast messages on the system when RRR is run for instance by systemd. Error messages should usually be
+printed using the
+.B msg
+function with loglevel 0.
+.El
+.PP
+A variable must be blessed with the
+.B rrr_debug
+class to use the debug functions, look at the code below on how to do this. There are also commented out example
+calls to message print functions. 
+.PP
 Below follows an example perl script.
 .PP
 .nf
@@ -522,6 +546,10 @@ package main;
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use rrr::rrr_helper::rrr_debug;
+
+my $debug = { };
+bless $debug, rrr::rrr_helper::rrr_debug;
 
 my $global_settings = undef;
 
@@ -533,7 +561,7 @@ sub config {
 	$global_settings = $settings;
 
 	# Custom settings from the configuration file must be read to avoid warning messages
-	# print "my_custom_setting is: " . $settings->get("my_custom_setting") . "\\n";
+	# $debug->msg(1, "my_custom_setting is: " . $settings->get("my_custom_setting") . "\\n");
 
 	# Set a custom setting
 	$settings->set("my_new_setting", "5");
@@ -549,7 +577,7 @@ sub source {
 	# Do some modifications
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
-	# print "source:  new timestamp of message is: " . $message->{'timestamp'} . "\\n";
+	# $debug->msg(1, "source:  new timestamp of message is: " . $message->{'timestamp'} . "\\n");
 
 	# Pass on the new message
 	$message->send();
@@ -565,7 +593,7 @@ sub process {
 	# Do some modifications to the message
 	$message->{'timestamp'} = $message->{'timestamp'} - $global_settings->get("my_custom_setting");
 
-	# print "process: new timestamp of message is: " . $message->{'timestamp'} . "\\n";
+	# $debug->msg(1, "process: new timestamp of message is: " . $message->{'timestamp'} . "\\n");
 
 	# Push an array value to the message array
 	push @{$message->{'array_values'}}, "My array string value";
