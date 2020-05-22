@@ -10,6 +10,9 @@ use rrr::rrr_helper::rrr_debug;
 
 use bytes;
 
+my $debug = { };
+bless $debug, rrr::rrr_helper::rrr_debug;
+
 my $global_settings = undef;
 
 sub get_from_tag {
@@ -80,7 +83,7 @@ sub process {
 	$message->send();
 
 	foreach my $key (sort keys(%{$message})) {
-		$debug->msg(0, "Key: $key: " . $message->{$key} . "\n");
+		$debug->dbg(1, "Key: $key: " . $message->{$key} . "\n");
 	}
 
 	return 1;

@@ -269,7 +269,16 @@ pid_t rrr_fork (
 ) {
 	pid_t ret = 0;
 
-	pthread_mutex_lock(&handler->lock);
+	/*
+	 * XXX : For some reason the perl5 module might sometimes hang during
+	 *       initialization when it forks out the worker. It will then hang
+	 *       waiting on this lock, despite the lock reporting "not acquired"
+	 *       when we attach a debugger. This seems however not to be a problem
+	 *       if when spin on trylock like this (also for some reason).
+	 */
+	while (pthread_mutex_trylock(&handler->lock) != 0) {
+		rrr_posix_usleep(5000);
+	}
 
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	if (result == NULL) {
@@ -286,9 +295,12 @@ pid_t rrr_fork (
 		goto out_unlock;
 	}
 	else if (ret == 0) {
-		// Only parent unlocks
+		// Child code
+		// Only parent unlocks. This is a PSHARED lock.
 		goto out;
 	}
+
+	// Parent code
 
 	RRR_DBG_1("=== FORK PID %i ========================================================================================\n", ret);
 

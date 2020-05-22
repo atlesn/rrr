@@ -1201,17 +1201,12 @@ int rrr_array_dump (
 
 	int i = 0;
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-
-		RRR_MSG_1("%i - %s - ", i, node->definition->identifier);
+		const char *tag = "-";
+		const char *to_str = "-";
 
 		if (node->tag != NULL && *(node->tag) != '\0') {
-			RRR_MSG_1 ("%s", node->tag);
+			tag = node->tag;
 		}
-		else {
-			RRR_MSG_1 ("-");
-		}
-
-		RRR_MSG_1 (" - (%i/%i = %i) - ", node->total_stored_length, node->element_count, node->total_stored_length / node->element_count);
 
 		if (node->definition->to_str != NULL) {
 			RRR_FREE_IF_NOT_NULL(tmp);
@@ -1220,18 +1215,24 @@ int rrr_array_dump (
 				ret = 1;
 				goto out;
 			}
-			RRR_MSG_1 ("%s", tmp);
-		}
-		else {
-			RRR_MSG_1 ("-");
+			to_str = tmp;
 		}
 
-		RRR_MSG_1 ("\n");
+		RRR_MSG_1 ("%i - %s - %s - (%i/%i = %i) - %s\n",
+				i,
+				node->definition->identifier,
+				tag,
+				node->total_stored_length,
+				node->element_count,
+				node->total_stored_length / node->element_count,
+				to_str
+		);
+
 		i++;
 	RRR_LL_ITERATE_END();
 
 
-	printf ("== ARRAY DUMP END ====================================================\n");
+	RRR_MSG_1 ("== ARRAY DUMP END ====================================================\n");
 
 	out:
 	RRR_FREE_IF_NOT_NULL(tmp);

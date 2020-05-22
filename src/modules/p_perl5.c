@@ -387,7 +387,8 @@ int perl5_start(struct perl5_child_data *data) {
 #define CHILD_PID_LOCK_IN						\
 	do {pthread_mutex_lock(&data->child_mutex);	\
 	if (data->child_pid_ <= 0)					\
-		goto out_unlock							\
+		pthread_mutex_unlock(&data->child_mutex);\
+		goto out								\
 
 #define CHILD_PID_LOCK_OUT						\
 	pthread_mutex_unlock(&data->child_mutex);	\
@@ -412,9 +413,6 @@ void terminate_child (struct perl5_data *data) {
 			INSTANCE_D_NAME(data->thread_data), pid);
 	kill(pid, SIGKILL);
 
-	goto out;
-	out_unlock:
-		pthread_mutex_unlock(&data->child_mutex);
 	out:
 		return;
 }
@@ -905,7 +903,7 @@ int worker_fork_signal_handler (int signal, void *private_arg) {
 	struct perl5_child_data *child_data = private_arg;
 
 	if (signal == SIGUSR1 || signal == SIGINT) {
-		RRR_DBG_1("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
+		RRR_DBG_SIGNAL("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
 		child_data->received_sigusr1 = 1;
 	}
 
