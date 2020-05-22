@@ -1,1 +1,11 @@
-# DO NOT DELETE THIS FILE
+[Unit]
+Description=Read Route Record 0.18-1
+
+[Service]
+ExecStart=/usr/bin/rrr /etc/rrr.conf.d/
+KillSignal=SIGINT
+User=rrr
+Group=rrr
+
+[Install]
+WantedBy=multi-user.target
