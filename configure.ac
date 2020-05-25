@@ -1,5 +1,5 @@
-AC_INIT([Read Route Record], 0.19)
-AC_DEFINE([RRR_CONFIG_VERSION], "0.19", [Full version])
+AC_INIT([Read Route Record], 0.20)
+AC_DEFINE([RRR_CONFIG_VERSION], "0.20", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 0, [Major version])
 AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 20, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
