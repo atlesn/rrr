@@ -504,6 +504,10 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
+	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+		goto out_cleanup_signal;
+	}
+
 	rrr_umask_onetime_set_global(RRR_GLOBAL_UMASK);
 
 	if (get_config_files (&config_file_map, &cmd) != 0) {
@@ -513,10 +517,6 @@ int main (int argc, const char *argv[]) {
 	if (RRR_MAP_COUNT(&config_file_map) == 0) {
 		RRR_MSG_0("No configuration files were found\n");
 		ret = 1;
-		goto out_cleanup_signal;
-	}
-
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_signal;
 	}
 
