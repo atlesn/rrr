@@ -1,3 +1,11 @@
+rrr (0.20) unstable; urgency=medium
+
+  * Add configuration option to output RFC5424 loglevels as
+    opposed to internal RRR debuglevels.
+  * Fix bug where it was not possible to use -h or -v
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 25 May 2020 18:06:05 +0200
+
 rrr (0.19) unstable; urgency=medium
 
   * New functionallity in perl5 to print RRR native debug and error messages
