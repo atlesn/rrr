@@ -32,12 +32,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 pthread_mutex_t global_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct rrr_global_config rrr_global_config = {
-	0,
-	0,
-	0,
-	0,
-	0,
-	"main"
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		"main"
 };
 
 void rrr_set_debuglevel_on_exit(void) {
@@ -58,8 +59,8 @@ void rrr_init_global_config (
 		unsigned int debuglevel,
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
-		unsigned int no_thread_restart
-
+		unsigned int no_thread_restart,
+		unsigned int rfc5424_loglevel_output
 ) {
 	pthread_mutex_lock(&global_config_mutex);
 	rrr_global_config.debuglevel = debuglevel;
@@ -67,6 +68,7 @@ void rrr_init_global_config (
 	rrr_global_config.debuglevel_on_exit = debuglevel_on_exit;
 	rrr_global_config.no_watchdog_timers = no_watcdog_timers;
 	rrr_global_config.no_thread_restart = no_thread_restart;
+	rrr_global_config.rfc5424_loglevel_output = rfc5424_loglevel_output;
 	rrr_global_config.log_prefix = rrr_default_log_prefix;
 	pthread_mutex_unlock(&global_config_mutex);
 }

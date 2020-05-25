@@ -85,11 +85,12 @@ int rrr_signal_handler(int s, void *arg) {
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
 		{0,							's',	"stats",				"[-s|--stats]"},
+		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -590,7 +591,7 @@ int main (int argc, const char *argv[]) {
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
-			RRR_MSG_0("Exiting program without errors\n");
+			RRR_MSG_1("Exiting program without errors\n");
 		}
 		else {
 			RRR_MSG_ERR("Exiting program following one or more errors\n");

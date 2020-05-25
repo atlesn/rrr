@@ -1,4 +1,4 @@
-.Dd 2020-01-16
+.Dd 2020-05-25
 .TH RRR_POST 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -17,6 +17,7 @@ program to post data to its modules.
 .Dl [-t|--topic[=]MQTT TOPIC]
 .Dl [-s|--sync]
 .Dl [-q|--quiet]
+.Dl [-l|--loglevel-translation]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
@@ -60,6 +61,9 @@ Don't print statistics upon exit.
 Debuglevel to use.
 .IP -D|--debuglevel_on_exit[=]FLAGS
 Debuglevel to use when program exits.
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
 
 .PP
 .SH SIGNALS
