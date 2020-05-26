@@ -33,6 +33,11 @@ RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux pac
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
 are not supported.
 
+## LICENSES
+
+RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
+the `LICENSE.*`-files regarding this.
+
 ## DEVELOPMENT
 
 If you are a developer and would like to see more functionallity or have some ideas, please consider
