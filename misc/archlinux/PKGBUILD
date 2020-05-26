@@ -11,10 +11,10 @@ pkgdesc="ReadRouteRecord"
 arch=('i686' 'arm64' 'x86_64')
 url="https://www.github.com/atlesn/rrr"
 license=('GPL')
-depends=('python3' 'perl' 'mariadb-clients', 'systemd')
+depends=('python3' 'perl' 'mariadb-clients')
+optdepends=('systemd: systemd daemon support')
 makedepends=('git')
-provides=('rrr' 'rrr-perlonly')
-conflicts=('rrr-perlonly')
+provides=('rrr')
 source=("git+https://github.com/atlesn/$pkgname.git#branch=archlinux")
 md5sums=('SKIP')
 
