@@ -5,11 +5,11 @@ RRR is a general purpose acquirement, transmission and storage server of all kin
 or messages. RRR has a variety of different modules which can be chained together to retrieve,
 transmit and save messages.
 
-RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
+RRR can read data of different types from external programs or sensors using UDP, TCP, UNIX sockets,
 piping or files.
 
-- Acquire messages using piping, UNIX sockets, UDP-packets
-- Transfer messages using MQTT or UDP
+- Acquire messages using piping, UNIX sockets, UDP/TCP-packets
+- Transfer messages using MQTT, UDP or TCP
 - Saving messages using InfluxDB and MySQL
 
 Application examples may include:
