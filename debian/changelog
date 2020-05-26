@@ -1,3 +1,9 @@
+rrr (1.0) unstable; urgency=medium
+
+  * First major release, no changes from 0.20
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 26 May 2020 21:48:12 +0200
+
 rrr (0.20) unstable; urgency=medium
 
   * Add configuration option to output RFC5424 loglevels as
