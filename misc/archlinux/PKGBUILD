@@ -11,7 +11,7 @@ pkgdesc="ReadRouteRecord"
 arch=('i686' 'arm64' 'x86_64')
 url="https://www.github.com/atlesn/rrr"
 license=('GPL')
-depends=('python3' 'perl' 'mariadb-clients')
+depends=('python3' 'perl' 'mariadb-clients', 'systemd')
 makedepends=('git')
 provides=('rrr' 'rrr-perlonly')
 conflicts=('rrr-perlonly')
@@ -25,7 +25,7 @@ prepare() {
 build() {
 	cd "${srcdir}/${pkgname}"
 	autoreconf -i
-	./configure --prefix=/usr
+	./configure --prefix=/usr --sysconfdir=/etc
 	make
 }
 
