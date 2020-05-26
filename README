@@ -29,7 +29,7 @@ the source, for instance when the data source is a device on a computer.
 
 RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
-is not supported.
+are not supported.
 
 ## DEVELOPMENT
 
