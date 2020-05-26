@@ -6,10 +6,12 @@ or messages. RRR has a variety of different modules which can be chained togethe
 transmit and save messages.
 
 RRR can read data of different types from external programs or sensors using UDP, TCP, UNIX sockets,
-piping or files.
+piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
+they pass through.
 
 - Acquire messages using piping, UNIX sockets, UDP/TCP-packets
 - Transfer messages using MQTT, UDP or TCP
+- Modify messages using Perl or Python
 - Saving messages using InfluxDB and MySQL
 
 Application examples may include:
