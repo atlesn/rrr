@@ -191,8 +191,6 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
-	int no_watchdog_timers = 0;
-	int no_thread_restart = 0;
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
@@ -236,6 +234,10 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
 
+	unsigned int no_watchdog_timers = 0;
+	unsigned int no_thread_restart = 0;
+	unsigned int rfc5424_loglevel_output = 0;
+
 	if (cmd_exists(cmd, "no_watchdog_timers", 0)) {
 		no_watchdog_timers = 1;
 	}
@@ -244,7 +246,17 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		no_thread_restart = 1;
 	}
 
-	rrr_init_global_config(debuglevel, debuglevel_on_exit, no_watchdog_timers, no_thread_restart);
+	if (cmd_exists(cmd, "loglevel-translation", 0)) {
+		rfc5424_loglevel_output = 1;
+	}
+
+	rrr_init_global_config (
+			debuglevel,
+			debuglevel_on_exit,
+			no_watchdog_timers,
+			no_thread_restart,
+			rfc5424_loglevel_output
+	);
 
 	return 0;
 }

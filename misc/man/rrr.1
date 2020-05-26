@@ -1,15 +1,16 @@
-.Dd 2020-05-19
+.Dd 2020-05-25
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .SH SYNOPSIS
 .B rrr {CONFIGURATION FILES OR DIRECTORIES}
-.Dl [-d|--debuglevel[=]FLAGS]
-.Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-W|--no_watchdog_timers]
 .Dl [-T|--no_thread_restart]
 .Dl [-s|--stats]
+.Dl [-l|--loglevel-translation]
+.Dl [-d|--debuglevel[=]FLAGS]
+.Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -99,6 +100,9 @@ Encourage threads and forks to stop in a polite matter before exiting the progra
 Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
 .IP SIGTERM
 Exit immediately.
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.

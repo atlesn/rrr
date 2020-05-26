@@ -150,6 +150,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_DEBUGLEVEL \
 		(rrr_global_config.debuglevel)
 
+#define RRR_RFC5424_LOGLEVEL_EMERGENCY	0
+#define RRR_RFC5424_LOGLEVEL_ALERT		1
+#define RRR_RFC5424_LOGLEVEL_CRITICAL	2
+#define RRR_RFC5424_LOGLEVEL_ERROR		3
+#define RRR_RFC5424_LOGLEVEL_WARNING	4
+#define RRR_RFC5424_LOGLEVEL_NOTICE		5
+#define RRR_RFC5424_LOGLEVEL_INFO		6
+#define RRR_RFC5424_LOGLEVEL_DEBUG		7
+
 // While writing code, use this macro to detect for instance invalid arguments to a function
 // which caller should have checked as opposed to letting the program crash ungracefully
 #define RRR_BUG(...) \

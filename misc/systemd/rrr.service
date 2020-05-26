@@ -1,8 +1,8 @@
 [Unit]
-Description=Read Route Record 0.19
+Description=Read Route Record 1.0
 
 [Service]
-ExecStart=/usr/bin/rrr /etc/rrr.conf.d/
+ExecStart=/usr/bin/rrr -l /etc/rrr.conf.d/
 KillSignal=SIGINT
 User=rrr
 Group=rrr
