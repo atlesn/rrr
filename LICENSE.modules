@@ -68,13 +68,3 @@ already granted by this license.
 3.2 MODIFICATIONS TO THE RRR LIBRARY
 If the RRR libraries are modified in any way to allow for the new module
 to function correctly, this license MAY NOT be used in the module.
-
-4. NON-COMPILED SCRIPTS RUN BY RRR
-
-A script is code which is run (to the user apparently) directly without
-the need of a compile stage. Some RRR modules may run such scripts and
-provide RRR-functionallity in the environment of the scripts.
-
-Such scripts may be used with RRR without any restrictions or
-requirements.
-
