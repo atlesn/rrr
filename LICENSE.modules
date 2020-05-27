@@ -67,4 +67,7 @@ already granted by this license.
 
 3.2 MODIFICATIONS TO THE RRR LIBRARY
 If the RRR libraries are modified in any way to allow for the new module
-to function correctly, this license MAY NOT be used in the module.
+to function correctly, this license MAY NOT be used in the module. If
+however a change in the library is also useful for other modules, this
+license MAY still be applied if the changed code is contributed to the
+RRR project under licenses used by RRR.
