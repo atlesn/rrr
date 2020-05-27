@@ -4,7 +4,7 @@ Copyright 2020 Atle Solbakken <atle@goliathdns.no>
 
 This license applies to extensions of the software package
 "Read Route Record (RRR)" initially created by Atle Solbakken. Other
-licenses may apply in addition to this licence. The authors of
+licenses may apply in addition to this license. The authors of
 extensions may under certain conditions choose to have this license
 apply to their code.
 
@@ -21,9 +21,9 @@ executable is created which directly or indirectly is linked to
 the RRR libraries.
 
 The RRR libraries themselves are linked to other libraries. These
-libraries may have licenses which are incompatible with this licence,
+libraries may have licenses which are incompatible with this license,
 depending on which functions in the RRR which are utilized. When
-applying this license, care must be taken so that other licences are
+applying this license, care must be taken so that other licenses are
 not violated. Most code in the RRR library however only depends on
 "C standard library" functions.
 
@@ -34,14 +34,14 @@ with this license unless explicitly accepted by copyright owners.
 
 2. LICENSE APPLICATION
 
-Any code using this license MUST contain "RRR MODULE LICENCE VERSION 1"
+Any code using this license MUST contain "RRR MODULE LICENSE VERSION 1"
 clearly visible at the top, and this full license document must be 
 distributed along with the code.
 
 If a module does not contain this header, the license DOES NOT apply,
 and other licenses used by RRR apply.
 
-Code licensed with this licence MAY have other licences applying
+Code licensed with this license MAY have other licenses applying
 simultaneously without any restrictions as long as they don't conflict
 with this license.
 
