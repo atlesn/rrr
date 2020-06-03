@@ -954,6 +954,7 @@ static int __rrr_udpstream_asd_receive_messages_callback (
 	struct rrr_read_common_receive_message_callback_data socket_callback_data = {
 			__rrr_udpstream_asd_receive_messages_callback_final,
 			NULL,
+			NULL,
 			callback_data
 	};
 

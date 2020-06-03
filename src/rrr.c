@@ -203,7 +203,7 @@ static int main_loop (
 		goto out;
 	}
 
-	RRR_DBG_1("RRR  found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {

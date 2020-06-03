@@ -121,6 +121,12 @@ void rrr_log_hook_register (
 	LOCK_HOOK_UNCHECKED_END;
 }
 
+void rrr_log_hook_unregister_all_after_fork (void) {
+	LOCK_HOOK_UNCHECKED_BEGIN;
+	rrr_log_hook_count = 0;
+	LOCK_HOOK_UNCHECKED_END;
+}
+
 void rrr_log_hook_unregister (
 		int handle
 ) {
@@ -147,6 +153,27 @@ void rrr_log_hook_unregister (
 	if (shifting_started == 0 || rrr_log_hook_count < 0) {
 		RRR_BUG("BUG: Invalid or double unregiser of handle %i in rrr_log_hook_unregister\n", handle);
 	}
+}
+
+void rrr_log_hooks_call_raw (
+		unsigned short loglevel_translated,
+		const char *prefix,
+		const char *message
+) {
+	// In case of recursive calls, we will skip the loop
+	LOCK_HOOK_BEGIN;
+
+	for (int i = 0; i < rrr_log_hook_count; i++) {
+		struct rrr_log_hook *hook = &rrr_log_hooks[i];
+		hook->log (
+				loglevel_translated,
+				prefix,
+				message,
+				hook->private_arg
+		);
+	}
+
+	LOCK_HOOK_END;
 }
 
 static void __rrr_log_hooks_call (
@@ -176,20 +203,7 @@ static void __rrr_log_hooks_call (
 	vsnprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE - size, __format, args);
 	tmp[RRR_LOG_HOOK_MSG_MAX_SIZE - 1] = '\0';
 
-	// In case of recursive calls, we will skip the loop
-	LOCK_HOOK_BEGIN;
-
-	for (int i = 0; i < rrr_log_hook_count; i++) {
-		struct rrr_log_hook *hook = &rrr_log_hooks[i];
-		hook->log (
-				loglevel_translated,
-				prefix,
-				tmp,
-				hook->private_arg
-		);
-	}
-
-	LOCK_HOOK_END;
+	rrr_log_hooks_call_raw(loglevel_translated, prefix, tmp);
 }
 
 static unsigned short __rrr_log_translate_loglevel_rfc5424_stdout (unsigned short loglevel) {

@@ -1,0 +1,59 @@
+/*
+
+Read Route Record
+
+Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
+
+#ifndef RRR_MESSAGE_LOG_H
+#define RRR_MESSAGE_LOG_H
+
+#include "rrr_socket.h"
+#include "rrr_socket_msg.h"
+#include "rrr_endian.h"
+
+#define RRR_MSG_LOG_PREFIX_SIZE(msg)										\
+	((msg)->prefix_size)
+
+#define RRR_MSG_LOG_MSG_SIZE(msg)											\
+	((msg)->msg_size - (sizeof(*(msg)) - 1) - (msg)->prefix_size)
+
+#define RRR_MSG_LOG_MSG_POS(msg)											\
+	((msg->prefix_and_message) + (msg)->prefix_size)
+
+#define RRR_MSG_LOG_SIZE_OK(msg)											\
+	((msg)->prefix_size > (msg)->msg_size - sizeof(*(msg)) - 1 ? 0 : 1)
+
+struct rrr_message_log {
+	RRR_SOCKET_MSG_HEAD;
+	uint8_t is_stdout;
+	uint8_t loglevel;
+	uint16_t prefix_size;
+	char prefix_and_message[1];
+} __attribute((__packed__));
+
+void rrr_message_log_prepare_for_network (struct rrr_message_log *msg);
+int rrr_message_log_to_host (struct rrr_message_log *msg);
+void rrr_message_log_init_head (struct rrr_message_log *target, uint16_t prefix_size, uint32_t data_size);
+int rrr_message_log_new (
+		struct rrr_message_log **target,
+		uint8_t loglevel,
+		const char *prefix,
+		const char *message
+);
+
+#endif /* RRR_MESSAGE_LOG_H */

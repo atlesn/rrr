@@ -230,6 +230,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		struct rrr_read_common_receive_message_callback_data read_callback_data = {
 				read_rrr_message_callback,
 				NULL,
+				NULL,
 				&socket_callback_data
 		};
 		if ((ret = rrr_socket_client_collection_read (

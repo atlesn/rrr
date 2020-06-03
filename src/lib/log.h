@@ -178,10 +178,17 @@ void rrr_log_hook_register (
 		),
 		void *private_arg
 );
+
+void rrr_log_hook_unregister_all_after_fork (void);
+
 void rrr_log_hook_unregister (
 		int handle
 );
-
+void rrr_log_hooks_call_raw (
+		unsigned short loglevel_translated,
+		const char *prefix,
+		const char *message
+);
 void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_printf_plain (const char *__restrict __format, ...);
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
