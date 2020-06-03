@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/message_addr.h"
+#include "../lib/message_log.h"
 #include "../lib/modules.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
@@ -918,6 +919,32 @@ int worker_fork_signal_handler (int signal, void *private_arg) {
 	return 0;
 }
 
+void perl5_worker_fork_log_hook (
+		unsigned short loglevel_translated,
+		const char *prefix,
+		const char *message,
+		void *private_arg
+) {
+	struct perl5_child_data *data = private_arg;
+
+	struct rrr_message_log *message_log = NULL;
+
+	if (rrr_message_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
+		goto out;
+	}
+
+	int ret = 0;
+	if ((ret = rrr_mmap_channel_write(data->parent_data->channel_from_child, message_log, message_log->msg_size)) != 0) {
+		if (ret == RRR_MMAP_CHANNEL_FULL) {
+			RRR_MSG_0("MMAP Channel was full in perl5_worker_fork_log_hook\n");
+			ret = 1;
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(message_log);
+}
+
 static void perl5_handle_sigchld (pid_t pid, void *arg) {
 	struct perl5_data *data = arg;
 
@@ -951,7 +978,9 @@ int start_worker_fork (struct perl5_data *data) {
 
 	// CHILD PROCESS CODE
 	rrr_socket_close_all_no_unlink();
+	rrr_log_hook_unregister_all_after_fork();
 
+	int log_hook_handle;
 	struct perl5_child_data child_data;
 
 	if (perl5_child_data_init(&child_data) != 0) {
@@ -959,6 +988,8 @@ int start_worker_fork (struct perl5_data *data) {
 		ret = 1;
 		goto out_child_error;
 	}
+
+	rrr_log_hook_register(&log_hook_handle, perl5_worker_fork_log_hook, &child_data);
 
 	child_data.parent_data = data;
 
@@ -971,6 +1002,8 @@ int start_worker_fork (struct perl5_data *data) {
 
 	perl5_child_data_cleanup(&child_data);
 
+	rrr_log_hook_unregister(log_hook_handle);
+
 	out_child_error:
 	RRR_DBG_1("perl5 instance %s child worker loop returned %i\n", INSTANCE_D_NAME(data->thread_data), ret);
 
@@ -980,14 +1013,14 @@ int start_worker_fork (struct perl5_data *data) {
 		return ret;
 }
 
-struct read_callback_data {
+struct perl5_read_callback_data {
 	struct perl5_data *data;
 	int count;
 	const struct rrr_message *message;
 };
 
 int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
-	struct read_callback_data *callback_data = arg;
+	struct perl5_read_callback_data *callback_data = arg;
 	struct perl5_data *data = callback_data->data;
 
 	int ret = 0;
@@ -1021,9 +1054,11 @@ int read_from_child_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	return ret;
 }
 
-int read_from_child_mmap_channel_callback (const void *data, size_t data_size, void *arg) {
-	struct read_callback_data *callback_data = arg;
-
+int read_from_child_mmap_channel_message_callback (
+		const void *data,
+		size_t data_size,
+		struct perl5_read_callback_data *callback_data
+) {
 	const struct rrr_message *msg = data;
 	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
@@ -1052,12 +1087,49 @@ int read_from_child_mmap_channel_callback (const void *data, size_t data_size, v
 	return 0;
 }
 
+int read_from_child_mmap_channel_log_callback (
+		const struct rrr_message_log *msg_log,
+		size_t data_size,
+		struct perl5_read_callback_data *callback_data
+) {
+	(void)(callback_data);
+
+	if (!RRR_MSG_LOG_SIZE_OK(msg_log) || data_size != msg_log->msg_size) {
+		RRR_BUG("BUG: Size error of message in read_from_child_mmap_channel_log_callback\n");
+	}
+
+//	printf("perl5 in log msg read - %s\n", RRR_MSG_LOG_MSG_POS(msg_log));
+
+	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
+	// only (includes statistics engine)
+	rrr_log_hooks_call_raw(msg_log->loglevel, msg_log->prefix_and_message, RRR_MSG_LOG_MSG_POS(msg_log));
+
+	return 0;
+}
+
+int read_from_child_mmap_channel_callback (const void *data, size_t data_size, void *arg) {
+	struct perl5_read_callback_data *callback_data = arg;
+
+	const struct rrr_socket_msg *msg = data;
+
+	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
+		return read_from_child_mmap_channel_message_callback(data, data_size, callback_data);
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg)) {
+		return read_from_child_mmap_channel_log_callback((const struct rrr_message_log *) msg, data_size, callback_data);
+	}
+
+	RRR_BUG("BUG: Unknown message type %u in read_from_child_mmap_channel_callback\n", msg->msg_type);
+
+	return 0;
+}
+
 int read_from_child_fork(int *read_count, struct perl5_data *data) {
 	int ret = 0;
 
 	*read_count = 0;
 
-	struct read_callback_data callback_data = {
+	struct perl5_read_callback_data callback_data = {
 			data,
 			0,
 			NULL

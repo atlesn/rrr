@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "vl_time.h"
 #include "messages.h"
 #include "message_addr.h"
+#include "message_log.h"
 #include "array.h"
 
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
@@ -441,6 +442,22 @@ int rrr_read_common_receive_message_raw_callback (
 		}
 
 		ret = callback_data->callback_addr_msg(message, callback_data->callback_arg);
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(socket_msg)) {
+		if (callback_data->callback_log_msg == NULL) {
+			RRR_MSG_0("Received an rrr_message_log in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		struct rrr_message_log *message = (struct rrr_message_log *) socket_msg;
+		if (rrr_message_log_to_host(message) != 0) {
+			RRR_MSG_0("Invalid data in received log message in rrr_read_common_receive_message_raw_callback\n");
+			ret = RRR_READ_SOFT_ERROR;
+			goto out;
+		}
+
+		ret = callback_data->callback_log_msg(message, callback_data->callback_arg);
 	}
 	else {
 		RRR_MSG_0("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",

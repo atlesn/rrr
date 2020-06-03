@@ -30,6 +30,9 @@ input_data
 /debian/tmp/
 # http://www.gnu.org/software/automake
 
+/conftest
+/conftest.err
+/conftest.c
 INSTALL
 Makefile.in
 /ar-lib
