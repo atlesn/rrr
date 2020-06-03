@@ -44,13 +44,21 @@ struct rrr_stats_named_message_list_collection {
 	RRR_LL_HEAD(struct rrr_stats_named_message_list);
 };
 
+struct rrr_stats_log_journal {
+	RRR_LL_HEAD(struct rrr_stats_message);
+};
+
 struct rrr_stats_engine {
 	int initialized;
 	int socket;
+	int log_hook_handle;
 	pthread_mutex_t main_lock;
+	pthread_mutex_t journal_lock;
 	struct rrr_stats_named_message_list_collection named_message_list;
 	struct rrr_socket_client_collection client_collection;
 	uint64_t next_send_time;
+	struct rrr_stats_log_journal log_journal;
+	const struct rrr_stats_message *log_journal_last_sent_message;
 };
 
 int rrr_stats_engine_init (struct rrr_stats_engine *stats);

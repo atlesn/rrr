@@ -181,6 +181,27 @@ int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct r
 	return __rrr_stats_tree_insert_or_update_branch(tree->first_branch, message->path, message);
 }
 
+static int __rrr_stats_branch_has_leaf (struct rrr_stats_tree_branch *branch, const char *path_postfix) {
+	if (RRR_LL_COUNT(branch) == 0) {
+		if (strcmp(branch->name, path_postfix) == 0) {
+			return 1;
+		}
+	}
+	else {
+		RRR_LL_ITERATE_BEGIN(branch, struct rrr_stats_tree_branch);
+			if (__rrr_stats_branch_has_leaf(node, path_postfix)) {
+				return 1;
+			}
+		RRR_LL_ITERATE_END();
+	}
+
+	return 0;
+}
+
+int rrr_stats_tree_has_leaf (struct rrr_stats_tree *tree, const char *path_postfix) {
+	return __rrr_stats_branch_has_leaf(tree->first_branch, path_postfix);
+}
+
 static void __rrr_stats_tree_branch_dump (struct rrr_stats_tree_branch *branch, const char *path_prefix) {
 	char path_tmp[RRR_STATS_MESSAGE_PATH_MAX_LENGTH + 1];
 

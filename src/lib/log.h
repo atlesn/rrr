@@ -164,6 +164,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_BUG(...) \
 	do { RRR_MSG_ERR(__VA_ARGS__); abort(); } while (0)
 
+#define RRR_LOG_HEADER_FORMAT "<%u> <%s> "
+
+#define RRR_LOG_HOOK_MSG_MAX_SIZE 512
+
+void rrr_log_hook_register (
+		int *handle,
+		void (*log)(
+				unsigned short loglevel_translated,
+				const char *prefix,
+				const char *message,
+				void *private_arg
+		),
+		void *private_arg
+);
+void rrr_log_hook_unregister (
+		int handle
+);
+
 void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_printf_plain (const char *__restrict __format, ...);
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);

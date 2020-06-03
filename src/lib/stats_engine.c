@@ -41,10 +41,60 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "random.h"
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
+#define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25
 
 struct rrr_stats_client {
 	struct rrr_stats_engine *engine;
+	int first_log_journal_messages_sent;
 };
+
+static void __rrr_stats_engine_log_listener (
+		unsigned short loglevel_translated,
+		const char *prefix,
+		const char *message,
+		void *private_arg
+) {
+	struct rrr_stats_engine *stats = private_arg;
+	struct rrr_stats_message *new_message = NULL;
+
+	if (stats->initialized == 0) {
+		return;
+	}
+
+	(void)(loglevel_translated);
+	(void)(prefix);
+
+	pthread_mutex_lock(&stats->journal_lock);
+
+	size_t msg_size = strlen(message) + 1;
+
+	// Trim message if too long
+	if (msg_size > RRR_STATS_MESSAGE_DATA_MAX_SIZE) {
+		msg_size = RRR_STATS_MESSAGE_DATA_MAX_SIZE;
+	}
+
+	if (rrr_stats_message_new (
+			&new_message,
+			RRR_STATS_MESSAGE_TYPE_TEXT,
+			0,
+			RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL,
+			message,
+			msg_size
+	) != 0) {
+		goto out;
+	}
+
+	new_message->data[msg_size - 1] = '\0';
+
+	RRR_LL_APPEND(&stats->log_journal, new_message);
+	new_message = NULL;
+
+	out:
+	pthread_mutex_unlock(&stats->journal_lock);
+	if (message != NULL) {
+		rrr_stats_message_destroy(new_message);
+	}
+}
 
 static int __rrr_stats_client_new (struct rrr_stats_client **target, struct rrr_stats_engine *engine) {
 	struct rrr_stats_client *client = malloc(sizeof(*client));
@@ -52,6 +102,8 @@ static int __rrr_stats_client_new (struct rrr_stats_client **target, struct rrr_
 		RRR_MSG_0("Could not allocate memory in __rrr_stats_client_new\n");
 		return 1;
 	}
+
+	memset(client, '\0', sizeof(*client));
 
 	client->engine = engine;
 
@@ -82,6 +134,10 @@ static void __rrr_stats_named_message_list_collection_clear (struct rrr_stats_na
 	RRR_LL_DESTROY(collection, struct rrr_stats_named_message_list, __rrr_stats_named_message_list_destroy(node));
 }
 
+static void __rrr_stats_log_journal_clear (struct rrr_stats_log_journal *collection) {
+	RRR_LL_DESTROY(collection, struct rrr_stats_message, rrr_stats_message_destroy(node));
+}
+
 static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
 		struct rrr_stats_named_message_list_collection *collection,
 		unsigned int handle
@@ -98,6 +154,7 @@ static struct rrr_stats_named_message_list *__rrr_stats_named_message_list_get (
 	return result;
 }
 
+// To provide memory fence, this must be called prior to any thread starting or forking
 int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	int ret = 0;
 	char *filename = NULL;
@@ -105,7 +162,7 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 	memset (stats, '\0', sizeof(*stats));
 
 	if (pthread_mutex_init(&stats->main_lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_stats_engine_init\n");
+		RRR_MSG_0("Could not initialize main mutex in rrr_stats_engine_init\n");
 		ret = 1;
 		goto out;
 	}
@@ -131,13 +188,22 @@ int rrr_stats_engine_init (struct rrr_stats_engine *stats) {
 		goto out_close_socket;
 	}
 
-	RRR_DBG_1("Statistics engine started, listening at %s\n", filename);
+	if (pthread_mutex_init(&stats->journal_lock, 0) != 0) {
+		RRR_MSG_0("Could not initialize journal mutex in rrr_stats_engine_init\n");
+		ret = 1;
+		goto out_destroy_client_collection;
+	}
+
+	rrr_log_hook_register(&stats->log_hook_handle, __rrr_stats_engine_log_listener, stats);
+
+	RRR_DBG_1("Statistics engine started, listening at %s, log hook handle is %i\n",
+			filename, stats->log_hook_handle);
 	stats->initialized = 1;
 
 	goto out;
 
-//	out_destroy_client_collection:
-//		rrr_socket_client_collection_clear(&stats->client_collection);
+	out_destroy_client_collection:
+		rrr_socket_client_collection_clear(&stats->client_collection);
 	out_close_socket:
 		rrr_socket_close(stats->socket);
 	out_destroy_mutex:
@@ -157,8 +223,10 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	// certain risk by destroying the mutex at program exit.
 	pthread_mutex_lock(&stats->main_lock);
 
+	rrr_log_hook_unregister(stats->log_hook_handle);
 	rrr_socket_client_collection_clear(&stats->client_collection);
 	__rrr_stats_named_message_list_collection_clear(&stats->named_message_list);
+	__rrr_stats_log_journal_clear(&stats->log_journal);
 
 	stats->initialized = 0;
 
@@ -167,6 +235,7 @@ void rrr_stats_engine_cleanup (struct rrr_stats_engine *stats) {
 	rrr_socket_close_ignore_unregistered(stats->socket);
 	stats->socket = 0;
 	pthread_mutex_destroy(&stats->main_lock);
+	pthread_mutex_destroy(&stats->journal_lock);
 }
 
 struct rrr_stats_engine_read_callback_data {
@@ -184,7 +253,50 @@ static int __rrr_stats_engine_read_callback (struct rrr_read_session *read_sessi
 	return 0;
 }
 
-static int __rrr_stats_engine_send_message_to_clients (struct rrr_stats_engine *stats, struct rrr_stats_message *message) {
+int __rrr_stats_engine_multicast_send_intermediate (
+		struct rrr_socket_msg *data,
+		size_t size,
+		void *callback_arg
+) {
+	struct rrr_stats_engine *stats = callback_arg;
+
+	return rrr_socket_client_collection_multicast_send_ignore_full_pipe (
+			&stats->client_collection,
+			data,
+			size
+	);
+}
+
+int __rrr_stats_engine_unicast_send_intermediate (
+		struct rrr_socket_msg *data,
+		size_t size,
+		void *callback_arg
+) {
+	struct rrr_socket_client *client = callback_arg;
+
+	int ret = 0;
+
+	ssize_t written_bytes_dummy = 0;
+	if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, client->connected_fd, data, size)) != 0) {
+		if (ret != RRR_SOCKET_SOFT_ERROR) {
+			RRR_DBG_1("Warning: Send error in __rrr_stats_engine_send_unicast_intermediate for client with fd %i\n",
+					client->connected_fd);
+			ret = 0;
+		}
+	}
+
+	return ret;
+}
+
+static int __rrr_stats_engine_pack_message (
+		struct rrr_stats_message *message,
+		int (*callback)(
+				struct rrr_socket_msg *data,
+				size_t size,
+				void *callback_arg
+		),
+		void *callback_arg
+) {
 	struct rrr_stats_message_packed message_packed;
 	size_t total_size;
 
@@ -211,11 +323,7 @@ static int __rrr_stats_engine_send_message_to_clients (struct rrr_stats_engine *
 			message->path
 	);
 
-	return rrr_socket_client_collection_multicast_send_ignore_full_pipe (
-			&stats->client_collection,
-			(struct rrr_socket_msg *) &message_packed,
-			total_size
-	);
+	return callback((struct rrr_socket_msg *) &message_packed, total_size, callback_arg);
 }
 
 static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *stats, struct rrr_stats_named_message_list *list) {
@@ -245,7 +353,11 @@ static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *
 		}
 
 		if (has_clients) {
-			if (__rrr_stats_engine_send_message_to_clients(stats, node) != 0) {
+			if (__rrr_stats_engine_pack_message(
+					node,
+					__rrr_stats_engine_multicast_send_intermediate,
+					stats
+			) != 0) {
 				RRR_MSG_0("Error while sending message in __rrr_stats_engine_send_messages_from_list\n");
 				ret = 1;
 				goto out;
@@ -269,6 +381,82 @@ static int __rrr_stats_engine_send_messages (struct rrr_stats_engine *stats) {
 
 	out:
 	return ret;
+}
+
+static void __rrr_stats_engine_journal_send_to_new_clients (struct rrr_stats_engine *stats) {
+	// All messages will be sent by the normal function the first iteration
+	if (stats->log_journal_last_sent_message == NULL) {
+		return;
+	}
+
+	RRR_LL_ITERATE_BEGIN(&stats->client_collection, struct rrr_socket_client);
+		struct rrr_stats_client *client = node->private_data;
+		struct rrr_socket_client *socket_client = node;
+
+		if (client->first_log_journal_messages_sent == 0) {
+			RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+				// Ignore errors
+				__rrr_stats_engine_pack_message(node, __rrr_stats_engine_unicast_send_intermediate, socket_client);
+				if (node == stats->log_journal_last_sent_message) {
+					// The rest will be sent by the normal send function
+					RRR_LL_ITERATE_LAST();
+				}
+			RRR_LL_ITERATE_END();
+
+			client->first_log_journal_messages_sent = 1;
+		}
+	RRR_LL_ITERATE_END();
+}
+
+static void __rrr_stats_engine_log_journal_send_to_clients (struct rrr_stats_engine *stats) {
+	int start_sending = 0;
+
+	if (stats->log_journal_last_sent_message == NULL) {
+		start_sending = 1;
+	}
+
+	again:
+	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+		if (start_sending) {
+			// Ignore errors
+			__rrr_stats_engine_pack_message(node, __rrr_stats_engine_multicast_send_intermediate, stats);
+			if (node == stats->log_journal_last_sent_message) {
+				// The rest will be sent by the normal send function
+				RRR_LL_ITERATE_LAST();
+			}
+			stats->log_journal_last_sent_message = node;
+		}
+		else if (node == stats->log_journal_last_sent_message) {
+			start_sending = 1;
+		}
+	RRR_LL_ITERATE_END();
+
+	if (start_sending == 0) {
+		start_sending = 1;
+		goto again;
+	}
+}
+
+static void __rrr_stats_engine_log_journal_trim (struct rrr_stats_engine *stats) {
+	RRR_LL_ITERATE_BEGIN(&stats->log_journal, struct rrr_stats_message);
+		if (RRR_LL_COUNT(&stats->log_journal) > RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&stats->log_journal, rrr_stats_message_destroy(node));
+}
+
+static void __rrr_stats_engine_log_journal_tick (struct rrr_stats_engine *stats) {
+	// New clients receive the full journal up to last_message mark
+	__rrr_stats_engine_journal_send_to_new_clients(stats);
+
+	// All clients receive journal messages after last_message mark
+	__rrr_stats_engine_log_journal_send_to_clients(stats);
+
+	// Keep only MAX newest elements
+	__rrr_stats_engine_log_journal_trim(stats);
 }
 
 int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
@@ -315,14 +503,17 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 	uint64_t time_now = rrr_time_get_64();
 
 	if (time_now > stats->next_send_time) {
-		// Send data to clients
+		// Send stats messages to clients
 		if ((ret = __rrr_stats_engine_send_messages(stats)) != 0) {
 			RRR_MSG_0("Error while sending messages in rrr_stats_engine_tick\n");
 			ret = 1;
 			goto out_unlock;
 		}
 		stats->next_send_time = time_now + RRR_STATS_ENGINE_SEND_INTERVAL_MS * 1000;
+
 	}
+
+	__rrr_stats_engine_log_journal_tick(stats);
 
 	out_unlock:
 		pthread_mutex_unlock(&stats->main_lock);

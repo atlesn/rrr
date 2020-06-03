@@ -12,6 +12,7 @@ program to post data to its modules.
 .SH SYNOPSIS
 .B rrr_stats [RRR SOCKET (PREFIX)]
 .Dl [-e|--exact_path]
+.Dl [-j|--journal]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
@@ -31,6 +32,8 @@ will look for a socket named this unless another name is specified at command li
 .SH OPTIONS
 .IP -e|--exact_path
 Use exact socket path, don't use prefix search.
+.IP -j|--journal
+Print journal (log) messages as they arrive. Nothing else is printed.
 .IP -d|--debuglevel[=]FLAGS
 Debuglevel to use.
 .IP -D|--debuglevel_on_exit[=]FLAGS
