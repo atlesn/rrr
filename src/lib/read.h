@@ -138,6 +138,7 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 );
 
+struct rrr_message_log;
 struct rrr_message_addr;
 struct rrr_message;
 struct rrr_array;
@@ -145,6 +146,7 @@ struct rrr_array;
 struct rrr_read_common_receive_message_callback_data {
 	int (*callback_msg)(struct rrr_message **message, void *arg);
 	int (*callback_addr_msg)(const struct rrr_message_addr *message, void *arg);
+	int (*callback_log_msg)(const struct rrr_message_log *message, void *arg);
 	void *callback_arg;
 };
 int rrr_read_common_receive_message_raw_callback (

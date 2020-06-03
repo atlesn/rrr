@@ -203,7 +203,7 @@ static int main_loop (
 		goto out;
 	}
 
-	RRR_DBG_1("RRR  found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
@@ -254,7 +254,8 @@ static int main_loop (
 		goto out_stop_threads;
 	}
 
-	// Post main sticky statistics messages
+	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
+	// and then gets unregistered here.
 	if (stats_data.handle != 0) {
 		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 		stats_data.handle = 0;

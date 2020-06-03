@@ -1,3 +1,10 @@
+rrr (1.1) unstable; urgency=medium
+
+  * Create new log journal which rrr_stats can read from
+  * Minor bugfix
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 03 Jun 2020 16:34:32 +0200
+
 rrr (1.0) unstable; urgency=medium
 
   * First major release, no changes from 0.20

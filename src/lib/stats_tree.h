@@ -46,6 +46,7 @@ struct rrr_stats_tree {
 int rrr_stats_tree_init (struct rrr_stats_tree *tree);
 void rrr_stats_tree_clear (struct rrr_stats_tree *tree);
 int rrr_stats_tree_insert_or_update (struct rrr_stats_tree *tree, const struct rrr_stats_message *message);
+int rrr_stats_tree_has_leaf (struct rrr_stats_tree *tree, const char *path_postfix);
 void rrr_stats_tree_dump (struct rrr_stats_tree *tree);
 void rrr_stats_tree_purge_old_branches (unsigned int *purged_total, struct rrr_stats_tree *tree, uint64_t min_time);
 

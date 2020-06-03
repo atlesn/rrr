@@ -5,11 +5,13 @@ RRR is a general purpose acquirement, transmission and storage server of all kin
 or messages. RRR has a variety of different modules which can be chained together to retrieve,
 transmit and save messages.
 
-RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
-piping or files.
+RRR can read data of different types from external programs or sensors using UDP, TCP, UNIX sockets,
+piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
+they pass through.
 
-- Acquire messages using piping, UNIX sockets, UDP-packets
-- Transfer messages using MQTT or UDP
+- Acquire messages using piping, UNIX sockets, UDP/TCP-packets
+- Transfer messages using MQTT, UDP or TCP
+- Modify messages using Perl or Python
 - Saving messages using InfluxDB and MySQL
 
 Application examples may include:
@@ -30,6 +32,11 @@ the source, for instance when the data source is a device on a computer.
 RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
 are not supported.
+
+## LICENSES
+
+RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
+the `LICENSE.*`-files regarding this.
 
 ## DEVELOPMENT
 

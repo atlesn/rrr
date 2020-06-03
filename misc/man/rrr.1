@@ -91,6 +91,9 @@ When a thread for some reason exits, close the other threads and exit as opposed
 restarts them.
 .IP -s|--stats
 Enable statistics engine which
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
 .Xr rrr_stats(1),
 can connect to.
 .SH SIGNALS
@@ -100,13 +103,11 @@ Encourage threads and forks to stop in a polite matter before exiting the progra
 Encourage threads and forks to stop in a polite matter before exiting the program. Multiple calls are treated the same way.
 .IP SIGTERM
 Exit immediately.
-.IP -l|--loglevel-translation
-Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
-and other messages DEBUG (loglevels 3 and 7).
 .SH RETURN VALUE
 .B rrr
 returns 0 on success and 1 on failure.
 .SH SEE ALSO
 .Xr rrr_post(1),
+.Xr rrr_stats(1),
 .Xr rrr.conf(5),
 .Xr rrr_python3(5)

@@ -79,6 +79,7 @@ static volatile int rrr_stats_abort = 0;
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"socket",				"[RRR SOCKET (PREFIX)] ..."},
 		{0,							'e',	"exact_path",			"[-e|--exact_path]"},
+		{0,							'j',	"journal",				"[-j|--journal]"},
 /*		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
@@ -102,6 +103,7 @@ struct rrr_stats_data {
 	char *socket_path_active;
 	int socket_fd;
 	int socket_path_exact;
+	int print_journal;
 };
 
 static void __rrr_stats_signal_handler (int s) {
@@ -216,6 +218,10 @@ static int __rrr_stats_read_message (
 static int __rrr_stats_parse_config (struct rrr_stats_data *data, struct cmd_data *cmd) {
 	if (cmd_exists(cmd, "exact_path", 0)) {
 		data->socket_path_exact = 1;
+	}
+
+	if (cmd_exists(cmd, "journal", 0)) {
+		data->print_journal = 1;
 	}
 
 	int i = 0;
@@ -545,6 +551,45 @@ static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {
 	return 0;
 }
 
+static int __rrr_stats_print_journal_message (const struct rrr_stats_message *message, void *private_arg) {
+	struct rrr_stats_read_message_callback_data *callback_data = private_arg;
+
+	int ret = 0;
+
+	if (message->type != RRR_STATS_MESSAGE_TYPE_TEXT) {
+		callback_data->message_count_err++;
+		goto out;
+	}
+
+	// TODO : A lot of memory copying etc. just to check the end of the path
+
+	struct rrr_stats_tree tree_tmp;
+	if (rrr_stats_tree_init(&tree_tmp) != 0) {
+		RRR_MSG_ERR("Could not initialize tree in __rrr_stats_print_journal_message\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_stats_tree_insert_or_update(&tree_tmp, message) != 0) {
+		RRR_MSG_0("Could not insert message into tree in __rrr_stats_print_journal_message\n");
+		ret = 1;
+		goto out_cleanup_tree;
+	}
+
+	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL)) {
+		printf("%s", message->data);
+		callback_data->message_count_ok++;
+	}
+	else {
+		callback_data->message_count_err++;
+	}
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out:
+		return ret;
+}
+
 static int __rrr_stats_process_message (const struct rrr_stats_message *message, void *private_arg) {
 	struct rrr_stats_read_message_callback_data *callback_data = private_arg;
 
@@ -575,6 +620,14 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 		return 0;
 	}
 
+	int (*callback)(const struct rrr_stats_message *message, void *private_arg) = NULL;
+	if (data->print_journal == 1) {
+		callback = __rrr_stats_print_journal_message;
+	}
+	else {
+		callback = __rrr_stats_process_message;
+	}
+
 	struct rrr_stats_read_message_callback_data callback_data = { data, 0, 0 };
 
 	unsigned int total_message_count_ok = 0;
@@ -587,7 +640,7 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 		switch (__rrr_stats_read_message (
 				&data->read_sessions,
 				data->socket_fd,
-				__rrr_stats_process_message,
+				callback,
 				&callback_data
 		)) {
 			case RRR_SOCKET_OK:
@@ -614,13 +667,15 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 				total_message_count_ok, total_message_count_err);
 	}
 
-	printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
+	if (data->print_journal == 0) {
+		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
 
-	unsigned int purged_total = 0;
+		unsigned int purged_total = 0;
 
-	rrr_stats_tree_dump(&data->message_tree);
-	rrr_stats_tree_purge_old_branches(&purged_total, &data->message_tree, rrr_time_get_64() - RRR_STATS_MESSAGE_LIFETIME_MS * 1000);
-	printf ("------ Purged: %u\n", purged_total);
+		rrr_stats_tree_dump(&data->message_tree);
+		rrr_stats_tree_purge_old_branches(&purged_total, &data->message_tree, rrr_time_get_64() - RRR_STATS_MESSAGE_LIFETIME_MS * 1000);
+		printf ("------ Purged: %u\n", purged_total);
+	}
 
 	return 0;
 }
@@ -636,7 +691,7 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 
 	struct cmd_data cmd;
-	struct rrr_stats_data data;
+	struct rrr_stats_data data = {0};
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
