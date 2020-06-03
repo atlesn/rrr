@@ -1091,8 +1091,9 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 	struct rrr_message *ret = data->message_dynamic;
 	struct rrr_message *new_msg = NULL;
 
-	if (MSG_CLASS(ret) != MSG_TYPE(&data->message_static)) {
-		RRR_MSG_0("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed.\n");
+	if (MSG_CLASS(ret) != MSG_CLASS(&data->message_static)) {
+		RRR_MSG_0("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed. Original class: %i, new class %i\n",
+			MSG_CLASS(ret), MSG_CLASS(&data->message_static));
 	}
 
 	// Overwrite header fields

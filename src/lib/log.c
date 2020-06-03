@@ -182,16 +182,19 @@ static void __rrr_log_hooks_call (
 		const char *__restrict __format,
 		va_list args
 ) {
-	// In case of a long prefix, only include the last part of it
 	const char *prefix_rpos = prefix;
-	size_t prefix_len = strlen(prefix);
-	if (prefix_len > RRR_LOG_HOOK_MSG_MAX_SIZE / 4) {
-		prefix_rpos = prefix_rpos + prefix_len - (RRR_LOG_HOOK_MSG_MAX_SIZE / 4);
+
+	{
+		// In case of a long prefix, only include the last part of it
+		size_t prefix_len = strlen(prefix);
+		if (prefix_len > RRR_LOG_HOOK_MSG_MAX_SIZE / 4) {
+			prefix_rpos = prefix_rpos + prefix_len - (RRR_LOG_HOOK_MSG_MAX_SIZE / 4);
+		}
 	}
 
 	char tmp[RRR_LOG_HOOK_MSG_MAX_SIZE];
 	char *wpos = tmp;
-	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT, loglevel_translated, prefix);
+	ssize_t size = snprintf(wpos, RRR_LOG_HOOK_MSG_MAX_SIZE, RRR_LOG_HEADER_FORMAT, loglevel_translated, prefix_rpos);
 	if (size <= 0) {
 		// NOTE ! Jumping out of function
 		return;
