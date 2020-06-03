@@ -12,7 +12,7 @@ echo "Description=@PACKAGE_STRING@" >> $OUTPUT
 echo >> $OUTPUT
 
 echo "[Service]" >> $OUTPUT
-echo "ExecStart=${BINDIR}/rrr -l ${CONFDIR}/" >> $OUTPUT
+echo "ExecStart=${BINDIR}/rrr -s -l ${CONFDIR}/" >> $OUTPUT
 echo "KillSignal=SIGINT" >> $OUTPUT
 echo "User=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
 echo "Group=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
