@@ -1,3 +1,10 @@
+rrr (1.1-1) unstable; urgency=medium
+
+  * Fix a segfault in perl5
+  * Improvents in a few debug/error messages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 04 Jun 2020 18:12:38 +0200
+
 rrr (1.1) unstable; urgency=medium
 
   * Create new log journal which rrr_stats can read from
