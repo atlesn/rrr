@@ -61,6 +61,9 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 	ssize_t items = 0;
 	struct pollfd pollfd = { callback_data->fd, POLLIN, 0 };
 
+	// Don't print errors here as errors will then be printed when a remote closes
+	// connection. Higher level should print error if needed. Debuglevel 1 is however fine here.
+
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
 	RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
@@ -72,12 +75,12 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_MSG_0("Poll error in rrr_socket_read_message\n");
+		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_MSG_0("Poll error in rrr_socket_read_message\n");
+		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
