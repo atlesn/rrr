@@ -242,6 +242,7 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 				}
 				value = node->unsigned_value;
 			}
+//			printf("Save signed value %" PRIi64 "\n", value);
 			memcpy(pos, &value, sizeof(value));
 		}
 		else {
@@ -249,6 +250,7 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 				RRR_BUG("BUG: A value was signed but was not processed as such in __rrr_perl5_type_to_value_h\n");
 			}
 			uint64_t value = node->unsigned_value;
+//			printf("Save unsigned value %" PRIu64 "\n", value);
 			memcpy(pos, &value, sizeof(value));
 		}
 
@@ -300,6 +302,8 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
     	goto out;
     }
 
+    memset(result, '\0', sizeof(*result));
+
 	STRLEN str_len = 0;
 	char *value = NULL;
 
@@ -311,6 +315,8 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 	}
 
 	if (str_len == 0) {
+		RRR_MSG_0("Empty strings or blobs cannot be used in arrays in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
+		ret = 1;
 		goto out;
 	}
 

@@ -577,6 +577,8 @@ static int __rrr_type_64_unpack (RRR_TYPE_UNPACK_ARGS, uint8_t target_type) {
 	for (unsigned int i = 0; i < array_size; i++) {
 		rrr_type_be tmp = *((rrr_type_be *) pos);
 		*((rrr_type_be *) pos) = rrr_be64toh(tmp);
+//		printf("Unpacking host U %" PRIu64 "\n", *((rrr_type_be *) pos));
+//		printf("Unpacking host I %" PRIi64 "\n", *((int64_t *) pos));
 		pos += sizeof(rrr_type_be);
 	}
 
@@ -605,7 +607,7 @@ static int __rrr_type_64_export_or_pack (RRR_TYPE_EXPORT_ARGS) {
 		const char *rpos = node->data + pos;
 		char *wpos = target + pos;
 		*((rrr_type_be *) wpos) = rrr_htobe64(*((rrr_type_be *) rpos));
-
+//		printf("Packing host U %" PRIu64 "\n", *((rrr_type_be *) wpos));
 		pos += sizeof(rrr_type_be);
 	}
 
@@ -1054,6 +1056,36 @@ static int __rrr_type_import_str (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
+int __rrr_type_h_to_str (RRR_TYPE_TO_STR_ARGS) {
+	int ret = 0;
+
+	ssize_t output_size = node->total_stored_length * 4;
+
+	char *result = malloc(output_size);
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in__rrr_type_bin_to_str\n");
+		return 1;
+	}
+
+	char *wpos = result;
+	for (int i = 0; i < (int) node->total_stored_length; i += sizeof(rrr_type_be)) {
+		if (RRR_TYPE_FLAG_IS_SIGNED(node->flags)) {
+			int64_t tmp = *((int64_t *) (node->data + i));
+			sprintf(wpos, "%" PRIi64 ",", tmp);
+		}
+		else {
+			uint64_t tmp = *((uint64_t *) (node->data + i));
+			sprintf(wpos, "%" PRIu64 ",", tmp);
+		}
+		wpos = result + strlen(result);
+	}
+	result[output_size - 1] = '\0';
+
+	*target = result;
+
+	return ret;
+}
+
 int __rrr_type_bin_to_str (RRR_TYPE_TO_STR_ARGS) {
 	int ret = 0;
 
@@ -1101,7 +1133,7 @@ int __rrr_type_str_to_str (RRR_TYPE_TO_STR_ARGS) {
 	const struct rrr_type_definition RRR_PASTE(rrr_type_definition_,name) = {type, max, import_length, import, export_length, export, unpack, pack, to_str, name_str}
 
 RRR_TYPE_DEFINE(be, RRR_TYPE_BE,		RRR_TYPE_MAX_BE,	__get_import_length_default,	__rrr_type_import_be,	NULL,								NULL,					__rrr_type_be_unpack,		NULL,					NULL,					RRR_TYPE_NAME_BE);
-RRR_TYPE_DEFINE(h, RRR_TYPE_H,			RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,								__rrr_type_host_export,	NULL,						__rrr_type_host_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_H);
+RRR_TYPE_DEFINE(h, RRR_TYPE_H,			RRR_TYPE_MAX_H,		__get_import_length_default,	__rrr_type_import_host,	NULL,								__rrr_type_host_export,	NULL,						__rrr_type_host_pack,	__rrr_type_h_to_str,	RRR_TYPE_NAME_H);
 RRR_TYPE_DEFINE(le, RRR_TYPE_LE,		RRR_TYPE_MAX_LE,	__get_import_length_default,	__rrr_type_import_le,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_LE);
 RRR_TYPE_DEFINE(blob, RRR_TYPE_BLOB,	RRR_TYPE_MAX_BLOB,	__get_import_length_default,	__rrr_type_import_blob,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_BLOB);
 RRR_TYPE_DEFINE(ustr, RRR_TYPE_USTR,	RRR_TYPE_MAX_USTR,	__get_import_length_ustr,		__rrr_type_import_ustr,	NULL,								NULL,					NULL,						NULL,					NULL,					RRR_TYPE_NAME_USTR);

@@ -198,7 +198,7 @@ int rrr_read_message_using_callbacks (
 			}
 		}
 		else {
-			RRR_MSG_0("Error from poll callback in rrr_socket_read_message_using_callbacks\n");
+			RRR_DBG_1("Error from poll callback in rrr_read_message_using_callbacks\n");
 		}
 		goto out;
 	}
@@ -209,7 +209,7 @@ int rrr_read_message_using_callbacks (
 		if (ret == RRR_READ_INCOMPLETE) {
 			goto out;
 		}
-		RRR_MSG_0("Error from read callback in rrr_socket_read_message_using_callbacks\n");
+		RRR_DBG_1("Error from read callback in rrr_read_message_using_callbacks\n");
 		goto out;
 	}
 
@@ -222,7 +222,7 @@ int rrr_read_message_using_callbacks (
 	/* Check for socket_options */
 	if (function_get_socket_options != NULL && read_session->socket_options == 0) {
 		if ((ret = function_get_socket_options(read_session, functions_callback_arg)) != 0) {
-			RRR_MSG_0("Error while gettings socket options in rrr_socket_read_message_using_callbacks\n");
+			RRR_MSG_0("Error while getting socket options in rrr_read_message_using_callbacks\n");
 			goto out;
 		}
 	}
@@ -233,7 +233,7 @@ int rrr_read_message_using_callbacks (
 		// return something else than OK. If not, we will always exit here.
 		if (read_session->read_complete_method == RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ) {
 			if (read_session->target_size > 0) {
-				RRR_BUG("Target size was set in rrr_socket_read_message while complete method was connection closed\n");
+				RRR_BUG("Target size was set in rrr_read_message while complete method was connection closed\n");
 			}
 			read_session->target_size = read_session->rx_buf_wpos;
 		}
@@ -269,7 +269,7 @@ int rrr_read_message_using_callbacks (
 	}
 
 	if (read_session->read_complete != 0) {
-		RRR_BUG("Read complete was non-zero in rrr_socket_read_message, read session must be cleared prior to reading more data\n");
+		RRR_BUG("Read complete was non-zero in rrr_read_message_using_callbacks, read session must be cleared prior to reading more data\n");
 	}
 
 	/* Check for expansion of buffer */

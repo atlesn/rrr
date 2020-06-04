@@ -241,7 +241,8 @@ int rrr_socket_client_collection_read (
 		}
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				RRR_MSG_0("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
+				// Don't print error as it will be printed when a remote client disconnects
+				RRR_DBG_1("Error while reading from a client in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;
