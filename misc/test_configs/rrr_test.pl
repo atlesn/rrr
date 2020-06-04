@@ -49,11 +49,12 @@ sub process {
 
 	print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
+	my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
+
 	# Create an array in the message and write some values
 	push_tag_str($message, "value_a", "This is the 'a' value");
-	push_tag_str($message, "value_b");
 	push_tag_h($message, "value_number", 12345);
-	push_tag_h($message, "value_number_negative", -12345);
+	push_tag_array($message, "value_numbers", \@numbers, "h");
 	push_tag_blob($message, "value_blob", "abcd");
 
 	# This can be used to duplicate a message if called multiple times
@@ -156,6 +157,17 @@ sub push_tag {
 	my $type = shift;
 
 	push @{$message->{'array_values'}}, "$value";
+	push @{$message->{'array_tags'}}, $tag;
+	push @{$message->{'array_types'}}, $type;
+}
+
+sub push_tag_array {
+	my $message = shift;
+	my $tag = shift;
+	my $values_ref = shift;
+	my $type = shift;
+
+	push @{$message->{'array_values'}}, $values_ref;
 	push @{$message->{'array_tags'}}, $tag;
 	push @{$message->{'array_types'}}, $type;
 }
