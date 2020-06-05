@@ -964,7 +964,7 @@ static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	// Parse any number of bytes until a separator is found.
 	for (const char *pos = start; pos < end; pos++) {
-		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)) {
+		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)||RRR_TYPE_CHAR_IS_SEP_F(*pos)) {
 			if (length == 0) {
 				RRR_MSG_0("No characters found for array nsep-field, only separator found\n");
 				ret = RRR_TYPE_PARSE_SOFT_ERR;
