@@ -89,6 +89,7 @@ do_test_simple --library-tests
 
 do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
+do_test_simple test_journal.conf
 
 do_test_ip test_ip.conf
 

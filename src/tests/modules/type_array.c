@@ -326,6 +326,28 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
+int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	// This cast is really weird, only done in test module. Our caller
+	// does not send thread_data struct but test_data struct.
+	struct test_result *result = (struct test_result *) thread_data;
+
+	result->message = NULL;
+	result->result = 1;
+
+	struct rrr_message *message = (struct rrr_message *) entry->message;
+
+	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
+
+	result->result = 2;
+
+	result->message = message;
+	entry->message = NULL;
+
+	rrr_ip_buffer_entry_unlock(entry);
+
+	return 0;
+}
+
 int test_do_poll_loop (
 		struct test_result *test_result,
 		struct rrr_instance_thread_data *thread_data,
@@ -529,6 +551,37 @@ int test_array (
 		goto out;
 	}
 	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result_1.result);
+
+	// Error if result is not two from both polls
+	ret |= (test_result_1.result != 2);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(test_result_1.message);
+	return ret;
+}
+
+int test_anything (
+		struct instance_metadata_collection *instances,
+		const char *output_name
+) {
+	int ret = 0;
+
+	struct test_result test_result_1 = {1, NULL};
+
+	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	if (output_1 == NULL) {
+		TEST_MSG("Could not find output instance %s in test_type_array\n",
+				output_name);
+		return 1;
+	}
+
+	// Poll from first output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
+	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_anything_callback);
+	if (ret != 0) {
+		goto out;
+	}
+	TEST_MSG("Result of test_anything, should be 2: %i\n", test_result_1.result);
 
 	// Error if result is not two from both polls
 	ret |= (test_result_1.result != 2);

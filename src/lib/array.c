@@ -1195,7 +1195,9 @@ int rrr_array_dump (
 	int ret = 0;
 	char *tmp = NULL;
 
-	RRR_MSG_1 ("== ARRAY DUMP ========================================================\n");
+	// Use high debuglevel to force suppression of messages in journal module
+
+	RRR_DBG_2 ("== ARRAY DUMP ========================================================\n");
 
 	// TODO : Each line must be written to a buffer then printed
 
@@ -1218,7 +1220,7 @@ int rrr_array_dump (
 			to_str = tmp;
 		}
 
-		RRR_MSG_1 ("%i - %s - %s - (%i/%i = %i) - %s\n",
+		RRR_DBG_2 ("%i - %s - %s - (%i/%i = %i) - %s\n",
 				i,
 				node->definition->identifier,
 				tag,
@@ -1232,7 +1234,7 @@ int rrr_array_dump (
 	RRR_LL_ITERATE_END();
 
 
-	RRR_MSG_1 ("== ARRAY DUMP END ====================================================\n");
+	RRR_DBG_2 ("== ARRAY DUMP END ====================================================\n");
 
 	out:
 	RRR_FREE_IF_NOT_NULL(tmp);

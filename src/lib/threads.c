@@ -257,8 +257,8 @@ static int __rrr_thread_allocate_thread (struct rrr_thread **target) {
 
 static int __rrr_thread_destroy (struct rrr_thread *thread, int do_destroy_private_data) {
 	rrr_thread_lock(thread);
-	if (thread->state != RRR_THREAD_STATE_STOPPED) {
-		RRR_BUG("Attempted to free thread which was not STOPPED\n");
+	if (thread->state != RRR_THREAD_STATE_STOPPED && thread->state != RRR_THREAD_STATE_FREE) {
+		RRR_BUG("Attempted to free thread which was not STOPPED or FREE\n");
 	}
 	thread->state = RRR_THREAD_STATE_FREE;
 	if (thread->is_watchdog == 0) {
@@ -844,6 +844,8 @@ struct rrr_thread *rrr_thread_preload_and_register (
 ) {
 	struct rrr_thread *thread = NULL;
 
+	// NOTE : Locking and gotos in this function are messy, take care
+
 	if (__rrr_thread_allocate_thread(&thread) != 0) {
 		RRR_MSG_0("Could not allocate thread\n");
 		goto out_error;
@@ -875,13 +877,13 @@ struct rrr_thread *rrr_thread_preload_and_register (
 
 	rrr_thread_lock(thread);
 
-	thread->state = RRR_THREAD_STATE_INIT;
-
 	int err = (preload_routine != NULL ? preload_routine(thread) : 0);
 	if (err != 0) {
 		RRR_MSG_0 ("Error while preloading thread\n");
 		goto out_error;
 	}
+
+	thread->state = RRR_THREAD_STATE_INIT;
 
 	// Thread tries to set a signal first and therefore can't proceed until we unlock
 	rrr_thread_unlock(thread);
