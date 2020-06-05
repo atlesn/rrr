@@ -218,6 +218,7 @@ RRR_TYPE_DEFINE_EXTERN(msg);
 RRR_TYPE_DEFINE_EXTERN(fixp);
 RRR_TYPE_DEFINE_EXTERN(str);
 RRR_TYPE_DEFINE_EXTERN(nsep);
+RRR_TYPE_DEFINE_EXTERN(stx);
 RRR_TYPE_DEFINE_EXTERN(null);
 
 int rrr_type_import_ustr_raw (uint64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
