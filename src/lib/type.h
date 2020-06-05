@@ -54,7 +54,8 @@ static const union type_system_endian {
 #define RRR_TYPE_FIXP		10 // Signed 64 type of which 24 bits are fraction given as string in base10 or base16
 #define RRR_TYPE_STR		11 // Dynamic length string quoted with "
 #define RRR_TYPE_NSEP		12 // Group of any byte not being a separator byte
-#define RRR_TYPE_MAX		12
+#define RRR_TYPE_STX		13 // STX or SOH, start of transmission or start of header
+#define RRR_TYPE_MAX		13
 
 #define RRR_TYPE_NAME_LE	"le"
 #define RRR_TYPE_NAME_BE	"be"
@@ -67,6 +68,7 @@ static const union type_system_endian {
 #define RRR_TYPE_NAME_FIXP	"fixp"
 #define RRR_TYPE_NAME_STR	"str"
 #define RRR_TYPE_NAME_NSEP	"nsep"
+#define RRR_TYPE_NAME_STX	"stx"
 
 #define RRR_TYPE_MAX_LE		sizeof(rrr_type_le)
 #define RRR_TYPE_MAX_BE		sizeof(rrr_type_be)
@@ -79,17 +81,19 @@ static const union type_system_endian {
 #define RRR_TYPE_MAX_FIXP	0
 #define RRR_TYPE_MAX_STR	0
 #define RRR_TYPE_MAX_NSEP	0
+#define RRR_TYPE_MAX_STX	64
 
 #define RRR_TYPE_IS_64(type) 	(														\
 			(type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H ||	\
 			(type) == RRR_TYPE_USTR || (type) == RRR_TYPE_ISTR							\
 		)
-#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP)
+#define RRR_TYPE_IS_BLOB(type)		((type) == RRR_TYPE_BLOB || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_MSG || (type) == RRR_TYPE_STR || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
 #define RRR_TYPE_IS_FIXP(type)		((type) == RRR_TYPE_FIXP)
 #define RRR_TYPE_IS_MSG(type)		((type) == RRR_TYPE_MSG)
-#define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_STR(type)		((type) == RRR_TYPE_STR || (type) == RRR_TYPE_SEP || (type) == RRR_TYPE_NSEP || (type) == RRR_TYPE_STX)
 #define RRR_TYPE_IS_SEP(type)		((type) == RRR_TYPE_SEP)
-#define RRR_TYPE_IS_NSEP(type)		((type) == RRR_TYPE_SEP)
+#define RRR_TYPE_IS_NSEP(type)		((type) == RRR_TYPE_NSEP)
+#define RRR_TYPE_IS_STX(type)		((type) == RRR_TYPE_STX)
 #define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
@@ -100,6 +104,9 @@ static const union type_system_endian {
 
 #define RRR_TYPE_FLAG_SET_SIGNED(flags)		(flags) |= (RRR_TYPE_FLAG_SIGNED)
 #define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= ~(RRR_TYPE_FLAG_SIGNED)
+
+#define RRR_TYPE_CHAR_IS_STX(c) \
+	(c >= 1 && c <= 2)     // SOH, STX
 
 #define RRR_TYPE_CHAR_IS_SEP_A(c) \
 	(c == '\n' || c == '\r' || c == '\t')
@@ -112,7 +119,7 @@ static const union type_system_endian {
 #define RRR_TYPE_CHAR_IS_SEP_E(c) \
 	(c >= 123 && c <= 126) // { | } ~
 #define RRR_TYPE_CHAR_IS_SEP_F(c) \
-	(c >= 0 && c <= 5)     // NULL, SOH, STX, ETX, EOH
+	(c == 0 || (c >= 3 &&c <= 4))     // NULL, ETX, EOT
 
 #define RRR_TYPE_CHAR_IS_SEP(c) (		\
 		RRR_TYPE_CHAR_IS_SEP_A(c)||		\

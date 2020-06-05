@@ -118,7 +118,10 @@ Unsigned number in the endianess of the machine. Might be unsafe for network tra
 .It blob
 Arbitary binary data. Lengt must be in the range 1-1024.
 .It sep
-One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL SOH STX ETX EOH LF CR TAB.
+One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR TAB.
+Length must be in the range 1-64.
+.It stx
+One or more STX or SOH characters.
 Length must be in the range 1-64.
 .El
 .PP
