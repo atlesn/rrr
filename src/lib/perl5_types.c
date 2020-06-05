@@ -648,6 +648,7 @@ static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
 	DEFINE_PERL5_TYPE(FIXP,	fixp,	__rrr_perl5_type_to_sv_h,		__rrr_perl5_type_to_value_h),
 	DEFINE_PERL5_TYPE(STR,	str,	__rrr_perl5_type_to_sv_str,		__rrr_perl5_type_to_value_str),
 	DEFINE_PERL5_TYPE(NSEP,	nsep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
+	DEFINE_PERL5_TYPE(STX,	stx,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
 	{ 0, NULL, NULL, NULL }
 };
 
