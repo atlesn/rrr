@@ -381,9 +381,9 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 			rrr_stats_instance_update_rate (stats, 1, "suppressed", data->count_suppressed - prev_suppressed);
 			rrr_stats_instance_update_rate (stats, 2, "total", data->count_total - prev_total);
 
-			prev_processed = 0;
-			prev_suppressed = 0;
-			prev_total = 0;
+			prev_processed = data->count_processed;
+			prev_suppressed = data->count_suppressed;
+			prev_total = data->count_total;
 		}
 
 		rrr_posix_usleep (50000); // 50 ms
