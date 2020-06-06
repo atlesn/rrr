@@ -49,7 +49,7 @@ sub process {
 
 	print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
-	sleep 10;
+	sleep 1;
 
 	my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
 
@@ -58,6 +58,8 @@ sub process {
 	push_tag_h($message, "value_number", 12345);
 	push_tag_array($message, "value_numbers", \@numbers, "h");
 	push_tag_blob($message, "value_blob", "abcd");
+
+	$message->{'ip_so_type'} = "tcp";
 
 	# This can be used to duplicate a message if called multiple times
 	$message->send();

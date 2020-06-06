@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <src/lib/ip.h>
 #include <fcntl.h>
 #include <read.h>
+#include <arpa/inet.h>
 
 #include "posix.h"
 #include "ip.h"
@@ -56,6 +57,45 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_strerror.h"
 #include "read_constants.h"
 #include "rrr_socket_constants.h"
+
+void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
+	const char *result = NULL;
+
+	*dest = '\0';
+
+	const void *addr_final = NULL;
+	in_port_t port_final = 0;
+
+	if (addr->sa_family == AF_INET) {
+		const struct sockaddr_in *in_addr = (const struct sockaddr_in *) addr;
+		addr_final = &in_addr->sin_addr;
+		port_final = in_addr->sin_port;
+	}
+	else if (addr->sa_family == AF_INET6) {
+		const struct sockaddr_in6 *in6_addr = (const struct sockaddr_in6 *) addr;
+		addr_final = &in6_addr->sin6_addr;
+		port_final = in6_addr->sin6_port;
+	}
+	else {
+		snprintf(dest, dest_size, "[Unknown address family %i]", addr->sa_family);
+		goto out;
+	}
+
+	char buf[256];
+	*buf = '\0';
+	result = inet_ntop(addr->sa_family, addr_final, buf, 256);
+	buf[256 - 1] = '\0';
+
+	if (result == NULL) {
+		snprintf(dest, dest_size, "[Unknown address of length %i]", addr_len);
+		goto out;
+	}
+
+	snprintf(dest, dest_size, "[%s:%u]", buf, ntohs(port_final));
+
+	out:
+	dest[dest_size - 1] = '\0';
+}
 
 int rrr_ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
 	stats->period = period;

@@ -146,6 +146,8 @@ void rrr_ip_buffer_entry_collection_sort (
 ) {
 	struct rrr_ip_buffer_entry_collection tmp = {0};
 
+	// TODO : This is probably a bad sorting algorithm
+
 	while (RRR_LL_COUNT(target) != 0) {
 		struct rrr_ip_buffer_entry *smallest = RRR_LL_FIRST(target);
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_ip_buffer_entry);
