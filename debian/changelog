@@ -1,3 +1,11 @@
+rrr (1.2) unstable; urgency=medium
+
+  * New log journal module
+  * Fixed bug in perl5 module causing fork not to be killed
+  * Misc fixes and improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 06 Jun 2020 18:21:13 +0200
+
 rrr (1.1-1) unstable; urgency=medium
 
   * Fix a segfault in perl5
