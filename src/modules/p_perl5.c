@@ -950,11 +950,15 @@ void perl5_worker_fork_log_hook (
 static void perl5_handle_sigchld (pid_t pid, void *arg) {
 	struct perl5_data *data = arg;
 
-	RRR_MSG_0("Child fork %i in perl5 instance %s exited\n",
+	RRR_MSG_0("Received SIGCHLD for child fork %i in perl5 instance %s\n",
 			pid, INSTANCE_D_NAME(data->thread_data));
 
 	pthread_mutex_lock(&data->child_mutex);
-	if (pid != data->child_pid) {
+	if (data->child_pid == 0) {
+		RRR_MSG_0("Note: Child had already exited and we knew about it in perl5 instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+	}
+	else if (pid != data->child_pid) {
 		RRR_BUG("PID mismatch in perl5_handle_sigchld (%i<>%i)\n", pid, data->child_pid);
 	}
 	data->child_pid = 0;
