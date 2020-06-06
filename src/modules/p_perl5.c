@@ -72,7 +72,7 @@ struct perl5_data {
 
 	// Protects the pid, accessed from many contexes
 	pthread_mutex_t child_mutex;
-	pid_t child_pid_;
+	pid_t child_pid;
 
 	uint64_t spawn_interval_ms;
 
@@ -392,24 +392,26 @@ int perl5_start(struct perl5_child_data *data) {
 	return ret;
 }
 
-#define CHILD_PID_LOCK_IN						\
-	do {pthread_mutex_lock(&data->child_mutex);	\
-	if (data->child_pid_ <= 0)					\
-		pthread_mutex_unlock(&data->child_mutex);\
-		goto out								\
-
-#define CHILD_PID_LOCK_OUT						\
-	pthread_mutex_unlock(&data->child_mutex);	\
-	} while(0)
-
 void terminate_child (struct perl5_data *data) {
 	// Just do our ting disregarding return values
 	pid_t pid = 0;
 
-	CHILD_PID_LOCK_IN;
-		pid = data->child_pid_;
-		data->child_pid_ = 0;
-	CHILD_PID_LOCK_OUT;
+	RRR_DBG_1("perl5 instance %s in terminate_child function, pid is %i\n",
+			INSTANCE_D_NAME(data->thread_data), data->child_pid);
+
+	// Make sure locking/unlocking is correct
+	pthread_mutex_lock(&data->child_mutex);
+	if (data->child_pid <= 0) {
+		pthread_mutex_unlock(&data->child_mutex);
+		goto out;
+	}
+
+	pid = data->child_pid;
+	data->child_pid = 0;
+
+	pthread_mutex_unlock(&data->child_mutex);
+
+	// Don't wrap these inside lock
 
 	RRR_DBG_1("perl5 instance %s SIGUSR1 to child process %i\n",
 			INSTANCE_D_NAME(data->thread_data), pid);
@@ -952,8 +954,10 @@ static void perl5_handle_sigchld (pid_t pid, void *arg) {
 			pid, INSTANCE_D_NAME(data->thread_data));
 
 	pthread_mutex_lock(&data->child_mutex);
-	pid = data->child_pid_;
-	data->child_pid_ = 0;
+	if (pid != data->child_pid) {
+		RRR_BUG("PID mismatch in perl5_handle_sigchld (%i<>%i)\n", pid, data->child_pid);
+	}
+	data->child_pid = 0;
 	pthread_mutex_unlock(&data->child_mutex);
 }
 
@@ -970,9 +974,8 @@ int start_worker_fork (struct perl5_data *data) {
 	}
 	else if (pid > 0) {
 		pthread_mutex_lock(&data->child_mutex);
-		data->child_pid_ = pid;
+		data->child_pid = pid;
 		pthread_mutex_unlock(&data->child_mutex);
-		RRR_DBG_1 ("=== FORK PID %i ========================================================================================\n", pid);
 		goto out_parent;
 	}
 
@@ -1176,7 +1179,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	}
 
 	struct rrr_fork_unregister_exit_handler_data fork_unregister_data = {
-			INSTANCE_D_FORK(thread_data), &data->child_pid_
+			INSTANCE_D_FORK(thread_data), &data->child_pid
 	};
 
 	rrr_poll_collection_init(&poll_ip);
@@ -1226,7 +1229,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	int consecutive_nothing_happend = 0;
 	uint64_t next_stats_time = 0;
 	uint64_t next_bubblesort_time = 0;
-	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && data->child_pid_ != 0) {
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && data->child_pid != 0) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int read_count = 0;
@@ -1370,7 +1373,7 @@ int perl5_cancel (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
 	RRR_MSG_0("Perl5 instance %s terminating child pid %i (if any) in cancel function\n",
-			INSTANCE_D_NAME(thread_data), data->child_pid_);
+			INSTANCE_D_NAME(thread_data), data->child_pid);
 	terminate_child(data);
 	pthread_cancel(thread->thread);
 	return 0;

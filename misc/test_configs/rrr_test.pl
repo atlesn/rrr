@@ -49,6 +49,8 @@ sub process {
 
 	print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
+	sleep 10;
+
 	my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
 
 	# Create an array in the message and write some values
