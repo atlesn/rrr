@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <inttypes.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "../lib/instance_config.h"
 #include "../lib/vl_time.h"
@@ -39,9 +40,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/linked_list.h"
 #include "../lib/gnu.h"
+#include "../lib/rrr_strerror.h"
 
 // No trailing /
 #define RRR_JOURNAL_TOPIC_PREFIX "/rrr/journal"
+#define RRR_JOURNAL_HOSTNAME_MAX_LEN 256
 
 struct journal_queue_entry {
 	RRR_LL_NODE(struct journal_queue_entry);
@@ -54,7 +57,9 @@ struct journal_queue {
 };
 
 struct journal_data {
-	int journal_generate_test_messages;
+	struct rrr_instance_thread_data *thread_data;
+
+	int do_generate_test_messages;
 	int log_hook_handle;
 
 	pthread_mutex_t delivery_lock;
@@ -65,6 +70,8 @@ struct journal_data {
 	uint64_t count_suppressed;
 	uint64_t count_total;
 	uint64_t count_processed;
+
+	char *hostname;
 };
 
 static int journal_queue_entry_new (struct journal_queue_entry **target) {
@@ -89,11 +96,11 @@ static void journal_queue_entry_destroy (struct journal_queue_entry *node) {
 	free(node);
 }
 
-static int journal_data_init(struct journal_data *data) {
+static int journal_data_init(struct journal_data *data, struct rrr_instance_thread_data *thread_data) {
 
 	// memset 0 is done in preload function, DO NOT do that here
 
-	(void)(data);
+	data->thread_data = thread_data;
 
 	return 0;
 }
@@ -103,6 +110,8 @@ static void journal_data_cleanup(void *arg) {
 
 	// DO NOT cleanup delivery_lock here, that is done in a separate function
 
+	RRR_FREE_IF_NOT_NULL(data->hostname);
+
 	pthread_mutex_lock(&data->delivery_lock);
 	RRR_LL_DESTROY(&data->delivery_queue, struct journal_queue_entry, journal_queue_entry_destroy(node));
 	pthread_mutex_unlock(&data->delivery_lock);
@@ -111,7 +120,26 @@ static void journal_data_cleanup(void *arg) {
 static int journal_parse_config (struct journal_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", journal_generate_test_messages, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("journal_hostname", hostname);
+
+	if (data->hostname == NULL || *(data->hostname) == '\0') {
+		char hostname[RRR_JOURNAL_HOSTNAME_MAX_LEN+1];
+		int ret = 0;
+		if ((ret = gethostname(hostname, sizeof(hostname))) != 0) {
+			RRR_MSG_0("Could not get system hostname in journal instance %s: %s\n",
+					INSTANCE_D_NAME(data->thread_data), rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+
+		RRR_FREE_IF_NOT_NULL(data->hostname);
+		if ((data->hostname = strdup(hostname)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for hostname in journal_parse_config\n");
+			ret = 1;
+			goto out;
+		}
+	}
 
 	out:
 	return ret;
@@ -232,8 +260,11 @@ static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, vo
 		goto out;
 	}
 
-	if (RRR_LL_COUNT(&data->delivery_queue) > 0) {
-		ret = RRR_MESSAGE_BROKER_AGAIN;
+	if (rrr_array_push_value_str_with_tag(&queue_entry->array, "log_hostname", data->hostname) != 0) {
+		RRR_MSG_0("Could not push hostname to message in journal_write_message_callback of instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
 	}
 
 	struct rrr_type_value *prefix_value = rrr_array_value_get_by_tag(&queue_entry->array, "log_prefix");
@@ -273,6 +304,10 @@ static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, vo
 
 	reading = NULL;
 
+	if (RRR_LL_COUNT(&data->delivery_queue) > 0) {
+		ret = RRR_MESSAGE_BROKER_AGAIN;
+	}
+
 	out:
 	if (queue_entry != NULL) {
 		journal_queue_entry_destroy(queue_entry);
@@ -305,7 +340,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	// This cleanup must happen after the hook is unregistered
 	pthread_cleanup_push(journal_delivery_lock_cleanup, data);
 
-	if (journal_data_init(data) != 0) {
+	if (journal_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initalize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
@@ -354,7 +389,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 		uint64_t time_now = rrr_time_get_64();
 
-		if (data->journal_generate_test_messages) {
+		if (data->do_generate_test_messages) {
 			if (time_now > next_test_msg_time) {
 				RRR_MSG_1("Log test message from journal instance %s per configuration\n", INSTANCE_D_NAME(thread_data));
 				next_test_msg_time = time_now + 1000000; // 1000 ms
