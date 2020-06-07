@@ -50,6 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define IP_DEFAULT_PORT		2222
 #define IP_DEFAULT_PROTOCOL	RRR_IP_UDP
+#define IP_SEND_TIME_LIMIT_MS	1000
 
 struct ip_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -1170,7 +1171,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		RRR_LL_ITERATE_END_CHECK_DESTROY(&tcp_connect_data, 0; rrr_ip_accept_data_close_and_destroy(node));
 
 		uint64_t timeout_limit = rrr_time_get_64() - (data->message_send_timeout_s * 1000000);
-
+		uint64_t send_loop_time_limit = rrr_time_get_64() + (IP_SEND_TIME_LIMIT_MS * 1000);
 		int max_iterations = 500;
 		int did_do_something = 0;
 		int timeout_count = 0;
@@ -1188,7 +1189,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				RRR_LL_ITERATE_LAST();
 			}
 
-			if (--max_iterations == 0) {
+			if (--max_iterations == 0 || rrr_time_get_64() > send_loop_time_limit) {
 				RRR_LL_ITERATE_LAST();
 			}
 
