@@ -1,5 +1,5 @@
 [Unit]
-Description=Read Route Record 1.2-1
+Description=Read Route Record 1.2-2
 
 [Service]
 ExecStart=/usr/bin/rrr -s -l /etc/rrr.conf.d/

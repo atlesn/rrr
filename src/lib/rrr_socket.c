@@ -601,7 +601,7 @@ int rrr_socket_unix_create_bind_and_listen (
 	}
 	return ret;
 }
-
+/*
 int rrr_socket_checksockopt (
 		int fd
 ) {
@@ -635,7 +635,7 @@ int rrr_socket_checksockopt (
 	out:
 	return ret;
 }
-
+*/
 int rrr_socket_send_check (
 		int fd
 ) {
@@ -683,12 +683,12 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 		int fd,
 		uint64_t timeout_ms
 ) {
-	int ret = 0;
+	int ret = RRR_SOCKET_SOFT_ERROR;
 
 	uint64_t time_end = rrr_time_get_64() + timeout_ms;
 
 	while (rrr_time_get_64() < time_end) {
-		if ((ret = rrr_socket_checksockopt(fd)) == 0) {
+		if ((ret = rrr_socket_send_check(fd)) == 0) {
 			goto out;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {

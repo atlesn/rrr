@@ -60,7 +60,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // TODO : This graylist-stuff is not ip-specific
 
-#define RRR_IP_TCP_GRAYLIST_TIME_MS 2000
+#define RRR_IP_TCP_GRAYLIST_TIME_MS		2000
+#define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MSG	250
 
 int rrr_ip_graylist_exists (
 		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
@@ -731,7 +732,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		goto out_free_accept;
 	}
 
-	uint64_t timeout = 3000000; // 3s
+	uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MSG * 1000;
 	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) != 0) {
 		RRR_DBG_1("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
 		goto out_free_accept;
@@ -817,7 +818,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
         }
         else {
 			if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
-				uint64_t timeout = 3000000; // 3s
+				uint64_t timeout = RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MSG * 1000;
 				if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
 					break;
 				}
