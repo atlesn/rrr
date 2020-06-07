@@ -1,3 +1,9 @@
+rrr (1.2-2) buster; urgency=medium
+
+  * Improvements in TCP error handling
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 19:04:45 +0200
+
 rrr (1.2-1) unstable; urgency=medium
 
   * Fix perl5 false warnings about unused settings

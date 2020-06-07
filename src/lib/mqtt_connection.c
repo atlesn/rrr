@@ -556,7 +556,7 @@ int rrr_mqtt_conn_collection_connect (
 	*connection = NULL;
 	struct rrr_ip_accept_data *accept_data = NULL;
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (&accept_data, port, host) != 0) {
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (&accept_data, port, host, NULL) != 0) {
 		RRR_MSG_0("Could not connect to mqtt server '%s'\n", host);
 		ret = 1;
 		goto out;
