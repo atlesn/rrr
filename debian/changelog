@@ -1,3 +1,11 @@
+rrr (1.2-1) unstable; urgency=medium
+
+  * Fix perl5 false warnings about unused settings
+  * Fix incorrect counters in journal module
+  * Fix bugtrap in perl5 module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 13:21:01 +0200
+
 rrr (1.2) unstable; urgency=medium
 
   * New log journal module

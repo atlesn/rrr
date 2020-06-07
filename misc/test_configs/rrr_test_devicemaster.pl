@@ -17,6 +17,7 @@ sub config {
 	my $settings = shift;
 
 	print "Custom argument is '" . $settings->get("custom_argument") . "'\n";
+	$settings->set("produce_warning_now", "abc");
 
 	return 1;
 }
