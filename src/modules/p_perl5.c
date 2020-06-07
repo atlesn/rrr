@@ -1295,14 +1295,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
-	rrr_posix_usleep(100000); // 100 ms, give the child some time to run the config function
-	int settings_read_from_child = 0;
-	if (read_from_child_fork(&settings_read_from_child, data, thread_data->init_data.instance_config->settings->settings_count) != 0) {
-		RRR_MSG_ERR("Error while reading from child fork in perl instance %s\n",
-			INSTANCE_D_NAME(thread_data));
-		break;
-	}
-
 	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
 	int no_polling = 1;
 	if (rrr_poll_collection_count (&poll_ip) > 0) {
