@@ -62,6 +62,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
 #define PERL5_MMAP_SIZE (1024*1024*2)
+#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -82,6 +83,9 @@ struct perl5_data {
 	char *config_sub;
 
 	int do_drop_on_error;
+
+	// Check for unused settings when child has run config function
+	int config_complete;
 
 	// For test suite, put build dirs in @INC
 	int do_include_build_directories;
@@ -510,6 +514,8 @@ int parse_config(struct perl5_data *data, struct rrr_instance_config *config) {
 	data->spawn_interval_ms = uint_tmp;
 
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_drop_on_error", do_drop_on_error, 0);
+
+	// For test suite, but build directories into @INC
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
 
 	out:
@@ -658,7 +664,18 @@ int perl5_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return 0;
 }
 
-int send_config(struct perl5_child_data *child_data) {
+int worker_setting_send (struct rrr_setting_packed *setting, void *arg) {
+	struct perl5_child_data *child_data = arg;
+
+	if (rrr_mmap_channel_write(child_data->parent_data->channel_from_child, setting, sizeof(*setting)) != 0) {
+		RRR_MSG_0("Error while writing settings to mmap channel in worker_setting_send\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+int worker_call_config(struct perl5_child_data *child_data) {
 	int ret = 0;
 
 	struct perl5_data *data = child_data->parent_data;
@@ -677,6 +694,9 @@ int send_config(struct perl5_child_data *child_data) {
 		goto out;
 	}
 
+	// The settings object from parent will get updated as the application accesses
+	// entries or writes new ones. Memory will however only get written to in the
+	// child fork, and all settings must be sent back to the parent over the mmap channel.
 	if ((ret = rrr_perl5_call_blessed_hvref(
 			child_data->ctx,
 			data->config_sub,
@@ -685,6 +705,13 @@ int send_config(struct perl5_child_data *child_data) {
 	)) != 0) {
 		RRR_MSG_0("Error while sending settings to sub %s in perl5 instance %s\n",
 				data->config_sub, INSTANCE_D_NAME(data->thread_data));
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_settings_iterate_packed(settings, worker_setting_send, child_data) != 0) {
+		RRR_MSG_0("Error while sending back settings to parent in worker_call_config og perl5 child of instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -771,11 +798,19 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 		goto out_sys_term;
 	}
 
-	if (send_config(child_data) != 0) {
+	if (worker_call_config(child_data) != 0) {
 		RRR_MSG_0("Could not send config to perl5 program in child fork of instance %s\n",
 				INSTANCE_D_NAME(child_data->parent_data->thread_data));
 		ret = 1;
 		goto out_destroy_ctx;
+	}
+
+	struct rrr_socket_msg control_msg = {0};
+	rrr_socket_msg_populate_control_msg(&control_msg, PERL5_CONTROL_MSG_CONFIG_COMPLETE, 1);
+
+	if (rrr_mmap_channel_write(child_data->parent_data->channel_from_child, &control_msg, sizeof(control_msg)) != 0) {
+		RRR_MSG_0("Error while writing config complete control message to mmap channel in worker_fork_loop\n");
+		return 1;
 	}
 
 	// Read stuff
@@ -1114,6 +1149,52 @@ int read_from_child_mmap_channel_log_callback (
 	return 0;
 }
 
+int read_from_child_mmap_channel_setting_callback (
+		const struct rrr_setting_packed *setting_packed,
+		size_t data_size,
+		struct perl5_read_callback_data *callback_data
+) {
+	int ret = 0;
+
+	(void)(data_size);
+
+	rrr_settings_update_used (
+			callback_data->data->thread_data->init_data.instance_config->settings,
+			setting_packed->name,
+			(setting_packed->was_used != 0 ? 1 : 0),
+			rrr_settings_iterate_nolock
+	);
+
+	return ret;
+}
+
+int read_from_child_mmap_channel_control_callback (
+		const struct rrr_socket_msg *msg,
+		size_t data_size,
+		struct perl5_read_callback_data *callback_data
+) {
+	struct rrr_socket_msg msg_copy = *msg;
+
+	(void)(data_size);
+
+	if (RRR_SOCKET_MSG_CTRL_F_HAS(&msg_copy, PERL5_CONTROL_MSG_CONFIG_COMPLETE)) {
+		if (callback_data->data->config_complete != 0) {
+			RRR_BUG("Config complete was not 0 in read_from_child_mmap_channel_control_callback\n");
+		}
+		callback_data->data->config_complete = 1;
+		RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, PERL5_CONTROL_MSG_CONFIG_COMPLETE);
+	}
+
+	// CTRL type is returned by FLAGS() macro
+	RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_SOCKET_MSG_TYPE_CTRL);
+
+	if (RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy) != 0) {
+		RRR_BUG("Unknown flags %u in control message from perl5 child\n", RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy));
+	}
+
+	return 0;
+}
+
 int read_from_child_mmap_channel_callback (const void *data, size_t data_size, void *arg) {
 	struct perl5_read_callback_data *callback_data = arg;
 
@@ -1125,13 +1206,19 @@ int read_from_child_mmap_channel_callback (const void *data, size_t data_size, v
 	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg)) {
 		return read_from_child_mmap_channel_log_callback((const struct rrr_message_log *) msg, data_size, callback_data);
 	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(msg)) {
+		return read_from_child_mmap_channel_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
+	}
+	else if (RRR_SOCKET_MSG_IS_CTRL(msg)) {
+		return read_from_child_mmap_channel_control_callback(msg, data_size, callback_data);
+	}
 
 	RRR_BUG("BUG: Unknown message type %u in read_from_child_mmap_channel_callback\n", msg->msg_type);
 
 	return 0;
 }
 
-int read_from_child_fork(int *read_count, struct perl5_data *data) {
+int read_from_child_fork(int *read_count, struct perl5_data *data, int loops) {
 	int ret = 0;
 
 	*read_count = 0;
@@ -1142,7 +1229,7 @@ int read_from_child_fork(int *read_count, struct perl5_data *data) {
 			NULL
 	};
 
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < loops; i++) {
 		int prev_count = callback_data.count;
 		if ((ret = rrr_mmap_channel_read_all (
 				data->channel_from_child,
@@ -1208,7 +1295,13 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
-	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+	rrr_posix_usleep(100000); // 100 ms, give the child some time to run the config function
+	int settings_read_from_child = 0;
+	if (read_from_child_fork(&settings_read_from_child, data, thread_data->init_data.instance_config->settings->settings_count) != 0) {
+		RRR_MSG_ERR("Error while reading from child fork in perl instance %s\n",
+			INSTANCE_D_NAME(thread_data));
+		break;
+	}
 
 	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
 	int no_polling = 1;
@@ -1229,6 +1322,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	int input_counter = 0;
 	int from_child_counter = 0;
 
+	int config_check_complete = 0;
+
 	int tick = 0;
 	int consecutive_nothing_happend = 0;
 	uint64_t next_stats_time = 0;
@@ -1237,11 +1332,17 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int read_count = 0;
-		// This will accept connection from child
-		if (read_from_child_fork(&read_count, data) != 0) {
+		if (read_from_child_fork(&read_count, data, 10) != 0) {
 			RRR_MSG_ERR("Error while reading from child fork in perl instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
+		}
+
+		if (config_check_complete == 0 && data->config_complete != 0) {
+			RRR_DBG_1("Perl5 instance %s child config function (if any) complete, checking for unused values\n",
+					INSTANCE_D_NAME(thread_data));
+			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+			config_check_complete = 1;
 		}
 
 		int input_count = 0;
@@ -1355,6 +1456,11 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		}
 
 		tick++;
+	}
+
+	if (data->config_complete == 0) {
+		RRR_MSG_0("Warning: perl5 child never completed configuration function in perl5 instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 	}
 
 	out_message:

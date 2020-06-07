@@ -13,7 +13,13 @@ use bytes;
 my $debug = { };
 bless $debug, rrr::rrr_helper::rrr_debug;
 
-my $global_settings = undef;
+sub config {
+	my $settings = shift;
+
+	print "Custom argument is '" . $settings->get("custom_argument") . "'\n";
+
+	return 1;
+}
 
 sub get_from_tag {
 	my $message = shift;
