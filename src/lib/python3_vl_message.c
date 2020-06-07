@@ -858,7 +858,7 @@ static int __preliminary_check_sep (PRELIMINARY_CHECK_DEF) {
 
 	for (int i = 0; i < *size; i++) {
 		unsigned char c = str[i];
-		if (!RRR_TYPE_CHAR_IS_SEP(c)) {
+		if (!RRR_TYPE_CHAR_IS_SEP(c) && !RRR_TYPE_CHAR_IS_STX(c)) {
 			RRR_MSG_0("Found non-separator character 0x%02x in supposed separator string while converting\n", c);
 			ret = 1;
 			// Don't break, report all errors
@@ -982,6 +982,10 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		}
 		else if (RRR_TYPE_IS_SEP(type_orig)) {
 			target_type = RRR_TYPE_SEP;
+			preliminary_check_function = __preliminary_check_sep;
+		}
+		else if (RRR_TYPE_IS_STX(type_orig)) {
+			target_type = RRR_TYPE_STX;
 			preliminary_check_function = __preliminary_check_sep;
 		}
 		else if (RRR_TYPE_IS_STR(type_orig)) {

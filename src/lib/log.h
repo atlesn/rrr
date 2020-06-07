@@ -82,6 +82,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_3(...) \
 	do { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
 
+#define RRR_MSG_4(...) \
+	do { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+
 // Critical errors, use only if program, fork or thread exits due to an error
 // This should not be used by the library, only by modules and executables
 #define RRR_MSG_ERR(...) \

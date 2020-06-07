@@ -729,7 +729,7 @@ void rrr_settings_update_used (
 	iterator(settings, __rrr_settings_update_used_callback, &callback_data);
 
 	if (callback_data.did_update != 1) {
-		RRR_MSG_0("Warning: Setting %s received from python3 config function was not originally set in configuration, discarding it.\n", name);
+		RRR_MSG_0("Warning: Setting %s was not originally set in configuration file, discarding it.\n", name);
 	}
 }
 

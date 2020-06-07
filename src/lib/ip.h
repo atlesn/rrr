@@ -80,6 +80,9 @@ struct rrr_ip_data {
 #define RRR_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
 
+void rrr_ip_to_str (
+		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
+);
 int rrr_ip_stats_init (
 		struct ip_stats *stats, unsigned int period, const char *type, const char *name
 );

@@ -63,7 +63,9 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		memcpy(buf, MSG_DATA_PTR(reading), print_length);
 		buf[print_length] = '\0';
 
-		RRR_MSG_1("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
+		// Use high debuglevel to force suppression of messages in journal module
+
+		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
 				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
 
 		if (MSG_IS_ARRAY(reading)) {

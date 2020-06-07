@@ -1005,7 +1005,8 @@ int rrr_perl5_hv_to_message (
 		ret = 1;
 		goto out;
 	}
-
+// TODO : Data must be written to a tmp buffer then logged
+/*
 	if (RRR_DEBUGLEVEL_3) {
 		RRR_DBG("rrr_perl5_hv_to_message output (data of message only): 0x");
 		for (unsigned int i = 0; i < MSG_DATA_LENGTH(target); i++) {
@@ -1017,7 +1018,7 @@ int rrr_perl5_hv_to_message (
 		}
 		RRR_DBG("\n");
 	}
-
+*/
 	*target_final = target;
 
 	out:

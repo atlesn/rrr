@@ -34,6 +34,11 @@ int test_array (
 		const char *output_name
 );
 
+int test_anything (
+		struct instance_metadata_collection *instances,
+		const char *output_name
+);
+
 int test_type_array_mysql (
 		struct instance_metadata_collection *instances,
 		const char *tag_buffer_name

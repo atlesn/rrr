@@ -380,9 +380,17 @@ static int __rrr_type_import_istr (RRR_TYPE_IMPORT_ARGS) {
 	return ret;
 }
 
-static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
+static int __rrr_type_validate_sep (char c) {
+	return RRR_TYPE_CHAR_IS_SEP(c);
+}
+
+static int __rrr_type_validate_stx (char c) {
+	return RRR_TYPE_CHAR_IS_STX(c);
+}
+
+static int __rrr_type_import_sep_stx (RRR_TYPE_IMPORT_ARGS, int (*validate)(char c)) {
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_sep\n");
+		RRR_BUG("data was not NULL in import_sep_stx\n");
 	}
 
 	ssize_t total_size = node->import_length * node->element_count;
@@ -392,8 +400,8 @@ static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 		CHECK_END_AND_RETURN(1);
 
 		unsigned char c = *start_tmp;
-		if (!RRR_TYPE_CHAR_IS_SEP(c)) {
-			RRR_MSG_0("Invalid separator character %c\n", c);
+		if (!validate(c)) {
+			RRR_MSG_0("Invalid separator or stx character 0x%01x\n", c);
 			return RRR_TYPE_PARSE_SOFT_ERR;
 		}
 
@@ -401,13 +409,13 @@ static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 	}
 
 	if (found != total_size) {
-		RRR_MSG_0("Not enough separator characters found\n");
+		RRR_MSG_0("Not enough special characters found\n");
 		return RRR_TYPE_PARSE_SOFT_ERR;
 	}
 
 	node->data = malloc(found);
 	if (node->data == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_sep\n");
+		RRR_MSG_0("Could not allocate memory in import_sep_stx\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 	memcpy (node->data, start, found);
@@ -417,6 +425,22 @@ static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
 	*parsed_bytes = found;
 
 	return RRR_TYPE_PARSE_OK;
+}
+
+static int __rrr_type_import_sep (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+	if ((ret = __rrr_type_import_sep_stx(node, parsed_bytes, start, end, __rrr_type_validate_sep)) != RRR_TYPE_PARSE_OK) {
+		RRR_MSG_0("Import of sep type failed\n");
+	}
+	return ret;
+}
+
+static int __rrr_type_import_stx (RRR_TYPE_IMPORT_ARGS) {
+	int ret = RRR_TYPE_PARSE_OK;
+	if ((ret = __rrr_type_import_sep_stx(node, parsed_bytes, start, end, __rrr_type_validate_stx)) != RRR_TYPE_PARSE_OK) {
+		RRR_MSG_0("Import of stx type failed\n");
+	}
+	return ret;
 }
 
 static int __rrr_type_msg_to_host_single (
@@ -964,7 +988,7 @@ static int __get_import_length_nsep (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 
 	// Parse any number of bytes until a separator is found.
 	for (const char *pos = start; pos < end; pos++) {
-		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)) {
+		if (RRR_TYPE_CHAR_IS_SEP_A(*pos)||RRR_TYPE_CHAR_IS_SEP_F(*pos)) {
 			if (length == 0) {
 				RRR_MSG_0("No characters found for array nsep-field, only separator found\n");
 				ret = RRR_TYPE_PARSE_SOFT_ERR;
@@ -1143,6 +1167,7 @@ RRR_TYPE_DEFINE(msg, RRR_TYPE_MSG,		RRR_TYPE_MAX_MSG,	__get_import_length_msg,		
 RRR_TYPE_DEFINE(fixp, RRR_TYPE_FIXP,	RRR_TYPE_MAX_FIXP,	__get_import_length_fixp,		__rrr_type_import_fixp,	NULL,								__rrr_type_fixp_export,	__rrr_type_fixp_unpack,		__rrr_type_fixp_pack,	__rrr_type_bin_to_str,	RRR_TYPE_NAME_FIXP);
 RRR_TYPE_DEFINE(str, RRR_TYPE_STR,		RRR_TYPE_MAX_STR,	__get_import_length_str,		__rrr_type_import_str,	__rrr_type_str_get_export_length,	__rrr_type_str_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_STR);
 RRR_TYPE_DEFINE(nsep, RRR_TYPE_NSEP,	RRR_TYPE_MAX_NSEP,	__get_import_length_nsep,		__rrr_type_import_nsep,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_NSEP);
+RRR_TYPE_DEFINE(stx, RRR_TYPE_STX,		RRR_TYPE_MAX_STX,	__get_import_length_default,	__rrr_type_import_stx,	NULL,								__rrr_type_blob_export,	__rrr_type_blob_unpack,		__rrr_type_blob_pack,	__rrr_type_str_to_str,	RRR_TYPE_NAME_STX);
 RRR_TYPE_DEFINE(null, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 // If there are types which begin with the same letters, the longest names must be first in the array
@@ -1158,6 +1183,7 @@ static const struct rrr_type_definition *type_templates[] = {
 		&rrr_type_definition_fixp,
 		&rrr_type_definition_str,
 		&rrr_type_definition_nsep,
+		&rrr_type_definition_stx,
 		&rrr_type_definition_null
 };
 

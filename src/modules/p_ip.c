@@ -497,7 +497,7 @@ int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rr
 			ip_read_array_intermediate,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error while writing entries in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Error while writing entries to broker while reading in ip instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -664,7 +664,7 @@ static int ip_send_message_tcp (
 			goto out_close_connection_error;
 		}
 		else {
-			RRR_MSG_0("Error while sending tcp message in ip instance %s\n",
+			RRR_MSG_0("Error while sending TCP message in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out;
@@ -802,7 +802,10 @@ static int ip_send_message_raw (
 					(struct sockaddr *) addr,
 					addr_len
 			) != 0) {
-				RRR_MSG_0("Could not connect to remote in ip instance %s, dropping message\n",
+				char ip_str[256];
+				rrr_ip_to_str(ip_str, 256, addr, addr_len);
+				RRR_MSG_0("Could not connect to remote '%s' in ip instance %s, dropping message\n",
+						ip_str,
 						INSTANCE_D_NAME(thread_data));
 				ret = 0;
 				goto out;

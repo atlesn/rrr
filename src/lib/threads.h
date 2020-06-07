@@ -158,21 +158,21 @@ struct rrr_thread_collection {
 };
 
 static inline void rrr_thread_lock(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
+//	RRR_MSG_4 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void rrr_thread_unlock(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
+//	RRR_MSG_4 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
 static inline void rrr_thread_unlock_if_locked(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s test unlock\n", thread->name);
-	if (pthread_mutex_trylock(&thread->mutex) == EBUSY) {
-//		VL_DEBUG_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
-		pthread_mutex_unlock(&thread->mutex);
+//	RRR_MSG_4 ("Thread %s test unlock\n", thread->name);
+	if (pthread_mutex_trylock(&thread->mutex) != 0) {
+//		RRR_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
 	}
+	pthread_mutex_unlock(&thread->mutex);
 }
 
 static inline int rrr_thread_check_signal(struct rrr_thread *thread, int signal) {
