@@ -58,6 +58,76 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "rrr_socket_constants.h"
 
+// TODO : This graylist-stuff is not ip-specific
+
+#define RRR_IP_TCP_GRAYLIST_TIME_MS 2000
+
+int rrr_ip_graylist_exists (
+		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
+) {
+	uint64_t time_now = rrr_time_get_64();
+	RRR_LL_ITERATE_BEGIN(list, struct rrr_ip_graylist_entry);
+		if (time_now > node->expire_time) {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else if (node->addr_len == len) {
+			if (memcmp(&node->addr, addr, len) == 0) {
+				return 1;
+			}
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(list, 0; free(node));
+	return 0;
+}
+
+int rrr_ip_graylist_push (
+		struct rrr_ip_graylist *target, const struct sockaddr *addr, socklen_t len, int timeout_ms
+) {
+	int ret = 0;
+
+	struct rrr_ip_graylist_entry *new_entry = NULL;
+
+	if (rrr_ip_graylist_exists(target, addr, len)) {
+		goto out;
+	}
+
+
+	char ip_str[256];
+	rrr_ip_to_str(ip_str, 256, addr, len);
+	RRR_MSG_0("Host '%s' graylisting for %u ms following connection error\n",
+			ip_str,
+			RRR_IP_TCP_GRAYLIST_TIME_MS
+	);
+
+	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_ip_graylist_push\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(new_entry, '\0', sizeof(*new_entry));
+
+	if (len > sizeof(new_entry->addr)) {
+		RRR_BUG("BUG: address length too long in rrr_ip_graylist_push\n");
+	}
+
+	memcpy (&new_entry->addr, addr, len);
+	new_entry->addr_len = len;
+	new_entry->expire_time = rrr_time_get_64() + timeout_ms * 1000;
+
+	RRR_LL_APPEND(target, new_entry);
+	new_entry = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(new_entry);
+	return ret;
+}
+
+void rrr_ip_graylist_clear (
+		struct rrr_ip_graylist *target
+) {
+	RRR_LL_DESTROY(target, struct rrr_ip_graylist_entry, free(node));
+}
+
 void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
 	const char *result = NULL;
 
@@ -602,12 +672,37 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 	return ret;
 }
 
+static int __rrr_ip_network_connect_tcp_check_graylist (
+		struct rrr_ip_graylist *graylist,
+		const struct sockaddr *addr,
+		socklen_t addr_len
+) {
+	int ret = RRR_SOCKET_OK;
+
+	if (graylist == NULL) {
+		goto out;
+	}
+
+	if (rrr_ip_graylist_exists(graylist, addr, addr_len)) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		return ret;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		struct rrr_ip_accept_data **accept_data,
 		struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		struct rrr_ip_graylist *graylist
 ) {
 	int fd = 0;
+
+    if (__rrr_ip_network_connect_tcp_check_graylist (graylist, addr, addr_len) != 0) {
+    	goto out_error;
+    }
 
 	*accept_data = NULL;
 
@@ -632,13 +727,13 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
     memset(accept_result, '\0', sizeof(*accept_result));
 
 	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) addr, addr_len) != 0) {
-		RRR_MSG_0("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
+		RRR_DBG_1("Could not connect in in ip_network_connect_tcp_ipv4_or_ipv6\n");
 		goto out_free_accept;
 	}
 
 	uint64_t timeout = 3000000; // 3s
 	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) != 0) {
-		RRR_MSG_0("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
+		RRR_DBG_1("Connect postcheck failed in ip_network_connect_tcp_ipv4_or_ipv6: %s\n", rrr_strerror(errno));
 		goto out_free_accept;
 	}
 
@@ -659,6 +754,9 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 	return 0;
 
 	out_free_accept:
+	 	if (graylist != NULL) {
+	 		 rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
+	 	}
 		free(accept_result);
 	out_close_socket:
 		rrr_socket_close(fd);
@@ -666,7 +764,12 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		return 1;
 }
 
-int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host) {
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
+		struct rrr_ip_accept_data **accept_data,
+		unsigned int port,
+		const char *host,
+		struct rrr_ip_graylist *graylist
+) {
 	int fd = 0;
 
 	*accept_data = NULL;
@@ -709,15 +812,25 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     	RRR_DBG_1("Connect attempt with address suggestion #%i to %s:%u address family %u\n",
     			i, host, port, rp->ai_addr->sa_family);
 
-    	if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
-        	uint64_t timeout = 3000000; // 3s
-        	if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
-        		break;
-        	}
-    	}
+        if (__rrr_ip_network_connect_tcp_check_graylist (graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) != 0) {
+        	goto graylist_next;
+        }
+        else {
+			if (rrr_socket_connect_nonblock(fd, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen) == 0) {
+				uint64_t timeout = 3000000; // 3s
+				if (rrr_socket_connect_nonblock_postcheck_loop(fd, timeout) == 0) {
+					break;
+				}
+			}
+        }
 
     	// This means connection refused or some other error, skip to next address suggestion
 
+		if (graylist != NULL) {
+			rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
+		}
+
+		graylist_next:
     	rrr_socket_close(fd);
     	i++;
     }
@@ -725,7 +838,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_
     freeaddrinfo(addrinfo_result);
 
     if (fd < 0 || rp == NULL) {
-		RRR_MSG_0 ("Could not create socket for host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
+		RRR_DBG_1 ("Could not connect to host '%s': %s\n", host, (errno != 0 ? rrr_strerror(errno) : "unknown"));
 		goto out_error;
     }
 

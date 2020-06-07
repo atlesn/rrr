@@ -602,7 +602,41 @@ int rrr_socket_unix_create_bind_and_listen (
 	return ret;
 }
 
-int rrr_socket_connect_nonblock_postcheck (
+int rrr_socket_checksockopt (
+		int fd
+) {
+	int ret = RRR_SOCKET_OK;
+
+	int error = 0;
+	socklen_t len = sizeof(error);
+	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
+		RRR_MSG_0("Error from getsockopt with fd %i: %s\n", fd, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+	else if (error == 0) {
+		goto out;
+	}
+	else if (error == EINPROGRESS) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+	else if (error == ECONNREFUSED) {
+		RRR_MSG_0("Connection refused\n");
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+	else {
+		RRR_MSG_0("Unknown error from getsockopt(): %i\n", error);
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int rrr_socket_send_check (
 		int fd
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -611,11 +645,11 @@ int rrr_socket_connect_nonblock_postcheck (
 		fd, POLLOUT, 0
 	};
 
-	int timeout = 5; // 5 ms
+	int timeout = 10; // 5 ms
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_MSG_0("Connection refused while connecting (POLLHUP)\n");
+			RRR_MSG_0("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -636,35 +670,9 @@ int rrr_socket_connect_nonblock_postcheck (
 	else if ((pollfd.revents & POLLOUT) != 0) {
 		goto out;
 	}
-	else if ((pollfd.revents & POLLOUT) == 0) {
+	else {
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
-	}
-	else {
-		int error = 0;
-		socklen_t len = sizeof(error);
-		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-			RRR_MSG_0("Error from getsockopt while connecting: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		else if (error == 0) {
-			goto out;
-		}
-		else if (error == EINPROGRESS) {
-			ret = RRR_SOCKET_SOFT_ERROR;
-			goto out;
-		}
-		else if (error == ECONNREFUSED) {
-			RRR_MSG_0("Connection refused while connecting\n");
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
-		}
-		else {
-			RRR_MSG_0("Unknown error while connecting: %i\n", error);
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
-		}
 	}
 
 	out:
@@ -680,7 +688,7 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 	uint64_t time_end = rrr_time_get_64() + timeout_ms;
 
 	while (rrr_time_get_64() < time_end) {
-		if ((ret = rrr_socket_connect_nonblock_postcheck(fd)) == 0) {
+		if ((ret = rrr_socket_checksockopt(fd)) == 0) {
 			goto out;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {

@@ -48,9 +48,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_endian.h"
 #include "../lib/log.h"
 
-#define IP_DEFAULT_PORT		2222
-#define IP_DEFAULT_PROTOCOL	RRR_IP_UDP
+#define IP_DEFAULT_PORT			2222
+#define IP_DEFAULT_PROTOCOL		RRR_IP_UDP
 #define IP_SEND_TIME_LIMIT_MS	1000
+#define IP_TCP_GRAYLIST_TIME_MS	2000
 
 struct ip_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -635,15 +636,16 @@ static int ip_send_message_tcp (
 		goto out_close_connection_error;
 	}
 
-	if ((ret = rrr_socket_connect_nonblock_postcheck(accept_data->ip_data.fd)) != 0) {
+	if ((ret = rrr_socket_send_check(accept_data->ip_data.fd)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			RRR_DBG_3("Connection not ready while sending in ip instance %s, putting message back into send queue\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_put_back;
 		}
 
-		RRR_DBG_1("Connection problem with TCP connection in ip instance %s\n",
+		RRR_MSG_0("Connection problem with TCP connection in ip instance %s\n",
 				INSTANCE_D_NAME(thread_data));
+
 		goto out_close_connection_error;
 	}
 	else if ((ret = rrr_ip_send(&err, accept_data->ip_data.fd, NULL, 0, (void*) send_data, send_size)) != 0) {
@@ -660,7 +662,7 @@ static int ip_send_message_tcp (
 				}
 			}
 
-			RRR_DBG_1("Connection problem with TCP connection while sending in ip instance %s\n",
+			RRR_MSG_0("Connection problem with TCP connection while sending in ip instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_close_connection_error;
 		}
@@ -718,6 +720,7 @@ static int ip_send_message_raw (
 		int *do_destroy,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
+		struct rrr_ip_graylist *graylist,
 		int protocol,
 		struct sockaddr *addr,
 		socklen_t addr_len,
@@ -734,6 +737,7 @@ static int ip_send_message_raw (
 
 	// Have this const to avoid mixing it up with the other one in this function
 	const struct rrr_ip_accept_data *accept_data_to_use = NULL;
+
 	
 	//////////////////////////////////////////////////////
 	// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
@@ -755,16 +759,20 @@ static int ip_send_message_raw (
 			);
 
 			if (accept_data_to_use == NULL) {
-				if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data_to_free, ip_data->target_port, ip_data->target_host) != 0) {
-					RRR_MSG_0("Could not connect with TCP to remote %s port %u in ip instance %s\n",
+				if (rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
+						&accept_data_to_free,
+						ip_data->target_port,
+						ip_data->target_host,
+						graylist
+				) != 0) {
+					RRR_DBG_1("Could not connect with TCP to remote %s port %u in ip instance %s, postponing send\n",
 							ip_data->target_host, ip_data->target_port, INSTANCE_D_NAME(thread_data));
-					ret = 1;
-					goto out;
+					goto out_put_back;
 				}
 
 				ip_data->ip_tcp_default_target_fd = accept_data_to_free->ip_data.fd;
 
-				// Blocks more attempts of using this connection untill next round
+				// Blocks more attempts of using this connection until next round
 				accept_data_to_free->custom_data = 1;
 
 				accept_data_to_use = accept_data_to_free;
@@ -801,15 +809,17 @@ static int ip_send_message_raw (
 			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw(
 					&accept_data_to_free,
 					(struct sockaddr *) addr,
-					addr_len
+					addr_len,
+					graylist
 			) != 0) {
 				char ip_str[256];
 				rrr_ip_to_str(ip_str, 256, addr, addr_len);
-				RRR_MSG_0("Could not connect to remote '%s' in ip instance %s, dropping message\n",
+				RRR_DBG_1("Could not connect to default remote '%s' in ip instance %s, graylisting for %u ms\n",
 						ip_str,
-						INSTANCE_D_NAME(thread_data));
-				ret = 0;
-				goto out;
+						INSTANCE_D_NAME(thread_data),
+						IP_TCP_GRAYLIST_TIME_MS
+				);
+				goto out_put_back;
 			}
 
 			// Blocks more attempts of using this connection untill next round
@@ -892,6 +902,7 @@ static int ip_send_message (
 		int *do_destroy,
 		struct ip_data *ip_data,
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
+		struct rrr_ip_graylist *graylist,
 		struct rrr_ip_buffer_entry *entry
 ) {
 	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
@@ -1022,7 +1033,7 @@ static int ip_send_message (
 		RRR_BUG("Invalid target_port/target_host configuration in ip input_callback\n");
 	}
 
-	// Used to check for succesive send attempts and timeout
+	// Used to check for successive send attempts and timeout
 	if (entry->send_time == 0) {
 		entry->send_time = rrr_time_get_64();
 	}
@@ -1031,6 +1042,7 @@ static int ip_send_message (
 			do_destroy,
 			ip_data,
 			tcp_connect_data,
+			graylist,
 			entry->protocol,
 			(struct sockaddr *) &entry->addr,
 			entry->addr_len,
@@ -1056,6 +1068,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
+	struct rrr_ip_graylist tcp_graylist = {0};
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initalize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -1123,6 +1136,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_ip_network_cleanup, &data->ip_tcp_listen);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_accept_data);
 	pthread_cleanup_push(rrr_ip_accept_data_collection_clear_void, &tcp_connect_data);
+	pthread_cleanup_push(rrr_ip_graylist_clear_void, &tcp_graylist);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
@@ -1184,7 +1198,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				timeout_count++;
 				do_destroy = 1;
 			}
-			else if ((ret_tmp = ip_send_message(&do_destroy, data, &tcp_connect_data, node)) != 0) {
+			else if ((ret_tmp = ip_send_message(&do_destroy, data, &tcp_connect_data, &tcp_graylist, node)) != 0) {
 				RRR_MSG_0("Error while iterating input buffer in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 				RRR_LL_ITERATE_LAST();
 			}
@@ -1291,6 +1305,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		tick++;
 	}
 
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

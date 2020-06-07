@@ -101,7 +101,10 @@ int rrr_socket_unix_create_bind_and_listen (
 		int do_mkstemp,
 		int do_unlink_if_exists
 );
-int rrr_socket_connect_nonblock_postcheck (
+int rrr_socket_checksockopt (
+		int fd
+);
+int rrr_socket_send_check (
 		int fd
 );
 int rrr_socket_connect_nonblock_postcheck_loop (
