@@ -367,7 +367,8 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data);
 
 	if (rrr_global_config.debuglevel != 0 && rrr_global_config.debuglevel != RRR_DEBUGLEVEL_1) {
-		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n");
+		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
+				INSTANCE_D_NAME(thread_data));
 	}
 
 	uint64_t time_start = rrr_time_get_64();
