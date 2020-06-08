@@ -57,7 +57,6 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 		if (	rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED
-//				|| rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
 		) {
 			// OK
 		}
@@ -80,12 +79,6 @@ int main_start_threads (
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
 ) {
-	/*
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_initialize_locks();
-#endif
-*/
-
 	int ret = 0;
 
 	// Initialize dynamic_data thread data
@@ -176,11 +169,6 @@ void main_ghost_handler (struct rrr_thread *thread) {
 void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
 	rrr_thread_stop_and_join_all(collection, main_ghost_handler);
 	rrr_instance_free_all_thread_data(instances);
-/*
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_free_locks();
-#endif
-*/
 }
 
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
