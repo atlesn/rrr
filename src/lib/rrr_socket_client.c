@@ -193,6 +193,7 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		ssize_t written_bytes_dummy = 0;
 		if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, node->connected_fd, data, size)) != 0) {
 			if (ret != RRR_SOCKET_SOFT_ERROR) {
+				// TODO : This error message is useless because we don't know which client has disconnected
 				RRR_DBG_1("Disconnecting client in client collection following send error\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 				ret = 0;
@@ -202,6 +203,8 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 
 	return ret;
 }
+
+// TODO : Add disconnect notification callback for debug purposes
 
 int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,
@@ -242,7 +245,8 @@ int rrr_socket_client_collection_read (
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
 				// Don't print error as it will be printed when a remote client disconnects
-				RRR_DBG_1("Error while reading from a client in rrr_socket_client_collection_read, closing connection\n");
+				// TODO : This error message is useless because we don't know which client has disconnected
+				RRR_DBG_1("A client was disconnected when reading in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;

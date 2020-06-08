@@ -151,6 +151,10 @@ Extract any RRR messages from the received data (if specified in ip_input_types)
 Causes any other data in the received arrays to be dropped.
 If set to yes and no message field is specified in the array definition, an error will be produced.
 Defaults to no.
+.It ip_max_message_size
+Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
+A value of 0 means unlimited message size.
+Defaults to 4096.
 .It ip_default_topic=MQTT-TOPIC
 An optional MQTT topic to set on the generated messages.
 .It ip_sync_byte_by_byte={yes|no}
@@ -181,7 +185,8 @@ Use the specified target host and port even if messages contain other address in
 Look for the defined tags in array messages from other modules, and send these concatenated together to remote.
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
-If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any. 
+If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
+.It ip 
 .El
 .PP
 .SS voltmonitor (SA)

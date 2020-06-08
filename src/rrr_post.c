@@ -48,7 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_post");
 
-#define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
+#define RRR_POST_DEFAULT_ARRAY_DEFINITION	"msg"
+#define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE	4096
 
 static volatile int rrr_post_abort = 0;
 static volatile int rrr_post_print_stats = 0;
@@ -60,6 +61,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'm',	"max-message-size",		"[-m|--max-message-size]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
 		{0,							's',	"sync",					"[-s|--sync]"},
@@ -87,6 +89,7 @@ struct rrr_post_data {
 	char *topic;
 	struct rrr_post_reading_collection readings;
 	uint64_t max_elements;
+	uint64_t max_message_size;
 	uint64_t elements_count;
 	struct rrr_array definition;
 
@@ -281,6 +284,23 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 		goto out;
 	}
 
+	// Max message size, make sure default value is being set
+	data->max_message_size = RRR_POST_DEFAULT_MAX_MESSAGE_SIZE;
+
+	const char *max_message_size = cmd_get_value(cmd, "max-message-size", 0);
+	if (cmd_get_value (cmd, "max-message-size", 1) != NULL) {
+		RRR_MSG_0("Error: Only one 'max-message-size' argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+	if (max_message_size != NULL) {
+		if (cmd_convert_uint64_10(max_message_size, &data->max_message_size)) {
+			RRR_MSG_0("Could not understand argument 'max-message-size', must be and unsigned integer\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
 	out:
 	return ret;
 }
@@ -462,6 +482,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				socket_read_flags,
 				&data->definition,
 				data->sync_byte_by_byte,
+				data->max_message_size,
 				__rrr_post_read_callback,
 				data
 		);

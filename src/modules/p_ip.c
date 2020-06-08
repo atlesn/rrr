@@ -48,10 +48,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_endian.h"
 #include "../lib/log.h"
 
-#define IP_DEFAULT_PORT			2222
-#define IP_DEFAULT_PROTOCOL		RRR_IP_UDP
-#define IP_SEND_TIME_LIMIT_MS	1000
-#define IP_TCP_GRAYLIST_TIME_MS	2000
+#define IP_DEFAULT_PORT				2222
+#define IP_DEFAULT_PROTOCOL			RRR_IP_UDP
+#define IP_SEND_TIME_LIMIT_MS		1000
+#define IP_DEFAULT_MAX_MESSAGE_SIZE	4096
 
 struct ip_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -73,6 +73,7 @@ struct ip_data {
 	int do_drop_on_error;
 	int do_persistent_connections;
 	rrr_setting_uint message_send_timeout_s;
+	rrr_setting_uint message_max_size;
 	char *default_topic;
 	char *target_host;
 	unsigned int target_port;
@@ -266,6 +267,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_receive_message_max", message_max_size, IP_DEFAULT_MAX_MESSAGE_SIZE);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
@@ -436,6 +438,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			RRR_READ_F_NO_SLEEPING,
 			&data->definitions,
 			data->do_sync_byte_by_byte,
+			data->message_max_size,
 			ip_read_raw_data_callback,
 			data,
 			NULL
@@ -806,19 +809,21 @@ static int ip_send_message_raw (
 		);
 
 		if (accept_data_to_use == NULL) {
-			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw(
+			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 					&accept_data_to_free,
 					(struct sockaddr *) addr,
 					addr_len,
 					graylist
 			) != 0) {
-				char ip_str[256];
-				rrr_ip_to_str(ip_str, 256, addr, addr_len);
-				RRR_DBG_1("Could not connect to default remote '%s' in ip instance %s, graylisting for %u ms\n",
-						ip_str,
-						INSTANCE_D_NAME(thread_data),
-						IP_TCP_GRAYLIST_TIME_MS
-				);
+				if (ret == RRR_SOCKET_HARD_ERROR) {
+					char ip_str[256];
+					rrr_ip_to_str(ip_str, 256, addr, addr_len);
+					RRR_MSG_0("Could not connect to remote '%s' in ip instance %s\n",
+							ip_str,
+							INSTANCE_D_NAME(thread_data)
+					);
+				}
+				ret = 0;
 				goto out_put_back;
 			}
 

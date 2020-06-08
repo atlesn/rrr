@@ -13,6 +13,7 @@ program to post data to its modules.
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
 .Dl [-a|--array_definition[=]ARRAY DEFINITION]
+.Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
 .Dl [-s|--sync]
@@ -49,6 +50,10 @@ reading messages are generated before any reading of a file or standard input be
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
+.IP -m|--max-message-size[=]BYTES
+Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
+A value of 0 means unlimited message size.
+Defaults to 4096.
 .IP -c|--count[=]RECORDS
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC

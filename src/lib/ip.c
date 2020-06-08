@@ -316,6 +316,7 @@ int rrr_ip_receive_array (
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -334,6 +335,7 @@ int rrr_ip_receive_array (
 			RRR_SOCKET_READ_METHOD_RECVFROM,
 			definition,
 			do_sync_byte_by_byte,
+			message_max_size,
 			__ip_receive_callback,
 			&callback_data
 	);

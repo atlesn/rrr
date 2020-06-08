@@ -75,6 +75,7 @@ do {if ((ret = rrr_settings_get_string_noconvert_silent(&data->target, config->s
 do {rrr_setting_uint tmp_uint = default_uint;																\
 	if ((ret = rrr_instance_config_read_unsigned_integer(&tmp_uint, config, string)) != 0) {				\
 		if (ret == RRR_SETTING_NOT_FOUND) {																	\
+			tmp_uint = default_uint;																		\
 			ret = 0;																						\
 		} else {																							\
 			RRR_MSG_0("Could not parse setting %s for instance %s\n", string, config->name);				\
