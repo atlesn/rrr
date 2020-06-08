@@ -948,8 +948,9 @@ int worker_fork_loop (struct perl5_child_data *child_data) {
 int worker_fork_signal_handler (int signal, void *private_arg) {
 	struct perl5_child_data *child_data = private_arg;
 
-	if (signal == SIGUSR1 || signal == SIGINT) {
-		RRR_DBG_SIGNAL("perl5 child of instance %s received SIGUSR1 or SIGINT, stopping\n", INSTANCE_D_NAME(child_data->parent_data->thread_data));
+	if (signal == SIGUSR1 || signal == SIGINT || signal == SIGTERM) {
+		RRR_DBG_SIGNAL("perl5 child of instance %s received SIGUSR1, SIGTERM or SIGINT, stopping\n",
+				INSTANCE_D_NAME(child_data->parent_data->thread_data));
 		child_data->received_sigusr1 = 1;
 	}
 

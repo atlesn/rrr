@@ -1,8 +1,10 @@
-rrr (1.2-2-posten4) buster; urgency=medium
+rrr (1.2-3) buster; urgency=medium
 
-  * Non-maintainer upload.
+  * Created max message size parameter in ip module and rrr_post
+  * Changed behaviour of SIGTERM
+  * Mix fixes
 
- -- LBSdrift <lbsdrift@posten.local>  Sun, 07 Jun 2020 13:51:48 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Jun 2020 19:44:32 +0200
 
 rrr (1.2-2) buster; urgency=medium
 
