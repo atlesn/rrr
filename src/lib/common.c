@@ -137,7 +137,7 @@ void rrr_signal_default_signal_actions_register(void) {
 	sigaction (SIGINT, &action, NULL);
 	// Used to set main_running = 0;
 	sigaction (SIGUSR1, &action, NULL);
-	// Exit immediately with EXIT_FAILURE
+	// Used to set main_running = 0;
 	sigaction (SIGTERM, &action, NULL);
 }
 
@@ -148,6 +148,7 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 		RRR_DBG_SIGNAL("Received SIGCHLD in default handler\n");
 	}
 	else if (s == SIGUSR1) {
+		// Used internally, no printed message
 		*main_running = 0;
 		return RRR_SIGNAL_HANDLED;
 	}
@@ -155,12 +156,14 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 		RRR_DBG_SIGNAL("Received SIGPIPE in default handler, ignoring\n");
 	}
 	else if (s == SIGTERM) {
-		exit(EXIT_FAILURE);
+		RRR_DBG_SIGNAL("Received SIGTERM in default handler, setting main_running to 0\n");
+		*main_running = 0;
+		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGINT) {
 		// Allow double ctrl+c to close program
 		if (s == SIGINT) {
-			RRR_DBG_SIGNAL("Received SIGINT in default handler\n");
+			RRR_DBG_SIGNAL("Received SIGINT in default handler, setting main_running to 0\n");
 			signal(SIGINT, SIG_DFL);
 		}
 
