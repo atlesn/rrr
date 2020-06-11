@@ -12,7 +12,8 @@ Build-Depends: debhelper (>= 9),
 	libmysqlclient-dev | libmariadbclient-dev-compat,
 	python3-dev (>= 3.6) | python3.8-dev | python3.7-dev | python3.6-dev,
 	libperl-dev (>= 5.26),
-	libsystemd-dev
+	libsystemd-dev,
+	pkg-config
 X-Python3-Version: 3.6,3.
 Standards-Version: 3.9.8
 Homepage: https://github.com/atlesn/rrr
