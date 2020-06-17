@@ -1,5 +1,10 @@
 TOPIC my_topic
 	DEFAULT WRITE
+	USER atle READ
+
+TOPIC mytopic
+	DEFAULT DENY
+	USER atle WRITE
 
 # Test for case insensitivity
 ToPiC x/#

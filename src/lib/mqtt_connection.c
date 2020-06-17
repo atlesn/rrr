@@ -329,6 +329,8 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 		free(connection->client_id);
 	}
 
+	RRR_FREE_IF_NOT_NULL(connection->username);
+
 	RRR_MQTT_CONN_UNLOCK(connection);
 	pthread_mutex_destroy (&connection->lock);
 
@@ -1592,8 +1594,11 @@ int rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
 		struct rrr_mqtt_conn *connection,
 		uint16_t keep_alive,
 		const struct rrr_mqtt_p_protocol_version *protocol_version,
-		struct rrr_mqtt_session *session
+		struct rrr_mqtt_session *session,
+		const char *username
 ) {
+	int ret = RRR_MQTT_CONN_OK;
+
 	if (RRR_MQTT_CONN_TRYLOCK(connection) == 0) {
 		RRR_BUG("Connection lock was not held in rrr_mqtt_connection_set_protocol_version_iterator_ctx\n");
 	}
@@ -1601,8 +1606,15 @@ int rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
 	connection->keep_alive = keep_alive;
 	connection->protocol_version = protocol_version;
 	connection->session = session;
+	if (username != NULL && *username != '\0') {
+		RRR_FREE_IF_NOT_NULL(connection->username);
+		if ((connection->username = strdup(username)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_conn_iterator_ctx_set_data_from_connect\n");
+			ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+		}
+	}
 
-	return RRR_MQTT_CONN_OK;
+	return ret;
 }
 
 int rrr_mqtt_conn_iterator_ctx_update_state (

@@ -33,6 +33,7 @@ struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	struct rrr_mqtt_session *session;
+	const char *username;
 };
 
 static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_conn *connection, void *arg) {
@@ -45,7 +46,8 @@ static int __rrr_mqtt_client_connect_set_connection_settings(struct rrr_mqtt_con
 					connection,
 					callback_data->keep_alive,
 					callback_data->protocol_version,
-					callback_data->session
+					callback_data->session,
+					callback_data->username
 			),
 			goto out,
 			" while setting new keep-alive on connection in __rrr_mqtt_client_connect_set_connection_settings"
@@ -404,7 +406,8 @@ int rrr_mqtt_client_connect (
 		struct set_connection_settings_callback_data callback_data = {
 			connect->keep_alive,
 			connect->protocol_version,
-			session
+			session,
+			username
 		};
 
 		if (rrr_mqtt_conn_with_iterator_ctx_do_custom (
@@ -483,7 +486,8 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 						connection,
 						client_data->session_properties.server_keep_alive,
 						connack->protocol_version,
-						connection->session
+						connection->session,
+						connection->username
 				),
 				goto out,
 				" while setting new keep-alive on connection"

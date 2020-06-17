@@ -662,15 +662,15 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int acl_result = mqtt_data->acl_handler(connection, packet, mqtt_data->acl_handler_arg);
 	switch (acl_result) {
 		case RRR_MQTT_ACL_RESULT_ALLOW:
-			printf ("PUBLISH ALLOWED\n");
+			RRR_MSG_2 ("PUBLISH topic '%s' ALLOWED\n", publish->topic);
 			reason_v5 = RRR_MQTT_P_5_REASON_OK;
 			break;
 		case RRR_MQTT_ACL_RESULT_DISCONNECT:
-			printf ("PUBLISH DENIED AND DISCONNECTING\n");
+			RRR_MSG_2 ("PUBLISH topic '%s' DENIED AND DISCONNECTING\n", publish->topic);
 			ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
 			goto out;
 		case RRR_MQTT_ACL_RESULT_DENY:
-			printf ("PUBLISH DENIED\n");
+			RRR_MSG_2 ("PUBLISH topic '%s' DENIED\n", publish->topic);
 			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
 			break;
 		default:

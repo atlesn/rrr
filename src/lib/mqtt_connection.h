@@ -96,6 +96,8 @@ struct rrr_mqtt_conn {
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	uint16_t keep_alive;
 
+	char *username;
+
 	uint32_t state_flags;
 	uint8_t disconnect_reason_v5_;
 
@@ -326,7 +328,8 @@ int rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
 		struct rrr_mqtt_conn *connection,
 		uint16_t keep_alive,
 		const struct rrr_mqtt_p_protocol_version *protocol_version,
-		struct rrr_mqtt_session *session
+		struct rrr_mqtt_session *session,
+		const char *username
 );
 
 #define RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN		1

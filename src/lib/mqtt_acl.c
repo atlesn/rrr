@@ -33,6 +33,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "parse.h"
 
+#define RRR_MQTT_ACL_ACTION_TO_STR(action) \
+	(action == RRR_MQTT_ACL_ACTION_RO ? "READ" : (action == RRR_MQTT_ACL_ACTION_RW ? "WRITE" : "DENY"))
+
+#define RRR_MQTT_ACL_ACTION_RESULT_TO_STR(action) \
+	(action == RRR_MQTT_ACL_RESULT_ALLOW ? "ALLOW" : (action == RRR_MQTT_ACL_RESULT_DENY ? "DENY" : (action == RRR_MQTT_ACL_RESULT_DISCONNECT ? "DISCONNECT" : "ERR")))
+
 static void __rrr_mqtt_acl_user_entry_destroy (
 		struct rrr_mqtt_acl_user_entry *entry
 ) {
@@ -40,12 +46,46 @@ static void __rrr_mqtt_acl_user_entry_destroy (
 	free(entry);
 }
 
+static int __rrr_mqtt_acl_user_entry_new_and_append (
+		struct rrr_mqtt_acl_entry *target,
+		const char *username,
+		int action
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_acl_user_entry *user_entry = malloc(sizeof(*user_entry));
+
+	if (user_entry == NULL) {
+		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_acl_user_entry_new_and_append\n");
+		ret = 1;
+		goto out;
+	}
+
+	memset(user_entry, '\0', sizeof(*user_entry));
+
+	if ((user_entry->username = strdup(username)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for username in __rrr_mqtt_acl_user_entry_new_and_append\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	user_entry->action = action;
+
+	RRR_LL_APPEND(target, user_entry);
+	user_entry = NULL;
+
+	goto out;
+	out_free:
+		free(user_entry);
+	out:
+		return ret;
+}
+
 static void __rrr_mqtt_acl_entry_destroy (
 		struct rrr_mqtt_acl_entry *entry
 ) {
-	// Checks for NULL
 	RRR_LL_DESTROY(entry, struct rrr_mqtt_acl_user_entry, __rrr_mqtt_acl_user_entry_destroy(node));
-	rrr_mqtt_topic_token_destroy(entry->first_token);
+	rrr_mqtt_topic_token_destroy(entry->first_token); // Checks for NULL
 	RRR_FREE_IF_NOT_NULL(entry->topic_orig);
 	free(entry);
 }
@@ -151,7 +191,7 @@ static int __rrr_mqtt_acl_parse_require_space_then_non_newline (
 	int line_orig = pos->line;
 	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (pos_orig == pos->pos || line_orig != pos->line) {
-		RRR_MSG_0("Syntax error at line %i: Expected whitespace and topic string after keyword\n", pos->line);
+		RRR_MSG_0("Syntax error at line %i: Expected whitespace and then string after keyword\n", pos->line);
 		ret = 1;
 		goto out;
 	}
@@ -210,8 +250,61 @@ static int __rrr_mqtt_acl_parse_keyword_default (
 
 	out:
 	if (ret != 0) {
-		RRR_MSG_0("Error while parsing value for keyword 'DEFAULT'\n");
+		RRR_MSG_0("Syntax error at line %i: Error while parsing value for keyword 'DEFAULT'\n", pos->line);
 	}
+	return ret;
+}
+
+static int __rrr_mqtt_acl_parse_keyword_user (
+		struct rrr_mqtt_acl_entry *entry,
+		struct rrr_parse_pos *pos
+) {
+	int ret = 0;
+
+	int username_start = 0;
+	int username_end = 0;
+
+	int action = 0;
+	char *username_tmp = NULL;
+
+	rrr_parse_ignore_space_and_tab(pos);
+
+	rrr_parse_letters(pos, &username_start, &username_end, 0, 0);
+
+	if (username_end < username_start) {
+		RRR_MSG_0("Syntax error at line %i: Error while parsing username for keyword 'USER'\n", pos->line);
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_parse_extract_string(&username_tmp, pos, username_start, (username_end - username_start) + 1)) != 0) {
+		RRR_MSG_0("Could not extract username in __rrr_mqtt_acl_parse_keyword_user\n");
+		goto out;
+	}
+
+	if ((ret = __rrr_mqtt_acl_parse_require_space_then_non_newline(pos)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_mqtt_acl_parse_acl_action(&action, pos)) != 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_mqtt_acl_parse_require_newline_or_eof(pos)) != 0) {
+		goto out;
+	}
+
+	if (strlen(username_tmp) == 0) {
+		RRR_BUG("BUG: Username length was 0 in __rrr_mqtt_acl_parse_keyword_user\n");
+	}
+
+	if ((ret = __rrr_mqtt_acl_user_entry_new_and_append(entry, username_tmp, action)) != 0) {
+		RRR_MSG_0("Could not create/insert user entry in __rrr_mqtt_acl_parse_keyword_user\n");
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(username_tmp);
 	return ret;
 }
 
@@ -242,12 +335,18 @@ static int __rrr_mqtt_acl_parse_topic_block_body (
 			}
 			entry->default_action_is_set = 1;
 		}
+		else if (rrr_parse_match_word_case(pos, "USER") == 1) {
+			if (__rrr_mqtt_acl_parse_keyword_user(entry, pos) != 0) {
+				ret = 1;
+				goto out;
+			}
+		}
 		else if (rrr_parse_match_word_case(pos, "TOPIC") == 1) {
 			pos->pos = pos_orig; // Done, revert position
 			goto out;
 		}
 		else {
-			RRR_MSG_0("Syntax error at line %i: Expected keywords 'DEFAULT' or 'TOPIC'\n", pos->line);
+			RRR_MSG_0("Syntax error at line %i: Expected keywords 'DEFAULT', 'USER' or 'TOPIC'\n", pos->line);
 			ret = 1;
 			goto out;
 		}
@@ -329,9 +428,11 @@ static int __rrr_mqtt_acl_parse_topic_blocks (
 		}
 
 		RRR_DBG_1("MQTT ACL topic %s default action %s\n",
-				topic_tmp,
-				(entry->default_action == RRR_MQTT_ACL_ACTION_RO ? "READ" : (entry->default_action == RRR_MQTT_ACL_ACTION_RW ? "WRITE" : "DENY"))
-		);
+				topic_tmp, RRR_MQTT_ACL_ACTION_TO_STR(entry->default_action));
+
+		RRR_LL_ITERATE_BEGIN(entry, struct rrr_mqtt_acl_user_entry);
+			RRR_DBG_1("\tUSER '%s' action %s\n", node->username, RRR_MQTT_ACL_ACTION_TO_STR(node->action));
+		RRR_LL_ITERATE_END();
 	}
 
 	out:
@@ -462,19 +563,21 @@ int rrr_mqtt_acl_check_access (
 
 	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_acl_entry);
 		if (match_function(node->first_token, first_token) == RRR_MQTT_TOKEN_MATCH) {
-//			printf ("ACL matched %s requested level %i default action %i\n",
-//					node->topic_orig, requested_access_level, node->default_action);
+			RRR_DBG_2 ("ACL matched %s requested level %s default action %s\n",
+					node->topic_orig, RRR_MQTT_ACL_ACTION_TO_STR(requested_access_level), RRR_MQTT_ACL_ACTION_TO_STR(node->default_action));
 
 			ret = __rrr_mqtt_acl_check_access_single(node->default_action, requested_access_level);
 
-//			printf ("ACL ret is now %i (after default)\n", ret);
+			RRR_DBG_2 ("ACL result is %s (after default)\n",
+					RRR_MQTT_ACL_ACTION_RESULT_TO_STR(ret));
 
 			if (username != NULL && *username != '\0') {
 				const struct rrr_mqtt_acl_entry *entry = node;
 				RRR_LL_ITERATE_BEGIN(entry, const struct rrr_mqtt_acl_user_entry);
 					if (strcmp(node->username, username) == 0) {
 						ret = __rrr_mqtt_acl_check_access_single(node->action, requested_access_level);
-//						printf ("ACL ret is now %i (after username %s match)\n", ret, username);
+						RRR_DBG_2 ("ACL result is %s (after username %s match)\n",
+								RRR_MQTT_ACL_ACTION_RESULT_TO_STR(ret), username);
 					}
 				RRR_LL_ITERATE_END();
 			}

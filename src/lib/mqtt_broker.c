@@ -575,12 +575,16 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		use_keep_alive = data->max_keep_alive;
 	}
 
-	rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
+	if ((ret = rrr_mqtt_conn_iterator_ctx_set_data_from_connect (
 			connection,
 			use_keep_alive,
 			connect->protocol_version,
-			session
-	);
+			session,
+			connect->username
+	)) != 0) {
+		RRR_MSG_0("Could not set connection data in  __rrr_mqtt_broker_handle_connect\n");
+		goto out;
+	}
 
 	// Remove session from any old connections not yet destroyed
 	if (rrr_mqtt_common_clear_session_from_connections_reenter (
@@ -853,14 +857,12 @@ static int __rrr_mqtt_broker_acl_handler_subscribe (
 	// each subscription
 	int ret = RRR_MQTT_ACL_RESULT_ALLOW;
 
-	// TODO : Replace NULL with connection->username
-
 	RRR_LL_ITERATE_BEGIN(subscribe->subscriptions, struct rrr_mqtt_subscription);
 		int ret_tmp = rrr_mqtt_acl_check_access(
 				broker->acl,
 				node->token_tree,
 				RRR_MQTT_ACL_ACTION_RO,
-				NULL,
+				connection->username,
 				rrr_mqtt_topic_match_tokens_recursively_acl
 		);
 		if (ret_tmp != RRR_MQTT_ACL_RESULT_ALLOW) {
@@ -868,8 +870,6 @@ static int __rrr_mqtt_broker_acl_handler_subscribe (
 		}
 	RRR_LL_ITERATE_END();
 
-
-	out:
 	return ret;
 }
 
@@ -882,11 +882,11 @@ static int __rrr_mqtt_broker_acl_handler_publish (
 
 	// TODO : Replace NULL with connection->username
 
-	ret = rrr_mqtt_acl_check_access(
+	ret = rrr_mqtt_acl_check_access (
 			broker->acl,
 			publish->token_tree_,
 			RRR_MQTT_ACL_ACTION_RW,
-			NULL,
+			connection->username,
 			rrr_mqtt_topic_match_tokens_recursively
 	);
 
