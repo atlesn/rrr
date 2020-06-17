@@ -27,6 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_broker.h"
 #include "mqtt_session.h"
 #include "mqtt_property.h"
+#include "mqtt_acl.h"
+#include "mqtt_subscription.h"
+#include "mqtt_topic.h"
 #include "linked_list.h"
 #include "gnu.h"
 
@@ -544,6 +547,16 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			session
 	);
 
+	// Remove session from any old connections not yet destroyed
+	if (rrr_mqtt_common_clear_session_from_connections_reenter (
+			&data->mqtt_data,
+			session,
+			connection
+	) != 0) {
+		RRR_MSG_0("Could not clear session from other connections in  __rrr_mqtt_broker_handle_connect\n");
+		goto out;
+	}
+
 	RRR_DBG_1("Setting keep-alive to %u in __rrr_mqtt_broker_handle_connect\n", use_keep_alive);
 
 	if (rrr_mqtt_property_collection_add_uint32 (
@@ -626,9 +639,18 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 		goto out;
 	}
 
-	// TODO : Check valid subscriptions (is done now while adding to session), set max QoS etc.
+	// This will set reason in subscriptions which are not allowed
+	ret = mqtt_data->acl_handler(connection, packet, mqtt_data->acl_handler_arg);
+	ret &= ~(RRR_MQTT_ACL_RESULT_ALLOW|RRR_MQTT_ACL_RESULT_DENY);
+
+	if (ret != 0) {
+		RRR_MSG_0("Error while checking ACL rules in __rrr_mqtt_broker_handle_subscribe, return was %i\n", ret);
+		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
+		goto out;
+	}
 
 	unsigned int dummy;
+	// TODO : Check valid subscriptions (is done now while adding to session), set max QoS etc.
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			mqtt_data->sessions->methods->receive_packet(
@@ -651,7 +673,8 @@ static int __rrr_mqtt_broker_handle_subscribe (RRR_MQTT_TYPE_HANDLER_DEFINITION)
 			mqtt_data->sessions->methods->send_packet(
 					mqtt_data->sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) suback
+					(struct rrr_mqtt_p *) suback,
+					0
 			),
 			goto out,
 			" while sending SUBACK to session in rrr_mqtt_p_handler_subscribe"
@@ -698,7 +721,8 @@ static int __rrr_mqtt_broker_handle_unsubscribe (RRR_MQTT_TYPE_HANDLER_DEFINITIO
 			mqtt_data->sessions->methods->send_packet(
 					mqtt_data->sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) unsuback
+					(struct rrr_mqtt_p *) unsuback,
+					0
 			),
 			goto out,
 			" while sending UNSUBACK to session in __rrr_mqtt_broker_handle_unsubscribe"
@@ -734,7 +758,6 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 static int __rrr_mqtt_broker_handle_auth (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	int ret = 0;
 	return ret;
-
 }
 
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
@@ -786,6 +809,81 @@ static int __rrr_mqtt_broker_event_handler (
 	return ret;
 }
 
+static int __rrr_mqtt_broker_acl_handler_subscribe (
+		struct rrr_mqtt_broker_data *broker,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_subscribe *subscribe
+) {
+	// We don't disallow the whole subscription, only set reason inside
+	// each subscription
+	int ret = RRR_MQTT_ACL_RESULT_ALLOW;
+
+	// TODO : Replace NULL with connection->username
+
+	RRR_LL_ITERATE_BEGIN(subscribe->subscriptions, struct rrr_mqtt_subscription);
+		int ret_tmp = rrr_mqtt_acl_check_access(
+				broker->acl,
+				node->token_tree,
+				RRR_MQTT_ACL_ACTION_RO,
+				NULL,
+				rrr_mqtt_topic_match_tokens_recursively_acl
+		);
+		if (ret_tmp != RRR_MQTT_ACL_RESULT_ALLOW) {
+			node->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
+		}
+	RRR_LL_ITERATE_END();
+
+
+	out:
+	return ret;
+}
+
+static int __rrr_mqtt_broker_acl_handler_publish (
+		struct rrr_mqtt_broker_data *broker,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_publish *publish
+) {
+	int ret = RRR_MQTT_ACL_RESULT_DENY;
+
+	// TODO : Replace NULL with connection->username
+
+	ret = rrr_mqtt_acl_check_access(
+			broker->acl,
+			publish->token_tree_,
+			RRR_MQTT_ACL_ACTION_RW,
+			NULL,
+			rrr_mqtt_topic_match_tokens_recursively
+	);
+
+	if (ret == RRR_MQTT_ACL_RESULT_DENY && !RRR_MQTT_P_IS_V5(publish) && broker->disconnect_on_v31_publish_deny != 0) {
+		ret = RRR_MQTT_ACL_RESULT_DISCONNECT;
+	}
+	return ret;
+}
+
+static int __rrr_mqtt_broker_acl_handler (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	struct rrr_mqtt_broker_data *broker = arg;
+
+	int ret = RRR_MQTT_ACL_RESULT_DENY;
+
+	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+		ret = __rrr_mqtt_broker_acl_handler_publish(broker, connection, (struct rrr_mqtt_p_publish *) packet);
+	}
+	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE) {
+		ret = __rrr_mqtt_broker_acl_handler_subscribe(broker, connection, (struct rrr_mqtt_p_subscribe *) packet);
+	}
+	else {
+		ret = RRR_MQTT_ACL_RESULT_ALLOW;
+	}
+
+	out:
+	return ret;
+}
+
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker) {
 	/* Caller should make sure that no more connections are accepted at this point */
 	__rrr_mqtt_broker_destroy_listen_fds(&broker->listen_fds);
@@ -802,6 +900,8 @@ int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
 		uint16_t max_keep_alive,
+		const struct rrr_mqtt_acl *acl,
+		int disconnect_on_v31_publish_deny,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 ) {
@@ -830,6 +930,8 @@ int rrr_mqtt_broker_new (
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_broker_event_handler,
+			res,
+			__rrr_mqtt_broker_acl_handler,
 			res
 	)) != 0) {
 		RRR_MSG_0("Could not initialize mqtt data in rrr_mqtt_broker_new\n");
@@ -848,6 +950,8 @@ int rrr_mqtt_broker_new (
 
 	res->max_clients = init_data->max_socket_connections - 10;
 	res->max_keep_alive = max_keep_alive;
+	res->disconnect_on_v31_publish_deny = disconnect_on_v31_publish_deny;
+	res->acl = acl;
 
 	goto out_success;
 

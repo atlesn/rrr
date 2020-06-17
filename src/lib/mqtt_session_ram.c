@@ -1274,6 +1274,20 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
+		if ((RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBACK ||
+			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREC) &&
+			RRR_MQTT_P_GET_REASON_V5(ack_packet) != RRR_MQTT_P_5_REASON_OK
+		) {
+			const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5 (RRR_MQTT_P_GET_REASON_V5(ack_packet));
+			if (reason == NULL) {
+				RRR_MSG_0("Unknown reason %u in PUBACK or PUBREC in __rrr_mqtt_session_ram_process_ack_callback\n");
+				ret = RRR_FIFO_CALLBACK_ERR;
+				goto out;
+			}
+			RRR_MSG_1("Note: PUBLISH with topic '%s' was rejected by broker with reason '%s'\n",
+					publish->topic, reason->description);
+		}
+
 		if ((RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBCOMP ||
 			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREC ||
 			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREL) && (
@@ -1690,7 +1704,8 @@ static int __rrr_mqtt_session_ram_process_ack (
 		unsigned int *match_count,
 		struct rrr_mqtt_session_ram *ram_session,
 		struct rrr_mqtt_p *packet,
-		int packet_was_outbound
+		int packet_was_outbound,
+		int allow_missing_publish
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -1738,7 +1753,7 @@ static int __rrr_mqtt_session_ram_process_ack (
 		else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_UNSUBACK) {
 			// Duplicate UNSUBACK packet is OK
 		}
-		else {
+		else if (allow_missing_publish == 0) {
 			RRR_MSG_0("Packet identifier %u missing for ACK of type %s for packet which originated from us, this is a session error\n",
 					RRR_MQTT_P_GET_IDENTIFIER(packet), RRR_MQTT_P_GET_TYPE_NAME(packet));
 			ret = RRR_MQTT_SESSION_ERROR;
@@ -2245,7 +2260,8 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 static int __rrr_mqtt_session_ram_send_packet (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		struct rrr_mqtt_p *packet
+		struct rrr_mqtt_p *packet,
+		int allow_missing_originating_packet
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
@@ -2297,7 +2313,13 @@ static int __rrr_mqtt_session_ram_send_packet (
 		// Incref, make sure nothing bad happens
 		RRR_MQTT_P_INCREF(packet);
 		unsigned int match_count = 0;
-		ret = __rrr_mqtt_session_ram_process_ack(&match_count, ram_session, packet, packet_was_outbound);
+		ret = __rrr_mqtt_session_ram_process_ack (
+				&match_count,
+				ram_session,
+				packet,
+				packet_was_outbound,
+				allow_missing_originating_packet
+		);
 		RRR_MQTT_P_DECREF(packet);
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
@@ -2375,7 +2397,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 
 		// Incref, make sure nothing bad happens
 		RRR_MQTT_P_INCREF(packet);
-		ret = __rrr_mqtt_session_ram_process_ack(ack_match_count, ram_session, packet, packet_was_outbound);
+		ret = __rrr_mqtt_session_ram_process_ack(ack_match_count, ram_session, packet, packet_was_outbound, 0);
 		RRR_MQTT_P_DECREF(packet);
 	}
 	else {

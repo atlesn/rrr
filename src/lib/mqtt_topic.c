@@ -109,6 +109,7 @@ int rrr_mqtt_topic_validate_name (
 	);
 }
 
+// Only sub_token may contain # and +
 int rrr_mqtt_topic_match_tokens_recursively (
 		const struct rrr_mqtt_topic_token *sub_token,
 		const struct rrr_mqtt_topic_token *pub_token
@@ -147,6 +148,51 @@ int rrr_mqtt_topic_match_tokens_recursively (
 	}
 
 	return rrr_mqtt_topic_match_tokens_recursively(sub_token->next, pub_token->next);
+}
+
+// Both token trees may contain # and +
+// The master token is usually an ACL entry and the slave a subscription request
+// The # of a slave topic will only match the master topic if the master topic is also # on the same level
+int rrr_mqtt_topic_match_tokens_recursively_acl (
+		const struct rrr_mqtt_topic_token *token_master,
+		const struct rrr_mqtt_topic_token *token_slave
+) {
+	if (token_master == NULL || token_slave == NULL) {
+		return RRR_MQTT_TOKEN_MISMATCH;
+	}
+
+//	printf ("Match ACL %s vs %s\n", token_master->data, token_slave->data);
+
+	if (*(token_master->data) == '#') {
+//		printf ("Match by master #\n");
+		return RRR_MQTT_TOKEN_MATCH;
+	}
+	else if (*(token_slave->data) == '#') {
+//		printf ("Mismatch by slave #\n");
+		return RRR_MQTT_TOKEN_MISMATCH;
+	}
+	else if (*(token_master->data) == '+' || *(token_slave->data) == '+') {
+//		printf ("Preliminary match by slave or master +\n");
+		if (*(token_master->data) == '$') {
+			printf ("Mismatch by master $\n");
+			return RRR_MQTT_TOKEN_MISMATCH;
+		}
+		// + matches everything on this level, continue
+	}
+	else if (strcmp(token_master->data, token_slave->data) != 0) {
+		// no wildcard, string on levels must be identical
+//		printf ("Mismatch by token inequality\n");
+		return RRR_MQTT_TOKEN_MISMATCH;
+	}
+
+	if (token_master->next == NULL && token_slave->next == NULL) {
+//		printf ("Match by no more tokens\n");
+		return RRR_MQTT_TOKEN_MATCH;
+	}
+
+//	printf ("Preliminary match by token equality\n");
+
+	return rrr_mqtt_topic_match_tokens_recursively_acl(token_master->next, token_slave->next);
 }
 
 void rrr_mqtt_topic_token_destroy (

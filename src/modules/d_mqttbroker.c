@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt_broker.h"
 #include "../lib/mqtt_common.h"
 #include "../lib/mqtt_session_ram.h"
+#include "../lib/mqtt_acl.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -58,14 +59,19 @@ struct mqtt_broker_data {
 	rrr_setting_uint max_keep_alive;
 	rrr_setting_uint retry_interval;
 	rrr_setting_uint close_wait_time;
+	char *acl_file;
+	int disconnect_on_v31_publish_deny;
+	struct rrr_mqtt_acl acl;
 };
 
-static void data_cleanup(void *arg) {
+static void mqttbroker_data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
 	rrr_fifo_buffer_clear(&data->local_buffer);
+	RRR_FREE_IF_NOT_NULL(data->acl_file);
+	rrr_mqtt_acl_entry_collection_clear(&data->acl);
 }
 
-static int data_init (
+static int mqttbroker_data_init (
 		struct mqtt_broker_data *data,
 		struct rrr_instance_thread_data *thread_data
 ) {
@@ -83,14 +89,14 @@ static int data_init (
 
 	out:
 	if (ret != 0) {
-		data_cleanup(data);
+		mqttbroker_data_cleanup(data);
 	}
 
 	return ret;
 }
 
 // TODO : Provide more configuration arguments
-static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_config *config) {
+static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	rrr_setting_uint mqtt_port = 0;
@@ -98,11 +104,11 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	rrr_setting_uint retry_interval = 0;
 	rrr_setting_uint close_wait_time = 0;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_server_port")) == 0) {
+	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_broker_port")) == 0) {
 		// OK
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_server_port setting of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mqtt_broker_port setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -112,20 +118,20 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	}
 	data->server_port = mqtt_port;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&max_keep_alive, config, "mqtt_server_max_keep_alive")) == 0) {
+	if ((ret = rrr_instance_config_read_unsigned_integer(&max_keep_alive, config, "mqtt_broker_max_keep_alive")) == 0) {
 		if (max_keep_alive > 0xffff) {
-			RRR_MSG_0("mqtt_server_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
+			RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (max_keep_alive < 1) {
-			RRR_MSG_0("mqtt_server_max_keep_alive was too small for instance %s, min is 1\n", config->name);
+			RRR_MSG_0("mqtt_broker_max_keep_alive was too small for instance %s, min is 1\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_server_max_keep_alive setting of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mqtt_broker_max_keep_alive setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -135,20 +141,20 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	}
 	data->max_keep_alive = max_keep_alive;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&retry_interval, config, "mqtt_server_retry_interval")) == 0) {
+	if ((ret = rrr_instance_config_read_unsigned_integer(&retry_interval, config, "mqtt_broker_retry_interval")) == 0) {
 		if (retry_interval > 0xffff) {
-			RRR_MSG_0("mqtt_server_retry_interval was too big for instance %s, max is 65535\n", config->name);
+			RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (retry_interval < 1) {
-			RRR_MSG_0("mqtt_server_retry_interval was too small for instance %s, min is 1\n", config->name);
+			RRR_MSG_0("mqtt_broker_retry_interval was too small for instance %s, min is 1\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_server_retry_interval setting of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mqtt_broker_retry_interval setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -158,20 +164,20 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	}
 	data->retry_interval = retry_interval;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&close_wait_time, config, "mqtt_server_close_wait_time")) == 0) {
+	if ((ret = rrr_instance_config_read_unsigned_integer(&close_wait_time, config, "mqtt_broker_close_wait_time")) == 0) {
 		if (close_wait_time > 0xffff) {
-			RRR_MSG_0("mqtt_server_close_wait_time was too big for instance %s, max is 65535\n", config->name);
+			RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (close_wait_time < 1) {
-			RRR_MSG_0("mqtt_server_close_wait_time was too small for instance %s, min is 1\n", config->name);
+			RRR_MSG_0("mqtt_broker_close_wait_time was too small for instance %s, min is 1\n", config->name);
 			ret = 1;
 			goto out;
 		}
 	}
 	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_server_close_wait_time setting of instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing mqtt_broker_close_wait_time setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -181,13 +187,16 @@ static int parse_config (struct mqtt_broker_data *data, struct rrr_instance_conf
 	}
 	data->close_wait_time = close_wait_time;
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_acl_file", acl_file);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", disconnect_on_v31_publish_deny, 0);
+
 	/* On error, memory is freed by data_cleanup */
 
 	out:
 	return ret;
 }
 
-static void update_stats (struct mqtt_broker_data *data, struct rrr_stats_instance *stats) {
+static void mqttbroker_update_stats (struct mqtt_broker_data *data, struct rrr_stats_instance *stats) {
 	if (stats->stats_handle == 0) {
 		return;
 	}
@@ -207,12 +216,38 @@ static void update_stats (struct mqtt_broker_data *data, struct rrr_stats_instan
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_delivered", 0, broker_stats.session_stats.total_publish_delivered);
 }
 
-static void *thread_entry_mqtt (struct rrr_thread *thread) {
+static int mqttbroker_parse_acl (struct mqtt_broker_data *data) {
+	int ret = 0;
+
+	if (data->acl_file == NULL) {
+		if (rrr_mqtt_acl_entry_collection_push_allow_all(&data->acl) != 0) {
+			RRR_MSG_0("Could not push default entry in mqttbroker_parse_acl\n");
+			ret = 1;
+		}
+		goto out;
+	}
+
+	if (*(data->acl_file) == '\0') {
+		RRR_MSG_0("ACL filename was empty\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_mqtt_acl_entry_collection_populate_from_file(&data->acl, data->acl_file) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
-	struct mqtt_broker_data* data = thread_data->private_data = thread_data->private_memory;
+	struct mqtt_broker_data *data = thread_data->private_data = thread_data->private_memory;
 
 	int init_ret = 0;
-	if ((init_ret = data_init(data, thread_data)) != 0) {
+	if ((init_ret = mqttbroker_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initalize data in mqtt broker instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
@@ -220,7 +255,7 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt broker thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(mqttbroker_data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -228,8 +263,13 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_0("Configuration parse failed for mqtt broker instance '%s'\n", thread_data->init_data.module->instance_name);
+	if (mqttbroker_parse_config(data, thread_data->init_data.instance_config) != 0) {
+		RRR_MSG_0("Configuration parse failed for mqtt broker instance '%s'\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	if (mqttbroker_parse_acl(data) != 0) {
+		RRR_MSG_0("ACL file parse failed for mqtt broker instance '%s'\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
@@ -246,9 +286,11 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 			&data->mqtt_broker_data,
 			&init_data,
 			data->max_keep_alive,
+			&data->acl,
+			data->disconnect_on_v31_publish_deny,
 			rrr_mqtt_session_collection_ram_new,
 			NULL
-		) != 0) {
+	) != 0) {
 		RRR_MSG_0("Could not create new mqtt broker\n");
 		goto out_message;
 	}
@@ -277,7 +319,7 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 		}
 
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
-			update_stats(data, stats);
+			mqttbroker_update_stats(data, stats);
 			prev_stats_time = rrr_time_get_64();
 		}
 
@@ -302,7 +344,7 @@ static void *thread_entry_mqtt (struct rrr_thread *thread) {
 
 static struct rrr_module_operations module_operations = {
 		NULL,
-		thread_entry_mqtt,
+		thread_entry_mqttbroker,
 		NULL,
 		NULL,
 		NULL,

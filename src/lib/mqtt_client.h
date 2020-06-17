@@ -49,6 +49,8 @@ struct rrr_mqtt_client_data {
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg);
 	void *suback_unsuback_handler_arg;
+	int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg);
+	void *packet_parsed_handler_arg;
 };
 
 int rrr_mqtt_client_connection_check_alive (
@@ -96,7 +98,9 @@ int rrr_mqtt_client_new (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
-		void *suback_unsuback_handler_arg
+		void *suback_unsuback_handler_arg,
+		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
+		void *packet_parsed_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
 int rrr_mqtt_client_iterate_and_clear_local_delivery (

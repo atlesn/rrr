@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 #include "mqtt_session.h"
+#include "mqtt_acl.h"
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
 		.session_expiry							= 0,
@@ -72,6 +73,80 @@ void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data) {
 /* Call this when a thread has been cancelled to make sure mutexes are unlocked etc. */
 void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data) {
 	rrr_mqtt_conn_collection_reset_locks_hard(&data->connections);
+}
+
+struct clear_sesion_from_connections_callback_data {
+	const struct rrr_mqtt_session *session_to_remove;
+	const struct rrr_mqtt_conn *disregard_connection;
+};
+
+static int __rrr_mqtt_broker_clear_session_from_connections_callback (struct rrr_mqtt_conn *connection, void *arg) {
+	struct clear_sesion_from_connections_callback_data *callback_data = arg;
+
+	int ret = RRR_MQTT_CONN_OK;
+
+	if (connection == callback_data->disregard_connection) {
+		goto out_nolock;
+	}
+
+	RRR_MQTT_CONN_LOCK(connection);
+
+	if (connection->session == callback_data->session_to_remove) {
+		connection->session = NULL;
+	}
+
+	RRR_MQTT_CONN_UNLOCK(connection);
+
+	out_nolock:
+	return ret;
+}
+
+/* If an old connection still holds the session while being destroyed after
+ * disconnect timer has expired, the session will be destroyed and this new
+ * connection will also become disconnected. To avoid this, clear the session from
+ * all other connections upon CONNECT. */
+int rrr_mqtt_common_clear_session_from_connections_reenter (
+		struct rrr_mqtt_data *data,
+		const struct rrr_mqtt_session *session_to_remove,
+		const struct rrr_mqtt_conn *disregard_connection
+) {
+	int ret = 0;
+
+	struct clear_sesion_from_connections_callback_data callback_data = {
+			session_to_remove,
+			disregard_connection
+	};
+
+	// We don't need write lock but there is no other re-enter function available
+	ret = rrr_mqtt_conn_collection_iterate_reenter_read_to_write (
+			&data->connections,
+			__rrr_mqtt_broker_clear_session_from_connections_callback ,
+			&callback_data
+	);
+
+	return ret;
+}
+
+// Same as above but from outside iterator ctx
+int rrr_mqtt_common_clear_session_from_connections (
+		struct rrr_mqtt_data *data,
+		const struct rrr_mqtt_session *session_to_remove,
+		const struct rrr_mqtt_conn *disregard_connection
+) {
+	int ret = 0;
+
+	struct clear_sesion_from_connections_callback_data callback_data = {
+			session_to_remove,
+			disregard_connection
+	};
+
+	ret = rrr_mqtt_conn_collection_iterate (
+			&data->connections,
+			__rrr_mqtt_broker_clear_session_from_connections_callback ,
+			&callback_data
+	);
+
+	return ret;
 }
 
 /*
@@ -164,7 +239,9 @@ int rrr_mqtt_common_data_init (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_static_arg
+		void *event_handler_static_arg,
+		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
+		void *acl_handler_arg
 ) {
 	int ret = 0;
 
@@ -183,6 +260,8 @@ int rrr_mqtt_common_data_init (
 	data->retry_interval_usec = init_data->retry_interval_usec;
 	data->close_wait_time_usec = init_data->close_wait_time_usec;
 	data->handler_properties = handler_properties;
+	data->acl_handler = acl_handler;
+	data->acl_handler_arg = acl_handler_arg;
 
 	if (rrr_mqtt_conn_collection_init (
 			&data->connections,
@@ -560,7 +639,13 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_p *ack = NULL;
 	uint8_t reason_v5 = 0;
 
+	// If we send an ACK without giving the PUBLISH to session framework first, this
+	// must be set to 1
+	int allow_missing_originating_packet = 0;
+
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		allow_missing_originating_packet = 1;
+
 		if (publish->qos == 0) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
 			ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
@@ -571,6 +656,30 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				publish->qos, publish->reason_v5);
 
 		reason_v5 = publish->reason_v5;
+		goto out_generate_ack;
+	}
+
+	int acl_result = mqtt_data->acl_handler(connection, packet, mqtt_data->acl_handler_arg);
+	switch (acl_result) {
+		case RRR_MQTT_ACL_RESULT_ALLOW:
+			printf ("PUBLISH ALLOWED\n");
+			reason_v5 = RRR_MQTT_P_5_REASON_OK;
+			break;
+		case RRR_MQTT_ACL_RESULT_DISCONNECT:
+			printf ("PUBLISH DENIED AND DISCONNECTING\n");
+			ret = RRR_MQTT_CONN_DESTROY_CONNECTION;
+			goto out;
+		case RRR_MQTT_ACL_RESULT_DENY:
+			printf ("PUBLISH DENIED\n");
+			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
+			break;
+		default:
+			RRR_MSG_0("Warning: Error while checking ACL in rrr_mqtt_common_handle_publish, dropping packet and closing connection\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR|RRR_MQTT_CONN_DESTROY_CONNECTION;
+			goto out;
+	};
+	if (reason_v5 != RRR_MQTT_P_5_REASON_OK) {
+		allow_missing_originating_packet = 1;
 		goto out_generate_ack;
 	}
 
@@ -652,7 +761,8 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			mqtt_data->sessions->methods->send_packet(
 					mqtt_data->sessions,
 					&connection->session,
-					ack
+					ack,
+					allow_missing_originating_packet
 			),
 			goto out_relock,
 			" in session send packet function in rrr_mqtt_common_handle_publish"
@@ -804,7 +914,7 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 	RRR_MQTT_P_UNLOCK(next_ack);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->send_packet(mqtt_data->sessions, &connection->session, next_ack),
+			mqtt_data->sessions->methods->send_packet(mqtt_data->sessions, &connection->session, next_ack, 0),
 			goto out,
 			" while sending ACK for packet to session in __rrr_mqtt_broker_handle_pubrec_pubrel"
 	);

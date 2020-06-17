@@ -443,6 +443,7 @@ void rrr_mqtt_conn_collection_destroy (struct rrr_mqtt_conn_collection *connecti
 // Called for instance upon pthread_cancel. We should be sure that everyone is out first
 // prior to calling. Hard lock reset should be performed prior to destruction in abnormal
 // situations. It's OK to call this in normal situations as well but not required.
+// XXX : We break the pthread specification here if we unlock with another thread than the one which locked
 void rrr_mqtt_conn_collection_reset_locks_hard (struct rrr_mqtt_conn_collection *connections) {
 	// Disregard return value
 	pthread_mutex_trylock(&connections->lock);
@@ -656,7 +657,8 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 	RRR_MQTT_CONN_LOCK(connection);
 
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED(connection)) {
-		RRR_BUG("Connection state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n");
+		RRR_BUG("Connection %p state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n",
+				connection);
 	}
 
 	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
@@ -674,8 +676,8 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer\n",
-					connection->disconnect_reason_v5_);
+			RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer\n",
+					connection, connection->disconnect_reason_v5_);
 		}
 		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
@@ -683,8 +685,8 @@ static int __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy (
 			ret = RRR_LL_DIDNT_DESTROY;
 			goto out_unlock;
 		}
-		RRR_DBG_1("Destroying connection in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, timer done\n",
-				connection->disconnect_reason_v5_);
+		RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, timer done\n",
+				connection, connection->disconnect_reason_v5_);
 	}
 
 	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
@@ -1252,7 +1254,7 @@ int rrr_mqtt_conn_iterator_ctx_parse (
 		__rrr_mqtt_connection_read_session_destroy(&connection->read_session);
 		__rrr_mqtt_connection_read_session_init(&connection->read_session);
 
-		if ((ret = CALL_EVENT_HANDLER(RRR_MQTT_CONN_EVENT_PACKET_PARSED)) != 0) {
+		if ((ret = CALL_EVENT_HANDLER_ARG(RRR_MQTT_CONN_EVENT_PACKET_PARSED, connection->parse_session.packet)) != 0) {
 			RRR_MSG_0("Error from event handler in rrr_mqtt_connection_iterator_ctx_parse, return was %i\n", ret);
 			goto out_unlock;
 		}
@@ -1307,8 +1309,10 @@ int rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle (
 		connection->parse_complete = 0;
 
 		if ((ret = handler_callback(connection, packet, callback_arg))) {
-			RRR_MSG_0("Error from handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
-			ret = 1;
+			if (ret == RRR_MQTT_CONN_INTERNAL_ERROR) {
+				RRR_MSG_0("Internal error from packet handler in rrr_mqtt_conn_iterator_ctx_check_parse_finalize_handle\n");
+			}
+			// Let error code propagate
 			goto out_unlock;
 		}
 	}

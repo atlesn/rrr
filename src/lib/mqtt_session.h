@@ -185,7 +185,8 @@ struct rrr_mqtt_session_collection_methods {
 	int (*send_packet) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			struct rrr_mqtt_p *packet
+			struct rrr_mqtt_p *packet,
+			int allow_missing_originating_packet
 	);
 
 	int (*receive_packet) (

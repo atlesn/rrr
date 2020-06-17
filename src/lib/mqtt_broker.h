@@ -37,6 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	10
 #define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 10
 
+struct rrr_mqtt_acl;
+
 struct rrr_mqtt_listen_fd {
 	RRR_LL_NODE(struct rrr_mqtt_listen_fd);
 	struct rrr_ip_data ip;
@@ -68,6 +70,9 @@ struct rrr_mqtt_broker_data {
 	uint32_t client_serial;
 	int client_count;
 	struct rrr_mqtt_broker_stats stats;
+
+	int disconnect_on_v31_publish_deny;
+	const struct rrr_mqtt_acl *acl;
 };
 
 #define RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(action)				\
@@ -88,6 +93,8 @@ int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
 		uint16_t max_keep_alive,
+		const struct rrr_mqtt_acl *acl,
+		int disconnect_on_v31_publish_deny,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 );

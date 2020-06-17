@@ -201,14 +201,20 @@ struct rrr_mqtt_type_handler_properties {
 struct rrr_mqtt_data {
 	struct rrr_mqtt_conn_collection connections;
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
+	char *client_name;
 	int (*event_handler)(
 			struct rrr_mqtt_conn *connection,
 			int event,
 			void *static_arg,
 			void *arg
 	);
-	char *client_name;
 	void *event_handler_static_arg;
+	int (*acl_handler)(
+			struct rrr_mqtt_conn *connection,
+			struct rrr_mqtt_p *packet,
+			void *arg
+	);
+	void *acl_handler_arg;
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
@@ -253,6 +259,16 @@ extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_clear_session_from_connections_reenter (
+		struct rrr_mqtt_data *data,
+		const struct rrr_mqtt_session *session_to_remove,
+		const struct rrr_mqtt_conn *disregard_connection
+);
+int rrr_mqtt_common_clear_session_from_connections (
+		struct rrr_mqtt_data *data,
+		const struct rrr_mqtt_session *session_to_remove,
+		const struct rrr_mqtt_conn *disregard_connection
+);
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
@@ -260,7 +276,9 @@ int rrr_mqtt_common_data_init (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_static_arg
+		void *event_handler_static_arg,
+		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
+		void *acl_handler_arg
 );
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		const struct rrr_mqtt_property *property,

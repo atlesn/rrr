@@ -393,7 +393,7 @@ static int __rrr_mqtt_assemble_sub_usub (
 	}
 
 	if (rrr_mqtt_subscription_collection_count(sub_usub->subscriptions) <= 0) {
-		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_subscribe\n");
+		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_sub_usub\n");
 	}
 
 	struct assemble_sub_usub_callback_data callback_data = {
@@ -408,7 +408,7 @@ static int __rrr_mqtt_assemble_sub_usub (
 			&callback_data
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
-		RRR_MSG_0("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_suback\n");
+		RRR_MSG_0("Error while assembling SUBSCRIBE packet in rrr_mqtt_assemble_sub_usub\n");
 		goto out;
 	}
 
@@ -423,11 +423,27 @@ int rrr_mqtt_assemble_unsubscribe (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	return __rrr_mqtt_assemble_sub_usub(target, size, packet, 0);
 }
 
+struct rrr_mqtt_assemble_suback_callback_data {
+	struct rrr_mqtt_payload_buf_session *session;
+	int is_v5;
+};
+
 int __rrr_mqtt_assemble_suback_callback (struct rrr_mqtt_subscription *sub, void *arg) {
 	int ret = RRR_MQTT_SUBSCRIPTION_ITERATE_OK;
 
-	struct rrr_mqtt_payload_buf_session *session = arg;
-	PUT_U8(sub->qos_or_reason_v5);
+	struct rrr_mqtt_assemble_suback_callback_data *callback_data = arg;
+	struct rrr_mqtt_payload_buf_session *session = callback_data->session;
+
+	uint8_t reason = sub->qos_or_reason_v5;
+
+	if (!callback_data->is_v5) {
+		if (reason > 2) {
+			// No other reasons allowed in V3.1 for SUBACK
+			reason = 0x80;
+		}
+	}
+
+	PUT_U8(reason);
 
 	out:
 	return ret;
@@ -448,10 +464,12 @@ int rrr_mqtt_assemble_suback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_suback\n");
 	}
 
+	struct rrr_mqtt_assemble_suback_callback_data callback_data = { session, RRR_MQTT_P_IS_V5(packet) };
+
 	ret = rrr_mqtt_subscription_collection_iterate(
 			suback->subscriptions_,
 			__rrr_mqtt_assemble_suback_callback,
-			session
+			&callback_data
 	);
 	if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
 		RRR_MSG_0("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");
@@ -476,10 +494,12 @@ int rrr_mqtt_assemble_unsuback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 			RRR_BUG("Subscription count was <= 0 in rrr_mqtt_assemble_suback\n");
 		}
 
+		struct rrr_mqtt_assemble_suback_callback_data callback_data = { session, RRR_MQTT_P_IS_V5(packet) };
+
 		ret = rrr_mqtt_subscription_collection_iterate(
 				suback->subscriptions_,
 				__rrr_mqtt_assemble_suback_callback,
-				session
+				&callback_data
 		);
 		if (ret != RRR_MQTT_SUBSCRIPTION_OK) {
 			RRR_MSG_0("Error while assembling SUBACK packet in rrr_mqtt_assemble_suback\n");

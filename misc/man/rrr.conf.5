@@ -1,4 +1,4 @@
-.Dd 2020-05-22
+.Dd 2020-06-15
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -692,18 +692,72 @@ or
 .B influxdb_fixed_fields
 .
 .SS mqttbroker (N)
-An MQTT broker supporting V3.1(.1) and V5 (lacking some functionallity).
+An MQTT broker supporting V3.1(.1) and V5 (lacking some functionality).
 .PP
 .Bl -tag -width -indent
-.It mqtt_server_port=PORT
+.It mqtt_broker_port=PORT
 TCP port to listen on (listens on all interfaces). Defaults to 1883.
-.It mqtt_server_max_keep_alive=SECONDS
+.It mqtt_broker_max_keep_alive=SECONDS
 Maximum keep-alive value for clients, defaults to 30.
-.It mqtt_server_retry_interval=SECONDS
+.It mqtt_broker_retry_interval=SECONDS
 Retry interval for QoS1 and QoS2 messages.
-.It mqtt_server_close_wait_time=SECONDS
+.It mqtt_broker_close_wait_time=SECONDS
 After disconnect, wait this many seconds before closing the socket (make client close first to avoid TIME_WAIT). Defaults to 1 second.
+.It mqtt_broker_v31_disconnect_on_publish_deny={yes|no}
+If a V3.1 or V3.1.1 client sends a PUBLISH which is rejected by ACL rules, the client will be disconnected
+if this option is set to yes. The default value is no, which means that the broker sends an acknowledgement packet
+regardless of whether the PUBLISH was rejected or not. For V5, an acknowledgement with an error code is always sent,
+disregarding this option.
+.It mqtt_broker_acl_file=FILENAME
+ACL file to allow different users access to topics. If left unspecified, all access is granted. If a file is specified and a rule
+is not found upon a PUBLISH or SUBSCRIBE from a client, access will be denied.
+.PP
+The ACL file consists of one or more
+.B TOPIC {TOPIC STRING}
+blocks. The
+.B TOPIC STRING
+value is an MQTT filter in which # and + are allowed according to the MQTT specifications. Curly brackets are not to be included.
+.PP
+A topic block may contain one or more lines beginning with one of the keywords
+.B USER
+or
+.B DEFAULT
+followed by one or more spaces or tabs. Keywords are case-insensitive.
+.PP
+The
+.B DEFAULT
+keyword takes one argument, and ACL action (DENY, READ or WRITE). If left unspecified, the default action is DENY.
+.PP
+The
+.B USER
+keyword takes two arguments, a username followed by one or more spaces or tabs and an ACL action (DENY, READ or WRITE).
 .El
+.PP
+If
+.B READ
+access is granted, a user may SUBSCRIBE to the matching topics. If
+.B WRITE
+access is granted, a user may SUBSCRIBE and PUBLISH to the matching topics.
+.B DENY
+will block all access to the matching topics. 
+.PP
+The ACL file is parsed from top to bottom, and the bottom most matching rule will take precedence.
+hence it should be placed on the first line in a topic block.
+.PP
+Comments may be placed on separate lines and begins with '#'. Spaces and tabs are allowed on the beginning of a line before keywords.
+.PP
+Below follows some example rules:
+.PP
+.nf
+# Allow access to everything from everyone
+TOPIC #
+	DEFAULT WRITE
+
+# Allow only READ access on $SYS topics, but allow system_user to WRITE
+TOPIC $SYS/#
+	DEFAULT READ
+	USER system_user WRITE
+.fi
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP

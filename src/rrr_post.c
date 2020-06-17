@@ -328,7 +328,7 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = STDIN_FILENO;
 	}
 	else {
-		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, "rrr_post");
+		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post");
 		if (data->input_fd < 0) {
 			RRR_MSG_0("Could not open input file %s: %s\n",
 					data->filename, rrr_strerror(errno));

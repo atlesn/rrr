@@ -1,0 +1,15 @@
+TOPIC my_topic
+	DEFAULT WRITE
+
+# Test for case insensitivity
+ToPiC x/#
+	DEFauLT ReaD
+
+TOPIC c/#
+	DEFAULT WRITE
+
+TOPIC x/#
+	DEFAULT WRITE
+
+TOPIC +/#
+	DEFAULT WRITE

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_client.h"
 #include "mqtt_common.h"
 #include "mqtt_subscription.h"
+#include "mqtt_acl.h"
 
 struct set_connection_settings_callback_data {
 	uint16_t keep_alive;
@@ -74,7 +75,8 @@ int rrr_mqtt_client_publish (
 			data->mqtt_data.sessions->methods->send_packet (
 					data->mqtt_data.sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) publish
+					(struct rrr_mqtt_p *) publish,
+					0
 			),
 			goto out,
 			" while sending PUBLISH packet in rrr_mqtt_client_publish\n"
@@ -130,7 +132,8 @@ int rrr_mqtt_client_subscribe (
 			data->mqtt_data.sessions->methods->send_packet (
 					data->mqtt_data.sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) subscribe
+					(struct rrr_mqtt_p *) subscribe,
+					0
 			),
 			goto out_decref,
 			" while sending SUBSCRIBE packet in rrr_mqtt_client_send_subscriptions\n"
@@ -190,7 +193,8 @@ int rrr_mqtt_client_unsubscribe (
 			data->mqtt_data.sessions->methods->send_packet (
 					data->mqtt_data.sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) unsubscribe
+					(struct rrr_mqtt_p *) unsubscribe,
+					0
 			),
 			goto out_decref,
 			" while sending UNSUBSCRIBE packet in rrr_mqtt_client_unsubscribe\n"
@@ -322,6 +326,12 @@ int rrr_mqtt_client_connect (
 	)) != RRR_MQTT_SESSION_OK || session == NULL) {
 		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		RRR_MSG_0("Internal error getting session in rrr_mqtt_client_connect\n");
+		goto out;
+	}
+
+	if ((ret = rrr_mqtt_common_clear_session_from_connections (mqtt_data, session, *connection)) != 0) {
+		RRR_MSG_0("Error while clearing session from old connections in rrr_mqtt_client_connect\n");
+		ret = RRR_MQTT_CONN_INTERNAL_ERROR;
 		goto out;
 	}
 
@@ -560,19 +570,35 @@ static int __rrr_mqtt_client_event_handler (
 	struct rrr_mqtt_client_data *data = static_arg;
 
 	(void)(connection);
-	(void)(data);
-	(void)(arg);
 
 	int ret = RRR_MQTT_CONN_OK;
 
 	switch (event) {
-		case RRR_MQTT_CONN_EVENT_DISCONNECT:
+		case RRR_MQTT_CONN_EVENT_PACKET_PARSED:
+			// Arg is packet
+			if (data->packet_parsed_handler != NULL) {
+				if ((ret = data->packet_parsed_handler(data, arg, data->packet_parsed_handler_arg)) != 0) {
+					RRR_MSG_0("Error %i from downstream handler in __rrr_mqtt_client_event_handler\n", ret);
+				}
+			}
 			break;
+		case RRR_MQTT_CONN_EVENT_DISCONNECT:
 		default:
 			break;
 	};
 
 	return ret;
+}
+
+static int __rrr_mqtt_client_acl_handler (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	(void)(connection);
+	(void)(packet);
+	(void)(arg);
+	return RRR_MQTT_ACL_RESULT_ALLOW;
 }
 
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
@@ -591,7 +617,9 @@ int rrr_mqtt_client_new (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*suback_unsuback_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p_suback_unsuback *packet, void *private_arg),
-		void *suback_unsuback_handler_arg
+		void *suback_unsuback_handler_arg,
+		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
+		void *packet_parsed_handler_arg
 ) {
 	int ret = 0;
 
@@ -612,7 +640,9 @@ int rrr_mqtt_client_new (
 			session_initializer,
 			session_initializer_arg,
 			__rrr_mqtt_client_event_handler,
-			result
+			result,
+			__rrr_mqtt_client_acl_handler,
+			NULL
 	);
 
 	if (ret != 0) {
@@ -624,6 +654,8 @@ int rrr_mqtt_client_new (
 	result->last_pingreq_time = rrr_time_get_64();
 	result->suback_unsuback_handler = suback_unsuback_handler;
 	result->suback_unsuback_handler_arg = suback_unsuback_handler_arg;
+	result->packet_parsed_handler = packet_parsed_handler;
+	result->packet_parsed_handler_arg = packet_parsed_handler_arg;
 
 	*client = result;
 
@@ -661,7 +693,8 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 			data->mqtt_data.sessions->methods->send_packet(
 					data->mqtt_data.sessions,
 					&connection->session,
-					(struct rrr_mqtt_p *) pingreq
+					(struct rrr_mqtt_p *) pingreq,
+					0
 			),
 			goto out,
 			" while sending PINGREQ in __rrr_mqtt_client_exceeded_keep_alive_callback"

@@ -2,7 +2,7 @@
 
 Command Line Parser
 
-Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@ typedef unsigned long int cmd_conf;
 #define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
 #define CMD_ARG_FLAG_NO_FLAG		(1<<2)
 #define CMD_ARG_FLAG_NO_FLAG_MULTI	(1<<4)
+#define CMD_ARG_FLAG_ALLOW_EMPTY	(1<<5)
 
 struct cmd_arg_value {
 	RRR_LL_NODE(struct cmd_arg_value);

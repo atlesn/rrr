@@ -100,7 +100,6 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 	return 0;
 }
 
-
 int __rrr_socket_holder_new (
 		struct rrr_socket_holder **holder,
 		const char *creator,
@@ -352,11 +351,12 @@ int rrr_socket_bind_and_listen (
 int rrr_socket_open (
 		const char *filename,
 		int flags,
+		int mode,
 		const char *creator
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
-	fd = open(filename, flags);
+	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
 		__rrr_socket_add_unlocked_basic(fd, creator);
@@ -364,6 +364,77 @@ int rrr_socket_open (
 
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
+}
+
+int rrr_socket_open_and_read_file (
+		char **result,
+		ssize_t *result_bytes,
+		const char *filename,
+		int options,
+		int mode
+) {
+	int ret = 0;
+
+	*result = NULL;
+	*result_bytes = 0;
+
+	char *contents_tmp = NULL;
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file");
+
+	if (fd <= 0) {
+		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	ssize_t bytes = ret = lseek(fd, 0, SEEK_END);
+	if (ret == 0) {
+		goto out;
+	}
+	else if (ret < 0) {
+		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (lseek(fd, 0, SEEK_SET) != 0) {
+		RRR_MSG_0("Could not seek to beginning of file '%s': %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if ((contents_tmp = malloc(bytes + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_full_file\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = read(fd, contents_tmp, bytes)) != bytes) {
+		RRR_MSG_0("Could not read all bytes from file '%s', return was %i: %s\n",
+				filename, ret, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	ret = 0;
+
+	// Make sure we allocate bytes + 1 above
+	contents_tmp[bytes] = '\0';
+
+	*result = contents_tmp;
+	*result_bytes = bytes;
+	contents_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(contents_tmp);
+	if (fd > 0) {
+		rrr_socket_close(fd);
+	}
+	return ret;
+
 }
 
 int rrr_socket (

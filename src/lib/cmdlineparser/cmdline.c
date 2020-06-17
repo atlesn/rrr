@@ -533,8 +533,10 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 				value = pos_equal + 1;
 			}
 			if (strlen(value) < 1) {
-				fprintf (stderr, "Error: Required argument missing or was empty for '%s'\n", rule->longname);
-				return 1;
+				if ((rule->flags & CMD_ARG_FLAG_ALLOW_EMPTY) == 0) {
+					fprintf (stderr, "Error: Required argument missing or was empty for '%s'\n", rule->longname);
+					return 1;
+				}
 			}
 		}
 		else if (pos_equal != NULL)  {
