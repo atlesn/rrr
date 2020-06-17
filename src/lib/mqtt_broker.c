@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_acl.h"
 #include "mqtt_subscription.h"
 #include "mqtt_topic.h"
+#include "passwd.h"
 #include "linked_list.h"
 #include "gnu.h"
 
@@ -396,6 +397,40 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	rrr_mqtt_conn_iterator_ctx_update_state (connection, packet, RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN);
 
+	if (connect->username != NULL && *(connect->username) != '\0') {
+		if (connect->password == NULL || *(connect->password) == '\0') {
+			RRR_DBG_1("Invalid CONNECT, username given but no password. The RRR MQTT broker requires passwords.\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR;
+			reason_v5 = RRR_MQTT_P_5_REASON_IMPL_SPECIFIC_ERROR;
+			goto out_send_connack;
+		}
+
+		if (data->password_file == NULL) {
+			RRR_DBG_1("Received CONNECT with username and password but no password file is defined in configuration.\n");
+			ret = RRR_MQTT_CONN_SOFT_ERROR;
+			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
+			goto out_send_connack;
+		}
+
+		if (rrr_passwd_authenticate (
+				data->password_file,
+				connect->username,
+				connect->password,
+				data->permission_name // May be NULL which means permissions are not checked
+		) != 0) {
+			RRR_DBG_1("Received CONNECT with username '%s' but authentication failed\n", connect->username);
+			ret = RRR_MQTT_CONN_SOFT_ERROR;
+			reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
+			goto out_send_connack;
+		}
+	}
+	else if (data->disallow_anonymous_logins != 0) {
+		RRR_DBG_1("Received CONNECT without username but anonymous login is disabled by configuration\n");
+		ret = RRR_MQTT_CONN_SOFT_ERROR;
+		reason_v5 = RRR_MQTT_P_5_REASON_NOT_AUTHORIZED;
+		goto out_send_connack;
+	}
+
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
 		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
 		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(
@@ -474,8 +509,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->client_count++);
 
-	RRR_DBG_1 ("CONNECT: Using client ID %s client count is %i\n",
-			connect->client_identifier, client_count + 1);
+	RRR_DBG_1 ("CONNECT: Using client ID '%s' username '%s' client count is %i\n",
+			connect->client_identifier, (connect->username != NULL ? connect->username : ""), client_count + 1);
 
 	if (session == NULL) {
 		if ((ret = mqtt_data->sessions->methods->get_session (
@@ -880,7 +915,6 @@ static int __rrr_mqtt_broker_acl_handler (
 		ret = RRR_MQTT_ACL_RESULT_ALLOW;
 	}
 
-	out:
 	return ret;
 }
 
@@ -900,7 +934,10 @@ int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
 		uint16_t max_keep_alive,
+		const char *password_file,
+		const char *permission_name,
 		const struct rrr_mqtt_acl *acl,
+		int disallow_anonymous_logins,
 		int disconnect_on_v31_publish_deny,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
@@ -950,7 +987,10 @@ int rrr_mqtt_broker_new (
 
 	res->max_clients = init_data->max_socket_connections - 10;
 	res->max_keep_alive = max_keep_alive;
+	res->disallow_anonymous_logins = disallow_anonymous_logins;
 	res->disconnect_on_v31_publish_deny = disconnect_on_v31_publish_deny;
+	res->password_file = password_file;
+	res->permission_name = permission_name;
 	res->acl = acl;
 
 	goto out_success;

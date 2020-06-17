@@ -221,6 +221,8 @@ int rrr_mqtt_client_connect (
 		uint8_t version,
 		uint16_t keep_alive,
 		uint8_t clean_start,
+		const char *username,
+		const char *password,
 		const struct rrr_mqtt_property_collection *connect_properties
 ) {
 	int ret = 0;
@@ -265,6 +267,21 @@ int rrr_mqtt_client_connect (
 	connect->connect_flags |= (clean_start != 0)<<1;
 	// Will QoS
 	// connect->connect_flags |= 2 << 3;
+
+	if (username != NULL) {
+		if ((connect->username = strdup(username)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_client_connect\n");
+			ret = 1;
+			goto out;
+		}
+	}
+	if (password != NULL) {
+		if ((connect->password = strdup(password)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for password in rrr_mqtt_client_connect\n");
+			ret = 1;
+			goto out;
+		}
+	}
 
 	if (rrr_mqtt_property_collection_add_from_collection(&connect->properties, connect_properties) != 0) {
 		RRR_MSG_0("Could not add properties to CONNECT packet in rrr_mqtt_client_connect\n");

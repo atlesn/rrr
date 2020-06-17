@@ -708,6 +708,18 @@ If a V3.1 or V3.1.1 client sends a PUBLISH which is rejected by ACL rules, the c
 if this option is set to yes. The default value is no, which means that the broker sends an acknowledgement packet
 regardless of whether the PUBLISH was rejected or not. For V5, an acknowledgement with an error code is always sent,
 disregarding this option.
+.It mqtt_broker_password_file=FILENAME
+Filename of an RRR password file created by
+.Xr rrr_passwd(1)
+with which users are authenticated. If left unspecified, all CONNECT packets containing a username will be rejected.
+RRR does not allow CONNECT packets only containing usernames, a password must always be set.
+.It mqtt_broker_permission_name=PERMISSION
+The permission name to which a user must have been registered with by using
+.It mqtt_broker_require_authentication={yes|no}
+Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
+.Xr rrr_passwd(1)
+to become authenticated with this broker. Defaults to
+.B mqtt. 
 .It mqtt_broker_acl_file=FILENAME
 ACL file to allow different users access to topics. If left unspecified, all access is granted. If a file is specified and a rule
 is not found upon a PUBLISH or SUBSCRIBE from a client, access will be denied.
@@ -785,6 +797,11 @@ Default action if connecting to the server failed. If set to
 all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
 .B retry,
 the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
+.It mqtt_username=USERNAME
+.It mqtt_password=PASSWORD
+Optional username and password to send in CONNECT packets. If a password is set, a username
+.B must
+also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
 .It mqtt_connect_attempts=NUMBER OF ATTEMPTS
 How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting

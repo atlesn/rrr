@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/evp.h>
@@ -34,6 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "passwd.h"
 #include "base64.h"
+#include "rrr_socket.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512
 #define RRR_PASSWD_HASH_KEY_LENGTH (RRR_PASSWD_HASH_MAX_LENGTH/2)
@@ -163,7 +165,7 @@ static int __rrr_passwd_check_base64 (
 		ret = 0; // Authenticated
 	}
 	else {
-		RRR_MSG_0("Authentiaction failed, password mismatch\n");
+		RRR_DBG_1("Authentication failed, password mismatch\n");
 	}
 
 	out:
@@ -236,7 +238,7 @@ static int __rrr_passwd_check_openssl (
 	size_t hash_raw_length = 0;
 
 	if ((hash_raw = rrr_base64_decode((unsigned char *) hash, strlen(hash), &hash_raw_length)) == NULL) {
-		RRR_MSG_0("Hash decoding failed in _rrr_passwd_check_openssl\n");
+		RRR_MSG_0("Hash decoding failed in __rrr_passwd_check_openssl\n");
 		goto out;
 	}
 
@@ -248,7 +250,7 @@ static int __rrr_passwd_check_openssl (
 		ret = 0; // Authenticated
 	}
 	else {
-		RRR_MSG_0("Authentiaction failed, password mismatch\n");
+		RRR_DBG_1("Authentication failed, password mismatch\n");
 	}
 
 	out:
@@ -463,7 +465,7 @@ static int __rrr_passwd_iterate_lines_split_columns_callback (
 
 	if (elements_count != 3) {
 		RRR_MSG_0("%u elements found in password file, 3 expected.\n", elements_count);
-		return 1;
+		return RRR_PASSWD_ITERATE_ERR;
 	}
 
 	callback_data->username = elements[0];
@@ -501,12 +503,12 @@ int rrr_passwd_iterate_lines (
 	rrr_parse_pos_init(&parse_pos, input_data, input_data_size);
 
 	struct rrr_passwd_iterate_lines_split_callback_data callback_data = {
-		NULL,
-		line_callback,
-		line_callback_arg,
-		NULL,
-		NULL,
-		NULL
+			NULL,
+			line_callback,
+			line_callback_arg,
+			NULL,
+			NULL,
+			NULL
 	};
 
 	while (!rrr_parse_check_eof(&parse_pos)) {
@@ -537,12 +539,176 @@ int rrr_passwd_iterate_lines (
 				__rrr_passwd_iterate_lines_split_columns_callback,
 				&callback_data
 		)) != 0) {
-			RRR_MSG_0("Password file processing failed at line %i\n", parse_pos.line);
+			if (ret != RRR_PASSWD_ITERATE_STOP) {
+				RRR_MSG_0("Password file processing failed at line %i\n", parse_pos.line);
+				ret = 1;
+			}
+			else {
+				ret = 0;
+			}
 			goto out;
 		}
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(line_tmp);
+	return ret;
+}
+
+struct rrr_passwd_authenticate_callback_data {
+		const char *username;
+		const char *password;
+		const char *permission;
+		int user_ok;
+		int pass_ok;
+		int permission_ok;
+};
+
+static int __rrr_passwd_authenticate_callback (
+		const char *line,
+		const char *username,
+		const char *hash_tmp,
+		const char *permissions[],
+		size_t permissions_count,
+		void *arg
+) {
+	struct rrr_passwd_authenticate_callback_data *callback_data = arg;
+
+	(void)(line);
+
+	int ret = RRR_PASSWD_ITERATE_OK;
+
+	// Make sure these are 0. Callers MUST use these to figure out whether an
+	// authentication request was successful or not.
+	callback_data->user_ok = 0;
+	callback_data->pass_ok = 0;
+	callback_data->permission_ok = 0;
+
+	if (strcmp(username, callback_data->username) != 0) {
+		// Check next user
+		ret = RRR_PASSWD_ITERATE_OK;
+		goto out;
+	}
+
+	callback_data->user_ok = 1;
+
+	if (rrr_passwd_check(hash_tmp, callback_data->password) != 0) {
+		// Password mismatch
+		ret = RRR_PASSWD_ITERATE_STOP;
+		goto out;
+	}
+
+	callback_data->pass_ok = 1;
+
+	if (callback_data->permission != NULL) {
+		int ret_tmp = 1;
+		for (size_t i = 0; i < permissions_count; i++) {
+			if (strcmp(permissions[i], callback_data->permission) == 0) {
+				ret_tmp = 0;
+				break;
+			}
+		}
+		if (ret_tmp == 0) {
+			callback_data->permission_ok = 1;
+		}
+	}
+
+	// We must return this to stop checking more users (the other users will fail)
+	ret = RRR_PASSWD_ITERATE_STOP;
+	goto out;
+
+	out:
+	return ret;
+}
+
+// TODO : Move to separate daemon
+
+int rrr_passwd_authenticate (
+		const char *filename,
+		const char *username,
+		const char *password,
+		const char *permission_name
+) {
+	int ret = 0;
+
+	ssize_t passwd_file_size = 0;
+	char *passwd_file_contents = NULL;
+
+	if (filename == NULL || *filename == '\0') {
+		RRR_BUG("BUG: No filename in rrr_passwd_authenticate\n");
+	}
+
+	if (username == NULL || *username == '\0' || password == NULL || *password == '\0') {
+		RRR_DBG_1("Username and/or password was not given in rrr_passwd_authenticate\n",
+				username);
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_socket_open_and_read_file(&passwd_file_contents, &passwd_file_size, filename, O_RDONLY, 0) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	struct rrr_passwd_authenticate_callback_data callback_data = {
+			username,
+			password,
+			permission_name,
+			0,
+			0,
+			0
+	};
+
+	if ((ret = rrr_passwd_iterate_lines (
+			passwd_file_contents,
+			passwd_file_size,
+			__rrr_passwd_authenticate_callback,
+			&callback_data
+	)) != 0) {
+		RRR_MSG_0("Error encountered while authenticating user '%s' in rrr_passwd_authenticate using file '%s'\n",
+				username, filename);
+		ret = 1;
+		goto out;
+	}
+
+	if (callback_data.user_ok != 1) {
+		RRR_DBG_1("User '%s' not found while authenticating\n",
+				username);
+		// Hash a password once to stop timing attacks probing for usernames
+		if (rrr_passwd_check (
+				"$1$nppTQ1zkV5w1Xdfv/C2LNgQATi9waSLB3kFmZUyRnLU=$1J8AidhY+frcJq/TF7y5wpk0PXzLaO/rq1vq87DZPfitUcUjVLrBrLbXqwvcU5rZCEYRa9ECP0fQJWHoKeOtUsvDN+H/5xQKbId9NOiYoWJuBLimgSqNVT2m7qDex5/h/qwgaVPHYNlWEiAR4AMTVnwZzKSQRkqmlsAxMliwM68KJk1HmNhTWKttg+JYWaIwt87XlV9aMfMZMWBeTomIQS5XSKpRyfZrZlmIHxKt7de0pMi0f613mzykb63m1m59/SCLR14WDR4YB2QqulT/WGFsL9NIfZdiuZNakuROm+WkRaURKE2DapXCXDky2PgB4l9h65Ku6ZIfQ1/o76JHaA==",
+				"rrr"
+		) != 0) {
+			RRR_MSG_0("Warning: Dummy password check failed in rrr_passwd_authenticate\n");
+		}
+		ret = 1;
+		goto out;
+	}
+	else if (callback_data.pass_ok != 1) {
+		RRR_DBG_1("Password mismatch for user '%s' while authenticating\n",
+				username);
+		ret = 1;
+		goto out;
+	}
+	else if (callback_data.permission_ok != 1) {
+		if (permission_name != NULL) {
+			RRR_DBG_1("Permission request for '%s' failed for user '%s' while authenticating\n",
+					permission_name, username);
+			ret = 1;
+			goto out;
+		}
+	}
+	else if (!(callback_data.user_ok && callback_data.pass_ok && callback_data.permission_ok)) {
+		RRR_MSG_0("Unknown authentication error in rrr_passwd_authenticate\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	// Don't let hashes hang around in memory
+	if (passwd_file_contents != NULL) {
+		memset(passwd_file_contents, '\0', passwd_file_size);
+	}
+	RRR_FREE_IF_NOT_NULL(passwd_file_contents);
 	return ret;
 }

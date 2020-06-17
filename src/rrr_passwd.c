@@ -328,7 +328,7 @@ static int __rrr_passwd_process_line_callback (
 
 	int fd = callback_data->output_fd;
 
-	int ret = 0;
+	int ret = RRR_PASSWD_ITERATE_OK;
 
 /*	printf ("%s - %lu - %s\n", username, permissions_count, password_hash);
 
@@ -339,18 +339,19 @@ static int __rrr_passwd_process_line_callback (
 	if (callback_data->username_to_find != NULL && strcmp(username, callback_data->username_to_find) == 0) {
 		if (data->do_create_user != 0) {
 			RRR_MSG_0("User '%s' already exists, cannot create user (-c flag was given)\n", username);
-			ret = 1;
+			ret = RRR_PASSWD_ITERATE_ERR;
 			goto out;
 		}
 		if (callback_data->username_was_found != 0) {
 			RRR_MSG_0("User '%s' was defined more than once in password file\n", username);
-			ret = 1;
+			ret = RRR_PASSWD_ITERATE_ERR;
 			goto out;
 		}
 		callback_data->username_was_found = 1;
 
 		if (data->do_remove_user != 0) {
 			// Simply don't write user to output file, also not \n
+			ret = 0;
 			goto out;
 		}
 
@@ -362,6 +363,7 @@ static int __rrr_passwd_process_line_callback (
 				permissions_count,
 				(data->password != NULL ? data->password : password_hash)
 		)) != 0) {
+			ret = RRR_PASSWD_ITERATE_ERR;
 			goto out;
 		}
 	}
@@ -372,6 +374,9 @@ static int __rrr_passwd_process_line_callback (
 	WRITE_AND_CHECK("\n", 1);
 
 	out:
+	if (ret != 0 && ret != RRR_PASSWD_ITERATE_ERR) {
+		ret = RRR_PASSWD_ITERATE_ERR;
+	}
 	return ret;
 }
 

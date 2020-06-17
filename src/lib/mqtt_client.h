@@ -82,6 +82,8 @@ int rrr_mqtt_client_connect (
 		uint8_t version,
 		uint16_t keep_alive,
 		uint8_t clean_start,
+		const char *username,
+		const char *password,
 		const struct rrr_mqtt_property_collection *connect_properties
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);

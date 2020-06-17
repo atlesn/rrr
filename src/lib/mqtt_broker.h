@@ -71,7 +71,11 @@ struct rrr_mqtt_broker_data {
 	int client_count;
 	struct rrr_mqtt_broker_stats stats;
 
+	int disallow_anonymous_logins;
 	int disconnect_on_v31_publish_deny;
+
+	const char *password_file;
+	const char *permission_name;
 	const struct rrr_mqtt_acl *acl;
 };
 
@@ -93,7 +97,10 @@ int rrr_mqtt_broker_new (
 		struct rrr_mqtt_broker_data **broker,
 		const struct rrr_mqtt_common_init_data *init_data,
 		uint16_t max_keep_alive,
+		const char *password_file,
+		const char *permission_name,
 		const struct rrr_mqtt_acl *acl,
+		int disallow_anonymous_logins,
 		int disconnect_on_v31_publish_deny,
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg

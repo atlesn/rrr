@@ -99,6 +99,8 @@ struct mqtt_client_data {
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
+	char *username;
+	char *password;
 };
 
 static void mqttclient_data_cleanup(void *arg) {
@@ -110,6 +112,8 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
+	RRR_FREE_IF_NOT_NULL(data->username);
+	RRR_FREE_IF_NOT_NULL(data->password);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
@@ -454,6 +458,15 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			ret = 1;
 			goto out;
 		}
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_username", username);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_password", password);
+
+	if (data->password != NULL && data->username == NULL) {
+		RRR_MSG_0("mqtt_password set without mqtt_username being so, this in an error.\n");
+		ret = 1;
+		goto out;
 	}
 
 	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
@@ -1375,6 +1388,8 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
 				clean_start,
+				data->username,
+				data->password,
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {

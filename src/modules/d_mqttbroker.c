@@ -59,15 +59,20 @@ struct mqtt_broker_data {
 	rrr_setting_uint max_keep_alive;
 	rrr_setting_uint retry_interval;
 	rrr_setting_uint close_wait_time;
+	char *password_file;
 	char *acl_file;
-	int disconnect_on_v31_publish_deny;
+	char *permission_name;
+	int do_require_authentication;
+	int do_disconnect_on_v31_publish_deny;
 	struct rrr_mqtt_acl acl;
 };
 
 static void mqttbroker_data_cleanup(void *arg) {
 	struct mqtt_broker_data *data = arg;
 	rrr_fifo_buffer_clear(&data->local_buffer);
+	RRR_FREE_IF_NOT_NULL(data->password_file);
 	RRR_FREE_IF_NOT_NULL(data->acl_file);
+	RRR_FREE_IF_NOT_NULL(data->permission_name);
 	rrr_mqtt_acl_entry_collection_clear(&data->acl);
 }
 
@@ -187,8 +192,31 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 	}
 	data->close_wait_time = close_wait_time;
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_password_file", password_file);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_permission_name", permission_name);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_acl_file", acl_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", disconnect_on_v31_publish_deny, 0);
+
+	if (data->permission_name == NULL || *(data->permission_name) == '\0') {
+		RRR_FREE_IF_NOT_NULL(data->permission_name);
+		if ((data->permission_name = strdup("mqtt")) == NULL) {
+			RRR_MSG_0("Could not allocate memory for permission name in mqttbroker_parse_config\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_require_authentication", do_require_authentication, 0);
+
+	if (!rrr_instance_config_setting_exists(config, "mqtt_broker_require_authentication")) {
+		if (data->password_file != NULL) {
+			data->do_require_authentication = 1;
+		}
+		else {
+			data->do_require_authentication = 0;
+		}
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -286,8 +314,11 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 			&data->mqtt_broker_data,
 			&init_data,
 			data->max_keep_alive,
+			data->password_file,
+			data->permission_name,
 			&data->acl,
-			data->disconnect_on_v31_publish_deny,
+			data->do_require_authentication,
+			data->do_disconnect_on_v31_publish_deny,
 			rrr_mqtt_session_collection_ram_new,
 			NULL
 	) != 0) {

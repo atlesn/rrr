@@ -58,6 +58,10 @@ int rrr_passwd_encrypt (
 		const char *password
 );
 
+#define RRR_PASSWD_ITERATE_OK	0
+#define RRR_PASSWD_ITERATE_ERR	1
+#define RRR_PASSWD_ITERATE_STOP	2
+
 int rrr_passwd_iterate_lines (
 		const char *input_data,
 		ssize_t input_data_size,
@@ -70,6 +74,12 @@ int rrr_passwd_iterate_lines (
 				void *arg
 		),
 		void *line_callback_arg
+);
+int rrr_passwd_authenticate (
+		const char *filename,
+		const char *username,
+		const char *password,
+		const char *permission_name
 );
 
 #endif /* RRR_PASSWD_H */
