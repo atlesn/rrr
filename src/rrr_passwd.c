@@ -42,17 +42,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_passwd");
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"file",					"{RRR PASSWORD FILE}"},
+		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"file",					"{PASSWORD_FILE}"},
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"username",				"{USERNAME}"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'c',	"create-user",			"[-c|--create-user]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'r',	"remove-user",			"[-r|--remove-user]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_SPLIT_COMMA,	'p',	"permissions",			"[-p|--permissions[=]permission1,permission2,...]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT |
-		 CMD_ARG_FLAG_ALLOW_EMPTY,	'P',	"password",				"[-P|--password[[=]PASSWORD]]"},
+		 CMD_ARG_FLAG_SPLIT_COMMA |
+		 CMD_ARG_FLAG_ALLOW_EMPTY,	'p',	"permissions",			"[-p|--permissions[=]permission1,permission2,...]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'a',	"append-permissions",	"[-a|--append-permissions]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT |
+		 CMD_ARG_FLAG_ALLOW_EMPTY,	'P',	"password",				"[-P|--password[=]PASSWORD]"},
+		{CMD_ARG_FLAG_NO_ARGUMENT,	's',	"stdout",				"[-s|--stdout]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
-		{CMD_ARG_FLAG_NO_ARGUMENT,	's',	"stdout",				"[-s|--stdout"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_NO_ARGUMENT,	'h',	"help",					"[-h|--help]"},
@@ -195,8 +196,16 @@ static int __rrr_passwd_parse_config (struct rrr_passwd_data *data, struct cmd_d
 	}
 
 	// Permissions
-	if (__rrr_passwd_add_permissions_from_cmd(data, cmd) != 0) {
+	if ((ret = __rrr_passwd_add_permissions_from_cmd(data, cmd)) != 0) {
 		goto out;
+	}
+
+	// Empty -p given, user might wants to remove all permissions. Insert dummy
+	// value.
+	if (cmd_exists(cmd, "permissions", 0) && RRR_LL_COUNT(&data->permissions) == 0) {
+		if ((ret = rrr_passwd_permission_new_and_append(&data->permissions, "")) != 0) {
+			goto out;
+		}
 	}
 
 	// Validate characters
@@ -540,11 +549,14 @@ int main (int argc, const char *argv[]) {
 	// Only ask for password if no other actions are specified and if password is not
 	// also not specified in -P. Also, do this prior to creating temporary file in
 	// case of ctrl+c
-	if (	data.do_append_permissions == 0 &&
-			data.do_remove_user == 0 &&
-			RRR_LL_COUNT(&data.permissions) == 0 &&
-			data.password == NULL
-	) {
+	if ((data.password == NULL) && (
+			(	data.do_append_permissions == 0 &&
+				data.do_remove_user == 0 &&
+				RRR_LL_COUNT(&data.permissions) == 0
+			) || (
+				data.do_create_user != 0
+			)
+	)) {
 		if (__rrr_passwd_read_password_stdin(&data.password) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -580,6 +592,10 @@ int main (int argc, const char *argv[]) {
 		}
 	}
 
+	if (data.password != NULL && *(data.password) == '\0') {
+		RRR_MSG_0("Warning: Setting empty password, user becomes disabled\n");
+	}
+
 	if (data.password != NULL && *(data.password) != '\0') {
 		char *hash_tmp = NULL;
 		if (rrr_passwd_encrypt (&hash_tmp, data.password) != 0) {
@@ -598,9 +614,6 @@ int main (int argc, const char *argv[]) {
 
 		RRR_FREE_IF_NOT_NULL(data.password);
 		data.password = hash_tmp;
-	}
-	else {
-		RRR_MSG_0("Warning: Setting empty password, user becomes disabled\n");
 	}
 
 	if (__rrr_passwd_process(&data, passwd_file_contents, passwd_file_size, fd_out) != 0) {

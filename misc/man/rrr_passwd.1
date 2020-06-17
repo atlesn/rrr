@@ -1,0 +1,81 @@
+.Dd 2020-06-17
+.TH RRR_PASSWD 1
+.SH NAME
+Read Route Record is a dynamic module-based message handling program
+for collecting, buffering, processing and storing messages and measurements.
+.PP
+.B rrr_passwd
+modifies RRR password files by setting permissions and user passwords.
+The password files are used by 
+.Xr rrr(1)
+modules to authenticate users.
+.SH SYNOPSIS
+.B rrr_passwd {PASSWORD_FILE} {USERNAME}
+.Dl [-c|--create-user]
+.Dl [-r|--remove-user]
+.Dl [-p|--permissions[=]permission1,permission2,...]
+.Dl [-a|--append-permissions]
+.Dl [-P|--password[=]PASSWORD]
+.Dl [-s|--stdout]
+.Dl [-l|--loglevel-translation]
+.Dl [-d|--debuglevel[=]DEBUG FLAGS]
+.Dl [-D|--debuglevel_on_exit[=]DEBUG FLAGS]
+.Dl [-h|--help]
+.Dl [-v|--version]
+
+.SH DESCRIPTION
+This program modifies the specified RRR password file according to given arguments.
+.SH OPTIONS
+.IP PASSWORD_FILE
+The password file to modify. The file will be created if it does not exist. Required parameter.
+.IP USERNAME
+The username to work with. Invalid characters for usernames are ':' (colon) and ',' (comma). Required parameter.
+.IP -c|--create-user
+Create a new user in the password file. An error will be produces if the username already exists. If not given, it is
+assumed that an existing user are to be modified.
+.IP -r|--remove-user
+Remove a user from the password file.
+.IP -p|--permissions[=]permission1,permission2,...
+A comma separated list of permissions to set for the username. RRR modules which support authentication will look these
+values up when authenticating users. If left unspecified, original values are kept (if any). Invalid characters for
+permissions are ':' (colon) and ',' (comma). Duplicate entries are removed.
+May be set to an empty string, e.g. "", to clear all permissions. 
+.IP -a|--append-permissions
+If this option is given, the list in
+.B -p
+is appended to existing permissions (if any). If not given, values in
+.B -p
+will replace all existing values. Duplicate entries are removed.
+.IP -P|--password[=]PASSWORD
+Password to set for the username.
+If not given, and if no other options are set, a password will be prompted for in the terminal.
+May be set to an empty string, e.g. "", to remove set an empty password for a user hence disabling it. 
+.IP -s|--stdout
+Don't modify the original file but print the final result to standard output.
+.IP -d|--debuglevel[=]FLAGS
+Debuglevel to use.
+.IP -D|--debuglevel_on_exit[=]FLAGS
+Debuglevel to use when program exits.
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
+
+.SH PASSWORD SECURITY
+If RRR is compiled without OpenSSL support, passwords will be stored in
+.B base64 encoded plain text.
+Otherwise, passwords will be stored using PKCS5_PBKDF2_HMAC with SHA-256 and 20,000 rounds.
+
+.SH RETURN VALUE
+.B rrr_passwd
+returns 0 on success and 1 on failure.
+
+.SH DEBUG FLAGS
+Refer to
+.Xr rrr(1)
+for possible debug flags.
+.B rrr_passwd
+does not produce any debug information at this time.
+
+.SH SEE ALSO
+.Xr rrr(1),
+.Xr rrr.conf(5)
