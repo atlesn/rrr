@@ -29,14 +29,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_util.h"
 #include "threads.h"
 
-#define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part)	\
-		const char *data_start =						\
-				part->data_ptr +						\
-				part->request_or_response_length +		\
-				part->header_length						\
-		;												\
-		const char *data_end =							\
-				data_start +							\
+#define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
+		const char *data_start =								\
+				data_ptr +										\
+				part->request_or_response_length +				\
+				part->header_length								\
+		;														\
+		const char *data_end =									\
+				data_start +									\
 				part->data_length
 
 static int __rrr_http_part_check_content_type (
@@ -332,7 +332,7 @@ void rrr_http_part_destroy_void (void *part) {
 
 void rrr_http_part_destroy_void_double_ptr (void *arg) {
 	struct rrr_thread_double_pointer *ptr = arg;
-	printf ("Free double ptr: %p\n", *(ptr->ptr));
+//	printf ("Free double ptr: %p\n", *(ptr->ptr));
 	if (*(ptr->ptr) != NULL) {
 		rrr_http_part_destroy(*(ptr->ptr));
 	}
@@ -1086,12 +1086,13 @@ static int __rrr_http_part_parse_chunk (
 
 int rrr_http_part_iterate_chunks (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part);
+	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_dump_header(part);
@@ -1105,9 +1106,8 @@ int rrr_http_part_iterate_chunks (
 	int i = 0;
 	int chunks_total = RRR_LL_COUNT(&part->chunks);
 
-	const char *buf = part->data_ptr;
 	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
-		const char *data_start = buf + node->start;
+		const char *data_start = data_ptr + node->start;
 
 		if (data_start + node->length > data_end) {
 			RRR_BUG("Chunk end overrun in __rrr_http_session_receive_callback\n");
@@ -1129,7 +1129,7 @@ int rrr_http_part_parse (
 		struct rrr_http_part *result,
 		ssize_t *target_size,
 		ssize_t *parsed_bytes,
-		const char *buf,
+		const char *data_ptr,
 		ssize_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
@@ -1145,8 +1145,6 @@ int rrr_http_part_parse (
 	ssize_t parsed_bytes_tmp = 0;
 	ssize_t parsed_bytes_total = 0;
 
-	result->data_ptr = buf;
-
 	if (result->is_chunked == 1) {
 		goto parse_chunked;
 	}
@@ -1156,7 +1154,7 @@ int rrr_http_part_parse (
 			ret = __rrr_http_parse_request (
 					result,
 					&parsed_bytes_tmp,
-					buf,
+					data_ptr,
 					start_pos + parsed_bytes_total,
 					end
 			);
@@ -1165,7 +1163,7 @@ int rrr_http_part_parse (
 			ret = __rrr_http_parse_response_code (
 					result,
 					&parsed_bytes_tmp,
-					buf,
+					data_ptr,
 					start_pos + parsed_bytes_total,
 					end
 			);
@@ -1193,7 +1191,7 @@ int rrr_http_part_parse (
 		ret = __rrr_http_part_parse_header_fields (
 				&result->headers,
 				&parsed_bytes_tmp,
-				buf,
+				data_ptr,
 				start_pos + parsed_bytes_total,
 				end
 		);
@@ -1302,7 +1300,7 @@ int rrr_http_part_parse (
 	ret = __rrr_http_part_parse_chunk (
 			&result->chunks,
 			&parsed_bytes_tmp,
-			buf,
+			data_ptr,
 			start_pos + parsed_bytes_total,
 			end
 	);
@@ -1357,6 +1355,7 @@ static int __rrr_http_part_find_boundary (
 
 static int __rrr_http_part_process_multipart_part (
 		struct rrr_http_part *parent,
+		const char *data_ptr,
 		ssize_t *parsed_bytes,
 		int *end_found,
 		const char *start_orig,
@@ -1449,8 +1448,8 @@ static int __rrr_http_part_process_multipart_part (
 			new_part,
 			&target_size,
 			&parsed_bytes_tmp,
-			start,
-			0,
+			data_ptr,
+			(start - data_ptr),
 			boundary_pos,
 			RRR_HTTP_PARSE_MULTIPART
 	)) != 0) {
@@ -1478,7 +1477,7 @@ static int __rrr_http_part_process_multipart_part (
 		rrr_http_part_dump_header(new_part);
 	}
 
-	if ((ret = rrr_http_part_process_multipart(new_part)) != 0) {
+	if ((ret = rrr_http_part_process_multipart(new_part, data_ptr)) != 0) {
 		RRR_MSG_0("Error while processing sub-multipart in HTTP multipart request\n");
 		goto out;
 	}
@@ -1494,7 +1493,8 @@ static int __rrr_http_part_process_multipart_part (
 }
 
 int rrr_http_part_process_multipart (
-		struct rrr_http_part *part
+		struct rrr_http_part *part,
+		const char *data_ptr
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
 
@@ -1515,7 +1515,7 @@ int rrr_http_part_process_multipart (
 		goto out;
 	}
 
-	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part);
+	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
 
 	const char *boundary_str = boundary->value;
 
@@ -1534,6 +1534,7 @@ int rrr_http_part_process_multipart (
 
 		if ((ret = __rrr_http_part_process_multipart_part (
 				part,
+				data_ptr,
 				&parsed_bytes_tmp,
 				&end_found,
 				data_start,
@@ -1712,14 +1713,15 @@ static int __rrr_http_part_parse_query_string (
 }
 
 int rrr_http_part_extract_post_and_query_fields (
-		struct rrr_http_part *target
+		struct rrr_http_part *target,
+		const char *data_ptr
 ) {
 	int ret = 0;
 
 	struct rrr_http_field *field_tmp = NULL;
 
 	if (__rrr_http_part_check_content_type(target, "application/x-www-form-urlencoded")) {
-		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target);
+		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
 
 		if ((ret = __rrr_http_part_parse_query_string (&target->fields, data_start, data_end)) != 0) {
 			RRR_MSG_0("Error while parsing query string in rrr_http_part_extract_post_and_query_fields\n");
@@ -1728,7 +1730,7 @@ int rrr_http_part_extract_post_and_query_fields (
 	}
 	else if (__rrr_http_part_check_content_type(target, "multipart/form-data")) {
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_http_part);
-			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node);
+			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node, data_ptr);
 
 			const struct rrr_http_field *field_name = __rrr_http_part_get_header_field_subvalue(node, "content-disposition", "name");
 			if (field_name == NULL || field_name->value == NULL || *(field_name)->value == '\0') {

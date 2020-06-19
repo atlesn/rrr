@@ -480,7 +480,7 @@ int rrr_http_session_transport_ctx_send_request (
 struct rrr_http_session_receive_data {
 	struct rrr_http_session *session;
 	ssize_t parse_complete_pos;
-	int (*callback)(struct rrr_http_part *part, void *arg);
+	int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg);
 	void *callback_arg;
 };
 
@@ -500,7 +500,7 @@ static int __rrr_http_session_receive_response_callback (
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
 			part->data_length,  part->request_or_response_length, part->header_length);
 
-	return receive_data->callback(part, receive_data->callback_arg);
+	return receive_data->callback(part, read_session->rx_buf_ptr, receive_data->callback_arg);
 }
 
 static int __rrr_http_session_receive_request_callback (
@@ -523,11 +523,11 @@ static int __rrr_http_session_receive_request_callback (
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
 			part->data_length,  part->request_or_response_length, part->header_length);
 
-	if ((ret = rrr_http_part_process_multipart(part)) != 0) {
+	if ((ret = rrr_http_part_process_multipart(part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_extract_post_and_query_fields(part)) != 0) {
+	if ((ret = rrr_http_part_extract_post_and_query_fields(part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
 	}
 
@@ -535,7 +535,7 @@ static int __rrr_http_session_receive_request_callback (
 		rrr_http_field_collection_dump (&part->fields);
 	}
 
-	ret = receive_data->callback(part, receive_data->callback_arg);
+	ret = receive_data->callback(part, read_session->rx_buf_ptr, receive_data->callback_arg);
 
 	out:
 	return ret;
@@ -599,7 +599,7 @@ static int __rrr_http_session_receive_get_target_size (
 
 int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
-		int (*callback)(struct rrr_http_part *part, void *arg),
+		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
 		void *callback_arg
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
