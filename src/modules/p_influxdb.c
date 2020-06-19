@@ -337,8 +337,11 @@ struct send_data_callback_data {
 	int ret;
 };
 
-static void __send_data_callback (struct rrr_net_transport_handle *handle, void *arg) {
+static void __send_data_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
 	struct send_data_callback_data *callback_data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
 
 	struct influxdb_data *data = callback_data->data;
 	struct rrr_array *array = callback_data->array;

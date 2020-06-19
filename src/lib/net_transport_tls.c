@@ -208,12 +208,18 @@ static int __rrr_net_transport_tls_new_ctx (
 
 static int __rrr_net_transport_tls_connect (
 		struct rrr_net_transport_handle **handle,
+		struct sockaddr *addr,
+		socklen_t *socklen,
 		struct rrr_net_transport *transport,
 		unsigned int port,
 		const char *host
 ) {
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 	struct rrr_ip_accept_data *accept_data = NULL;
+
+	if (*socklen < sizeof(accept_data->addr)) {
+		RRR_BUG("BUG: socklen too small in __rrr_net_transport_tls_connect\n");
+	}
 
 	*handle = NULL;
 
@@ -323,6 +329,9 @@ static int __rrr_net_transport_tls_connect (
 	}
 
 	// TODO : Hostname verification
+
+	memcpy(addr, &accept_data->addr, accept_data->len);
+	*socklen = accept_data->len;
 
 	// Return locked handle
 	*handle = new_handle;
@@ -596,6 +605,7 @@ static int __rrr_net_transport_tls_read_message (
 	int read_attempts,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
+	int read_flags,
 	int (*get_target_size)(struct rrr_read_session *read_callback_data, void *arg),
 	void *get_target_size_arg,
 	int (*complete_callback)(struct rrr_read_session *read_callback_data, void *arg),
@@ -631,11 +641,11 @@ static int __rrr_net_transport_tls_read_message (
 		complete_callback_arg
 	};
 
-	while (--read_attempts > 0) {
+	while (--read_attempts >= 0) {
 		ret = rrr_read_message_using_callbacks (
 				read_step_initial,
 				read_step_max_size,
-				0,
+				read_flags,
 				__rrr_net_transport_tls_read_get_target_size,
 				__rrr_net_transport_tls_read_complete_callback,
 				__rrr_net_transport_tls_read_poll,

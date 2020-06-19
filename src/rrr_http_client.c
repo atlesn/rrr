@@ -350,8 +350,11 @@ static int __rrr_http_client_receive_callback_intermediate (
 #define RRR_HTTP_CLIENT_TRANSPORT_HTTP 1
 #define RRR_HTTP_CLIENT_TRANSPORT_HTTPS 2
 
-static void __rrr_http_client_send_request_callback (struct rrr_net_transport_handle *handle, void *arg) {
+static void __rrr_http_client_send_request_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
 	struct rrr_http_client_data *data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
 
 	int ret = 0;
 

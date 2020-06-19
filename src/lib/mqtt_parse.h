@@ -39,22 +39,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PARSE_STATUS_ERR						(1<<15)
 
 #define RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) != 0)
 
 #define RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_IS_MOVE_PAYLOAD_TO_PACKET(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET) != 0)
 
 #define RRR_MQTT_PARSE_IS_COMPLETE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_COMPLETE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_COMPLETE) != 0)
 
 #define RRR_MQTT_PARSE_IS_ERR(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_ERR) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_ERR) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_SET(s,f) \
 	((s)->status |= (f))
@@ -116,7 +116,7 @@ void rrr_mqtt_parse_session_update (
 int rrr_mqtt_packet_parse (
 		struct rrr_mqtt_parse_session *session
 );
-int rrr_mqtt_packet_parse_finalize (
+void rrr_mqtt_packet_parse_session_extract_packet (
 		struct rrr_mqtt_p **packet,
 		struct rrr_mqtt_parse_session *session
 );

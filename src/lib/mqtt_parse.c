@@ -1292,8 +1292,8 @@ int rrr_mqtt_packet_parse (
 		session->type_flags = RRR_MQTT_PARSE_GET_TYPE_FLAGS(header);
 		session->type_properties = properties;
 
-		RRR_DBG_3 ("parsed a packet fixed header of type %s\n",
-				properties->name);
+		RRR_DBG_3 ("parsed a packet fixed header of type %s total bytes received %li/%li\n",
+				properties->name, session->buf_size, session->target_size);
 
 		RRR_MQTT_PARSE_STATUS_SET(session,RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE);
 	}
@@ -1308,6 +1308,8 @@ int rrr_mqtt_packet_parse (
 		}
 	}
 
+//	printf ("calling parse for type %s total bytes received %li/%li\n",
+//			session->type_properties->name, session->buf_size, session->target_size);
 	if ((ret = session->type_properties->parse(session)) != RRR_MQTT_PARSE_OK) {
 		if (ret == RRR_MQTT_PARSE_INCOMPLETE) {
 			/* Not enough bytes were read or CONNECT is not yet handled (protocol version not set) */
@@ -1324,6 +1326,7 @@ int rrr_mqtt_packet_parse (
 
 	/* Type parser might haver set error flag */
 	if (RRR_MQTT_PARSE_IS_ERR(session)) {
+		ret = RRR_MQTT_PARSE_PARAMETER_ERROR;
 		goto out;
 	}
 
@@ -1339,19 +1342,15 @@ int rrr_mqtt_packet_parse (
 	return ret;
 }
 
-int rrr_mqtt_packet_parse_finalize (
+void rrr_mqtt_packet_parse_session_extract_packet (
 		struct rrr_mqtt_p **packet,
 		struct rrr_mqtt_parse_session *session
 ) {
-	int ret = 0;
-
 	if (session->packet == NULL || !RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(session)) {
-		RRR_BUG("Invalid preconditions for rrr_mqtt_packet_parse_finalize\n");
+		RRR_BUG("Invalid preconditions for rrr_mqtt_packet_parse_extract_packet\n");
 	}
 
 	session->packet->type_flags = session->type_flags;
 	*packet = session->packet;
 	session->packet = NULL;
-
-	return ret;
 }

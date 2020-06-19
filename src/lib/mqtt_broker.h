@@ -38,16 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 10
 
 struct rrr_mqtt_acl;
-
-struct rrr_mqtt_listen_fd {
-	RRR_LL_NODE(struct rrr_mqtt_listen_fd);
-	struct rrr_ip_data ip;
-};
-
-struct rrr_mqtt_listen_fd_collection {
-	RRR_LL_HEAD(struct rrr_mqtt_listen_fd);
-	pthread_mutex_t lock;
-};
+struct rrr_net_transport;
 
 struct rrr_mqtt_broker_stats {
 	uint64_t connections_active;
@@ -60,8 +51,6 @@ struct rrr_mqtt_broker_stats {
 struct rrr_mqtt_broker_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
-
-	struct rrr_mqtt_listen_fd_collection listen_fds;
 
 	int max_clients;
 	uint16_t max_keep_alive;
@@ -84,7 +73,10 @@ struct rrr_mqtt_broker_data {
 	action;														\
 	pthread_mutex_unlock(&data->client_serial_stats_lock)
 
-int rrr_mqtt_broker_accept_connections (struct rrr_mqtt_broker_data *data);
+int rrr_mqtt_broker_accept_connections (
+		struct rrr_mqtt_broker_data *data,
+		int listen_handle
+);
 void rrr_mqtt_broker_destroy (struct rrr_mqtt_broker_data *broker);
 static inline void rrr_mqtt_broker_destroy_void (void *broker) {
 	rrr_mqtt_broker_destroy (broker);
@@ -105,14 +97,24 @@ int rrr_mqtt_broker_new (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 );
-int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
+int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
+		int *listen_handle,
+		struct rrr_mqtt_broker_data *broker,
+		int port,
+		const char *certificate_file,
+		const char *key_file
+);
+int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
+		int *listen_handle,
 		struct rrr_mqtt_broker_data *broker,
 		int port
 );
-void rrr_mqtt_broker_stop_listening (struct rrr_mqtt_broker_data *broker);
 
 /* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
-int rrr_mqtt_broker_synchronized_tick (struct rrr_mqtt_broker_data *data);
+int rrr_mqtt_broker_synchronized_tick (
+		struct rrr_mqtt_broker_data *data,
+		int listen_handle
+);
 
 void rrr_mqtt_broker_get_stats (
 		struct rrr_mqtt_broker_stats *target,

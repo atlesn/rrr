@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_READ_OK				0
 #define RRR_READ_HARD_ERROR		1
 #define RRR_READ_SOFT_ERROR		2
-#define RRR_READ_INCOMPLETE		3
-#define RRR_READ_EOF			4
+#define RRR_READ_INCOMPLETE		4
+#define RRR_READ_EOF			8
 
 #define RRR_READ_COMPLETE_METHOD_TARGET_LENGTH			0
 #define RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ		11

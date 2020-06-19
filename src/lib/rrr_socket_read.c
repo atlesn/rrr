@@ -66,7 +66,9 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
-	RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	if (items > 0) {
+		RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	}
 	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;

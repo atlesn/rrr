@@ -788,7 +788,7 @@ other modules can read messages the client receives on subscribed topics.
 .It mqtt_server=HOST
 Host name or IP of the broker to connect to. Defaults to localhost.
 .It mqtt_server_port=PORT
-TCP port on the server, defaults to 1883.
+TCP port on the server for TLS connections, defaults to 1883 for plain transport and 8883 for TLS connection.
 .It mqtt_client_identifier=IDENTIFIER
 Client identifier to use. If left unspecified, broker pics one.
 .It mqtt_connect_error_action={restart|retry}
@@ -800,6 +800,12 @@ the client will keep trying to connect without any restart (messages will not be
 .It mqtt_username=USERNAME
 .It mqtt_password=PASSWORD
 Optional username and password to send in CONNECT packets. If a password is set, a username
+.It mqtt_certificate_file=FILENAME
+The certificate to use for TLS connections. Optional.
+.It mqtt_key_file=FILENAME
+The private key to use for TLS connections. Optional.
+.It mqtt_transport_type={plain|tls}
+The transport type to use when connecting to the server. Defaults to 'plain'.
 .B must
 also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
 .It mqtt_connect_attempts=NUMBER OF ATTEMPTS

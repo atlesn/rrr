@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 
 struct rrr_net_transport_tls {
-	RRR_NET_TRANSPORT_HEAD;
+	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_tls);
 
 	const SSL_METHOD *ssl_client_method;
 	const SSL_METHOD *ssl_server_method;

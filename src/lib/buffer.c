@@ -1216,8 +1216,10 @@ int rrr_fifo_buffer_write (
 		__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
 
-	RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
-			buffer, entry_count_before, entry_count_after);
+	if (entry_count_before != 0 || entry_count_after != 0) {
+		RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
+				buffer, entry_count_before, entry_count_after);
+	}
 
 //	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 

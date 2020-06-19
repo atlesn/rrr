@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 
 struct rrr_mqtt_session_collection;
+struct rrr_mqtt_p_suback_unsuback;
 
 struct rrr_mqtt_client_stats {
 	struct rrr_mqtt_session_collection_stats session_stats;
@@ -57,25 +58,26 @@ int rrr_mqtt_client_connection_check_alive (
 		int *alive,
 		int *send_allowed,
 		struct rrr_mqtt_client_data *data,
-		struct rrr_mqtt_conn *connection
+		int transport_handle
 );
 int rrr_mqtt_client_publish (
 		struct rrr_mqtt_client_data *data,
-		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_session **session,
 		struct rrr_mqtt_p_publish *publish
 );
 int rrr_mqtt_client_subscribe (
 		struct rrr_mqtt_client_data *data,
-		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_session **session,
 		const struct rrr_mqtt_subscription_collection *subscriptions
 );
 int rrr_mqtt_client_unsubscribe (
 		struct rrr_mqtt_client_data *data,
-		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_session **session,
 		const struct rrr_mqtt_subscription_collection *subscriptions
 );
 int rrr_mqtt_client_connect (
-		struct rrr_mqtt_conn **connection,
+		int *transport_handle,
+		struct rrr_mqtt_session **session,
 		struct rrr_mqtt_client_data *data,
 		const char *server,
 		uint16_t port,
@@ -85,6 +87,14 @@ int rrr_mqtt_client_connect (
 		const char *username,
 		const char *password,
 		const struct rrr_mqtt_property_collection *connect_properties
+);
+int rrr_mqtt_client_start_plain (
+		struct rrr_mqtt_client_data *data
+);
+int rrr_mqtt_client_start_tls (
+		struct rrr_mqtt_client_data *data,
+		const char *certificate_file,
+		const char *key_file
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
 static inline void rrr_mqtt_client_destroy_void (void *client) {

@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -47,7 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats_instance.h"
 #include "../lib/log.h"
 
-#define RRR_MQTT_DEFAULT_SERVER_PORT 1883
+#define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
+#define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
 #define RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE 30
 #define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
 
@@ -55,13 +57,19 @@ struct mqtt_broker_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_fifo_buffer local_buffer;
 	struct rrr_mqtt_broker_data *mqtt_broker_data;
-	rrr_setting_uint server_port;
+	rrr_setting_uint server_port_plain;
+	rrr_setting_uint server_port_tls;
 	rrr_setting_uint max_keep_alive;
 	rrr_setting_uint retry_interval;
 	rrr_setting_uint close_wait_time;
 	char *password_file;
 	char *acl_file;
 	char *permission_name;
+	char *tls_certificate_file;
+	char *tls_key_file;
+	char *transport_type;
+	int do_transport_plain;
+	int do_transport_tls;
 	int do_require_authentication;
 	int do_disconnect_on_v31_publish_deny;
 	struct rrr_mqtt_acl acl;
@@ -73,6 +81,9 @@ static void mqttbroker_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password_file);
 	RRR_FREE_IF_NOT_NULL(data->acl_file);
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
+	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
+	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_mqtt_acl_entry_collection_clear(&data->acl);
 }
 
@@ -104,93 +115,44 @@ static int mqttbroker_data_init (
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	rrr_setting_uint mqtt_port = 0;
-	rrr_setting_uint max_keep_alive = 0;
-	rrr_setting_uint retry_interval = 0;
-	rrr_setting_uint close_wait_time = 0;
+	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
+	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_broker_port")) == 0) {
-		// OK
-	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_broker_port setting of instance %s\n", config->name);
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
+	if (data->max_keep_alive > 0xffff) {
+		RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
 		ret = 1;
 		goto out;
 	}
-	else {
-		mqtt_port = RRR_MQTT_DEFAULT_SERVER_PORT;
-		ret = 0;
-	}
-	data->server_port = mqtt_port;
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&max_keep_alive, config, "mqtt_broker_max_keep_alive")) == 0) {
-		if (max_keep_alive > 0xffff) {
-			RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (max_keep_alive < 1) {
-			RRR_MSG_0("mqtt_broker_max_keep_alive was too small for instance %s, min is 1\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_broker_max_keep_alive setting of instance %s\n", config->name);
+	if (data->max_keep_alive < 1) {
+		RRR_MSG_0("mqtt_broker_max_keep_alive was too small for instance %s, min is 1\n", config->name);
 		ret = 1;
 		goto out;
 	}
-	else {
-		max_keep_alive = RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE;
-		ret = 0;
-	}
-	data->max_keep_alive = max_keep_alive;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&retry_interval, config, "mqtt_broker_retry_interval")) == 0) {
-		if (retry_interval > 0xffff) {
-			RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (retry_interval < 1) {
-			RRR_MSG_0("mqtt_broker_retry_interval was too small for instance %s, min is 1\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_broker_retry_interval setting of instance %s\n", config->name);
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_retry_interval", retry_interval, 1);
+	if (data->retry_interval > 0xffff) {
+		RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name);
 		ret = 1;
 		goto out;
 	}
-	else {
-		retry_interval = 1;
-		ret = 0;
-	}
-	data->retry_interval = retry_interval;
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&close_wait_time, config, "mqtt_broker_close_wait_time")) == 0) {
-		if (close_wait_time > 0xffff) {
-			RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		if (close_wait_time < 1) {
-			RRR_MSG_0("mqtt_broker_close_wait_time was too small for instance %s, min is 1\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_broker_close_wait_time setting of instance %s\n", config->name);
+	if (data->retry_interval < 1) {
+		RRR_MSG_0("mqtt_broker_retry_interval was too small for instance %s, min is 1\n", config->name);
 		ret = 1;
 		goto out;
 	}
-	else {
-		close_wait_time = 1;
-		ret = 0;
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_close_wait_time", close_wait_time, 1);
+	if (data->close_wait_time > 0xffff) {
+		RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name);
+		ret = 1;
+		goto out;
 	}
-	data->close_wait_time = close_wait_time;
+	if (data->close_wait_time < 1) {
+		RRR_MSG_0("mqtt_broker_close_wait_time was too small for instance %s, min is 1\n", config->name);
+		ret = 1;
+		goto out;
+	}
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_password_file", password_file);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_permission_name", permission_name);
@@ -217,6 +179,50 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 	}
 
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_certificate_file", tls_certificate_file);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_key_file", tls_key_file);
+
+	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
+			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
+	) {
+		RRR_MSG_0("Only one of mqtt_broker_certificate_file and mqtt_broker_key_file was specified, either both or none are required in mqttbroker instance %s",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
+
+	if (data->transport_type != NULL) {
+		if (strcasecmp(data->transport_type, "plain")) {
+			data->do_transport_plain = 1;
+		}
+		else if (strcasecmp(data->transport_type, "tls")) {
+			data->do_transport_tls = 1;
+		}
+		else if (strcasecmp(data->transport_type, "both")) {
+			data->do_transport_tls = 1;
+			data->do_transport_plain = 1;
+		}
+		else {
+			RRR_MSG_0("Unknown value '%s' for mqtt_broker_transport_type in mqtt broker instance %s\n",
+					data->transport_type, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		data->do_transport_plain = 1;
+	}
+
+	// Note : It's allowed not to specify a certificate
+	if (data->tls_certificate_file != NULL && data->do_transport_tls == 0) {
+		RRR_MSG_0("TLS certificate specified in mqtt_broker_certificate_file but mqtt_transport_type was not 'both' or 'tls' for mqtt broker instance %s\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
 
 	/* On error, memory is freed by data_cleanup */
 
@@ -331,10 +337,32 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt broker started thread %p\n", thread_data);
 
-	if (rrr_mqtt_broker_listen_ipv4_and_ipv6(data->mqtt_broker_data, data->server_port) != 0) {
-		RRR_MSG_0("Could not start network in mqtt broker instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_destroy_broker;
+	int listen_handle_plain = 0;
+	int listen_handle_tls = 0;
+
+	if (data->do_transport_plain) {
+		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
+				&listen_handle_plain,
+				data->mqtt_broker_data,
+				data->server_port_plain
+		) != 0) {
+			RRR_MSG_0("Could not start plain network transport in mqtt broker instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out_destroy_broker;
+		}
+	}
+	if (data->do_transport_tls) {
+		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
+				&listen_handle_tls,
+				data->mqtt_broker_data,
+				data->server_port_tls,
+				data->tls_certificate_file,
+				data->tls_key_file
+		) != 0) {
+			RRR_MSG_0("Could not start tls network transport in mqtt broker instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			goto out_destroy_broker;
+		}
 	}
 
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
@@ -344,9 +372,17 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data) != 0) {
-			RRR_MSG_ERR("Error from MQTT broker while running tasks\n");
-			break;
+		if (listen_handle_plain) {
+			if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data, listen_handle_plain) != 0) {
+				RRR_MSG_ERR("Error from MQTT broker while running plain transport tasks\n");
+				break;
+			}
+		}
+		if (listen_handle_tls) {
+			if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data, listen_handle_tls) != 0) {
+				RRR_MSG_ERR("Error from MQTT broker while running TLS transport tasks\n");
+				break;
+			}
 		}
 
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {

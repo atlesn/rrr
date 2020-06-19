@@ -52,6 +52,8 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 
 static int __rrr_net_transport_plain_connect (
 		struct rrr_net_transport_handle **handle,
+		struct sockaddr *addr,
+		socklen_t *socklen,
 		struct rrr_net_transport *transport,
 		unsigned int port,
 		const char *host
@@ -63,6 +65,10 @@ static int __rrr_net_transport_plain_connect (
 	int ret = 0;
 
 	struct rrr_ip_accept_data *accept_data = NULL;
+
+	if (*socklen < sizeof(accept_data->addr)) {
+		RRR_BUG("BUG: socklen too small in __rrr_net_transport_plain_connect\n");
+	}
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_MSG_0("Could not connect to server '%s' port '%u'\n", host, port);
@@ -82,6 +88,9 @@ static int __rrr_net_transport_plain_connect (
 		ret = 1;
 		goto out_disconnect;
 	}
+
+	memcpy(addr, &accept_data->addr, accept_data->len);
+	*socklen = accept_data->len;
 
 	// Return locked handle
 	*handle = new_handle;
@@ -119,6 +128,7 @@ static int __rrr_net_transport_plain_read_message (
 	int read_attempts,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
+	int read_flags,
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 	void *get_target_size_arg,
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
@@ -134,13 +144,13 @@ static int __rrr_net_transport_plain_read_message (
 			complete_callback_arg,
 	};
 
-	while (--read_attempts > 0) {
+	while (--read_attempts >= 0) {
 		ret = rrr_socket_read_message_default (
 				&handle->read_sessions,
 				handle->submodule_private_fd,
 				read_step_initial,
 				read_step_max_size,
-				0,
+				read_flags,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,

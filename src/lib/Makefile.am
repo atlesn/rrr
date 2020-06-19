@@ -30,7 +30,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
-					mqtt_topic.c mqtt_id_pool.c mqtt_client.c mqtt_acl.c\
+					mqtt_topic.c mqtt_id_pool.c mqtt_client.c mqtt_acl.c mqtt_transport.c \
 					message_broker.c \
 					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
