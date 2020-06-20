@@ -66,10 +66,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			return RRR_MQTT_OK;															\
 		}} while (0)
 
-#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK										\
-		struct rrr_mqtt_conn *connection = handle->application_private_ptr;				\
-		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {	\
-			return RRR_MQTT_SOFT_ERROR;													\
+#define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
+		struct rrr_mqtt_conn *connection = handle->application_private_ptr;															\
+		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
+			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)
 
 struct rrr_mqtt_data;

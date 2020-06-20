@@ -697,6 +697,16 @@ An MQTT broker supporting V3.1(.1) and V5 (lacking some functionality).
 .Bl -tag -width -indent
 .It mqtt_broker_port=PORT
 TCP port to listen on (listens on all interfaces). Defaults to 1883.
+.It mqtt_broker_port_tls=PORT
+TCP port to listen on for TLS connections (listens on all interfaces). Defaults to 8883.
+.It mqtt_broker_transport_type={plain|tls|both}
+The transport type to use when listening. Defaults to 'plain'.
+.It mqtt_broker_certificate_file=FILENAME
+The certificate to use for TLS connections. Optional.
+.It mqtt_broker_key_file=FILENAME
+The private key to use for TLS connections. Optional.
+.It mqtt_broker_ca_path=PATH[:OTHER_PATH...]
+An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
 .It mqtt_broker_max_keep_alive=SECONDS
 Maximum keep-alive value for clients, defaults to 30.
 .It mqtt_broker_retry_interval=SECONDS
@@ -804,6 +814,8 @@ Optional username and password to send in CONNECT packets. If a password is set,
 The certificate to use for TLS connections. Optional.
 .It mqtt_key_file=FILENAME
 The private key to use for TLS connections. Optional.
+.It mqtt_ca_path=PATH[:OTHER_PATH...]
+An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
 .It mqtt_transport_type={plain|tls}
 The transport type to use when connecting to the server. Defaults to 'plain'.
 .B must

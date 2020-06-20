@@ -266,7 +266,8 @@ int rrr_net_transport_new (
 		enum rrr_net_transport_type transport,
 		int flags,
 		const char *certificate_file,
-		const char *private_key_file
+		const char *private_key_file,
+		const char *ca_path
 ) {
 	int ret = 0;
 
@@ -294,14 +295,20 @@ int rrr_net_transport_new (
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
 			}
-			if (certificate_file != NULL || private_key_file != NULL) {
-				RRR_BUG("BUG: Plain method does not support certificate file and key file in rrr_net_transport_new but they were given\n");
+			if (certificate_file != NULL || private_key_file != NULL || ca_path != NULL) {
+				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
 			break;
 #ifdef RRR_WITH_OPENSSL
 		case RRR_NET_TRANSPORT_TLS:
-			ret = rrr_net_transport_tls_new((struct rrr_net_transport_tls **) &new_transport, flags, certificate_file, private_key_file);
+			ret = rrr_net_transport_tls_new (
+					(struct rrr_net_transport_tls **) &new_transport,
+					flags,
+					certificate_file,
+					private_key_file,
+					ca_path
+			);
 			break;
 #endif
 		default:
@@ -636,7 +643,9 @@ int rrr_net_transport_iterate_with_callback (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }
-
+/*
+ * These are disabled. They might not work correctly, especially not destruction
+ * of handles when read functions return error. Test after enabling.
 int rrr_net_transport_read_message (
 		struct rrr_net_transport *transport,
 		int transport_handle,
@@ -722,7 +731,7 @@ int rrr_net_transport_read_message_all_handles (
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_UNLOCK();
 	return ret;
 }
-
+*/
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,
 		int transport_handle,

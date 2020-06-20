@@ -60,7 +60,8 @@ static inline struct rrr_net_transport *rrr_mqtt_transport_get_latest (
 int rrr_mqtt_transport_start_tls (
 		struct rrr_mqtt_transport *transport,
 		const char *tls_certificate_file,
-		const char *tls_key_file
+		const char *tls_key_file,
+		const char *tls_ca_path
 );
 int rrr_mqtt_transport_start_plain (
 		struct rrr_mqtt_transport *transport

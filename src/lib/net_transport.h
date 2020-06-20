@@ -30,7 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read_constants.h"
 #include "linked_list.h"
 
-#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY (1<<0)
+#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY	(1<<0)
+#define RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1	(1<<1)
 
 // Use same numbering system as socket subsystem, saves us from translating
 // return values in many cases
@@ -183,7 +184,8 @@ int rrr_net_transport_new (
 		enum rrr_net_transport_type transport,
 		int flags,
 		const char *certificate_file,
-		const char *private_key_file
+		const char *private_key_file,
+		const char *ca_path
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
@@ -245,29 +247,6 @@ int rrr_net_transport_iterate_with_callback (
 		enum rrr_net_transport_socket_mode mode,
 		int (*callback)(struct rrr_net_transport_handle *handle, void *arg),
 		void *arg
-);
-int rrr_net_transport_read_message (
-		struct rrr_net_transport *transport,
-		int transport_handle,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
-);
-int rrr_net_transport_read_message_all_handles (
-		struct rrr_net_transport *transport,
-		int read_attempts,
-		ssize_t read_step_initial,
-		ssize_t read_step_max_size,
-		int read_flags,
-		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-		void *get_target_size_arg,
-		int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-		void *complete_callback_arg
 );
 int rrr_net_transport_send_blocking (
 		struct rrr_net_transport *transport,

@@ -134,6 +134,7 @@ int rrr_mqtt_conn_update_state (
 int rrr_mqtt_conn_iterator_ctx_send_disconnect (
 		struct rrr_net_transport_handle *handle
 ) {
+	// Will return immediately if disconnect is already sent
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	int ret = RRR_MQTT_OK;
@@ -202,9 +203,13 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 		RRR_BUG("NULL pointer in __rrr_mqtt_connection_destroy\n");
 	}
 
+	// This will be cleaned up anyway, it's more for informational purposes
 	if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
+		RRR_DBG_1("Connection %p was supposedly not yet closed, closing now\n", connection);
 		__rrr_mqtt_connection_close (connection);
 	}
+
+	RRR_DBG_1("Destroying connection %p, final destruction\n", connection);
 
 	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
 
@@ -314,8 +319,11 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer\n",
+			RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer (and closing connection if neeeded)\n",
 					connection, connection->disconnect_reason_v5_);
+			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
+				__rrr_mqtt_connection_close (connection);
+			}
 		}
 		if (time_now - connection->close_wait_start < connection->close_wait_time_usec) {
 /*			printf ("Connection is not to be closed closed yet, waiting %" PRIu64 " usecs\n",
@@ -473,9 +481,10 @@ static int __rrr_mqtt_conn_parse (
 		struct rrr_read_session *read_session,
 		struct rrr_mqtt_conn *connection
 ) {
-	int ret = RRR_MQTT_OK;
+	int ret = RRR_MQTT_INCOMPLETE;
 
 	if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
+		ret = RRR_MQTT_OK;
 		goto out;
 	}
 
@@ -487,18 +496,17 @@ static int __rrr_mqtt_conn_parse (
 			connection->protocol_version
 	);
 
-	ret = rrr_mqtt_packet_parse (&connection->parse_session);
+	rrr_mqtt_packet_parse (&connection->parse_session);
 	if (RRR_MQTT_PARSE_IS_ERR(&connection->parse_session)) {
 		/* Error which was the remote's fault, close connection */
+		ret = RRR_MQTT_SOFT_ERROR;
 		goto out;
 	}
-/*
-	if (!RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
-		printf("return from parse incomplete: %i - %i\n", ret, connection->parse_session.status);
-		ret = RRR_MQTT_PARSE_INCOMPLETE;
+
+	if (RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
+		ret = RRR_MQTT_OK;
 		goto out;
 	}
-*/
 
 	out:
 	return ret;
@@ -512,7 +520,6 @@ struct rrr_mqtt_conn_read_callback_data {
 			void *arg
 	);
 	void *handler_callback_arg;
-	int return_from_parser;
 };
 
 static int __rrr_mqtt_conn_read_get_target_size (
@@ -524,17 +531,24 @@ static int __rrr_mqtt_conn_read_get_target_size (
 	struct rrr_mqtt_conn_read_callback_data *callback_data = arg;
 	struct rrr_mqtt_conn *connection = callback_data->handle->application_private_ptr;
 
-	if ((callback_data->return_from_parser = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_PARSE_OK) {
-		if (callback_data->return_from_parser == RRR_MQTT_PARSE_INTERNAL_ERROR) {
-			ret = RRR_READ_HARD_ERROR;
+//	printf ("get target size in %p wpos %li target size %li buf size %li\n",
+//			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
+
+	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
+		if ((ret & (RRR_MQTT_INTERNAL_ERROR|RRR_MQTT_SOFT_ERROR)) != 0) {
+			ret &= ~(RRR_SOCKET_READ_INCOMPLETE);
 			goto out;
 		}
+		// Don't got out, fixed header might be done
 	}
 
 	if (RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(&connection->parse_session)) {
 		read_session->target_size = connection->parse_session.target_size;
 		ret = RRR_READ_OK;
 	}
+
+//	printf ("get target size out %p wpos %li target size %li buf size %li\n",
+//			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
 
 	out:
 	return ret;
@@ -550,20 +564,23 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	struct rrr_mqtt_conn_read_callback_data *callback_data = arg;
 	struct rrr_mqtt_conn *connection = callback_data->handle->application_private_ptr;
 
-	if ((callback_data->return_from_parser = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_PARSE_OK) {
-		callback_data->return_from_parser = RRR_READ_SOFT_ERROR;
+//	printf ("read_complete %p wpos %li target size %li buf size %li\n",
+//			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
+
+	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (!RRR_MQTT_PARSE_IS_COMPLETE(&connection->parse_session)) {
 		RRR_MSG_0("Reading is done for a packet but parsing did not complete. Closing connection.\n");
-		callback_data->return_from_parser = RRR_READ_SOFT_ERROR;
+		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
 	if (RRR_MQTT_PARSE_STATUS_IS_MOVE_PAYLOAD_TO_PACKET(&connection->parse_session)) {
 		if (connection->parse_session.packet->payload != NULL) {
-			RRR_BUG("payload data was not NULL in rrr_mqtt_connection_iterator_ctx_parse while moving payload\n");
+			RRR_BUG("payload data was not NULL in __rrr_mqtt_conn_read_complete_callback while moving payload\n");
 		}
 
 		ret = rrr_mqtt_p_payload_new_with_allocated_payload (
@@ -573,7 +590,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 				read_session->rx_buf_wpos - connection->parse_session.payload_pos
 		);
 		if (ret != 0) {
-			RRR_MSG_0("Could not move payload to packet in rrr_mqtt_conn_iterator_ctx_parse\n");
+			RRR_MSG_0("Could not move payload to packet in __rrr_mqtt_conn_read_complete_callback\n");
 			goto out;
 		}
 
@@ -582,7 +599,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	}
 
 	if ((ret = CALL_EVENT_HANDLER_ARG(RRR_MQTT_CONN_EVENT_PACKET_PARSED, connection->parse_session.packet)) != 0) {
-		RRR_MSG_0("Error from event handler in rrr_mqtt_connection_iterator_ctx_parse, return was %i\n", ret);
+		RRR_MSG_0("Error from event handler in __rrr_mqtt_conn_read_complete_callback, return was %i\n", ret);
 		goto out;
 	}
 
@@ -595,15 +612,13 @@ static int __rrr_mqtt_conn_read_complete_callback (
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 	rrr_mqtt_parse_session_init(&connection->parse_session);
 
-	if ((callback_data->return_from_parser = callback_data->handler_callback (
+	if ((ret = callback_data->handler_callback (
 			callback_data->handle,
 			packet,
 			callback_data->handler_callback_arg
 	)) != 0) {
-		if (callback_data->return_from_parser == RRR_MQTT_INTERNAL_ERROR) {
-			ret = RRR_READ_HARD_ERROR;
-			goto out;
-		}
+		RRR_MSG_0("Error from handler callback in __rrr_mqtt_conn_read_complete_callback, return was %i\n", ret);
+		goto out;
 	}
 
 	out:
@@ -628,8 +643,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	struct rrr_mqtt_conn_read_callback_data callback_data = {
 			handle,
 			handler_callback,
-			handler_callback_arg,
-			0
+			handler_callback_arg
 	};
 
 	if ((ret = rrr_net_transport_ctx_read_message (
@@ -645,8 +659,6 @@ int rrr_mqtt_conn_iterator_ctx_read (
 	)) != 0) {
 		goto out;
 	}
-
-	ret = callback_data.return_from_parser;
 
 	__rrr_mqtt_connection_update_last_read_time (connection);
 

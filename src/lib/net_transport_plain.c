@@ -164,8 +164,7 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_0("Error while reading from server in __rrr_net_transport_plain_read_message\n");
-			ret = 1;
+			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
 			goto out;
 		}
 	}

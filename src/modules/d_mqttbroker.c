@@ -67,6 +67,7 @@ struct mqtt_broker_data {
 	char *permission_name;
 	char *tls_certificate_file;
 	char *tls_key_file;
+	char *tls_ca_path;
 	char *transport_type;
 	int do_transport_plain;
 	int do_transport_tls;
@@ -83,6 +84,7 @@ static void mqttbroker_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
 	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
 	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_mqtt_acl_entry_collection_clear(&data->acl);
 }
@@ -116,7 +118,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 	int ret = 0;
 
 	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
-	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
+	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_TLS);
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
 	if (data->max_keep_alive > 0xffff) {
@@ -192,16 +194,17 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_path", tls_ca_path);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
 
 	if (data->transport_type != NULL) {
-		if (strcasecmp(data->transport_type, "plain")) {
+		if (strcasecmp(data->transport_type, "plain") == 0) {
 			data->do_transport_plain = 1;
 		}
-		else if (strcasecmp(data->transport_type, "tls")) {
+		else if (strcasecmp(data->transport_type, "tls") == 0) {
 			data->do_transport_tls = 1;
 		}
-		else if (strcasecmp(data->transport_type, "both")) {
+		else if (strcasecmp(data->transport_type, "both") == 0) {
 			data->do_transport_tls = 1;
 			data->do_transport_plain = 1;
 		}
@@ -216,9 +219,26 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		data->do_transport_plain = 1;
 	}
 
-	// Note : It's allowed not to specify a certificate
+	if (rrr_settings_exists(config->settings, "mqtt_broker_port") && !data->do_transport_plain) {
+		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_settings_exists(config->settings, "mqtt_broker_port_tls") && !data->do_transport_tls) {
+		RRR_MSG_0("mqtt_broker_port_tls was set but TLS transport method was not enabled in mqtt broker instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
 	if (data->tls_certificate_file != NULL && data->do_transport_tls == 0) {
 		RRR_MSG_0("TLS certificate specified in mqtt_broker_certificate_file but mqtt_transport_type was not 'both' or 'tls' for mqtt broker instance %s\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+	if (data->tls_certificate_file == NULL && data->do_transport_tls != 0) {
+		RRR_MSG_0("TLS certificate not specified in mqtt_broker_certificate_file but mqtt_transport_type was 'both' or 'tls' for mqtt broker instance %s\n",
 				config->name);
 		ret = 1;
 		goto out;
@@ -341,6 +361,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	int listen_handle_tls = 0;
 
 	if (data->do_transport_plain) {
+		RRR_DBG_1("Broker starting plain listening on port %i\n", data->server_port_plain);
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
 				&listen_handle_plain,
 				data->mqtt_broker_data,
@@ -352,12 +373,14 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 	}
 	if (data->do_transport_tls) {
+		RRR_DBG_1("Broker starting TLS listening on port %i\n", data->server_port_tls);
 		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 				&listen_handle_tls,
 				data->mqtt_broker_data,
 				data->server_port_tls,
 				data->tls_certificate_file,
-				data->tls_key_file
+				data->tls_key_file,
+				data->tls_ca_path
 		) != 0) {
 			RRR_MSG_0("Could not start tls network transport in mqtt broker instance %s\n",
 					INSTANCE_D_NAME(thread_data));

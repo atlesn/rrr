@@ -102,7 +102,8 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 		struct rrr_mqtt_broker_data *broker,
 		int port,
 		const char *certificate_file,
-		const char *key_file
+		const char *key_file,
+		const char *ca_path
 );
 int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
 		int *listen_handle,

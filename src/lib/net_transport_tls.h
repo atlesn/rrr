@@ -35,13 +35,15 @@ struct rrr_net_transport_tls {
 	int flags;
 	char *certificate_file;
 	char *private_key_file;
+	char *ca_path;
 };
 
 int rrr_net_transport_tls_new (
 		struct rrr_net_transport_tls **target,
 		int flags,
 		const char *certificate_file,
-		const char *private_key_file
+		const char *private_key_file,
+		const char *ca_path
 );
 
 #endif /* RRR_NET_TRANSPORT_TLS_H */

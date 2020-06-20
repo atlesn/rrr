@@ -363,7 +363,7 @@ int rrr_read_message_using_callbacks (
 		if (function_complete_callback != NULL) {
 			ret = function_complete_callback (read_session, functions_callback_arg);
 			if (ret != 0) {
-				RRR_MSG_0("Error from callback in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Error %i from complete callback in rrr_read_message_using_callbacks\n", ret);
 				goto out;
 			}
 

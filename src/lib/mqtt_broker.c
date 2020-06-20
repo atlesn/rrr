@@ -59,7 +59,6 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 	*listen_handle = 0;
 
 	struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data callback_data = { 0 };
-
 	if ((ret = rrr_net_transport_bind_and_listen (
 			transport,
 			port,
@@ -82,7 +81,8 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 		struct rrr_mqtt_broker_data *broker,
 		int port,
 		const char *certificate_file,
-		const char *key_file
+		const char *key_file,
+		const char *ca_path
 ) {
 	int ret = 0;
 
@@ -93,7 +93,8 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 	if ((ret = rrr_mqtt_transport_start_tls (
 			broker->mqtt_data.transport,
 			certificate_file,
-			key_file
+			key_file,
+			ca_path
 	)) != 0) {
 		RRR_MSG_0("Could not start TLS transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls\n");
 		ret = 1;
