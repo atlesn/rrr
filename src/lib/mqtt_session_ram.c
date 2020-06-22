@@ -797,6 +797,11 @@ static int __rrr_mqtt_session_ram_iterate_publish_grace_callback (RRR_FIFO_READ_
 		(*counter)++;
 		ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 	}
+	else {
+		// If we encounter a packet which has not expired, it's unlikely that the rest
+		// of the packets are expired.
+		ret = RRR_FIFO_SEARCH_STOP;
+	}
 
 	RRR_MQTT_P_UNLOCK(packet);
 	return ret;
