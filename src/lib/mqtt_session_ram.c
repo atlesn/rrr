@@ -57,7 +57,11 @@ struct rrr_mqtt_session_ram {
 	// The queues and id pool have their own locking and the session lock is redundant
 	struct rrr_mqtt_p_queue to_remote_queue;
 	struct rrr_mqtt_p_queue from_remote_queue;
+	struct rrr_mqtt_p_queue publish_grace_queue;
 	struct rrr_mqtt_id_pool id_pool;
+
+	// Iteration of garce queue only done as often as publish grace time
+	uint64_t prev_publish_grace_queue_iteration;
 
 	// Deliver PUBLISH locally (and check against subscriptions) or forward to other sessions
 	int (*delivery_method)(
@@ -303,16 +307,22 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 	}
 
 	if (rrr_fifo_buffer_init_custom_free(&result->from_remote_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
-		RRR_MSG_0("Could not initialize send buffer in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
+		RRR_MSG_0("Could not initialize from remote queue in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out_destroy_to_client_queue;
+		goto out_destroy_to_remote_queue;
+	}
+
+	if (rrr_fifo_buffer_init_custom_free(&result->publish_grace_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
+		RRR_MSG_0("Could not initialize publish grace queue in _rrr_mqtt_session_collection_ram_create_session_unlocked\n");
+		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		goto out_destroy_from_remote_queue;
 	}
 
 	result->client_id = malloc(strlen(client_id) + 1);
 	if (result->client_id == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked B\n");
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out_destroy_from_client_queue;
+		goto out_destroy_publish_grace_queue;
 	}
 	strcpy (result->client_id, client_id);
 
@@ -351,12 +361,12 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		rrr_mqtt_subscription_collection_destroy(result->subscriptions);
 	out_free_client_id:
 		free(result->client_id);
-	out_destroy_from_client_queue:
+	out_destroy_publish_grace_queue:
 		rrr_fifo_buffer_clear(&result->from_remote_queue.buffer);
-	out_destroy_to_client_queue:
+	out_destroy_from_remote_queue:
+		rrr_fifo_buffer_clear(&result->from_remote_queue.buffer);
+	out_destroy_to_remote_queue:
 		rrr_fifo_buffer_clear(&result->to_remote_queue.buffer);
-//	TODO : Implement
-//	fifo_buffer_destroy(&result->qos_queue.buffer);
 
 	out_free_result:
 		if (result != NULL) {
@@ -398,8 +408,7 @@ static int __rrr_mqtt_session_ram_decref_unlocked (
 	// destroyed here anyway, not need for the packets to release IDs.
 	rrr_fifo_buffer_clear_with_callback(&session->to_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 	rrr_fifo_buffer_clear_with_callback(&session->from_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
-	//  TODO : Look into proper destruction of the buffer mutexes.
-	//	fifo_buffer_destroy(&session->qos_queue.buffer);
+	rrr_fifo_buffer_clear_with_callback(&session->publish_grace_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 
 	RRR_FREE_IF_NOT_NULL(session->client_id);
 
@@ -765,6 +774,34 @@ static int __rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery (
 	return ret;
 }
 
+static int __rrr_mqtt_session_ram_iterate_publish_grace_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
+	 struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
+
+	(void)(size);
+
+	int *counter = arg;
+
+	int ret = RRR_FIFO_OK;
+
+	RRR_MQTT_P_LOCK(packet);
+
+	if (packet->planned_expiry_time == 0) {
+		RRR_BUG("BUG: Planned expiry not set in __rrr_mqtt_session_ram_iterate_publish_grace_callback\n");
+	}
+	else if (packet->planned_expiry_time < rrr_time_get_64()) {
+		RRR_DBG_3("%s %p id %u grace time is complete, deleting from buffer.\n",
+			RRR_MQTT_P_GET_TYPE_NAME(packet),
+			packet,
+			RRR_MQTT_P_GET_IDENTIFIER(packet)
+		);
+		(*counter)++;
+		ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+	}
+
+	RRR_MQTT_P_UNLOCK(packet);
+	return ret;
+}
+
 static int __rrr_mqtt_session_collection_ram_maintain (
 		struct rrr_mqtt_session_collection *sessions
 ) {
@@ -795,10 +832,20 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		uint64_t time_diff = 0;
 		uint32_t session_expiry = 0;
 
+		int do_iterate_publish_grace_queue = 0;
+
 		SESSION_RAM_LOCK(node);
+
 		time_diff = time_now - node->last_seen;
 		session_expiry = node->session_properties.session_expiry;
 		__rrr_mqtt_session_ram_heartbeat_unlocked(node);
+
+		uint64_t publish_grace_queue_iteration_interval_usec = node->complete_publish_grace_time * 1000 * 1000;
+		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {
+			node->prev_publish_grace_queue_iteration = time_now;
+			do_iterate_publish_grace_queue = 1;
+		}
+
 		SESSION_RAM_UNLOCK(node);
 
 		if (session_expiry != 0 &&
@@ -811,14 +858,24 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 			SESSION_RAM_UNLOCK(node);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
-/*		else {
-			SESSION_RAM_LOCK(node);
-			if (__rrr_mqtt_session_ram_maintain_queues(node) != 0) {
-				RRR_MSG_0("Error in __rrr_mqtt_session_collection_ram_maintain while maintaining session\n");
-				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		else {
+			if (do_iterate_publish_grace_queue) {
+				int counter = 0;
+
+				SESSION_RAM_LOCK(node);
+				if (rrr_fifo_buffer_search (
+						&node->publish_grace_queue.buffer,
+						__rrr_mqtt_session_ram_iterate_publish_grace_callback,
+						&counter,
+						0
+				) != 0) {
+					RRR_MSG_0("Error while iterating publish grace queue in __rrr_mqtt_session_collection_ram_maintain\n");
+					ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+					RRR_LL_ITERATE_LAST();
+				}
+				SESSION_RAM_UNLOCK(node);
 			}
-			SESSION_RAM_UNLOCK(node);
-		}*/
+		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY (
 			data,
 			__rrr_mqtt_session_ram_decref_unlocked(node)
@@ -954,6 +1011,12 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 
 	rrr_fifo_buffer_clear_with_callback (
 			&ram_session->from_remote_queue.buffer,
+			__rrr_mqtt_session_ram_packet_id_release_callback,
+			NULL
+	);
+
+	rrr_fifo_buffer_clear_with_callback (
+			&ram_session->publish_grace_queue.buffer,
 			__rrr_mqtt_session_ram_packet_id_release_callback,
 			NULL
 	);
@@ -1967,25 +2030,25 @@ static int __rrr_mqtt_session_ram_maintain_packet_maintain_unlocked (
 	}
 	else if (ack_complete == 1) {
 		counters->maintain_ack_complete_counter++;
-		if (packet->planned_expiry_time == 0) {
-			packet->planned_expiry_time = rrr_time_get_64() + (iterate_callback_data->complete_publish_grace_time_usec);
-			RRR_DBG_3("%s %p id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
-					RRR_MQTT_P_GET_TYPE_NAME(packet),
-					packet,
-					RRR_MQTT_P_GET_IDENTIFIER(packet),
-					iterate_callback_data->complete_publish_grace_time_usec
-			);
-		}
-		if (packet->planned_expiry_time < rrr_time_get_64()) {
-			RRR_DBG_3("%s %p id %u grace time is complete, deleting from buffer.\n",
-					RRR_MQTT_P_GET_TYPE_NAME(packet),
-					packet,
-					RRR_MQTT_P_GET_IDENTIFIER(packet)
-			);
-			counters->maintain_deleted_counter++;
-			ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+		packet->planned_expiry_time = rrr_time_get_64() + (iterate_callback_data->complete_publish_grace_time_usec);
+		RRR_DBG_3("%s %p id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
+				RRR_MQTT_P_GET_TYPE_NAME(packet),
+				packet,
+				RRR_MQTT_P_GET_IDENTIFIER(packet),
+				iterate_callback_data->complete_publish_grace_time_usec
+		);
+		counters->maintain_deleted_counter++;
+
+		RRR_MQTT_P_INCREF(packet);
+		if (__rrr_mqtt_session_ram_fifo_write(&iterate_callback_data->ram_session->publish_grace_queue.buffer, packet, 1, 0, 0) != 0) {
+			RRR_MQTT_P_DECREF(packet);
+			RRR_MSG_0("Could not add packet to publish grace queue in __rrr_mqtt_session_ram_maintain_packet_maintain_unlocked\n");
+			ret = RRR_FIFO_GLOBAL_ERR;
 			goto out;
 		}
+
+		ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
+		goto out;
 	}
 	else if (rrr_time_get_64() - packet->last_attempt > iterate_callback_data->retry_interval_usec) {
 		packet->last_attempt = 0;

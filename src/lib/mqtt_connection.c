@@ -653,6 +653,9 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			handler_callback_arg
 	};
 
+	int consecutive_nothing_happened = 0;
+	int read_loops = 0;
+
 	// TODO : Make this better
 	// Do this 60 times as we send 50 packets at a time (10 more)
 	for (int i = 0; i < 60; i++) {
@@ -672,10 +675,15 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			goto out;
 		}
 
-		if (prev_bytes_read == handle->bytes_read_total) {
+		if (prev_bytes_read == handle->bytes_read_total && ++consecutive_nothing_happened > 5) {
 			// Nothing was read
 			break;
 		}
+		read_loops++;
+	}
+
+	if (read_loops > 0) {
+//		printf("Read loops: %i\n", read_loops);
 	}
 
 	out:

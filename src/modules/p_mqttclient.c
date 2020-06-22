@@ -57,6 +57,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats_instance.h"
 #include "../lib/log.h"
 
+//#define RRR_BENCHMARK_ENABLE
+#include "../lib/benchmark.h"
+
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
 #define RRR_MQTT_DEFAULT_QOS 1
@@ -1525,6 +1528,10 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
+	RRR_BENCHMARK_INIT(mqtt_client_deliver);
+	RRR_BENCHMARK_INIT(mqtt_client_sleep);
+	RRR_BENCHMARK_INIT(mqtt_client_tick);
+
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
 	rrr_poll_collection_init(&poll);
@@ -1665,22 +1672,29 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		int something_happened = 0;
+
+		RRR_BENCHMARK_IN(mqtt_client_tick);
 		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
 		}
+		RRR_BENCHMARK_OUT(mqtt_client_tick);
 
+		RRR_BENCHMARK_IN(mqtt_client_deliver);
 		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data) != 0) {
 			RRR_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
 		}
+		RRR_BENCHMARK_OUT(mqtt_client_deliver);
 
 		if (something_happened == 0) {
 			if (++consecutive_nothing_happened > 100) {
+				RRR_BENCHMARK_IN(mqtt_client_sleep);
 				rrr_posix_usleep (50000); // 50 ms
 				data->total_usleep_count++;
+				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 			}
 			if (startup_time == 0 || rrr_time_get_64() > startup_time) {
 				rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, 0);
@@ -1702,11 +1716,14 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
-		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
+		RRR_DBG_1 ("Thread mqtt client %p instance %s exiting\n", thread_data->thread, INSTANCE_D_NAME(thread_data));
 //		pthread_cleanup_pop(1);
 		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
+		RRR_BENCHMARK_DUMP(mqtt_client_tick);
+		RRR_BENCHMARK_DUMP(mqtt_client_sleep);
+		RRR_BENCHMARK_DUMP(mqtt_client_deliver);
 		pthread_exit(0);
 }
 

@@ -1138,18 +1138,6 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 
 	ret_preserve = ret;
 
-/*
-	if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {
-		if ((ret = rrr_mqtt_conn_iterator_ctx_send_disconnect(handle)) != 0) {
-			if (ret == RRR_MQTT_INTERNAL_ERROR) {
-				RRR_MSG_0("Internal error while sending disconnect packet in __rrr_mqtt_common_read_parse_handle_callback\n");
-				goto out;
-			}
-			RRR_MSG_1("Warning: Soft error while sending disconnect packet in __rrr_mqtt_common_read_parse_handle_callback\n");
-			ret = 0;
-		}
-	}
-*/
 	if ((ret = rrr_mqtt_conn_housekeeping(connection, &callback_data->housekeeping_data)) != 0) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while housekeeping\n");
