@@ -612,7 +612,6 @@ static int __rrr_net_transport_tls_read_read (
 		if (BIO_should_retry(ssl_data->web) == 0) {
 			int reason = BIO_get_retry_reason(ssl_data->web);
 			RRR_SSL_ERR("Error while reading from TLS connection");
-			RRR_MSG_0("Reason: %s\n", rrr_strerror(reason));
 			// Possible close of connection
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
@@ -624,7 +623,7 @@ static int __rrr_net_transport_tls_read_read (
 	}
 	else if (ERR_peek_error() != 0) {
 		RRR_SSL_ERR("Error while reading in __rrr_net_transport_tls_read_read");
-		return RRR_READ_HARD_ERROR;
+		return RRR_READ_SOFT_ERROR;
 	}
 
 	out:

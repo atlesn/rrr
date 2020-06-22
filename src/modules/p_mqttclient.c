@@ -1439,8 +1439,14 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(data->thread_data->thread) != 1; i--) {
 		rrr_thread_update_watchdog_time(data->thread_data->thread);
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
-				INSTANCE_D_NAME(data->thread_data), data->server, data->server_port, i, i_first);
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' username '%s' attempt %i/%i\n",
+				INSTANCE_D_NAME(data->thread_data),
+				data->server,
+				data->server_port,
+				(data->username != NULL ? data->username : ""),
+				i,
+				i_first
+		);
 
 		if (rrr_mqtt_client_connect (
 				&data->transport_handle,
@@ -1530,6 +1536,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+	;
 
 	if (mqttclient_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for mqtt client instance '%s'\n", thread_data->init_data.module->instance_name);

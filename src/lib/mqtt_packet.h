@@ -367,6 +367,11 @@ struct rrr_mqtt_p_connect {
 #define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
+
+#define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p) 		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
+
+
 struct rrr_mqtt_p_connack {
 	RRR_MQTT_P_PACKET_HEADER;
 

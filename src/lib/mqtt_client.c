@@ -320,6 +320,7 @@ int rrr_mqtt_client_connect (
 	// connect->connect_flags |= 2 << 3;
 
 	if (username != NULL) {
+		RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(connect);
 		if ((connect->username = strdup(username)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for username in rrr_mqtt_client_connect\n");
 			ret = 1;
@@ -327,6 +328,10 @@ int rrr_mqtt_client_connect (
 		}
 	}
 	if (password != NULL) {
+		if (!RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect)) {
+			RRR_BUG("BUG: Password given without username in rrr_mqtt_client_connect\n");
+		}
+		RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(connect);
 		if ((connect->password = strdup(password)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for password in rrr_mqtt_client_connect\n");
 			ret = 1;
@@ -557,7 +562,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				client_data->session_properties.server_keep_alive,
 				connack->protocol_version,
 				connection->session,
-				connection->username
+				NULL // Don't reset username upon CONNACK, will cause corruption
 		)) != 0 ) {
 			RRR_MSG_0 ("Error while setting new keep-alive and username on connection in __rrr_mqtt_client_handle_connack\n");
 			goto out;
