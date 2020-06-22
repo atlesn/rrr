@@ -308,13 +308,9 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 
 	BUF_INIT();
 
-	// Make sure that if somebody modified qos, dup or retain that these
-	// values are put into the type flags
-	RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(publish);
-
 	PUT_RAW_WITH_LENGTH(publish->topic, strlen(publish->topic));
-	if (publish->qos > 0) {
-		// TODO Put packet ID
+
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0) {
 		PUT_U16(publish->packet_identifier);
 	}
 
@@ -331,6 +327,7 @@ int rrr_mqtt_assemble_publish (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 int rrr_mqtt_assemble_def_puback (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 	struct rrr_mqtt_p_def_puback *puback = (struct rrr_mqtt_p_def_puback *) packet;
 	BUF_INIT();
+
 	PUT_U16(puback->packet_identifier);
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		PUT_U8(puback->reason_v5);

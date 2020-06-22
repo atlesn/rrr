@@ -630,14 +630,14 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		allow_missing_originating_packet = 1;
 
-		if (publish->qos == 0) {
+		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;
 		}
 
 		RRR_MSG_0("Sending ACK for malformed PUBLISH packet with QoS %u, reason was %u\n",
-				publish->qos, publish->reason_v5);
+				RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish), publish->reason_v5);
 
 		reason_v5 = publish->reason_v5;
 		goto out_generate_ack;
@@ -699,7 +699,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 
 	out_generate_ack:
-	if (publish->qos == 1) {
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) {
 		struct rrr_mqtt_p_puback *puback = (struct rrr_mqtt_p_puback *) rrr_mqtt_p_allocate (
 						RRR_MQTT_P_TYPE_PUBACK, publish->protocol_version
 		);
@@ -715,7 +715,7 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		puback->packet_identifier = publish->packet_identifier;
 		RRR_MQTT_P_UNLOCK(puback);
 	}
-	else if (publish->qos == 2) {
+	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2) {
 		struct rrr_mqtt_p_pubrec *pubrec = (struct rrr_mqtt_p_pubrec *) rrr_mqtt_p_allocate (
 						RRR_MQTT_P_TYPE_PUBREC, publish->protocol_version
 		);
@@ -731,8 +731,8 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		pubrec->packet_identifier = publish->packet_identifier;
 		RRR_MQTT_P_UNLOCK(pubrec);
 	}
-	else if (publish->qos != 0) {
-		RRR_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", publish->qos);
+	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) != 0) {
+		RRR_BUG("Invalid QoS (%u) in rrr_mqtt_common_handle_publish\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish));
 	}
 
 	if (ack != NULL) {

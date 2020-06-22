@@ -424,8 +424,8 @@ struct rrr_mqtt_p_publish {
 
 	/* These three are also accessible through packet type flags but we cache them here */
 	//uint8_t dup; <-- defined in header
-	uint8_t qos;
-	uint8_t retain;
+	//uint8_t qos;
+	//uint8_t retain;
 
 	struct rrr_mqtt_property_collection properties;
 
@@ -448,8 +448,18 @@ struct rrr_mqtt_p_publish {
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
-#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
-	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p,new_retain,new_qos,new_dup) \
+	(p)->type_flags = new_retain|(new_qos << 1)|(new_dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p,new_qos) \
+	(p)->type_flags = ((p)->type_flags & 1)|(new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(p,new_dup) \
+	(p)->type_flags = (((p)->type_flags & 1))|((((p)->type_flags & (3<<1)) >> 1) << 1)|(new_dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(p,new_retain) \
+	(p)->type_flags = new_retain|((((p)->type_flags & (3<<1)) >> 1) << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
 
 struct rrr_mqtt_p_suback_unsuback;
 struct rrr_mqtt_p_suback;

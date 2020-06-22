@@ -797,7 +797,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out_free;
 	}
 
-	publish->qos = private_data->qos;
+	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, private_data->qos);
 
 	if (private_data->publish_rrr_message != 0) {
 		ssize_t msg_size = MSG_TOTAL_SIZE(reading);

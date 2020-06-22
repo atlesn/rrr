@@ -292,8 +292,8 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFI
 	}
 
 	result->dup = publish->dup;
-	result->qos = publish->qos;
-	result->retain = publish->retain;
+//	result->qos = publish->qos;
+//	result->retain = publish->retain;
 	result->reason_v5 = publish->reason_v5;
 
 	if (publish->payload != NULL) {

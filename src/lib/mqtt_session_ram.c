@@ -611,14 +611,12 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	// send queue and the zero ID is found.
 
 	new_publish->packet_identifier = 0;
-	if (new_publish->qos > subscription->qos_or_reason_v5) {
-		new_publish->qos = subscription->qos_or_reason_v5;
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(new_publish) > subscription->qos_or_reason_v5) {
+		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(new_publish, subscription->qos_or_reason_v5);
 	}
 
 	new_publish->dup = 0;
 	new_publish->is_outbound = 1;
-
-	RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(new_publish);
 
 	RRR_MQTT_P_UNLOCK(new_publish);
 
@@ -673,7 +671,7 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 
 	int ret = RRR_FIFO_OK;
 
-	if (publish->retain != 0) {
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish) != 0) {
 		RRR_BUG("Retain not supported in __rrr_mqtt_session_collection_ram_forward_publish_to_clients\n");
 	}
 
@@ -938,8 +936,8 @@ static int __rrr_mqtt_session_ram_clean_preserve_publish_and_release_id_callback
 	if (	RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH &&
 			packet->planned_expiry_time == 0 &&
 			(
-					(publish->qos == 1 && publish->qos_packets.puback == NULL) ||
-					(publish->qos == 2 && publish->qos_packets.pubcomp == NULL)
+					(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1 && publish->qos_packets.puback == NULL) ||
+					(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2 && publish->qos_packets.pubcomp == NULL)
 			)
 	) {
 		RRR_DBG_1("Preserving outbound PUBLISH id %u when cleaning session. ID will be reset.\n", packet->packet_identifier);
@@ -1252,7 +1250,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		if ((RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBCOMP ||
 			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREC ||
 			RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBREL) && (
-				publish->qos != 2
+					RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) != 2
 			)
 		) {
 			RRR_MSG_0("Received %s for PUBLISH packet id %u which was not QoS2 in __rrr_mqtt_session_ram_process_ack_callback\n",
@@ -1264,7 +1262,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		ret = RRR_FIFO_SEARCH_STOP;
 
 		if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBACK) {
-			if (publish->qos != 1) {
+			if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) != 1) {
 				RRR_MSG_0("Duplicate PUBACK for PUBLISH packet which was not QoS1 id %u in __rrr_mqtt_session_ram_process_ack_callback\n",
 						RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
 				ret = RRR_FIFO_CALLBACK_ERR;
@@ -1809,14 +1807,14 @@ static int __rrr_mqtt_session_ram_receive_publish (
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
-	if (publish->qos > 2) {
-		RRR_BUG("Invalid QoS %u in __rrr_mqtt_session_ram_receive_publish\n", publish->qos);
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 2) {
+		RRR_BUG("Invalid QoS %u in __rrr_mqtt_session_ram_receive_publish\n", RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish));
 	}
 
 	// Make sure newly generated ACKs aren't re-sent immediately when the queues are maintained
 	publish->last_attempt = rrr_time_get_64();
 
-	if (publish->qos == 0) {
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 		// QOS 0 packets are released immediately
 
 		RRR_DBG_3("Receive PUBLISH QOS 0 packet %p with id %u add directly to publish queue\n",
@@ -1826,7 +1824,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 		ram_session->delivery_method(ram_session, publish);
 		RRR_MQTT_P_DECREF(publish);
 	}
-	else if (publish->qos == 1) {
+	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) {
 		// QOS 1 packets are released when we send PUBACK
 
 		RRR_DBG_3("Receive PUBLISH QOS 1 packet %p with id %u add to QoS 1/2 queue\n",
@@ -1846,7 +1844,7 @@ static int __rrr_mqtt_session_ram_receive_publish (
 			goto out;
 		}
 	}
-	else if (publish->qos == 2) {
+	else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2) {
 		// QOS 2 packets are released when we send PUBCOMP
 
 		struct find_qos2_publish_data callback_data = {
@@ -1991,9 +1989,9 @@ static int __rrr_mqtt_session_ram_maintain_packet_maintain_unlocked (
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 
-		if ((publish->qos == 0) ||
-			(publish->qos == 1 && publish->qos_packets.puback != NULL) ||
-			(publish->qos == 2 && publish->qos_packets.pubcomp != NULL)
+		if ((RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) ||
+			(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1 && publish->qos_packets.puback != NULL) ||
+			(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2 && publish->qos_packets.pubcomp != NULL)
 		) {
 			ack_complete = 1;
 		}
@@ -2125,7 +2123,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 			struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
 			if (	publish->is_outbound != 0 &&
-					publish->qos > 0 &&
+					RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0 &&
 					publish->qos_packets.pubcomp == NULL &&
 					publish->qos_packets.pubrec == NULL &&
 					publish->planned_expiry_time == 0
@@ -2164,10 +2162,10 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		// NOTE ! This functions handles packets in both directions. For a given PUBLISH packet,
 		//        the most recent ACK not acknowledged by remote will be sent.
 
-		if ((publish->qos == 0 || publish->qos == 1) && publish->is_outbound == 1) {
+		if ((RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0 || RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 1) && publish->is_outbound == 1) {
 			packet_to_transmit = packet;
 		}
-		else if (publish->qos == 2) {
+		else if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 2) {
 			if (publish->is_outbound == 1) {
 				// PUBCOMP not yet received for transmitted PUBREL
 				if (publish->qos_packets.pubcomp == NULL && publish->qos_packets.pubrel != NULL) {

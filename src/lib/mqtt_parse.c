@@ -826,16 +826,22 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	PARSE_REQUIRE_PROTOCOL_VERSION();
 	PARSE_ALLOCATE(publish);
 
+	publish->type_flags = session->type_flags;
+
 	publish->dup = RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(session);
-	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
-	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
+//	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
+//	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
 	RRR_DBG_3("PUBLISH flags (%u): DUP: %u, QOS: %u, RET: %u\n",
-			session->packet->type_flags, publish->dup, publish->qos, publish->retain);
+			session->packet->type_flags,
+			publish->dup,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish),
+			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(publish)
+	);
 
-	PARSE_VALIDATE_QOS(publish->qos);
+	PARSE_VALIDATE_QOS(RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish));
 
-	if (publish->qos == 0 && publish->dup != 0) {
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0 && publish->dup != 0) {
 		RRR_MSG_0("Received a PUBLISH packet of QoS 0, but DUP was non zero\n");
 		return RRR_MQTT_SOFT_ERROR;
 	}
@@ -856,7 +862,7 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 		return RRR_MQTT_INTERNAL_ERROR;
 	}
 
-	if (publish->qos > 0) {
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) > 0) {
 		PARSE_PACKET_ID(publish);
 	}
 
