@@ -504,6 +504,10 @@ int rrr_net_transport_ctx_send_nonblock (
 ) {
 	int ret = 0;
 
+	if (size < 0) {
+		RRR_BUG("BUG: Size was < 0 in rrr_net_transport_ctx_send_nonblock\n");
+	}
+
 	if (handle->mode != RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION) {
 		RRR_BUG("BUG: Handle to rrr_net_transport_ctx_send_nonblock was not of CONNECTION type\n");
 	}
@@ -522,7 +526,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		}
 	}
 
-	if (written_bytes != size) {
+	uint64_t size_tmp = (size >= 0 ? size : 0);
+	if (written_bytes != size_tmp) {
 		RRR_MSG_1("Not all bytes were sent %li < %li in rrr_net_transport_ctx_send_nonblock\n", written_bytes, size);
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}

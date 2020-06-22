@@ -1,3 +1,10 @@
+rrr (1.3) buster; urgency=medium
+
+  * Added support for TLS in MQTT
+  * Added support for username and password authentication in MQTT
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jun 2020 23:52:31 +0200
+
 rrr (1.2-3) buster; urgency=medium
 
   * Created max message size parameter in ip module and rrr_post
