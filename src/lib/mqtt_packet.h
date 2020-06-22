@@ -277,7 +277,8 @@ static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	if (p->users == 0) {
 		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
 	}
-//	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
+// Noisy
+//	RRR_DBG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
 	pthread_mutex_unlock(&p->refcount_lock);
@@ -288,6 +289,7 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
+// Noisy
 //	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;

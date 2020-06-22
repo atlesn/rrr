@@ -31,12 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "linked_list.h"
 
-#define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
-#define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
-
-#define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	10
-#define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 10
-
 struct rrr_mqtt_acl;
 struct rrr_net_transport;
 

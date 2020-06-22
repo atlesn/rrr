@@ -162,7 +162,7 @@ int rrr_mqtt_transport_accept (
 				new_connection_callback,
 				&callback_data
 		)) != 0) {
-			RRR_MSG_0("Could not accept connections in rrr_mqtt_conn_collection_accept\n");
+//			RRR_MSG_0("Could not accept connections in rrr_mqtt_conn_collection_accept\n");
 			goto out;
 		}
 		if ((*new_transport_handle = callback_data.transport_handle) > 0) {
@@ -214,7 +214,7 @@ int rrr_mqtt_transport_connect (
 			new_connection_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Could not accept connections in rrr_mqtt_conn_collection_accept\n");
+//		RRR_MSG_0("Could not connect in rrr_mqtt_transport_connect\n");
 		goto out;
 
 	}

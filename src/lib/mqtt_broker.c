@@ -37,6 +37,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "gnu.h"
 
+#define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
+#define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
+
+#define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	1000
+#define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 2
+
 struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data {
 	int transport_handle;
 };

@@ -551,12 +551,15 @@ static int __rrr_mqtt_session_ram_release_packet_id (
 		void *arg2,
 		uint16_t packet_id
 ) {
+//	printf("Release packet ID A %u collection %p session %p\n", packet_id, arg1, arg2);
 	struct rrr_mqtt_session_collection *collection = arg1;
 	struct rrr_mqtt_session *session = arg2;
 	struct rrr_mqtt_session **session_to_find = &session;
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
+
+//	printf("Release packet ID B\n");
 
 	rrr_mqtt_id_pool_release_id(&ram_session->id_pool, packet_id);
 
@@ -782,15 +785,17 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 		queue_callback_data->ack_complete_counter++;
 		if (packet->planned_expiry_time == 0) {
 			packet->planned_expiry_time = rrr_time_get_64() + (queue_callback_data->complete_publish_grace_time_usec);
-			RRR_DBG_3("%s id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
+			RRR_DBG_3("%s %p id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
 					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					packet,
 					RRR_MQTT_P_GET_IDENTIFIER(packet),
 					queue_callback_data->complete_publish_grace_time_usec
 			);
 		}
 		if (packet->planned_expiry_time < rrr_time_get_64()) {
-			RRR_DBG_3("%s id %u with is complete, deleting from buffer.\n",
+			RRR_DBG_3("%s %p id %u grace time is complete, deleting from buffer.\n",
 					RRR_MQTT_P_GET_TYPE_NAME(packet),
+					packet,
 					RRR_MQTT_P_GET_IDENTIFIER(packet)
 			);
 			queue_callback_data->deleted_counter++;
@@ -829,7 +834,7 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 	);
 
 	if (queue_callback_data.deleted_counter > 0 || queue_callback_data.ack_complete_counter > 0 || queue_callback_data.ack_missing_counter > 0) {
-		RRR_DBG_1("Queue %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+		RRR_DBG_3("Queue %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				queue,
 				queue_callback_data.deleted_counter,
 				queue_callback_data.ack_complete_counter,
@@ -949,6 +954,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		SESSION_RAM_LOCK(node);
 		time_diff = time_now - node->last_seen;
 		session_expiry = node->session_properties.session_expiry;
+		__rrr_mqtt_session_ram_heartbeat_unlocked(node);
 		SESSION_RAM_UNLOCK(node);
 
 		if (session_expiry != 0 &&
@@ -960,6 +966,14 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 					node->client_id);
 			SESSION_RAM_UNLOCK(node);
 			RRR_LL_ITERATE_SET_DESTROY();
+		}
+		else {
+			SESSION_RAM_LOCK(node);
+			if (__rrr_mqtt_session_ram_maintain_queues(node) != 0) {
+				RRR_MSG_0("Error in __rrr_mqtt_session_collection_ram_maintain while maintaining session\n");
+				ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			}
+			SESSION_RAM_UNLOCK(node);
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY (
 			data,
@@ -1210,21 +1224,6 @@ static int __rrr_mqtt_session_ram_heartbeat (
 	__rrr_mqtt_session_ram_heartbeat_unlocked(ram_session);
 
 	SESSION_RAM_UNLOCK(ram_session);
-
-	uint64_t time_now = rrr_time_get_64();
-	if (time_now - ram_session->prev_maintain_time > (RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000)) {
-		printf("session %p maintain buffer sizes %i and %i\n",
-				ram_session,
-				rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer),
-				rrr_fifo_buffer_get_entry_count(&ram_session->from_remote_queue.buffer)
-		);
-		if (__rrr_mqtt_session_ram_maintain_queues(ram_session) != 0) {
-			RRR_MSG_0("Error in __rrr_mqtt_session_ram_heartbeat while maintaining session\n");
-			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		}
-		ram_session->prev_maintain_time = time_now;
-	}
-
 	SESSION_RAM_DECREF();
 
 	return ret;
@@ -1269,10 +1268,15 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 		goto out;
 	}
 
-	if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PINGRESP && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
-		struct rrr_mqtt_p_pingreq *pingreq = (struct rrr_mqtt_p_pingreq *) packet;
-		pingreq->pingresp_received = 1;
-		goto out_increment_found;
+	if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PINGRESP) {
+		// Don't try to match IDs. Also, make a single PINGRESP match all
+		// PINGREQs in the queue, don't stop iteration once found.
+		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
+			struct rrr_mqtt_p_pingreq *pingreq = (struct rrr_mqtt_p_pingreq *) packet;
+			pingreq->pingresp_received = 1;
+			goto out_increment_found;
+		}
+		goto out;
 	}
 
 	if (RRR_MQTT_P_GET_IDENTIFIER(packet) != RRR_MQTT_P_GET_IDENTIFIER(ack_packet)) {
@@ -1349,14 +1353,16 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 
 		if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBACK) {
 			if (publish->qos != 1) {
-				RRR_MSG_0("Received PUBACK for PUBLISH packet which was not QoS1 id %u in __rrr_mqtt_session_ram_process_ack_callback\n",
+				RRR_MSG_0("Duplicate PUBACK for PUBLISH packet which was not QoS1 id %u in __rrr_mqtt_session_ram_process_ack_callback\n",
 						RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
 				ret = RRR_FIFO_CALLBACK_ERR;
 				goto out;
 			}
 			if (publish->qos_packets.puback != NULL) {
-				RRR_DBG_1("Received duplicate PUBACK for PUBLISH id %u\n",
-						RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
+				RRR_DBG_1("Received duplicate PUBACK for PUBLISH id %u direction %s\n",
+						RRR_MQTT_P_GET_IDENTIFIER(ack_packet),
+						publish->is_outbound ? "outbound" : "inbound"
+				);
 				RRR_MQTT_P_DECREF(publish->qos_packets.puback);
 				publish->qos_packets.puback = NULL;
 			}
@@ -1367,14 +1373,17 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 					goto out;
 				}
 			}
-//			printf ("Bind PUBACK id %u to PUBLISH\n", ack_packet->packet_identifier);
+			// Noisy
+			RRR_DBG_3 ("Bind PUBACK id %u to PUBLISH\n", ack_packet->packet_identifier);
 			publish->qos_packets.puback = (struct rrr_mqtt_p_puback *) ack_packet;
 			ack_packet = NULL;
 		}
 		else if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PUBCOMP) {
 			if (publish->qos_packets.pubcomp != NULL) {
-				RRR_DBG_1("Received duplicate PUBCOMP for PUBLISH id %u\n",
-						RRR_MQTT_P_GET_IDENTIFIER(ack_packet));
+				RRR_DBG_1("Duplicate PUBCOMP for PUBLISH id %u direction %s\n",
+						RRR_MQTT_P_GET_IDENTIFIER(ack_packet),
+						publish->is_outbound ? "outbound" : "inbound"
+				);
 				RRR_MQTT_P_DECREF(publish->qos_packets.pubcomp);
 				publish->qos_packets.pubcomp = NULL;
 			}
@@ -1759,11 +1768,11 @@ static int __rrr_mqtt_session_ram_process_ack (
 		RRR_BUG("Received non-ACK packet in __rrr_mqtt_session_ram_process_ack\n");
 	}
 
-	RRR_DBG_3("Process ACK packet %p id %u type %s in queue, was outbound: %i\n",
+	RRR_DBG_3("Process ACK packet %p id %u type %s in queue direction %s\n",
 			packet,
 			RRR_MQTT_P_GET_IDENTIFIER(packet),
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
-			packet_was_outbound
+			packet_was_outbound ? "outbound" : "inbound"
 	);
 
 	if ((ret = __rrr_mqtt_session_ram_process_iterate_ack (
@@ -2035,6 +2044,8 @@ struct iterate_send_queue_callback_data {
 	void *callback_arg;
 	unsigned int max_count;
 	unsigned int counter;
+	unsigned int incomplete_qos_publish_counter;
+	unsigned int incomplete_qos_publish_max_reached_counter;
 	struct rrr_mqtt_session_collection_ram_data *ram_data;
 	struct rrr_mqtt_session_ram *ram_session;
 };
@@ -2058,14 +2069,14 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		) {
 			uint16_t packet_identifier = rrr_mqtt_id_pool_get_id(&iterate_callback_data->ram_session->id_pool);
 			if (packet_identifier == 0) {
-				RRR_DBG_1("ID pool exhausted in __rrr_mqtt_session_ram_iterate_send_queue_callback, must wait until more packets are sent to remote\n");
+				RRR_DBG_2("ID pool exhausted in __rrr_mqtt_session_ram_iterate_send_queue_callback, must wait until more packets are sent to remote\n");
 				// Retry immediately
 				packet->last_attempt = 0;
 				goto out_unlock;
 			}
 
-			RRR_DBG_3("Setting new packet identifier %u for packet type %s while iterating send queue\n",
-					packet_identifier, RRR_MQTT_P_GET_TYPE_NAME(packet));
+			RRR_DBG_3("Setting new packet identifier %u for packet %p type %s while iterating send queue\n",
+					packet_identifier, packet, RRR_MQTT_P_GET_TYPE_NAME(packet));
 
 			RRR_MQTT_P_SET_PACKET_ID_WITH_RELEASER (
 					packet,
@@ -2074,6 +2085,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 					iterate_callback_data->ram_data,
 					iterate_callback_data->ram_session
 			);
+
+//			printf("Set pool ID for %p arg1 %p arg2 %p\n", packet, packet->release_packet_id_arg1, packet->release_packet_id_arg2);
 		}
 		else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
 				RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC ||
@@ -2088,6 +2101,17 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	}
 
 	if (packet->last_attempt != 0) {
+		if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
+			struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+			if (	publish->is_outbound != 0 &&
+					publish->qos > 0 &&
+					publish->qos_packets.pubcomp == NULL &&
+					publish->qos_packets.pubrec == NULL &&
+					publish->planned_expiry_time == 0
+			) {
+				iterate_callback_data->incomplete_qos_publish_counter++;
+			}
+		}
 		goto out_unlock;
 	}
 
@@ -2095,6 +2119,21 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 
 	if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBLISH) {
 		struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
+
+		if (	publish->last_attempt == 0 &&
+				publish->is_outbound != 0 &&
+				iterate_callback_data->incomplete_qos_publish_counter > iterate_callback_data->ram_session->max_in_flight
+		) {
+			if (++(iterate_callback_data->incomplete_qos_publish_max_reached_counter) == 1) {
+				RRR_DBG_3("Session %p max in flight %u/%u reached\n",
+						iterate_callback_data->ram_session,
+						iterate_callback_data->incomplete_qos_publish_counter,
+						iterate_callback_data->ram_session->max_in_flight
+				);
+			}
+			goto out_unlock;
+		}
+
 		if (publish->qos_packets.puback != NULL ||
 			publish->qos_packets.pubcomp != NULL) {
 			// Nothing more to do for this QoS handshake
@@ -2204,6 +2243,8 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			callback,
 			callback_arg,
 			max_count,
+			0,
+			0,
 			0,
 			ram_data,
 			ram_session
@@ -2484,6 +2525,8 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		RRR_BUG("arg was not NULL in rrr_mqtt_session_collection_ram_new\n");
 	}
 
+	pthread_mutexattr_t mutexattr;
+
 	struct rrr_mqtt_session_collection_ram_data *ram_data = malloc(sizeof(*ram_data));
 	if (ram_data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_session_collection_ram_new\n");
@@ -2502,10 +2545,23 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		goto out_destroy_ram_data;
 	}
 
-	if (pthread_mutex_init(&ram_data->lock, 0) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_mqtt_session_collection_ram_new\n");
+	if (pthread_mutexattr_init(&mutexattr) != 0) {
+		RRR_MSG_0("Could not initialize mutexattr in rrr_mqtt_session_collection_ram_new\n");
 		ret = 1;
 		goto out_destroy_collection;
+
+	}
+
+	if (pthread_mutexattr_settype(&mutexattr, PTHREAD_MUTEX_RECURSIVE) != 0) {
+		RRR_MSG_0("Could not set PTHREAD_MUTEX_RECURSIVE rrr_mqtt_session_collection_ram_new\n");
+		ret = 1;
+		goto out_destroy_mutexattr;
+	}
+
+	if (pthread_mutex_init(&ram_data->lock, &mutexattr) != 0) {
+		RRR_MSG_0("Could not initialize mutex in rrr_mqtt_session_collection_ram_new\n");
+		ret = 1;
+		goto out_destroy_mutexattr;
 	}
 
 	if (rrr_fifo_buffer_init_custom_free(&ram_data->retain_queue.buffer, rrr_mqtt_p_standardized_decref) != 0) {
@@ -2542,6 +2598,8 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 		pthread_mutex_destroy(&ram_data->lock);
 	out_destroy_collection:
 		rrr_mqtt_session_collection_destroy((struct rrr_mqtt_session_collection *)ram_data);
+	out_destroy_mutexattr:
+		pthread_mutexattr_destroy(&mutexattr);
 	out_destroy_ram_data:
 		free(ram_data);
 
