@@ -1536,7 +1536,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
-	;
 
 	if (mqttclient_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for mqtt client instance '%s'\n", thread_data->init_data.module->instance_name);
@@ -1596,7 +1595,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 				INSTANCE_D_NAME(thread_data));
 		goto out_destroy_client;
 	}
-	else if (data->do_transport_tls && rrr_mqtt_client_start_tls(
+	else if (data->do_transport_tls && rrr_mqtt_client_start_tls (
 			data->mqtt_client_data,
 			data->tls_certificate_file,
 			data->tls_key_file,

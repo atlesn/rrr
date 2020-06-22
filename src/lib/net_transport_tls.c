@@ -178,7 +178,6 @@ static int __rrr_net_transport_tls_new_ctx (
 		goto out_destroy;
 	}
 
-	// TODO : Add user-configurable cerfificates and paths
 	if ((ret = rrr_openssl_load_verify_locations(ctx, ca_file, ca_path)) != 0) {
 		ret = 1;
 		goto out_destroy;
@@ -190,8 +189,8 @@ static int __rrr_net_transport_tls_new_ctx (
 	}
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
-		RRR_DBG_1("Opening certificate file '%s', expecting PEM format\n", certificate_file);
-		if (SSL_CTX_use_certificate_file(ctx, certificate_file, SSL_FILETYPE_PEM) <= 0) {
+		RRR_DBG_1("Opening certificate chain file '%s'\n", certificate_file);
+		if (SSL_CTX_use_certificate_chain_file(ctx, certificate_file) <= 0) {
 			RRR_SSL_ERR("Could not set certificate file while starting TLS");
 			ret = 1;
 			goto out_destroy;
