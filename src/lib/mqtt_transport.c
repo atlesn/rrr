@@ -81,6 +81,7 @@ int rrr_mqtt_transport_start_tls (
 		struct rrr_mqtt_transport *transport,
 		const char *tls_certificate_file,
 		const char *tls_key_file,
+		const char *tls_ca_file,
 		const char *tls_ca_path
 ) {
 	int ret = 0;
@@ -93,6 +94,7 @@ int rrr_mqtt_transport_start_tls (
 			RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1,
 			tls_certificate_file,
 			tls_key_file,
+			tls_ca_file,
 			tls_ca_path
 	)) != 0) {
 		RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
@@ -116,6 +118,7 @@ int rrr_mqtt_transport_start_plain (
 			&tmp,
 			RRR_NET_TRANSPORT_PLAIN,
 			0,
+			NULL,
 			NULL,
 			NULL,
 			NULL

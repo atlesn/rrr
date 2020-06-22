@@ -510,10 +510,10 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	}
 
 	if (transport_code == RRR_HTTP_CLIENT_TRANSPORT_HTTPS) {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL, NULL);
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL, NULL, NULL);
 	}
 	else {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL);
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL);
 	}
 
 	if (ret != 0) {

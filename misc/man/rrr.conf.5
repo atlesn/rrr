@@ -1,4 +1,4 @@
-.Dd 2020-06-15
+.Dd 2020-06-22
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -707,6 +707,8 @@ The certificate to use for TLS connections. Optional.
 The private key to use for TLS connections. Optional.
 .It mqtt_broker_ca_path=PATH[:OTHER_PATH...]
 An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
+.It mqtt_broker_ca_file=FILENAME
+A CA certificate to use when validating certificates.
 .It mqtt_broker_max_keep_alive=SECONDS
 Maximum keep-alive value for clients, defaults to 30.
 .It mqtt_broker_retry_interval=SECONDS
@@ -816,6 +818,8 @@ The certificate to use for TLS connections. Optional.
 The private key to use for TLS connections. Optional.
 .It mqtt_ca_path=PATH[:OTHER_PATH...]
 An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
+.It mqtt_ca_file=FILENAME
+A CA certificate to use when validating certificates.
 .It mqtt_transport_type={plain|tls}
 The transport type to use when connecting to the server. Defaults to 'plain'.
 .B must

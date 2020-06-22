@@ -35,6 +35,7 @@ struct rrr_net_transport_tls {
 	int flags;
 	char *certificate_file;
 	char *private_key_file;
+	char *ca_file;
 	char *ca_path;
 };
 
@@ -43,6 +44,7 @@ int rrr_net_transport_tls_new (
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
+		const char *ca_file,
 		const char *ca_path
 );
 

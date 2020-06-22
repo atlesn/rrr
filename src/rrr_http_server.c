@@ -603,7 +603,7 @@ int main (int argc, const char *argv[]) {
 	int https_handle = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL)) != 0) {
+		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL)) != 0) {
 			RRR_MSG_0("Could not create HTTP transport\n");
 			goto out;
 		}
@@ -625,6 +625,7 @@ int main (int argc, const char *argv[]) {
 				(data.ssl_no_cert_verify ? RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY : 0),
 				data.certificate_file,
 				data.private_key_file,
+				NULL,
 				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTPS transport\n");

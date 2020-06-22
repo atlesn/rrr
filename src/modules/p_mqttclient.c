@@ -113,6 +113,7 @@ struct mqtt_client_data {
 	char *password;
 	char *tls_certificate_file;
 	char *tls_key_file;
+	char *tls_ca_file;
 	char *tls_ca_path;
 	char *transport_type;
 	int do_transport_tls;
@@ -132,6 +133,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password);
 	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
 	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_map_clear(&data->publish_values_from_array_list);
@@ -486,6 +488,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_file", tls_ca_file);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_path", tls_ca_path);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_transport_type", transport_type);
 
@@ -1589,6 +1592,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			data->mqtt_client_data,
 			data->tls_certificate_file,
 			data->tls_key_file,
+			data->tls_ca_file,
 			data->tls_ca_path
 	) != 0) {
 		RRR_MSG_0("Could not start tls network transport in mqtt client instance %s\n",

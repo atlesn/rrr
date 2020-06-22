@@ -67,6 +67,7 @@ struct mqtt_broker_data {
 	char *permission_name;
 	char *tls_certificate_file;
 	char *tls_key_file;
+	char *tls_ca_file;
 	char *tls_ca_path;
 	char *transport_type;
 	int do_transport_plain;
@@ -84,6 +85,7 @@ static void mqttbroker_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
 	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
 	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
 	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_mqtt_acl_entry_collection_clear(&data->acl);
@@ -194,6 +196,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_file", tls_ca_file);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_path", tls_ca_path);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
 
@@ -380,6 +383,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 				data->server_port_tls,
 				data->tls_certificate_file,
 				data->tls_key_file,
+				data->tls_ca_file,
 				data->tls_ca_path
 		) != 0) {
 			RRR_MSG_0("Could not start tls network transport in mqtt broker instance %s\n",

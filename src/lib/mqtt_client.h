@@ -95,6 +95,7 @@ int rrr_mqtt_client_start_tls (
 		struct rrr_mqtt_client_data *data,
 		const char *certificate_file,
 		const char *key_file,
+		const char *ca_file,
 		const char *ca_path
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);

@@ -61,6 +61,7 @@ int rrr_mqtt_transport_start_tls (
 		struct rrr_mqtt_transport *transport,
 		const char *tls_certificate_file,
 		const char *tls_key_file,
+		const char *tls_ca_file,
 		const char *tls_ca_path
 );
 int rrr_mqtt_transport_start_plain (

@@ -86,6 +86,7 @@ static void __rrr_net_transport_tls_destroy (struct rrr_net_transport *transport
 	struct rrr_net_transport_tls *tls = (struct rrr_net_transport_tls *) transport;
 
 	RRR_FREE_IF_NOT_NULL(tls->ca_path);
+	RRR_FREE_IF_NOT_NULL(tls->ca_file);
 	RRR_FREE_IF_NOT_NULL(tls->certificate_file);
 	RRR_FREE_IF_NOT_NULL(tls->private_key_file);
 
@@ -137,6 +138,7 @@ static int __rrr_net_transport_tls_new_ctx (
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
+		const char *ca_file,
 		const char *ca_path
 ) {
 	int ret = 0;
@@ -177,7 +179,7 @@ static int __rrr_net_transport_tls_new_ctx (
 	}
 
 	// TODO : Add user-configurable cerfificates and paths
-	if ((ret = rrr_openssl_load_verify_locations(ctx, ca_path)) != 0) {
+	if ((ret = rrr_openssl_load_verify_locations(ctx, ca_file, ca_path)) != 0) {
 		ret = 1;
 		goto out_destroy;
 	}
@@ -272,6 +274,7 @@ static int __rrr_net_transport_tls_connect (
 			tls->flags,
 			tls->certificate_file,
 			tls->private_key_file,
+			tls->ca_file,
 			tls->ca_path
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_connect");
@@ -420,6 +423,7 @@ static int __rrr_net_transport_tls_bind_and_listen (
 			tls->flags,
 			tls->certificate_file,
 			tls->private_key_file,
+			tls->ca_file,
 			tls->ca_path
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_bind_and_listen");
@@ -500,6 +504,7 @@ int __rrr_net_transport_tls_accept (
 			tls->flags,
 			tls->certificate_file,
 			tls->private_key_file,
+			tls->ca_file,
 			tls->ca_path
 	) != 0) {
 		RRR_SSL_ERR("Could not get SSL CTX in __rrr_net_transport_tls_accept\n");
@@ -752,6 +757,7 @@ int rrr_net_transport_tls_new (
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
+		const char *ca_file,
 		const char *ca_path
 ) {
 	struct rrr_net_transport_tls *result = NULL;
@@ -794,6 +800,14 @@ int rrr_net_transport_tls_new (
 		}
 	}
 
+	if (ca_file != NULL && *ca_file != '\0') {
+		if ((result->ca_file = strdup(ca_file)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for CA file file in rrr_net_transport_tls_new\n");
+			ret = 1;
+			goto out_free;
+		}
+	}
+
 	if (ca_path != NULL && *ca_path != '\0') {
 		if ((result->ca_path = strdup(ca_path)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for CA path file in rrr_net_transport_tls_new\n");
@@ -812,6 +826,7 @@ int rrr_net_transport_tls_new (
 	goto out;
 	out_free:
 		RRR_FREE_IF_NOT_NULL(result->ca_path);
+		RRR_FREE_IF_NOT_NULL(result->ca_file);
 		RRR_FREE_IF_NOT_NULL(result->certificate_file);
 		RRR_FREE_IF_NOT_NULL(result->private_key_file);
 		free(result);

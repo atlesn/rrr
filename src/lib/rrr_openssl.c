@@ -64,15 +64,16 @@ void rrr_openssl_global_unregister_user(void) {
 	pthread_mutex_unlock(&rrr_openssl_global_lock);
 }
 
-int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_path) {
+int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const char *ca_path) {
 	int ret = 0;
 
 	const char *ca_path_use = (ca_path != NULL ? ca_path : RRR_OPENSSL_DEFAULT_CA_PATH);
+	const char *ca_file_use = (ca_file != NULL && *ca_file != '\0' ? ca_file : NULL);
 
 	RRR_DBG_1("Using path '%s' for CA certificates in OpenSSL\n", ca_path_use);
 
 	// TODO : Add user-configurable cerfificates and paths
-	if (SSL_CTX_load_verify_locations(ctx, NULL, ca_path_use) != 1) {
+	if (SSL_CTX_load_verify_locations(ctx, ca_file_use, ca_path_use) != 1) {
 		RRR_SSL_ERR("Could not set certificate verification path\n");
 		ret = 1;
 		goto out;

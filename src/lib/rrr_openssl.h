@@ -33,6 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 void rrr_openssl_global_register_user(void);
 void rrr_openssl_global_unregister_user(void);
-int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_path);
+int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const char *ca_path);
 
 #endif /* RRR_OPENSSL_H */

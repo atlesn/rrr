@@ -189,6 +189,7 @@ int rrr_net_transport_new (
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
+		const char *ca_file,
 		const char *ca_path
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);

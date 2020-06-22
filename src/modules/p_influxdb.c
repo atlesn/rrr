@@ -71,7 +71,7 @@ int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *threa
 
 	memset (data, '\0', sizeof(*data));
 
-	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL) != 0) {
+	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");
 		ret = 1;
 		goto out;

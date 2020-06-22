@@ -267,6 +267,7 @@ int rrr_net_transport_new (
 		int flags,
 		const char *certificate_file,
 		const char *private_key_file,
+		const char *ca_file,
 		const char *ca_path
 ) {
 	int ret = 0;
@@ -295,7 +296,7 @@ int rrr_net_transport_new (
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
 			}
-			if (certificate_file != NULL || private_key_file != NULL || ca_path != NULL) {
+			if (certificate_file != NULL || private_key_file != NULL || ca_file != NULL || ca_path != NULL) {
 				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
@@ -307,6 +308,7 @@ int rrr_net_transport_new (
 					flags,
 					certificate_file,
 					private_key_file,
+					ca_file,
 					ca_path
 			);
 			break;

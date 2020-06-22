@@ -82,6 +82,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 		int port,
 		const char *certificate_file,
 		const char *key_file,
+		const char *ca_file,
 		const char *ca_path
 ) {
 	int ret = 0;
@@ -94,6 +95,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 			broker->mqtt_data.transport,
 			certificate_file,
 			key_file,
+			ca_file,
 			ca_path
 	)) != 0) {
 		RRR_MSG_0("Could not start TLS transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls\n");

@@ -103,6 +103,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
 		int port,
 		const char *certificate_file,
 		const char *key_file,
+		const char *ca_file,
 		const char *ca_path
 );
 int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
