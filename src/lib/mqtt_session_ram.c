@@ -34,6 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "mqtt_id_pool.h"
 
+#define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
+
 struct rrr_mqtt_session_collection_ram_data;
 
 /*struct rrr_mqtt_session_ram_stats {
@@ -69,6 +71,7 @@ struct rrr_mqtt_session_ram {
 	uint64_t last_seen;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
+	uint64_t prev_maintain_time;
 	uint32_t max_in_flight;
 	uint32_t complete_publish_grace_time;
 	int clean_session;
@@ -505,7 +508,7 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 
 	}
 
-	RRR_DBG_1("Got a session, session present was %i and no creation was %i\n",
+	RRR_DBG_2("Got a session, session present was %i and no creation was %i\n",
 			*session_present, no_creation);
 
 	__rrr_mqtt_session_ram_heartbeat_unlocked(result);
@@ -703,7 +706,9 @@ static int __rrr_mqtt_session_collection_ram_forward_publish_to_clients (RRR_FIF
 }
 
 struct maintain_queue_callback_data {
-	int counter;
+	int deleted_counter;
+	int ack_complete_counter;
+	int ack_missing_counter;
 	uint64_t complete_publish_grace_time_usec;
 	uint64_t retry_interval_usec;
 };
@@ -737,6 +742,9 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 		) {
 			ack_complete = 1;
 		}
+		else {
+			queue_callback_data->ack_missing_counter++;
+		}
 	}
 	else if (
 			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_SUBSCRIBE ||
@@ -746,11 +754,17 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 		if (sub_usub->sub_usuback != NULL) {
 			ack_complete = 1;
 		}
+		else {
+			queue_callback_data->ack_missing_counter++;
+		}
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
 		struct rrr_mqtt_p_pingreq *pingreq = (struct rrr_mqtt_p_pingreq *) packet;
 		if (pingreq->pingresp_received != 0) {
 			discard_now = 1;
+		}
+		else {
+			queue_callback_data->ack_missing_counter++;
 		}
 	}
 	else {
@@ -760,11 +774,12 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 	}
 
 	if (discard_now == 1) {
-		queue_callback_data->counter++;
+		queue_callback_data->deleted_counter++;
 		ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 		goto out;
 	}
 	else if (ack_complete == 1) {
+		queue_callback_data->ack_complete_counter++;
 		if (packet->planned_expiry_time == 0) {
 			packet->planned_expiry_time = rrr_time_get_64() + (queue_callback_data->complete_publish_grace_time_usec);
 			RRR_DBG_3("%s id %u is complete, starting grace time of %" PRIu64 " usecs.\n",
@@ -778,7 +793,7 @@ static int __rrr_mqtt_session_ram_maintain_queue_callback (RRR_FIFO_READ_CALLBAC
 					RRR_MQTT_P_GET_TYPE_NAME(packet),
 					RRR_MQTT_P_GET_IDENTIFIER(packet)
 			);
-			queue_callback_data->counter++;
+			queue_callback_data->deleted_counter++;
 			ret = RRR_FIFO_SEARCH_GIVE | RRR_FIFO_SEARCH_FREE;
 			goto out;
 		}
@@ -800,31 +815,41 @@ static int __rrr_mqtt_session_ram_maintain_queue (
 ) {
 	struct maintain_queue_callback_data queue_callback_data = {
 		0,
+		0,
+		0,
 		complete_publish_grace_time * 1000 * 1000,
 		retry_interval * 1000 * 1000
 	};
 
-	if (queue_callback_data.counter > 0) {
-		RRR_DBG_1("Deleted %i entries in __rrr_mqtt_session_ram_maintain_queue\n",
-				queue_callback_data.counter);
-	}
-
-	return rrr_fifo_buffer_search (
+	int ret = rrr_fifo_buffer_search (
 			&queue->buffer,
 			__rrr_mqtt_session_ram_maintain_queue_callback,
 			&queue_callback_data,
 			0
 	);
+
+	if (queue_callback_data.deleted_counter > 0 || queue_callback_data.ack_complete_counter > 0 || queue_callback_data.ack_missing_counter > 0) {
+		RRR_DBG_1("Queue %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+				queue,
+				queue_callback_data.deleted_counter,
+				queue_callback_data.ack_complete_counter,
+				queue_callback_data.ack_missing_counter,
+				rrr_fifo_buffer_get_entry_count(&queue->buffer));
+	}
+
+	return ret;
 }
 
 static int __rrr_mqtt_session_ram_maintain_queues (struct rrr_mqtt_session_ram *session) {
 	int ret = RRR_MQTT_SESSION_OK;
 
+//	printf ("Session %p maintain to_remote\n", session);
 	ret |= __rrr_mqtt_session_ram_maintain_queue(
 			&session->to_remote_queue,
 			session->complete_publish_grace_time,
 			session->retry_interval_usec
 	);
+//	printf ("Session %p maintain from_remote\n", session);
 	ret |= __rrr_mqtt_session_ram_maintain_queue(
 			&session->from_remote_queue,
 			session->complete_publish_grace_time,
@@ -1123,7 +1148,7 @@ static int __rrr_mqtt_session_ram_init (
 	);
 
 
-	RRR_DBG_1("Init session expiry interval: %" PRIu32 "\n",
+	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 "\n",
 			ram_session->session_properties.session_expiry);
 
 	out_unlock:
@@ -1186,10 +1211,18 @@ static int __rrr_mqtt_session_ram_heartbeat (
 
 	SESSION_RAM_UNLOCK(ram_session);
 
-	// TODO : Maybe not do this all the time
-	if (__rrr_mqtt_session_ram_maintain_queues(ram_session) != 0) {
-		RRR_MSG_0("Error in __rrr_mqtt_session_ram_heartbeat while maintaining session\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+	uint64_t time_now = rrr_time_get_64();
+	if (time_now - ram_session->prev_maintain_time > (RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000)) {
+		printf("session %p maintain buffer sizes %i and %i\n",
+				ram_session,
+				rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer),
+				rrr_fifo_buffer_get_entry_count(&ram_session->from_remote_queue.buffer)
+		);
+		if (__rrr_mqtt_session_ram_maintain_queues(ram_session) != 0) {
+			RRR_MSG_0("Error in __rrr_mqtt_session_ram_heartbeat while maintaining session\n");
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+		}
+		ram_session->prev_maintain_time = time_now;
 	}
 
 	SESSION_RAM_DECREF();
@@ -1223,6 +1256,18 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 	// held by the PUBLISH packet with user count 1, and we DECREF this pointer
 	// if a QoS packet field is already filled
 	RRR_MQTT_P_INCREF(ack_packet);
+
+	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREL ||
+			RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBCOMP
+		)
+	) {
+		// Ignore ACK packets waiting to be sent to remote for the first time. The packet IDs
+		// of these packets are both from the remote generated series and from the locally generated
+		// series, and they might therefore collide.
+		goto out;
+	}
 
 	if (RRR_MQTT_P_GET_TYPE(ack_packet) == RRR_MQTT_P_TYPE_PINGRESP && RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
 		struct rrr_mqtt_p_pingreq *pingreq = (struct rrr_mqtt_p_pingreq *) packet;
@@ -1322,6 +1367,7 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 					goto out;
 				}
 			}
+//			printf ("Bind PUBACK id %u to PUBLISH\n", ack_packet->packet_identifier);
 			publish->qos_packets.puback = (struct rrr_mqtt_p_puback *) ack_packet;
 			ack_packet = NULL;
 		}
@@ -1713,7 +1759,7 @@ static int __rrr_mqtt_session_ram_process_ack (
 		RRR_BUG("Received non-ACK packet in __rrr_mqtt_session_ram_process_ack\n");
 	}
 
-	RRR_DBG_3("Process ACK packet %p id %u type %s in send queue, was outbound: %i\n",
+	RRR_DBG_3("Process ACK packet %p id %u type %s in queue, was outbound: %i\n",
 			packet,
 			RRR_MQTT_P_GET_IDENTIFIER(packet),
 			RRR_MQTT_P_GET_TYPE_NAME(packet),
@@ -2218,7 +2264,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK(ram_session);
 
-	RRR_DBG_1("Session notify disconnect expiry interval: %" PRIu32 " clean session: %i reason: %u\n",
+	RRR_DBG_2("Session notify disconnect expiry interval: %" PRIu32 " clean session: %i reason: %u\n",
 			ram_session->session_properties.session_expiry,
 			ram_session->clean_session,
 			reason_v5
@@ -2230,11 +2276,11 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	}
 
  	if (ram_session->clean_session == 1) {
-		RRR_DBG_1("Destroying session which had clean session set upon disconnect\n");
+		RRR_DBG_2("Destroying session which had clean session set upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
 	else if (ram_session->session_properties.session_expiry == 0) {
-		RRR_DBG_1("Destroying session with zero session expiry upon disconnect\n");
+		RRR_DBG_2("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
 
@@ -2321,6 +2367,11 @@ static int __rrr_mqtt_session_ram_send_packet (
 				allow_missing_originating_packet
 		);
 		RRR_MQTT_P_DECREF(packet);
+
+		// Outgoing ACK for PUBLISH are both bound to the publish then
+		// they need to be written to the buffer as well as a solo
+		// entry for them to be sent immediately
+		goto out_write_to_buffer;
 	}
 	else if (RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PINGREQ) {
 		goto out_write_to_buffer;
@@ -2333,7 +2384,7 @@ static int __rrr_mqtt_session_ram_send_packet (
 	out_write_to_buffer:
 	RRR_MQTT_P_UNLOCK(packet);
 
-	RRR_MQTT_P_INCREF(packet);;
+	RRR_MQTT_P_INCREF(packet);
 	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, packet, sizeof(*packet), 0, 1) != 0) {
 		RRR_MSG_0("Could not write to to_remote_queue in __rrr_mqtt_session_ram_send_packet\n");
 		ret = 1;

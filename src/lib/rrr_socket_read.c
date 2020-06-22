@@ -228,6 +228,7 @@ static int __rrr_socket_read_message_default_read (
 }
 
 int rrr_socket_read_message_default (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,
@@ -250,6 +251,7 @@ int rrr_socket_read_message_default (
 	callback_data.socket_read_flags = socket_read_flags;
 
 	return rrr_read_message_using_callbacks (
+			bytes_read,
 			read_step_initial,
 			read_step_max_size,
 			read_flags,

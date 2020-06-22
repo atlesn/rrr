@@ -107,6 +107,8 @@ struct mqtt_client_data {
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
+	uint64_t total_usleep_count;
+	uint64_t total_ticks_count;
 	char *username;
 	char *password;
 	char *tls_certificate_file;
@@ -1402,13 +1404,16 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 			break;
 		}
 
-		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
+		int something_happened = 0;
+		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_0("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
 		}
 
-		rrr_posix_usleep (5000); // 50 ms
+		if (something_happened == 0) {
+			rrr_posix_usleep (50000); // 50 ms
+		}
 	}
 
 	return 0;
@@ -1470,7 +1475,11 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 	return 0;
 }
 
-static void mqttlient_update_stats (struct mqtt_client_data *data, struct rrr_stats_instance *stats) {
+static void mqttlient_update_stats (
+		struct mqtt_client_data *data,
+		struct rrr_stats_instance *stats
+) {
+
 	if (stats->stats_handle == 0) {
 		return;
 	}
@@ -1483,6 +1492,10 @@ static void mqttlient_update_stats (struct mqtt_client_data *data, struct rrr_st
 	// This is difficult to count in the MQTT-framework as the same function is used to send packets
 	// regardless of their origin. We therefore count it in the module poll callback function.
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
+
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_usleep", 0, data->total_usleep_count);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_ticks", 0, data->total_ticks_count);
 
 	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
@@ -1639,13 +1652,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			goto reconnect;
 		}
 
-		if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-			rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, 50);
+		int something_happened = 0;
 
-			startup_time = 0;
-		}
-
-		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
+		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
@@ -1657,12 +1666,21 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			goto out_destroy_client;
 		}
 
+		if (something_happened == 0) {
+			data->total_usleep_count++;
+			rrr_posix_usleep (50000); // 50 ms
+			if (startup_time == 0 || rrr_time_get_64() > startup_time) {
+				rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, 0);
+
+				startup_time = 0;
+			}
+		}
+		data->total_ticks_count++;
+
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
 			mqttlient_update_stats(data, stats);
 			prev_stats_time = rrr_time_get_64();
 		}
-
-		rrr_posix_usleep (5000); // 50 ms
 	}
 
 	out_destroy_client:

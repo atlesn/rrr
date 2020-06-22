@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
 #define RRR_MQTT_CLIENT_MAX_SOCKETS					100
 #define RRR_MQTT_CLIENT_MAX_IN_FLIGHT				10
-#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME	10
+#define RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME	0
 #define RRR_MQTT_CLIENT_KEEP_ALIVE					30
 
 #include <inttypes.h>
@@ -115,7 +115,10 @@ int rrr_mqtt_client_new (
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
 		void *packet_parsed_handler_arg
 );
-int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data);
+int rrr_mqtt_client_synchronized_tick (
+		int *something_happened,
+		struct rrr_mqtt_client_data *data
+);
 int rrr_mqtt_client_iterate_and_clear_local_delivery (
 		struct rrr_mqtt_client_data *data,
 		int (*callback)(struct rrr_mqtt_p_publish *publish, void *arg),

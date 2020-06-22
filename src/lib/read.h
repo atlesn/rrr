@@ -100,6 +100,7 @@ int rrr_read_session_destroy (
 		struct rrr_read_session *read_session
 );
 int rrr_read_message_using_callbacks (
+		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,

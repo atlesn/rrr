@@ -629,6 +629,7 @@ static int __rrr_net_transport_tls_read_read (
 }
 
 static int __rrr_net_transport_tls_read_message (
+	uint64_t *bytes_read,
 	struct rrr_net_transport_handle *handle,
 	int read_attempts,
 	ssize_t read_step_initial,
@@ -641,7 +642,9 @@ static int __rrr_net_transport_tls_read_message (
 ) {
 	int ret = 0;
 
-	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
+	*bytes_read = 0;
+
+//	struct rrr_net_transport_tls_ssl_data *ssl_data = handle->submodule_private_ptr;
 
 	// Try only once to avoid blocking on bad clients
 /*	while (ssl_data->handshake_complete == 0) {
@@ -670,7 +673,9 @@ static int __rrr_net_transport_tls_read_message (
 	};
 
 	while (--read_attempts >= 0) {
+		uint64_t bytes_read_tmp = 0;
 		ret = rrr_read_message_using_callbacks (
+				&bytes_read_tmp,
 				read_step_initial,
 				read_step_max_size,
 				read_flags,
@@ -684,6 +689,7 @@ static int __rrr_net_transport_tls_read_message (
 				NULL,
 				&read_callback_data
 		);
+		*bytes_read += bytes_read_tmp;
 
 		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE) {
 			continue;
@@ -702,7 +708,7 @@ static int __rrr_net_transport_tls_read_message (
 }
 
 static int __rrr_net_transport_tls_send (
-	ssize_t *sent_bytes,
+	uint64_t *sent_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
@@ -719,7 +725,7 @@ static int __rrr_net_transport_tls_send (
 		return 1;
 	}
 	else {
-		*sent_bytes = size;
+		*sent_bytes = (size > 0 ? size : 0);
 	}
 
 	return 0;

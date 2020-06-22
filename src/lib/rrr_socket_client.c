@@ -226,7 +226,9 @@ int rrr_socket_client_collection_read (
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		uint64_t bytes_read = 0;
 		ret = rrr_socket_read_message_default (
+				&bytes_read,
 				&node->read_sessions,
 				node->connected_fd,
 				read_step_initial,

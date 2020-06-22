@@ -113,6 +113,7 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
 
 /* Run all tasks in sequence, simply call repeatedly for non-threaded operation */
 int rrr_mqtt_broker_synchronized_tick (
+		int *something_happened,
 		struct rrr_mqtt_broker_data *data,
 		int listen_handle
 );

@@ -575,7 +575,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	RRR_DBG_1("Setting keep-alive to %u in __rrr_mqtt_broker_handle_connect\n", use_keep_alive);
+	RRR_DBG_2("Setting keep-alive to %u in __rrr_mqtt_broker_handle_connect\n", use_keep_alive);
 
 	if (rrr_mqtt_property_collection_add_uint32 (
 			&connack->properties,
@@ -605,7 +605,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if ((ret & RRR_MQTT_SOFT_ERROR) != 0 && reason_v5 == 0) {
 		RRR_BUG("Reason was not set on soft error in rrr_mqtt_p_handler_connect\n");
 	}
-	RRR_DBG_1("Setting connection disconnect reason to %u in __rrr_mqtt_broker_handle_connect\n", reason_v5);
+	RRR_DBG_2("Setting connection disconnect reason to %u in __rrr_mqtt_broker_handle_connect\n", reason_v5);
 	connack->reason_v5 = reason_v5;
 	RRR_MQTT_CONN_SET_DISCONNECT_REASON_V5(connection, reason_v5);
 
@@ -1030,6 +1030,7 @@ int rrr_mqtt_broker_accept_connections (
 }
 
 int rrr_mqtt_broker_synchronized_tick (
+		int *something_happened,
 		struct rrr_mqtt_broker_data *data,
 		int listen_handle
 ) {
@@ -1042,7 +1043,7 @@ int rrr_mqtt_broker_synchronized_tick (
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (&data->mqtt_data, NULL, NULL)) != 0) {
+	if ((ret = rrr_mqtt_common_read_parse_handle (something_happened, &data->mqtt_data, NULL, NULL)) != 0) {
 		goto out;
 	}
 

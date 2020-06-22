@@ -124,6 +124,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
+	uint64_t *bytes_read,
 	struct rrr_net_transport_handle *handle,
 	int read_attempts,
 	ssize_t read_step_initial,
@@ -136,6 +137,8 @@ static int __rrr_net_transport_plain_read_message (
 ) {
 	int ret = 0;
 
+	*bytes_read = 0;
+
 	struct rrr_net_transport_plain_read_session callback_data = {
 			handle,
 			get_target_size,
@@ -145,7 +148,9 @@ static int __rrr_net_transport_plain_read_message (
 	};
 
 	while (--read_attempts >= 0) {
+		uint64_t bytes_read_tmp = 0;
 		ret = rrr_socket_read_message_default (
+				&bytes_read_tmp,
 				&handle->read_sessions,
 				handle->submodule_private_fd,
 				read_step_initial,
@@ -157,6 +162,7 @@ static int __rrr_net_transport_plain_read_message (
 				__rrr_net_transport_plain_read_complete_callback,
 				&callback_data
 		);
+		*bytes_read += bytes_read_tmp;
 
 		if (ret == RRR_SOCKET_OK) {
 			// TODO : Check for persistent connection/more results which might be
@@ -174,14 +180,18 @@ static int __rrr_net_transport_plain_read_message (
 }
 
 static int __rrr_net_transport_plain_send (
-	ssize_t *written_bytes,
+	uint64_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
 ) {
 	int ret = RRR_NET_TRANSPORT_SEND_OK;
 
-	if ((ret = rrr_socket_sendto_nonblock(written_bytes, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
+	*written_bytes = 0;
+
+	ssize_t written_bytes_tmp = 0;
+
+	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			goto out;
 		}
@@ -189,6 +199,8 @@ static int __rrr_net_transport_plain_send (
 		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
+
+	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
 
 	out:
 	return ret;

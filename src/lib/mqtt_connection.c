@@ -205,11 +205,11 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	// This will be cleaned up anyway, it's more for informational purposes
 	if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
-		RRR_DBG_1("Connection %p was supposedly not yet closed, closing now\n", connection);
+		RRR_DBG_2("Connection %p was supposedly not yet closed, closing now\n", connection);
 		__rrr_mqtt_connection_close (connection);
 	}
 
-	RRR_DBG_1("Destroying connection %p, final destruction\n", connection);
+	RRR_DBG_2("Destroying connection %p, final destruction\n", connection);
 
 	rrr_fifo_buffer_clear(&connection->receive_queue.buffer);
 
@@ -319,8 +319,11 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, starting timer (and closing connection if neeeded)\n",
-					connection, connection->disconnect_reason_v5_);
+			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if neeeded)\n",
+					connection,
+					(connection->client_id != NULL ? connection->client_id : ""),
+					connection->disconnect_reason_v5_
+			);
 			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
 				__rrr_mqtt_connection_close (connection);
 			}
@@ -333,7 +336,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 			ret = RRR_LL_DIDNT_DESTROY;
 			goto out;
 		}
-		RRR_DBG_1("Destroying connection %p in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy reason %u, timer done\n",
+		RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
 				connection, connection->disconnect_reason_v5_);
 	}
 
@@ -471,10 +474,12 @@ int rrr_mqtt_conn_iterator_ctx_check_alive_callback (
 
 static void __rrr_mqtt_connection_update_last_read_time (struct rrr_mqtt_conn *connection) {
 	connection->last_read_time = rrr_time_get_64();
+//-	printf ("Set last_read_time to %" PRIu64 "\n", connection->last_read_time);
 }
 
 static void __rrr_mqtt_connection_update_last_write_time (struct rrr_mqtt_conn *connection) {
 	connection->last_write_time = rrr_time_get_64();
+//	printf ("Set last_write_time to %" PRIu64 "\n", connection->last_write_time);
 }
 
 static int __rrr_mqtt_conn_parse (
@@ -567,6 +572,8 @@ static int __rrr_mqtt_conn_read_complete_callback (
 //	printf ("read_complete %p wpos %li target size %li buf size %li\n",
 //			read_session, read_session->rx_buf_wpos, read_session->target_size, read_session->rx_buf_size);
 
+	__rrr_mqtt_connection_update_last_read_time (connection);
+
 	if ((ret = __rrr_mqtt_conn_parse (read_session, connection)) != RRR_MQTT_OK) {
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
@@ -646,21 +653,30 @@ int rrr_mqtt_conn_iterator_ctx_read (
 			handler_callback_arg
 	};
 
-	if ((ret = rrr_net_transport_ctx_read_message (
-			handle,
-			2, // Read two times this round
-			2, // Read only two bytes the first time
-			read_step_max_size,
-			RRR_READ_F_NO_SLEEPING,
-			__rrr_mqtt_conn_read_get_target_size,
-			&callback_data,
-			__rrr_mqtt_conn_read_complete_callback,
-			&callback_data
-	)) != 0) {
-		goto out;
-	}
+	// TODO : Make this better
+	// Do this 60 times as we send 50 packets at a time (10 more)
+	for (int i = 0; i < 60; i++) {
+		uint64_t prev_bytes_read = handle->bytes_read_total;
 
-	__rrr_mqtt_connection_update_last_read_time (connection);
+		if ((ret = rrr_net_transport_ctx_read_message (
+				handle,
+				2, // Read two times this round
+				2, // Read only two bytes the first time
+				read_step_max_size,
+				RRR_READ_F_NO_SLEEPING,
+				__rrr_mqtt_conn_read_get_target_size,
+				&callback_data,
+				__rrr_mqtt_conn_read_complete_callback,
+				&callback_data
+		)) != 0) {
+			goto out;
+		}
+
+		if (prev_bytes_read == handle->bytes_read_total) {
+			// Nothing was read
+			break;
+		}
+	}
 
 	out:
 	return ret;
@@ -684,8 +700,6 @@ static int __rrr_mqtt_conn_iterator_ctx_write (
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto out;
 	}
-
-	__rrr_mqtt_connection_update_last_write_time(connection);
 
 	out:
 	return ret;
@@ -814,6 +828,8 @@ int rrr_mqtt_conn_iterator_ctx_send_packet (
 			total_size,
 			RRR_MQTT_P_GET_IDENTIFIER(packet)
 	);
+
+	__rrr_mqtt_connection_update_last_write_time(connection);
 
 	if ((ret = __rrr_mqtt_conn_iterator_ctx_write (handle, (char*) &header, sizeof(header.type) + variable_int_length)) != 0) {
 		if (ret == RRR_MQTT_INCOMPLETE) {

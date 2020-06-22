@@ -75,6 +75,9 @@ struct rrr_net_transport_handle {
 	enum rrr_net_transport_socket_mode mode;
 	struct rrr_read_session_collection read_sessions;
 
+	uint64_t bytes_read_total;
+	uint64_t bytes_written_total;
+
 	// Like SSL data or plain FD
 	void *submodule_private_ptr;
 	int submodule_private_fd;
@@ -148,6 +151,7 @@ struct rrr_net_transport_methods {
 			struct rrr_net_transport_handle *handle
 	);
 	int (*read_message)(
+			uint64_t *bytes_read,
 			struct rrr_net_transport_handle *handle,
 			int read_attempts,
 			ssize_t read_step_initial,
@@ -159,7 +163,7 @@ struct rrr_net_transport_methods {
 			void *complete_callback_arg
 	);
 	int (*send)(
-			ssize_t *sent_bytes,
+			uint64_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
 			const void *data,
 			ssize_t size

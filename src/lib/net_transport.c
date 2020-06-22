@@ -477,7 +477,9 @@ int rrr_net_transport_ctx_read_message (
 		RRR_BUG("BUG: Handle to rrr_net_transport_read_message was not of CONNECTION type\n");
 	}
 
-	return handle->transport->methods->read_message (
+	uint64_t bytes_read = 0;
+	int ret = handle->transport->methods->read_message (
+			&bytes_read,
 			handle,
 			read_attempts,
 			read_step_initial,
@@ -488,6 +490,9 @@ int rrr_net_transport_ctx_read_message (
 			complete_callback,
 			complete_callback_arg
 	);
+	handle->bytes_read_total += bytes_read;
+
+	return ret;
 }
 
 int rrr_net_transport_ctx_send_nonblock (
@@ -501,7 +506,7 @@ int rrr_net_transport_ctx_send_nonblock (
 		RRR_BUG("BUG: Handle to rrr_net_transport_ctx_send_nonblock was not of CONNECTION type\n");
 	}
 
-	ssize_t written_bytes = 0;
+	uint64_t written_bytes = 0;
 
 	if ((ret = handle->transport->methods->send (
 			&written_bytes,
@@ -520,6 +525,8 @@ int rrr_net_transport_ctx_send_nonblock (
 		ret = RRR_NET_TRANSPORT_SEND_INCOMPLETE;
 	}
 
+	handle->bytes_written_total += written_bytes;
+
 	out:
 	return ret;
 }
@@ -535,8 +542,8 @@ int rrr_net_transport_ctx_send_blocking (
 		RRR_BUG("BUG: Handle to rrr_net_transport_send_blocking was not of CONNECTION type\n");
 	}
 
-	ssize_t written_bytes = 0;
-	ssize_t written_bytes_total = 0;
+	uint64_t written_bytes = 0;
+	uint64_t written_bytes_total = 0;
 
 	do {
 		if ((ret = handle->transport->methods->send (

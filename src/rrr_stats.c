@@ -199,7 +199,10 @@ static int __rrr_stats_read_message (
 			callback, callback_data
 	};
 
+	uint64_t bytes_read = 0;
+
 	return rrr_socket_read_message_default (
+			&bytes_read,
 			read_sessions,
 			fd,
 			sizeof(struct rrr_socket_msg),

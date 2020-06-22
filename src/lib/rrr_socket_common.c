@@ -123,7 +123,9 @@ int rrr_socket_common_receive_array (
 			arg
 	};
 
+	uint64_t bytes_read = 0;
 	int ret = rrr_socket_read_message_default (
+			&bytes_read,
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_socket_msg),

@@ -311,7 +311,7 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int __receive_http_response (struct rrr_http_part *part, void *arg) {
+static int __receive_http_response (struct rrr_http_part *part, const char *data_ptr, void *arg) {
 	struct response_callback_data *data = arg;
 
 	int ret = 0;

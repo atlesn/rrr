@@ -415,6 +415,7 @@ void __rrr_net_http_server_worker_close_transport (void *arg) {
 
 int __rrr_net_http_server_worker_http_session_receive_callback (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		void *arg
 ) {
 	return 0;

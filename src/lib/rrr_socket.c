@@ -895,7 +895,7 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_3("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+		RRR_DBG_3("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -925,7 +925,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_MSG_0("Error from send(to) function in rrr_socket_sendto fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_MSG_0("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,

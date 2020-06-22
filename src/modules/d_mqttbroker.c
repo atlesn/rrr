@@ -395,25 +395,30 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		uint64_t time_now = rrr_time_get_64();
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
+		int plain_something_happened = 0;
+		int tls_something_happened = 0;
+
 		if (listen_handle_plain) {
-			if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data, listen_handle_plain) != 0) {
+			if (rrr_mqtt_broker_synchronized_tick(&plain_something_happened, data->mqtt_broker_data, listen_handle_plain) != 0) {
 				RRR_MSG_ERR("Error from MQTT broker while running plain transport tasks\n");
 				break;
 			}
 		}
 		if (listen_handle_tls) {
-			if (rrr_mqtt_broker_synchronized_tick(data->mqtt_broker_data, listen_handle_tls) != 0) {
+			if (rrr_mqtt_broker_synchronized_tick(&tls_something_happened, data->mqtt_broker_data, listen_handle_tls) != 0) {
 				RRR_MSG_ERR("Error from MQTT broker while running TLS transport tasks\n");
 				break;
 			}
+		}
+
+		if (plain_something_happened + tls_something_happened == 0) {
+			rrr_posix_usleep(50000); // 50 ms
 		}
 
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
 			mqttbroker_update_stats(data, stats);
 			prev_stats_time = rrr_time_get_64();
 		}
-
-		rrr_posix_usleep (5000); // 50 ms
 	}
 
 	// If clients run on the same machine, we hope they close the connection first

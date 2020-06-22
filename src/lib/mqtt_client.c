@@ -793,7 +793,10 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 		return ret;
 }
 
-int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {
+int rrr_mqtt_client_synchronized_tick (
+		int *something_happened,
+		struct rrr_mqtt_client_data *data
+) {
 	int ret = 0;
 
 	struct exceeded_keep_alive_callback_data callback_data = {
@@ -801,6 +804,7 @@ int rrr_mqtt_client_synchronized_tick (struct rrr_mqtt_client_data *data) {
 	};
 
 	if ((ret = rrr_mqtt_common_read_parse_handle (
+			something_happened,
 			&data->mqtt_data,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,
 			&callback_data

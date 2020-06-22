@@ -143,6 +143,7 @@ void rrr_read_session_collection_remove_session (
 }
 
 int rrr_read_message_using_callbacks (
+		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
@@ -181,6 +182,8 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 ) {
 	int ret = RRR_READ_OK;
+
+	*bytes_read = 0;
 
 	ssize_t bytes = 0;
 	char buf[read_step_max_size];
@@ -274,6 +277,7 @@ int rrr_read_message_using_callbacks (
 
 	/* Check for expansion of buffer */
 	if (bytes > 0) {
+		*bytes_read = bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
