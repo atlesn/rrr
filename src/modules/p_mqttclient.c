@@ -63,6 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 #define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
 #define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
+#define RRR_MQTT_CLIENT_KEEP_ALIVE 30
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
