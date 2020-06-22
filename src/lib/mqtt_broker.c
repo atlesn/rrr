@@ -40,8 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535
 
-#define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	1000
-#define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME 2
+#define RRR_MQTT_BROKER_MAX_IN_FLIGHT 	125
+#define RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME_S 2
 
 struct rrr_mqtt_broker_listen_ipv4_and_ipv6_callback_data {
 	int transport_handle;
@@ -538,7 +538,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			callback_data.session_properties,
 			mqtt_data->retry_interval_usec,
 			RRR_MQTT_BROKER_MAX_IN_FLIGHT,
-			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME,
+			RRR_MQTT_BROKER_COMPLETE_PUBLISH_GRACE_TIME_S,
 			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
 			0, // No local delivery (forward publish to other sessions)
 			&session_present

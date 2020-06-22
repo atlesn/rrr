@@ -1633,6 +1633,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	// Main loop
+	unsigned int consecutive_nothing_happened = 0;
 	uint64_t prev_stats_time = rrr_time_get_64();
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
@@ -1658,7 +1659,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		int something_happened = 0;
-
 		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
@@ -1672,13 +1672,17 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 
 		if (something_happened == 0) {
-			data->total_usleep_count++;
-			rrr_posix_usleep (50000); // 50 ms
+			if (++consecutive_nothing_happened > 100) {
+				rrr_posix_usleep (50000); // 50 ms
+				data->total_usleep_count++;
+			}
 			if (startup_time == 0 || rrr_time_get_64() > startup_time) {
 				rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, 0);
-
 				startup_time = 0;
 			}
+		}
+		else {
+			consecutive_nothing_happened = 0;
 		}
 		data->total_ticks_count++;
 
