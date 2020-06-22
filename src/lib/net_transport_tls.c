@@ -190,6 +190,7 @@ static int __rrr_net_transport_tls_new_ctx (
 	}
 
 	if (certificate_file != NULL && *certificate_file != '\0') {
+		RRR_DBG_1("Opening certificate file '%s', expecting PEM format\n", certificate_file);
 		if (SSL_CTX_use_certificate_file(ctx, certificate_file, SSL_FILETYPE_PEM) <= 0) {
 			RRR_SSL_ERR("Could not set certificate file while starting TLS");
 			ret = 1;
@@ -198,6 +199,7 @@ static int __rrr_net_transport_tls_new_ctx (
 	}
 
 	if (private_key_file != NULL && *private_key_file != '\0') {
+		RRR_DBG_1("Opening private key file '%s', expecting PEM format\n", private_key_file);
 		if (SSL_CTX_use_PrivateKey_file(ctx, private_key_file, SSL_FILETYPE_PEM) <= 0 ) {
 			RRR_SSL_ERR("Could not set private key file while starting TLS");
 			ret = 1;
@@ -610,7 +612,7 @@ static int __rrr_net_transport_tls_read_read (
 	ssize_t result = BIO_read(ssl_data->web, buf, read_step_max_size);
 	if (result < 0) {
 		if (BIO_should_retry(ssl_data->web) == 0) {
-			int reason = BIO_get_retry_reason(ssl_data->web);
+//			int reason = BIO_get_retry_reason(ssl_data->web);
 			RRR_SSL_ERR("Error while reading from TLS connection");
 			// Possible close of connection
 			ret = RRR_READ_SOFT_ERROR;
