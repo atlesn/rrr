@@ -43,7 +43,7 @@ static PyModuleDef module_definition = {
 };
 
 /*
- * We need a lock because these methods are called before Py_Initialzie(), hence
+ * We need a lock because these methods are called before Py_Initialize(), hence
  * there are no python locking.
  */
 static pthread_mutex_t rrr_python3_module_create_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -79,7 +79,7 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 			goto out;
 		}
 		//printf ("python3 setting type flags 1: %lu", rrr_python3_setting_type.tp_flags);
-		if (PyType_Ready(&rrr_python3_setting_type) < 0) {
+		if (PyType_Ready(&rrr_python3_config_type) < 0) {
 			RRR_MSG_0("PyType_Ready for python3 setting type failed:\n");
 			PyErr_Print();
 			err = 1;
@@ -122,8 +122,8 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 			err = 1;
 			goto out;
 		}
-		Py_INCREF((PyObject *) &rrr_python3_setting_type);
-		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_SETTING_TYPE_NAME, (PyObject *) &rrr_python3_setting_type) != 0) {
+		Py_INCREF((PyObject *) &rrr_python3_config_type);
+		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_CONFIG_TYPE_NAME, (PyObject *) &rrr_python3_config_type) != 0) {
 			RRR_MSG_0("Could not add python3 setting type to module:\n");
 			PyErr_Print();
 			err = 1;

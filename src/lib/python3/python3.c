@@ -41,11 +41,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3.h"
 #include "python3_common.h"
-#include "python3_setting.h"
+#include "python3_config.h"
 #include "python3_vl_message.h"
 #include "python3_array.h"
 #include "python3_module.h"
 #include "python3_socket.h"
+#include "../array.h"
 #include "../settings.h"
 #include "../rrr_socket.h"
 #include "../rrr_socket_msg.h"
@@ -449,9 +450,6 @@ PyObject *__rrr_py_socket_message_to_pyobject (const struct rrr_socket_msg *mess
 	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
 		ret = rrr_python3_rrr_message_new_from_message_and_address (message, message_addr);
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(message)) {
-		ret = rrr_python3_setting_new_from_setting (message);
-	}
 	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
 #if RRR_SOCKET_64_IS_LONG
 		ret = PyLong_FromLong(message->msg_value);
@@ -487,24 +485,51 @@ static void __rrr_py_fork_signal_handler (int s) {
 struct rrr_py_persistent_process_read_callback_data {
 	struct python3_fork_runtime *runtime;
 	PyObject *function;
-	PyObject *config_function;
 	int *start_sourcing_requested;
 	struct rrr_message_addr previous_addr_msg;
 	int message_count;
 };
+
+int __rrr_py_persisten_process_call_application_raw (
+		PyObject *function,
+		PyObject *arg1,
+		PyObject *arg2
+) {
+	int ret = 0;
+
+	PyObject *result = PyObject_CallFunctionObjArgs(function, arg1, arg2, NULL);
+
+	if (result == NULL) {
+		RRR_MSG_0("Error while calling python3 function in __rrr_py_persistent_process_call_application_raw pid %i\n",
+				getpid());
+		PyErr_Print();
+		ret = 1;
+		goto out;
+
+	}
+	if (!PyObject_IsTrue(result)) {
+		RRR_MSG_0("Non-true returned from python3 function in __rrr_py_persistent_process_call_application_raw pid %i\n",
+				getpid());
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	RRR_Py_XDECREF(result);
+	return ret;
+}
 
 int __rrr_py_persistent_process_call_application (
 		const struct rrr_socket_msg *message,
 		struct rrr_message_addr *addr_message,
 		struct rrr_py_persistent_process_read_callback_data  *callback_data
 ) {
-	PyObject *result = NULL;
-	PyObject *arg = NULL;
+	PyObject *arg_message = NULL;
 
 	int ret = 0;
 
-	arg = __rrr_py_socket_message_to_pyobject(message, addr_message);
-	if (arg == NULL) {
+	arg_message = __rrr_py_socket_message_to_pyobject(message, addr_message);
+	if (arg_message == NULL) {
 		RRR_MSG_0("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
 		ret = 1;
 		goto out;
@@ -512,33 +537,15 @@ int __rrr_py_persistent_process_call_application (
 
 	PyObject *function = NULL;
 
-	if (rrr_python3_rrr_message_check(arg)) {
+	if (rrr_python3_rrr_message_check(arg_message)) {
 		function = callback_data->function;
-	}
-	else if (rrr_python3_setting_check(arg)) {
-		function = callback_data->config_function;
 	}
 
 	if (function != NULL) {
-		result = PyObject_CallFunctionObjArgs(function, callback_data->runtime->socket, arg, NULL);
-		if (result == NULL) {
-			RRR_MSG_0("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
-					getpid());
-			PyErr_Print();
-			ret = 1;
-			goto out;
-
-		}
-		if (!PyObject_IsTrue(result)) {
-			RRR_MSG_0("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
-					getpid());
-			ret = 1;
-			goto out;
-		}
+		ret = __rrr_py_persisten_process_call_application_raw(function, callback_data->runtime->socket, arg_message);
 	}
 	else {
-		// This happens when no config-function is specified
-		RRR_DBG_3("Python3 no functions defined for received message type %p, %s\n", Py_TYPE(arg), arg->ob_type->tp_name);
+		RRR_DBG_3("Python3 no functions defined for received message type %p, %s\n", Py_TYPE(arg_message), arg_message->ob_type->tp_name);
 	}
 
 	if (ret != 0) {
@@ -546,18 +553,38 @@ int __rrr_py_persistent_process_call_application (
 	}
 
 	out:
-	RRR_Py_XDECREF(result);
-	RRR_Py_XDECREF(arg);
+	RRR_Py_XDECREF(arg_message);
 
 	return ret;
 }
 
 void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runtime, PyObject *function) {
 	PyObject *result = NULL;
+	PyObject *message = NULL;
+
+	struct rrr_message *template = NULL;
 
 	int ret = 0;
 	while (rrr_py_fork_running) {
-		result = PyObject_CallFunctionObjArgs(function, runtime->socket, NULL);
+		RRR_FREE_IF_NOT_NULL(template);
+		template = rrr_message_new_array(rrr_time_get_64(), 0, 0);
+		if (template == NULL) {
+			RRR_MSG_0("Could not create template message in __rrr_py_persistent_fork_run_source_loop\n");
+			ret = 1;
+			goto out;
+		}
+
+		template->version = RRR_ARRAY_VERSION;
+
+		RRR_Py_XDECREF(message);
+		message = rrr_python3_rrr_message_new_from_message((struct rrr_socket_msg *) template);
+		if (message == NULL) {
+			RRR_MSG_0("Could not create python message in __rrr_py_persistent_fork_run_source_loop\n");
+			ret = 1;
+			goto out;
+		}
+
+		result = PyObject_CallFunctionObjArgs(function, runtime->socket, message);
 		if (result == NULL) {
 			RRR_MSG_0("Error while calling python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
@@ -576,6 +603,8 @@ void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runt
 	}
 
 	out:
+	RRR_FREE_IF_NOT_NULL(template);
+	RRR_Py_XDECREF(message);
 	RRR_Py_XDECREF(result);
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
 		RRR_DBG("Python3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
@@ -635,11 +664,73 @@ static int __rrr_py_persistent_process_read_callback (const void *data, size_t d
 	return ret;
 }
 
+struct return_settings_iterate_callback_data {
+	struct rrr_mmap_channel *channel_from_fork;
+};
+
+int __rrr_py_return_settings_iterate_callback (
+		struct rrr_setting_packed *setting_packed,
+		void *callback_arg
+) {
+	struct return_settings_iterate_callback_data *data = callback_arg;
+
+	int ret = 0;
+
+	if ((ret = rrr_mmap_channel_write(data->channel_from_fork, setting_packed, sizeof(*setting_packed))) != 0) {
+		RRR_MSG_0("Error while writing setting to mmap channel in __rrr_py_return_settings_iterate_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+int __rrr_py_persistent_send_config (
+		PyObject *config_function,
+		struct rrr_mmap_channel *channel_from_fork,
+		struct rrr_instance_settings *settings
+) {
+	int ret = 0;
+
+	PyObject *config = NULL;
+
+	if (config_function == NULL) {
+		goto out;
+	}
+
+	// NOTE : The python config object operates on the original settings structure
+	config = rrr_python3_config_new (settings);
+
+	if (config == NULL) {
+		RRR_MSG_0("Could not create config object in __rrr_py_persistent_process_loop\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = __rrr_py_persisten_process_call_application_raw (
+			config_function,
+			config,
+			NULL
+	)) != 0) {
+		RRR_MSG_0("Error from config function in __rrr_py_persistent_process_loop\n");
+		ret = 1;
+		goto out;
+	}
+
+	struct return_settings_iterate_callback_data callback_data = { channel_from_fork };
+
+	ret = rrr_settings_iterate_packed(settings, __rrr_py_return_settings_iterate_callback, &callback_data);
+
+	out:
+	Py_XDECREF(config);
+	return ret;
+}
+
 void __rrr_py_persistent_process_loop (
 		struct python3_fork_runtime *runtime,
 		struct rrr_mmap_channel *channel_to_fork,
 		PyObject *function,
-		PyObject *config_function,
 		int *start_sourcing_requested
 ) {
 	*start_sourcing_requested = 0;
@@ -647,7 +738,6 @@ void __rrr_py_persistent_process_loop (
 	struct rrr_py_persistent_process_read_callback_data callback_data = {
 			runtime,
 			function,
-			config_function,
 			start_sourcing_requested,
 			{0},
 			0
@@ -689,7 +779,8 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 		const char *module_path,
 		const char *module_name,
 		const char *function_name,
-		const char *config_function_name
+		const char *config_function_name,
+		struct rrr_instance_settings *settings
 ) {
 	int ret = 0;
 
@@ -756,13 +847,17 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 		}
 	}
 
+	if ((ret = __rrr_py_persistent_send_config(config_function, fork->channel_from_fork, settings)) != 0) {
+		ret = 1;
+		goto out_cleanup_runtime;
+	}
+
 	int start_sourcing = 0;
 
 	__rrr_py_persistent_process_loop (
 			&runtime,
 			fork->channel_to_fork,
 			function,
-			config_function,
 			&start_sourcing
 	);
 
@@ -788,6 +883,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 int rrr_py_start_persistent_rw_fork (
 		struct python3_fork **result_fork,
 		struct rrr_fork_handler *fork_handler,
+		struct rrr_instance_settings *settings,
 		const char *module_path,
 		const char *module_name,
 		const char *function_name,
@@ -844,7 +940,8 @@ int rrr_py_start_persistent_rw_fork (
 			module_path,
 			module_name,
 			function_name,
-			config_function_name
+			config_function_name,
+			settings
 	);
 
 	// Avoid warnings in parent
@@ -903,7 +1000,7 @@ static int __rrr_py_persistent_process_socket_msg (
 	}
 	return ret;
 }
-
+/*
 int rrr_py_persistent_process_setting (
 		struct python3_fork *fork,
 		const struct rrr_setting_packed *setting
@@ -914,7 +1011,7 @@ int rrr_py_persistent_process_setting (
 	}
 	return ret;
 }
-
+*/
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
 		const struct rrr_ip_buffer_entry *entry

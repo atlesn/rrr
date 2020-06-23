@@ -383,13 +383,13 @@ static PyMethodDef array_value_methods[] = {
 		},
 		{
 				.ml_name	= "set",
-				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_set,
+				.ml_meth	= (void *) rrr_python3_array_value_f_set,
 				.ml_flags	= METH_FASTCALL,
 				.ml_doc		= "Set a value of parameter with index x to value y"
 		},
 		{
 				.ml_name	= "get_tag",
-				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_get_tag,
+				.ml_meth	= (void *) rrr_python3_array_value_f_get_tag,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get tag of value"
 		},
@@ -407,19 +407,19 @@ static PyMethodDef array_value_methods[] = {
 		},
 		{
 				.ml_name	= "count",
-				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_count,
+				.ml_meth	= (void *) rrr_python3_array_value_f_count,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the number of items in the array"
 		},
 		{
 				.ml_name	= "get_type",
-				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_get_type,
+				.ml_meth	= (void *) rrr_python3_array_value_f_get_type,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the target type of the value"
 		},
 		{
 				.ml_name	= "get_type_str",
-				.ml_meth	= (PyCFunction) rrr_python3_array_value_f_get_type_str,
+				.ml_meth	= (void *) rrr_python3_array_value_f_get_type_str,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the target type of the value as a string"
 		},
@@ -816,7 +816,7 @@ static PyMethodDef array_methods[] = {
 		},
 		{
 				.ml_name	= "count",
-				.ml_meth	= (PyCFunction) rrr_python3_array_f_count,
+				.ml_meth	= (void *) rrr_python3_array_f_count,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get the number of items in the array"
 		},

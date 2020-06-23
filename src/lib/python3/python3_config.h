@@ -23,9 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_PYTHON3_SETTING_H
 
 typedef struct PyObject Pyobject;
-struct rrr_socket_msg;
+struct rrr_instance_settings;
 
-struct rrr_setting_packed *rrr_python3_setting_get_setting (PyObject *self);
-PyObject *rrr_python3_setting_new_from_setting (const struct rrr_socket_msg *msg);
+PyObject *rrr_python3_config_new (struct rrr_instance_settings *settings);
 
 #endif /* RRR_PYTHON3_SETTING_H */

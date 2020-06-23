@@ -58,7 +58,7 @@ struct rrr_python3_rrr_message_data {
 	struct rrr_message *message_dynamic;
 	PyObject *rrr_array;
 	struct rrr_python3_rrr_message_constants constants;
-	struct sockaddr ip_addr;
+	struct sockaddr_storage ip_addr;
 	socklen_t ip_addr_len;
 };
 
@@ -1183,8 +1183,14 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		goto out_err;
 	}
 
-	memcpy(&ret->ip_addr, &message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
-	ret->ip_addr_len = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
+	if (message_addr != NULL) {
+		memcpy(&ret->ip_addr, &message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
+		ret->ip_addr_len = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr);
+	}
+	else {
+		memset(&ret->ip_addr, '\0', sizeof(ret->ip_addr));
+		ret->ip_addr_len = 0;
+	}
 
 	RRR_FREE_IF_NOT_NULL(ret->message_dynamic);
 
@@ -1303,4 +1309,10 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		Py_XDECREF(node_tag);
 		rrr_array_clear(&array_tmp);
 		return (PyObject *) ret;
+}
+
+PyObject *rrr_python3_rrr_message_new_from_message (
+		const struct rrr_socket_msg *msg
+) {
+	return rrr_python3_rrr_message_new_from_message_and_address(msg, NULL);
 }
