@@ -26,12 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <netinet/in.h>
 
-#include "buffer.h"
-#include "ip.h"
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
-#include "linked_list.h"
-#include "read_constants.h"
+#include "../buffer.h"
+#include "../ip.h"
+#include "../linked_list.h"
+#include "../read_constants.h"
 
 #define RRR_MQTT_CONN_TYPE_IPV4 4
 #define RRR_MQTT_CONN_TYPE_IPV6 6

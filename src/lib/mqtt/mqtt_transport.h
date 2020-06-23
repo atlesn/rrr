@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <sys/socket.h>
 
-#include "net_transport.h"
 #include "mqtt_common.h"
+#include "../net_transport.h"
 
 struct rrr_mqtt_p;
 

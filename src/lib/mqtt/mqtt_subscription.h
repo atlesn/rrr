@@ -22,7 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_SUBSCRIPTION_H
 #define RRR_MQTT_SUBSCRIPTION_H
 
-#include "linked_list.h"
+#include <stdio.h>
+
+#include "../linked_list.h"
 
 #define RRR_MQTT_SUBSCRIPTION_OK				0
 #define RRR_MQTT_SUBSCRIPTION_MATCH				0

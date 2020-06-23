@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MQTT_ACL_H
 #define RRR_MQTT_ACL_H
 
-#include "linked_list.h"
+#include "../linked_list.h"
 
 #define RRR_MQTT_ACL_ACTION_DENY	0
 #define RRR_MQTT_ACL_ACTION_RO		1

@@ -19,14 +19,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include "mqtt_id_pool.h"
-#include "log.h"
-
 #include <stdlib.h>
 #include <stdint.h>
 #include <pthread.h>
 #include <string.h>
 #include <inttypes.h>
+
+#include "mqtt_id_pool.h"
+#include "../log.h"
 
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));

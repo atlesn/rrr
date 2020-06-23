@@ -26,6 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_property.h"
 
+// These headers for submodules should only include declaration of their new collection function
+#include "mqtt_session_ram.h"
+
 struct rrr_mqtt_p;
 struct rrr_mqtt_p_publish;
 struct rrr_mqtt_session_collection;

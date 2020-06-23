@@ -22,9 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
 #include "mqtt_property.h"
-#include "linked_list.h"
+#include "../log.h"
+#include "../linked_list.h"
 
 const struct rrr_mqtt_property_definition property_definitions[] = {
 		{RRR_MQTT_PROPERTY_DATA_TYPE_ONE,	0x01, "Payload format indicator"},

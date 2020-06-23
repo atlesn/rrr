@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "log.h"
 #include "mqtt_packet.h"
 #include "mqtt_common.h"
 #include "mqtt_broker.h"
@@ -32,10 +31,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_topic.h"
 #include "mqtt_transport.h"
 #include "mqtt_connection.h"
-#include "net_transport.h"
-#include "passwd.h"
-#include "linked_list.h"
-#include "gnu.h"
+#include "../log.h"
+#include "../net_transport.h"
+#include "../passwd.h"
+#include "../linked_list.h"
+#include "../gnu.h"
 
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535

@@ -24,15 +24,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
 #include "mqtt_session_ram.h"
 #include "mqtt_session.h"
 #include "mqtt_packet.h"
 #include "mqtt_subscription.h"
 #include "mqtt_common.h"
-#include "vl_time.h"
-#include "linked_list.h"
 #include "mqtt_id_pool.h"
+#include "../log.h"
+#include "../vl_time.h"
+#include "../linked_list.h"
 
 #define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
 

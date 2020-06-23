@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "mqtt_session.h"
-#include "read_constants.h"
+#include "../read_constants.h"
 
 #define RRR_MQTT_OK						RRR_READ_OK
 #define RRR_MQTT_INTERNAL_ERROR			RRR_READ_HARD_ERROR

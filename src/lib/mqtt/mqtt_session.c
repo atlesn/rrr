@@ -22,9 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
 #include "mqtt_session.h"
 #include "mqtt_property.h"
+#include "../log.h"
 
 void rrr_mqtt_session_properties_destroy (
 		struct rrr_mqtt_session_properties *target

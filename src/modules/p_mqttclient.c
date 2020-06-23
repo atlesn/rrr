@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <poll.h>
 
-#include "../lib/mqtt_topic.h"
-#include "../lib/mqtt_client.h"
-#include "../lib/mqtt_common.h"
-#include "../lib/mqtt_session_ram.h"
-#include "../lib/mqtt_subscription.h"
-#include "../lib/mqtt_packet.h"
+#include "../lib/mqtt/mqtt_topic.h"
+#include "../lib/mqtt/mqtt_client.h"
+#include "../lib/mqtt/mqtt_common.h"
+#include "../lib/mqtt/mqtt_session.h"
+#include "../lib/mqtt/mqtt_subscription.h"
+#include "../lib/mqtt/mqtt_packet.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"

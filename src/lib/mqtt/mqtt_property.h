@@ -23,8 +23,9 @@ along with this program.  If not
 #define RRR_MQTT_PROPERTY_H
 
 #include <inttypes.h>
+#include <stdio.h>
 
-#include "linked_list.h"
+#include "../linked_list.h"
 
 #define RRR_MQTT_PROPERTY_DATA_TYPE_ONE 1
 #define RRR_MQTT_PROPERTY_DATA_TYPE_TWO 2

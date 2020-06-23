@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <stdio.h>
 
-#include "buffer.h"
 #include "mqtt_property.h"
-#include "linked_list.h"
+#include "../buffer.h"
+#include "../linked_list.h"
 
 #define RRR_MQTT_MIN_RECEIVE_SIZE 2
 
