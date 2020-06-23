@@ -35,5 +35,8 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		const struct rrr_socket_msg *msg,
 		const struct rrr_message_addr *message_addr
 );
+PyObject *rrr_python3_rrr_message_new_from_message (
+		const struct rrr_socket_msg *msg
+);
 
 #endif /* RRR_PYTHON3_RRR_MESSAGE_H */

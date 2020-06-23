@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_common.h"
 #include "python3_module.h"
 #include "python3_module_common.h"
-#include "python3_setting.h"
 #include "python3_socket.h"
 #include "python3_vl_message.h"
 #include <unistd.h>
@@ -106,18 +105,6 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 				rrr_message->timestamp);
 
 		message = rrr_message_safe_cast(rrr_message);
-	}
-	else if (rrr_python3_setting_check(arg)) {
-		struct rrr_setting_packed *setting = rrr_python3_setting_get_setting (arg);
-		if (setting == NULL) {
-			ret = 1;
-			goto out;
-		}
-
-		RRR_DBG_3("python3 socket sending setting %s from application\n",
-				setting->name);
-
-		message = rrr_setting_safe_cast(setting);
 	}
 	else {
 		RRR_MSG_0("Received unknown object type in python3 socket send\n");

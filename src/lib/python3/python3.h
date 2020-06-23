@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 
 #include "../linked_list.h"
+#include "../rrr_socket_msg_head.h"
 #include "../../../build_directory.h"
 
-struct rrr_socket_msg;
 struct rrr_setting_packed;
 struct rrr_ip_buffer_entry;
 struct rrr_fork_handler;
@@ -44,8 +44,11 @@ struct rrr_fork_handler;
 #define RRR_PYTHON3_PERSISTENT_PROCESS_INPUT_MAX 12
 #define RRR_PYTHON3_EXTRA_SYS_PATH RRR_BUILD_DIR
 
+#define RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
+
 #define RRR_PY_PASTE(a,b,c) a ## b ## v
 
+struct rrr_instance_settings;
 struct python3_fork_runtime;
 
 struct python3_fork {
@@ -83,6 +86,7 @@ void rrr_py_fork_terminate_and_destroy (
 int rrr_py_start_persistent_rw_fork (
 		struct python3_fork **result_fork,
 		struct rrr_fork_handler *fork_handler,
+		struct rrr_instance_settings *settings,
 		const char *module_path,
 		const char *module_name,
 		const char *function_name,
@@ -113,10 +117,6 @@ int rrr_py_persistent_process_read_from_fork (
 		void **target,
 		size_t *target_size,
 		struct python3_fork *fork
-);
-int rrr_py_persistent_process_setting (
-		struct python3_fork *fork,
-		const struct rrr_setting_packed *setting
 );
 int rrr_py_persistent_process_message (
 		struct python3_fork *fork,
