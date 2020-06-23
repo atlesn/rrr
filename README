@@ -250,9 +250,16 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 
             return True
 
-       def source(socket : rrr_socket):
-            # create a new message
-            message = rrr_message()
+       def source(socket: rrr_socket, message: rrr_message):
+            # Set an array value in the template message
+            my_array_value = rrr_array_value()
+            my_array_value.set_tag("my_tag")
+            my_array_value.set(0, "my_value")
+
+            my_array = rrr_array()
+            my_array.append(my_array_value)
+
+            message.set_array(my_array)
 
             # queue the message to be sent back (optional) for python to give to readers
             socket.send(message)
