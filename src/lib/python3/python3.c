@@ -358,7 +358,12 @@ static void __rrr_py_fork_destroy_unlocked (struct python3_fork *fork) {
 	if (fork->pid > 0) {
 		rrr_fork_unregister_exit_handler(fork->fork_handler, fork->pid);
 		kill(fork->pid, SIGUSR1);
+		rrr_posix_usleep(250000); // 250 ms
+		kill(fork->pid, SIGKILL);
 	}
+
+	// Do this "only" on the channel which we write to in this fork (parent fork)
+	rrr_mmap_channel_writer_free_blocks(fork->channel_to_fork);
 
 	rrr_mmap_channel_destroy(fork->channel_to_fork);
 	rrr_mmap_channel_destroy(fork->channel_from_fork);
@@ -470,6 +475,10 @@ static void __rrr_py_fork_signal_handler (int s) {
 	if (s == SIGUSR1 || s == SIGINT || s == SIGTERM) {
 		rrr_py_fork_running = 0;
 	}
+	if (s == SIGINT) {
+		// Reset so that second SIGINT shuts us down
+		signal(SIGINT, SIG_DFL);
+	}
 	if (s == SIGPIPE) {
 	        RRR_MSG_0("Received SIGPIPE in fork, ignoring\n");
 	}
@@ -569,7 +578,7 @@ void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runt
 	out:
 	RRR_Py_XDECREF(result);
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
-		RRR_DBG("Pytohn3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
+		RRR_DBG("Python3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
 				getpid(), ret, rrr_py_fork_running);
 	}
 }
@@ -668,7 +677,7 @@ void __rrr_py_persistent_process_loop (
 	}
 
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
-		RRR_DBG("Pytohn3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
+		RRR_DBG("Python3 child persistent rw process exiting with return value %i, fork running is %i\n", ret, rrr_py_fork_running);
 	}
 
 	out:
@@ -823,8 +832,10 @@ int rrr_py_start_persistent_rw_fork (
 	signal(SIGUSR1, SIG_DFL);
 	signal(SIGPIPE, SIG_DFL);
 
+	sigaction (SIGINT, &action, NULL);
 	sigaction (SIGUSR1, &action, NULL);
 	sigaction (SIGPIPE, &action, NULL);
+	sigaction (SIGTERM, &action, NULL);
 
 	RRR_DBG_1("Python3 child fork %i starting python3 code\n", getpid());
 
@@ -836,9 +847,13 @@ int rrr_py_start_persistent_rw_fork (
 			config_function_name
 	);
 
+	// Avoid warnings in parent
+	// Only clean up the channel which we write to (child fork)
 	rrr_mmap_channel_writer_free_blocks(fork->channel_from_fork);
 
 	RRR_DBG_1("Python3 child fork %i returned %i\n", getpid(), ret);
+
+	// We apparently don't care much about freeing memory
 	exit(ret);
 
 	/////////////////
