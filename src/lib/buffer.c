@@ -25,16 +25,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
+#include "posix.h"
 #include "buffer.h"
 #include "log.h"
+#include "slow_noop.h"
 
-#define RRR_FIFO_BUFFER_DEBUG 1
+//#define RRR_FIFO_BUFFER_DEBUG 1
 
 static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
 //	printf ("buffer %p write lock wait thread %lu\n", buffer, pthread_self());
 	while (pthread_rwlock_trywrlock(&buffer->rwlock) != 0) {
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 	}
 //	printf ("buffer %p write lock done thread %lu\n", buffer, pthread_self());
 }
@@ -51,7 +53,7 @@ static inline void rrr_fifo_read_lock(struct rrr_fifo_buffer *buffer) {
 //	printf ("buffer %p read lock wait thread %lu\n", buffer, pthread_self());
 	while (pthread_rwlock_tryrdlock(&buffer->rwlock) != 0) {
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 	}
 //	printf ("buffer %p read lock done thread %lu\n", buffer, pthread_self());
 }
@@ -114,9 +116,9 @@ static int __rrr_fifo_verify_counter(struct rrr_fifo_buffer *buffer) {
 #else
 
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK() \
-	(void)(void)
+	do { } while (0)
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() \
-	(void)(void)
+	do { } while (0)
 
 #endif
 
@@ -190,7 +192,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (struct rrr_fifo_buffer_entry **
 
 	struct rrr_fifo_buffer_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
+		RRR_MSG_0("Could not allocate entry in __rrr_fifo_buffer_entry_new_unlocked \n");
 		ret = 1;
 		goto out;
 	}
@@ -198,7 +200,7 @@ static int __rrr_fifo_buffer_entry_new_unlocked (struct rrr_fifo_buffer_entry **
 	memset (entry, '\0', sizeof(*entry));
 
 	if (pthread_mutex_init(&entry->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in __rrr_fifo_buffer_entry_new_unlocked\n");
+		RRR_MSG_0("Could not initialize lock in __rrr_fifo_buffer_entry_new_unlocked\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -514,8 +516,7 @@ int rrr_fifo_buffer_search (
 			break;
 		}
 		else if (did_something == 0) {
-			RRR_MSG_ERR ("Bug: Unkown return value %i to fifo_search\n", actions);
-			exit (EXIT_FAILURE);
+			RRR_BUG ("Bug: Unkown return value %i to fifo_search\n", actions);
 		}
 
 		keep:
@@ -944,12 +945,12 @@ void __rrr_fifo_buffer_do_ratelimit(struct rrr_fifo_buffer *buffer) {
 		uint64_t time_start = rrr_time_get_64();
 		long long int spin_time_orig = spin_time;
 		while (--spin_time > 0) {
-			asm("");
+			rrr_slow_noop();
 		}
 		uint64_t time_end = rrr_time_get_64();
 		uint64_t time_diff = (time_end - time_start) + 1; // +1 to prevent division by zero
 		if (do_usleep) {
-			usleep(do_usleep);
+			rrr_posix_usleep(do_usleep);
 		}
 		pthread_mutex_lock(&buffer->ratelimit_mutex);
 
@@ -1085,7 +1086,7 @@ int rrr_fifo_buffer_write (
 		pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
 
 		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
-			RRR_MSG_ERR("Could not allocate entry in rrr_fifo_buffer_write\n");
+			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_write\n");
 			ret = 1;
 			goto loop_out_no_entry_free;
 		}
@@ -1215,8 +1216,10 @@ int rrr_fifo_buffer_write (
 		__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
 
-	RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
-			buffer, entry_count_before, entry_count_after);
+	if (entry_count_before != 0 || entry_count_after != 0) {
+		RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
+				buffer, entry_count_before, entry_count_after);
+	}
 
 //	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 
@@ -1245,7 +1248,7 @@ int rrr_fifo_buffer_write_delayed (
 
 	do {
 		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
-			RRR_MSG_ERR("Could not allocate entry in rrr_fifo_buffer_delayed_write\n");
+			RRR_MSG_0("Could not allocate entry in rrr_fifo_buffer_delayed_write\n");
 			ret = 1;
 			goto out;
 		}

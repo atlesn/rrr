@@ -35,6 +35,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
 
+
+#define RRR_GLOBAL_SET_LOG_PREFIX(str) \
+	const char *rrr_default_log_prefix = str
+
+// Must be initialized in main c-file using the macro
+extern const char *rrr_default_log_prefix;
+
 struct cmd_data;
 
 /* Runtime globals */
@@ -44,6 +51,7 @@ struct rrr_global_config {
 	unsigned int debuglevel_orig;
 	unsigned int no_watchdog_timers;
 	unsigned int no_thread_restart;
+	unsigned int rfc5424_loglevel_output;
 	const char *log_prefix;
 };
 
@@ -56,7 +64,8 @@ void rrr_init_global_config (
 		unsigned int debuglevel,
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
-		unsigned int no_thread_restart
+		unsigned int no_thread_restart,
+		unsigned int rfc5424_loglevel_output
 );
 void rrr_global_config_set_log_prefix (
 		const char *log_prefix

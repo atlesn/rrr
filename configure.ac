@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 0.18)
-AC_DEFINE([RRR_CONFIG_VERSION], "0.18", [Full version])
-AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 0, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 18, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 5, [Revision number])
+AC_INIT([Read Route Record], 1.3-1)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.3-1", [Full version])
+AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 3, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -14,6 +14,20 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_MACRO_DIRS([m4])
 
 AC_CONFIG_SUBDIRS([src/blockdevlogger])
+
+dnl OpenBSD check for egcc
+AC_CHECK_PROG([EGCC], egcc, egcc)
+AC_MSG_CHECKING([for OpenBSD EGCC])
+AS_IF([test "x${EGCC}" != "x"], [
+       	AS_IF([test "x${CC}" != "x" ], [
+		AC_MSG_RESULT([found, but CC was already set to something (else)])
+	], [
+		CC=${EGCC}
+		AC_MSG_RESULT([${EGCC}])
+	])
+], [
+	AC_MSG_RESULT([no])
+])
 
 AM_INIT_AUTOMAKE([subdir-objects no-dependencies])
 LT_INIT
@@ -61,8 +75,13 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
+
+AC_MSG_CHECKING([for RRR config file directory])
+RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
+AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
+AC_SUBST(RRR_CONF_DIR)
 
 SHELL_VARS_INIT([variables.sh])
 
@@ -354,13 +373,32 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	SYSTEMD_INIT
 	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
 
-	AC_CONFIG_FILES([misc/systemd/rrr.service])
+	AC_CONFIG_FILES([misc/systemd/make-service.sh])
 	AC_CONFIG_FILES([misc/systemd/Makefile])
 
 	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
 ],[
 	AC_MSG_RESULT([no])
 ])
+
+AC_MSG_CHECKING([for systemd service file no installation command])
+AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
+	AC_MSG_RESULT([yes])
+], [
+	AC_MSG_RESULT([no])
+])
+
+AC_MSG_CHECKING([for systemd username])
+AS_IF([test "x$RRR_SYSTEMD_USERNAME" != "x"] , [
+	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME}])
+], [
+	RRR_SYSTEMD_USERNAME=daemon
+	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME} (by default)])
+])
+AC_SUBST(RRR_SYSTEMD_USERNAME)
+
+
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])

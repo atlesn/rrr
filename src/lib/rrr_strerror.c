@@ -90,7 +90,7 @@ static const char *__rrr_strerror_find_error_or_register (int find_num) {
 	const char *tmp = strerror(find_num);
 	new_node = malloc(sizeof(*new_node));
 	if (new_node == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_strerror_find_error_or_register\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_strerror_find_error_or_register\n");
 		return NULL;
 	}
 
@@ -98,7 +98,7 @@ static const char *__rrr_strerror_find_error_or_register (int find_num) {
 	new_node->str = strdup(tmp);
 
 	if (new_node->str == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_strerror_find_error_or_register\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_strerror_find_error_or_register\n");
 		goto out;
 	}
 
@@ -115,7 +115,7 @@ const char *rrr_strerror (int find_num) {
 	const char *str = NULL;
 
 	if (find_num < 0) {
-		RRR_MSG_ERR("Warning: Received negative value %i in rrr_strerror\n", find_num);
+		RRR_MSG_0("Warning: Received negative value %i in rrr_strerror\n", find_num);
 	}
 
 	pthread_mutex_lock(&lock);
@@ -127,7 +127,7 @@ const char *rrr_strerror (int find_num) {
 
 	if (str == NULL) {
 		str = general_error_message;
-		RRR_MSG_ERR("Warning: Could not create error message for error number %i\n", find_num);
+		RRR_MSG_0("Warning: Could not create error message for error number %i\n", find_num);
 	}
 
 //	printf ("Stored error messages: %i\n", RRR_LL_COUNT(&errors));

@@ -28,20 +28,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 
 struct rrr_net_transport_tls {
-	RRR_NET_TRANSPORT_HEAD;
+	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_tls);
 
 	const SSL_METHOD *ssl_client_method;
 	const SSL_METHOD *ssl_server_method;
 	int flags;
 	char *certificate_file;
 	char *private_key_file;
+	char *ca_file;
+	char *ca_path;
 };
 
 int rrr_net_transport_tls_new (
 		struct rrr_net_transport_tls **target,
 		int flags,
 		const char *certificate_file,
-		const char *private_key_file
+		const char *private_key_file,
+		const char *ca_file,
+		const char *ca_path
 );
 
 #endif /* RRR_NET_TRANSPORT_TLS_H */

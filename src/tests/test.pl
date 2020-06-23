@@ -5,6 +5,14 @@ package main;
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use rrr::rrr_helper::rrr_debug;
+
+my $dbg = { };
+bless $dbg, rrr::rrr_helper::rrr_debug;
+
+$dbg->msg(0, "This is my message\n");
+$dbg->dbg(1, "This is my message dbg 1\n");
+$dbg->err("This is my error message err\n");
 
 sub config {
 	my $settings = shift;

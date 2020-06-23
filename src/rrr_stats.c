@@ -19,19 +19,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Allow S_IFMT etc.
+#undef _DEFAULT_SOURCE
+#undef __XSI_VISIBLE
+#define _DEFAULT_SOURCE
+#define __XSI_VISIBLE 1
+#	include <sys/stat.h>
+#undef _DEFAULT_SOURCE
+#undef __XSI_VISIBLE
+
+#include <sys/types.h>
+#include <dirent.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <libgen.h>
 #include <errno.h>
-#include <sys/types.h>
 #include <limits.h>
-#include <dirent.h>
-#include <sys/stat.h>
 
 #include "global.h"
 #include "main.h"
+#include "lib/posix.h"
 #include "lib/vl_time.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
@@ -52,6 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	error "Cannot use _GNU_SOURCE, would cause use of incorrect basename() function"
 #endif
 
+
 #define RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH \
 	RRR_TMP_PATH "/" RRR_STATS_SOCKET_PREFIX
 
@@ -62,11 +72,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_KEEPALIVE_INTERVAL_MS			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000
 #define RRR_STATS_MESSAGE_LIFETIME_MS			1500
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_stats");
+
 static volatile int rrr_stats_abort = 0;
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"socket",				"[RRR SOCKET (PREFIX)] ..."},
 		{0,							'e',	"exact_path",			"[-e|--exact_path]"},
+		{0,							'j',	"journal",				"[-j|--journal]"},
 /*		{CMD_ARG_FLAG_HAS_ARGUMENT,	'f',	"file",					"[-f|--file[=]FILENAME|-]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
@@ -90,6 +103,7 @@ struct rrr_stats_data {
 	char *socket_path_active;
 	int socket_fd;
 	int socket_path_exact;
+	int print_journal;
 };
 
 static void __rrr_stats_signal_handler (int s) {
@@ -97,10 +111,10 @@ static void __rrr_stats_signal_handler (int s) {
 		rrr_post_print_stats = 1;
 	}*/
 	if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
+		RRR_MSG_0("Received SIGPIPE, ignoring\n");
 	}
 	else if (s == SIGTERM) {
-		RRR_MSG_ERR("Received SIGTERM, exiting\n");
+		RRR_MSG_0("Received SIGTERM, exiting\n");
 		exit(EXIT_FAILURE);
 	}
 	else if (s == SIGINT) {
@@ -113,7 +127,7 @@ static void __rrr_stats_signal_handler (int s) {
 static int __rrr_stats_data_init (struct rrr_stats_data *data) {
 	memset(data, '\0', sizeof(*data));
 	if (rrr_stats_tree_init(&data->message_tree) != 0) {
-		RRR_MSG_ERR("Could not initialize message tree in __rrr_stats_data_init\n");
+		RRR_MSG_0("Could not initialize message tree in __rrr_stats_data_init\n");
 		return 1;
 	}
 	rrr_read_session_collection_init(&data->read_sessions);
@@ -132,7 +146,7 @@ static int __rrr_stats_socket_prefix_register (struct rrr_stats_data *data, cons
 
 	struct rrr_map_item *node = malloc(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
 		goto out;
 	}
@@ -140,7 +154,7 @@ static int __rrr_stats_socket_prefix_register (struct rrr_stats_data *data, cons
 
 	node->tag = malloc(strlen(prefix) + 1);
 	if (node->tag == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_stats_socket_prefix_register\n");
 		ret = 1;
 		goto out;
 	}
@@ -185,7 +199,10 @@ static int __rrr_stats_read_message (
 			callback, callback_data
 	};
 
+	uint64_t bytes_read = 0;
+
 	return rrr_socket_read_message_default (
+			&bytes_read,
 			read_sessions,
 			fd,
 			sizeof(struct rrr_socket_msg),
@@ -206,12 +223,16 @@ static int __rrr_stats_parse_config (struct rrr_stats_data *data, struct cmd_dat
 		data->socket_path_exact = 1;
 	}
 
+	if (cmd_exists(cmd, "journal", 0)) {
+		data->print_journal = 1;
+	}
+
 	int i = 0;
 	while (cmd_exists(cmd, "socket", i)) {
 		const char *path = NULL;
 		if ((path = cmd_get_value(cmd, "socket", i)) != NULL) {
 			if (__rrr_stats_socket_prefix_register(data, path) != 0) {
-				RRR_MSG_ERR("Could not register socket prefix in __rrr_stats_parse_config\n");
+				RRR_MSG_0("Could not register socket prefix in __rrr_stats_parse_config\n");
 				return 1;
 			}
 		}
@@ -236,7 +257,7 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 			goto out;
 		}
 
-		RRR_MSG_ERR("Hard error while connecting to socket %s in __rrr_stats_attempt_connect_exact\n", path);
+		RRR_MSG_0("Hard error while connecting to socket %s in __rrr_stats_attempt_connect_exact\n", path);
 		ret = 1;
 		goto out;
 	}
@@ -266,7 +287,7 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 			}
 		}
 
-		usleep(50000); // 50ms
+		rrr_posix_usleep(50000); // 50ms
 	}
 
 	if (callback_data.message_count_ok == 0) {
@@ -279,7 +300,7 @@ static int __rrr_stats_attempt_connect_exact (struct rrr_stats_data *data, const
 
 	RRR_FREE_IF_NOT_NULL(data->socket_path_active);
 	if ((data->socket_path_active = strdup(path)) == NULL) {
-		RRR_MSG_ERR("Could not save socket path name in __rrr_stats_attempt_connect_exact\n");
+		RRR_MSG_0("Could not save socket path name in __rrr_stats_attempt_connect_exact\n");
 		ret = 1;
 		goto out_close;
 	}
@@ -352,7 +373,7 @@ static int __rrr_stats_attempt_connect_prefix_callback (
 			}
 
 			if (__rrr_stats_attempt_connect_exact(data->data, resolved_path) != 0) {
-				RRR_MSG_ERR("Error while connecting to socket %s\n", resolved_path);
+				RRR_MSG_0("Error while connecting to socket %s\n", resolved_path);
 				return 1;
 			}
 		}
@@ -372,7 +393,7 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 	int ret = 0;
 
 	if (strlen(prefix) > PATH_MAX) {
-		RRR_MSG_ERR("Prefix was too long in __rrr_stats_attempt_connect_prefix\n");
+		RRR_MSG_0("Prefix was too long in __rrr_stats_attempt_connect_prefix\n");
 		ret = 1;
 		goto out;
 	}
@@ -412,7 +433,7 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 		};
 
 		if ((ret = rrr_readdir_foreach(prefix, __rrr_stats_attempt_connect_prefix_callback, &callback_data)) != 0) {
-			RRR_MSG_ERR("Error while going through directory %s\n", prefix);
+			RRR_MSG_0("Error while going through directory %s\n", prefix);
 		}
 	}
 	else {
@@ -420,7 +441,7 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 		prefix_copy_b = strdup(prefix);
 
 		if (prefix_copy_a == NULL || prefix_copy_b == NULL) {
-			RRR_MSG_ERR("Could not duplicate path in __rrr_stats_attempt_connect_prefix\n");
+			RRR_MSG_0("Could not duplicate path in __rrr_stats_attempt_connect_prefix\n");
 			ret = 1;
 			goto out;
 		}
@@ -434,7 +455,7 @@ static int __rrr_stats_attempt_connect_prefix (struct rrr_stats_data *data, cons
 		};
 
 		if ((ret = rrr_readdir_foreach(dir_name, __rrr_stats_attempt_connect_prefix_callback, &callback_data)) != 0) {
-			RRR_MSG_ERR("Error while going through directory %s\n", dir_name);
+			RRR_MSG_0("Error while going through directory %s\n", dir_name);
 		}
 	}
 
@@ -451,7 +472,7 @@ static int __rrr_stats_attempt_connect (struct rrr_stats_data *data) {
 
 	if (RRR_LL_COUNT(&data->socket_prefixes) == 0) {
 		if (__rrr_stats_socket_prefix_register(data, RRR_STATS_DEFAULT_SOCKET_SEARCH_PATH) != 0) {
-			RRR_MSG_ERR("Could not register default socket prefix in __rrr_stats_attempt_connect\n");
+			RRR_MSG_0("Could not register default socket prefix in __rrr_stats_attempt_connect\n");
 			ret = 1;
 			goto out;
 		}
@@ -464,7 +485,7 @@ static int __rrr_stats_attempt_connect (struct rrr_stats_data *data) {
 		else {
 			RRR_DBG_1("Attempting to use prefix %s\n", node_tag);
 			if (__rrr_stats_attempt_connect_prefix(data, node->tag) != 0) {
-				RRR_MSG_ERR("Error while attempting to connect to socket prefix %s\n", node_tag);
+				RRR_MSG_0("Error while attempting to connect to socket prefix %s\n", node_tag);
 				ret = 1;
 				goto out;
 			}
@@ -514,7 +535,7 @@ static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {
 	struct rrr_stats_message message;
 
 	if (rrr_stats_message_init(&message, RRR_STATS_MESSAGE_TYPE_KEEPALIVE, 0, "", NULL, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize keepalive message in __rrr_stats_send_keepalive\n");
+		RRR_MSG_0("Could not initialize keepalive message in __rrr_stats_send_keepalive\n");
 		return 1;
 	}
 
@@ -526,11 +547,50 @@ static int __rrr_stats_send_keepalive (struct rrr_stats_data *data) {
 			data->socket_fd = 0;
 			break;
 		default:
-			RRR_MSG_ERR("Hard error while sending message to server\n");
+			RRR_MSG_0("Hard error while sending message to server\n");
 			return 1;
 	};
 
 	return 0;
+}
+
+static int __rrr_stats_print_journal_message (const struct rrr_stats_message *message, void *private_arg) {
+	struct rrr_stats_read_message_callback_data *callback_data = private_arg;
+
+	int ret = 0;
+
+	if (message->type != RRR_STATS_MESSAGE_TYPE_TEXT) {
+		callback_data->message_count_err++;
+		goto out;
+	}
+
+	// TODO : A lot of memory copying etc. just to check the end of the path
+
+	struct rrr_stats_tree tree_tmp;
+	if (rrr_stats_tree_init(&tree_tmp) != 0) {
+		RRR_MSG_ERR("Could not initialize tree in __rrr_stats_print_journal_message\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_stats_tree_insert_or_update(&tree_tmp, message) != 0) {
+		RRR_MSG_0("Could not insert message into tree in __rrr_stats_print_journal_message\n");
+		ret = 1;
+		goto out_cleanup_tree;
+	}
+
+	if (rrr_stats_tree_has_leaf(&tree_tmp, RRR_STATS_MESSAGE_PATH_GLOBAL_LOG_JOURNAL)) {
+		printf("%s", message->data);
+		callback_data->message_count_ok++;
+	}
+	else {
+		callback_data->message_count_err++;
+	}
+
+	out_cleanup_tree:
+		rrr_stats_tree_clear(&tree_tmp);
+	out:
+		return ret;
 }
 
 static int __rrr_stats_process_message (const struct rrr_stats_message *message, void *private_arg) {
@@ -543,12 +603,12 @@ static int __rrr_stats_process_message (const struct rrr_stats_message *message,
 	int ret = 0;
 	if ((ret = rrr_stats_tree_insert_or_update(&callback_data->data->message_tree, message)) != 0) {
 		if (ret == RRR_STATS_TREE_SOFT_ERROR) {
-			RRR_MSG_ERR("Message with path %s was invalid, not added to tree\n", message->path);
+			RRR_MSG_0("Message with path %s was invalid, not added to tree\n", message->path);
 			ret = 0;
 			goto out;
 		}
 
-		RRR_MSG_ERR("Error while inserting message in tree in __rrr_stats_process_message\n");
+		RRR_MSG_0("Error while inserting message in tree in __rrr_stats_process_message\n");
 		ret = 1;
 		goto out;
 
@@ -563,6 +623,14 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 		return 0;
 	}
 
+	int (*callback)(const struct rrr_stats_message *message, void *private_arg) = NULL;
+	if (data->print_journal == 1) {
+		callback = __rrr_stats_print_journal_message;
+	}
+	else {
+		callback = __rrr_stats_process_message;
+	}
+
 	struct rrr_stats_read_message_callback_data callback_data = { data, 0, 0 };
 
 	unsigned int total_message_count_ok = 0;
@@ -575,7 +643,7 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 		switch (__rrr_stats_read_message (
 				&data->read_sessions,
 				data->socket_fd,
-				__rrr_stats_process_message,
+				callback,
 				&callback_data
 		)) {
 			case RRR_SOCKET_OK:
@@ -587,7 +655,7 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 				data->socket_fd = 0;
 				break;
 			default:
-				RRR_MSG_ERR("Error while reading messages from RRR\n");
+				RRR_MSG_0("Error while reading messages from RRR\n");
 				data->socket_fd = 0;
 				return 1;
 		};
@@ -602,20 +670,22 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 				total_message_count_ok, total_message_count_err);
 	}
 
-	printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
+	if (data->print_journal == 0) {
+		printf ("- TICK MS %" PRIu64 "\n", rrr_time_get_64() / 1000);
 
-	unsigned int purged_total = 0;
+		unsigned int purged_total = 0;
 
-	rrr_stats_tree_dump(&data->message_tree);
-	rrr_stats_tree_purge_old_branches(&purged_total, &data->message_tree, rrr_time_get_64() - RRR_STATS_MESSAGE_LIFETIME_MS * 1000);
-	printf ("------ Purged: %u\n", purged_total);
+		rrr_stats_tree_dump(&data->message_tree);
+		rrr_stats_tree_purge_old_branches(&purged_total, &data->message_tree, rrr_time_get_64() - RRR_STATS_MESSAGE_LIFETIME_MS * 1000);
+		printf ("------ Purged: %u\n", purged_total);
+	}
 
 	return 0;
 }
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -624,12 +694,12 @@ int main (int argc, const char *argv[]) {
 	int ret = EXIT_SUCCESS;
 
 	struct cmd_data cmd;
-	struct rrr_stats_data data;
+	struct rrr_stats_data data = {0};
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	if (__rrr_stats_data_init(&data) != 0) {
-		RRR_MSG_ERR("Could not initialize stats data\n");
+		RRR_MSG_0("Could not initialize stats data\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -671,7 +741,7 @@ int main (int argc, const char *argv[]) {
 		data.socket_fd = 0;
 
 		if (__rrr_stats_attempt_connect(&data) != 0) {
-			RRR_MSG_ERR("Error while attempting to connect to socket\n");
+			RRR_MSG_0("Error while attempting to connect to socket\n");
 			ret = EXIT_FAILURE;
 			goto out_cleanup_cmd;
 		}
@@ -690,11 +760,11 @@ int main (int argc, const char *argv[]) {
 				next_keep_alive = rrr_time_get_64() + (RRR_STATS_KEEPALIVE_INTERVAL_MS * 1000);
 			}
 
-			usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
+			rrr_posix_usleep (RRR_STATS_TICK_SLEEP_MS * 1000);
 		}
 
 		if (rrr_stats_abort != 1 && data.socket_fd == 0) {
-			usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
+			rrr_posix_usleep (RRR_STATS_RECONNECT_SLEEP_MS * 1000);
 		}
 	}
 

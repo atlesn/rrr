@@ -60,7 +60,6 @@ do_test_simple () {
 do_test_socket() {
 	conf=$1
 	print_test_header SOCKET $conf
-	rm $TEST_SOCKET
  	do_rrr_post &
 	echo \$ $TEST $conf
 	$TEST $conf
@@ -86,8 +85,11 @@ if test $? -ne 0; then
 	fail "data generation"
 fi
 
+do_test_simple --library-tests
+
 do_test_simple test_dummy.conf
 do_test_simple test_averager.conf
+do_test_simple test_journal.conf
 
 do_test_ip test_ip.conf
 

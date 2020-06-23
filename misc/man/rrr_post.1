@@ -1,4 +1,4 @@
-.Dd 2020-01-16
+.Dd 2020-05-25
 .TH RRR_POST 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -13,10 +13,12 @@ program to post data to its modules.
 .Dl [-f|--file[=]FILENAME|-]
 .Dl [-r|--readings[=]reading1,reading2,...]
 .Dl [-a|--array_definition[=]ARRAY DEFINITION]
+.Dl [-m|--max-message-size[=]BYTES]
 .Dl [-c|--count[=]MAX FILE RECORDS]
 .Dl [-t|--topic[=]MQTT TOPIC]
 .Dl [-s|--sync]
 .Dl [-q|--quiet]
+.Dl [-l|--loglevel-translation]
 .Dl [-d|--debuglevel[=]FLAGS]
 .Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
@@ -48,6 +50,10 @@ reading messages are generated before any reading of a file or standard input be
 Format of the input data for file or standard input, see the
 .B ARRAY DEFINITION
 section. If no array is specified, the array "msg" is used (input is RRR messages).
+.IP -m|--max-message-size[=]BYTES
+Maximum size of a message when reading. This should be set to prevent messages with missing delimeters to fill up memory.
+A value of 0 means unlimited message size.
+Defaults to 4096.
 .IP -c|--count[=]RECORDS
 Stop reading file or standard input after this many records have been read.
 .IP -t|--topic[=]MQTT-TOPIC
@@ -60,6 +66,9 @@ Don't print statistics upon exit.
 Debuglevel to use.
 .IP -D|--debuglevel_on_exit[=]FLAGS
 Debuglevel to use when program exits.
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
 
 .PP
 .SH SIGNALS
@@ -114,8 +123,11 @@ Unsigned number in the endianess of the machine. Might be unsafe for network tra
 .It blob
 Arbitary binary data. Lengt must be in the range 1-1024.
 .It sep
-One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
-must be in the range 1-64.
+One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR TAB.
+Length must be in the range 1-64.
+.It stx
+One or more STX or SOH characters.
+Length must be in the range 1-64.
 .El
 .PP
 Types
@@ -150,7 +162,7 @@ A full RRR message complete with headers and checksums.
 An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \\. The
 surrounding quotes are not included in the final string.
 .It nsep
-Match any numbers of bytes untill a separator character LF, CR, TAB or SPACE is found. The separator itself will not be included in the result, a
+Match any numbers of bytes untill a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be included in the result, a
 .B sep
 should follow afterwards to take care of it.
 .El

@@ -65,7 +65,7 @@ PyObject *rrr_python3_setting_f_set (PyObject *self, PyObject *arg) {
 	struct rrr_python3_setting_data *data = (struct rrr_python3_setting_data *) self;
 
 	if (!PyUnicode_Check(arg)) {
-		RRR_MSG_ERR("Expected unicode/string argument in rrr_setting.set()\n");
+		RRR_MSG_0("Expected unicode/string argument in rrr_setting.set()\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -73,7 +73,7 @@ PyObject *rrr_python3_setting_f_set (PyObject *self, PyObject *arg) {
 	const char *str = PyUnicode_AsUTF8(arg);
 	int len = strlen (str);
 	if (len > RRR_SETTINGS_MAX_DATA_SIZE - 1) {
-		RRR_MSG_ERR("Length of string in rrr_setting.set() was too long, max is %i\n", RRR_SETTINGS_MAX_DATA_SIZE - 1);
+		RRR_MSG_0("Length of string in rrr_setting.set() was too long, max is %i\n", RRR_SETTINGS_MAX_DATA_SIZE - 1);
 		Py_RETURN_FALSE;
 	}
 
@@ -229,7 +229,7 @@ PyObject *rrr_python3_setting_new_from_setting (const struct rrr_socket_msg *msg
 	}
 
 	if (rrr_settings_packed_validate(&new_setting->setting)) {
-		RRR_MSG_ERR("Received an invalid setting in rrr_python3_setting_new_from_setting\n");
+		RRR_MSG_0("Received an invalid setting in rrr_python3_setting_new_from_setting\n");
 		ret = 1;
 		goto out;
 	}

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
+#include "posix.h"
 #include "log.h"
 #include "ip_buffer_entry.h"
 #include "messages.h"
@@ -56,7 +57,7 @@ void rrr_ip_buffer_entry_lock (struct rrr_ip_buffer_entry *entry) {
 	while (pthread_mutex_trylock(&entry->lock) != 0) {
 		pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 		pthread_testcancel();
-		usleep(10);
+		rrr_posix_usleep(10);
 		pthread_mutex_lock(&rrr_ip_buffer_master_lock);
 	}
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
@@ -145,6 +146,8 @@ void rrr_ip_buffer_entry_collection_sort (
 ) {
 	struct rrr_ip_buffer_entry_collection tmp = {0};
 
+	// TODO : This is probably a bad sorting algorithm
+
 	while (RRR_LL_COUNT(target) != 0) {
 		struct rrr_ip_buffer_entry *smallest = RRR_LL_FIRST(target);
 		RRR_LL_ITERATE_BEGIN(target, struct rrr_ip_buffer_entry);
@@ -174,13 +177,13 @@ int rrr_ip_buffer_entry_new (
 
 	struct rrr_ip_buffer_entry *entry = malloc(sizeof(*entry));
 	if (entry == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in ip_buffer_entry_new\n");
+		RRR_MSG_0("Could not allocate memory in ip_buffer_entry_new\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (__rrr_ip_buffer_entry_lock_init(entry) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in rrr_ip_buffer_entry_new\n");
+		RRR_MSG_0("Could not initialize lock in rrr_ip_buffer_entry_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -243,7 +246,7 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 
 	message = malloc(message_size);
 	if (message == NULL) {
-		RRR_MSG_ERR("Could not allocate message in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate message in ip_buffer_entry_new_with_message\n");
 		goto out;
 	}
 
@@ -255,7 +258,7 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 			protocol,
 			message
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
 		ret = 1;
 		goto out;
 	}

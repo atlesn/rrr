@@ -63,13 +63,13 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config *con
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
-		RRR_MSG_ERR("test_method not set for test module instance %s\n", config->name);
+		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
 	if (data->test_output_instance == NULL) {
-		RRR_MSG_ERR("test_method not set for test module instance %s\n", config->name);
+		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
@@ -111,7 +111,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	rrr_thread_update_watchdog_time(thread_data->thread);
 
 	if (strcmp(data->test_method, "test_dummy") == 0) {
-		usleep(1000000); // 1s
+		rrr_posix_usleep(1000000); // 1s
 		ret = 0;
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {
@@ -129,6 +129,13 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		);
 		TEST_MSG("Result from averager test: %i\n", ret);
 	}
+	else if (strcmp(data->test_method, "test_anything") == 0) {
+		ret = test_anything (
+				thread_data->init_data.module->all_instances,
+				data->test_output_instance
+		);
+		TEST_MSG("Result from anything test: %i\n", ret);
+	}
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
 		ret = test_type_array_mysql (
@@ -141,7 +148,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 #endif
 	}
 	else {
-		RRR_MSG_ERR("Unknown test type '%s' in test module\n", data->test_method);
+		RRR_MSG_0("Unknown test type '%s' in test module\n", data->test_method);
 		ret = 1;
 		goto out_message;
 	}

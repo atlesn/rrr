@@ -1,0 +1,8 @@
+Copyright 2020 Atle Solbakken <atle@goliathdns.no>
+
+By contributing code to the Read Route Record (RRR) library, you
+hereby accept that others may link their code to the library,
+possibly utilizing functions you have written, and that they may
+do so without any requirements or restrictions imposed by other
+licenses, as long as they apply a version of the license
+"RRR MODULE LICENSE" to their code.

@@ -1,3 +1,102 @@
+rrr (1.3-1) buster; urgency=medium
+
+  * Improvements in MQTT to increase throughput
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Jun 2020 02:40:17 +0200
+
+rrr (1.3) buster; urgency=medium
+
+  * Added support for TLS in MQTT
+  * Added support for username and password authentication in MQTT
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jun 2020 23:52:31 +0200
+
+rrr (1.2-3) buster; urgency=medium
+
+  * Created max message size parameter in ip module and rrr_post
+  * Changed behaviour of SIGTERM
+  * Misc fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Jun 2020 19:44:32 +0200
+
+rrr (1.2-2) buster; urgency=medium
+
+  * Improvements in TCP error handling
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 19:04:45 +0200
+
+rrr (1.2-1) unstable; urgency=medium
+
+  * Fix perl5 false warnings about unused settings
+  * Fix incorrect counters in journal module
+  * Fix bugtrap in perl5 module
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 13:21:01 +0200
+
+rrr (1.2) unstable; urgency=medium
+
+  * New log journal module
+  * Fixed bug in perl5 module causing fork not to be killed
+  * Misc fixes and improvements
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sat, 06 Jun 2020 18:21:13 +0200
+
+rrr (1.1-1) unstable; urgency=medium
+
+  * Fix a segfault in perl5
+  * Improvents in a few debug/error messages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 04 Jun 2020 18:12:38 +0200
+
+rrr (1.1) unstable; urgency=medium
+
+  * Create new log journal which rrr_stats can read from
+  * Minor bugfix
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 03 Jun 2020 16:34:32 +0200
+
+rrr (1.0) unstable; urgency=medium
+
+  * First major release, no changes from 0.20
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 26 May 2020 21:48:12 +0200
+
+rrr (0.20) unstable; urgency=medium
+
+  * Add configuration option to output RFC5424 loglevels as
+    opposed to internal RRR debuglevels.
+  * Fix bug where it was not possible to use -h or -v
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 25 May 2020 18:06:05 +0200
+
+rrr (0.19) unstable; urgency=medium
+
+  * New functionallity in perl5 to print RRR native debug and error messages
+  * Fix some issues with shutdown and startup hangs
+  * Cleanup in error message printing, very little is now printed to STDERR
+  * To some degree adapt code to C11 and POSIX 2008. Attempt to have
+    non-compliant stuff in separate files and use wrappers.
+  * New permissive license for linking costum modules with the library
+  * Improve some buggy IP connect checks
+  * Minor changes in test suite
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 22 May 2020 23:57:07 +0200
+
+rrr (0.18-1) unstable; urgency=medium
+
+  * Create new global fork and signal handling.
+  * Rewrite of python3 and test suite, python code only run in forks.
+  * Load multiple configuration files in same program
+  * New logging output style
+  * Optional systemd integration available with rrr.conf.d directory for configs
+  * Fix bugs after previous rewrite and build on different systems
+  * Disable MySQL test by default as this needs database setup
+  * By default disable USB
+  * Misc new configuration options
+  * Package for archlinux
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 19 May 2020 12:38:58 +0200
+
 rrr (0.18) unstable; urgency=medium
 
   * New message broker to transfer messages between modules with proper

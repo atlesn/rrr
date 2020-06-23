@@ -67,8 +67,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MSG_DATA_PTR(message)		((message)->data + (message)->topic_length)
 
 #define MSG_TO_BE(message)												\
-	(message)->timestamp = htobe64((message)->timestamp);				\
-	(message)->topic_length = htobe16((message)->topic_length)
+	(message)->timestamp = rrr_htobe64((message)->timestamp);			\
+	(message)->topic_length = rrr_htobe16((message)->topic_length)
 
 #define RRR_MESSAGE_HEAD 	\
 	rrr_u64 timestamp;		\

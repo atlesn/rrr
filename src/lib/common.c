@@ -102,7 +102,7 @@ void rrr_signal_handler_remove_all(void) {
 }
 
 void rrr_signal (int s) {
-    RRR_DBG_1("Received signal %i\n", s);
+	RRR_DBG_SIGNAL("Received signal %i\n", s);
 
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;
@@ -131,13 +131,13 @@ void rrr_signal_default_signal_actions_register(void) {
 	// Handle forked children exiting
 	sigaction (SIGCHLD, &action, NULL);
 	// We generally ignore sigpipe and use NONBLOCK on all sockets
-	sigaction (SIGPIPE, &action, NULL);
+	signal (SIGPIPE, SIG_IGN);
 	// Used to set main_running = 0. The signal is set to default afterwards
 	// so that a second SIGINT will terminate the process
 	sigaction (SIGINT, &action, NULL);
 	// Used to set main_running = 0;
 	sigaction (SIGUSR1, &action, NULL);
-	// Exit immediately with EXIT_FAILURE
+	// Used to set main_running = 0;
 	sigaction (SIGTERM, &action, NULL);
 }
 
@@ -145,22 +145,25 @@ int rrr_signal_default_handler(int *main_running, int s, void *arg) {
 	(void)(arg);
 
 	if (s == SIGCHLD) {
-		RRR_DBG_1("Received SIGCHLD in default handler\n");
+		RRR_DBG_SIGNAL("Received SIGCHLD in default handler\n");
 	}
 	else if (s == SIGUSR1) {
+		// Used internally, no printed message
 		*main_running = 0;
 		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE in default handler, ignoring\n");
+		RRR_DBG_SIGNAL("Received SIGPIPE in default handler, ignoring\n");
 	}
 	else if (s == SIGTERM) {
-		exit(EXIT_FAILURE);
+		RRR_DBG_SIGNAL("Received SIGTERM in default handler, setting main_running to 0\n");
+		*main_running = 0;
+		return RRR_SIGNAL_HANDLED;
 	}
 	else if (s == SIGINT) {
 		// Allow double ctrl+c to close program
 		if (s == SIGINT) {
-			RRR_MSG_ERR("Received SIGINT in default handler\n");
+			RRR_DBG_SIGNAL("Received SIGINT in default handler, setting main_running to 0\n");
 			signal(SIGINT, SIG_DFL);
 		}
 

@@ -22,12 +22,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TIME_H
 #define RRR_TIME_H
 
+// Allow gettimeofday on BSD
+
+#undef __XSI_VISIBLE
+#undef _XOPEN_SOURCE
+
+#define _XOPEN_SOURCE 500
+#define __XSI_VISIBLE 1
+
+#include <sys/time.h>
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <sys/time.h>
 
 #include "log.h"
 #include "rrr_strerror.h"
@@ -36,8 +45,7 @@ static inline uint64_t rrr_time_get_64(void) {
 	struct timeval tv;
 
 	if (gettimeofday(&tv, NULL) != 0) {
-		RRR_MSG_ERR("Error while getting time, cannot recover from this: %s\n", rrr_strerror(errno));
-		exit (EXIT_FAILURE);
+		RRR_BUG("Error while getting time, cannot recover from this: %s\n", rrr_strerror(errno));
 	}
 
 	uint64_t tv_sec = tv.tv_sec;
@@ -46,5 +54,8 @@ static inline uint64_t rrr_time_get_64(void) {
 
 	return (tv_sec * tv_factor) + (tv_usec);
 }
+
+#undef __XSI_VISIBLE
+#undef _XOPEN_SOURCE
 
 #endif /* RRR_TIME_H */

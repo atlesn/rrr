@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "posix.h"
 #include "log.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
@@ -60,9 +61,14 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 	ssize_t items = 0;
 	struct pollfd pollfd = { callback_data->fd, POLLIN, 0 };
 
+	// Don't print errors here as errors will then be printed when a remote closes
+	// connection. Higher level should print error if needed. Debuglevel 1 is however fine here.
+
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
-	RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	if (items > 0) {
+		RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	}
 	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;
@@ -71,12 +77,12 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 		else if (errno == EINTR) {
 			goto poll_retry;
 		}
-		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
 	else if ((pollfd.revents & (POLLERR|POLLNVAL)) != 0) {
-		RRR_MSG_ERR("Poll error in rrr_socket_read_message\n");
+		RRR_DBG_1("Poll error in rrr_socket_read_message\n");
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -116,7 +122,7 @@ static int __rrr_socket_read_message_default_get_socket_options (struct rrr_read
 	int ret = getsockopt(callback_data->fd, SOL_SOCKET, SO_TYPE, &so_type, &optlen);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error from getsockopt on fd %i: %s\n", callback_data->fd, rrr_strerror(errno));
+		RRR_MSG_0("Error from getsockopt on fd %i: %s\n", callback_data->fd, rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -200,11 +206,11 @@ static int __rrr_socket_read_message_default_read (
 		}
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			if ((callback_data->socket_read_flags & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
-				usleep(10 * 1000);
+				rrr_posix_usleep(10 * 1000);
 			}
 			goto out;
 		}
-		RRR_MSG_ERR("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error from read in __rrr_socket_read_message_default_read: %s\n", rrr_strerror(errno));
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -222,6 +228,7 @@ static int __rrr_socket_read_message_default_read (
 }
 
 int rrr_socket_read_message_default (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,
@@ -244,6 +251,7 @@ int rrr_socket_read_message_default (
 	callback_data.socket_read_flags = socket_read_flags;
 
 	return rrr_read_message_using_callbacks (
+			bytes_read,
 			read_step_initial,
 			read_step_max_size,
 			read_flags,

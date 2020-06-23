@@ -24,24 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdlib.h>
 
+#include "parse.h"
 #include "log.h"
 #include "configuration.h"
 #include "rrr_strerror.h"
 
 #include "instance_config.h"
 
-struct parse_pos {
-	const char *data;
-	int pos;
-	int size;
-	int line;
-};
-
 struct rrr_config *__rrr_config_new (void) {
 	struct rrr_config *ret = malloc(sizeof(*ret));
 
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for rrr_config struct\n");
+		RRR_MSG_0("Could not allocate memory for rrr_config struct\n");
 		return NULL;
 	}
 
@@ -60,7 +54,7 @@ int __rrr_config_expand(struct rrr_config *target) {
 	struct rrr_instance_config **configs_new = realloc(target->configs, new_size);
 
 	if (configs_new == NULL) {
-		RRR_MSG_ERR("Could not reallocate memory for rrr_instance_config struct\n");
+		RRR_MSG_0("Could not reallocate memory for rrr_instance_config struct\n");
 		return 1;
 	}
 
@@ -72,13 +66,13 @@ int __rrr_config_expand(struct rrr_config *target) {
 
 int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config *instance_config) {
 	if (rrr_config_find_instance (target, instance_config->name) != NULL) {
-		RRR_MSG_ERR("Two instances was named %s\n", instance_config->name);
+		RRR_MSG_0("Two instances was named %s\n", instance_config->name);
 		return 1;
 	}
 
 	if (target->module_count == target->module_count_max) {
 		if (__rrr_config_expand(target) != 0) {
-			RRR_MSG_ERR("Could not push new config struct\n");
+			RRR_MSG_0("Could not push new config struct\n");
 			return 1;
 		}
 	}
@@ -89,133 +83,7 @@ int __rrr_config_push (struct rrr_config *target, struct rrr_instance_config *in
 	return 0;
 }
 
-int __rrr_config_check_eof (const struct parse_pos *pos) {
-	return (pos->pos >= pos->size);
-}
-
-void __rrr_config_ignore_spaces (struct parse_pos *pos) {
-	if (pos->pos >= pos->size) {
-		return;
-	}
-
-	char c = pos->data[pos->pos];
-
-	while ((c == ' ' || c == '\t' || c == '\n' || c == '\r') && pos->pos < pos->size) {
-		char next = pos->pos + 1 < pos->size ? pos->data[pos->pos + 1] : '\0';
-
-		if (c == '\r' && next == '\n') {
-			// Windows
-			pos->pos++;
-			pos->line++;
-		}
-		else if (c == '\n') {
-			// UNIX
-			pos->line++;
-		}
-		else if (c == '\r') {
-			// MAC
-			pos->line++;
-		}
-
-		pos->pos++;
-		if (__rrr_config_check_eof(pos)) {
-			break;
-		}
-
-		c = pos->data[pos->pos];
-	}
-}
-
-void __rrr_config_parse_comment (struct parse_pos *pos) {
-	if (pos->pos >= pos->size) {
-		return;
-	}
-
-	char c = pos->data[pos->pos];
-
-	while (c != '\r' && c != '\n' && pos->pos < pos->size) {
-		pos->pos++;
-		c = pos->data[pos->pos];
-	}
-
-	__rrr_config_ignore_spaces(pos);
-}
-
-void __rrr_config_parse_letters (struct parse_pos *pos, int *start, int *end, int allow_space_tab, int allow_commas) {
-	*start = pos->pos;
-	*end = pos->pos;
-
-	char c = pos->data[pos->pos];
-	while (!__rrr_config_check_eof(pos)) {
-		if (	(c >= 'a' && c <= 'z') ||
-				(c >= 'A' && c <= 'Z') ||
-				(c >= '0' && c <= '9') ||
-				c == '_' ||
-				c == '-' ||
-				(allow_space_tab && (c == ' ' || c == '\t')) ||
-				(allow_commas && (c == ',' || c == ';'))
-		) {
-			// OK
-		}
-		else {
-			break;
-		}
-
-		pos->pos++;
-		if (__rrr_config_check_eof(pos)) {
-			break;
-		}
-		c = pos->data[pos->pos];
-	}
-
-	*end = pos->pos - 1;
-}
-
-void __rrr_config_parse_non_newline (struct parse_pos *pos, int *start, int *end) {
-	*start = pos->pos;
-	*end = pos->pos;
-
-	char c = pos->data[pos->pos];
-	while (!__rrr_config_check_eof(pos)) {
-		if (c == '\r' || c == '\n') {
-			break;
-		}
-
-		pos->pos++;
-		if (__rrr_config_check_eof(pos)) {
-			break;
-		}
-		c = pos->data[pos->pos];
-	}
-
-	*end = pos->pos - 1;
-}
-
-int __rrr_config_extract_string (char **target, struct parse_pos *pos, const int begin, const int length) {
-	*target = NULL;
-
-	if (length == 0) {
-		RRR_MSG_ERR("BUG: length was 0 in __rrr_config_extract_string\n");
-		exit(EXIT_FAILURE);
-	}
-
-	char *bytes = malloc(length + 1);
-
-	if (bytes == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_config_extract_string\n");
-		return 1;
-	}
-
-	memcpy(bytes, pos->data + begin, length);
-
-	bytes[length] = '\0';
-
-	*target = bytes;
-
-	return 0;
-}
-
-int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_settings *settings, int *did_parse) {
+int __rrr_config_parse_setting (struct rrr_parse_pos *pos, struct rrr_instance_settings *settings, int *did_parse) {
 	int ret = 0;
 
 	char c;
@@ -227,15 +95,15 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 
 	*did_parse = 0;
 
-	__rrr_config_ignore_spaces(pos);
+	rrr_parse_ignore_spaces_and_increment_line(pos);
 
-	if (__rrr_config_check_eof(pos)) {
+	if (rrr_parse_check_eof(pos)) {
 		goto out;
 	}
 
 	while (pos->data[pos->pos] == '#') {
-		__rrr_config_parse_comment(pos);
-		if (__rrr_config_check_eof(pos)) {
+		rrr_parse_comment(pos);
+		if (rrr_parse_check_eof(pos)) {
 			goto out;
 		}
 	}
@@ -245,41 +113,41 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 	}
 
 
-	__rrr_config_parse_letters(pos, &name_begin, &name_end, 0, 0);
+	rrr_parse_letters(pos, &name_begin, &name_end, 0, 0);
 
 	if (name_end < name_begin) {
 		ret = 0;
 		goto out;
 	}
 
-	__rrr_config_ignore_spaces(pos);
-	if (__rrr_config_check_eof(pos)) {
-		RRR_MSG_ERR("Unexpected end of file after setting name at line %d\n", pos->line);
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (rrr_parse_check_eof(pos)) {
+		RRR_MSG_0("Unexpected end of file after setting name at line %d\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	c = pos->data[pos->pos];
 	if (c != '=') {
-		RRR_MSG_ERR("Expected = after setting name at line %d, found %c\n", pos->line, c);
+		RRR_MSG_0("Expected = after setting name at line %d, found %c\n", pos->line, c);
 		ret = 1;
 		goto out;
 	}
 
 	pos->pos++;
-	__rrr_config_ignore_spaces(pos);
-	if (__rrr_config_check_eof(pos)) {
-		RRR_MSG_ERR("Unexpected end of file after = at line %d\n", pos->line);
+	rrr_parse_ignore_spaces_and_increment_line(pos);
+	if (rrr_parse_check_eof(pos)) {
+		RRR_MSG_0("Unexpected end of file after = at line %d\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	int value_begin;
 	int value_end;
-	__rrr_config_parse_non_newline(pos, &value_begin, &value_end);
+	rrr_parse_non_newline(pos, &value_begin, &value_end);
 
 	if (value_end < value_begin) {
-		RRR_MSG_ERR("Expected value after = at line %d\n", pos->line);
+		RRR_MSG_0("Expected value after = at line %d\n", pos->line);
 		ret = 1;
 		goto out;
 	}
@@ -287,14 +155,14 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 	int name_length = name_end - name_begin + 1;
 	int value_length = value_end - value_begin + 1;
 
-	if (__rrr_config_extract_string(&name, pos, name_begin, name_length) != 0) {
-		RRR_MSG_ERR("Could not extract setting name\n");
+	if (rrr_parse_extract_string(&name, pos, name_begin, name_length) != 0) {
+		RRR_MSG_0("Could not extract setting name\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (__rrr_config_extract_string(&value, pos, value_begin, value_length) != 0) {
-		RRR_MSG_ERR("Could not extract setting name\n");
+	if (rrr_parse_extract_string(&value, pos, value_begin, value_length) != 0) {
+		RRR_MSG_0("Could not extract setting name\n");
 		ret = 1;
 		goto out;
 	}
@@ -317,11 +185,11 @@ int __rrr_config_parse_setting (struct parse_pos *pos, struct rrr_instance_setti
 	return ret;
 }
 
-int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *pos, int *did_parse) {
+int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos *pos, int *did_parse) {
 	int ret = 0;
 	*did_parse = 0;
 
-	__rrr_config_ignore_spaces(pos);
+	rrr_parse_ignore_spaces_and_increment_line(pos);
 	if (pos->pos >= pos->size) {
 		ret = 0;
 		goto out;
@@ -330,16 +198,16 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 	int begin = pos->pos;
 
 	if (pos->pos >= pos->size) {
-		RRR_MSG_ERR("Unexpected end of instance definition at line %d\n", pos->line);
+		RRR_MSG_0("Unexpected end of instance definition at line %d\n", pos->line);
 		return 1;
 	}
 
 	char c = pos->data[pos->pos];
-	while (c != ']' && !__rrr_config_check_eof(pos)) {
+	while (c != ']' && !rrr_parse_check_eof(pos)) {
 		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
 		}
 		else {
-			RRR_MSG_ERR("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);
+			RRR_MSG_0("Unexpected character '%c' in instance definition in line %d\n", c, pos->line);
 			ret = 1;
 			goto out;
 		}
@@ -353,15 +221,15 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 		c = pos->data[pos->pos];
 	}
 
-	if (__rrr_config_check_eof(pos)) {
-		RRR_MSG_ERR("Unexpected end of instance definition in line %d\n", pos->line);
+	if (rrr_parse_check_eof(pos)) {
+		RRR_MSG_0("Unexpected end of instance definition in line %d\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	c = pos->data[pos->pos];
 	if (c != ']') {
-		RRR_MSG_ERR("Syntax error in instance definition in line %d, possibly missing ]\n", pos->line);
+		RRR_MSG_0("Syntax error in instance definition in line %d, possibly missing ]\n", pos->line);
 		ret = 1;
 		goto out;
 	}
@@ -372,14 +240,14 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 	pos->pos++;
 
 	if (end < begin) {
-		RRR_MSG_ERR("Instance name at line %d was too short\n", pos->line);
+		RRR_MSG_0("Instance name at line %d was too short\n", pos->line);
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_instance_config *instance_config = rrr_instance_config_new(pos->data + begin, length, RRR_CONFIG_MAX_SETTINGS);
 	if (instance_config == NULL) {
-		RRR_MSG_ERR("Instance config creation result was NULL\n");
+		RRR_MSG_0("Instance config creation result was NULL\n");
 		ret = 1;
 		goto out;
 	}
@@ -390,12 +258,12 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 			break;
 		}
 		else {
-			__rrr_config_ignore_spaces(pos);
+			rrr_parse_ignore_spaces_and_increment_line(pos);
 		}
 	}
 
 	if (ret == 1) {
-		RRR_MSG_ERR("Settings parsing failed for instance %s at line %d\n", instance_config->name, pos->line);
+		RRR_MSG_0("Settings parsing failed for instance %s at line %d\n", instance_config->name, pos->line);
 		*did_parse = 0;
 	}
 
@@ -411,7 +279,7 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 	if (ret == 0) {
 		ret = __rrr_config_push(config, instance_config);
 		if (ret != 0) {
-			RRR_MSG_ERR("Could not save instance %s to global config\n", instance_config->name);
+			RRR_MSG_0("Could not save instance %s to global config\n", instance_config->name);
 		}
 	}
 
@@ -423,13 +291,13 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct parse_pos *po
 	return ret;
 }
 
-int __rrr_config_parse_any (struct rrr_config *config, struct parse_pos *pos) {
+int __rrr_config_parse_any (struct rrr_config *config, struct rrr_parse_pos *pos) {
 	int ret = 0;
 
-	__rrr_config_ignore_spaces(pos);
+	rrr_parse_ignore_spaces_and_increment_line(pos);
 
 
-	if (__rrr_config_check_eof(pos)) {
+	if (rrr_parse_check_eof(pos)) {
 		return 0;
 	}
 
@@ -437,7 +305,7 @@ int __rrr_config_parse_any (struct rrr_config *config, struct parse_pos *pos) {
 
 	if (++pos->pos < pos->size) {
 		if (c == '#') {
-			__rrr_config_parse_comment(pos);
+			rrr_parse_comment(pos);
 		}
 		else if (c == '[') {
 			int did_parse;
@@ -450,12 +318,12 @@ int __rrr_config_parse_any (struct rrr_config *config, struct parse_pos *pos) {
 			}
 		}
 		else {
-			RRR_MSG_ERR("Syntax error in config file at line %d, unexpected '%c'\n", pos->line, c);
+			RRR_MSG_0("Syntax error in config file at line %d, unexpected '%c'\n", pos->line, c);
 			ret = 1;
 		}
 	}
 	else {
-		RRR_MSG_ERR("Syntax error at end of file (line %d)\n", pos->line);
+		RRR_MSG_0("Syntax error at end of file (line %d)\n", pos->line);
 		ret = 1;
 	}
 
@@ -465,17 +333,14 @@ int __rrr_config_parse_any (struct rrr_config *config, struct parse_pos *pos) {
 int __rrr_config_parse_file (struct rrr_config *config, const void *data, const int size) {
 	int ret = 0;
 
-	struct parse_pos pos;
+	struct rrr_parse_pos pos;
 
-	pos.data = data;
-	pos.pos = 0;
-	pos.size = size;
-	pos.line = 1;
+	rrr_parse_pos_init(&pos, data, size);
 
-	while (!__rrr_config_check_eof(&pos)) {
+	while (!rrr_parse_check_eof(&pos)) {
 		ret = __rrr_config_parse_any(config, &pos);
 		if (ret != 0) {
-			RRR_MSG_ERR("Error in configuration file\n");
+			RRR_MSG_0("Error in configuration file\n");
 			break;
 		}
 	}
@@ -514,49 +379,51 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 		goto out;
 	}
 
+	// TODO : Use rrr_socket read whole file function
+
 	FILE *cfgfile = fopen(filename, "r");
 
 	if (cfgfile == NULL) {
-		RRR_MSG_ERR("Could not open configuration file %s: %s\n", filename, rrr_strerror(errno));
+		RRR_MSG_0("Could not open configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out;
 	}
 
 	if (fseek(cfgfile, 0L, SEEK_END) != 0) {
-		RRR_MSG_ERR("Could not fseek to the end in configuration file %s: %s\n", filename, rrr_strerror(errno));
+		RRR_MSG_0("Could not fseek to the end in configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
 	ssize_t size_signed = ftell(cfgfile);
 	if (size_signed < 0) {
-		RRR_MSG_ERR("Could not get size of configuration file %s: %s\n", filename, rrr_strerror(errno));
+		RRR_MSG_0("Could not get size of configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
 
 	size_t size = size_signed;
 	if (size > RRR_CONFIG_MAX_SIZE) {
-		RRR_MSG_ERR("Configuration file %s was too big (%li > %d)\n", filename, size, RRR_CONFIG_MAX_SIZE);
+		RRR_MSG_0("Configuration file %s was too big (%li > %d)\n", filename, size, RRR_CONFIG_MAX_SIZE);
 		err = 1;
 		goto out_close;
 	}
 
 	if (fseek(cfgfile, 0L, 0) != 0) {
-		RRR_MSG_ERR("Could not fseek to the beginning in configuration file %s: %s\n", filename, rrr_strerror(errno));
+		RRR_MSG_0("Could not fseek to the beginning in configuration file %s: %s\n", filename, rrr_strerror(errno));
 		err = 1;
 		goto out_close;
 	}
 
 	void *file_data = malloc(size);
 	if (file_data == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for configuration file\n");
+		RRR_MSG_0("Could not allocate memory for configuration file\n");
 		err = 1;
 		goto out_close;
 	}
 
 	size_t bytes = fread(file_data, 1, size, cfgfile);
 	if (bytes != size) {
-		RRR_MSG_ERR("The whole configuration file was not read (result %lu): %s\n", bytes, rrr_strerror(ferror(cfgfile)));
+		RRR_MSG_0("The whole configuration file was not read (result %lu): %s\n", bytes, rrr_strerror(ferror(cfgfile)));
 		err = 1;
 		goto out_free;
 	}

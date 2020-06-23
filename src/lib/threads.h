@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
+#include "posix.h"
 #include "vl_time.h"
 #include "linked_list.h"
 #include "../global.h"
@@ -157,21 +158,21 @@ struct rrr_thread_collection {
 };
 
 static inline void rrr_thread_lock(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s lock\n", thread->name);
+//	RRR_MSG_4 ("Thread %s lock\n", thread->name);
 	pthread_mutex_lock(&thread->mutex);
 }
 
 static inline void rrr_thread_unlock(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s unlock\n", thread->name);
+//	RRR_MSG_4 ("Thread %s unlock\n", thread->name);
 	pthread_mutex_unlock(&thread->mutex);
 }
 
 static inline void rrr_thread_unlock_if_locked(struct rrr_thread *thread) {
-//	VL_DEBUG_MSG_4 ("Thread %s test unlock\n", thread->name);
-	if (pthread_mutex_trylock(&thread->mutex) == EBUSY) {
-//		VL_DEBUG_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
-		pthread_mutex_unlock(&thread->mutex);
+//	RRR_MSG_4 ("Thread %s test unlock\n", thread->name);
+	if (pthread_mutex_trylock(&thread->mutex) != 0) {
+//		RRR_MSG_4 ("Thread %s was locked, unlock now\n", thread->name);
 	}
+	pthread_mutex_unlock(&thread->mutex);
 }
 
 static inline int rrr_thread_check_signal(struct rrr_thread *thread, int signal) {
@@ -190,7 +191,7 @@ static inline void rrr_thread_signal_wait(struct rrr_thread *thread, int signal)
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		usleep (10000); // 10ms
+		rrr_posix_usleep (10000); // 10ms
 	}
 }
 
@@ -203,7 +204,7 @@ static inline void rrr_thread_signal_wait_with_watchdog_update(struct rrr_thread
 		if ((signal_test & signal) == signal) {
 			break;
 		}
-		usleep (10000); // 10ms
+		rrr_posix_usleep (10000); // 10ms
 	}
 }
 

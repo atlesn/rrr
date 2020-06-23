@@ -54,7 +54,7 @@ int rrr_message_addr_new (struct rrr_message_addr **target) {
 
 	struct rrr_message_addr *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_ERR("Could not allocate memorty in rrr_message_addr_new");
+		RRR_MSG_0("Could not allocate memorty in rrr_message_addr_new");
 		return 1;
 	}
 

@@ -48,13 +48,13 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 
 //	printf ("Put crc32 %lu data size %li\n", message->data_crc32, message->network_size - sizeof(*message));
 
-	message->msg_type = htobe16(message->msg_type);
-	message->msg_size = htobe32(message->msg_size);
-	message->msg_value = htobe32(message->msg_value);
-	message->data_crc32 = htobe32(message->data_crc32);
+	message->msg_type = rrr_htobe16(message->msg_type);
+	message->msg_size = rrr_htobe32(message->msg_size);
+	message->msg_value = rrr_htobe32(message->msg_value);
+	message->data_crc32 = rrr_htobe32(message->data_crc32);
 
 	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
 	ssize_t head_size = sizeof(*message) - sizeof(message->header_crc32);
 
-	message->header_crc32 = htobe32(crc32buf(head_begin, head_size));
+	message->header_crc32 = rrr_htobe32(crc32buf(head_begin, head_size));
 }

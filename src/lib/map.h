@@ -91,6 +91,7 @@ void rrr_map_clear (struct rrr_map *map);
 int rrr_map_init (struct rrr_map *map);
 int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size);
 int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item);
+int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value);
 int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter);
 int rrr_map_parse_pair_arrow (const char *input, void *arg);
 int rrr_map_parse_pair_equal (const char *input, void *arg);

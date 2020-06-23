@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do {ret = callback(ctx, sv, i, value->definition, callback_arg);					\
 		SvREFCNT_dec(sv);																\
 		if (ret != 0) {																	\
-			RRR_MSG_ERR("Error from callback in __rrr_perl5_type_*_to_sv\n");			\
+			RRR_MSG_0("Error from callback in __rrr_perl5_type_*_to_sv\n");			\
 			ret = 1;																	\
 			goto out;																	\
 	}} while(0)
@@ -62,7 +62,7 @@ static int __rrr_perl5_type_to_sv_h (RRR_PERL5_TYPE_TO_SV_ARGS) {
 	ELEMENT_SIZE_SET;
 
 	if (element_size != IVSIZE) {
-		RRR_MSG_ERR("Element size not the same as capacity of perl integer in __rrr_perl5_type_h_to_sv, cannot convert value (%li vs %i)\n",
+		RRR_MSG_0("Element size not the same as capacity of perl integer in __rrr_perl5_type_h_to_sv, cannot convert value (%li vs %i)\n",
 				element_size, IVSIZE);
 		ret = 1;
 		goto out;
@@ -142,7 +142,7 @@ static int __rrr_perl5_type_to_value_h_save_intermediate_result (
 
     struct type_to_value_h_intermediate_result *result = malloc(sizeof(*result));
     if (result == NULL) {
-    	RRR_MSG_ERR("Could not allocate memory in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
+    	RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
     	ret = 1;
     	goto out;
     }
@@ -152,7 +152,7 @@ static int __rrr_perl5_type_to_value_h_save_intermediate_result (
 	STRLEN str_len;
 	char *num_str = SvPV_force(sv, str_len);
 	if (num_str == NULL) {
-		RRR_MSG_ERR("Could not convert SV to string in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
+		RRR_MSG_0("Could not convert SV to string in __rrr_perl5_type_to_value_h_save_intermediate_result\n");
 		ret = 1;
 		goto out;
 	}
@@ -195,12 +195,12 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	for (int i = 0; i <= av_len(values); i++) {
 		SV **tmp = av_fetch(values, i, 1);
 		if (tmp == NULL || *tmp == NULL) {
-			RRR_MSG_ERR("Could not fetch from AV in __rrr_perl5_type_to_value_h\n");
+			RRR_MSG_0("Could not fetch from AV in __rrr_perl5_type_to_value_h\n");
 			ret = 1;
 			goto out;
 		}
 		if (__rrr_perl5_type_to_value_h_save_intermediate_result(ctx, &intermediate_values, *tmp)) {
-			RRR_MSG_ERR("Error in perl5 while converting array value with index %i to RRR value\n", i);
+			RRR_MSG_0("Error in perl5 while converting array value with index %i to RRR value\n", i);
 			ret = 1;
 			goto out;
 		}
@@ -223,7 +223,7 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			RRR_LL_COUNT(&intermediate_values),
 			RRR_LL_COUNT(&intermediate_values) * sizeof(uint64_t)
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate new value in __rrr_perl5_type_to_value_h\n");
+		RRR_MSG_0("Could not allocate new value in __rrr_perl5_type_to_value_h\n");
 		ret = 1;
 		goto out;
 	}
@@ -238,10 +238,11 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			}
 			else {
 				if (node->unsigned_value > INT64_MAX) {
-					RRR_MSG_ERR("Warning: Integer value from perl5 array at position %i overflows due to conversion to signed integer\n", i);
+					RRR_MSG_0("Warning: Integer value from perl5 array at position %i overflows due to conversion to signed integer\n", i);
 				}
 				value = node->unsigned_value;
 			}
+//			printf("Save signed value %" PRIi64 "\n", value);
 			memcpy(pos, &value, sizeof(value));
 		}
 		else {
@@ -249,6 +250,7 @@ static int __rrr_perl5_type_to_value_h (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 				RRR_BUG("BUG: A value was signed but was not processed as such in __rrr_perl5_type_to_value_h\n");
 			}
 			uint64_t value = node->unsigned_value;
+//			printf("Save unsigned value %" PRIu64 "\n", value);
 			memcpy(pos, &value, sizeof(value));
 		}
 
@@ -295,10 +297,12 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 
     struct type_to_value_blob_intermediate_result *result = malloc(sizeof(*result));
     if (result == NULL) {
-    	RRR_MSG_ERR("Could not allocate memory in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
+    	RRR_MSG_0("Could not allocate memory in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
     	ret = 1;
     	goto out;
     }
+
+    memset(result, '\0', sizeof(*result));
 
 	STRLEN str_len = 0;
 	char *value = NULL;
@@ -311,11 +315,13 @@ static int __rrr_perl5_type_to_value_blob_save_intermediate_result (
 	}
 
 	if (str_len == 0) {
+		RRR_MSG_0("Empty strings or blobs cannot be used in arrays in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
+		ret = 1;
 		goto out;
 	}
 
 	if ((result->data = malloc(str_len + 1)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory for data in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
+		RRR_MSG_0("Could not allocate memory for data in __rrr_perl5_type_to_value_blob_save_intermediate_result\n");
 		ret = 1;
 		goto out;
 	}
@@ -355,20 +361,20 @@ static int __rrr_perl5_type_to_value_blob_populate_intermediate_list (
 	for (int i = 0; i <= array_length; i++) {
 		SV **tmp = av_fetch(values, i, 1);
 		if (tmp == NULL || *tmp == NULL) {
-			RRR_MSG_ERR("Could not fetch from AV in __rrr_perl5_type_to_value_blob_populate_intermediate_list\n");
+			RRR_MSG_0("Could not fetch from AV in __rrr_perl5_type_to_value_blob_populate_intermediate_list\n");
 			ret = 1;
 			goto out;
 		}
 
 		if (__rrr_perl5_type_to_value_blob_save_intermediate_result(ctx, collection, *tmp, do_binary) != 0) {
-			RRR_MSG_ERR("Error in perl5 while converting stringish array value with index %i to RRR value\n", i);
+			RRR_MSG_0("Error in perl5 while converting stringish array value with index %i to RRR value\n", i);
 			ret = 1;
 			goto out;
 		}
 
 		ssize_t data_len =  RRR_LL_LAST(collection)->data_size;
 		if (lengths_must_be_equal != 0 && i > 0 && data_len != previous_length) {
-			RRR_MSG_ERR("Stringish array value length of index %i differed from the previous value. All lengths of an element must be equal, cannot continue.\n", i);
+			RRR_MSG_0("Stringish array value length of index %i differed from the previous value. All lengths of an element must be equal, cannot continue.\n", i);
 			ret = 1;
 			goto out;
 		}
@@ -428,7 +434,7 @@ static int __rrr_perl5_type_to_value_blob (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			RRR_LL_COUNT(&intermediate_values),
 			total_length
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate new value in __rrr_perl5_type_to_value_blob\n");
+		RRR_MSG_0("Could not allocate new value in __rrr_perl5_type_to_value_blob\n");
 		ret = 1;
 		goto out;
 	}
@@ -494,7 +500,7 @@ static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 	}
 
 	if (RRR_LL_COUNT(&intermediate_values) > 1) {
-		RRR_MSG_ERR("Array items of type str cannot have more than one value, %i was found\n", RRR_LL_COUNT(&intermediate_values));
+		RRR_MSG_0("Array items of type str cannot have more than one value, %i was found\n", RRR_LL_COUNT(&intermediate_values));
 		ret = 1;
 		goto out;
 	}
@@ -512,7 +518,7 @@ static int __rrr_perl5_type_to_value_str (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			1,
 			data_size
 	) != 0) {
-		RRR_MSG_ERR("Could not create new value in __rrr_perl5_type_to_value_str\n");
+		RRR_MSG_0("Could not create new value in __rrr_perl5_type_to_value_str\n");
 		ret = 1;
 		goto out;
 	}
@@ -566,7 +572,7 @@ static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			RRR_LL_COUNT(&intermediate_values),
 			RRR_LL_COUNT(&intermediate_values) * sizeof(uint64_t)
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate memory for value in __rrr_perl5_type_to_value_ustr_istr\n");
+		RRR_MSG_0("Could not allocate memory for value in __rrr_perl5_type_to_value_ustr_istr\n");
 		ret = 1;
 		goto out;
 	}
@@ -596,13 +602,13 @@ static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 		}
 
 		if (parsed_bytes < node->data_size - 1) {
-			RRR_MSG_ERR("Invalid characters in perl5 istr or ustr in array value index %i at position ~%li\n", i, parsed_bytes);
+			RRR_MSG_0("Invalid characters in perl5 istr or ustr in array value index %i at position ~%li\n", i, parsed_bytes);
 			ret = 1;
 			goto out;
 		}
 
 		if (ret != 0) {
-			RRR_MSG_ERR("Error while importing istr or ustr from perl5 for value with index %i\n", i);
+			RRR_MSG_0("Error while importing istr or ustr from perl5 for value with index %i\n", i);
 			ret = 1;
 			goto out;
 		}
@@ -642,6 +648,7 @@ static const struct rrr_perl5_type_definition rrr_perl5_type_definitions[] = {
 	DEFINE_PERL5_TYPE(FIXP,	fixp,	__rrr_perl5_type_to_sv_h,		__rrr_perl5_type_to_value_h),
 	DEFINE_PERL5_TYPE(STR,	str,	__rrr_perl5_type_to_sv_str,		__rrr_perl5_type_to_value_str),
 	DEFINE_PERL5_TYPE(NSEP,	nsep,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
+	DEFINE_PERL5_TYPE(STX,	stx,	__rrr_perl5_type_to_sv_blob,	__rrr_perl5_type_to_value_blob),
 	{ 0, NULL, NULL, NULL }
 };
 

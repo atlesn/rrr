@@ -232,7 +232,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
 
 	if (types[10]->element_count != 2) {
-		RRR_MSG_ERR("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
+		RRR_MSG_0("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -241,19 +241,19 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
 
 	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
-		RRR_MSG_ERR("Blob sizes not equal in test_type_array_callback\n");
+		RRR_MSG_0("Blob sizes not equal in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
 	if (blob_a[blob_a_length - 1] != '\0' || blob_b[blob_b_length - 1] != '\0') {
-		RRR_MSG_ERR("Returned blobs were not zero terminated in test_type_array_callback\n");
+		RRR_MSG_0("Returned blobs were not zero terminated in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
 
 	if (strcmp(blob_a, "abcdefg") != 0 || strcmp(blob_b, "gfedcba") != 0) {
-		RRR_MSG_ERR("Returned blobs did not match input in test_type_array_callback\n");
+		RRR_MSG_0("Returned blobs did not match input in test_type_array_callback\n");
 		ret = 1;
 		goto out_free_final_data;
 	}
@@ -324,6 +324,28 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	rrr_ip_buffer_entry_unlock(entry);
 
 	return ret;
+}
+
+int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	// This cast is really weird, only done in test module. Our caller
+	// does not send thread_data struct but test_data struct.
+	struct test_result *result = (struct test_result *) thread_data;
+
+	result->message = NULL;
+	result->result = 1;
+
+	struct rrr_message *message = (struct rrr_message *) entry->message;
+
+	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
+
+	result->result = 2;
+
+	result->message = message;
+	entry->message = NULL;
+
+	rrr_ip_buffer_entry_unlock(entry);
+
+	return 0;
 }
 
 int test_do_poll_loop (
@@ -538,6 +560,37 @@ int test_array (
 	return ret;
 }
 
+int test_anything (
+		struct instance_metadata_collection *instances,
+		const char *output_name
+) {
+	int ret = 0;
+
+	struct test_result test_result_1 = {1, NULL};
+
+	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	if (output_1 == NULL) {
+		TEST_MSG("Could not find output instance %s in test_type_array\n",
+				output_name);
+		return 1;
+	}
+
+	// Poll from first output
+	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
+	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_anything_callback);
+	if (ret != 0) {
+		goto out;
+	}
+	TEST_MSG("Result of test_anything, should be 2: %i\n", test_result_1.result);
+
+	// Error if result is not two from both polls
+	ret |= (test_result_1.result != 2);
+
+	out:
+	RRR_FREE_IF_NOT_NULL(test_result_1.message);
+	return ret;
+}
+
 #ifdef RRR_WITH_MYSQL
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
@@ -589,7 +642,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 
 	ptr = mysql_init(&mysql);
 	if (ptr == NULL) {
-		RRR_MSG_ERR ("Could not initialize MySQL\n");
+		RRR_MSG_0 ("Could not initialize MySQL\n");
 		ret = 1;
 		goto out;
 	}
@@ -606,7 +659,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	);
 
 	if (ptr == NULL) {
-		RRR_MSG_ERR ("mysql_type_array_setup_mysql: Failed to connect to database: Error: %s\n",
+		RRR_MSG_0 ("mysql_type_array_setup_mysql: Failed to connect to database: Error: %s\n",
 				mysql_error(&mysql));
 		ret = 1;
 		goto out;
@@ -615,7 +668,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	TEST_MSG("%s\n", create_table_sql);
 
 	if (mysql_query(&mysql, create_table_sql)) {
-		RRR_MSG_ERR ("mysql_type_array_setup_mysql: Failed to create table: Error: %s\n",
+		RRR_MSG_0 ("mysql_type_array_setup_mysql: Failed to create table: Error: %s\n",
 				mysql_error(&mysql));
 		ret = 1;
 		goto out_close;
@@ -696,7 +749,7 @@ int test_type_array_mysql (
 
 	ret = test_type_array_mysql_steal_config(&mysql_data, mysql);
 	if (ret != 0) {
-		RRR_MSG_ERR("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
+		RRR_MSG_0("Failed to get configuration from MySQL in test_type_array_mysql_and_network\n");
 		ret = 1;
 		goto out;
 	}
@@ -704,7 +757,7 @@ int test_type_array_mysql (
 	TEST_MSG("The error message_1 'Failed to prepare statement' is fine, it might show up before the table is created\n");
 	ret = test_type_array_setup_mysql (&mysql_data);
 	if (ret != 0) {
-		RRR_MSG_ERR("Failed to setup MySQL test environment\n");
+		RRR_MSG_0("Failed to setup MySQL test environment\n");
 		ret = 1;
 		goto out;
 	}
@@ -715,14 +768,14 @@ int test_type_array_mysql (
 
 	ret = test_result.result;
 	if (ret != 0) {
-		RRR_MSG_ERR("Result was not OK from test_type_array_mysql_and_network_callback\n");
+		RRR_MSG_0("Result was not OK from test_type_array_mysql_and_network_callback\n");
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_message *result_message = test_result.message;
 	if (!MSG_IS_TAG(result_message)) {
-		RRR_MSG_ERR("Message from MySQL was not a TAG message\n");
+		RRR_MSG_0("Message from MySQL was not a TAG message\n");
 		ret = 1;
 		goto out;
 	};

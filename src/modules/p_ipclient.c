@@ -108,13 +108,13 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 	rrr_setting_uint client_id = 0;
 
 	if ((ret = rrr_instance_config_read_unsigned_integer(&client_id, config, "ipclient_client_number")) != 0) {
-		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be set to a unique number for this client\n", config->name);
+		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be set to a unique number for this client\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
 	if (client_id == 0 || client_id > 0xffffffff) {
-		RRR_MSG_ERR("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
+		RRR_MSG_0("Error while parsing setting ipclient_client_number of instance %s, must be in the range 1-4294967295 and unique for this client\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -123,7 +123,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote, config, "ipclient_default_remote")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing setting ipclient_default_remote of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing setting ipclient_default_remote of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -140,12 +140,12 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->ip_default_remote_port, config, "ipclient_default_remote_port")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing ipclient_default_remote_port settings of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing ipclient_default_remote_port settings of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
 		if (rrr_asprintf(&data->ip_default_remote_port, "%i", RRR_IPCLIENT_DEFAULT_PORT) <= 0) {
-			RRR_MSG_ERR("Could not allocate string for port number in ipclient instance %s\n", config->name);
+			RRR_MSG_0("Could not allocate string for port number in ipclient instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -161,7 +161,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 		ret = 0;
 	}
 	else {
-		RRR_MSG_ERR("ipclient: Could not understand ipclient_src_port argument, must be numeric\n");
+		RRR_MSG_0("ipclient: Could not understand ipclient_src_port argument, must be numeric\n");
 		ret = 1;
 		goto out;
 	}
@@ -172,7 +172,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Invalid value for setting ipclient_disallow_remote_ip_swap of instance %s, please specify yes or no\n", config->name);
+			RRR_MSG_0("Invalid value for setting ipclient_disallow_remote_ip_swap of instance %s, please specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -186,7 +186,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Invalid value for setting ipclient_listen of instance %s, please specify yes or no\n", config->name);
+			RRR_MSG_0("Invalid value for setting ipclient_listen of instance %s, please specify yes or no\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -235,7 +235,7 @@ static int receive_messages_callback_final(struct rrr_ip_buffer_entry *entry, vo
 			INSTANCE_D_HANDLE(data->thread_data),
 			entry
 	)) != 0) {
-		RRR_MSG_ERR("Error while writing to output buffer in ipclient instance %s\n",
+		RRR_MSG_0("Error while writing to output buffer in ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -258,7 +258,7 @@ static int receive_messages (int *receive_count, struct ipclient_data *data) {
 			receive_messages_callback_final,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_ERR("Error while receiving messages from ASD in receive_messages of ipclient instance %s\n",
+		RRR_MSG_0("Error while receiving messages from ASD in receive_messages of ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -282,7 +282,7 @@ struct send_packet_callback_data {
 */
 
 int delete_message_callback (struct rrr_ip_buffer_entry *entry, struct ipclient_data *ipclient_data) {
-	RRR_MSG_ERR("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
+	RRR_MSG_0("Warning: Received a message from sender in ipclient instance %s, but remote host is not set. Dropping message.\n",
 			INSTANCE_D_NAME(ipclient_data->thread_data));
 
 	(void)(entry);
@@ -300,7 +300,7 @@ int queue_message_callback (struct rrr_ip_buffer_entry *entry, struct ipclient_d
 			goto out;
 		}
 		else {
-			RRR_MSG_ERR("Could not queue message in queue_message_callback of ipclient instance %s\n",
+			RRR_MSG_0("Could not queue message in queue_message_callback of ipclient instance %s\n",
 					INSTANCE_D_NAME(ipclient_data->thread_data));
 			ret = 1;
 		}
@@ -357,7 +357,7 @@ static int __ipclient_asd_reconnect (struct ipclient_data *data) {
 			data->listen,
 			data->disallow_remote_ip_swap
 	)) != 0) {
-		RRR_MSG_ERR("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		RRR_MSG_0("Could not initialize ASD in ipclient instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -386,7 +386,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	void *joined_data = NULL;
 
 	if (rrr_ip_buffer_entry_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
-		RRR_MSG_ERR("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
+		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
 		goto out;
 	}
@@ -438,7 +438,7 @@ static int ipclient_udpstream_allocator (
 			&callback_data,
 			NULL
 	)) != 0) {
-		RRR_MSG_ERR("Error from message broker writer in ipclient instance %s\n",
+		RRR_MSG_0("Error from message broker writer in ipclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -453,7 +453,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll_ip;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -469,7 +469,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
+		RRR_MSG_0("Configuration parse failed for ipclient instance %s\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
 
@@ -488,7 +488,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	//     Only close here and not when shutting down the thread (might cause
 	//     deadlock in rrr_socket). rrr_socket cleanup will close the socket if we exit.
 	if (__ipclient_asd_reconnect(data) != 0) {
-		RRR_MSG_ERR("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not reconnect in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
@@ -502,13 +502,13 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		int err = 0;
-
 		time_now = rrr_time_get_64();
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
 			if (rrr_poll_do_poll_delete (thread_data, &poll_ip, poll_callback, 25) != 0) {
+				RRR_MSG_ERR("Error while polling in ipclient instance %s\n",
+						INSTANCE_D_NAME(thread_data));
 				break;
 			}
 		} while (RRR_LL_COUNT(&data->send_queue_intermediate) < RRR_IPCLIENT_SEND_BUFFER_INTERMEDIATE_MAX &&
@@ -524,7 +524,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 		int queue_count = 0;
 		rrr_thread_update_watchdog_time(thread_data->thread);
 		if (queue_or_delete_messages(&queue_count, data) != 0) {
-			usleep (10000); // 10 ms
+			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;
 		}
 		queued_total += queue_count;
@@ -538,9 +538,9 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 				data,
 				data->udpstream_asd
 		) != 0) {
-			RRR_MSG_ERR("UDP-stream regular tasks failed in send_packets of ipclient instance %s\n",
+			RRR_MSG_0("UDP-stream regular tasks failed in send_packets of ipclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
-			usleep (10000); // 10 ms
+			rrr_posix_usleep (10000); // 10 ms
 			goto network_restart;
 		}
 		send_total += send_count;
@@ -550,12 +550,12 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 			if (consecutive_zero_recv_and_send > 1000) {
 /*				RRR_DEBUG_MSG_2("ipclient instance %s long sleep send buffer %i\n",
 						INSTANCE_D_NAME(thread_data), fifo_buffer_get_entry_count(&data->send_queue_intermediate));*/
-				usleep (100000); // 100 ms
+				rrr_posix_usleep (100000); // 100 ms
 			}
 			else {
 				sched_yield();
 				if (consecutive_zero_recv_and_send++ > 10) {
-					usleep(10);
+					rrr_posix_usleep(10);
 				}
 //				printf("ipclient instance %s yield\n", INSTANCE_D_NAME(thread_data));
 			}
@@ -583,13 +583,15 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 					&ratelimit_active,
 					thread_data
 			) != 0) {
+				RRR_MSG_ERR("Error while setting ratelimit in ipclient instance %s\n",
+					INSTANCE_D_NAME(thread_data));
 				break;
 			}
 
 			send_queue_count = RRR_LL_COUNT(&data->send_queue_intermediate);
 
 			if (RRR_DEBUGLEVEL_1) {
-				RRR_DBG("-- ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %i q/s %i s/s %i d/s %i\n",
+				RRR_MSG_1("-- ipclient instance %s OB %i SQ %i TP %" PRIu64 " TQ %" PRIu64 " r/s %i q/s %i s/s %i d/s %i\n",
 						INSTANCE_D_NAME(thread_data),
 						output_buffer_count,
 						send_queue_count,
@@ -600,7 +602,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 						send_total,
 						delivered_total
 				);
-				RRR_DBG("--------------\n");
+				RRR_MSG_1("--------------\n");
 			}
 
 			prev_stats_time = time_now;
@@ -608,10 +610,6 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 			queued_total = 0;
 			send_total = 0;
 			delivered_total = 0;
-		}
-
-		if (err != 0) {
-			break;
 		}
 	}
 

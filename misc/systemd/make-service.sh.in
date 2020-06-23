@@ -1,0 +1,23 @@
+#!/bin/sh
+
+OUTPUT=$1
+BINDIR=$2
+CONFDIR=$3
+
+rm -f $OUTPUT
+
+echo "[Unit]" >> $OUTPUT
+echo "Description=@PACKAGE_STRING@" >> $OUTPUT
+
+echo >> $OUTPUT
+
+echo "[Service]" >> $OUTPUT
+echo "ExecStart=${BINDIR}/rrr -s -l ${CONFDIR}/" >> $OUTPUT
+echo "KillSignal=SIGTERM" >> $OUTPUT
+echo "User=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
+echo "Group=@RRR_SYSTEMD_USERNAME@" >> $OUTPUT
+
+echo >> $OUTPUT
+
+echo "[Install]" >> $OUTPUT
+echo "WantedBy=multi-user.target" >> $OUTPUT

@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <sys/wait.h>
 
+#include "posix.h"
 #include "fork.h"
 #include "log.h"
 #include "rrr_strerror.h"
@@ -50,14 +51,14 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	*result = NULL;
 
 	if (pthread_mutexattr_init(&attr) != 0)  {
-		RRR_MSG_ERR("Could not initialize mutexattr in rrr_fork_handler_init\n");
+		RRR_MSG_0("Could not initialize mutexattr in rrr_fork_handler_init\n");
 		goto out;
 	}
 
 	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
-	if ((handler = mmap(NULL, RRR_FORK_HANDLER_ALLOCATION_SIZE, PROT_WRITE|PROT_READ, MAP_ANON|MAP_SHARED, -1, 0)) == MAP_FAILED) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
+	if ((handler = rrr_posix_mmap(RRR_FORK_HANDLER_ALLOCATION_SIZE)) == MAP_FAILED) {
+		RRR_MSG_0("Could not allocate memory in rrr_fork_handler_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_destroy_mutexattr;
 	}
@@ -68,7 +69,7 @@ int rrr_fork_handler_new (struct rrr_fork_handler **result) {
 	handler->self_p = getpid();
 
 	if (pthread_mutex_init(&handler->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in rrr_fork_handler_init\n");
+		RRR_MSG_0("Could not initialize mutex in rrr_fork_handler_init\n");
 		goto out_free;
 	}
 
@@ -106,7 +107,7 @@ static int rrr_fork_handler_signal_pending = 0;
 int rrr_fork_signal_handler (int s, void *arg) {
 	(void)(arg);
 	if (s == SIGCHLD) {
-		RRR_MSG_ERR("Fork signal handler received SIGCHLD\n");
+		RRR_DBG_SIGNAL("Fork signal handler received SIGCHLD\n");
 		// Do not lock, only call from main context
 		rrr_fork_handler_signal_pending = 1;
 
@@ -179,7 +180,7 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
 
 		pthread_mutex_unlock (&handler->lock);
-		usleep(100000); // 100ms
+		rrr_posix_usleep(100000); // 100ms
 		pthread_mutex_lock (&handler->lock);
 	} while (active_forks > 0);
 
@@ -222,7 +223,7 @@ void rrr_fork_handle_sigchld_and_notify_if_needed  (struct rrr_fork_handler *han
 				outwaited_children++;
 			}
 			else if (errno == ECHILD) {
-				RRR_MSG_ERR("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? Removing it.\n", node->pid);
+				RRR_MSG_0("Warning: ECHILD while waiting for python3 fork pid %i, already waited for? Removing it.\n", node->pid);
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 		RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(__rrr_fork_tag_for_clearing(node));
@@ -268,11 +269,20 @@ pid_t rrr_fork (
 ) {
 	pid_t ret = 0;
 
-	pthread_mutex_lock(&handler->lock);
+	/*
+	 * XXX : For some reason the perl5 module might sometimes hang during
+	 *       initialization when it forks out the worker. It will then hang
+	 *       waiting on this lock, despite the lock reporting "not acquired"
+	 *       when we attach a debugger. This seems however not to be a problem
+	 *       if when spin on trylock like this (also for some reason).
+	 */
+	while (pthread_mutex_trylock(&handler->lock) != 0) {
+		rrr_posix_usleep(5000);
+	}
 
 	struct rrr_fork *result = __rrr_fork_allocate_unlocked (handler);
 	if (result == NULL) {
-		RRR_MSG_ERR("No available fork slot while forking in rrr_fork\n");
+		RRR_MSG_0("No available fork slot while forking in rrr_fork\n");
 		ret = -1;
 		goto out_unlock;
 	}
@@ -280,14 +290,17 @@ pid_t rrr_fork (
 	ret = fork();
 
 	if (ret < 0) {
-		RRR_MSG_ERR("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Error while forking in rrr_fork: %s\n", rrr_strerror(errno));
 		ret = -1;
 		goto out_unlock;
 	}
 	else if (ret == 0) {
-		// Only parent unlocks
+		// Child code
+		// Only parent unlocks. This is a PSHARED lock.
 		goto out;
 	}
+
+	// Parent code
 
 	RRR_DBG_1("=== FORK PID %i ========================================================================================\n", ret);
 

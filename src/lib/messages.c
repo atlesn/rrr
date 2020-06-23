@@ -65,7 +65,7 @@ int rrr_message_new_empty (
 	// -1 because the char which points to the data holds 1 byte
 	struct rrr_message *result = malloc(total_size);
 	if (result == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in new_empty_message\n");
+		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
 		return 1;
 	}
 
@@ -124,7 +124,7 @@ int rrr_message_to_string (
 
 	char *target = malloc(128);
 	if (target == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in message_to_string\n");
+		RRR_MSG_0("Could not allocate memory in message_to_string\n");
 		ret = 1;
 		goto out;
 	}
@@ -138,7 +138,7 @@ int rrr_message_to_string (
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		RRR_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", MSG_TYPE(message));
+		RRR_MSG_0 ("Unknown type %" PRIu32 " in message while converting to string\n", MSG_TYPE(message));
 		ret = 1;
 		goto out;
 	}
@@ -152,7 +152,7 @@ int rrr_message_to_string (
 		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
-		RRR_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", MSG_CLASS(message));
+		RRR_MSG_0 ("Unknown class %" PRIu32 " in message while converting to string\n", MSG_CLASS(message));
 		ret = 1;
 		goto out;
 	}
@@ -203,21 +203,21 @@ static int __message_validate (const struct rrr_message *message){
 	if (message->msg_size < sizeof(*message) - 1 ||
 			MSG_TOTAL_SIZE(message) != message->msg_size
 	) {
-		RRR_MSG_ERR("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
+		RRR_DBG_1("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
 				message->msg_size, MSG_TOTAL_SIZE(message));
 		ret = 1;
 		goto out;
 	}
 	if (!MSG_CLASS_OK(message)) {
-		RRR_MSG_ERR("Invalid class %u in message to message_validate\n", MSG_CLASS(message));
+		RRR_DBG_1("Invalid class %u in message to message_validate\n", MSG_CLASS(message));
 		ret = 1;
 	}
 	if (!MSG_TYPE_OK(message)) {
-		RRR_MSG_ERR("Invalid type %u in message to message_validate\n", MSG_TYPE(message));
+		RRR_DBG_1("Invalid type %u in message to message_validate\n", MSG_TYPE(message));
 		ret = 1;
 	}
 	if (rrr_utf8_validate(MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message)) != 0) {
-		RRR_MSG_ERR("Invalid topic for message in message_validate, not valid UTF-8\n");
+		RRR_DBG_1("Invalid topic for message in message_validate, not valid UTF-8\n");
 		ret = 1;
 	}
 
@@ -227,14 +227,14 @@ static int __message_validate (const struct rrr_message *message){
 
 int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size) {
 	if (expected_size < ((ssize_t) sizeof(*message)) - 1) {
-		RRR_MSG_ERR("Message was too short in message_to_host_and_verify\n");
+		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
-	message->timestamp = be64toh(message->timestamp);
-	message->topic_length = be16toh(message->topic_length);
+	message->timestamp = rrr_be64toh(message->timestamp);
+	message->topic_length = rrr_be16toh(message->topic_length);
 
 	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
-		RRR_MSG_ERR("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
+		RRR_DBG_1("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
 				expected_size, MSG_TOTAL_SIZE(message));
 		return 1;
 	}
@@ -255,7 +255,7 @@ void rrr_message_prepare_for_network (struct rrr_message *message) {
 	}
 /*
 	if (message_to_string (message, buf+1, buf_size) != 0) {
-		VL_MSG_ERR ("ipclient: Error while converting message to string\n");
+		VL_MSG_0 ("ipclient: Error while converting message to string\n");
 		return 1;
 	}
 */
@@ -270,7 +270,7 @@ struct rrr_message *rrr_message_duplicate_no_data_with_size (
 
 	struct rrr_message *ret = malloc(new_total_size);
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 
@@ -288,7 +288,7 @@ struct rrr_message *rrr_message_duplicate (
 ) {
 	struct rrr_message *ret = malloc(MSG_TOTAL_SIZE(message));
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 	memcpy(ret, message, MSG_TOTAL_SIZE(message));
@@ -301,7 +301,7 @@ struct rrr_message *rrr_message_duplicate_no_data (
 	ssize_t new_size = sizeof(struct rrr_message) - 1 + MSG_TOPIC_LENGTH(message);
 	struct rrr_message *ret = malloc(new_size);
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in message_duplicate\n");
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
 	}
 	memcpy(ret, message, new_size);
@@ -316,7 +316,7 @@ int rrr_message_set_topic (
 ) {
 	struct rrr_message *ret = rrr_message_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
 	if (ret == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in message_set_topic\n");
+		RRR_MSG_0("Could not allocate memory in message_set_topic\n");
 		return 1;
 	}
 
@@ -331,8 +331,8 @@ int rrr_message_set_topic (
 
 int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
 	// Assume network order if crc32 is set
-	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? be64toh(message_a->timestamp) : message_a->timestamp);
-	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? be64toh(message_b->timestamp) : message_b->timestamp);
+	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
 
 	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
 }

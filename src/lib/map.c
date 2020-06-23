@@ -46,7 +46,7 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 
 	struct rrr_map_item *item = malloc(sizeof(*item));
 	if (item == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -56,7 +56,7 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 	item->value = malloc(field_size);
 
 	if (item->tag == NULL || item->value == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_map_item_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_map_item_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -77,6 +77,37 @@ int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 int rrr_map_item_add (struct rrr_map *map, struct rrr_map_item *item) {
 	RRR_LL_APPEND(map, item);
 	return 0;
+}
+
+int rrr_map_item_add_new (struct rrr_map *map, const char *tag, const char *value) {
+	int ret = 0;
+
+	struct rrr_map_item *item_new = NULL;
+
+	// Remember + 1 and minimum size 1
+	size_t tag_size = (tag != NULL ? strlen(tag) + 1 : 1);
+	size_t value_size = (value != NULL ? strlen(value) + 1 : 1);
+	size_t max_size = (tag_size > value_size ? tag_size : value_size);
+
+	if ((ret = rrr_map_item_new(&item_new, max_size)) != 0) {
+		goto out;
+	}
+
+	if (tag != NULL) {
+		memcpy(item_new->tag, tag, tag_size);
+	}
+	if (value != NULL) {
+		memcpy(item_new->value, value, value_size);
+	}
+
+	RRR_LL_APPEND(map, item_new);
+	item_new = NULL;
+
+	out:
+	if (item_new != NULL) {
+		rrr_map_item_destroy(item_new);
+	}
+	return ret;
 }
 
 int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *delimeter) {
@@ -101,7 +132,7 @@ int rrr_map_parse_pair (const char *input, struct rrr_map *target, const char *d
 
 			const char *pos = delimeter_pos + delimeter_length;
 			if (*pos == '\0' || pos > (input + input_length)) {
-				RRR_MSG_ERR("Missing value after delimeter '%s' in definition '%s'\n", delimeter, input);
+				RRR_MSG_0("Missing value after delimeter '%s' in definition '%s'\n", delimeter, input);
 				ret = 1;
 				goto out;
 			}

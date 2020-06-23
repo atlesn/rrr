@@ -25,7 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #include "main.h"
 #include "global.h"
@@ -42,7 +44,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/stats_message.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
+#include "lib/map.h"
 #include "lib/fork.h"
+#include "lib/rrr_readdir.h"
+#include "lib/rrr_umask.h"
+
+RRR_GLOBAL_SET_LOG_PREFIX("rrr");
+
+#define RRR_CONFIG_FILE_SUFFIX	".conf"
+#define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
 
 const char *module_library_paths[] = {
 		RRR_MODULE_PATH,
@@ -74,12 +84,13 @@ int rrr_signal_handler(int s, void *arg) {
 }
 
 static const struct cmd_arg_rule cmd_rules[] = {
-		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE}"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_NO_FLAG_MULTI,'\0',	"config",				"{CONFIGURATION FILE OR DIRECTORY}"},
 		{0,							'W',	"no_watchdog_timers",	"[-W|--no_watchdog_timers]"},
 		{0,							'T',	"no_thread_restart",	"[-T|--no_thread_restart]"},
 		{0,							's',	"stats",				"[-s|--stats]"},
+		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
 		{0,							'v',	"version",				"[-v|--version]"},
 		{0,							'\0',	NULL,					NULL}
@@ -105,7 +116,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 	}
 
 	if (rrr_stats_engine_post_message(&stats_data->engine, stats_data->handle, "main", &message) != 0) {
-		RRR_MSG_ERR("Could not post main statistics message\n");
+		RRR_MSG_0("Could not post main statistics message\n");
 		return EXIT_FAILURE;
 	}
 
@@ -115,7 +126,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct instance_metadata_collection *instances) {
 	int ret = 0;
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
-		RRR_MSG_ERR("Error while obtaining statistics handle in main\n");
+		RRR_MSG_0("Error while obtaining statistics handle in main\n");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -169,6 +180,8 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
+// We have one loop per fork and one fork per configuration file
+// Parent fork only monitors child forks
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
@@ -187,18 +200,18 @@ static int main_loop (
 	rrr_global_config_set_log_prefix(config_file);
 
 	if ((config = rrr_config_parse_file(config_file)) == NULL) {
-		RRR_MSG_ERR("Configuration file parsing failed for %s\n", config_file);
+		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	RRR_DBG_1("RRR  found %d instances in configuration file %s\n",
+	RRR_DBG_1("RRR found %d instances in configuration file %s\n",
 			config->module_count, config_file);
 
 	if (RRR_DEBUGLEVEL_1) {
 		if (config != NULL && rrr_config_dump(config) != 0) {
 			ret = EXIT_FAILURE;
-			RRR_MSG_ERR("Error occured while dumping configuration\n");
+			RRR_MSG_0("Error occured while dumping configuration\n");
 			goto out_destroy_config;
 		}
 	}
@@ -215,7 +228,7 @@ static int main_loop (
 
 	if (cmd_exists(cmd, "stats", 0)) {
 		if (rrr_stats_engine_init(&stats_data.engine) != 0) {
-			RRR_MSG_ERR("Could not initialize statistics engine\n");
+			RRR_MSG_0("Could not initialize statistics engine\n");
 			ret = EXIT_FAILURE;
 			goto out_destroy_instance_metadata;
 		}
@@ -243,7 +256,8 @@ static int main_loop (
 		goto out_stop_threads;
 	}
 
-	// Post main sticky statistics messages
+	// This is messy. Handle gets registered inside of main_stats_post_sticky_messages
+	// and then gets unregistered here.
 	if (stats_data.handle != 0) {
 		rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 		stats_data.handle = 0;
@@ -257,7 +271,7 @@ static int main_loop (
 
 	// Main loop
 	while (main_running) {
-		usleep (250000); // 250ms
+		rrr_posix_usleep (250000); // 250ms
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
@@ -273,7 +287,7 @@ static int main_loop (
 			rrr_message_broker_unregister_all_hard(&message_broker);
 
 			if (main_running && rrr_global_config.no_thread_restart == 0) {
-				usleep(1000000); // 1s
+				rrr_posix_usleep(1000000); // 1s
 				goto threads_restart;
 			}
 			else {
@@ -288,7 +302,7 @@ static int main_loop (
 		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
+			RRR_MSG_0("Main cleaned up after %i ghost(s) (in loop) in configuration %s\n", count, config_file);
 		}
 	}
 
@@ -305,7 +319,7 @@ static int main_loop (
 		int count;
 		rrr_thread_run_ghost_cleanup(&count);
 		if (count > 0) {
-			RRR_MSG_ERR("Main cleaned up after %i ghost(s) (after loop)\n", count);
+			RRR_MSG_0("Main cleaned up after %i ghost(s) (after loop)\n", count);
 		}
 		rrr_socket_close_all();
 
@@ -324,9 +338,126 @@ static int main_loop (
 		return ret;
 }
 
+static int get_config_files_test_open (const char *path) {
+	int fd_tmp = open(path, O_RDONLY);
+	if (fd_tmp == -1) {
+		return 1;
+	}
+	close(fd_tmp);
+	return 0;
+}
+
+static int get_config_files_suffix_ok (const char *check_path) {
+	const char *suffix = RRR_CONFIG_FILE_SUFFIX;
+
+	const char *check_pos = check_path + strlen(check_path) - 1;
+	const char *suffix_pos = suffix + strlen(suffix) - 1;
+
+	while (check_pos >= check_path && suffix_pos >= suffix) {
+		if (*check_pos != *suffix_pos) {
+				return 1;
+		}
+		check_pos--;
+		suffix_pos--;
+	}
+
+	return 0;
+}
+
+static int get_config_files_callback (struct dirent *entry, const char *resolved_path, unsigned char type, void *private_data) {
+	struct rrr_map *target = private_data;
+
+	(void)(entry);
+	(void)(type);
+
+	int ret = 0;
+
+	if (get_config_files_suffix_ok(resolved_path) != 0) {
+		RRR_DBG_1("Note: File '%s' found in a configuration directory did not have the correct suffix '%s', ignoring it.\n",
+				resolved_path, RRR_CONFIG_FILE_SUFFIX);
+		ret = 0;
+		goto out;
+	}
+
+	if (get_config_files_test_open(resolved_path) != 0) {
+		RRR_MSG_0("Configuration file %s could not be opened: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = rrr_map_item_add_new(target, resolved_path, "")) != 0) {
+		RRR_MSG_0("Could not add configuration file to list in get_config_files_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
+	int ret = 0;
+
+	const char *config_string;
+	int config_i = 0;
+	while ((config_string = cmd_get_value(cmd, "config", config_i)) != NULL) {
+		if (*config_string == '\0') {
+			break;
+		}
+
+		char cwd[PATH_MAX];
+		if (getcwd(cwd, sizeof(cwd)) == NULL) {
+			RRR_MSG_0("getcwd() failed in get_config_files: %s\n", rrr_strerror(errno));
+			ret = 1;
+			goto out;
+		}
+
+		if (chdir(config_string) == 0) {
+			if (chdir(cwd) != 0) {
+				RRR_MSG_0("Could not chdir() to original directory %s: %s\n", rrr_strerror(errno));
+				ret = 1;
+				goto out;
+			}
+			if ((ret = rrr_readdir_foreach (
+					config_string,
+					get_config_files_callback,
+					target
+			)) != 0) {
+				RRR_MSG_0("Error while reading configuration files in directory %s\n", config_string);
+				ret = 1;
+				goto out;
+			}
+		}
+		else if (errno == ENOTDIR) {
+			// OK (for now), not a directory
+			if (get_config_files_test_open(config_string) != 0) {
+				goto out_print_errno;
+			}
+			if ((ret = rrr_map_item_add_new(target, config_string, "")) != 0) {
+				RRR_MSG_0("Could not add configuration file to list in get_config_files\n");
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			goto out_print_errno;
+		}
+
+		config_i++;
+	}
+
+	goto out;
+	out_print_errno:
+		RRR_MSG_0("Error while accessing configuration file or directory %s: %s\n",
+				config_string, rrr_strerror(errno));
+		ret = 1;
+	out:
+		return ret;
+}
+
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -334,7 +465,6 @@ int main (int argc, const char *argv[]) {
 
 	int is_child = 0;
 
-	const char *config_string = NULL;
 	int ret = EXIT_SUCCESS;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
@@ -346,7 +476,10 @@ int main (int argc, const char *argv[]) {
 			&some_fork_has_stopped
 	};
 
+	struct rrr_map config_file_map = {0};
+
 	struct cmd_data cmd;
+
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	struct rrr_signal_functions signal_functions = {
@@ -357,7 +490,7 @@ int main (int argc, const char *argv[]) {
 
 	if (rrr_fork_handler_new (&fork_handler) != 0) {
 		ret = EXIT_FAILURE;
-		goto out_cleanup_signal;
+		goto out_run_cleanup_methods;
 	}
 
 	// The fork signal handler must be first
@@ -368,13 +501,9 @@ int main (int argc, const char *argv[]) {
 
 	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
 
+	// Everything which might print debug stuff must be called after this
+	// as the global debuglevel is 0 up to now
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
-		goto out_cleanup_signal;
-	}
-
-	if (cmd_get_value(&cmd, "config", 0) == NULL) {
-		RRR_MSG_ERR("No configuration file specified\n");
-		ret = 1;
 		goto out_cleanup_signal;
 	}
 
@@ -382,16 +511,26 @@ int main (int argc, const char *argv[]) {
 		goto out_cleanup_signal;
 	}
 
+	rrr_umask_onetime_set_global(RRR_GLOBAL_UMASK);
+
+	if (get_config_files (&config_file_map, &cmd) != 0) {
+		goto out_cleanup_signal;
+	}
+
+	if (RRR_MAP_COUNT(&config_file_map) == 0) {
+		RRR_MSG_0("No configuration files were found\n");
+		ret = 1;
+		goto out_cleanup_signal;
+	}
+
 	RRR_DBG_1("ReadRouteRecord debuglevel is: %u\n", RRR_DEBUGLEVEL);
 
 	// Load configuration and fork
 	int config_i = 0;
-	while ((config_string = cmd_get_value(&cmd, "config", config_i)) != NULL) {
-		if (*config_string == '\0') {
-			break;
-		}
+	RRR_MAP_ITERATE_BEGIN(&config_file_map);
+	 	 // We fork one child for every specified config file
 
-		// We fork one child for every specified config file
+		const char *config_string = node->tag;
 
 		pid_t pid = rrr_fork (
 				fork_handler,
@@ -399,7 +538,7 @@ int main (int argc, const char *argv[]) {
 				&exit_notification_data
 		);
 		if (pid < 0) {
-			RRR_MSG_ERR("Could not fork child process in main(): %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not fork child process in main(): %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_cleanup_signal;
 		}
@@ -424,17 +563,17 @@ int main (int argc, const char *argv[]) {
 
 		increment:
 		config_i++;
-	}
+	RRR_MAP_ITERATE_END();
 
 	while (main_running) {
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 
 		if (some_fork_has_stopped) {
-			RRR_MSG_ERR("One or more forks has exited\n");
+			RRR_MSG_0("One or more forks has exited\n");
 			goto out_cleanup_signal;
 		}
 
-		usleep(250000); // 250 ms
+		rrr_posix_usleep(250000); // 250 ms
 	}
 
 	out_cleanup_signal:
@@ -444,24 +583,24 @@ int main (int argc, const char *argv[]) {
 		signal_functions.set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
-			goto out_cleanup_free_fork_handler;
+			// Child forks must skip *ALL* the fork-cleanup stuff
+			goto out_run_cleanup_methods;
 		}
 
-		// Child forks must skip this
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-
-	out_cleanup_free_fork_handler:
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 		rrr_fork_handler_free(fork_handler);
 
+	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
 		if (ret == 0) {
-			RRR_DBG_1("Exiting program without errors\n");
+			RRR_MSG_1("Exiting program without errors\n");
 		}
 		else {
-			RRR_DBG_1("Exiting program with errors\n");
+			RRR_MSG_ERR("Exiting program following one or more errors\n");
 		}
 		cmd_destroy(&cmd);
+		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
 		return ret;
 }

@@ -24,12 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#define RRR_MQTT_PARSE_OK				0
-#define RRR_MQTT_PARSE_INTERNAL_ERROR	1
-#define RRR_MQTT_PARSE_INCOMPLETE		2
-#define RRR_MQTT_PARSE_PARAMETER_ERROR	3
-#define RRR_MQTT_PARSE_OVERFLOW			4
-
 #define RRR_MQTT_PARSE_STATUS_NONE						0
 #define RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE			(1<<0)
 #define RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE		(1<<1)
@@ -39,22 +33,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PARSE_STATUS_ERR						(1<<15)
 
 #define RRR_MQTT_PARSE_FIXED_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_FIXED_HEADER_DONE) != 0)
 
 #define RRR_MQTT_PARSE_VARIABLE_HEADER_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_VARIABLE_HEADER_DONE) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_PAYLOAD_IS_DONE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_PAYLOAD_DONE) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_IS_MOVE_PAYLOAD_TO_PACKET(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_MOVE_PAYLOAD_TO_PACKET) != 0)
 
 #define RRR_MQTT_PARSE_IS_COMPLETE(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_COMPLETE) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_COMPLETE) != 0)
 
 #define RRR_MQTT_PARSE_IS_ERR(s) \
-	(((s)->status & RRR_MQTT_PARSE_STATUS_ERR) > 0)
+	(((s)->status & RRR_MQTT_PARSE_STATUS_ERR) != 0)
 
 #define RRR_MQTT_PARSE_STATUS_SET(s,f) \
 	((s)->status |= (f))
@@ -81,7 +75,8 @@ struct rrr_mqtt_parse_session {
 
 	ssize_t payload_checkpoint;
 
-	ssize_t buf_size;
+//	ssize_t buf_size;
+	ssize_t buf_wpos;
 	ssize_t target_size;
 
 	uint8_t type;
@@ -110,13 +105,13 @@ void rrr_mqtt_parse_session_init (
 void rrr_mqtt_parse_session_update (
 		struct rrr_mqtt_parse_session *session,
 		const char *buf,
-		ssize_t buf_size,
+		ssize_t buf_wpos,
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 );
-int rrr_mqtt_packet_parse (
+void rrr_mqtt_packet_parse (
 		struct rrr_mqtt_parse_session *session
 );
-int rrr_mqtt_packet_parse_finalize (
+void rrr_mqtt_packet_parse_session_extract_packet (
 		struct rrr_mqtt_p **packet,
 		struct rrr_mqtt_parse_session *session
 );

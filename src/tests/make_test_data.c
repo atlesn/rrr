@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
+#include "../lib/rrr_endian.h"
 #include "../lib/messages_head.h"
 #include "../lib/rrr_socket_msg_checksum.h"
 #include "../lib/rrr_socket_msg_head.h"
@@ -62,7 +63,7 @@ void test_data_init (struct test_data *data) {
 	data->be3[0] = 1;
 	data->be3[1] = 2;
 
-	data->be2 = htobe16(-33);
+	data->be2 = rrr_htobe16(-33);
 
 	data->be1 = 1;
 
@@ -76,7 +77,7 @@ void test_data_init (struct test_data *data) {
 	data->le3[1] = 2;
 	data->le3[2] = 1;
 
-	data->le2 = htole16(-33);
+	data->le2 = rrr_htole16(-33);
 
 	data->le1 = 1;
 

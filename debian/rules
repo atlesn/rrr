@@ -1,8 +1,13 @@
 #!/usr/bin/make -f
 # See debhelper(7) (uncomment to enable)
 # output every command that modifies files on the build system.
-#export DH_VERBOSE = 1
+# export DH_VERBOSE = 1
 
+# This will disable installation of rrr.service systemd file and let dh_systemd/dh_installinit do that instead
+export RRR_SYSTEMD_NO_INSTALL=1
+
+# This will create User=rrr and Group=rrr in rrr.service as opposed to the default username 'daemon'
+export RRR_SYSTEMD_USERNAME=rrr
 
 # see FEATURE AREAS in dpkg-buildflags(1)
 #export DEB_BUILD_MAINT_OPTIONS = hardening=+all
@@ -15,7 +20,11 @@
 
 
 %:
-	dh $@ --with autoreconf
+	dh $@ --with autoreconf,systemd
+
+# In the perlonly package, the name of the service file must be overriden as it does not match the package name
+override_dh_installinit:
+	dh_installinit --name=rrr
 
 # dh_make generated override targets
 # This is example for Cmake (See https://bugs.debian.org/641051 )

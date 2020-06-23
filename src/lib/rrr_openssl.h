@@ -28,11 +28,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do {												\
 		char buf[256];									\
 		ERR_error_string_n(ERR_get_error(), buf, 256); 	\
-		RRR_MSG_ERR(msg ": %s\n", buf);					\
+		RRR_MSG_0(msg ": %s\n", buf);					\
 	} while(0)
 
 void rrr_openssl_global_register_user(void);
 void rrr_openssl_global_unregister_user(void);
-int rrr_openssl_load_verify_locations (SSL_CTX *ctx);
+int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const char *ca_path);
 
 #endif /* RRR_OPENSSL_H */

@@ -56,7 +56,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 			INSTANCE_D_HANDLE(thread_data),
 			message
 	) != 0) {
-		RRR_MSG_ERR("Could not inject message in dummy instance %s\n",
+		RRR_MSG_0("Could not inject message in dummy instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out;
@@ -86,7 +86,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -100,7 +100,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -114,7 +114,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -126,7 +126,7 @@ int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing dummy_random_payload_max_size setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing dummy_random_payload_max_size setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -177,7 +177,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
-		RRR_MSG_ERR("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -192,7 +192,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Configuration parse failed for instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_cleanup;
 	}
 
@@ -251,7 +251,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		}
 
 		if (data->no_sleeping == 0 || (data->max_generated > 0 && generated_count_total >= data->max_generated)) {
-			usleep (50000); // 50 ms
+			rrr_posix_usleep (50000); // 50 ms
 		}
 	}
 

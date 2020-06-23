@@ -6,9 +6,21 @@ use Socket qw(:DEFAULT :crlf);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
+use rrr::rrr_helper::rrr_debug;
+
 use bytes;
 
-my $global_settings = undef;
+my $debug = { };
+bless $debug, rrr::rrr_helper::rrr_debug;
+
+sub config {
+	my $settings = shift;
+
+	print "Custom argument is '" . $settings->get("custom_argument") . "'\n";
+	$settings->set("produce_warning_now", "abc");
+
+	return 1;
+}
 
 sub get_from_tag {
 	my $message = shift;
@@ -78,7 +90,7 @@ sub process {
 	$message->send();
 
 	foreach my $key (sort keys(%{$message})) {
-		print "Key: $key: " . $message->{$key} . "\n";
+		$debug->dbg(1, "Key: $key: " . $message->{$key} . "\n");
 	}
 
 	return 1;

@@ -62,7 +62,7 @@ static int __rrr_mmap_channel_block_free (
 			// Attempt to recover from previously failed allocation
 			struct shmid_ds ds;
 			if (shmctl(block->shmid, IPC_STAT, &ds) != block->shmid) {
-				RRR_MSG_ERR("Warning: shmctl IPC_STAT failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("Warning: shmctl IPC_STAT failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
 			}
 			else {
 				if (ds.shm_nattch > 0) {
@@ -70,13 +70,13 @@ static int __rrr_mmap_channel_block_free (
 				}
 
 				if (shmctl(block->shmid, IPC_RMID, NULL) != 0) {
-					RRR_MSG_ERR("shmctl IPC_RMID failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
+					RRR_MSG_0("shmctl IPC_RMID failed in __rrr_mmap_channel_block_free: %s\n", rrr_strerror(errno));
 					return 1;
 				}
 			}
 		}
 		else if (shmdt(block->ptr_shm_or_mmap) != 0) {
-			RRR_MSG_ERR("shmdt failed in rrr_mmap_channel_write_using_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmdt failed in rrr_mmap_channel_write_using_callback: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 	}
@@ -128,12 +128,12 @@ static int __rrr_mmap_channel_allocate (
 		do {
 			new_key = rrr_rand();
 //			printf("allocate shmget key %i pos %i size %lu\n", new_key, block_pos, data_size);
-			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) <= 0) {
+			if ((shmid = shmget(new_key, data_size, IPC_CREAT|IPC_EXCL|0600)) == -1) {
 				if (errno == EEXIST) {
 					// OK, try another key
 				}
 				else {
-					RRR_MSG_ERR("Error from shmget in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+					RRR_MSG_0("Error from shmget in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
 					ret = 1;
 					goto out;
 				}
@@ -144,20 +144,20 @@ static int __rrr_mmap_channel_allocate (
 		block->size_capacity = data_size;
 
 		if ((block->ptr_shm_or_mmap = shmat(shmid, NULL, 0)) == NULL) {
-			RRR_MSG_ERR("shmat failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmat failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 
 		if (shmctl(shmid, IPC_RMID, NULL) != 0) {
-			RRR_MSG_ERR("shmctl IPC_RMID failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmctl IPC_RMID failed in __rrr_mmap_channel_allocate: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
 		if ((block->ptr_shm_or_mmap = rrr_mmap_allocate(target->mmap, data_size)) == NULL) {
-//			RRR_MSG_ERR("Could not allocate mmap memory in __rrr_mmap_channel_allocate \n");
+//			RRR_MSG_0("Could not allocate mmap memory in __rrr_mmap_channel_allocate \n");
 			ret = 1;
 			goto out;
 		}
@@ -196,7 +196,7 @@ int rrr_mmap_channel_write_using_callback (
 	}
 
 	if (__rrr_mmap_channel_allocate(target, block, data_size) != 0) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_mmap_channel_write\n");
+		RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_write\n");
 		ret = 1;
 		goto out_unlock;
 	}
@@ -204,7 +204,7 @@ int rrr_mmap_channel_write_using_callback (
 	ret = callback(block->ptr_shm_or_mmap, callback_arg);
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Error from callback in rrr_mmap_channel_write_using_callback\n");
+		RRR_MSG_0("Error from callback in rrr_mmap_channel_write_using_callback\n");
 		ret = 1;
 		goto out_unlock;
 	}
@@ -286,26 +286,26 @@ int rrr_mmap_channel_read_with_callback (
 		const char *data_pointer = NULL;
 
 		if ((data_pointer = shmat(block->shmid, NULL, 0)) == NULL) {
-			RRR_MSG_ERR("Could not get shm pointer in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not get shm pointer in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_unlock;
 		}
 
 		if ((ret = callback(data_pointer, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_ERR("Error from callback in rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
 
 		if (shmdt(data_pointer) != 0) {
-			RRR_MSG_ERR("shmdt failed in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("shmdt failed in rrr_mmap_channel_read_with_callback: %s\n", rrr_strerror(errno));
 			ret = 1;
 			goto out_rpos_increment;
 		}
 	}
 	else {
 		if ((ret = callback(block->ptr_shm_or_mmap, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_ERR("Error from callback in rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
@@ -361,7 +361,7 @@ static int __rrr_mmap_channel_read_callback (const void *data, size_t data_size,
 	int ret = 0;
 
 	if ((callback_data->data = malloc(data_size)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_mmap_channel_read_callback\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_mmap_channel_read_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -451,13 +451,13 @@ void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
 			if (++msg_count == 1) {
-				RRR_MSG_ERR("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
+				RRR_MSG_0("Warning: Pointer was still present in block in rrr_mmap_channel_destroy\n");
 			}
 		}
 		pthread_mutex_destroy(&target->blocks[i].block_lock);
 	}
 	if (msg_count > 1) {
-		RRR_MSG_ERR("Last message duplicated %i times\n", msg_count - 1);
+		RRR_MSG_0("Last message duplicated %i times\n", msg_count - 1);
 	}
 
 	rrr_mmap_free(target->mmap, target);
@@ -487,13 +487,13 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	pthread_mutexattr_t attr;
 
 	if ((ret = pthread_mutexattr_init(&attr)) != 0) {
-		RRR_MSG_ERR("Could not initialize mutexattr inrrr_mmap_channel_new (%i)\n", ret);
+		RRR_MSG_0("Could not initialize mutexattr inrrr_mmap_channel_new (%i)\n", ret);
 		ret = 1;
 		goto out;
 	}
 
     if ((result = rrr_mmap_allocate(mmap, sizeof(*result))) == NULL) {
-    	RRR_MSG_ERR("Could not allocate memory in rrr_mmap_channel_new\n");
+    	RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
     	ret = 1;
     	goto out_destroy_mutexattr;
     }
@@ -503,14 +503,14 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
 	if ((ret = pthread_mutex_init(&result->index_lock, &attr)) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
+		RRR_MSG_0("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
 		ret = 1;
 		goto out_free;
 	}
 
 	for (mutex_i = 0; mutex_i != RRR_MMAP_CHANNEL_SLOTS; mutex_i++) {
 		if ((ret = pthread_mutex_init(&result->blocks[mutex_i].block_lock, &attr)) != 0) {
-			RRR_MSG_ERR("Could not initialize mutex in rrr_mmap_new %i\n", ret);
+			RRR_MSG_0("Could not initialize mutex in rrr_mmap_new %i\n", ret);
 			ret = 1;
 			goto out_destroy_mutexes;
 		}

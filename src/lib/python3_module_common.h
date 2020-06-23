@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	a ## b
 
 #define RRR_PY_ASSERT_IN_BOUNDS(name,bits) \
-	do {if (name > RRR_PY_PASTE(max_,bits)) { RRR_MSG_ERR("Value of parameter " RRR_PY_QUOTE(name) " exceeds maximum in .set()\n"); ret = 1; }}while(0)
+	do {if (name > RRR_PY_PASTE(max_,bits)) { RRR_MSG_0("Value of parameter " RRR_PY_QUOTE(name) " exceeds maximum in .set()\n"); ret = 1; }}while(0)
 
 #define RRR_PY_DECLARE_GET_TEST_32(idx,name) \
 		unsigned long long name = RRR_PY_LONG_AS_32(args[idx]); \

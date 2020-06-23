@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_MSG_H
 #define RRR_SOCKET_MSG_H
 
+#include <stdio.h>
+
 #include "../global.h"
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"

@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 
 struct rrr_net_transport_plain {
-	RRR_NET_TRANSPORT_HEAD;
+	RRR_NET_TRANSPORT_HEAD(struct rrr_net_transport_plain);
 };
 
 int rrr_net_transport_plain_new (struct rrr_net_transport_plain **target);

@@ -55,32 +55,32 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 
 //	if (rrr_python3_module == NULL) {
 		if (PyType_Ready(&rrr_python3_socket_type) < 0) {
-			RRR_MSG_ERR("PyType_Ready for python3 socket type failed:\n");
+			RRR_MSG_0("PyType_Ready for python3 socket type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		if (PyType_Ready(&rrr_python3_rrr_message_type) < 0) {
-			RRR_MSG_ERR("PyType_Ready for python3 rrr_message type failed:\n");
+			RRR_MSG_0("PyType_Ready for python3 rrr_message type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		if (PyType_Ready(&rrr_python3_array_type) < 0) {
-			RRR_MSG_ERR("PyType_Ready for python3 array type failed:\n");
+			RRR_MSG_0("PyType_Ready for python3 array type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		if (PyType_Ready(&rrr_python3_array_value_type) < 0) {
-			RRR_MSG_ERR("PyType_Ready for python3 array value type failed:\n");
+			RRR_MSG_0("PyType_Ready for python3 array value type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		//printf ("python3 setting type flags 1: %lu", rrr_python3_setting_type.tp_flags);
 		if (PyType_Ready(&rrr_python3_setting_type) < 0) {
-			RRR_MSG_ERR("PyType_Ready for python3 setting type failed:\n");
+			RRR_MSG_0("PyType_Ready for python3 setting type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
@@ -88,7 +88,7 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 		//printf ("python3 setting type flags 2: %lu", rrr_python3_setting_type.tp_flags);
 
 		if ((rrr_python3_module = PyModule_Create(&module_definition)) == NULL) {
-			RRR_MSG_ERR("Could create python3 module from definition:\n");
+			RRR_MSG_0("Could create python3 module from definition:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
@@ -96,35 +96,35 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 
 		Py_INCREF((PyObject *) &rrr_python3_socket_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_SOCKET_TYPE_NAME, (PyObject *) &rrr_python3_socket_type) != 0) {
-			RRR_MSG_ERR("Could not add python3 socket type to module:\n");
+			RRR_MSG_0("Could not add python3 socket type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		Py_INCREF((PyObject *) &rrr_python3_rrr_message_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME, (PyObject *) &rrr_python3_rrr_message_type) != 0) {
-			RRR_MSG_ERR("Could not add python3 rrr_message type to module:\n");
+			RRR_MSG_0("Could not add python3 rrr_message type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		Py_INCREF((PyObject *) &rrr_python3_array_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_ARRAY_TYPE_NAME, (PyObject *) &rrr_python3_array_type) != 0) {
-			RRR_MSG_ERR("Could not add python3 array type to module:\n");
+			RRR_MSG_0("Could not add python3 array type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		Py_INCREF((PyObject *) &rrr_python3_array_value_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_ARRAY_VALUE_TYPE_NAME, (PyObject *) &rrr_python3_array_value_type) != 0) {
-			RRR_MSG_ERR("Could not add python3 array type to module:\n");
+			RRR_MSG_0("Could not add python3 array type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
 		}
 		Py_INCREF((PyObject *) &rrr_python3_setting_type);
 		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_SETTING_TYPE_NAME, (PyObject *) &rrr_python3_setting_type) != 0) {
-			RRR_MSG_ERR("Could not add python3 setting type to module:\n");
+			RRR_MSG_0("Could not add python3 setting type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
@@ -152,7 +152,7 @@ int rrr_python3_module_append_inittab() {
 	}
 
 	if (PyImport_AppendInittab(RRR_PYTHON3_MODULE_NAME, __rrr_python3_module_create_or_get) != 0) {
-		RRR_MSG_ERR("Could not append rrr helper module to Python3 inittab:\n");
+		RRR_MSG_0("Could not append rrr helper module to Python3 inittab:\n");
 		PyErr_Print();
 		ret = 1;
 		goto out;

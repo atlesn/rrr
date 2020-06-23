@@ -32,7 +32,7 @@ int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));
 
 	if (pthread_mutex_init(&pool->lock, 0) != 0) {
-		RRR_MSG_ERR("Could not initialize lock in rrr_mqtt_id_pool_init\n");
+		RRR_MSG_0("Could not initialize lock in rrr_mqtt_id_pool_init\n");
 		return 1;
 	}
 
@@ -66,7 +66,7 @@ static inline int __rrr_mqtt_id_pool_realloc(struct rrr_mqtt_id_pool *pool, ssiz
 
 	uint32_t *new_pool = realloc(pool->pool, new_size);
 	if (new_pool == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_id_pool_realloc\n");
 		return 1;
 	}
 
@@ -116,7 +116,12 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 	MIN_MAJ_MASK(ret);
 
 	RRR_DBG_3("Get ID, min %" PRIu32 ", maj %li, mask %" PRIu32 ", size %li, pool block %" PRIu32 "\n",
-			min, maj, mask, pool->allocated_majors, (maj < pool->allocated_majors ? pool->pool[maj] : 0));
+			min,
+			maj,
+			mask,
+			pool->allocated_majors,
+			(maj < pool->allocated_majors ? pool->pool[maj] : 0)
+	);
 
 	if (maj < pool->allocated_majors && (pool->pool[maj] & mask) == 0) {
 		pool->pool[maj] |= mask;
@@ -140,7 +145,8 @@ uint16_t rrr_mqtt_id_pool_get_id (struct rrr_mqtt_id_pool *pool) {
 		goto retry;
 	}
 	else {
-		RRR_MSG_ERR("No more room in ID pool\n");
+// Noisy message
+//		RRR_DBG_1("No more room in ID pool\n");
 	}
 
 	out:
@@ -158,7 +164,7 @@ void rrr_mqtt_id_pool_release_id (struct rrr_mqtt_id_pool *pool, uint16_t id) {
 			id, min, maj, mask, pool->allocated_majors, pool->pool[maj]);
 
 	if (maj >= pool->allocated_majors) {
-		RRR_BUG("Tries to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
+		RRR_BUG("Tried to release ID which was not yet allocated in rrr_mqtt_id_pool_release_id\n");
 	}
 
 	if ((pool->pool[maj] & mask) == 0) {

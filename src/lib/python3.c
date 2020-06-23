@@ -19,26 +19,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+// Put first to avoid problems with other files including sys/time.h
+#include "vl_time.h"
+
 #include <string.h>
 #include <fcntl.h>
 #include <stddef.h>
 #include <signal.h>
-
-//#include <ceval.h>
-//#include <cpython/pystate.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-//#include <pystate.h>
 #include <signal.h>
 
-#include <src/global.h>
 #include <stdlib.h>
-//#include <string.h>
 
+// Due to warnings in python (which defines this)
+#undef _POSIX_C_SOURCE
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#undef _POSIX_C_SOURCE
 
+#include "../global.h"
+#include "posix.h"
 #include "python3.h"
 #include "python3_common.h"
 #include "python3_setting.h"
@@ -94,7 +96,7 @@ int __rrr_py_initialize_increment_users(void) {
 		RRR_DBG_1 ("python3 initialize\n");
 
 		if (rrr_python3_module_append_inittab() != 0) {
-			RRR_MSG_ERR("Could not append python3 rrr_helper module to inittab before initializing\n");
+			RRR_MSG_0("Could not append python3 rrr_helper module to inittab before initializing\n");
 			ret = 1;
 			goto out;
 		}
@@ -164,7 +166,7 @@ int __rrr_py_import_function_or_print_error(PyObject **target, PyObject *diction
 	*target = NULL;
 	PyObject *res = rrr_py_import_function(dictionary, name);
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not find %s function: \n", name);
+		RRR_MSG_0("Could not find %s function: \n", name);
 		PyErr_Print();
 		return 1;
 	}
@@ -201,7 +203,7 @@ static int __rrr_py_get_rrr_objects (
 	}
 
 	if ((rrr_helper_module = PyImport_ImportModule("rrr_helper")) == NULL) {
-		RRR_MSG_ERR("Could not add rrr_helper module to current thread state dict:\n");
+		RRR_MSG_0("Could not add rrr_helper module to current thread state dict:\n");
 		PyErr_Print();
 		ret = 1;
 		goto out;
@@ -235,7 +237,7 @@ static int __rrr_py_get_rrr_objects (
 
 	res = PyRun_String(rrr_py_import_final, Py_file_input, dictionary, dictionary);
 	if (res == NULL) {
-		RRR_MSG_ERR("Could not run initial python3 code to set up RRR environment: \n");
+		RRR_MSG_0("Could not run initial python3 code to set up RRR environment: \n");
 		ret = 1;
 		PyErr_Print();
 		goto out;
@@ -279,7 +281,7 @@ static int __rrr_py_fork_runtime_init (
 	// LOAD PYTHON MAIN DICTIONARY
 	PyObject *py_main = PyImport_AddModule("__main__"); // Borrowed reference
 	if (py_main == NULL) {
-		RRR_MSG_ERR("Could not get python3 __main__ in __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get python3 __main__ in __rrr_py_fork_runtime_init\n");
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
@@ -287,7 +289,7 @@ static int __rrr_py_fork_runtime_init (
 
 	PyObject *py_main_dict = PyModule_GetDict(py_main); // Borrowed reference
 	if (py_main_dict == NULL) {
-		RRR_MSG_ERR("Could not get python3 main dictionary in __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get python3 main dictionary in __rrr_py_fork_runtime_init\n");
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
@@ -302,14 +304,14 @@ static int __rrr_py_fork_runtime_init (
 	}
 
 	if (__rrr_py_get_rrr_objects(py_main_dict, (const char **) module_path_array, module_path_length) != 0) {
-		RRR_MSG_ERR("Could not get rrr objects  __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not get rrr objects  __rrr_py_fork_runtime_init\n");
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_istate;
 	}
 
 	if ((runtime->socket = rrr_python3_socket_new (channel_from_fork)) == NULL) {
-		RRR_MSG_ERR("Could not create socket PyObject in  __rrr_py_fork_runtime_init\n");
+		RRR_MSG_0("Could not create socket PyObject in  __rrr_py_fork_runtime_init\n");
 		goto out_cleanup_istate;
 	}
 
@@ -377,7 +379,7 @@ void rrr_py_fork_terminate_and_destroy (struct python3_fork *fork) {
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)															\
 	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
-		RRR_MSG_ERR("Could not allocate temporary string for name in rrr_py_fork_new\n");				\
+		RRR_MSG_0("Could not allocate temporary string for name in rrr_py_fork_new\n");				\
 		goto err_free;																					\
 	}
 
@@ -397,24 +399,24 @@ static struct python3_fork *__rrr_py_fork_new (
 	ALLOCATE_TMP_NAME(mmap_channel_from_name, name, "ch-from");
 
 	if ((ret = malloc(sizeof(*ret))) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_py_fork_new\n");
+		RRR_MSG_0("Could not allocate memory in rrr_py_fork_new\n");
 		goto err_free;
 	}
 
 	memset(ret, '\0', sizeof(*ret));
 
 	if (rrr_mmap_new(&ret->mmap, PYTHON3_MMAP_SIZE, mmap_name) != 0) {
-		RRR_MSG_ERR("Could not create mmap in rrr_py_fork_new\n");
+		RRR_MSG_0("Could not create mmap in rrr_py_fork_new\n");
 		goto err_free;
 	}
 
 	if (rrr_mmap_channel_new(&ret->channel_to_fork, ret->mmap, mmap_channel_to_name) != 0) {
-		RRR_MSG_ERR("Could not create mmap channel in rrr_py_fork_new\n");
+		RRR_MSG_0("Could not create mmap channel in rrr_py_fork_new\n");
 		goto err_destroy_mmap;
 	}
 
 	if (rrr_mmap_channel_new(&ret->channel_from_fork, ret->mmap, mmap_channel_from_name) != 0) {
-		RRR_MSG_ERR("Could not create mmap channel in rrr_py_fork_new\n");
+		RRR_MSG_0("Could not create mmap channel in rrr_py_fork_new\n");
 		goto err_destroy_mmap_channel_to_fork;
 	}
 
@@ -455,7 +457,7 @@ PyObject *__rrr_py_socket_message_to_pyobject (const struct rrr_socket_msg *mess
 #endif
 	}
 	else {
-		RRR_MSG_ERR("Unsupported socket message type %u received in __rrr_py_socket_message_to_pyobject\n", message->msg_type);
+		RRR_MSG_0("Unsupported socket message type %u received in __rrr_py_socket_message_to_pyobject\n", message->msg_type);
 		goto out;
 	}
 
@@ -465,11 +467,11 @@ PyObject *__rrr_py_socket_message_to_pyobject (const struct rrr_socket_msg *mess
 
 static int rrr_py_fork_running = 1;
 static void __rrr_py_fork_signal_handler (int s) {
-	if (s == SIGUSR1) {
+	if (s == SIGUSR1 || s == SIGINT || s == SIGTERM) {
 		rrr_py_fork_running = 0;
 	}
 	if (s == SIGPIPE) {
-	        RRR_MSG_ERR("Received SIGPIPE in fork, ignoring\n");
+	        RRR_MSG_0("Received SIGPIPE in fork, ignoring\n");
 	}
 }
 
@@ -494,7 +496,7 @@ int __rrr_py_persistent_process_call_application (
 
 	arg = __rrr_py_socket_message_to_pyobject(message, addr_message);
 	if (arg == NULL) {
-		RRR_MSG_ERR("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
+		RRR_MSG_0("Unknown message type received in __rrr_py_start_persistent_thread_rw_child\n");
 		ret = 1;
 		goto out;
 	}
@@ -511,7 +513,7 @@ int __rrr_py_persistent_process_call_application (
 	if (function != NULL) {
 		result = PyObject_CallFunctionObjArgs(function, callback_data->runtime->socket, arg, NULL);
 		if (result == NULL) {
-			RRR_MSG_ERR("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+			RRR_MSG_0("Error while calling python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
 					getpid());
 			PyErr_Print();
 			ret = 1;
@@ -519,7 +521,7 @@ int __rrr_py_persistent_process_call_application (
 
 		}
 		if (!PyObject_IsTrue(result)) {
-			RRR_MSG_ERR("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
+			RRR_MSG_0("Non-true returned from python3 function in __rrr_py_start_persistent_thread_rw_child pid %i\n",
 					getpid());
 			ret = 1;
 			goto out;
@@ -548,7 +550,7 @@ void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runt
 	while (rrr_py_fork_running) {
 		result = PyObject_CallFunctionObjArgs(function, runtime->socket, NULL);
 		if (result == NULL) {
-			RRR_MSG_ERR("Error while calling python3 function in __rrr_py_persistent_thread_source pid %i\n",
+			RRR_MSG_0("Error while calling python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
 			PyErr_Print();
 			ret = 1;
@@ -556,7 +558,7 @@ void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runt
 
 		}
 		if (!PyObject_IsTrue(result)) {
-			RRR_MSG_ERR("Non-true returned from python3 function in __rrr_py_persistent_thread_source pid %i\n",
+			RRR_MSG_0("Non-true returned from python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
 			ret = 1;
 			goto out;
@@ -597,7 +599,7 @@ static int __rrr_py_persistent_process_read_callback (const void *data, size_t d
 			*(callback_data->start_sourcing_requested) = 1;
 		}
 		else {
-			RRR_MSG_ERR("Unknown flags %u in control message in __rrr_py_persistent_thread_process\n",
+			RRR_MSG_0("Unknown flags %u in control message in __rrr_py_persistent_thread_process\n",
 					RRR_SOCKET_MSG_CTRL_FLAGS(message));
 			ret = 1;
 			goto out;
@@ -658,11 +660,11 @@ void __rrr_py_persistent_process_loop (
 					break;
 				}
 
-				RRR_MSG_ERR("Error from read function in python3 __rrr_py_persistent_thread_process\n");
+				RRR_MSG_0("Error from read function in python3 __rrr_py_persistent_thread_process\n");
 				goto out;
 			}
 		}
-		usleep (25000);
+		rrr_posix_usleep (25000);
 	}
 
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
@@ -695,7 +697,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 			fork->channel_from_fork,
 			module_path
 	)) != 0) {
-		RRR_MSG_ERR("Could not initialize python3 runtime in __rrr_py_start_persistent_rw_fork_intermediate\n");
+		RRR_MSG_0("Could not initialize python3 runtime in __rrr_py_start_persistent_rw_fork_intermediate\n");
 		ret = 1;
 		goto out;
 	}
@@ -709,7 +711,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 	module = PyImport_GetModule(py_module_name);
 //	printf ("Module %s already loaded? %p\n", module_name, module);
 	if (module == NULL && (module = PyImport_ImportModule(module_name)) == NULL) {
-		RRR_MSG_ERR("Could not import module %s while starting thread:\n", module_name);
+		RRR_MSG_0("Could not import module %s while starting thread:\n", module_name);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_runtime;
@@ -717,7 +719,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 //	printf ("Module %s loaded: %p\n", module_name, module);
 
 	if ((module_dict = PyModule_GetDict(module)) == NULL) { // Borrowed reference
-		RRR_MSG_ERR("Could not get dictionary of module %s while starting thread:\n", module_name);
+		RRR_MSG_0("Could not get dictionary of module %s while starting thread:\n", module_name);
 		PyErr_Print();
 		ret = 1;
 		goto out_cleanup_runtime;
@@ -730,7 +732,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 	}*/
 
 	if ((function = rrr_py_import_function(module_dict, function_name)) == NULL) {
-		RRR_MSG_ERR("Could not get function %s from module %s while starting thread\n",
+		RRR_MSG_0("Could not get function %s from module %s while starting thread\n",
 				function_name, module_name);
 		ret = 1;
 		goto out_cleanup_runtime;
@@ -738,7 +740,7 @@ static int __rrr_py_start_persistent_rw_fork_intermediate (
 
 	if (config_function_name != NULL && *config_function_name != '\0') {
 		if ((config_function = rrr_py_import_function(module_dict, config_function_name)) == NULL) {
-			RRR_MSG_ERR("Could not get config function %s from module %s while starting thread\n",
+			RRR_MSG_0("Could not get config function %s from module %s while starting thread\n",
 					config_function_name, module_name);
 			ret = 1;
 			goto out_cleanup_runtime;
@@ -789,14 +791,14 @@ int rrr_py_start_persistent_rw_fork (
 	*result_fork = NULL;
 
 	if ((fork = __rrr_py_fork_new(fork_handler, function_name)) == NULL) {
-		RRR_MSG_ERR("Could not start thread.\n");
+		RRR_MSG_0("Could not start thread.\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_fork(fork_handler, rrr_py_handle_sigchld, fork)) != 0) {
 		if (ret < 0) {
-			RRR_MSG_ERR("Could not fork python3: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Could not fork python3: %s\n", rrr_strerror(errno));
 		}
 		goto out_main;
 	}
@@ -880,7 +882,7 @@ static int __rrr_py_persistent_process_socket_msg (
 	int ret = 0;
 	if ((ret = rrr_mmap_channel_write(fork->channel_to_fork, msg, MSG_TOTAL_SIZE(msg))) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
-			RRR_MSG_ERR("Channel was full in __rrr_py_persistent_process_socket_msg\n");
+			RRR_MSG_0("Channel was full in __rrr_py_persistent_process_socket_msg\n");
 			ret = 1;
 		}
 	}
@@ -893,7 +895,7 @@ int rrr_py_persistent_process_setting (
 ) {
 	int ret = __rrr_py_persistent_process_socket_msg (fork, (const struct rrr_socket_msg *) setting);
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not send python3 message to child in rrr_py_persistent_process_message\n");
+		RRR_MSG_0("Could not send python3 message to child in rrr_py_persistent_process_message\n");
 	}
 	return ret;
 }
@@ -905,7 +907,7 @@ int rrr_py_persistent_process_message (
 	int ret = 0;
 
 	if (fork->invalid == 1) {
-		RRR_MSG_ERR("Fork was invalid in rrr_py_persistent_process_message, child has exited\n");
+		RRR_MSG_0("Fork was invalid in rrr_py_persistent_process_message, child has exited\n");
 		ret = 1;
 		goto out;
 	}
@@ -919,13 +921,13 @@ int rrr_py_persistent_process_message (
 
 	ret = __rrr_py_persistent_process_socket_msg (fork, (const struct rrr_socket_msg *) &message_addr);
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not send python3 message to child in rrr_py_persistent_process_message\n");
+		RRR_MSG_0("Could not send python3 message to child in rrr_py_persistent_process_message\n");
 		goto out;
 	}
 
 	ret = __rrr_py_persistent_process_socket_msg (fork, (const struct rrr_socket_msg *) entry->message);
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not send python3 message to child in rrr_py_persistent_process_message\n");
+		RRR_MSG_0("Could not send python3 message to child in rrr_py_persistent_process_message\n");
 		goto out;
 	}
 
@@ -939,7 +941,7 @@ int rrr_py_persistent_start_sourcing (
 	struct rrr_socket_msg message;
 	rrr_socket_msg_populate_control_msg(&message, RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING, 0);
 	if (rrr_mmap_channel_write(fork->channel_to_fork, &message, sizeof(message)) != 0) {
-		RRR_MSG_ERR("Error while sending control message to fork in rrr_py_persistent_start_sourcing\n");
+		RRR_MSG_0("Error while sending control message to fork in rrr_py_persistent_start_sourcing\n");
 		return 1;
 	}
 	return 0;

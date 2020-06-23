@@ -48,6 +48,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/random.h"
 #include "lib/net_transport.h"
 
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_server");
+
 #define RRR_HTTP_SERVER_USER_AGENT "RRR/" PACKAGE_VERSION
 #define RRR_HTTP_SERVER_WORKER_THREADS 10
 
@@ -101,14 +103,14 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	// Certificate file
 	const char *certificate = cmd_get_value(cmd, "certificate", 0);
 	if (cmd_get_value (cmd, "certificate", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one certificate argument may be specified\n");
+		RRR_MSG_0("Error: Only one certificate argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (certificate != NULL) {
 		data->certificate_file = strdup(certificate);
 		if (data->certificate_file == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -117,14 +119,14 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	// Private key file
 	const char *key = cmd_get_value(cmd, "key", 0);
 	if (cmd_get_value (cmd, "key", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one key argument may be specified\n");
+		RRR_MSG_0("Error: Only one key argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (key != NULL) {
 		data->private_key_file = strdup(key);
 		if (data->private_key_file == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -142,13 +144,13 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 
 	// Consistency check
 	if ((data->certificate_file == NULL || *(data->certificate_file) == '\0') && (data->private_key_file != NULL && *(data->private_key_file) != '\0')) {
-		RRR_MSG_ERR("Private key was specified but certificate was not, please check arguments.\n");
+		RRR_MSG_0("Private key was specified but certificate was not, please check arguments.\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((data->private_key_file == NULL || *(data->private_key_file) == '\0') && (data->certificate_file != NULL && *(data->certificate_file) != '\0')) {
-		RRR_MSG_ERR("Certificate was specified but private key was not, please check arguments.\n");
+		RRR_MSG_0("Certificate was specified but private key was not, please check arguments.\n");
 		ret = 1;
 		goto out;
 	}
@@ -157,13 +159,13 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 0;
 	if (cmd_get_value (cmd, "port", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'port' argument may be specified\n");
+		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_ERR("Could not understand argument 'port', must be and unsigned integer\n");
+			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -172,7 +174,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		port_tmp = 80;
 	}
 	if (port_tmp < 1 || port_tmp > 65535) {
-		RRR_MSG_ERR("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
 		ret = 1;
 		goto out;
 	}
@@ -182,13 +184,13 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 	port = cmd_get_value(cmd, "ssl-port", 0);
 	port_tmp = 0;
 	if (cmd_get_value (cmd, "ssl-port", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'ssl-port' argument may be specified\n");
+		RRR_MSG_0("Error: Only one 'ssl-port' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_ERR("Could not understand argument 'ssl-port', must be and unsigned integer\n");
+			RRR_MSG_0("Could not understand argument 'ssl-port', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -197,7 +199,7 @@ static int __rrr_http_server_parse_config (struct rrr_http_server_data *data, st
 		port_tmp = 443;
 	}
 	if (port_tmp < 1 || port_tmp > 65535) {
-		RRR_MSG_ERR("HTTPS out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		RRR_MSG_0("HTTPS out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
 		ret = 1;
 		goto out;
 	}
@@ -237,7 +239,7 @@ static void __rrr_http_server_accept_create_http_session_callback (
 	if (rrr_http_session_transport_ctx_server_new (
 			handle
 	) != 0) {
-		RRR_MSG_ERR("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
+		RRR_MSG_0("Could not create HTTP session in __rrr_http_server_accept_read_write\n");
 		worker_data->error = 1;
 	}
 	else {
@@ -265,7 +267,7 @@ static int __rrr_http_server_accept (
 			__rrr_http_server_accept_create_http_session_callback,
 			worker_data
 	)) != 0) {
-		RRR_MSG_ERR("Error from accept() in __rrr_http_server_accept_read_write\n");
+		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_read_write\n");
 		ret = 1;
 		goto out;
 	}
@@ -306,7 +308,7 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 			callback_data->transport_handle,
 			locked_thread->private_data
 	)) != 0) {
-		RRR_MSG_ERR("Error from accept() in __rrr_http_server_accept_if_free_thread_callback\n");
+		RRR_MSG_0("Error from accept() in __rrr_http_server_accept_if_free_thread_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -346,7 +348,7 @@ static int __rrr_http_server_accept_if_free_thread (
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while accepting connections\n");
+			RRR_MSG_0("Error while accepting connections\n");
 			ret = 1;
 			goto out;
 		}
@@ -368,7 +370,7 @@ int __rrr_http_server_worker_thread_data_new (struct rrr_http_server_worker_thre
 
 	struct rrr_http_server_worker_thread_data *data = malloc(sizeof(*data));
 	if (data == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_http_server_worker_thread_data_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_http_server_worker_thread_data_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -376,7 +378,7 @@ int __rrr_http_server_worker_thread_data_new (struct rrr_http_server_worker_thre
 	memset (data, '\0', sizeof(*data));
 
 	if (pthread_mutex_init(&data->lock, NULL) != 0) {
-		RRR_MSG_ERR("Could not initialize mutex in __rrr_http_server_worker_thread_data_new\n");
+		RRR_MSG_0("Could not initialize mutex in __rrr_http_server_worker_thread_data_new\n");
 		ret = 1;
 		goto out_free;
 	}
@@ -413,6 +415,7 @@ void __rrr_net_http_server_worker_close_transport (void *arg) {
 
 int __rrr_net_http_server_worker_http_session_receive_callback (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		void *arg
 ) {
 	return 0;
@@ -429,7 +432,7 @@ int __rrr_net_http_server_worker_net_transport_ctx_do_work (struct rrr_net_trans
 			__rrr_net_http_server_worker_http_session_receive_callback,
 			worker_data
 	)) != 0) {
-		RRR_MSG_ERR("Error while reading from client\n");
+		RRR_MSG_0("Error while reading from client\n");
 		ret = 1;
 		goto out;
 	}
@@ -479,11 +482,11 @@ static void *__rrr_http_server_worker_thread_entry (struct rrr_thread *thread) {
 				__rrr_net_http_server_worker_net_transport_ctx_do_work,
 				&worker_data
 		) != 0) {
-			RRR_MSG_ERR("Failed while working with client in thread %p\n", thread);
+			RRR_MSG_0("Failed while working with client in thread %p\n", thread);
 			break;
 		}
 
-		usleep(1000);
+		rrr_posix_usleep(1000);
 	}
 
 	printf ("Worker thread %p exiting\n", thread);
@@ -507,7 +510,7 @@ static int __rrr_http_server_allocate_threads (struct rrr_thread_collection *thr
 	int to_allocate = RRR_HTTP_SERVER_WORKER_THREADS - rrr_thread_collection_count(threads);
 	for (int i = 0; i < to_allocate; i++) {
 		if ((ret = __rrr_http_server_worker_thread_data_new(&worker_data)) != 0) {
-			RRR_MSG_ERR("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
+			RRR_MSG_0("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
 			goto out;
 		}
 
@@ -524,14 +527,14 @@ static int __rrr_http_server_allocate_threads (struct rrr_thread_collection *thr
 		);
 
 		if (thread == NULL) {
-			RRR_MSG_ERR("Could create thread in __rrr_http_server_allocate_threads\n");
+			RRR_MSG_0("Could create thread in __rrr_http_server_allocate_threads\n");
 			goto out;
 		}
 
 		worker_data = NULL; // Now managed by thread framework
 
 		if ((ret = rrr_thread_start(thread)) != 0) {
-			RRR_MSG_ERR("Could not start thread in __rrr_http_server_allocate_threads\n");
+			RRR_MSG_0("Could not start thread in __rrr_http_server_allocate_threads\n");
 			goto out;
 		}
 	}
@@ -550,7 +553,7 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -565,7 +568,7 @@ int main (int argc, const char *argv[]) {
 
 	struct rrr_thread_collection *threads = NULL;
 	if (rrr_thread_new_collection(&threads) != 0) {
-		RRR_MSG_ERR("Could not create thread collection\n");
+		RRR_MSG_0("Could not create thread collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -600,8 +603,8 @@ int main (int argc, const char *argv[]) {
 	int https_handle = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL)) != 0) {
-			RRR_MSG_ERR("Could not create HTTP transport\n");
+		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL)) != 0) {
+			RRR_MSG_0("Could not create HTTP transport\n");
 			goto out;
 		}
 
@@ -621,9 +624,11 @@ int main (int argc, const char *argv[]) {
 				RRR_NET_TRANSPORT_TLS,
 				(data.ssl_no_cert_verify ? RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY : 0),
 				data.certificate_file,
-				data.private_key_file
+				data.private_key_file,
+				NULL,
+				NULL
 		)) != 0) {
-			RRR_MSG_ERR("Could not create HTTPS transport\n");
+			RRR_MSG_0("Could not create HTTPS transport\n");
 			goto out;
 		}
 
@@ -639,7 +644,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if (transport_http == NULL && transport_https == NULL) {
-		RRR_MSG_ERR("Neither HTTP or HTTPS are active, check arguments.\n");
+		RRR_MSG_0("Neither HTTP or HTTPS are active, check arguments.\n");
 		ret = 1;
 		goto out;
 	}
@@ -659,7 +664,7 @@ int main (int argc, const char *argv[]) {
 		}
 
 		if ((ret = __rrr_http_server_allocate_threads(threads)) != 0) {
-			RRR_MSG_ERR("Could not allocate threads\n");
+			RRR_MSG_0("Could not allocate threads\n");
 			break;
 		}
 
@@ -674,7 +679,7 @@ int main (int argc, const char *argv[]) {
 			}
 		}
 
-		usleep(500);
+		rrr_posix_usleep(500);
 	}
 
 	out:

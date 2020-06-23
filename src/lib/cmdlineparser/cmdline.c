@@ -46,7 +46,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 	struct cmd_arg_value *value = malloc(sizeof(*value));
 	if (value == NULL) {
-		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
+		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -54,7 +54,7 @@ static int __cmd_arg_value_new (struct cmd_arg_value **target, const char *value
 
 	if (value_str != NULL) {
 		if ((value->value = strdup(value_str)) == NULL) {
-			fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_value_new\n");
+			RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_value_new\n");
 			ret = 1;
 			goto out;
 		}
@@ -82,7 +82,7 @@ static int __cmd_arg_pair_new (struct cmd_arg_pair **target, const struct cmd_ar
 
 	struct cmd_arg_pair *pair = malloc(sizeof(*pair));
 	if (pair == NULL) {
-		fprintf(stderr, "Error: Could not allocate memory in __cmd_arg_pair_new\n");
+		RRR_MSG_0("Error: Could not allocate memory in __cmd_arg_pair_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -219,9 +219,9 @@ void cmd_print_usage(struct cmd_data *data) {
 	rule = &data->rules[i];
 	while (rule->longname != NULL) {
 		if (i > 0) {
-			printf("%s", spaces);
+			RRR_MSG_PLAIN("%s", spaces);
 		}
-		printf("%s\n", rule->legend);
+		RRR_MSG_PLAIN("%s\n", rule->legend);
 		i++;
 		rule = &data->rules[i];
 	}
@@ -287,7 +287,7 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 	char *buf = NULL;
 
 	if (RRR_LL_COUNT(pair) != 1) {
-		fprintf(stderr, "Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
+		RRR_MSG_0("Bug: Length of argument values was not 1 in __cmd_pair_split_comma\n");
 		abort();
 	}
 
@@ -299,7 +299,7 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 
 	buf = malloc(end - pos + 1);
 	if (buf == NULL) {
-		fprintf(stderr, "Error: Could not allocate memory A in __cmd_pair_split_comma\n");
+		RRR_MSG_0("Error: Could not allocate memory A in __cmd_pair_split_comma\n");
 		return 1;
 	}
 
@@ -314,7 +314,7 @@ static int __cmd_pair_split_comma(struct cmd_arg_pair *pair) {
 		buf[length] = '\0';
 
 		if (__cmd_arg_pair_append_value(pair, buf) != 0) {
-			fprintf(stderr, "Error: Could not allocate memory B in __cmd_pair_split_comma\n");
+			RRR_MSG_0("Error: Could not allocate memory B in __cmd_pair_split_comma\n");
 			return 1;
 		}
 
@@ -533,8 +533,10 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 				value = pos_equal + 1;
 			}
 			if (strlen(value) < 1) {
-				fprintf (stderr, "Error: Required argument missing or was empty for '%s'\n", rule->longname);
-				return 1;
+				if ((rule->flags & CMD_ARG_FLAG_ALLOW_EMPTY) == 0) {
+					fprintf (stderr, "Error: Required argument missing or was empty for '%s'\n", rule->longname);
+					return 1;
+				}
 			}
 		}
 		else if (pos_equal != NULL)  {
@@ -561,15 +563,15 @@ int cmd_parse (struct cmd_data *data, cmd_conf config) {
 
 	#ifdef CMD_DBG_CMDLINE
 
-	printf ("Program: %s\n", data->program);
-	printf ("Command: %s\n", data->command);
+	RRR_MSG_0 ("Program: %s\n", data->program);
+	RRR_MSG_0 ("Command: %s\n", data->command);
 
 	int i = 0;
 	RRR_LINKED_LIST_ITERATE_BEGIN(data, struct cmd_arg_pair);
 		struct cmd_arg_pair *pair = node;
-		printf ("Argument %i key: %s\n", i, pair->rule->longname);
+		RRR_MSG_0 ("Argument %i key: %s\n", i, pair->rule->longname);
 		RRR_LINKED_LIST_ITERATE_BEGIN(pair, struct cmd_arg_value);
-			printf ("Argument %i value: %s\n", i, node->value);
+		RRR_MSG_0 ("Argument %i value: %s\n", i, node->value);
 		RRR_LL_ITERATE_END(node);
 		i++;
 	RRR_LL_ITERATE_END(data);

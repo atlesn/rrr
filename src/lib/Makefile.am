@@ -27,19 +27,19 @@ librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c \
-					array.c type.c version.c configuration.c settings.c instance_config.c common.c \
+					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
-					mqtt_topic.c mqtt_id_pool.c mqtt_client.c \
+					mqtt_topic.c mqtt_id_pool.c mqtt_client.c mqtt_acl.c mqtt_transport.c \
 					message_broker.c \
 					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
-					read.c message_addr.c rrr_mmap.c mmap_channel.c \
+					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c rrr_socket.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
 					stats_engine.c stats_instance.c stats_message.c stats_tree.c \
 					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c \
-					fixed_point.c \
+					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
 					${mysql} ${encryption}
 
 libadd_rrr_readdir = librrr_readdir.la
@@ -62,12 +62,18 @@ librrr_log_la_SOURCES = log.c
 librrr_log_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_PRINTF ${AM_CFLAGS}
 librrr_log_la_LDFLAGS = -lpthread -ldl -lm
 
+libadd_rrr_umask = librrr_umask.la
+librrr_umask_la_SOURCES = rrr_umask.c
+librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
+librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
+
 libadd_all =	${libadd_perl5}			\
 				${libadd_python3}		\
 				${libadd_rrr_readdir}	\
 				${libadd_rrr_strerror}	\
 				${libadd_rrr_fork}		\
-				${libadd_rrr_log}
+				${libadd_rrr_log}		\
+				${libadd_rrr_umask}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD =  ${libadd_all}

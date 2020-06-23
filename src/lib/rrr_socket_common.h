@@ -39,6 +39,7 @@ int rrr_socket_common_receive_array (
 		int socket_read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 );

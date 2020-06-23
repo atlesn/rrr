@@ -2,14 +2,25 @@ Source: rrr
 Section: main
 Priority: optional
 Maintainer: Atle Solbakken <atle@goliathdns.no>
-Build-Depends: debhelper (>= 9), dh-autoreconf, dh-python, build-essential, libssl-dev, libusb-dev, libmysqlclient-dev | libmariadbclient-dev-compat, python3-dev (>= 3.6) | python3.7-dev | python3.6-dev, libperl-dev (>= 5.26)
+Build-Depends: debhelper (>= 9),
+	dh-autoreconf,
+	dh-python,
+	dh-systemd (>= 1.5),
+	build-essential,
+	libssl-dev,
+	libusb-dev,
+	libmysqlclient-dev | libmariadbclient-dev-compat,
+	python3-dev (>= 3.6) | python3.8-dev | python3.7-dev | python3.6-dev,
+	libperl-dev (>= 5.26),
+	libsystemd-dev,
+	pkg-config
 X-Python3-Version: 3.6,3.
 Standards-Version: 3.9.8
 Homepage: https://github.com/atlesn/rrr
 
 Package: rrr
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libmysqlclient | libmariadbclient-compat | libmysqlclient20 | libmysqlclient21, libssl1.1, libusb | libusb-1.0-0, python3 (>= 3.6), systemd
-Replaces: voltage-logger, block-device-logger, libblock-device-logger, libblock-device-logger-dev
-Conflicts: voltage-logger, block-device-logger, libblock-device-logger, libblock-device-logger-dev
+Depends: ${shlibs:Depends}, ${misc:Depends}, libmysqlclient | libmariadbclient-dev-compat | libmysqlclient20 | libmysqlclient21, libssl1.1, libusb | libusb-1.0-0, python3 (>= 3.6), systemd
+Replaces: rrr-perlonly
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+

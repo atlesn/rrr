@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_MSG_TYPE_SETTING			4
 #define RRR_SOCKET_MSG_TYPE_TREE_DATA		6
 #define RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR	8
+#define RRR_SOCKET_MSG_TYPE_MESSAGE_LOG		16
 
 // This bit is reserved for holding the type=control number
 #define RRR_SOCKET_MSG_CTRL_F_RESERVED		(1<<0)
@@ -59,6 +60,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR)
 #define RRR_SOCKET_MSG_IS_SETTING(msg) \
 	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_SETTING)
+#define RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg) \
+	((msg)->msg_type == RRR_SOCKET_MSG_TYPE_MESSAGE_LOG)
 
 // The header_crc32 is calculated AFTER conversion to network
 // byte order (big endian). The crc32 is then converted itself.

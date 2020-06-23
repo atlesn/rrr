@@ -63,18 +63,20 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		memcpy(buf, MSG_DATA_PTR(reading), print_length);
 		buf[print_length] = '\0';
 
-		RRR_MSG("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
+		// Use high debuglevel to force suppression of messages in journal module
+
+		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
 				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-				RRR_MSG_ERR("Could not get array from message in raw_poll_callback of raw instance %s\n",
+				RRR_MSG_0("Could not get array from message in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
 			}
 			if (rrr_array_dump(&array_tmp) != 0) {
-				RRR_MSG_ERR("Error while dumping array in raw_poll_callback of raw instance %s\n",
+				RRR_MSG_0("Error while dumping array in raw_poll_callback of raw instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;
 				goto out;
@@ -104,7 +106,7 @@ int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
 			ret = 0;
 		}
 		else {
-			RRR_MSG_ERR("Error while parsing raw_print_data setting of instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing raw_print_data setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -137,7 +139,7 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Error while parsing configuration for raw instance %s\n",
+		RRR_MSG_0("Error while parsing configuration for raw instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 	}
 
@@ -156,6 +158,8 @@ static void *thread_entry_raw (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_poll_do_poll_delete (thread_data, &poll, raw_poll_callback, 50) != 0) {
+			RRR_MSG_ERR("Error while polling in raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 			break;
 		}
 

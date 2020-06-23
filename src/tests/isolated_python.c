@@ -71,6 +71,6 @@ int main (int argc, const char **argv) {
 		Py_EndInterpreter(tstate);
 		PyThreadState_Swap(main_tstate);
 		Py_Finalize();
-		usleep (1000000);
+		rrr_posix_usleep (1000000);
 	}
 }

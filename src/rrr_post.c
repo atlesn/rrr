@@ -46,7 +46,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/messages.h"
 #include "lib/gnu.h"
 
-#define RRR_POST_DEFAULT_ARRAY_DEFINITION "msg"
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_post");
+
+#define RRR_POST_DEFAULT_ARRAY_DEFINITION	"msg"
+#define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE	4096
 
 static volatile int rrr_post_abort = 0;
 static volatile int rrr_post_print_stats = 0;
@@ -58,10 +61,12 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'r',	"readings",				"[-r|--readings[=]reading1,reading2,...]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT |
 		 CMD_ARG_FLAG_SPLIT_COMMA,	'a',	"array_definition",		"[-a|--array_definition[=]ARRAY DEFINITION]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'm',	"max-message-size",		"[-m|--max-message-size]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"count",				"[-c|--count[=]MAX FILE ELEMENTS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	't',	"topic",				"[-t|--topic[=]MQTT TOPIC]"},
 		{0,							's',	"sync",					"[-s|--sync]"},
 		{0,							'q',	"quiet",				"[-q|--quiet]"},
+		{0,							'l',	"loglevel-translation",	"[-l|--loglevel-translation]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'D',	"debuglevel_on_exit",	"[-D|--debuglevel_on_exit[=]DEBUG FLAGS]"},
 		{0,							'h',	"help",					"[-h|--help]"},
@@ -84,6 +89,7 @@ struct rrr_post_data {
 	char *topic;
 	struct rrr_post_reading_collection readings;
 	uint64_t max_elements;
+	uint64_t max_message_size;
 	uint64_t elements_count;
 	struct rrr_array definition;
 
@@ -101,10 +107,10 @@ static void __rrr_post_signal_handler (int s) {
 		rrr_post_print_stats = 1;
 	}
 	else if (s == SIGPIPE) {
-		RRR_MSG_ERR("Received SIGPIPE, ignoring\n");
+		RRR_MSG_0("Received SIGPIPE, ignoring\n");
 	}
 	else if (s == SIGTERM) {
-		RRR_MSG_ERR("Received SIGTERM, exiting\n");
+		RRR_MSG_0("Received SIGTERM, exiting\n");
 		exit(EXIT_FAILURE);
 	}
 	else if (s == SIGINT) {
@@ -136,12 +142,12 @@ static int __rrr_post_add_readings (struct rrr_post_data *data, struct cmd_data 
 				if (reading != NULL) {
 					uint64_t value;
 					if (cmd_convert_uint64_10(reading, &value) != 0) {
-						RRR_MSG_ERR("Error in reading '%s', not an unsigned integer\n", reading);
+						RRR_MSG_0("Error in reading '%s', not an unsigned integer\n", reading);
 						return 1;
 					}
 					struct rrr_post_reading *reading_new = malloc(sizeof(*reading_new));
 					if (reading_new == NULL) {
-						RRR_MSG_ERR("Could not allocate memory in __rrr_post_add_readings\n");
+						RRR_MSG_0("Could not allocate memory in __rrr_post_add_readings\n");
 						return 1;
 					}
 					reading_new->value = value;
@@ -165,14 +171,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Socket
 	const char *socket = cmd_get_value(cmd, "socket", 0);
 	if (socket == NULL || *socket == '\0') {
-		RRR_MSG_ERR("No socket path specified\n");
+		RRR_MSG_0("No socket path specified\n");
 		ret = 1;
 		goto out;
 	}
 
 	data->socket_path = strdup(socket);
 	if (data->socket_path == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -196,14 +202,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Filename
 	const char *filename = cmd_get_value(cmd, "file", 0);
 	if (cmd_get_value (cmd, "file", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one filename argument may be specified\n");
+		RRR_MSG_0("Error: Only one filename argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (filename != NULL) {
 		data->filename = strdup(filename);
 		if (data->filename == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -211,14 +217,14 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 
 	const char *topic = cmd_get_value(cmd, "topic", 0);
 	if (cmd_get_value (cmd, "topic", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one topic argument may be specified\n");
+		RRR_MSG_0("Error: Only one topic argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (topic != NULL) {
 		data->topic = strdup(topic);
 		if (data->topic == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -232,13 +238,13 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	// Count
 	const char *max_elements = cmd_get_value(cmd, "count", 0);
 	if (cmd_get_value (cmd, "count", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'count' argument may be specified\n");
+		RRR_MSG_0("Error: Only one 'count' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (max_elements != NULL) {
 		if (cmd_convert_uint64_10(max_elements, &data->max_elements)) {
-			RRR_MSG_ERR("Could not understand argument 'count', must be and unsigned integer\n");
+			RRR_MSG_0("Could not understand argument 'count', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -267,15 +273,32 @@ static int __rrr_post_parse_config (struct rrr_post_data *data, struct cmd_data 
 	}
 
 	if (ret != 0 || callback_data.parse_ret != 0 || rrr_array_validate_definition(&data->definition) != 0) {
-		RRR_MSG_ERR("Error while parsing array definition\n");
+		RRR_MSG_0("Error while parsing array definition\n");
 		ret = 1;
 		goto out;
 	}
 
 	if (cmd_get_value (cmd, "array_definition", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one array_definition argument may be specified\n");
+		RRR_MSG_0("Error: Only one array_definition argument may be specified\n");
 		ret = 1;
 		goto out;
+	}
+
+	// Max message size, make sure default value is being set
+	data->max_message_size = RRR_POST_DEFAULT_MAX_MESSAGE_SIZE;
+
+	const char *max_message_size = cmd_get_value(cmd, "max-message-size", 0);
+	if (cmd_get_value (cmd, "max-message-size", 1) != NULL) {
+		RRR_MSG_0("Error: Only one 'max-message-size' argument may be specified\n");
+		ret = 1;
+		goto out;
+	}
+	if (max_message_size != NULL) {
+		if (cmd_convert_uint64_10(max_message_size, &data->max_message_size)) {
+			RRR_MSG_0("Could not understand argument 'max-message-size', must be and unsigned integer\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	out:
@@ -286,7 +309,7 @@ static int __rrr_post_connect(struct rrr_post_data *data) {
 	int ret = 0;
 
 	if (rrr_socket_unix_create_and_connect(&data->output_fd, "rrr_post", data->socket_path, 0) != RRR_SOCKET_OK) {
-		RRR_MSG_ERR("Could not connect to socket\n");
+		RRR_MSG_0("Could not connect to socket\n");
 		ret = 1;
 		goto out;
 	}
@@ -305,9 +328,9 @@ static int __rrr_post_open(struct rrr_post_data *data) {
 		data->input_fd = STDIN_FILENO;
 	}
 	else {
-		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, "rrr_post");
+		data->input_fd = rrr_socket_open(data->filename, O_RDONLY, 0, "rrr_post");
 		if (data->input_fd < 0) {
-			RRR_MSG_ERR("Could not open input file %s: %s\n",
+			RRR_MSG_0("Could not open input file %s: %s\n",
 					data->filename, rrr_strerror(errno));
 			ret = 1;
 			goto out;
@@ -331,7 +354,7 @@ static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_messag
 	int ret = 0;
 
 	if ((ret = rrr_socket_common_prepare_and_send_socket_msg_blocking((struct rrr_socket_msg *) message, data->output_fd, NULL)) != 0) {
-		RRR_MSG_ERR("Error while sending message in __rrr_post_send_message\n");
+		RRR_MSG_0("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}
 
@@ -344,14 +367,14 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 
 	char *text = NULL;
 	if (rrr_asprintf(&text, "%" PRIu64, reading->value) <= 0) {
-		RRR_MSG_ERR("Could not create reading text in __rrr_post_send_reading\n");
+		RRR_MSG_0("Could not create reading text in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
 
 	struct rrr_message *message = NULL;
 	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
-		RRR_MSG_ERR("Could not allocate message in __rrr_post_send_reading\n");
+		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
 	}
@@ -407,7 +430,7 @@ static int __rrr_post_read_callback(struct rrr_read_session *read_session, void 
 			__rrr_post_read_message_callback,
 			data
 	)) != 0) {
-		RRR_MSG_ERR("Could not create or send message in __rrr_post_read_callback\n");
+		RRR_MSG_0("Could not create or send message in __rrr_post_read_callback\n");
 		goto out;
 	}
 
@@ -459,12 +482,13 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 				socket_read_flags,
 				&data->definition,
 				data->sync_byte_by_byte,
+				data->max_message_size,
 				__rrr_post_read_callback,
 				data
 		);
 
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
-			RRR_MSG_ERR("Warning: Invalid or unexpected data received\n");
+			RRR_MSG_0("Warning: Invalid or unexpected data received\n");
 			ret = 0;
 		}
 
@@ -486,7 +510,7 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 

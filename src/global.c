@@ -21,23 +21,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
 #include "global.h"
 #include "lib/log.h"
 
-
 pthread_mutex_t global_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static const char *rrr_default_log_prefix = "main";
 struct rrr_global_config rrr_global_config = {
-	0,
-	0,
-	0,
-	0,
-	0,
-	"main"
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		"main"
 };
 
 void rrr_set_debuglevel_on_exit(void) {
@@ -58,7 +59,8 @@ void rrr_init_global_config (
 		unsigned int debuglevel,
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
-		unsigned int no_thread_restart
+		unsigned int no_thread_restart,
+		unsigned int rfc5424_loglevel_output
 ) {
 	pthread_mutex_lock(&global_config_mutex);
 	rrr_global_config.debuglevel = debuglevel;
@@ -66,6 +68,7 @@ void rrr_init_global_config (
 	rrr_global_config.debuglevel_on_exit = debuglevel_on_exit;
 	rrr_global_config.no_watchdog_timers = no_watcdog_timers;
 	rrr_global_config.no_thread_restart = no_thread_restart;
+	rrr_global_config.rfc5424_loglevel_output = rfc5424_loglevel_output;
 	rrr_global_config.log_prefix = rrr_default_log_prefix;
 	pthread_mutex_unlock(&global_config_mutex);
 }
@@ -85,7 +88,7 @@ int rrr_print_help_and_version (
 ) {
 	int help_or_version_printed = 0;
 	if (cmd_exists(cmd, "version", 0)) {
-		RRR_MSG(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
+		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
 		help_or_version_printed = 1;
 	}
 

@@ -51,6 +51,7 @@ struct socket_data {
 	ssize_t default_topic_length;
 	int receive_rrr_message;
 	int do_sync_byte_by_byte;
+	int do_unlink_if_exists;
 	struct rrr_array definitions;
 	struct rrr_socket_client_collection clients;
 	int socket_fd;
@@ -78,14 +79,14 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 	// Socket path
 	if (rrr_settings_get_string_noconvert(&data->socket_path, config->settings, "socket_path") != 0) {
-		RRR_MSG_ERR("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
+		RRR_MSG_0("Error while parsing configuration parameter socket_path in socket instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
 	struct sockaddr_un addr;
 	if (strlen(data->socket_path) > sizeof(addr.sun_path) - 1) {
-		RRR_MSG_ERR("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
+		RRR_MSG_0("Configuration parameter socket_path in socket instance %s was too long, max length is %lu bytes\n",
 				config->name, sizeof(addr.sun_path) - 1);
 		ret = 1;
 		goto out;
@@ -94,7 +95,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	// Message default topic
 	if ((ret = rrr_settings_get_string_noconvert_silent(&data->default_topic, config->settings, "socket_default_topic")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
+			RRR_MSG_0("Error while parsing configuration parameter socket_default_path in socket instance %s\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -102,7 +103,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	}
 	else {
 		if (rrr_utf8_validate(data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_ERR("socket_default_topic for instance %s was not valid UTF-8\n", config->name);
+			RRR_MSG_0("socket_default_topic for instance %s was not valid UTF-8\n", config->name);
 			ret = 1;
 			goto out;
 		}
@@ -112,7 +113,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	// Receive full rrr message
 	int yesno = 0;
 	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_ERR ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
+		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
 				config->name);
 		return 1;
 	}
@@ -121,7 +122,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
 		if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail(&data->definitions, config, "socket_input_types")) != 0) {
-			RRR_MSG_ERR("Could not parse configuration parameter socket_input_types in socket instance %s\n",
+			RRR_MSG_0("Could not parse configuration parameter socket_input_types in socket instance %s\n",
 					config->name);
 			return 1;
 		}
@@ -131,7 +132,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	yesno = 0;
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, "socket_sync_byte_by_byte")) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_ERR("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n",
+			RRR_MSG_0("Error while parsing udpr_sync_byte_by_byte for udpreader instance %s, please use yes or no\n",
 					config->name);
 			ret = 1;
 			goto out;
@@ -141,15 +142,17 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	data->do_sync_byte_by_byte = yesno;
 
 	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
-		RRR_MSG_ERR("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
+		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
 	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_ERR("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
+		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		return 1;
 	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
 
 	out:
 	return ret;
@@ -166,7 +169,7 @@ int read_rrr_message_callback (struct rrr_message **message, void *arg) {
 
 	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
 		if (rrr_message_set_topic(message, data->default_topic, strlen(data->default_topic)) != 0) {
-			RRR_MSG_ERR("Could not set topic of message in rread_data_receive_callback of instance %s\n",
+			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
 		}
@@ -199,7 +202,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 			data->default_topic_length,
 			&data->definitions
 	)) != 0) {
-		RRR_MSG_ERR("Could not create array message in read_data_receive_message_callback of socket instance %s\n",
+		RRR_MSG_0("Could not create array message in read_data_receive_message_callback of socket instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
@@ -227,6 +230,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		struct rrr_read_common_receive_message_callback_data read_callback_data = {
 				read_rrr_message_callback,
 				NULL,
+				NULL,
 				&socket_callback_data
 		};
 		if ((ret = rrr_socket_client_collection_read (
@@ -246,7 +250,8 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	else {
 		struct rrr_read_common_get_session_target_length_from_array_data callback_data = {
 				&data->definitions,
-				data->do_sync_byte_by_byte
+				data->do_sync_byte_by_byte,
+				0 // TODO : Set max size?
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
@@ -300,8 +305,8 @@ static int socket_start (struct socket_data *data) {
 	socket_name[64] = '\0';
 
 	int fd = 0;
-	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1, 0) != 0) {
-		RRR_MSG_ERR("Could not create socket in socket_start of instance %s\n", INSTANCE_D_NAME(data->thread_data));
+	if (rrr_socket_unix_create_bind_and_listen(&fd, socket_name, data->socket_path, 10, 1, 0, data->do_unlink_if_exists) != 0) {
+		RRR_MSG_0("Could not create socket in socket_start of instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -332,7 +337,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_ERR("Could not initalize data in socket instance %s\n",
+		RRR_MSG_0("Could not initalize data in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
@@ -347,7 +352,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
-		RRR_MSG_ERR("Configuration parsing failed for socket instance %s\n",
+		RRR_MSG_0("Configuration parsing failed for socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
@@ -355,7 +360,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
 	if (socket_start(data) != 0) {
-		RRR_MSG_ERR("Could not start socket in socket instance %s\n",
+		RRR_MSG_0("Could not start socket in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
@@ -368,6 +373,8 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (rrr_socket_client_collection_accept_simple(&data->clients) != 0) {
+			RRR_MSG_ERR("Error while accepting connections in socket instance %s\n",
+				INSTANCE_D_NAME(thread_data));
 			break;
 		}
 
@@ -391,7 +398,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 			consecutive_nothing_happened = 0;
 		}
 		else if (++consecutive_nothing_happened > 100) {
-			usleep(25000); // 25ms
+			rrr_posix_usleep(25000); // 25ms
 		}
 	}
 

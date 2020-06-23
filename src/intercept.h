@@ -24,6 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INTERCEPT_H
 #define RRR_INTERCEPT_H
 
+// Blocks a lot of stuff
+#define _POSIX_C_SOURCE 200809L
+
 #ifndef RRR_INTERCEPT_ALLOW_READDIR
 	// Not guaranteed thread-safety in current POSIX specification, rrr wrapper with
 	// locking must be used
@@ -44,6 +47,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // All logging must be done through wrappers
 #ifndef RRR_INTERCEPT_ALLOW_PRINTF
 //#	define printf(x,...)	RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_PRINTF
+#endif
+
+// umask calls must be wrapped in global umask lock
+#ifndef RRR_INTERCEPT_ALLOW_UMASK
+#	define umask(x)			RRR_INTERCEPT_H_UNSAFE_LIBARY_FUNCTION_UMASK
 #endif
 
 #endif /* RRR_INTERCEPT_H */

@@ -49,7 +49,7 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_collection_entry);
 		struct instance_metadata *check = node->instance;
 		if (check == instance) {
-			RRR_MSG_ERR("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
+			RRR_MSG_0("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
 					INSTANCE_M_NAME(instance));
 			return 1;
 		}
@@ -57,7 +57,6 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 		if (	rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_RUNNING_FORKED ||
 				rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPED
-//				|| rrr_thread_get_state(check->thread_data->thread) == RRR_THREAD_STATE_STOPPING
 		) {
 			// OK
 		}
@@ -80,12 +79,6 @@ int main_start_threads (
 		struct rrr_message_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
 ) {
-	/*
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_initialize_locks();
-#endif
-*/
-
 	int ret = 0;
 
 	// Initialize dynamic_data thread data
@@ -113,7 +106,7 @@ int main_start_threads (
 
 	// Create thread collection
 	if (rrr_thread_new_collection (thread_collection) != 0) {
-		RRR_MSG_ERR("Could not create thread collection\n");
+		RRR_MSG_0("Could not create thread collection\n");
 		ret = 1;
 		goto out;
 	}
@@ -128,6 +121,7 @@ int main_start_threads (
 		}
 
 		if (rrr_instance_preload_thread(*thread_collection, instance->thread_data) != 0) {
+			// This might actually not be a bug but we cannot recover from preload failure
 			RRR_BUG("Error while preloading thread for instance %s, can't proceed\n",
 					instance->dynamic_data->instance_name);
 		}
@@ -145,7 +139,7 @@ int main_start_threads (
 	}
 
 	if (threads_total == 0) {
-		RRR_MSG_ERR("No instances started, exiting\n");
+		RRR_MSG_0("No instances started, exiting\n");
 		return EXIT_FAILURE;
 	}
 
@@ -156,7 +150,7 @@ int main_start_threads (
 			__main_start_threads_check_wait_for_callback,
 			&callback_data
 	) != 0) {
-		RRR_MSG_ERR("Error while waiting for threads to initialize\n");
+		RRR_MSG_0("Error while waiting for threads to initialize\n");
 		return EXIT_FAILURE;
 	}
 
@@ -175,23 +169,16 @@ void main_ghost_handler (struct rrr_thread *thread) {
 void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
 	rrr_thread_stop_and_join_all(collection, main_ghost_handler);
 	rrr_instance_free_all_thread_data(instances);
-/*
-#ifdef VL_WITH_OPENSSL
-	vl_crypt_free_locks();
-#endif
-*/
 }
 
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (cmd_parse(cmd, config) != 0) {
-		RRR_MSG_ERR("Error while parsing command line\n");
+		RRR_MSG_0("Error while parsing command line\n");
 		return EXIT_FAILURE;
 	}
 
 	unsigned int debuglevel = 0;
 	unsigned int debuglevel_on_exit = 0;
-	int no_watchdog_timers = 0;
-	int no_thread_restart = 0;
 
 	const char *debuglevel_string = cmd_get_value(cmd, "debuglevel", 0);
 	if (debuglevel_string != NULL) {
@@ -200,13 +187,13 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 			debuglevel_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_string, &debuglevel_tmp) != 0) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Could not understand debuglevel argument '%s', use a number or 'all'\n",
 					debuglevel_string);
 			return EXIT_FAILURE;
 		}
 		if (debuglevel_tmp < 0 || debuglevel_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_tmp);
 			return EXIT_FAILURE;
@@ -221,19 +208,23 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 			debuglevel_on_exit_tmp = __RRR_DEBUGLEVEL_ALL;
 		}
 		else if (cmd_convert_integer_10(debuglevel_on_exit_string, &debuglevel_on_exit_tmp) != 0) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Could not understand debuglevel_on_exit argument '%s', use a number or 'all'\n",
 					debuglevel_on_exit_string);
 			return EXIT_FAILURE;
 		}
 		if (debuglevel_on_exit_tmp < 0 || debuglevel_on_exit_tmp > __RRR_DEBUGLEVEL_ALL) {
-			RRR_MSG_ERR(
+			RRR_MSG_0(
 					"Debuglevel must be 0 <= debuglevel_on_exit <= %i, %i was given.\n",
 					__RRR_DEBUGLEVEL_ALL, debuglevel_on_exit_tmp);
 			return EXIT_FAILURE;
 		}
 		debuglevel_on_exit = debuglevel_on_exit_tmp;
 	}
+
+	unsigned int no_watchdog_timers = 0;
+	unsigned int no_thread_restart = 0;
+	unsigned int rfc5424_loglevel_output = 0;
 
 	if (cmd_exists(cmd, "no_watchdog_timers", 0)) {
 		no_watchdog_timers = 1;
@@ -243,7 +234,17 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		no_thread_restart = 1;
 	}
 
-	rrr_init_global_config(debuglevel, debuglevel_on_exit, no_watchdog_timers, no_thread_restart);
+	if (cmd_exists(cmd, "loglevel-translation", 0)) {
+		rfc5424_loglevel_output = 1;
+	}
+
+	rrr_init_global_config (
+			debuglevel,
+			debuglevel_on_exit,
+			no_watchdog_timers,
+			no_thread_restart,
+			rfc5424_loglevel_output
+	);
 
 	return 0;
 }

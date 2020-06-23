@@ -1,15 +1,16 @@
-.Dd 2020-01-22
+.Dd 2020-05-25
 .TH RRR 1
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
 for collecting, buffering, processing and storing messages and measurements.
 .SH SYNOPSIS
-.B rrr {CONFIGURATION FILE}
-.Dl [-d|--debuglevel[=]FLAGS]
-.Dl [-D|--debuglevel_on_exit[=]FLAGS]
+.B rrr {CONFIGURATION FILES OR DIRECTORIES}
 .Dl [-W|--no_watchdog_timers]
 .Dl [-T|--no_thread_restart]
 .Dl [-s|--stats]
+.Dl [-l|--loglevel-translation]
+.Dl [-d|--debuglevel[=]FLAGS]
+.Dl [-D|--debuglevel_on_exit[=]FLAGS]
 .Dl [-h|--help]
 .Dl [-v|--version]
 
@@ -40,7 +41,18 @@ usually does not make
 .B rrr
 quit, all instances are simply restarted.
 .PP
+If
+.B rrr
+is started with multiple configuration files, one fork is created for each of the files. Note that
+all forks will be stopped and the program will exit if a single one of them fails.
+.PP
+When multiple configuration files are loaded by the same program, the name of the configuration file
+of a fork is included in the logging output when it prints something.
+.PP
 .SH OPTIONS
+One or more configuration files or directories must always be specified. If a directory is specified,
+all files inside it with names ending in .conf will be loaded. Subdirectories are not checked.
+.PP
 .IP -d|--debuglevel[=]FLAGS
 .IP -D|--debuglevel_on_exit[=]FLAGS
 A debuglevel may be specified at command line making
@@ -79,6 +91,9 @@ When a thread for some reason exits, close the other threads and exit as opposed
 restarts them.
 .IP -s|--stats
 Enable statistics engine which
+.IP -l|--loglevel-translation
+Translate output loglevels to RFC5424 format. Internal loglevels will be translated so that error messages become ERROR
+and other messages DEBUG (loglevels 3 and 7).
 .Xr rrr_stats(1),
 can connect to.
 .SH SIGNALS
@@ -93,5 +108,6 @@ Exit immediately.
 returns 0 on success and 1 on failure.
 .SH SEE ALSO
 .Xr rrr_post(1),
+.Xr rrr_stats(1),
 .Xr rrr.conf(5),
 .Xr rrr_python3(5)

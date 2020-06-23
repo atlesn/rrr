@@ -19,16 +19,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+
 /*
  * This file must be compiled with -DRRR_INTERCEPT_ALLOW_READDIR prior to inclusion
  * of intercept.h, or intercept.h must not be included. If this is done incorrectly,
  * we will not be able to use readdir()
  */
 
+// Allow S_IFDIR etc. on BSD
+#undef __XSI_VISIBLE
+#define __XSI_VISIBLE 1
+#	include <sys/stat.h>
+#undef __XSI_VISIBLE
+
 #include <errno.h>
 #include <dirent.h>
 #include <pthread.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
@@ -37,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "rrr_readdir.h"
 #include "rrr_strerror.h"
+#include "rrr_path_max.h"
 
 pthread_mutex_t rrr_readdir_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -53,7 +60,7 @@ int rrr_readdir_foreach (
 
 	DIR *dirp = opendir(dir_path);
 	if (dirp == NULL) {
-		RRR_MSG_ERR("Could not open directory '%s': %s\n", dir_path, rrr_strerror(errno));
+		RRR_MSG_0("Could not open directory '%s': %s\n", dir_path, rrr_strerror(errno));
 		ret = 1;
 		goto out;
 	}
@@ -72,7 +79,7 @@ int rrr_readdir_foreach (
 
 		char resolved_path[PATH_MAX + 1];
 		if (snprintf(resolved_path, PATH_MAX, "%s/%s", dir_path, entry->d_name) >= PATH_MAX) {
-			RRR_MSG_ERR("Path was too long for file '%s' in rrr_readdir_foreach\n", entry->d_name);
+			RRR_MSG_0("Path was too long for file '%s' in rrr_readdir_foreach\n", entry->d_name);
 			continue; // Non-critical
 		}
 
@@ -85,7 +92,7 @@ int rrr_readdir_foreach (
 		while (--i > 0 && (d_type == DT_UNKNOWN || d_type == DT_LNK)) {
 			struct stat sb;
 			if (lstat(resolved_path, &sb) != 0) {
-				RRR_MSG_ERR("Could not stat file '%s': %s\n", resolved_path, rrr_strerror(errno));
+				RRR_MSG_0("Could not stat file '%s': %s\n", resolved_path, rrr_strerror(errno));
 				goto next_entry; // Non-critical
 			}
 
@@ -102,7 +109,7 @@ int rrr_readdir_foreach (
 
 			if (d_type == DT_LNK) {
 				if (realpath(resolved_path, realpath_tmp) == NULL) {
-					RRR_MSG_ERR("Could not resolve real path for '%s': %s\n", resolved_path, rrr_strerror(errno));
+					RRR_MSG_0("Could not resolve real path for '%s': %s\n", resolved_path, rrr_strerror(errno));
 					goto next_entry; // Non-critical
 				}
 #ifdef RRR_READDIR_DEBUG
@@ -116,7 +123,7 @@ int rrr_readdir_foreach (
 		}
 
 		if (i <= 0) {
-			RRR_MSG_ERR("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", resolved_path);
+			RRR_MSG_0("Possible symlink loop in rrr_readdir_foreach for file '%s'\n", resolved_path);
 			goto next_entry; // Non-critical
 		}
 

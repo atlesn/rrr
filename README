@@ -1,21 +1,47 @@
 # README FOR READ ROUTE RECORD (triple R)
 ## ABOUT
 
-RRR is designed to process, transmit and save all kinds of measurements or messages. RRR has a variety
-of different modules which can be chained together to retrieve, transmit and save messages.
+RRR is a general purpose acquirement, transmission and storage server of all kinds of measurements
+or messages. RRR has a variety of different modules which can be chained together to retrieve,
+transmit and save messages.
 
-RRR can read data of different types from external programs or sensors using UDP, UNIX sockets,
-piping or files.
+RRR can read data of different types from external programs or sensors using UDP, TCP, UNIX sockets,
+piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
+they pass through.
 
-- Acquire messages using piping, UNIX sockets, UDP-packets
-- Transfer messages using MQTT or UDP
+- Acquire messages using piping, UNIX sockets, UDP/TCP-packets
+- Transfer messages using MQTT, UDP or TCP
+- Modify messages using Perl or Python
 - Saving messages using InfluxDB and MySQL
 
-RRR can also be extended by writing custom Perl or Python modules, and can function as a stand-alone MQTT broker.
+Application examples may include:
+
+- Barcode scanners
+- Sensors (temperature, pressure, voltage etc.)
+- PLCs
+- Message forwarding, media or protocol conversion etc.
+
+Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
+particular device with RRR. Please not that RRR is a general purpose program and does not support
+any particular hardware unless configured to do so.
+
+To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
+also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
+the source, for instance when the data source is a device on a computer.
+
+RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
+may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
+are not supported.
+
+## LICENSES
+
+RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
+the `LICENSE.*`-files regarding this.
 
 ## DEVELOPMENT
 
-Please create an issue on the RRR GitHub page if you would like to see more functionallity.
+If you are a developer and would like to see more functionallity or have some ideas, please consider
+forking the GitHub repository.
 
 ## QUICK START
 
@@ -24,6 +50,9 @@ Please create an issue on the RRR GitHub page if you would like to see more func
 	$ git clone https://github.com/atlesn/rrr.git
 
 ### COMPILE
+
+Compiling the source requires some basic knowledge on how to build a program using Autotools. Please
+look online if you have not done this before.
 
 See `./configure --help` for flags to use for disabling modules with dependencies (perl, mysql etc.).
 
@@ -37,6 +66,12 @@ on detailed information about this and on which packages you need to build `.deb
 
 	$ dpkg-buildpackage
 	$ sudo dpkg -i ../rrr*.deb
+
+On ArchLinux, do the following:
+
+* Download the file `PKGBUILD` from `misc/archlinux/` in the repository.
+* Put the file into some directory and run `makepkg`
+* Install the generated package using `pacman`
 
 ### RUN
 
@@ -129,6 +164,9 @@ This module is useful when messages need to be transferred over lossy connection
 The `ipclient` module keeps track of all messages and makes sure that they are delivered excactly once (like MQTT QOS2).
 
 The module may function both as a server which accepts connections and a client (also simultaneously).
+
+An RRR native protocol is used to transfer messages which means that and RRR program only can communicate with other RRR
+programs using this module.
 
 ### mysql (store messages to database)
 Reads messages from other modules and stores them in a MySQL database.

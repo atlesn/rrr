@@ -22,7 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_H
 #define RRR_SOCKET_H
 
+// Allow SOCK_NONBLOCK on BSD
+#define __BSD_VISIBLE 1
 #include <sys/socket.h>
+#undef __BSD_VISIBLE
+
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/types.h>
@@ -72,7 +76,15 @@ int rrr_socket_bind_and_listen (
 int rrr_socket_open (
 		const char *filename,
 		int flags,
+		int mode,
 		const char *creator
+);
+int rrr_socket_open_and_read_file (
+		char **result,
+		ssize_t *result_bytes,
+		const char *filename,
+		int options,
+		int mode
 );
 int rrr_socket (
 		int domain,
@@ -94,10 +106,15 @@ int rrr_socket_unix_create_bind_and_listen (
 		const char *filename_orig,
 		int num_clients,
 		int nonblock,
-		int do_mkstemp
+		int do_mkstemp,
+		int do_unlink_if_exists
 );
-int rrr_socket_connect_nonblock_postcheck (
+int rrr_socket_send_check (
 		int fd
+);
+int rrr_socket_connect_nonblock_postcheck_loop (
+		int fd,
+		uint64_t timeout_ms
 );
 int rrr_socket_connect_nonblock (
 		int fd,

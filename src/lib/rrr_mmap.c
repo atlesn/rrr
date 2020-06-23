@@ -26,7 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <pthread.h>
 
+#include "posix.h"
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_strerror.h"
@@ -288,14 +290,7 @@ void *rrr_mmap_allocate(struct rrr_mmap *mmap, uint64_t req_size) {
 }
 
 static void *__rrr_mmap(size_t size) {
-    void *ptr = mmap (
-    		NULL,
-			size,
-			PROT_READ | PROT_WRITE,
-			MAP_SHARED | MAP_ANONYMOUS,
-			-1,
-			0
-	);
+    void *ptr = rrr_posix_mmap(size);
 
     if (ptr != NULL) {
     	memset(ptr, '\0', size);
@@ -320,7 +315,7 @@ int rrr_mmap_heap_reallocate (struct rrr_mmap *mmap, uint64_t heap_size) {
 
 	void *new_heap = __rrr_mmap(heap_size_padded);
 	if (new_heap == NULL) {
-		RRR_MSG_ERR("Could not re-allocate in rrr_mmap_new_heap_size\n");
+		RRR_MSG_0("Could not re-allocate in rrr_mmap_new_heap_size\n");
 		ret = 1;
 		goto out_unlock;
 	}
@@ -344,13 +339,13 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 
     pthread_mutexattr_t attr;
     if ((ret = pthread_mutexattr_init(&attr)) != 0) {
-    	RRR_MSG_ERR("Could not initialize mutexattr in rrr_mmap_new (%i)\n", ret);
+    	RRR_MSG_0("Could not initialize mutexattr in rrr_mmap_new (%i)\n", ret);
     	ret = 1;
     	goto out;
     }
 
 	if ((result = __rrr_mmap(sizeof(*result))) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_destroy_mutexattr;
 	}
@@ -360,7 +355,7 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 	uint64_t heap_size_padded = heap_size + (4096 - (heap_size % 4096));
 
 	if ((result->heap = __rrr_mmap(heap_size_padded)) == NULL) {
-		RRR_MSG_ERR("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
+		RRR_MSG_0("Could not allocate memory with mmap in rrr_mmap_new: %s\n", rrr_strerror(errno));
 		ret = 1;
 		goto out_munmap_main;
 
@@ -372,7 +367,7 @@ int rrr_mmap_new (struct rrr_mmap **target, uint64_t heap_size, const char *name
 
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
     if ((ret = pthread_mutex_init(&result->mutex, &attr)) != 0) {
-    	RRR_MSG_ERR("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
+    	RRR_MSG_0("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
     	ret = 1;
     	goto out_munmap_heap;
     }

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
+#include "posix.h"
 #include "log.h"
 #include "linked_list.h"
 #include "rrr_socket.h"
@@ -62,7 +63,7 @@ static int __rrr_socket_client_new (
 
 	struct rrr_socket_client *client = malloc (sizeof(*client));
 	if (client == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_socket_client_new\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_socket_client_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -84,7 +85,7 @@ static int __rrr_socket_client_new (
 		}
 
 		if ((ret = private_data_new(&client->private_data, private_arg)) != 0) {
-			RRR_MSG_ERR("Error while initializing private data in __rrr_socket_client_new\n");
+			RRR_MSG_0("Error while initializing private data in __rrr_socket_client_new\n");
 			ret = 1;
 			goto out_free;
 		}
@@ -120,7 +121,7 @@ int rrr_socket_client_collection_init (
 	memset(collection, '\0', sizeof(*collection));
 	collection->creator = strdup(creator);
 	if (collection->creator == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_init\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_init\n");
 		return 1;
 	}
 	collection->listen_fd = listen_fd;
@@ -145,7 +146,7 @@ int rrr_socket_client_collection_accept (
 	int ret = rrr_socket_accept(collection->listen_fd, (struct sockaddr *) &temp.addr, &temp.addr_len, collection->creator);
 	if (ret == -1) {
 		if (errno != EWOULDBLOCK) {
-			RRR_MSG_ERR("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
+			RRR_MSG_0("Error while accepting connection in rrr_socket_client_collection_accept: %s\n", rrr_strerror(errno));
 			return 1;
 		}
 		return 0;
@@ -163,7 +164,7 @@ int rrr_socket_client_collection_accept (
 			private_arg,
 			private_data_destroy
 	) != 0) {
-		RRR_MSG_ERR("Could not allocate memory in rrr_socket_client_collection_accept\n");
+		RRR_MSG_0("Could not allocate memory in rrr_socket_client_collection_accept\n");
 		return 1;
 	}
 
@@ -192,6 +193,7 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 		ssize_t written_bytes_dummy = 0;
 		if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, node->connected_fd, data, size)) != 0) {
 			if (ret != RRR_SOCKET_SOFT_ERROR) {
+				// TODO : This error message is useless because we don't know which client has disconnected
 				RRR_DBG_1("Disconnecting client in client collection following send error\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 				ret = 0;
@@ -201,6 +203,8 @@ int rrr_socket_client_collection_multicast_send_ignore_full_pipe (
 
 	return ret;
 }
+
+// TODO : Add disconnect notification callback for debug purposes
 
 int rrr_socket_client_collection_read (
 		struct rrr_socket_client_collection *collection,
@@ -218,11 +222,13 @@ int rrr_socket_client_collection_read (
 	uint64_t timeout = rrr_time_get_64() - (RRR_SOCKET_CLIENT_TIMEOUT_S * 1000 * 1000);
 
 	if (RRR_LL_COUNT(collection) == 0 && (read_flags_socket & RRR_SOCKET_READ_USE_TIMEOUT) != 0) {
-		usleep(10 * 1000);
+		rrr_posix_usleep(10 * 1000);
 	}
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_socket_client);
+		uint64_t bytes_read = 0;
 		ret = rrr_socket_read_message_default (
+				&bytes_read,
 				&node->read_sessions,
 				node->connected_fd,
 				read_step_initial,
@@ -240,7 +246,9 @@ int rrr_socket_client_collection_read (
 		}
 		else {
 			if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-				RRR_MSG_ERR("Error while reading from client in rrr_socket_client_collection_read, closing connection\n");
+				// Don't print error as it will be printed when a remote client disconnects
+				// TODO : This error message is useless because we don't know which client has disconnected
+				RRR_DBG_1("A client was disconnected when reading in rrr_socket_client_collection_read, closing connection\n");
 				RRR_LL_ITERATE_SET_DESTROY();
 			}
 			ret = 0;

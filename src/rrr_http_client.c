@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/posix.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/rrr_socket.h"
@@ -43,6 +44,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/ip.h"
 #include "lib/rrr_strerror.h"
 #include "lib/gnu.h"
+
+RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_client");
+
 #define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {
@@ -101,19 +105,19 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Server name
 	const char *server = cmd_get_value(cmd, "server", 0);
 	if (cmd_get_value (cmd, "server", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one server argument may be specified\n");
+		RRR_MSG_0("Error: Only one server argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (server == NULL) {
-		RRR_MSG_ERR("No server specified\n");
+		RRR_MSG_0("No server specified\n");
 		ret = 1;
 		goto out;
 	}
 
 	data->hostname= strdup(server);
 	if (data->hostname == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -121,7 +125,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Endpoint
 	const char *endpoint = cmd_get_value(cmd, "endpoint", 0);
 	if (cmd_get_value (cmd, "endpoint", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one endpoint argument may be specified\n");
+		RRR_MSG_0("Error: Only one endpoint argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
@@ -131,7 +135,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 
 	data->endpoint = strdup(endpoint);
 	if (data->endpoint == NULL) {
-		RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
 	}
@@ -139,14 +143,14 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	// Query
 	const char *query = cmd_get_value(cmd, "query", 0);
 	if (cmd_get_value (cmd, "query", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one query argument may be specified\n");
+		RRR_MSG_0("Error: Only one query argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (query != NULL) {
 		data->query = strdup(query);
 		if (data->query == NULL) {
-			RRR_MSG_ERR("Could not allocate memory in __rrr_post_parse_config\n");
+			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 			ret = 1;
 			goto out;
 		}
@@ -168,7 +172,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	}
 
 	if (data->ssl_force != 0 && data->plain_force != 0) {
-		RRR_MSG_ERR("Both SSL-force and Plain-force (-S and -P) was set at the same time, but only one of them may be set simultaneously\n");
+		RRR_MSG_0("Both SSL-force and Plain-force (-S and -P) was set at the same time, but only one of them may be set simultaneously\n");
 		ret = 1;
 		goto out;
 	}
@@ -177,13 +181,13 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 	const char *port = cmd_get_value(cmd, "port", 0);
 	uint64_t port_tmp = 0;
 	if (cmd_get_value (cmd, "port", 1) != NULL) {
-		RRR_MSG_ERR("Error: Only one 'port' argument may be specified\n");
+		RRR_MSG_0("Error: Only one 'port' argument may be specified\n");
 		ret = 1;
 		goto out;
 	}
 	if (port != NULL) {
 		if (cmd_convert_uint64_10(port, &port_tmp)) {
-			RRR_MSG_ERR("Could not understand argument 'port', must be and unsigned integer\n");
+			RRR_MSG_0("Could not understand argument 'port', must be and unsigned integer\n");
 			ret = 1;
 			goto out;
 		}
@@ -197,7 +201,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		}
 	}
 	if (port_tmp < 1 || port_tmp > 65535) {
-		RRR_MSG_ERR("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
+		RRR_MSG_0("HTTP port out of range (must be 1-65535, got %" PRIu64 ")\n", port_tmp);
 		ret = 1;
 		goto out;
 	}
@@ -217,7 +221,7 @@ static int __rrr_http_client_update_target_if_not_null (
 	if (protocol != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->protocol);
 		if ((data->protocol = strdup(protocol)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for protocol in __rrr_http_client_update_target_if_not_null\n");
+			RRR_MSG_0("Could not allocate memory for protocol in __rrr_http_client_update_target_if_not_null\n");
 			return 1;
 		}
 	}
@@ -225,7 +229,7 @@ static int __rrr_http_client_update_target_if_not_null (
 	if (hostname != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->hostname);
 		if ((data->hostname = strdup(hostname)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for hostname in __rrr_http_client_update_target_if_not_null\n");
+			RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_client_update_target_if_not_null\n");
 			return 1;
 		}
 	}
@@ -233,7 +237,7 @@ static int __rrr_http_client_update_target_if_not_null (
 	if (endpoint != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
 		if ((data->endpoint = strdup(endpoint)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for endpoint in __rrr_http_client_update_target_if_not_null\n");
+			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_update_target_if_not_null\n");
 			return 1;
 		}
 	}
@@ -270,6 +274,8 @@ static int __rrr_http_client_receive_callback (
 
 		retry:
 
+//		printf("data start: %p size %li\n", data_start, data_size);
+
 		bytes = write (STDOUT_FILENO, data_start, data_size);
 		if (bytes < data_size) {
 			if (bytes > 0) {
@@ -278,7 +284,7 @@ static int __rrr_http_client_receive_callback (
 				goto retry;
 			}
 			else {
-				RRR_MSG_ERR("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
+				RRR_MSG_0("Error while printing HTTP response in __rrr_http_client_receive_callback: %s\n", rrr_strerror(errno));
 				ret = 1;
 				goto out;
 			}
@@ -293,6 +299,7 @@ static int __rrr_http_client_receive_callback (
 
 static int __rrr_http_client_receive_callback_intermediate (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		void *arg
 ) {
 	struct rrr_http_client_response *response = arg;
@@ -305,7 +312,7 @@ static int __rrr_http_client_receive_callback_intermediate (
 	if (part->response_code >= 300 && part->response_code <= 399) {
 		const struct rrr_http_header_field *location = rrr_http_part_get_header_field(part, "location");
 		if (location == NULL) {
-			RRR_MSG_ERR("Could not find Location-field in HTTP response %i %s\n",
+			RRR_MSG_0("Could not find Location-field in HTTP response %i %s\n",
 					part->response_code, part->response_str);
 			ret = 1;
 		}
@@ -315,7 +322,7 @@ static int __rrr_http_client_receive_callback_intermediate (
 			RRR_BUG("Response argument was not NULL in __rrr_http_client_receive_callback, possible double call with non-200 response\n");
 		}
 		if ((response->argument = strdup(location->value)) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
+			RRR_MSG_0("Could not allocate memory for location string in __rrr_http_client_receive_callback\n");
 			ret = 1;
 			goto out;
 		}
@@ -323,7 +330,7 @@ static int __rrr_http_client_receive_callback_intermediate (
 		goto out;
 	}
 	else if (part->response_code < 200 || part->response_code > 299) {
-		RRR_MSG_ERR("Error while fetching HTTP: %i %s\n",
+		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
 				part->response_code, part->response_str);
 		ret = 1;
 		goto out;
@@ -331,10 +338,11 @@ static int __rrr_http_client_receive_callback_intermediate (
 
 	if ((ret = rrr_http_part_iterate_chunks (
 			part,
+			data_ptr,
 			__rrr_http_client_receive_callback,
 			response
 	) != 0)) {
-		RRR_MSG_ERR("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
+		RRR_MSG_0("Error while iterating chunks in response in __rrr_http_client_receive_callback_intermediate\n");
 		goto out;
 	}
 
@@ -346,8 +354,11 @@ static int __rrr_http_client_receive_callback_intermediate (
 #define RRR_HTTP_CLIENT_TRANSPORT_HTTP 1
 #define RRR_HTTP_CLIENT_TRANSPORT_HTTPS 2
 
-static void __rrr_http_client_send_request_callback (struct rrr_net_transport_handle *handle, void *arg) {
+static void __rrr_http_client_send_request_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
 	struct rrr_http_client_data *data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
 
 	int ret = 0;
 
@@ -357,7 +368,7 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 	if (data->endpoint == NULL || *(data->endpoint) == '\0') {
 		RRR_FREE_IF_NOT_NULL(data->endpoint);
 		if ((data->endpoint = strdup("/")) == NULL) {
-			RRR_MSG_ERR("Could not allocate memory for endpoint in __rrr_http_client_send_request\n");
+			RRR_MSG_0("Could not allocate memory for endpoint in __rrr_http_client_send_request\n");
 			ret = 1;
 			goto out;
 		}
@@ -365,14 +376,14 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 
 	if (data->query != NULL && *(data->query) != '\0') {
 		if ((ret = rrr_asprintf(&endpoint_and_query, "%s?%s", data->endpoint, data->query)) <= 0) {
-			RRR_MSG_ERR("Could not allocate string for endpoint and query in __rrr_http_client_send_request\n");
+			RRR_MSG_0("Could not allocate string for endpoint and query in __rrr_http_client_send_request\n");
 			ret = 1;
 			goto out;
 		}
 	}
 	else {
 		if ((endpoint_and_query = strdup(data->endpoint)) == NULL) {
-			RRR_MSG_ERR("Could not allocate string for endpoint in __rrr_http_client_send_request\n");
+			RRR_MSG_0("Could not allocate string for endpoint in __rrr_http_client_send_request\n");
 			ret = 1;
 			goto out;
 		}
@@ -387,12 +398,12 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 			endpoint_and_query,
 			RRR_HTTP_CLIENT_USER_AGENT
 	)) != 0) {
-		RRR_MSG_ERR("Could not create HTTP session in _rrr_http_client_send_request\n");
+		RRR_MSG_0("Could not create HTTP session in _rrr_http_client_send_request\n");
 		goto out;
 	}
 
 	if ((ret = rrr_http_session_transport_ctx_send_request(handle, data->hostname)) != 0) {
-		RRR_MSG_ERR("Could not send request in __rrr_http_client_send_request\n");
+		RRR_MSG_0("Could not send request in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -412,7 +423,7 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 		struct rrr_http_uri *uri = NULL;
 
 		if (rrr_http_util_uri_parse(&uri, response.argument) != 0) {
-			RRR_MSG_ERR("Could not parse Location from redirect response header\n");
+			RRR_MSG_0("Could not parse Location from redirect response header\n");
 			ret = 1;
 			goto out;
 		}
@@ -432,7 +443,7 @@ static void __rrr_http_client_send_request_callback (struct rrr_net_transport_ha
 				uri->endpoint,
 				uri->port
 		) != 0) {
-			RRR_MSG_ERR("Could not update target after redirect\n");
+			RRR_MSG_0("Could not update target after redirect\n");
 			ret = 1;
 			goto out;
 		}
@@ -459,14 +470,14 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	int transport_code = RRR_HTTP_CLIENT_TRANSPORT_ANY;
 
 	if (data->protocol != NULL) {
-		if (strcasecmp(data->protocol, "http") == 0) {
+		if (rrr_posix_strcasecmp(data->protocol, "http") == 0) {
 			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTP;
 		}
-		else if (strcasecmp(data->protocol, "https") == 0) {
+		else if (rrr_posix_strcasecmp(data->protocol, "https") == 0) {
 			transport_code = RRR_HTTP_CLIENT_TRANSPORT_HTTPS;
 		}
 		else {
-			RRR_MSG_ERR("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
+			RRR_MSG_0("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
 			ret = 1;
 			goto out;
 		}
@@ -475,7 +486,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	if (data->ssl_force != 0) {
 		RRR_DBG_1("Forcing SSL/TLS\n");
 		if (transport_code != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport_code != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
-			RRR_MSG_ERR("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
+			RRR_MSG_0("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
 			ret = 1;
 			goto out;
 		}
@@ -484,7 +495,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	if (data->plain_force != 0) {
 		RRR_DBG_1("Forcing plaintext non-SSL/TLS\n");
 		if (transport_code != RRR_HTTP_CLIENT_TRANSPORT_HTTPS && transport_code != RRR_HTTP_CLIENT_TRANSPORT_ANY) {
-			RRR_MSG_ERR("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
+			RRR_MSG_0("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
 			ret = 1;
 			goto out;
 		}
@@ -499,14 +510,14 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	}
 
 	if (transport_code == RRR_HTTP_CLIENT_TRANSPORT_HTTPS) {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL);
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL, NULL, NULL);
 	}
 	else {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL);
+		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL);
 	}
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not create transport in __rrr_http_client_send_request\n");
+		RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -521,7 +532,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 	ret |= data->http_session_ret;
 
 	if (ret != 0) {
-		RRR_MSG_ERR("Could not create session in __rrr_http_client_send_request\n");
+		RRR_MSG_0("Could not create session in __rrr_http_client_send_request\n");
 		goto out;
 	}
 
@@ -538,7 +549,7 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_ERR("Library build version mismatch.\n");
+		RRR_MSG_0("Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -568,7 +579,7 @@ int main (int argc, const char *argv[]) {
 
 	retry:
 	if (--retry_max == 0) {
-		RRR_MSG_ERR("Maximum number of retries reached\n");
+		RRR_MSG_0("Maximum number of retries reached\n");
 		ret = 1;
 		goto out;
 	}

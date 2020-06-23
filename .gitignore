@@ -9,6 +9,7 @@
 /src/rrr_http_client
 /src/rrr_http_server
 /src/rrr_stats
+/src/rrr_passwd
 /build_timestamp.h
 /build_directory.h
 input_data
@@ -26,9 +27,13 @@ input_data
 /debian/debhelper-build-stamp
 /debian/files
 /debian/.debhelper/
+/debian/*.debhelper
 /debian/tmp/
 # http://www.gnu.org/software/automake
 
+/conftest
+/conftest.err
+/conftest.c
 INSTALL
 Makefile.in
 /ar-lib

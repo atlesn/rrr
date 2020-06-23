@@ -28,4 +28,7 @@ int rrr_vasprintf (char **resultp, const char *format, va_list args);
 int rrr_asprintf (char **resultp, const char *format, ...);
 char *rrr_strcasestr (const char *haystack, const char *needle);
 
+/* Use this instead of asm("") */ 
+int rrr_slow_noop (void);
+
 #endif /* RRR_GNU_H */
