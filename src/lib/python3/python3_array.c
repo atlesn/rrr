@@ -22,11 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <structmember.h>
 
-#include "linked_list.h"
-#include "python3_module_common.h"
 #include "python3_array.h"
-#include "type.h"
-#include "log.h"
+#include "python3_module_common.h"
+#include "../linked_list.h"
+#include "../type.h"
+#include "../log.h"
 
 struct rrr_python3_array_value_data;
 struct rrr_python3_array_data;

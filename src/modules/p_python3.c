@@ -29,12 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/python3/python3.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/python3.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_addr.h"
 #include "../lib/ip_buffer_entry.h"

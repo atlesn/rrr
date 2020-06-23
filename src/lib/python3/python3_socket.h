@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Python.h>
 
-#include "rrr_socket_msg.h"
+#include "../rrr_socket_msg.h"
 
 // Tell a python3 fork to start calling it's function continuously without
 // sending data to it

@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 
 #include "python3_common.h"
-#include "log.h"
+#include "../log.h"
 
 PyObject *rrr_py_import_object (PyObject *dictionary, const char *symbol) {
 	PyObject *res = PyDict_GetItemString(dictionary, symbol);

@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_COMMON_H
 #define RRR_PYTHON3_COMMON_H
 
-#include "../global.h"
-#include "log.h"
+#include "../log.h"
+#include "../../global.h"
 
 // #define RRR_PYTHON3_DEBUG_REFCOUNT
 

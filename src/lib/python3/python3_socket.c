@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "vl_time.h"
+#include "../vl_time.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -29,24 +29,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
+
+// Keep these above unistd.h and Python.h
+#include "python3_common.h"
+#include "python3_module.h"
+#include "python3_module_common.h"
+#include "python3_setting.h"
+#include "python3_socket.h"
+#include "python3_vl_message.h"
 #include <unistd.h>
 #include <Python.h>
-#include <read.h>
 
-#include "log.h"
-#include "python3_common.h"
-#include "python3_module_common.h"
-#include "python3_vl_message.h"
-#include "python3_module.h"
-#include "python3_socket.h"
-#include "python3_setting.h"
-#include "rrr_socket.h"
-#include "messages.h"
-#include "message_addr.h"
-#include "settings.h"
-#include "read.h"
-#include "mmap_channel.h"
-#include "../../config.h"
+#include "../read.h"
+#include "../log.h"
+#include "../rrr_socket.h"
+#include "../messages.h"
+#include "../message_addr.h"
+#include "../settings.h"
+#include "../read.h"
+#include "../mmap_channel.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD

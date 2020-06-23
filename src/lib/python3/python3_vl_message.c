@@ -22,16 +22,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <structmember.h>
 
+#include "python3_array.h"
 #include "python3_module_common.h"
 #include "python3_vl_message.h"
-#include "python3_array.h"
-#include "rrr_socket_msg.h"
-#include "messages.h"
-#include "array.h"
-#include "fixed_point.h"
-#include "vl_time.h"
-#include "message_addr.h"
-#include "log.h"
+#include "../rrr_socket_msg.h"
+#include "../messages.h"
+#include "../array.h"
+#include "../fixed_point.h"
+#include "../vl_time.h"
+#include "../message_addr.h"
+#include "../log.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;

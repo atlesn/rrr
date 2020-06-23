@@ -24,11 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 #include <structmember.h>
 
-#include "log.h"
-#include "settings.h"
 #include "python3_common.h"
 #include "python3_module_common.h"
 #include "python3_setting.h"
+#include "../log.h"
+#include "../settings.h"
 
 struct rrr_python3_setting_data {
 	PyObject_HEAD

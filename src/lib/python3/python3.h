@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Python.h>
 
-#include "../../build_directory.h"
-#include "linked_list.h"
+#include "../linked_list.h"
+#include "../../../build_directory.h"
 
 struct rrr_socket_msg;
 struct rrr_setting_packed;

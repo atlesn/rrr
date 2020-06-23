@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <Python.h>
 
-#include "../lib/python3_module.h"
+#include "../lib/python3/python3_module.h"
 
 int main (int argc, const char **argv) {
 	(void)(argc); (void)(argv);
