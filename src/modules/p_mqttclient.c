@@ -65,8 +65,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 #define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
+
 #define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
 #define RRR_MQTT_CLIENT_KEEP_ALIVE 30
+
+// Number of incomplete PUBLISH QoS before we stop polling from other modules. This
+// limit is needed because operation gets extremely slow when to to_remote buffer
+// fills up in mqtt session_ram framework
+#define RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT 500
+
+// Hard limit to stop before things go really wrong
+#define RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT 2000
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
@@ -1411,8 +1420,9 @@ static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 			break;
 		}
 
+		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
 		int something_happened = 0;
-		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
+		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_0("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
@@ -1490,7 +1500,9 @@ static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_sta
 
 static void mqttlient_update_stats (
 		struct mqtt_client_data *data,
-		struct rrr_stats_instance *stats
+		struct rrr_stats_instance *stats,
+		int to_remote_buffer_size,
+		int to_remote_unacknowledged_publish
 ) {
 
 	if (stats->stats_handle == 0) {
@@ -1506,9 +1518,11 @@ static void mqttlient_update_stats (
 	// regardless of their origin. We therefore count it in the module poll callback function.
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
 
-
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_usleep", 0, data->total_usleep_count);
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_ticks", 0, data->total_ticks_count);
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "to_remote_buffer", 0, to_remote_buffer_size);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "to_remote_unack", 0, to_remote_unacknowledged_publish);
 
 	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
@@ -1646,15 +1660,22 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	// Main loop
+
+	// Defaults to 1, is set to 0 when to many PUBLISH are undelivered
+	int poll_allowed = 1;
+
 	unsigned int consecutive_nothing_happened = 0;
+
 	uint64_t prev_stats_time = rrr_time_get_64();
+
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
 		int send_allowed = 0;
-		if (rrr_mqtt_client_connection_check_alive(
+
+		if (rrr_mqtt_client_connection_check_alive (
 				&alive,
 				&send_allowed,
 				data->mqtt_client_data,
@@ -1673,13 +1694,36 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 		int something_happened = 0;
 
+		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
+
 		RRR_BENCHMARK_IN(mqtt_client_tick);
-		if (rrr_mqtt_client_synchronized_tick(&something_happened, data->mqtt_client_data) != 0) {
+		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
 		}
 		RRR_BENCHMARK_OUT(mqtt_client_tick);
+
+		if (counters.incomplete_qos_publish_counter > RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT ||
+			counters.buffer_size > RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT
+		) {
+			if (poll_allowed == 1) {
+				RRR_DBG_2("Polling disabled in MQTT client instance %s, %u PUBLISH with QOS undelivered as this time with buffer size %u\n",
+						INSTANCE_D_NAME(thread_data),
+						counters.incomplete_qos_publish_counter,
+						counters.buffer_size
+				);
+			}
+			poll_allowed = 0;
+		}
+		else if (poll_allowed == 0) {
+			if (counters.incomplete_qos_publish_counter < (RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT / 2) &&
+				counters.buffer_size < (RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT / 2)
+			) {
+				RRR_DBG_2("Polling re-enabled in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
+				poll_allowed = 1;
+			}
+		}
 
 		RRR_BENCHMARK_IN(mqtt_client_deliver);
 		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data) != 0) {
@@ -1689,25 +1733,37 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		}
 		RRR_BENCHMARK_OUT(mqtt_client_deliver);
 
+		// When adjusting sleep algorithm, test throughput properly afterwards with different configurations
+
+		int poll_sleep = 0;
+
 		if (something_happened == 0) {
 			if (++consecutive_nothing_happened > 100) {
-				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				rrr_posix_usleep (50000); // 50 ms
-				data->total_usleep_count++;
-				RRR_BENCHMARK_OUT(mqtt_client_sleep);
-			}
-			if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-				rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, 0);
-				startup_time = 0;
+				poll_sleep = 30;
 			}
 		}
 		else {
 			consecutive_nothing_happened = 0;
 		}
+
+		if (poll_allowed == 1 && (time_now > startup_time)) {
+			if (poll_sleep > 0) {
+				data->total_usleep_count++;
+			}
+			RRR_BENCHMARK_IN(mqtt_client_sleep);
+			rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, poll_sleep);
+			RRR_BENCHMARK_OUT(mqtt_client_sleep);
+		}
+
 		data->total_ticks_count++;
 
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
-			mqttlient_update_stats(data, stats);
+			mqttlient_update_stats (
+					data,
+					stats,
+					counters.buffer_size,
+					counters.incomplete_qos_publish_counter
+			);
 			prev_stats_time = rrr_time_get_64();
 		}
 	}

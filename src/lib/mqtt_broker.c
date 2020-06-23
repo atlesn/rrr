@@ -1051,7 +1051,15 @@ int rrr_mqtt_broker_synchronized_tick (
 		goto out;
 	}
 
-	if ((ret = rrr_mqtt_common_read_parse_handle (something_happened, &data->mqtt_data, NULL, NULL)) != 0) {
+	struct rrr_mqtt_session_iterate_send_queue_counters session_iterate_counters = {0};
+
+	if ((ret = rrr_mqtt_common_read_parse_handle (
+			&session_iterate_counters,
+			something_happened,
+			&data->mqtt_data,
+			NULL,
+			NULL
+	)) != 0) {
 		goto out;
 	}
 

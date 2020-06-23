@@ -807,6 +807,7 @@ static int __rrr_mqtt_client_exceeded_keep_alive_callback (struct rrr_mqtt_conn 
 }
 
 int rrr_mqtt_client_synchronized_tick (
+		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
 		int *something_happened,
 		struct rrr_mqtt_client_data *data
 ) {
@@ -817,6 +818,7 @@ int rrr_mqtt_client_synchronized_tick (
 	};
 
 	if ((ret = rrr_mqtt_common_read_parse_handle (
+			session_counters,
 			something_happened,
 			&data->mqtt_data,
 			__rrr_mqtt_client_exceeded_keep_alive_callback,

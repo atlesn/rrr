@@ -192,21 +192,24 @@ struct rrr_mqtt_p_payload {
 // locally, and the parameters are disregarded by the packet framework. In normal
 // operations, packets are stored in FIFO buffers in which these parameters are not used.
 
+// Keep values used during iteration together at the top
+
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
-	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
-	uint8_t dup;														\
+	uint8_t is_outbound;												\
+	uint16_t packet_identifier;											\
+	uint64_t last_attempt;												\
+	uint64_t planned_expiry_time;										\
 	uint8_t reason_v5;													\
+	uint8_t dup;														\
+	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	const struct rrr_mqtt_p_reason *reason;								\
 	int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id);	\
 	void *release_packet_id_arg1;										\
 	void *release_packet_id_arg2;										\
-	uint16_t packet_identifier;											\
 	uint64_t create_time;												\
-	uint64_t last_attempt;												\
-	uint64_t planned_expiry_time;										\
 	char *_assembled_data;												\
 	ssize_t assembled_data_size;										\
 	ssize_t received_size;												\
@@ -435,7 +438,6 @@ struct rrr_mqtt_p_publish {
 	struct rrr_mqtt_property_collection user_properties;
 	struct rrr_mqtt_property_collection subscription_ids;
 
-	int is_outbound;
 	struct rrr_mqtt_p_qos_packets qos_packets;
 
 	/* Memory of these are managed in the properties field */

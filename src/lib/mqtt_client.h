@@ -110,6 +110,7 @@ int rrr_mqtt_client_new (
 		void *packet_parsed_handler_arg
 );
 int rrr_mqtt_client_synchronized_tick (
+		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,
 		int *something_happened,
 		struct rrr_mqtt_client_data *data
 );

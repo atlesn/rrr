@@ -30,6 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 #include "mqtt_acl.h"
 
+#define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
+#define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
+
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
 		.session_expiry							= 0,
 		.receive_maximum						= 0,
@@ -1019,6 +1022,7 @@ static int __rrr_mqtt_common_read_parse_handle (
 	if ((ret = rrr_mqtt_conn_iterator_ctx_read (
 			handle,
 			RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE,
+			RRR_MQTT_COMMON_READ_PER_ROUND_MAX,
 			__rrr_mqtt_common_handle_packet_callback,
 			data
 	)) != 0) {
@@ -1055,6 +1059,7 @@ int rrr_mqtt_common_send_from_sessions_callback (
 }
 
 static int __rrr_mqtt_common_send (
+		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_data *data
 ) {
@@ -1072,11 +1077,12 @@ static int __rrr_mqtt_common_send (
 	};
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
 			data->sessions->methods->iterate_send_queue (
+					counters,
 					data->sessions,
 					&connection->session,
 					rrr_mqtt_common_send_from_sessions_callback,
 					&callback_data,
-					50	// <-- max count
+					RRR_MQTT_COMMON_SEND_PER_ROUND_MAX
 			),
 			goto out,
 			"while iterating session send queue"
@@ -1090,6 +1096,7 @@ struct rrr_mqtt_common_read_parse_handle_callback_data {
 	struct rrr_mqtt_data *data;
 	struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data housekeeping_data;
 	int something_happened;
+	struct rrr_mqtt_session_iterate_send_queue_counters *counters;
 };
 
 static int __rrr_mqtt_common_read_parse_handle_callback (
@@ -1102,6 +1109,7 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
 	struct rrr_mqtt_common_read_parse_handle_callback_data *callback_data = arg;
+	struct rrr_mqtt_session_iterate_send_queue_counters *counters = callback_data->counters;
 
 	uint64_t prev_bytes_read = handle->bytes_read_total;
 	uint64_t prev_bytes_written = handle->bytes_written_total;
@@ -1120,7 +1128,11 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 		callback_data->something_happened = 1;
 	}
 
-	if ((ret = __rrr_mqtt_common_send(handle, callback_data->data)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
+	if ((ret = __rrr_mqtt_common_send (
+			counters,
+			handle,
+			callback_data->data
+	)) != 0 && (ret != RRR_MQTT_INCOMPLETE)) {
 		if ((ret & RRR_MQTT_INTERNAL_ERROR) == RRR_MQTT_INTERNAL_ERROR) {
 			RRR_MSG_0("Internal error in __rrr_mqtt_common_read_parse_handle_callback while sending\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;
@@ -1154,6 +1166,7 @@ static int __rrr_mqtt_common_read_parse_handle_callback (
 }
 
 int rrr_mqtt_common_read_parse_handle (
+		struct rrr_mqtt_session_iterate_send_queue_counters *session_iterate_counters,
 		int *something_happened,
 		struct rrr_mqtt_data *data,
 		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
@@ -1164,7 +1177,8 @@ int rrr_mqtt_common_read_parse_handle (
 	struct rrr_mqtt_common_read_parse_handle_callback_data callback_data = {
 			data,
 			{ exceeded_keep_alive_callback, callback_arg },
-			0
+			0,
+			session_iterate_counters
 	};
 
 	ret |= rrr_mqtt_transport_iterate (

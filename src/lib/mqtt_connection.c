@@ -636,6 +636,7 @@ static int __rrr_mqtt_conn_read_complete_callback (
 int rrr_mqtt_conn_iterator_ctx_read (
 		struct rrr_net_transport_handle *handle,
 		int read_step_max_size,
+		int read_per_round_max,
 		int (*handler_callback) (
 				struct rrr_net_transport_handle *handle,
 				struct rrr_mqtt_p *packet,
@@ -658,7 +659,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 
 	// TODO : Make this better
 	// Do this 60 times as we send 50 packets at a time (10 more)
-	for (int i = 0; i < 60; i++) {
+	for (int i = 0; i < read_per_round_max; i++) {
 		uint64_t prev_bytes_read = handle->bytes_read_total;
 
 		if ((ret = rrr_net_transport_ctx_read_message (

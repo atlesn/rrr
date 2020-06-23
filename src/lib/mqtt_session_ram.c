@@ -843,7 +843,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		session_expiry = node->session_properties.session_expiry;
 		__rrr_mqtt_session_ram_heartbeat_unlocked(node);
 
-		uint64_t publish_grace_queue_iteration_interval_usec = node->complete_publish_grace_time * 1000 * 1000;
+		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
 		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {
 			node->prev_publish_grace_queue_iteration = time_now;
 			do_iterate_publish_grace_queue = 1;
@@ -1949,15 +1949,6 @@ static int __rrr_mqtt_session_ram_receive_publish (
 	return ret;
 }
 
-struct iterate_send_queue_callback_data_counters {
-		unsigned int maintain_deleted_counter;
-		unsigned int maintain_ack_complete_counter;
-		unsigned int maintain_ack_missing_counter;
-		unsigned int counter;
-		unsigned int incomplete_qos_publish_counter;
-		unsigned int incomplete_qos_publish_max_reached_counter;
-};
-
 struct iterate_send_queue_callback_data {
 		int (*callback)(struct rrr_mqtt_p *packet, void *arg);
 		void *callback_arg;
@@ -1966,7 +1957,7 @@ struct iterate_send_queue_callback_data {
 		unsigned int send_max;
 		struct rrr_mqtt_session_collection_ram_data *ram_data;
 		struct rrr_mqtt_session_ram *ram_session;
-		struct iterate_send_queue_callback_data_counters counters;
+		struct rrr_mqtt_session_iterate_send_queue_counters *counters;
 };
 
 static int __rrr_mqtt_session_ram_maintain_packet_maintain_unlocked (
@@ -1975,7 +1966,7 @@ static int __rrr_mqtt_session_ram_maintain_packet_maintain_unlocked (
 ) {
 	int ret = RRR_FIFO_OK;
 
-	struct iterate_send_queue_callback_data_counters *counters = &iterate_callback_data->counters;
+	struct rrr_mqtt_session_iterate_send_queue_counters *counters = iterate_callback_data->counters;
 
 	if (packet->last_attempt == 0) {
 		goto out;
@@ -2070,7 +2061,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 	(void)(size);
 
 	struct iterate_send_queue_callback_data *iterate_callback_data = arg;
-	struct iterate_send_queue_callback_data_counters *counters = &iterate_callback_data->counters;
+	struct rrr_mqtt_session_iterate_send_queue_counters *counters = iterate_callback_data->counters;
 	struct rrr_mqtt_p *packet = (struct rrr_mqtt_p *) data;
 
 	RRR_MQTT_P_LOCK(packet);
@@ -2201,7 +2192,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 		goto out_unlock;
 	}
 
-	if (++counters->counter > iterate_callback_data->send_max) {
+	if (++counters->sent_counter > iterate_callback_data->send_max) {
 		ret = RRR_FIFO_SEARCH_STOP;
 		goto out_unlock;
 	}
@@ -2248,6 +2239,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue_callback (RRR_FIFO_READ_CAL
 }
 
 static int __rrr_mqtt_session_ram_iterate_send_queue (
+		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		int (*callback)(struct rrr_mqtt_p *packet, void *arg),
@@ -2266,7 +2258,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			send_max,
 			ram_data,
 			ram_session,
-			{0}
+			counters
 	};
 
 	// (RE)TRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM US AND MAINTAIN
@@ -2277,15 +2269,17 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			0
 	);
 
-	if (	callback_data.counters.maintain_deleted_counter > 0 ||
-			callback_data.counters.maintain_ack_complete_counter > 0 ||
-			callback_data.counters.maintain_ack_missing_counter > 0
+	counters->buffer_size = rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer);
+
+	if (	counters->maintain_deleted_counter > 0 ||
+			counters->maintain_ack_complete_counter > 0 ||
+			counters->maintain_ack_missing_counter > 0
 	) {
 		RRR_DBG_3("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->to_remote_queue.buffer,
-				callback_data.counters.maintain_deleted_counter,
-				callback_data.counters.maintain_ack_complete_counter,
-				callback_data.counters.maintain_ack_missing_counter,
+				counters->maintain_deleted_counter,
+				counters->maintain_ack_complete_counter,
+				counters->maintain_ack_missing_counter,
 				rrr_fifo_buffer_get_entry_count(&ram_session->to_remote_queue.buffer));
 	}
 
@@ -2300,7 +2294,9 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 		goto out;
 	}
 
-	memset (&callback_data.counters, '\0', sizeof(callback_data.counters));
+	// The returned counters should only contain status of the to_remote buffer
+	struct rrr_mqtt_session_iterate_send_queue_counters counters_from_remote = {0};
+	callback_data.counters = &counters_from_remote;
 
 	// RETRANSMIT PACKETS IN WHICH PUBLISH ORIGINATIED FROM REMOTE AND MAINTAIN
 	ret = rrr_fifo_buffer_search (
@@ -2310,15 +2306,15 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			0
 	);
 
-	if (	callback_data.counters.maintain_deleted_counter > 0 ||
-			callback_data.counters.maintain_ack_complete_counter > 0 ||
-			callback_data.counters.maintain_ack_missing_counter > 0
+	if (	counters->maintain_deleted_counter > 0 ||
+			counters->maintain_ack_complete_counter > 0 ||
+			counters->maintain_ack_missing_counter > 0
 	) {
 		RRR_DBG_3("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->from_remote_queue.buffer,
-				callback_data.counters.maintain_deleted_counter,
-				callback_data.counters.maintain_ack_complete_counter,
-				callback_data.counters.maintain_ack_missing_counter,
+				counters->maintain_deleted_counter,
+				counters->maintain_ack_complete_counter,
+				counters->maintain_ack_missing_counter,
 				rrr_fifo_buffer_get_entry_count(&ram_session->from_remote_queue.buffer));
 	}
 

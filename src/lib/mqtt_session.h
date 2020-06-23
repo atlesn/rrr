@@ -70,14 +70,28 @@ struct rrr_mqtt_session_properties {
 // the argument to get_stats() or maintain the numbers in some other fashion
 // and fill the provided struct field by field
 struct rrr_mqtt_session_collection_stats {
-	uint64_t active;
-	uint64_t total_created;
-	uint64_t total_deleted;
-	uint64_t total_publish_received;
-	uint64_t total_publish_delivered;
-	uint64_t total_publish_forwarded;
-	uint64_t total_publish_not_forwarded;
-	uint64_t in_memory_sessions;
+		uint64_t active;
+		uint64_t total_created;
+		uint64_t total_deleted;
+		uint64_t total_publish_received;
+		uint64_t total_publish_delivered;
+		uint64_t total_publish_forwarded;
+		uint64_t total_publish_not_forwarded;
+		uint64_t in_memory_sessions;
+};
+
+// Note that numbers might be lower than actual numbers. When sent_counter
+// reaches maximum allowed send per round, iteration may stop and counters
+// will not get incremented. The buffer_size is however always the true
+// value, and is safer to use when throttling.
+struct rrr_mqtt_session_iterate_send_queue_counters {
+		unsigned int maintain_deleted_counter;
+		unsigned int maintain_ack_complete_counter;
+		unsigned int maintain_ack_missing_counter;
+		unsigned int incomplete_qos_publish_counter;
+		unsigned int incomplete_qos_publish_max_reached_counter;
+		unsigned int sent_counter;
+		unsigned int buffer_size;
 };
 
 // Session engines must implement these methods
@@ -167,11 +181,12 @@ struct rrr_mqtt_session_collection_methods {
 	// Iterate send queue of session. If force=1, return everything. If not,
 	// return only non-sent and messages with exceeded retry interval.
 	int (*iterate_send_queue) (
+			struct rrr_mqtt_session_iterate_send_queue_counters *counters,
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session_to_find,
 			int (*callback)(struct rrr_mqtt_p *packet, void *arg),
 			void *callback_arg,
-			unsigned int max_count
+			unsigned int send_max
 	);
 
 	// Act upon client disconnect event according to clean_session and
