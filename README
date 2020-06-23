@@ -220,23 +220,18 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
        
        my_global_variable = ""
 
-       def config(socket : rrr_socket, rrr_setting : setting):
+       def config(rrr_config: config):
             global my_global_variable
 
-            # retrieve some custom settings from configuration file. The get()
-            # will update the "was-used" flag in the setting.
-            print ("Received a setting: " + setting.name + "=" + setting.get())
-
-            # set a global variable
-            if setting.name == "my_setting":
-                 my_global_variable = setting.get()
-
-            # send settings back to update which have been read (optional)
-            socket.send(setting)
+            # retrieve a custom setting from the configuration file. The get()
+            # will update the "was-used" flag in the setting which stops a
+            # warning from being printed.
+            print ("Received configuration parameters")
+            my_global_variable = config.get("my_global_variable")
 
             return True
 
-       def process(socket : rrr_socket, message: rrr_message):
+       def process(socket: rrr_socket, message: rrr_message):
             # Return False if something is wrong
             if my_global_variable == "":
                  print("Error: configuration failure")
