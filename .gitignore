@@ -10,6 +10,7 @@
 /src/rrr_http_server
 /src/rrr_stats
 /src/rrr_passwd
+/src/rrr_auth
 /build_timestamp.h
 /build_directory.h
 input_data

@@ -7,3 +7,4 @@ send_ip
 .rrr_test.sock
 test.sh
 .test_composite.sh
+.rrr_test.passwd
