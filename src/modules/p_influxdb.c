@@ -71,7 +71,7 @@ int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *threa
 
 	memset (data, '\0', sizeof(*data));
 
-	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL) != 0) {
+	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL) != 0) {
 		RRR_MSG_0("Could not create transport in influxdb data_init\n");
 		ret = 1;
 		goto out;
@@ -311,7 +311,7 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int __receive_http_response (struct rrr_http_part *part, void *arg) {
+static int __receive_http_response (struct rrr_http_part *part, const char *data_ptr, void *arg) {
 	struct response_callback_data *data = arg;
 
 	int ret = 0;
@@ -337,8 +337,11 @@ struct send_data_callback_data {
 	int ret;
 };
 
-static void __send_data_callback (struct rrr_net_transport_handle *handle, void *arg) {
+static void __send_data_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
 	struct send_data_callback_data *callback_data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
 
 	struct influxdb_data *data = callback_data->data;
 	struct rrr_array *array = callback_data->array;

@@ -100,7 +100,6 @@ int __rrr_socket_holder_close_and_destroy(struct rrr_socket_holder *holder, int 
 	return 0;
 }
 
-
 int __rrr_socket_holder_new (
 		struct rrr_socket_holder **holder,
 		const char *creator,
@@ -352,11 +351,12 @@ int rrr_socket_bind_and_listen (
 int rrr_socket_open (
 		const char *filename,
 		int flags,
+		int mode,
 		const char *creator
 ) {
 	int fd = 0;
 	pthread_mutex_lock(&socket_lock);
-	fd = open(filename, flags);
+	fd = open(filename, flags, mode);
 
 	if (fd != -1) {
 		__rrr_socket_add_unlocked_basic(fd, creator);
@@ -364,6 +364,77 @@ int rrr_socket_open (
 
 	pthread_mutex_unlock(&socket_lock);
 	return fd;
+}
+
+int rrr_socket_open_and_read_file (
+		char **result,
+		ssize_t *result_bytes,
+		const char *filename,
+		int options,
+		int mode
+) {
+	int ret = 0;
+
+	*result = NULL;
+	*result_bytes = 0;
+
+	char *contents_tmp = NULL;
+	int fd = rrr_socket_open(filename, options, mode, "rrr_socket_open_and_read_full_file");
+
+	if (fd <= 0) {
+		RRR_MSG_0("Could not open file '%s' for reading: %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	ssize_t bytes = ret = lseek(fd, 0, SEEK_END);
+	if (ret == 0) {
+		goto out;
+	}
+	else if (ret < 0) {
+		RRR_MSG_0("Could not seek to end of file '%s': %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if (lseek(fd, 0, SEEK_SET) != 0) {
+		RRR_MSG_0("Could not seek to beginning of file '%s': %s\n",
+				filename, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	if ((contents_tmp = malloc(bytes + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_socket_open_and_read_full_file\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((ret = read(fd, contents_tmp, bytes)) != bytes) {
+		RRR_MSG_0("Could not read all bytes from file '%s', return was %i: %s\n",
+				filename, ret, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+
+	ret = 0;
+
+	// Make sure we allocate bytes + 1 above
+	contents_tmp[bytes] = '\0';
+
+	*result = contents_tmp;
+	*result_bytes = bytes;
+	contents_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(contents_tmp);
+	if (fd > 0) {
+		rrr_socket_close(fd);
+	}
+	return ret;
+
 }
 
 int rrr_socket (
@@ -601,8 +672,42 @@ int rrr_socket_unix_create_bind_and_listen (
 	}
 	return ret;
 }
+/*
+int rrr_socket_checksockopt (
+		int fd
+) {
+	int ret = RRR_SOCKET_OK;
 
-int rrr_socket_connect_nonblock_postcheck (
+	int error = 0;
+	socklen_t len = sizeof(error);
+	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
+		RRR_MSG_0("Error from getsockopt with fd %i: %s\n", fd, rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+	else if (error == 0) {
+		goto out;
+	}
+	else if (error == EINPROGRESS) {
+		ret = RRR_SOCKET_SOFT_ERROR;
+		goto out;
+	}
+	else if (error == ECONNREFUSED) {
+		RRR_MSG_0("Connection refused\n");
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+	else {
+		RRR_MSG_0("Unknown error from getsockopt(): %i\n", error);
+		ret = RRR_SOCKET_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+*/
+int rrr_socket_send_check (
 		int fd
 ) {
 	int ret = RRR_SOCKET_OK;
@@ -611,11 +716,11 @@ int rrr_socket_connect_nonblock_postcheck (
 		fd, POLLOUT, 0
 	};
 
-	int timeout = 5; // 5 ms
+	int timeout = 10; // 5 ms
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_MSG_0("Connection refused while connecting (POLLHUP)\n");
+			RRR_MSG_0("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -636,35 +741,9 @@ int rrr_socket_connect_nonblock_postcheck (
 	else if ((pollfd.revents & POLLOUT) != 0) {
 		goto out;
 	}
-	else if ((pollfd.revents & POLLOUT) == 0) {
+	else {
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
-	}
-	else {
-		int error = 0;
-		socklen_t len = sizeof(error);
-		if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len) == -1) {
-			RRR_MSG_0("Error from getsockopt while connecting: %s\n", rrr_strerror(errno));
-			ret = 1;
-			goto out;
-		}
-		else if (error == 0) {
-			goto out;
-		}
-		else if (error == EINPROGRESS) {
-			ret = RRR_SOCKET_SOFT_ERROR;
-			goto out;
-		}
-		else if (error == ECONNREFUSED) {
-			RRR_MSG_0("Connection refused while connecting\n");
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
-		}
-		else {
-			RRR_MSG_0("Unknown error while connecting: %i\n", error);
-			ret = RRR_SOCKET_HARD_ERROR;
-			goto out;
-		}
 	}
 
 	out:
@@ -675,12 +754,12 @@ int rrr_socket_connect_nonblock_postcheck_loop (
 		int fd,
 		uint64_t timeout_ms
 ) {
-	int ret = 0;
+	int ret = RRR_SOCKET_SOFT_ERROR;
 
 	uint64_t time_end = rrr_time_get_64() + timeout_ms;
 
 	while (rrr_time_get_64() < time_end) {
-		if ((ret = rrr_socket_connect_nonblock_postcheck(fd)) == 0) {
+		if ((ret = rrr_socket_send_check(fd)) == 0) {
 			goto out;
 		}
 		else if (ret == RRR_SOCKET_HARD_ERROR) {
@@ -816,7 +895,7 @@ int rrr_socket_sendto_nonblock (
 
 	retry:
 	if (--max_retries == 0) {
-		RRR_DBG_3("Max retries reached in rrr_socket_sendto for socket %i\n", fd);
+		RRR_DBG_3("Max retries reached in rrr_socket_sendto_nonblock for socket %i\n", fd);
 		ret = RRR_SOCKET_SOFT_ERROR;
 		goto out;
 	}
@@ -846,7 +925,7 @@ int rrr_socket_sendto_nonblock (
 				goto retry;
 			}
 			else {
-				RRR_MSG_0("Error from send(to) function in rrr_socket_sendto fd %i flags %i addr ptr %p addr len %i: %s\n",
+				RRR_MSG_0("Error from send(to) function in rrr_socket_sendto_nonblock fd %i flags %i addr ptr %p addr len %i: %s\n",
 						fd,
 						flags,
 						addr,

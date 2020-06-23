@@ -1497,7 +1497,9 @@ int rrr_udpstream_do_read_tasks (
 
 	int errors = 0;
 	do {
+		uint64_t bytes_read = 0;
 		if ((ret = rrr_socket_read_message_default (
+				&bytes_read,
 				&data->read_sessions,
 				data->ip.fd,
 				1024,

@@ -180,6 +180,8 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 	return ret;
 }
 
+// We have one loop per fork and one fork per configuration file
+// Parent fork only monitors child forks
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,

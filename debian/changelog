@@ -1,3 +1,30 @@
+rrr (1.3-1) buster; urgency=medium
+
+  * Improvements in MQTT to increase throughput
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Jun 2020 02:40:17 +0200
+
+rrr (1.3) buster; urgency=medium
+
+  * Added support for TLS in MQTT
+  * Added support for username and password authentication in MQTT
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 22 Jun 2020 23:52:31 +0200
+
+rrr (1.2-3) buster; urgency=medium
+
+  * Created max message size parameter in ip module and rrr_post
+  * Changed behaviour of SIGTERM
+  * Misc fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 08 Jun 2020 19:44:32 +0200
+
+rrr (1.2-2) buster; urgency=medium
+
+  * Improvements in TCP error handling
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 07 Jun 2020 19:04:45 +0200
+
 rrr (1.2-1) unstable; urgency=medium
 
   * Fix perl5 false warnings about unused settings

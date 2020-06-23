@@ -250,7 +250,8 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	else {
 		struct rrr_read_common_get_session_target_length_from_array_data callback_data = {
 				&data->definitions,
-				data->do_sync_byte_by_byte
+				data->do_sync_byte_by_byte,
+				0 // TODO : Set max size?
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,

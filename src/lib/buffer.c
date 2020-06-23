@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "slow_noop.h"
 
-#define RRR_FIFO_BUFFER_DEBUG 1
+//#define RRR_FIFO_BUFFER_DEBUG 1
 
 static inline void rrr_fifo_write_lock(struct rrr_fifo_buffer *buffer) {
 //	printf ("buffer %p write lock wait thread %lu\n", buffer, pthread_self());
@@ -116,9 +116,9 @@ static int __rrr_fifo_verify_counter(struct rrr_fifo_buffer *buffer) {
 #else
 
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK() \
-	(void)(void)
+	do { } while (0)
 #define RRR_FIFO_BUFFER_CONSISTENCY_CHECK_WRITE_LOCK() \
-	(void)(void)
+	do { } while (0)
 
 #endif
 
@@ -1216,8 +1216,10 @@ int rrr_fifo_buffer_write (
 		__rrr_fifo_buffer_do_ratelimit(buffer);
 	} while (write_again);
 
-	RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
-			buffer, entry_count_before, entry_count_after);
+	if (entry_count_before != 0 || entry_count_after != 0) {
+		RRR_DBG_4("buffer %p write loop complete, %i entries before %i after writing (some might have been removed)\n",
+				buffer, entry_count_before, entry_count_after);
+	}
 
 //	VL_DEBUG_MSG_4 ("New buffer entry %p data %p\n", entry, entry->data);
 

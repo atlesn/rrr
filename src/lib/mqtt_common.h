@@ -24,36 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "mqtt_connection.h"
 #include "mqtt_session.h"
+#include "read_constants.h"
 
-#define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE 4096
-#define RRR_MQTT_COMMON_CLOSE_WAIT_TIME 3
-#define RRR_MQTT_COMMON_RETRY_INTERVAL 5
-#define RRR_MQTT_COMMON_MAX_CONNECTIONS 260
+#define RRR_MQTT_OK						RRR_READ_OK
+#define RRR_MQTT_INTERNAL_ERROR			RRR_READ_HARD_ERROR
+#define RRR_MQTT_SOFT_ERROR				RRR_READ_SOFT_ERROR
+#define RRR_MQTT_INCOMPLETE				RRR_READ_INCOMPLETE
 
-#define RRR_MQTT_COMMON_CONN_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_destroy,ret_soft,ret_hard) \
-	do {if (ret_tmp != RRR_MQTT_CONN_OK) {							\
-		if ((ret_tmp & RRR_MQTT_CONN_DESTROY_CONNECTION) != 0) {	\
-			ret_tmp &= ~RRR_MQTT_CONN_DESTROY_CONNECTION;			\
-			ret_final |= ret_destroy;								\
-		}															\
-		if ((ret_tmp & RRR_MQTT_CONN_SOFT_ERROR) != 0) {			\
-			RRR_MSG_0("Soft connection error " msg_on_err "\n");	\
-			ret_tmp &= ~RRR_MQTT_CONN_SOFT_ERROR;					\
-			ret_final |= ret_soft;									\
-		}															\
-		if ((ret_tmp & RRR_MQTT_CONN_BUSY) != 0) {					\
-			ret_tmp &= ~RRR_MQTT_CONN_BUSY;							\
-		}															\
-		if (ret_tmp != RRR_MQTT_CONN_OK) {							\
-			RRR_MSG_0("Internal connection error " msg_on_err		\
-				" (return was %i)\n", ret_tmp);						\
-			ret_final |= ret_hard;									\
-			goto_or_break_hard;										\
-		}															\
-		goto_or_break_soft;											\
-	}} while(0)
+#define RRR_MQTT_SYNCHRONIZED_READ_STEP_MAX_SIZE	4096
+#define RRR_MQTT_COMMON_CLOSE_WAIT_TIME				3
+#define RRR_MQTT_COMMON_RETRY_INTERVAL				5
+#define RRR_MQTT_COMMON_MAX_CONNECTIONS				260
 
 #define RRR_MQTT_COMMON_SESSION_CHECK_RETURN(ret_final,msg_on_err,goto_or_break_soft,goto_or_break_hard,ret_soft,ret_deleted,ret_hard) \
 	do {if (ret_tmp != 0) {											\
@@ -92,19 +74,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		goto_or_break_soft;											\
 	}} while(0)
 
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
-	do { int ret_tmp = function;									\
-		RRR_MQTT_COMMON_CONN_CHECK_RETURN(							\
-			ret_final,												\
-			msg_on_err,												\
-			goto_or_break_soft,										\
-			goto_or_break_hard,										\
-			RRR_MQTT_CONN_DESTROY_CONNECTION,						\
-			RRR_MQTT_CONN_SOFT_ERROR,								\
-			RRR_MQTT_CONN_INTERNAL_ERROR							\
-		);															\
-	} while(0)
-
 #define RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
 	do { int ret_tmp = function;									\
 		RRR_MQTT_COMMON_SESSION_CHECK_RETURN(						\
@@ -118,19 +87,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		);															\
 	} while(0)
 
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
-	do { int ret_tmp = function;									\
-		RRR_MQTT_COMMON_CONN_CHECK_RETURN(							\
-			ret_final,												\
-			msg_on_err,												\
-			goto_or_break_soft,										\
-			goto_or_break_hard,										\
-			RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP,				\
-			RRR_FIFO_CALLBACK_ERR|RRR_FIFO_SEARCH_STOP,				\
-			RRR_FIFO_SEARCH_STOP|RRR_FIFO_GLOBAL_ERR				\
-		);															\
-	} while(0)
-
 #define RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
 	do { int ret_tmp = function;									\
 	RRR_MQTT_COMMON_SESSION_CHECK_RETURN(							\
@@ -138,9 +94,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		msg_on_err,													\
 		goto_or_break_soft,											\
 		goto_or_break_hard,											\
-		RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,	\
-		RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,	\
-		RRR_MQTT_CONN_INTERNAL_ERROR								\
+		RRR_MQTT_SOFT_ERROR,										\
+		RRR_MQTT_SOFT_ERROR,										\
+		RRR_MQTT_INTERNAL_ERROR										\
 	); } while(0)
 
 #define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_CONN_ERRORS(function,ret_final,goto_or_break_soft,goto_or_break_hard,msg_on_err) \
@@ -150,8 +106,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			msg_on_err,												\
 			goto_or_break_soft,										\
 			goto_or_break_hard,										\
-			RRR_MQTT_CONN_DESTROY_CONNECTION|RRR_MQTT_CONN_SOFT_ERROR,\
-			RRR_MQTT_CONN_INTERNAL_ERROR							\
+			RRR_MQTT_DESTROY_CONNECTION|RRR_MQTT_SOFT_ERROR,\
+			RRR_MQTT_INTERNAL_ERROR							\
 		);															\
 	} while(0)
 
@@ -167,14 +123,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		);															\
 	} while(0)
 
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_GENERAL(function,goto,msg_on_err) \
-		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN(function,ret,goto,goto,msg_on_err)
-
 #define RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN_GENERAL(function,goto,msg_on_err) \
 		RRR_MQTT_COMMON_CALL_SESSION_AND_CHECK_RETURN(function,ret,goto,goto,msg_on_err)
-
-#define RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS_GENERAL(function,goto,msg_on_err) \
-		RRR_MQTT_COMMON_CALL_CONN_AND_CHECK_RETURN_TO_FIFO_ERRORS(function,ret,goto,goto,msg_on_err)
 
 #define RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(function,goto,msg_on_err) \
 		RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS(function,ret,goto,goto,msg_on_err)
@@ -185,30 +135,51 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS_GENERAL(function,goto,msg_on_err) \
 		RRR_MQTT_COMMON_CALL_FIFO_CHECK_RETURN_TO_SESSION_ERRORS(function,ret,goto,goto,msg_on_err)
 
-struct rrr_ip_accept_data;
+struct rrr_net_transport;
+struct rrr_net_transport_handle;
 struct rrr_mqtt_data;
+struct rrr_mqtt_conn;
 struct rrr_mqtt_p_publish;
 
-#define RRR_MQTT_TYPE_HANDLER_DEFINITION \
-		struct rrr_mqtt_data *mqtt_data, \
-		struct rrr_mqtt_conn *connection, \
+#define RRR_MQTT_TYPE_HANDLER_DEFINITION		\
+		struct rrr_mqtt_data *mqtt_data,		\
+		struct rrr_net_transport_handle *handle,\
 		struct rrr_mqtt_p *packet
 
 struct rrr_mqtt_type_handler_properties {
 	int (*handler)(RRR_MQTT_TYPE_HANDLER_DEFINITION);
 };
 
+#define RRR_MQTT_EVENT_HANDLER_DEFINITION		\
+		struct rrr_mqtt_conn *connection,		\
+		int event,								\
+		void *static_arg,						\
+		void *arg
+
+#define RRR_MQTT_ACL_HANDLER_DEFINITION			\
+		struct rrr_mqtt_conn *connection,		\
+		struct rrr_mqtt_p *packet,				\
+		void *arg
+
+struct rrr_mqtt_common_accept_and_connect_callback_data {
+		int transport_handle;
+		uint64_t close_wait_time_usec;
+		int (*event_handler)(RRR_MQTT_EVENT_HANDLER_DEFINITION);
+		void *event_handler_arg;
+};
+
 struct rrr_mqtt_data {
-	struct rrr_mqtt_conn_collection connections;
+	struct rrr_mqtt_transport *transport;
 	const struct rrr_mqtt_type_handler_properties *handler_properties;
-	int (*event_handler)(
-			struct rrr_mqtt_conn *connection,
-			int event,
-			void *static_arg,
-			void *arg
-	);
 	char *client_name;
+	int (*event_handler)(
+			RRR_MQTT_EVENT_HANDLER_DEFINITION
+	);
 	void *event_handler_static_arg;
+	int (*acl_handler)(
+			RRR_MQTT_ACL_HANDLER_DEFINITION
+	);
+	void *acl_handler_arg;
 	struct rrr_mqtt_session_collection *sessions;
 	uint64_t retry_interval_usec;
 	uint64_t close_wait_time_usec;
@@ -222,7 +193,7 @@ struct rrr_mqtt_common_init_data {
 };
 
 struct rrr_mqtt_send_from_sessions_callback_data {
-	struct rrr_mqtt_conn *connection;
+	struct rrr_net_transport_handle *handle;
 };
 
 #define MQTT_COMMON_CALL_SESSION_HEARTBEAT(mqtt,session) \
@@ -253,6 +224,11 @@ extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_
 
 void rrr_mqtt_common_data_destroy (struct rrr_mqtt_data *data);
 void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
+int rrr_mqtt_common_clear_session_from_connections (
+		struct rrr_mqtt_data *data,
+		const struct rrr_mqtt_session *session_to_remove,
+		int disregard_transport_handle
+);
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_type_handler_properties *handler_properties,
@@ -260,7 +236,9 @@ int rrr_mqtt_common_data_init (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg,
 		int (*event_handler)(struct rrr_mqtt_conn *connection, int event, void *static_arg, void *arg),
-		void *event_handler_static_arg
+		void *event_handler_static_arg,
+		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
+		void *acl_handler_arg
 );
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		const struct rrr_mqtt_property *property,
@@ -288,19 +266,19 @@ int rrr_mqtt_common_handle_properties (
 			(struct rrr_mqtt_common_parse_properties_data*) &callback_data,							\
 			&reason_v5																				\
 	)) != 0) {																						\
-		if ((ret & RRR_MQTT_CONN_SOFT_ERROR) != 0) {												\
+		if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {												\
 			RRR_MSG_0("Soft error while iterating %s properties\n",								\
 					RRR_MQTT_P_GET_TYPE_NAME(packet));												\
-			ret = ret & ~(RRR_MQTT_CONN_SOFT_ERROR);												\
+			ret = ret & ~(RRR_MQTT_SOFT_ERROR);												\
 		}																							\
 		if (ret != 0) {																				\
-			ret = RRR_MQTT_CONN_INTERNAL_ERROR;														\
+			ret = RRR_MQTT_INTERNAL_ERROR;														\
 			RRR_MSG_0("Internal error while iterating %s properties, return was %i\n",				\
 					RRR_MQTT_P_GET_TYPE_NAME(packet), ret);											\
 			goto out;																				\
 		}																							\
 																									\
-		ret = RRR_MQTT_CONN_SOFT_ERROR;																\
+		ret = RRR_MQTT_SOFT_ERROR;																\
 		action_on_error;																			\
 	}} while(0)
 
@@ -314,6 +292,8 @@ int rrr_mqtt_common_send_from_sessions_callback (
 		void *arg
 );
 int rrr_mqtt_common_read_parse_handle (
+		struct rrr_mqtt_session_iterate_send_queue_counters *counters,
+		int *something_happened,
 		struct rrr_mqtt_data *data,
 		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg),
 		void *callback_arg

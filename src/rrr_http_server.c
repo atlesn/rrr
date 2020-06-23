@@ -415,6 +415,7 @@ void __rrr_net_http_server_worker_close_transport (void *arg) {
 
 int __rrr_net_http_server_worker_http_session_receive_callback (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		void *arg
 ) {
 	return 0;
@@ -602,7 +603,7 @@ int main (int argc, const char *argv[]) {
 	int https_handle = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL)) != 0) {
+		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL)) != 0) {
 			RRR_MSG_0("Could not create HTTP transport\n");
 			goto out;
 		}
@@ -623,7 +624,9 @@ int main (int argc, const char *argv[]) {
 				RRR_NET_TRANSPORT_TLS,
 				(data.ssl_no_cert_verify ? RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY : 0),
 				data.certificate_file,
-				data.private_key_file
+				data.private_key_file,
+				NULL,
+				NULL
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTPS transport\n");
 			goto out;

@@ -100,6 +100,7 @@ int rrr_read_session_destroy (
 		struct rrr_read_session *read_session
 );
 int rrr_read_message_using_callbacks (
+		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
@@ -171,6 +172,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum (
 struct rrr_read_common_get_session_target_length_from_array_data {
 	const struct rrr_array *definition;
 	int do_byte_by_byte_sync;
+	unsigned int message_max_size;
 };
 int rrr_read_common_get_session_target_length_from_array (
 		struct rrr_read_session *read_session,

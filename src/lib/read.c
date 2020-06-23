@@ -143,6 +143,7 @@ void rrr_read_session_collection_remove_session (
 }
 
 int rrr_read_message_using_callbacks (
+		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
 		int read_flags,
@@ -181,6 +182,8 @@ int rrr_read_message_using_callbacks (
 		void *functions_callback_arg
 ) {
 	int ret = RRR_READ_OK;
+
+	*bytes_read = 0;
 
 	ssize_t bytes = 0;
 	char buf[read_step_max_size];
@@ -274,6 +277,7 @@ int rrr_read_message_using_callbacks (
 
 	/* Check for expansion of buffer */
 	if (bytes > 0) {
+		*bytes_read = bytes;
 		if (bytes + read_session->rx_buf_wpos > read_session->rx_buf_size) {
 			ssize_t new_size = read_session->rx_buf_size + (bytes > read_step_max_size ? bytes : read_step_max_size);
 			char *new_buf = realloc(read_session->rx_buf_ptr, new_size);
@@ -363,7 +367,7 @@ int rrr_read_message_using_callbacks (
 		if (function_complete_callback != NULL) {
 			ret = function_complete_callback (read_session, functions_callback_arg);
 			if (ret != 0) {
-				RRR_MSG_0("Error from callback in rrr_read_message_using_callbacks\n");
+				RRR_MSG_0("Error %i from complete callback in rrr_read_message_using_callbacks\n", ret);
 				goto out;
 			}
 
@@ -554,6 +558,14 @@ int rrr_read_common_get_session_target_length_from_array (
 
 	char *pos = read_session->rx_buf_ptr;
 	ssize_t wpos = read_session->rx_buf_wpos;
+
+//	printf ("Array wpos: %li\n", wpos);
+
+	if (data->message_max_size != 0 && wpos > data->message_max_size) {
+		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%u>%li)\n",
+				wpos, data->message_max_size);
+		return RRR_READ_SOFT_ERROR;
+	}
 
 	ssize_t import_length = 0;
 	ssize_t skipped_bytes = 0;

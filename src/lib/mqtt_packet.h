@@ -192,21 +192,24 @@ struct rrr_mqtt_p_payload {
 // locally, and the parameters are disregarded by the packet framework. In normal
 // operations, packets are stored in FIFO buffers in which these parameters are not used.
 
+// Keep values used during iteration together at the top
+
 #define RRR_MQTT_P_PACKET_HEADER										\
 	RRR_MQTT_P_STANDARIZED_USERCOUNT_HEADER;							\
-	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	pthread_mutex_t data_lock;											\
 	uint8_t type_flags;													\
-	uint8_t dup;														\
+	uint8_t is_outbound;												\
+	uint16_t packet_identifier;											\
+	uint64_t last_attempt;												\
+	uint64_t planned_expiry_time;										\
 	uint8_t reason_v5;													\
+	uint8_t dup;														\
+	RRR_LL_NODE(struct rrr_mqtt_p);										\
 	const struct rrr_mqtt_p_reason *reason;								\
 	int (*release_packet_id_func)(void *arg1, void *arg2, uint16_t id);	\
 	void *release_packet_id_arg1;										\
 	void *release_packet_id_arg2;										\
-	uint16_t packet_identifier;											\
 	uint64_t create_time;												\
-	uint64_t last_attempt;												\
-	uint64_t planned_expiry_time;										\
 	char *_assembled_data;												\
 	ssize_t assembled_data_size;										\
 	ssize_t received_size;												\
@@ -277,7 +280,8 @@ static inline void rrr_mqtt_p_standardized_incref (void *arg) {
 	if (p->users == 0) {
 		RRR_BUG("Users was 0 in rrr_mqtt_p_standardized_incref\n");
 	}
-//	VL_DEBUG_MSG_3("INCREF %p users %i\n", p, (p)->users);
+// Noisy
+//	RRR_DBG_3("INCREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&p->refcount_lock);
 	p->users++;
 	pthread_mutex_unlock(&p->refcount_lock);
@@ -288,6 +292,7 @@ static inline void rrr_mqtt_p_standardized_decref (void *arg) {
 		return;
 	}
 	struct rrr_mqtt_p_standarized_usercount *p = arg;
+// Noisy
 //	RRR_DBG_3("DECREF %p users %i\n", p, (p)->users);
 	pthread_mutex_lock(&(p)->refcount_lock);
 	--(p)->users;
@@ -365,6 +370,10 @@ struct rrr_mqtt_p_connect {
 #define RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(p) 		(((1<<6) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 6)
 #define RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(p)		(((1<<7) &			((struct rrr_mqtt_p_connect *)(p))->connect_flags) >> 7)
 
+#define RRR_MQTT_P_CONNECT_SET_FLAG_PASSWORD(p) 		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<6))
+#define RRR_MQTT_P_CONNECT_SET_FLAG_USER_NAME(p)		(((struct rrr_mqtt_p_connect *)(p))->connect_flags|=(1<<7))
+
+
 struct rrr_mqtt_p_connack {
 	RRR_MQTT_P_PACKET_HEADER;
 
@@ -418,8 +427,8 @@ struct rrr_mqtt_p_publish {
 
 	/* These three are also accessible through packet type flags but we cache them here */
 	//uint8_t dup; <-- defined in header
-	uint8_t qos;
-	uint8_t retain;
+	//uint8_t qos;
+	//uint8_t retain;
 
 	struct rrr_mqtt_property_collection properties;
 
@@ -429,7 +438,6 @@ struct rrr_mqtt_p_publish {
 	struct rrr_mqtt_property_collection user_properties;
 	struct rrr_mqtt_property_collection subscription_ids;
 
-	int is_outbound;
 	struct rrr_mqtt_p_qos_packets qos_packets;
 
 	/* Memory of these are managed in the properties field */
@@ -442,8 +450,18 @@ struct rrr_mqtt_p_publish {
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(p)		(((p)->type_flags & (3<<1)) >> 1)
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(p)		(((p)->type_flags & (1<<3)) >> 3)
-#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p) \
-	(p)->type_flags = (p)->retain|((p)->qos << 1)|((p)->dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_UPDATE_TYPE_FLAGS(p,new_retain,new_qos,new_dup) \
+	(p)->type_flags = new_retain|(new_qos << 1)|(new_dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(p,new_qos) \
+	(p)->type_flags = ((p)->type_flags & 1)|(new_qos << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_DUP(p,new_dup) \
+	(p)->type_flags = (((p)->type_flags & 1))|((((p)->type_flags & (3<<1)) >> 1) << 1)|(new_dup << 3)
+
+#define RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(p,new_retain) \
+	(p)->type_flags = new_retain|((((p)->type_flags & (3<<1)) >> 1) << 1)|((((p)->type_flags & (1<<3)) >> 3) << 3)
 
 struct rrr_mqtt_p_suback_unsuback;
 struct rrr_mqtt_p_suback;

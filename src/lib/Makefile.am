@@ -27,10 +27,10 @@ librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c \
-					array.c type.c version.c configuration.c settings.c instance_config.c common.c \
+					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
 					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
-					mqtt_topic.c mqtt_id_pool.c mqtt_client.c \
+					mqtt_topic.c mqtt_id_pool.c mqtt_client.c mqtt_acl.c mqtt_transport.c \
 					message_broker.c \
 					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
@@ -39,7 +39,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					stats_engine.c stats_instance.c stats_message.c stats_tree.c \
 					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c \
-					fixed_point.c slow_noop.c rrr_endian.c posix.c \
+					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
 					${mysql} ${encryption}
 
 libadd_rrr_readdir = librrr_readdir.la

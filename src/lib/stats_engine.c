@@ -278,11 +278,10 @@ int __rrr_stats_engine_unicast_send_intermediate (
 
 	ssize_t written_bytes_dummy = 0;
 	if ((ret = rrr_socket_send_nonblock(&written_bytes_dummy, client->connected_fd, data, size)) != 0) {
-		if (ret != RRR_SOCKET_SOFT_ERROR) {
+//		if (ret != RRR_SOCKET_SOFT_ERROR) {
 			RRR_DBG_1("Warning: Send error in __rrr_stats_engine_send_unicast_intermediate for client with fd %i\n",
 					client->connected_fd);
-			ret = 0;
-		}
+//		}
 	}
 
 	return ret;
@@ -317,11 +316,13 @@ static int __rrr_stats_engine_pack_message (
 			(struct rrr_socket_msg *) &message_packed
 	);
 
-	RRR_DBG_3("STATS TX size %lu sticky %i path %s\n",
+	// This is very noisy, disable. Causes self-genration of messages
+	// with log_journal
+/*	RRR_DBG_3("STATS TX size %lu sticky %i path %s\n",
 			total_size,
 			RRR_STATS_MESSAGE_FLAGS_IS_STICKY(message),
 			message->path
-	);
+	);*/
 
 	return callback((struct rrr_socket_msg *) &message_packed, total_size, callback_arg);
 }

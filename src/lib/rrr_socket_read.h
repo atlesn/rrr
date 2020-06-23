@@ -30,6 +30,7 @@ struct rrr_read_session;
 struct rrr_read_session_collection;
 
 int rrr_socket_read_message_default (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,

@@ -75,10 +75,35 @@ struct rrr_ip_data {
 	unsigned int port;
 };
 
+struct rrr_ip_graylist_entry {
+	RRR_LL_NODE(struct rrr_ip_graylist_entry);
+	struct sockaddr addr;
+	socklen_t addr_len;
+	uint64_t expire_time;
+};
+
+struct rrr_ip_graylist {
+	RRR_LL_HEAD(struct rrr_ip_graylist_entry);
+};
+
 #define RRR_IP_STATS_UPDATE_OK 0		// Stats was updated
 #define RRR_IP_STATS_UPDATE_ERR 1	// Error
 #define RRR_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
 
+int rrr_ip_graylist_exists (
+		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
+);
+int rrr_ip_graylist_push (
+		struct rrr_ip_graylist *target, const struct sockaddr *addr, socklen_t len, int timeout_ms
+);
+void rrr_ip_graylist_clear (
+		struct rrr_ip_graylist *target
+);
+static inline void rrr_ip_graylist_clear_void (
+		void *target
+) {
+	return rrr_ip_graylist_clear(target);
+}
 
 void rrr_ip_to_str (
 		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
@@ -102,6 +127,7 @@ int rrr_ip_receive_array (
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg,
 		struct ip_stats *stats
@@ -130,9 +156,15 @@ int rrr_ip_network_sendto_udp_ipv4_or_ipv6 (
 int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 		struct rrr_ip_accept_data **accept_data,
 		struct sockaddr *addr,
-		socklen_t addr_len
+		socklen_t addr_len,
+		struct rrr_ip_graylist *graylist
 );
-int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (struct rrr_ip_accept_data **accept_data, unsigned int port, const char *host);
+int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
+		struct rrr_ip_accept_data **accept_data,
+		unsigned int port,
+		const char *host,
+		struct rrr_ip_graylist *graylist
+);
 int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections);
 int rrr_ip_close (struct rrr_ip_data *data);
 int rrr_ip_accept(struct rrr_ip_accept_data **accept_data,

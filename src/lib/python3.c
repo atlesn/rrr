@@ -467,7 +467,7 @@ PyObject *__rrr_py_socket_message_to_pyobject (const struct rrr_socket_msg *mess
 
 static int rrr_py_fork_running = 1;
 static void __rrr_py_fork_signal_handler (int s) {
-	if (s == SIGUSR1) {
+	if (s == SIGUSR1 || s == SIGINT || s == SIGTERM) {
 		rrr_py_fork_running = 0;
 	}
 	if (s == SIGPIPE) {

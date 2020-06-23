@@ -177,6 +177,8 @@ static void __rrr_mqtt_p_destroy (void *arg) {
 	if (p->users != 0) {
 		RRR_BUG("users was not 0 in __rrr_mqtt_p_destroy\n");
 	}
+//	printf("Release pool ID %u: %p(%p, %p)\n",
+//			p->packet_identifier, p->release_packet_id_func, p->release_packet_id_arg1, p->release_packet_id_arg2);
 	RRR_MQTT_P_RELEASE_POOL_ID(p);
 	RRR_FREE_IF_NOT_NULL(p->_assembled_data);
 	pthread_mutex_destroy(&p->data_lock);
@@ -290,8 +292,8 @@ static struct rrr_mqtt_p *__rrr_mqtt_p_clone_publish (RRR_MQTT_P_TYPE_CLONE_DEFI
 	}
 
 	result->dup = publish->dup;
-	result->qos = publish->qos;
-	result->retain = publish->retain;
+//	result->qos = publish->qos;
+//	result->retain = publish->retain;
 	result->reason_v5 = publish->reason_v5;
 
 	if (publish->payload != NULL) {

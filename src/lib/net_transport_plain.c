@@ -52,6 +52,8 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 
 static int __rrr_net_transport_plain_connect (
 		struct rrr_net_transport_handle **handle,
+		struct sockaddr *addr,
+		socklen_t *socklen,
 		struct rrr_net_transport *transport,
 		unsigned int port,
 		const char *host
@@ -64,7 +66,11 @@ static int __rrr_net_transport_plain_connect (
 
 	struct rrr_ip_accept_data *accept_data = NULL;
 
-	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host) != 0) {
+	if (*socklen < sizeof(accept_data->addr)) {
+		RRR_BUG("BUG: socklen too small in __rrr_net_transport_plain_connect\n");
+	}
+
+	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
 		RRR_MSG_0("Could not connect to server '%s' port '%u'\n", host, port);
 		ret = 1;
 		goto out;
@@ -82,6 +88,9 @@ static int __rrr_net_transport_plain_connect (
 		ret = 1;
 		goto out_disconnect;
 	}
+
+	memcpy(addr, &accept_data->addr, accept_data->len);
+	*socklen = accept_data->len;
 
 	// Return locked handle
 	*handle = new_handle;
@@ -115,16 +124,20 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
+	uint64_t *bytes_read,
 	struct rrr_net_transport_handle *handle,
 	int read_attempts,
 	ssize_t read_step_initial,
 	ssize_t read_step_max_size,
+	int read_flags,
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 	void *get_target_size_arg,
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
 	void *complete_callback_arg
 ) {
 	int ret = 0;
+
+	*bytes_read = 0;
 
 	struct rrr_net_transport_plain_read_session callback_data = {
 			handle,
@@ -134,19 +147,22 @@ static int __rrr_net_transport_plain_read_message (
 			complete_callback_arg,
 	};
 
-	while (--read_attempts > 0) {
+	while (--read_attempts >= 0) {
+		uint64_t bytes_read_tmp = 0;
 		ret = rrr_socket_read_message_default (
+				&bytes_read_tmp,
 				&handle->read_sessions,
 				handle->submodule_private_fd,
 				read_step_initial,
 				read_step_max_size,
-				0,
+				read_flags,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,
 				&callback_data
 		);
+		*bytes_read += bytes_read_tmp;
 
 		if (ret == RRR_SOCKET_OK) {
 			// TODO : Check for persistent connection/more results which might be
@@ -154,8 +170,7 @@ static int __rrr_net_transport_plain_read_message (
 			goto out;
 		}
 		else if (ret != RRR_SOCKET_READ_INCOMPLETE) {
-			RRR_MSG_0("Error while reading from server in __rrr_net_transport_plain_read_message\n");
-			ret = 1;
+			RRR_MSG_0("Error %i while reading from remote in __rrr_net_transport_plain_read_message\n", ret);
 			goto out;
 		}
 	}
@@ -165,14 +180,18 @@ static int __rrr_net_transport_plain_read_message (
 }
 
 static int __rrr_net_transport_plain_send (
-	ssize_t *written_bytes,
+	uint64_t *written_bytes,
 	struct rrr_net_transport_handle *handle,
 	const void *data,
 	ssize_t size
 ) {
 	int ret = RRR_NET_TRANSPORT_SEND_OK;
 
-	if ((ret = rrr_socket_sendto_nonblock(written_bytes, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
+	*written_bytes = 0;
+
+	ssize_t written_bytes_tmp = 0;
+
+	if ((ret = rrr_socket_sendto_nonblock(&written_bytes_tmp, handle->submodule_private_fd, data, size, NULL, 0)) != 0) {
 		if (ret == RRR_SOCKET_SOFT_ERROR) {
 			goto out;
 		}
@@ -180,6 +199,8 @@ static int __rrr_net_transport_plain_send (
 		ret = RRR_NET_TRANSPORT_SEND_HARD_ERROR;
 		goto out;
 	}
+
+	*written_bytes += (written_bytes_tmp > 0 ? written_bytes_tmp : 0);
 
 	out:
 	return ret;

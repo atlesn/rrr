@@ -102,7 +102,7 @@ struct rrr_http_part {
 	int is_chunked;
 	int parsed_protocol_version;
 
-	const void *data_ptr;
+//	const void *data_ptr;
 
 	ssize_t request_or_response_length;
 	ssize_t header_length;
@@ -117,25 +117,31 @@ const struct rrr_http_header_field *rrr_http_part_get_header_field (
 		const struct rrr_http_part *part,
 		const char *name_lowercase
 );
+int rrr_http_part_update_data_ptr (
+		struct rrr_http_part *part
+);
 int rrr_http_part_iterate_chunks (
 		struct rrr_http_part *part,
+		const char *data_ptr,
 		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
 		void *callback_arg
 );
 int rrr_http_part_process_multipart (
-		struct rrr_http_part *part
+		struct rrr_http_part *part,
+		const char *data_ptr
 );
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
 		ssize_t *target_size,
 		ssize_t *parsed_bytes,
-		const char *buf,
+		const char *data_ptr,
 		ssize_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
 int rrr_http_part_extract_post_and_query_fields (
-		struct rrr_http_part *target
+		struct rrr_http_part *target,
+		const char *data_ptr
 );
 void rrr_http_part_dump_header (struct rrr_http_part *part);
 #endif /* RRR_HTTP_PART_H */

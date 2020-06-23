@@ -66,7 +66,9 @@ static int __rrr_socket_read_message_default_poll(int read_flags, void *private_
 
 	poll_retry:
 	items = poll(&pollfd, 1, 0);
-	RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	if (items > 0) {
+		RRR_DBG_4("Socket %i poll result was %i items\n", callback_data->fd, items);
+	}
 	if (items == -1) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			ret = RRR_SOCKET_READ_INCOMPLETE;
@@ -226,6 +228,7 @@ static int __rrr_socket_read_message_default_read (
 }
 
 int rrr_socket_read_message_default (
+		uint64_t *bytes_read,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		ssize_t read_step_initial,
@@ -248,6 +251,7 @@ int rrr_socket_read_message_default (
 	callback_data.socket_read_flags = socket_read_flags;
 
 	return rrr_read_message_using_callbacks (
+			bytes_read,
 			read_step_initial,
 			read_step_max_size,
 			read_flags,

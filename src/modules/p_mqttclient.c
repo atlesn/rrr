@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -36,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt_common.h"
 #include "../lib/mqtt_session_ram.h"
 #include "../lib/mqtt_subscription.h"
+#include "../lib/mqtt_packet.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
@@ -55,11 +57,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats_instance.h"
 #include "../lib/log.h"
 
-#define RRR_MQTT_DEFAULT_SERVER_PORT 1883
+//#define RRR_BENCHMARK_ENABLE
+#include "../lib/benchmark.h"
+
+#define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
+#define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
 #define RRR_MQTT_DEFAULT_QOS 1
 #define RRR_MQTT_DEFAULT_VERSION 4 // 3.1.1
 #define RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS 20
+
 #define RRR_MQTT_CLIENT_STATS_INTERVAL_MS 1000
+#define RRR_MQTT_CLIENT_KEEP_ALIVE 30
+
+// Number of incomplete PUBLISH QoS before we stop polling from other modules. This
+// limit is needed because operation gets extremely slow when to to_remote buffer
+// fills up in mqtt session_ram framework
+#define RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT 500
+
+// Hard limit to stop before things go really wrong
+#define RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT 2000
 
 #define RRR_MQTT_CONNECT_ERROR_DO_RESTART	"restart"
 #define RRR_MQTT_CONNECT_ERROR_DO_RETRY		"retry"
@@ -73,10 +89,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_SUBACK_RESEND_TIMEOUT_MS 1000
 #define RRR_MQTT_SUBACK_RESEND_MAX 5
 
+// TODO : Clean this up
+
+struct rrr_mqtt_session;
+
 struct mqtt_client_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_fifo_buffer output_buffer;
 	struct rrr_mqtt_client_data *mqtt_client_data;
+	int transport_handle;
+	struct rrr_mqtt_session *session;
 	rrr_setting_uint server_port;
 	struct rrr_mqtt_subscription_collection *requested_subscriptions;
 	struct rrr_mqtt_property_collection connect_properties;
@@ -93,15 +115,25 @@ struct mqtt_client_data {
 	int publish_rrr_message;
 	int receive_rrr_message;
 	char *connect_error_action;
-	struct rrr_mqtt_conn *connection;
 	rrr_setting_uint connect_attempts;
 	int debug_unsubscribe_cycle;
 	unsigned int received_suback_packet_id;
 	unsigned int received_unsuback_packet_id;
 	uint64_t total_sent_count;
+	uint64_t total_usleep_count;
+	uint64_t total_ticks_count;
+	char *username;
+	char *password;
+	char *tls_certificate_file;
+	char *tls_key_file;
+	char *tls_ca_file;
+	char *tls_ca_path;
+	char *transport_type;
+	int do_transport_tls;
+	int do_transport_plain;
 };
 
-static void data_cleanup(void *arg) {
+static void mqttclient_data_cleanup(void *arg) {
 	struct mqtt_client_data *data = arg;
 	rrr_fifo_buffer_clear(&data->output_buffer);
 	RRR_FREE_IF_NOT_NULL(data->server);
@@ -110,13 +142,20 @@ static void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->client_identifier);
 	RRR_FREE_IF_NOT_NULL(data->publish_values_from_array);
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
+	RRR_FREE_IF_NOT_NULL(data->username);
+	RRR_FREE_IF_NOT_NULL(data->password);
+	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
+	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
+	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
 }
 
-static int data_init (
+static int mqttclient_data_init (
 		struct mqtt_client_data *data,
 		struct rrr_instance_thread_data *thread_data
 ) {
@@ -126,12 +165,12 @@ static int data_init (
 	data->thread_data = thread_data;
 
 	if ((ret = rrr_fifo_buffer_init(&data->output_buffer)) != 0) {
-		RRR_MSG_0("Could not initialize fifo buffer in mqtt client data_init\n");
+		RRR_MSG_0("Could not initialize fifo buffer in mqtt client mqttclient_data_init\n");
 		goto out;
 	}
 
 	if (rrr_mqtt_subscription_collection_new(&data->requested_subscriptions) != 0) {
-		RRR_MSG_0("Could not create subscription collection in mqtt client data_init\n");
+		RRR_MSG_0("Could not create subscription collection in mqtt client mqttclient_data_init\n");
 		goto out_destroy_fifo_buffer;
 	}
 
@@ -146,7 +185,7 @@ static int data_init (
 		return ret;
 }
 
-static int parse_sub_topic (const char *topic_str, void *arg) {
+static int mqttclient_parse_sub_topic (const char *topic_str, void *arg) {
 	struct mqtt_client_data *data = arg;
 
 	if (rrr_mqtt_topic_filter_validate_name(topic_str) != 0) {
@@ -168,14 +207,14 @@ static int parse_sub_topic (const char *topic_str, void *arg) {
 	return 0;
 }
 
-static int parse_publish_value_tag (const char *value, void *arg) {
+static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {
 	struct mqtt_client_data *data = arg;
 
 	int ret = 0;
 
 	struct rrr_map_item *node = malloc(sizeof(*node));
 	if (node == NULL) {
-		RRR_MSG_0("Could not allocate memory in parse_publish_value_tag\n");
+		RRR_MSG_0("Could not allocate memory in mqttclient_parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
 	}
@@ -183,7 +222,7 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 
 	node->tag = strdup(value);
 	if (node->tag == NULL) {
-		RRR_MSG_0("Could not allocate memory for data in parse_publish_value_tag\n");
+		RRR_MSG_0("Could not allocate memory for data in mqttclient_parse_publish_value_tag\n");
 		ret = 1;
 		goto out;
 	}
@@ -199,12 +238,11 @@ static int parse_publish_value_tag (const char *value, void *arg) {
 }
 
 // TODO : Provide more configuration arguments
-static int parse_config (struct mqtt_client_data *data, struct rrr_instance_config *config) {
+static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	int yesno = 0;
 
-	rrr_setting_uint mqtt_port = 0;
 	rrr_setting_uint mqtt_qos = 0;
 	rrr_setting_uint mqtt_connect_attempts = 0;
 
@@ -227,20 +265,6 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	}
 	data->connect_attempts = mqtt_connect_attempts;
 
-	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_port, config, "mqtt_server_port")) == 0) {
-		// OK
-	}
-	else if (ret != RRR_SETTING_NOT_FOUND) {
-		RRR_MSG_0("Error while parsing mqtt_server_port setting of instance %s\n", config->name);
-		ret = 1;
-		goto out;
-	}
-	else {
-		mqtt_port = RRR_MQTT_DEFAULT_SERVER_PORT;
-		ret = 0;
-	}
-	data->server_port = mqtt_port;
-
 	if ((ret = rrr_instance_config_read_unsigned_integer(&mqtt_qos, config, "mqtt_qos")) == 0) {
 		if (mqtt_qos > 2) {
 			RRR_MSG_0("Setting mqtt_qos was >2 in config of instance %s\n", config->name);
@@ -262,7 +286,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->client_identifier, config, "mqtt_client_identifier")) != 0) {
 		data->client_identifier = malloc(strlen(config->name) + 1);
 		if (data->client_identifier == NULL) {
-			RRR_MSG_0("Could not allocate memory in parse_config of instance %s\n", config->name);
+			RRR_MSG_0("Could not allocate memory in mqttclient_parse_config of instance %s\n", config->name);
 		}
 		strcpy(data->client_identifier, config->name);
 	}
@@ -392,7 +416,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		goto out;
 	}
 
-	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", parse_sub_topic, data)) != 0) {
+	if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_subscribe_topics", mqttclient_parse_sub_topic, data)) != 0) {
 		RRR_MSG_0("Error while parsing mqtt_subscribe_topics setting of instance %s\n", config->name);
 		ret = 1;
 		goto out;
@@ -416,7 +440,7 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		if (*data->publish_values_from_array == '*') {
 			// OK, publish full raw array
 		}
-		else if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_publish_array_values", parse_publish_value_tag, data)) != 0) {
+		else if ((ret = rrr_instance_config_traverse_split_commas_silent_fail(config, "mqtt_publish_array_values", mqttclient_parse_publish_value_tag, data)) != 0) {
 			RRR_MSG_0("Error while parsing mqtt_publish_values_from_array setting of instance %s\n", config->name);
 			ret = 1;
 			goto out;
@@ -456,6 +480,63 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 		}
 	}
 
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_username", username);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_password", password);
+
+	if (data->password != NULL && data->username == NULL) {
+		RRR_MSG_0("mqtt_password set without mqtt_username being so, this in an error.\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_certificate_file", tls_certificate_file);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_key_file", tls_key_file);
+
+	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
+			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
+	) {
+		RRR_MSG_0("Only one of mqtt_certificate_file and mqtt_key_file was specified, either both or none are required in mqttclient instance %s",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_file", tls_ca_file);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_path", tls_ca_path);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_transport_type", transport_type);
+
+	if (data->transport_type != NULL) {
+		if (strcasecmp(data->transport_type, "plain") == 0) {
+			data->do_transport_plain = 1;
+		}
+		else if (strcasecmp(data->transport_type, "tls") == 0) {
+			data->do_transport_tls = 1;
+		}
+		else {
+			RRR_MSG_0("Unknown value '%s' for mqtt_transport_type in mqttclient instance %s\n",
+					data->transport_type, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+	else {
+		data->do_transport_plain = 1;
+	}
+
+	// Note : It's allowed not to specify a certificate
+	if (data->tls_certificate_file != NULL && data->do_transport_tls == 0) {
+		RRR_MSG_0("TLS certificate specified in mqtt_certificate_file but mqtt_transport_type was not 'tls' for mqttclient instance %s\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_server_port", server_port, (
+			data->do_transport_tls
+				? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
+				: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN
+	));
+
 	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
 	// subscribe to all topics once more.
 	if ((ret = (rrr_instance_config_check_yesno(&yesno, config, "mqtt_client_debug_unsubscribe_cycle")
@@ -477,13 +558,13 @@ static int parse_config (struct mqtt_client_data *data, struct rrr_instance_conf
 
 	ret = 0;
 
-	/* On error, memory is freed by data_cleanup */
+	/* On error, memory is freed by mqttclient_data_cleanup */
 
 	out:
 	return ret;
 }
 
-static int process_unsuback (
+static int mqttclient_process_unsuback (
 		struct mqtt_client_data *data,
 		const struct rrr_mqtt_subscription *subscription,
 		const uint8_t reason_v5
@@ -510,7 +591,7 @@ static int process_unsuback (
 	return 0;
 }
 
-static int process_suback (
+static int mqttclient_process_suback (
 		struct mqtt_client_data *data,
 		const struct rrr_mqtt_subscription *subscription,
 		const int i,
@@ -545,7 +626,7 @@ static int process_suback (
 	return ret;
 }
 
-static int process_suback_unsuback (
+static int mqttclient_process_suback_unsuback (
 		struct rrr_mqtt_client_data *mqtt_client_data,
 		struct rrr_mqtt_p_suback_unsuback *packet,
 		void *arg
@@ -574,7 +655,7 @@ static int process_suback_unsuback (
 					orig_collection,
 					i
 			);
-			if (process_suback(data, subscription, i, ack->acknowledgements[i]) != 0) {
+			if (mqttclient_process_suback(data, subscription, i, ack->acknowledgements[i]) != 0) {
 				return 1;
 			}
 		}
@@ -593,7 +674,7 @@ static int process_suback_unsuback (
 						orig_collection,
 						i
 				);
-				if (process_unsuback(data, subscription, ack->acknowledgements[i]) != 0) {
+				if (mqttclient_process_unsuback(data, subscription, ack->acknowledgements[i]) != 0) {
 					return 1;
 				}
 			}
@@ -604,7 +685,7 @@ static int process_suback_unsuback (
 		data->received_unsuback_packet_id = RRR_MQTT_P_GET_IDENTIFIER(ack);
 	}
 	else {
-		RRR_BUG("Unknown packet of type %u received in mqtt client %s process_suback\n",
+		RRR_BUG("Unknown packet of type %u received in mqtt client %s mqttclient_process_suback\n",
 				RRR_MQTT_P_GET_TYPE(packet),
 				INSTANCE_D_NAME(data->thread_data)
 		);
@@ -613,7 +694,34 @@ static int process_suback_unsuback (
 	return 0;
 }
 
-static int message_data_to_payload (
+// Used to print informational messages only
+static int mqttclient_process_parsed_packet (
+		struct rrr_mqtt_client_data *mqtt_client_data,
+		struct rrr_mqtt_p *packet,
+		void *arg
+) {
+	struct mqtt_client_data *data = arg;
+
+	(void)(mqtt_client_data);
+
+//	printf ("mqttclient parsed packet of type %s\n", RRR_MQTT_P_GET_TYPE_NAME(packet));
+
+	if ((RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBACK ||
+		RRR_MQTT_P_GET_TYPE(packet) == RRR_MQTT_P_TYPE_PUBREC) &&
+		RRR_MQTT_P_GET_REASON_V5(packet) != RRR_MQTT_P_5_REASON_OK
+	) {
+		const struct rrr_mqtt_p_reason *reason = rrr_mqtt_p_reason_get_v5 (RRR_MQTT_P_GET_REASON_V5(packet));
+
+		RRR_MSG_0("A PUBLISH was rejected by the broker in mqttclient instance %s with reason '%s'\n",
+				INSTANCE_D_NAME(data->thread_data),
+				(reason != NULL ? reason->description : "UNKNOWN")
+		);
+	}
+
+	return RRR_MQTT_OK;
+}
+
+static int mqttclient_message_data_to_payload (
 		char **result,
 		ssize_t *result_size,
 
@@ -637,7 +745,7 @@ static int message_data_to_payload (
 	return 0;
 }
 
-static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct mqtt_client_data *private_data = thread_data->private_data;
 	struct rrr_mqtt_p_publish *publish = NULL;
 	struct rrr_message *reading = (struct rrr_message *) entry->message;
@@ -652,7 +760,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			INSTANCE_D_NAME(thread_data), reading->timestamp);
 
 	if (private_data->mqtt_client_data->protocol_version == NULL) {
-		RRR_MSG_0("Protocol version not yet set in mqtt client instance %s poll_callback while sending PUBLISH\n",
+		RRR_MSG_0("Protocol version not yet set in mqtt client instance %s mqttclient_poll_callback while sending PUBLISH\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -660,7 +768,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, private_data->mqtt_client_data->protocol_version);
 	if (publish == NULL) {
-		RRR_MSG_0("Could not allocate PUBLISH in poll_callback of mqtt client instance %s\n",
+		RRR_MSG_0("Could not allocate PUBLISH in mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
@@ -683,7 +791,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 	else {
 		if (private_data->force_publish_topic != 0) {
-			RRR_BUG("force_publish_topic was 1 but topic was not set in poll_callback of mqttclient\n");
+			RRR_BUG("force_publish_topic was 1 but topic was not set in mqttclient_poll_callback of mqttclient\n");
 		}
 		RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
 				INSTANCE_D_NAME(thread_data));
@@ -692,13 +800,13 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (publish->topic == NULL) {
-		RRR_MSG_0("Could not allocate topic in mqtt client poll_callback of mqtt client instance %s\n",
+		RRR_MSG_0("Could not allocate topic in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
 		goto out_free;
 	}
 
-	publish->qos = private_data->qos;
+	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, private_data->qos);
 
 	if (private_data->publish_rrr_message != 0) {
 		ssize_t msg_size = MSG_TOTAL_SIZE(reading);
@@ -715,7 +823,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				RRR_MESSAGE_MIME_TYPE,
 				strlen(RRR_MESSAGE_MIME_TYPE)
 		) != 0) {
-			RRR_MSG_0("Could not set content-type of publish in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_0("Could not set content-type of publish in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -726,7 +834,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 	else if (private_data->publish_values_from_array != NULL) {
 		if (!MSG_IS_ARRAY(reading)) {
-			RRR_MSG_0("Received message was not an array while mqtt_publish_values_from_array was set in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_0("Received message was not an array while mqtt_publish_values_from_array was set in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -738,7 +846,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		);
 
 		if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
-			RRR_MSG_0("Could not create temporary array collection in poll_callback of mqtt client instance %s\n",
+			RRR_MSG_0("Could not create temporary array collection in mqttclient_poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -764,15 +872,15 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		}
 	}
 	else if (MSG_DATA_LENGTH(reading) > 0) {
-		if ((ret = message_data_to_payload(&payload, &payload_size, reading)) != 0) {
-			RRR_MSG_0("Error while creating payload from message data in mqtt client poll_callback of mqtt client instance %s\n",
+		if ((ret = mqttclient_message_data_to_payload(&payload, &payload_size, reading)) != 0) {
+			RRR_MSG_0("Error while creating payload from message data in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_free;
 		}
 	}
 	else {
 		if ((ret = rrr_message_to_string(&payload, reading)) != 0) {
-			RRR_MSG_0("could not convert message to string for PUBLISH payload in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_0("could not convert message to string for PUBLISH payload in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			goto out_free;
 		}
@@ -781,7 +889,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	if (payload != NULL) {
 		if (rrr_mqtt_p_payload_new_with_allocated_payload(&publish->payload, payload, payload, payload_size) != 0) {
-			RRR_MSG_0("Could not set payload of PUBLISH in mqtt client poll_callback of mqtt client instance %s\n",
+			RRR_MSG_0("Could not set payload of PUBLISH in mqtt client mqttclient_poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;
 			goto out_free;
@@ -792,7 +900,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	RRR_DBG_2 ("mqtt client %s: PUBLISH with topic %s\n",
 			INSTANCE_D_NAME(thread_data), publish->topic);
 
-	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, private_data->connection, publish) != 0) {
+	if (rrr_mqtt_client_publish(private_data->mqtt_client_data, &private_data->session, publish) != 0) {
 		RRR_MSG_0("Could not publish message in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		ret = 1;
@@ -810,7 +918,7 @@ static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	return ret;
 }
 
-static int __try_create_rrr_message_with_publish_data (
+static int mqttclient_try_create_rrr_message_with_publish_data (
 		struct rrr_message **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
@@ -855,7 +963,7 @@ static int __try_create_rrr_message_with_publish_data (
 	return ret;
 }
 
-static int __try_get_rrr_message_from_publish (
+static int mqttclient_try_get_rrr_message_from_publish (
 		struct rrr_message **result,
 		struct rrr_mqtt_p_publish *publish,
 		struct mqtt_client_data *data
@@ -914,7 +1022,7 @@ static int __try_get_rrr_message_from_publish (
 
 	*result = malloc(message_actual_length);
 	if (*result == NULL) {
-		RRR_MSG_0("Could not allocate memory in __try_get_rrr_message_from_publish\n");
+		RRR_MSG_0("Could not allocate memory in mqttclient_try_get_rrr_message_from_publish\n");
 		ret = 1;
 		goto out;
 	}
@@ -927,7 +1035,7 @@ static int __try_get_rrr_message_from_publish (
 	return ret;
 }
 
-static int __try_create_array_message_from_publish (
+static int mqttclient_try_create_array_message_from_publish (
 		struct rrr_message **result,
 		ssize_t *parsed_bytes,
 		struct rrr_mqtt_p_publish *publish,
@@ -996,7 +1104,7 @@ struct receive_publish_create_entry_callback_data {
 	const struct rrr_message *message;
 };
 
-static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int mqttclient_receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct receive_publish_create_entry_callback_data *data = arg;
 
 	int ret = 0;
@@ -1004,7 +1112,7 @@ static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *
 	size_t msg_size = MSG_TOTAL_SIZE(data->message);
 
 	if ((entry->message = malloc(msg_size)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __receive_publish_create_entry_callback\n");
+		RRR_MSG_0("Could not allocate memory in mqttclient_receive_publish_create_entry_callback\n");
 		ret = 1;
 		goto out;
 	}
@@ -1018,7 +1126,7 @@ static int __receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *
 	return ret;
 }
 
-static int __receive_publish_create_and_save_entry (const struct rrr_message *message, struct mqtt_client_data *data) {
+static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_message *message, struct mqtt_client_data *data) {
 	int ret = 0;
 
 	struct receive_publish_create_entry_callback_data callback_data = {
@@ -1032,10 +1140,10 @@ static int __receive_publish_create_and_save_entry (const struct rrr_message *me
 			NULL,
 			0,
 			0,
-			__receive_publish_create_entry_callback,
+			mqttclient_receive_publish_create_entry_callback,
 			&callback_data
 	)) != 0) {
-		RRR_MSG_0("Error while writing entry to output buffer in __receive_publish_create_entry of mqtt client instance %s\n",
+		RRR_MSG_0("Error while writing entry to output buffer in mqttclient_receive_publish_create_entry of mqtt client instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
@@ -1046,11 +1154,11 @@ static int __receive_publish_create_and_save_entry (const struct rrr_message *me
 }
 
 #define WRITE_TO_BUFFER_AND_SET_TO_NULL(message)								\
-	if ((ret = __receive_publish_create_and_save_entry(message, data)) != 0) {	\
+	if ((ret = mqttclient_receive_publish_create_and_save_entry(message, data)) != 0) {	\
 		goto out;																\
 	}	RRR_FREE_IF_NOT_NULL(message)
 
-static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
+static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	int ret = 0;
 
 	struct mqtt_client_data *data = arg;
@@ -1089,7 +1197,7 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 
 	// Try to extract a message from the data of the publish
 	if (is_rrr_message != 0) {
-		if ((ret = __try_get_rrr_message_from_publish (
+		if ((ret = mqttclient_try_get_rrr_message_from_publish (
 				&message_final,
 				publish,
 				data
@@ -1115,7 +1223,7 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 		ssize_t read_pos = 0;
 		do {
 			ssize_t parsed_bytes = 0;
-			if ((ret = __try_create_array_message_from_publish (
+			if ((ret = mqttclient_try_create_array_message_from_publish (
 					&message_final,
 					&parsed_bytes,
 					publish,
@@ -1145,7 +1253,7 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 
 	// Try to create a message with the data being the data of the publish. This will return
 	// NULL in message_final if there is no data in the publish message.
-	if ((ret = __try_create_rrr_message_with_publish_data (
+	if ((ret = mqttclient_try_create_rrr_message_with_publish_data (
 			&message_final,
 			publish,
 			data
@@ -1189,14 +1297,14 @@ static int __receive_publish (struct rrr_mqtt_p_publish *publish, void *arg) {
 	return ret;
 }
 
-static int do_subscribe (struct mqtt_client_data *data) {
+static int mqttclient_do_subscribe (struct mqtt_client_data *data) {
 	if (data->received_suback_packet_id != 0) {
 		RRR_BUG("received_suback_packet_id was not 0 in mqtt client do_subscribe\n");
 	}
 
 	if (rrr_mqtt_client_subscribe (
 			data->mqtt_client_data,
-			data->connection,
+			&data->session,
 			data->requested_subscriptions
 	) != 0) {
 		RRR_MSG_0("Could not subscribe to topics in mqtt client instance %s\n",
@@ -1206,14 +1314,14 @@ static int do_subscribe (struct mqtt_client_data *data) {
 	return 0;
 }
 
-static int do_unsubscribe (struct mqtt_client_data *data) {
+static int mqttclient_do_unsubscribe (struct mqtt_client_data *data) {
 	if (data->received_unsuback_packet_id != 0) {
 		RRR_BUG("received_unsuback_packet_id was not 0 in mqtt client do_subscribe\n");
 	}
 
 	if (rrr_mqtt_client_unsubscribe (
 			data->mqtt_client_data,
-			data->connection,
+			&data->session,
 			data->requested_subscriptions
 	) != 0) {
 		RRR_MSG_0("Could not unsubscribe to topics in mqtt client instance %s\n",
@@ -1223,7 +1331,7 @@ static int do_unsubscribe (struct mqtt_client_data *data) {
 	return 0;
 }
 
-static int subscription_loop (struct mqtt_client_data *data) {
+static int mqttclient_subscription_loop (struct mqtt_client_data *data) {
 	uint64_t subscription_sent_time = 0;
 	int subscription_send_attempts = 0;
 	int subscription_done = 0;
@@ -1245,8 +1353,8 @@ static int subscription_loop (struct mqtt_client_data *data) {
 				&alive,
 				&send_allowed,
 				data->mqtt_client_data,
-				data->connection)
-		) {
+				data->transport_handle
+		)) {
 			RRR_MSG_0("Error in mqtt client instance %s while checking for connection alive\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
@@ -1260,7 +1368,7 @@ static int subscription_loop (struct mqtt_client_data *data) {
 			if (subscription_sent_time == 0) {
 				if (send_allowed != 0) {
 					data->received_suback_packet_id = 0;
-					if (do_subscribe(data) != 0) {
+					if (mqttclient_do_subscribe(data) != 0) {
 						return 1;
 					}
 					subscription_send_attempts++;
@@ -1284,7 +1392,7 @@ static int subscription_loop (struct mqtt_client_data *data) {
 			if (unsubscription_sent_time == 0) {
 				if (send_allowed != 0) {
 					data->received_unsuback_packet_id = 0;
-					if (do_unsubscribe(data) != 0) {
+					if (mqttclient_do_unsubscribe(data) != 0) {
 						return 1;
 					}
 					unsubscription_send_attempts++;
@@ -1312,19 +1420,23 @@ static int subscription_loop (struct mqtt_client_data *data) {
 			break;
 		}
 
-		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
+		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
+		int something_happened = 0;
+		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_0("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
 		}
 
-		rrr_posix_usleep (5000); // 50 ms
+		if (something_happened == 0) {
+			rrr_posix_usleep (50000); // 50 ms
+		}
 	}
 
 	return 0;
 }
 
-static int connect_loop (struct mqtt_client_data *data, int clean_start) {
+static int mqttclient_connect_loop (struct mqtt_client_data *data, int clean_start) {
 	int i_first = data->connect_attempts;
 	if (i_first < 1 || (uint64_t) i_first != (uint64_t) data->connect_attempts) {
 		i_first = 0x7fffffff; // One 7, seven f's
@@ -1334,20 +1446,32 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 
 	reconnect:
 
+	data->transport_handle = 0;
+	data->session = NULL;
+
 	for (int i = i_first; i >= 0 && rrr_thread_check_encourage_stop(data->thread_data->thread) != 1; i--) {
 		rrr_thread_update_watchdog_time(data->thread_data->thread);
 
-		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' attempt %i/%i\n",
-				INSTANCE_D_NAME(data->thread_data), data->server, data->server_port, i, i_first);
+		RRR_DBG_1("MQTT client instance %s attempting to connect to server '%s' port '%llu' username '%s' attempt %i/%i\n",
+				INSTANCE_D_NAME(data->thread_data),
+				data->server,
+				data->server_port,
+				(data->username != NULL ? data->username : ""),
+				i,
+				i_first
+		);
 
 		if (rrr_mqtt_client_connect (
-				&data->connection,
+				&data->transport_handle,
+				&data->session,
 				data->mqtt_client_data,
 				data->server,
 				data->server_port,
 				data->version,
 				RRR_MQTT_CLIENT_KEEP_ALIVE,
 				clean_start,
+				data->username,
+				data->password,
 				&data->connect_properties
 		) != 0) {
 			if (i == 0) {
@@ -1374,7 +1498,13 @@ static int connect_loop (struct mqtt_client_data *data, int clean_start) {
 	return 0;
 }
 
-static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instance *stats) {
+static void mqttlient_update_stats (
+		struct mqtt_client_data *data,
+		struct rrr_stats_instance *stats,
+		int to_remote_buffer_size,
+		int to_remote_unacknowledged_publish
+) {
+
 	if (stats->stats_handle == 0) {
 		return;
 	}
@@ -1388,6 +1518,12 @@ static void update_stats (struct mqtt_client_data *data, struct rrr_stats_instan
 	// regardless of their origin. We therefore count it in the module poll callback function.
 	rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_sent", 0, data->total_sent_count);
 
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_usleep", 0, data->total_usleep_count);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "total_ticks", 0, data->total_ticks_count);
+
+	rrr_stats_instance_post_unsigned_base10_text(stats, "to_remote_buffer", 0, to_remote_buffer_size);
+	rrr_stats_instance_post_unsigned_base10_text(stats, "to_remote_unack", 0, to_remote_unacknowledged_publish);
+
 	// These will always be zero for the client, nothing is forwarded. Keep it here nevertheless to avoid accidently activating it.
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_forwarded", 0, client_stats.session_stats.total_publish_forwarded);
 	// rrr_stats_instance_post_unsigned_base10_text(stats, "total_publish_received", 0, client_stats.session_stats.total_publish_received);
@@ -1400,17 +1536,21 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll;
 
 	int init_ret = 0;
-	if ((init_ret = data_init(data, thread_data)) != 0) {
+	if ((init_ret = mqttclient_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initalize data in mqtt client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
 
+	RRR_BENCHMARK_INIT(mqtt_client_deliver);
+	RRR_BENCHMARK_INIT(mqtt_client_sleep);
+	RRR_BENCHMARK_INIT(mqtt_client_tick);
+
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
 	rrr_poll_collection_init(&poll);
 	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(mqttclient_data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -1418,7 +1558,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (mqttclient_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Configuration parse failed for mqtt client instance '%s'\n", thread_data->init_data.module->instance_name);
 		goto out_message;
 	}
@@ -1438,7 +1578,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			&init_data,
 			rrr_mqtt_session_collection_ram_new,
 			NULL,
-			process_suback_unsuback,
+			mqttclient_process_suback_unsuback,
+			data,
+			mqttclient_process_parsed_packet,
 			data
 		) != 0) {
 		RRR_MSG_0("Could not create new mqtt client\n");
@@ -1469,17 +1611,38 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto out_destroy_client;
 	}
 
+	if (data->do_transport_plain && rrr_mqtt_client_start_plain(data->mqtt_client_data) != 0) {
+		RRR_MSG_0("Could not start plain network transport in mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_destroy_client;
+	}
+	else if (data->do_transport_tls && rrr_mqtt_client_start_tls (
+			data->mqtt_client_data,
+			data->tls_certificate_file,
+			data->tls_key_file,
+			data->tls_ca_file,
+			data->tls_ca_path
+	) != 0) {
+		RRR_MSG_0("Could not start tls network transport in mqtt client instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_destroy_client;
+	}
+
+	if ((data->do_transport_plain ^ data->do_transport_tls) != 1) {
+		RRR_BUG("BUG: No transport or both transports started in mqttclient, configuration parse bug\n");
+	}
+
 	// We have do use clean start the first time we connect as the server
 	// might remember packets from our last session (if any)
 	int clean_start = 1;
 
 	reconnect:
 
-	if (connect_loop(data, clean_start) != 0) {
+	if (mqttclient_connect_loop(data, clean_start) != 0) {
 		goto out_destroy_client;
 	}
 
-	if (subscription_loop(data) != 0) {
+	if (mqttclient_subscription_loop(data) != 0) {
 		goto out_destroy_client;
 	}
 
@@ -1497,14 +1660,27 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	// Main loop
+
+	// Defaults to 1, is set to 0 when to many PUBLISH are undelivered
+	int poll_allowed = 1;
+
+	unsigned int consecutive_nothing_happened = 0;
+
 	uint64_t prev_stats_time = rrr_time_get_64();
+
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		uint64_t time_now = rrr_time_get_64();
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int alive = 0;
 		int send_allowed = 0;
-		if (rrr_mqtt_client_connection_check_alive(&alive, &send_allowed, data->mqtt_client_data, data->connection)) {
+
+		if (rrr_mqtt_client_connection_check_alive (
+				&alive,
+				&send_allowed,
+				data->mqtt_client_data,
+				data->transport_handle
+		)) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while checking for connection alive\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
@@ -1516,41 +1692,94 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			goto reconnect;
 		}
 
-		if (startup_time == 0 || rrr_time_get_64() > startup_time) {
-			rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50);
+		int something_happened = 0;
 
-			startup_time = 0;
-		}
+		struct rrr_mqtt_session_iterate_send_queue_counters counters = {0};
 
-		if (rrr_mqtt_client_synchronized_tick(data->mqtt_client_data) != 0) {
+		RRR_BENCHMARK_IN(mqtt_client_tick);
+		if (rrr_mqtt_client_synchronized_tick(&counters, &something_happened, data->mqtt_client_data) != 0) {
 			RRR_MSG_ERR("Error in mqtt client instance %s while running tasks\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
 		}
+		RRR_BENCHMARK_OUT(mqtt_client_tick);
 
-		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, __receive_publish, data) != 0) {
+		if (counters.incomplete_qos_publish_counter > RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT ||
+			counters.buffer_size > RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT
+		) {
+			if (poll_allowed == 1) {
+				RRR_DBG_2("Polling disabled in MQTT client instance %s, %u PUBLISH with QOS undelivered as this time with buffer size %u\n",
+						INSTANCE_D_NAME(thread_data),
+						counters.incomplete_qos_publish_counter,
+						counters.buffer_size
+				);
+			}
+			poll_allowed = 0;
+		}
+		else if (poll_allowed == 0) {
+			if (counters.incomplete_qos_publish_counter < (RRR_MQTT_CLIENT_INCOMPLETE_PUBLISH_QOS_LIMIT / 2) &&
+				counters.buffer_size < (RRR_MQTT_CLIENT_TO_REMOTE_BUFFER_LIMIT / 2)
+			) {
+				RRR_DBG_2("Polling re-enabled in MQTT client instance %s\n", INSTANCE_D_NAME(thread_data));
+				poll_allowed = 1;
+			}
+		}
+
+		RRR_BENCHMARK_IN(mqtt_client_deliver);
+		if (rrr_mqtt_client_iterate_and_clear_local_delivery(data->mqtt_client_data, mqttclient_receive_publish, data) != 0) {
 			RRR_MSG_ERR("Error while iterating local delivery queue in mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			goto out_destroy_client;
 		}
+		RRR_BENCHMARK_OUT(mqtt_client_deliver);
 
-		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
-			update_stats(data, stats);
-			prev_stats_time = rrr_time_get_64();
+		// When adjusting sleep algorithm, test throughput properly afterwards with different configurations
+
+		int poll_sleep = 0;
+
+		if (something_happened == 0) {
+			if (++consecutive_nothing_happened > 100) {
+				poll_sleep = 30;
+			}
+		}
+		else {
+			consecutive_nothing_happened = 0;
 		}
 
-		rrr_posix_usleep (5000); // 50 ms
+		if (poll_allowed == 1 && (time_now > startup_time)) {
+			if (poll_sleep > 0) {
+				data->total_usleep_count++;
+			}
+			RRR_BENCHMARK_IN(mqtt_client_sleep);
+			rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, poll_sleep);
+			RRR_BENCHMARK_OUT(mqtt_client_sleep);
+		}
+
+		data->total_ticks_count++;
+
+		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
+			mqttlient_update_stats (
+					data,
+					stats,
+					counters.buffer_size,
+					counters.incomplete_qos_publish_counter
+			);
+			prev_stats_time = rrr_time_get_64();
+		}
 	}
 
 	out_destroy_client:
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 	out_message:
-		RRR_DBG_1 ("Thread mqtt client %p exiting\n", thread_data->thread);
+		RRR_DBG_1 ("Thread mqtt client %p instance %s exiting\n", thread_data->thread, INSTANCE_D_NAME(thread_data));
 //		pthread_cleanup_pop(1);
 		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
+		RRR_BENCHMARK_DUMP(mqtt_client_tick);
+		RRR_BENCHMARK_DUMP(mqtt_client_sleep);
+		RRR_BENCHMARK_DUMP(mqtt_client_deliver);
 		pthread_exit(0);
 }
 

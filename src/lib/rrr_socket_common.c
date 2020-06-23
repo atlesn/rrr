@@ -107,12 +107,14 @@ int rrr_socket_common_receive_array (
 		int socket_read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
+		unsigned int message_max_size,
 		int (*callback)(struct rrr_read_session *read_session, void *arg),
 		void *arg
 ) {
 	struct rrr_read_common_get_session_target_length_from_array_data callback_data_array = {
 			definition,
-			do_sync_byte_by_byte
+			do_sync_byte_by_byte,
+			message_max_size
 	};
 
 	struct receive_callback_data callback_data = {
@@ -121,7 +123,9 @@ int rrr_socket_common_receive_array (
 			arg
 	};
 
+	uint64_t bytes_read = 0;
 	int ret = rrr_socket_read_message_default (
+			&bytes_read,
 			read_session_collection,
 			fd,
 			sizeof(struct rrr_socket_msg),
