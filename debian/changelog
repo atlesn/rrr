@@ -1,3 +1,9 @@
+rrr (1.3-1) buster; urgency=medium
+
+  * Improvements in MQTT to increase throughput
+
+ -- Atle Solbakken <atle@goliathdns.no>  Tue, 23 Jun 2020 02:40:17 +0200
+
 rrr (1.3) buster; urgency=medium
 
   * Added support for TLS in MQTT
