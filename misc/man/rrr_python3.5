@@ -19,14 +19,14 @@ These classes are available in python script when run by RRR.
 .Dl from rrr_helper import rrr_message
 .Dl from rrr_helper import rrr_array
 .Dl from rrr_helper import rrr_array_value
-.Dl from rrr_helper import rrr_setting
+.Dl from rrr_helper import rrr_config
 .PP
 These 
 .B handler functions
 should be specified in a python script which is to be used by RRR.
 .Dl def [NAME OF SOURCE FUNCTION](socket : rrr_socket):
 .Dl def [NAME OF PROCESS FUNCTION](socket : rrr_socket, message : rrr_message):
-.Dl def [NAME OF CONFIG FUNCTION](socket : rrr_socket, setting : rrr_setting)
+.Dl def [NAME OF CONFIG FUNCTION](config : rrr_config)
 .SH OBJECTS AND FUNCTIONS
 Below follows detailed description of methods and members of the RRR objects.
 .SS rrr_message
@@ -165,39 +165,36 @@ Any multiple items of the types
 and
 .B STR
 must always be of identical length/size. The RRR python3-module will exit and restart if they are not.
-.
 .SS rrr_socket
-To communicate with RRR in its python module, a UNIX socket is used "behind the scenes" over which messages
-are sent in both directions.
+For security and stability reasons, the process and source functions are run in sperate forks.
+To communicate with RRR from the scripts, a communication channel called is used which is called a socket.
+(It's not actually a socket, but it is used the same way).
 .PP
 When a
 .B handler function
 is called by RRR, it receives an
 .B rrr_socket
-object which is already connect to RRR, and it's possible to send messages immediately. It is also possible to set
-up sockets manually to send data somewhere (
-.Xr rrr_post(1)
-would be able to read such messages). It is not possible to read messages from the socket.
+object which is already connect to RRR, and it's possible to send messages immediately. 
+It is not possible to read messages from the socket.
 .TP
 .B rrr_socket()
-The initializer takes no arguments.
+The socket cannot be initialized except from by RRR internally.
 .TP
-.B rrr_socket.start([filename])
-Create a new socket. If a filename is provided, connect to an existing socket. If not, create a new socket and listen for
-incoming connections. The filename of the socket is generated automatically.
-.TP
-.B rrr_socket.get_filename()
-Get the filename of the socket.
-.TP
-.B rrr_socket.send(object : rrr_message|rrr_setting)
+.B rrr_socket.send(object : rrr_message)
 Send a
 .B rrr_message
-or
-.B rrr_setting
-object on the socket.
+on the socket.
+.SS rrr_config
 .TP
-.B rrr_socket.accept()
-Accept a connection (for listening socket only).
+.B rrr_config.get(string : name)
+Returns a the value of a configuration parameter. May returne none if a parameter with the given name does not exist.
+.TP
+.B rrr_socket.replace(string : name, string : value)
+.TP 
+.B rrr_socket.add(string : name, string : value)
+Replace the value of an existing configuration parameter or add a new value witohut checking if a
+setting with the same name already exists. These functions currently have limited usefulness as any changes
+is discarded and not used anywhere.
 .SH SEE ALSO
 .Xr rrr(1),
 .Xr rrr.conf(5)

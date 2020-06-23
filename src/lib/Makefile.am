@@ -8,8 +8,8 @@ endif
 
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3.c python3_module.c python3_common.c python3_vl_message.c python3_setting.c python3_socket.c \
-							python3_array.c
+librrrpython3_la_SOURCES = python3/python3.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
+							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
 endif
@@ -22,15 +22,16 @@ librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
 endif
 
+mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_packet.c mqtt/mqtt_parse.c mqtt/mqtt_property.c \
+	mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
+	mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
+
 lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c \
 					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
-					mqtt_broker.c mqtt_common.c mqtt_connection.c mqtt_packet.c mqtt_parse.c mqtt_property.c \
-					mqtt_session.c mqtt_session_ram.c mqtt_assemble.c mqtt_payload_buf.c mqtt_subscription.c  \
-					mqtt_topic.c mqtt_id_pool.c mqtt_client.c mqtt_acl.c mqtt_transport.c \
 					message_broker.c \
 					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
@@ -40,7 +41,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c \
 					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${mysql} ${encryption}
+					${mysql} ${encryption} ${mqtt}
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = rrr_readdir.c

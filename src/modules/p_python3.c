@@ -29,12 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/python3/python3.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/python3.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_addr.h"
 #include "../lib/ip_buffer_entry.h"
@@ -50,6 +50,8 @@ struct python3_reader_data {
 	struct rrr_message_addr previous_address_msg;
 	int message_counter;
 	int loop_count;
+	int config_complete;
+	int *config_complete_to_parent;
 };
 
 struct python3_data {
@@ -69,6 +71,9 @@ struct python3_data {
 	struct python3_reader_data process_thread;
 
 	int reader_thread_became_ghost;
+
+	int config_complete_from_processor;
+	int config_complete_from_source;
 };
 
 int data_init (
@@ -92,7 +97,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->config_function);
 	RRR_FREE_IF_NOT_NULL(data->module_path);
 }
-
+/*
 struct python3_send_config_callback_data {
 	struct python3_data *data;
 	struct python3_fork *target;
@@ -128,7 +133,7 @@ int python3_send_config (struct python3_data *data, struct python3_fork *target)
 
 	return ret;
 }
-
+*/
 int python3_send_start_sourcing (struct python3_fork *target) {
 	return rrr_py_persistent_start_sourcing (target);
 }
@@ -136,11 +141,12 @@ int python3_send_start_sourcing (struct python3_fork *target) {
 int python3_start(struct python3_data *data) {
 	int ret = 0;
 
-	// START PROCESSING THREAD
+	// START PROCESSING FORK
 	if (data->process_function != NULL) {
 		if ((ret = rrr_py_start_persistent_rw_fork (
 				&data->processing_fork,
 				INSTANCE_D_FORK(data->thread_data),
+				INSTANCE_D_SETTINGS(data->thread_data),
 				data->module_path,
 				data->python3_module,
 				data->process_function,
@@ -150,19 +156,20 @@ int python3_start(struct python3_data *data) {
 			goto out_thread_out;
 		}
 
-		if (python3_send_config(data, data->processing_fork) != 0) {
+/*		if (python3_send_config(data, data->processing_fork) != 0) {
 			RRR_MSG_0("Could not send configuration to processing thread in instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out_thread_out;
-		}
+		}*/
 	}
 
-	// START SOURCE THREAD
+	// START SOURCE FORK
 	if (data->source_function != NULL) {
 		if ((ret = rrr_py_start_persistent_rw_fork (
 				&data->source_fork,
 				INSTANCE_D_FORK(data->thread_data),
+				INSTANCE_D_SETTINGS(data->thread_data),
 				data->module_path,
 				data->python3_module,
 				data->source_function,
@@ -172,12 +179,12 @@ int python3_start(struct python3_data *data) {
 			goto out_thread_out;
 		}
 
-		if (python3_send_config(data, data->source_fork) != 0) {
+/*		if (python3_send_config(data, data->source_fork) != 0) {
 			RRR_MSG_0("Could not send configuration to source thread in instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out_thread_out;
-		}
+		}*/
 
 		// This stops read/write behavior and initiates source only behavior
 		if ((ret = python3_send_start_sourcing(data->source_fork)) != 0) {
@@ -293,6 +300,7 @@ struct read_from_processor_callback_data {
 	struct python3_data *data;
 	struct rrr_message_addr *previous_addr_msg;
 	int message_count;
+	int config_complete;
 };
 
 int read_from_source_or_processor_finalize (
@@ -342,12 +350,28 @@ int read_from_source_or_processor_finalize (
 				python3_data->thread_data->init_data.instance_config->settings,
 				setting->name,
 				setting->was_used,
-				rrr_settings_iterate_nolock
+				rrr_settings_iterate // <-- Iterate with lock, both source and processor threads do this
 		);
 		goto out_clear_message;
 	}
+	else if (RRR_SOCKET_MSG_IS_CTRL(message)) {
+		struct rrr_socket_msg msg_copy = *((struct rrr_socket_msg *) message);
+
+		if (RRR_SOCKET_MSG_CTRL_F_HAS(&msg_copy, RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE)) {
+			callback_data->config_complete = 1;
+			RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE);
+		}
+
+		// CTRL type is returned by FLAGS() macro
+		RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_SOCKET_MSG_TYPE_CTRL);
+
+		if (RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy) != 0) {
+			RRR_BUG("Unknown flags %u in control message from child fork in read_from_source_or_processor_finalize \n",
+					RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy));
+		}
+	}
 	else {
-		RRR_MSG_0("Warning: Received non rrr_message, non rrr_settings and non address msg from python3 source/processor function, discarding it.\n");
+		RRR_MSG_0("Warning: Received non rrr_message, non rrr_settings, non control and non address msg from python3 source/processor function, discarding it.\n");
 		ret = 1;
 		goto out;
 	}
@@ -369,6 +393,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 	struct read_from_processor_callback_data callback_data = {
 			python3_data,
 			&data->previous_address_msg,
+			0,
 			0
 	};
 
@@ -403,6 +428,13 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 		RRR_MSG_0("Error from callback function while receiving message from python3 child\n");
 		ret = 1;
 		goto out;
+	}
+
+	if (callback_data.config_complete) {
+		if (data->config_complete != 0) {
+			RRR_BUG("BUG: config_complete was not 0 in read_from_source_or_processor_callback. The cause is possibly that the control packet was sent twice.\n");
+		}
+		data->config_complete = 1;
 	}
 
 	if (data->loop_count <= 0) {
@@ -456,6 +488,10 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 			break;
 		}
 
+		if (data->config_complete != 1 && *(data->config_complete_to_parent) != 1) {
+			*(data->config_complete_to_parent) = 1;
+		}
+
 //		printf("python3 reader tick: %u write done\n", tick);
 
 		if (data->message_counter == message_counter_old) {
@@ -482,7 +518,8 @@ int preload_reader_thread (
 		struct rrr_thread_collection *collection,
 		struct python3_data *python3_data,
 		struct python3_fork *fork,
-		const char *name
+		const char *name,
+		int *config_complete_to_parent
 ) {
 	int ret = 0;
 	struct rrr_thread *thread = NULL;
@@ -490,6 +527,8 @@ int preload_reader_thread (
 	reader_data->message_counter = 0;
 	reader_data->data = python3_data;
 	reader_data->fork = fork;
+	reader_data->config_complete = 0;
+	reader_data->config_complete_to_parent = config_complete_to_parent;
 
 	thread = rrr_thread_preload_and_register (
 			collection,
@@ -539,10 +578,14 @@ static int threads_start(struct python3_data *data) {
 				data->thread_collection,
 				data,
 				data->source_fork,
-				name
+				name,
+				&data->config_complete_from_source
 		) != 0) {
 			goto out_destroy_collection;
 		}
+	}
+	else {
+		data->config_complete_from_source = 1;
 	}
 
 	if (data->process_function != NULL && *(data->process_function) != '\0') {
@@ -552,10 +595,19 @@ static int threads_start(struct python3_data *data) {
 				data->thread_collection,
 				data,
 				data->processing_fork,
-				name
+				name,
+				&data->config_complete_from_processor
 		) != 0) {
 			goto out_destroy_collection;
 		}
+	}
+	else {
+		data->config_complete_from_processor = 1;
+	}
+
+	if (data->config_function == NULL || *(data->config_function) == '0') {
+		data->config_complete_from_source = 1;
+		data->config_complete_from_processor = 1;
 	}
 
 	if (data->source_thread.thread != NULL && rrr_thread_start(data->source_thread.thread) != 0) {
@@ -667,7 +719,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	// This must be delayed as the results from any config functions are
 	// asynchronously received
-	uint64_t check_settings_used_time = rrr_time_get_64() + 1000000;
+	int settings_was_checked = 0;
 	uint64_t prev_stats_time = 0;
 
 	unsigned int tick = 0;
@@ -677,9 +729,9 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 //		printf ("Python 3 ticks: %u\n", tick);
 
-		if (check_settings_used_time != 0 && check_settings_used_time > rrr_time_get_64()) {
+		if (settings_was_checked == 0 && data->config_complete_from_processor == 1 && data->config_complete_from_source == 1) {
 			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-			check_settings_used_time = 0;
+			settings_was_checked = 1;
 		}
 
 		if (no_polling) {
