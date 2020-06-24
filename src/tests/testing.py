@@ -3,22 +3,22 @@ from rrr_helper import *
 persistent_setting_a = "not touched"
 persistent_setting_b = "not touched"
 
-def config(socket: rrr_socket, setting : rrr_setting):
+def config(config : rrr_config):
 	global persistent_setting_a
 	global persistent_setting_b
 
-	print ("python3 received setting with name " + setting.name)
+	print("python3 setting b, value was '" + config.get("persistent_setting_b") + "'")
+	config.replace("persistent_setting_b", "touched")
+	print("python3 touched setting b, value is now '" + config.get("persistent_setting_b") + "'")
 
-	if setting.name == "python3_persistent_setting_b":
-		print("python3 touching setting b, value was '" + persistent_setting_b + "'")
-		persistent_setting_b = setting.get()
-		print("python3 touching setting b, value is now '" + persistent_setting_b + "'")
+	config.add("persistent_setting_c_new", "produce_warning")
 
-	socket.send(setting)
+	persistent_setting_a = config.get("persistent_setting_a")
+	persistent_setting_b = config.get("persistent_setting_b")
 
 	return True
 
-def source(socket: rrr_socket):
+def source(socket: rrr_socket, message : rrr_message):
 	global persistent_setting_a
 	global persistent_setting_b
 

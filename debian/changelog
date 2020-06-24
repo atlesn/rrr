@@ -1,3 +1,13 @@
+rrr (1.3-2) buster; urgency=medium
+
+  * New binary rrr_auth used to test password files
+  * Pass pre-made rrr_message to python3 source function for simplicity
+  * Remove rrr_setting class, new rrr_config class. Config function
+    only called once (per source/process fork).
+  * Misc. bugfixes in python3
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 24 Jun 2020 16:13:54 +0200
+
 rrr (1.3-1) buster; urgency=medium
 
   * Improvements in MQTT to increase throughput

@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PASSWD_H
 #define RRR_PASSWD_H
 
+#define RRR_PASSWD_MAX_INPUT_LENGTH 1024
+
 #include <stdio.h>
 
 #include "linked_list.h"
@@ -80,6 +82,13 @@ int rrr_passwd_authenticate (
 		const char *username,
 		const char *password,
 		const char *permission_name
+);
+int rrr_passwd_read_password_from_terminal (
+		char **result,
+		int do_confirm
+);
+int rrr_passwd_read_password_from_stdin (
+		char **result
 );
 
 #endif /* RRR_PASSWD_H */

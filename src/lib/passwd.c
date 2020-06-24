@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <termios.h>
 
 #ifdef RRR_WITH_OPENSSL
 #	include <openssl/evp.h>
@@ -36,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "passwd.h"
 #include "base64.h"
 #include "rrr_socket.h"
+#include "rrr_strerror.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512
 #define RRR_PASSWD_HASH_KEY_LENGTH (RRR_PASSWD_HASH_MAX_LENGTH/2)
@@ -710,5 +712,140 @@ int rrr_passwd_authenticate (
 		memset(passwd_file_contents, '\0', passwd_file_size);
 	}
 	RRR_FREE_IF_NOT_NULL(passwd_file_contents);
+	return ret;
+}
+
+static int __rrr_passwd_read_password_from_terminal_prompt (
+		char buf[RRR_PASSWD_MAX_INPUT_LENGTH],
+		const char *msg
+) {
+	size_t password_length = 0;
+
+	password_length = 0;
+	buf[0] = '\0';
+	printf ("%s", msg);
+
+	while (1) {
+		unsigned char c = fgetc(stdin);
+		if (password_length + 1 >= RRR_PASSWD_MAX_INPUT_LENGTH) {
+			printf("\n");
+			RRR_MSG_0("Password was too long, max is %i characters\n", RRR_PASSWD_MAX_INPUT_LENGTH - 1);
+			return 1;
+		}
+
+		if (c == '\n' || c == '\r') {
+			break;
+		}
+
+		buf[password_length] = c;
+		buf[password_length + 1] = '\0';
+
+		password_length++;
+	}
+
+	printf("\n");
+
+	return 0;
+}
+
+int rrr_passwd_read_password_from_terminal (
+		char **result,
+		int do_confirm
+) {
+	int ret = 0;
+
+	struct termios t;
+	struct termios t_orig;
+
+	char buf[RRR_PASSWD_MAX_INPUT_LENGTH];
+	char buf_control[RRR_PASSWD_MAX_INPUT_LENGTH];
+
+	*buf = '\0';
+	*buf_control = '\0';
+
+	*result = NULL;
+
+	if (tcgetattr(STDIN_FILENO, &t_orig) != 0) {
+		RRR_MSG_0("Could not get terminal properties in read_password_stdin: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out_no_restore;
+	}
+
+	t = t_orig;
+	t.c_lflag &= ~(ECHO);
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &t) != 0) {
+		RRR_MSG_0("Could not set terminal properties in read_password_stdin: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out_no_restore;
+	}
+
+	retry:
+	if (__rrr_passwd_read_password_from_terminal_prompt(buf, "Password: ")) {
+		ret = 1;
+		goto out;
+	}
+
+	if (do_confirm) {
+		if (__rrr_passwd_read_password_from_terminal_prompt(buf_control, "Password (again): ")) {
+			ret = 1;
+			goto out;
+		}
+
+		if (strcmp(buf, buf_control) != 0) {
+			printf("Password mismatch, try again\n");
+			goto retry;
+		}
+	}
+
+	*result = strdup(buf);
+	if (*result == NULL) {
+		RRR_MSG_0("Could not allocate memory in read_password_stdin\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+		tcsetattr(STDIN_FILENO, TCSANOW, &t_orig);
+	out_no_restore:
+		return ret;
+}
+
+int rrr_passwd_read_password_from_stdin (
+		char **result
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	char buf[RRR_PASSWD_MAX_INPUT_LENGTH];
+
+	ssize_t bytes = read(STDIN_FILENO, buf, RRR_PASSWD_MAX_INPUT_LENGTH - 1);
+
+	if (bytes < 0) {
+		RRR_MSG_0("Could not read password from stdin: %s\n", rrr_strerror(errno));
+		ret = 1;
+		goto out;
+	}
+	if (bytes == 0) {
+		RRR_MSG_0("Password was empty while reading from standard input\n");
+		ret = 1;
+		goto out;
+	}
+	if (bytes >= RRR_PASSWD_MAX_INPUT_LENGTH - 1) {
+		RRR_MSG_0("Password was too long while reading from standard input\n");
+		ret = 1;
+		goto out;
+	}
+
+	buf[bytes] = '\0';
+
+	*result = strdup(buf);
+	if (*result == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_passwd_read_password_from_stdin\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
 	return ret;
 }

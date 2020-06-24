@@ -26,4 +26,4 @@ make_test_data_CFLAGS =
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = 
 
-TESTS = test.sh 
+TESTS = test.sh test_passwd.sh 

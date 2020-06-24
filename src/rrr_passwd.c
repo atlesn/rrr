@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
-#include <termios.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -38,8 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/gnu.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
-
-#define RRR_PASSWD_MAX_INPUT_LENGTH 1024
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_passwd");
 
@@ -430,93 +427,6 @@ static int __rrr_passwd_process (
 	return ret;
 }
 
-static int __rrr_passwd_read_password_stdin_prompt (char buf[RRR_PASSWD_MAX_INPUT_LENGTH], const char *msg) {
-	size_t password_length = 0;
-
-	password_length = 0;
-	buf[0] = '\0';
-	printf ("%s", msg);
-
-	while (1) {
-		unsigned char c = fgetc(stdin);
-		if (password_length + 1 >= RRR_PASSWD_MAX_INPUT_LENGTH) {
-			printf("\n");
-			RRR_MSG_0("Password was too long, max is %i characters\n", RRR_PASSWD_MAX_INPUT_LENGTH - 1);
-			return 1;
-		}
-
-		if (c == '\n' || c == '\r') {
-			break;
-		}
-
-		buf[password_length] = c;
-		buf[password_length + 1] = '\0';
-
-		password_length++;
-	}
-
-	printf("\n");
-
-	return 0;
-}
-
-static int __rrr_passwd_read_password_stdin (char **result) {
-	int ret = 0;
-
-	struct termios t;
-	struct termios t_orig;
-
-	char buf[RRR_PASSWD_MAX_INPUT_LENGTH];
-	char buf_control[RRR_PASSWD_MAX_INPUT_LENGTH];
-
-	*buf = '\0';
-	*buf_control = '\0';
-
-	*result = NULL;
-
-	if (tcgetattr(STDIN_FILENO, &t_orig) != 0) {
-		RRR_MSG_0("Could not get terminal properties in read_password_stdin: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out_no_restore;
-	}
-
-	t = t_orig;
-	t.c_lflag &= ~(ECHO);
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &t) != 0) {
-		RRR_MSG_0("Could not set terminal properties in read_password_stdin: %s\n", rrr_strerror(errno));
-		ret = 1;
-		goto out_no_restore;
-	}
-
-	retry:
-	if (__rrr_passwd_read_password_stdin_prompt(buf, "Password: ")) {
-		ret = 1;
-		goto out;
-	}
-
-	if (__rrr_passwd_read_password_stdin_prompt(buf_control, "Password (again): ")) {
-		ret = 1;
-		goto out;
-	}
-
-	if (strcmp(buf, buf_control) != 0) {
-		printf("Password mismatch, try again\n");
-		goto retry;
-	}
-
-	*result = strdup(buf);
-	if (*result == NULL) {
-		RRR_MSG_0("Could not allocate memory in read_password_stdin\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-		tcsetattr(STDIN_FILENO, TCSANOW, &t_orig);
-	out_no_restore:
-		return ret;
-}
-
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
 		RRR_MSG_0("Library build version mismatch.\n");
@@ -564,7 +474,7 @@ int main (int argc, const char *argv[]) {
 				data.do_create_user != 0
 			)
 	)) {
-		if (__rrr_passwd_read_password_stdin(&data.password) != 0) {
+		if (rrr_passwd_read_password_from_terminal(&data.password, 1) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;
 		}
