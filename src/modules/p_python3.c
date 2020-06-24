@@ -369,6 +369,7 @@ int read_from_source_or_processor_finalize (
 			RRR_BUG("Unknown flags %u in control message from child fork in read_from_source_or_processor_finalize \n",
 					RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy));
 		}
+		goto out_clear_message;
 	}
 	else {
 		RRR_MSG_0("Warning: Received non rrr_message, non rrr_settings, non control and non address msg from python3 source/processor function, discarding it.\n");
@@ -430,7 +431,7 @@ int read_from_source_or_processor_callback (struct rrr_ip_buffer_entry *entry, v
 		goto out;
 	}
 
-	if (callback_data.config_complete) {
+	if (callback_data.config_complete != 0) {
 		if (data->config_complete != 0) {
 			RRR_BUG("BUG: config_complete was not 0 in read_from_source_or_processor_callback. The cause is possibly that the control packet was sent twice.\n");
 		}
@@ -488,7 +489,7 @@ static void *thread_entry_python3_reader (struct rrr_thread *thread) {
 			break;
 		}
 
-		if (data->config_complete != 1 && *(data->config_complete_to_parent) != 1) {
+		if (data->config_complete != 0 && *(data->config_complete_to_parent) == 0) {
 			*(data->config_complete_to_parent) = 1;
 		}
 

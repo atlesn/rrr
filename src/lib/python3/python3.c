@@ -691,7 +691,7 @@ int __rrr_py_persistent_send_config (
 	config = rrr_python3_config_new (settings);
 
 	if (config == NULL) {
-		RRR_MSG_0("Could not create config object in __rrr_py_persistent_process_loop\n");
+		RRR_MSG_0("Could not create config object in __rrr_py_persistent_send_config \n");
 		ret = 1;
 		goto out;
 	}
@@ -701,7 +701,7 @@ int __rrr_py_persistent_send_config (
 			config,
 			NULL
 	)) != 0) {
-		RRR_MSG_0("Error from config function in __rrr_py_persistent_process_loop\n");
+		RRR_MSG_0("Error from config function in __rrr_py_persistent_send_config \n");
 		ret = 1;
 		goto out;
 	}
@@ -709,6 +709,15 @@ int __rrr_py_persistent_send_config (
 	struct return_settings_iterate_callback_data callback_data = { channel_from_fork };
 
 	ret = rrr_settings_iterate_packed(settings, __rrr_py_return_settings_iterate_callback, &callback_data);
+
+	struct rrr_socket_msg ctrl_msg = {0};
+	rrr_socket_msg_populate_control_msg(&ctrl_msg, RRR_PYTHON3_CONTROL_MSG_CONFIG_COMPLETE, 0);
+
+	if ((ret = rrr_mmap_channel_write(channel_from_fork, &ctrl_msg, sizeof(ctrl_msg))) != 0) {
+		RRR_MSG_0("Error while writing control to mmap channel in __rrr_py_persistent_send_config \n");
+		ret = 1;
+		goto out;
+	}
 
 	out:
 	Py_XDECREF(config);
