@@ -490,7 +490,7 @@ struct rrr_py_persistent_process_read_callback_data {
 	int message_count;
 };
 
-int __rrr_py_persisten_process_call_application_raw (
+int __rrr_py_persistent_process_call_application_raw (
 		PyObject *function,
 		PyObject *arg1,
 		PyObject *arg2
@@ -542,7 +542,7 @@ int __rrr_py_persistent_process_call_application (
 	}
 
 	if (function != NULL) {
-		ret = __rrr_py_persisten_process_call_application_raw(function, callback_data->runtime->socket, arg_message);
+		ret = __rrr_py_persistent_process_call_application_raw(function, callback_data->runtime->socket, arg_message);
 	}
 	else {
 		RRR_DBG_3("Python3 no functions defined for received message type %p, %s\n", Py_TYPE(arg_message), arg_message->ob_type->tp_name);
@@ -559,7 +559,6 @@ int __rrr_py_persistent_process_call_application (
 }
 
 void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runtime, PyObject *function) {
-	PyObject *result = NULL;
 	PyObject *message = NULL;
 
 	struct rrr_message *template = NULL;
@@ -584,28 +583,17 @@ void __rrr_py_persistent_fork_run_source_loop (struct python3_fork_runtime *runt
 			goto out;
 		}
 
-		result = PyObject_CallFunctionObjArgs(function, runtime->socket, message);
-		if (result == NULL) {
+		if ((ret = __rrr_py_persistent_process_call_application_raw (function, runtime->socket, message)) != 0) {
 			RRR_MSG_0("Error while calling python3 function in __rrr_py_persistent_thread_source pid %i\n",
 					getpid());
-			PyErr_Print();
-			ret = 1;
-			goto out;
-
-		}
-		if (!PyObject_IsTrue(result)) {
-			RRR_MSG_0("Non-true returned from python3 function in __rrr_py_persistent_thread_source pid %i\n",
-					getpid());
 			ret = 1;
 			goto out;
 		}
-		RRR_Py_XDECREF(result);
 	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(template);
 	RRR_Py_XDECREF(message);
-	RRR_Py_XDECREF(result);
 	if (RRR_DEBUGLEVEL_1 || ret != 0) {
 		RRR_DBG("Python3 child persistent ro pid %i exiting with return value %i, fork running is %i\n",
 				getpid(), ret, rrr_py_fork_running);
@@ -708,7 +696,7 @@ int __rrr_py_persistent_send_config (
 		goto out;
 	}
 
-	if ((ret = __rrr_py_persisten_process_call_application_raw (
+	if ((ret = __rrr_py_persistent_process_call_application_raw (
 			config_function,
 			config,
 			NULL
