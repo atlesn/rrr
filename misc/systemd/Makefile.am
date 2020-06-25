@@ -11,3 +11,6 @@ install-data-local:
 clean-local:
 	echo "# DO NOT DELETE THIS FILE" > rrr.service
 
+distclean-local:
+	rm -f make-service.sh || true
+

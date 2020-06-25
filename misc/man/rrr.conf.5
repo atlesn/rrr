@@ -806,7 +806,12 @@ Host name or IP of the broker to connect to. Defaults to localhost.
 .It mqtt_server_port=PORT
 TCP port on the server for TLS connections, defaults to 1883 for plain transport and 8883 for TLS connection.
 .It mqtt_client_identifier=IDENTIFIER
-Client identifier to use. If left unspecified, broker pics one.
+Client identifier to use. If left unspecified, the broker picks one.
+.It mqtt_v5_recycle_assigned_client_identifier={yes|no}
+If we let the broker pick a client identifier and we are using protocol version 5, the broker will inform the client
+about which client identifier it assigned. If this option is set to yes and the client needs to re-connect for some reason,
+it will attempt to use this assigned client identifier. In version 3, the broker does not inform the client about the
+picked client identifier and this option is then ignored. Defaults to 'yes'.
 .It mqtt_connect_error_action={restart|retry}
 Default action if connecting to the server failed. If set to
 .B restart,

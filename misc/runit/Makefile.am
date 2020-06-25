@@ -13,3 +13,6 @@ uninstall-hook:
 clean-local:
 	echo "# DO NOT DELETE THIS FILE" > run
 
+distclean-local:
+	rm -rf make-runit.sh || true
+

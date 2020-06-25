@@ -1,3 +1,1 @@
-#!/bin/sh
-
-exec su -c "LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/rrr /usr/local/etc/rrr.conf.d" - daemon
+# DO NOT DELETE THIS FILE
