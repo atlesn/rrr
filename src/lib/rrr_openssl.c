@@ -46,7 +46,6 @@ void rrr_openssl_global_register_user(void) {
 void rrr_openssl_global_unregister_user(void) {
 	pthread_mutex_lock(&rrr_openssl_global_lock);
 	if ((--rrr_openssl_global_usercount) == 0) {
-		(void)FIPS_mode_set(0);
 		CONF_modules_unload(1);
 
 		// Deprecated stuff in version >= 1.1.0

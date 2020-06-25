@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * we will not be able to use readdir()
  */
 
+// Allow realpath
+#define _XOPEN_SOURCE 500
+#include <stdlib.h>
+
 // Allow S_IFDIR etc. on BSD
 #undef __XSI_VISIBLE
 #define __XSI_VISIBLE 1
@@ -37,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <fcntl.h>
 #include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 #include "log.h"
