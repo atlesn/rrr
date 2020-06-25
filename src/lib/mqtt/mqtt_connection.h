@@ -72,15 +72,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)
 
-struct rrr_mqtt_data;
 struct rrr_mqtt_session;
-struct rrr_net_transport;
 struct rrr_net_transport_handle;
 
 struct rrr_mqtt_conn {
-//	struct rrr_mqtt_transport *collection;
-//	struct rrr_net_transport *transport;
-
 	int transport_handle;
 
 	int (*event_handler)(

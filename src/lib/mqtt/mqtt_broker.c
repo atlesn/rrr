@@ -219,13 +219,17 @@ static int __rrr_mqtt_broker_check_unique_client_id_callback (struct rrr_net_tra
  * prefix if a session with this prefix already exists. If a new connection with an
  * existing client ID appears, the old client is to be disconnected. */
 static int __rrr_mqtt_broker_check_unique_client_id (
+		int *name_was_taken,
+		int *other_client_was_disconnected,
 		const char *client_id,
 		const struct rrr_mqtt_conn *connection,
 		struct rrr_mqtt_broker_data *broker,
-		int disconnect_other_client,
-		int *other_client_was_disconnected
+		int disconnect_other_client
 ) {
 	int ret = 0;
+
+	*name_was_taken = 0;
+	*other_client_was_disconnected = 0;
 
 	struct validate_client_id_callback_data callback_data = {
 			connection,
@@ -240,6 +244,8 @@ static int __rrr_mqtt_broker_check_unique_client_id (
 			__rrr_mqtt_broker_check_unique_client_id_callback,
 			&callback_data
 	);
+
+	*name_was_taken = callback_data.name_was_taken;
 
 	// Do not replace error handling with macro, special case
 	if (ret != RRR_MQTT_OK) {
@@ -287,33 +293,40 @@ static int __rrr_mqtt_broker_generate_unique_client_id_unlocked (
 
 		RRR_FREE_IF_NOT_NULL(result);
 
-		if (rrr_asprintf(&result, RRR_MQTT_BROKER_CLIENT_PREFIX "%u", serial) != 0) {
-			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_broker_generate_client_id\n");
+		if (rrr_asprintf(&result, RRR_MQTT_BROKER_CLIENT_PREFIX "%u", serial) < 0) {
+			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
 			ret = RRR_MQTT_INTERNAL_ERROR;
 			goto out;
 		}
 
+		int name_was_taken = 0;
 		int dummy = 0;
-		ret = __rrr_mqtt_broker_check_unique_client_id (result, connection, broker, 0, &dummy);
+
+		ret = __rrr_mqtt_broker_check_unique_client_id (
+				&name_was_taken,
+				&dummy,
+				result,
+				connection,
+				broker,
+				0 // = do not disconnect other client with equal name
+		);
 
 		if (dummy != 0) {
-			RRR_BUG("dummy was not 0 in __rrr_mqtt_broker_generate_unique_client_id\n");
+			RRR_BUG("dummy was not 0 in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
 		}
 
 		if (ret != 0) {
-			ret = ret & ~RRR_MQTT_SOFT_ERROR;
-			if (ret == 0) {
-				continue;
-			}
-
-			RRR_MSG_0("Error while validating client ID in __rrr_mqtt_broker_generate_unique_client_id: %i\n", ret);
-			ret = RRR_MQTT_INTERNAL_ERROR;
+			RRR_MSG_0("Error while validating client ID in __rrr_mqtt_broker_generate_unique_client_id_unlocked: %i\n", ret);
 			goto out;
+		}
+
+		if (name_was_taken == 0) {
+			break;
 		}
 	}
 
 	if (retries <= 0) {
-		RRR_MSG_0("Number of generated client IDs reached maximum in __rrr_mqtt_broker_generate_unique_client_id\n");
+		RRR_MSG_0("Number of generated client IDs reached maximum in __rrr_mqtt_broker_generate_unique_client_id_unlocked\n");
 		ret = RRR_MQTT_SOFT_ERROR;
 		goto out;
 	}
@@ -350,6 +363,8 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 	return ret;
 }
 
+// TODO : Try to split this up into multiple functions
+
 static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -365,7 +380,10 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	int client_id_was_assigned = 0;
 	int session_present = 0;
+
+	int name_was_taken = 0;
 	int other_client_was_disconnected = 0;
+
 	uint8_t reason_v5 = 0;
 	struct rrr_mqtt_session *session = NULL;
 	struct rrr_mqtt_p_connack *connack = NULL;
@@ -418,8 +436,9 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
-		RRR_FREE_IF_NOT_NULL(connect->client_identifier);
-		if ((ret = __rrr_mqtt_broker_generate_unique_client_id (&connect->client_identifier, connection, data)) != 0) {
+		// Note: Write ID to connectION, not the connect packet
+		RRR_FREE_IF_NOT_NULL(connection->client_id);
+		if ((ret = __rrr_mqtt_broker_generate_unique_client_id (&connection->client_id, connection, data)) != 0) {
 			if (ret == RRR_MQTT_SOFT_ERROR) {
 				reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
 				goto out_send_connack;
@@ -459,11 +478,12 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 		// If client ID is already used for active connection, disconnect the old one
 		if ((ret = __rrr_mqtt_broker_check_unique_client_id (
+				&name_was_taken,
+				&other_client_was_disconnected,
 				connect->client_identifier,
 				connection,
 				data,
-				1, // Disconnect existing client with same ID
-				&other_client_was_disconnected
+				1 // Disconnect existing client with same ID
 		)) != 0) {
 			 ret = ret & ~RRR_MQTT_SOFT_ERROR;
 			 if (ret != 0) {
@@ -476,9 +496,14 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			 goto out_send_connack;
 		}
 
-		connection->client_id = malloc(strlen(connect->client_identifier) + 1);
-		strcpy(connection->client_id, connect->client_identifier);
+		if ((connection->client_id = strdup(connect->client_identifier)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for client ID in __rrr_mqtt_broker_handle_connect\n");
+			ret = RRR_MQTT_INTERNAL_ERROR;
+			goto out;
+		}
 	}
+
+	// Below this point, only access client identifier through connection struct, not connect struct (might be NULL)
 
 	int client_count = 0;
 	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(client_count = data->client_count);
@@ -496,14 +521,18 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->client_count++);
 
-	RRR_DBG_1 ("CONNECT: Using client ID '%s' username '%s' client count is %i\n",
-			connect->client_identifier, (connect->username != NULL ? connect->username : ""), client_count + 1);
+	RRR_DBG_1 ("CONNECT: Using client ID '%s'%s username '%s' client count is %i\n",
+			(connection->client_id != NULL ? connection->client_id : "(empty)"),
+			(client_id_was_assigned ? " (generated)"  : ""),
+			(connect->username != NULL ? connect->username : ""),
+			client_count + 1
+	);
 
 	if (session == NULL) {
 		if ((ret = mqtt_data->sessions->methods->get_session (
 				&session,
 				mqtt_data->sessions,
-				connect->client_identifier,
+				connection->client_id,
 				&session_present,
 				0 // Create if non-existent client ID
 		)) != RRR_MQTT_SESSION_OK || session == NULL) {
@@ -516,7 +545,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	if (!RRR_MQTT_P_IS_V5(packet)) {
 		// Default for version 3.1 is that sessions do not expire,
 		// only use clean session to control this
-		session_properties.session_expiry = 0xffffffff;
+		session_properties.numbers.session_expiry = 0xffffffff;
 	}
 
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
@@ -647,7 +676,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	out:
 
-	rrr_mqtt_session_properties_destroy(&session_properties);
+	rrr_mqtt_session_properties_clear(&session_properties);
 //	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;

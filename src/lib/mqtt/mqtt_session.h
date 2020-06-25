@@ -42,24 +42,29 @@ struct rrr_mqtt_session {
 	char dummy;
 };
 
-struct rrr_mqtt_session_properties {
+struct rrr_mqtt_session_properties_numbers {
 	uint32_t session_expiry;
 	uint32_t receive_maximum;
 	uint32_t maximum_qos;
 	uint32_t retain_available;
 	uint32_t maximum_packet_size;
-	struct rrr_mqtt_property *assigned_client_identifier;
-	struct rrr_mqtt_property *reason_string;
 	uint32_t wildcard_subscriptions_available;
 	uint32_t subscription_identifiers_availbable;
 	uint32_t shared_subscriptions_available;
 	uint32_t server_keep_alive;
-	struct rrr_mqtt_property *response_information;
-	struct rrr_mqtt_property *server_reference;
 	uint32_t topic_alias_maximum;
 	uint32_t request_response_information;
 	uint32_t request_problem_information;
+};
+
+struct rrr_mqtt_session_properties {
+	struct rrr_mqtt_session_properties_numbers numbers;
 	struct rrr_mqtt_property_collection user_properties;
+
+	struct rrr_mqtt_property *assigned_client_identifier;
+	struct rrr_mqtt_property *reason_string;
+	struct rrr_mqtt_property *response_information;
+	struct rrr_mqtt_property *server_reference;
 	struct rrr_mqtt_property *auth_method;
 	struct rrr_mqtt_property *auth_data;
 };
@@ -168,11 +173,20 @@ struct rrr_mqtt_session_collection_methods {
 			struct rrr_mqtt_session **session
 	);
 
-	// Reset properties for a session
-	int (*reset_properties) (
+	// Update properties for a session, usually after CONNACK
+	int (*update_properties) (
 			struct rrr_mqtt_session_collection *collection,
 			struct rrr_mqtt_session **session,
-			const struct rrr_mqtt_session_properties *properties
+			const struct rrr_mqtt_session_properties *properties,
+			const struct rrr_mqtt_session_properties_numbers *numbers_to_update,
+			uint8_t is_v5
+	);
+
+	// Get session properties. Target is cleaned up before used.
+	int (*get_properties) (
+			struct rrr_mqtt_session_properties *target,
+			struct rrr_mqtt_session_collection *collection,
+			struct rrr_mqtt_session **session
 	);
 
 	// Called upon reception of ANY packet from the client
@@ -224,8 +238,13 @@ struct rrr_mqtt_session_collection {
 	// Private data follows
 };
 
-void rrr_mqtt_session_properties_destroy (
+void rrr_mqtt_session_properties_clear (
 		struct rrr_mqtt_session_properties *target
+);
+int rrr_mqtt_session_properties_update (
+		struct rrr_mqtt_session_properties *target,
+		const struct rrr_mqtt_session_properties *source,
+		const struct rrr_mqtt_session_properties_numbers *numbers_to_update
 );
 int rrr_mqtt_session_properties_clone (
 		struct rrr_mqtt_session_properties *target,

@@ -46,6 +46,10 @@ typedef unsigned long long int rrr_setting_uint;
 #define RRR_SETTING_PARSE_ERROR 2
 #define RRR_SETTING_NOT_FOUND 3
 
+#define RRR_SETTINGS_IF_EXISTS_THEN(string, then)															\
+	do { if ( rrr_instance_config_setting_exists(config, string)) { then;									\
+	}} while (0)
+
 #define RRR_SETTINGS_PARSE_OPTIONAL_YESNO(string, target, default_yesno)									\
 do {int yesno = default_yesno;																				\
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\

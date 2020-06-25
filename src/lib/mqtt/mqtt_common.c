@@ -34,25 +34,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)
 
 const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties = {
-		.session_expiry							= 0,
-		.receive_maximum						= 0,
-		.maximum_qos							= 0,
-		.retain_available						= 1,
-		.maximum_packet_size					= 0,
-		.assigned_client_identifier				= NULL,
-		.reason_string							= NULL,
-		.wildcard_subscriptions_available		= 1,
-		.subscription_identifiers_availbable	= 1,
-		.shared_subscriptions_available			= 1,
-		.server_keep_alive						= 30,
-		.response_information					= NULL,
-		.server_reference						= NULL,
+		.numbers.session_expiry					= 0,
+		.numbers.receive_maximum				= 0,
+		.numbers.maximum_qos					= 0,
+		.numbers.retain_available				= 1,
+		.numbers.maximum_packet_size			= 0,
+		.numbers.wildcard_subscriptions_available		= 1,
+		.numbers.subscription_identifiers_availbable	= 1,
+		.numbers.shared_subscriptions_available			= 1,
+		.numbers.server_keep_alive				= 30,
+		.numbers.topic_alias_maximum			= 0,
+		.numbers.request_response_information	= 0,
+		.numbers.request_problem_information	= 0,
 
-		.topic_alias_maximum					= 0,
-		.request_response_information			= 0,
-		.request_problem_information			= 0,
 		.user_properties						= {0},
 
+		.assigned_client_identifier				= NULL,
+		.reason_string							= NULL,
+		.response_information					= NULL,
+		.server_reference						= NULL,
 		.auth_method							= NULL,
 		.auth_data								= NULL
 };
@@ -231,14 +231,14 @@ int rrr_mqtt_common_data_init (
 
 	memset (data, '\0', sizeof(*data));
 
-	data->client_name = malloc(strlen(init_data->client_name) + 1);
-	if (data->client_name == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
-		ret = 1;
-		goto out;
+	if (init_data->client_name != NULL && *(init_data->client_name) != '\0') {
+		if ((data->client_name = strdup(init_data->client_name)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_mqtt_data_init\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
-	strcpy(data->client_name, init_data->client_name);
 	data->event_handler = event_handler;
 	data->event_handler_static_arg = event_handler_static_arg;
 	data->retry_interval_usec = init_data->retry_interval_usec;
@@ -286,11 +286,14 @@ int rrr_mqtt_common_data_init (
 		goto out_reason_protocol_error;																			\
 	}} while (0)
 
+
+#define HANDLE_PROPERTY_SWITCH_INIT()										\
+		int ret = RRR_MQTT_OK;												\
+		HANDLE_PROPERTY_CHECK_DUP();										\
+		uint32_t tmp_u32 = 0; (void)(tmp_u32)
+
 #define HANDLE_PROPERTY_SWITCH_BEGIN()										\
-	int ret = RRR_MQTT_OK;												\
-	HANDLE_PROPERTY_CHECK_DUP();											\
-	uint32_t tmp_u32 = 0; (void)(tmp_u32);									\
-	do { switch (RRR_MQTT_PROPERTY_GET_ID(property)) {						\
+	switch (RRR_MQTT_PROPERTY_GET_ID(property)) {							\
 		case 0:																\
 			RRR_BUG("Property id was 0 in HANDLE_PROPERTY_SWITCH_BEGIN\n");	\
 			break
@@ -384,23 +387,24 @@ int rrr_mqtt_common_data_init (
 			(target) = property;																	\
 			break;
 
+#define HANDLE_PROPERTY_SWITCH_END() 																\
+		default:																					\
+			RRR_MSG_0("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));				\
+			goto out_reason_protocol_error;															\
+		}
+
 // We do not return error as we want to parse the rest of the source_properties to check
 // for more errors. Caller checks for non-zero reason.
-#define HANDLE_PROPERTY_SWITCH_END_AND_RETURN() 													\
-		default:																					\
-			RRR_MSG_0("Unknown property '%s'\n", RRR_MQTT_PROPERTY_GET_NAME(property));			\
-			goto out_reason_protocol_error;															\
-	};																								\
-	goto out;																						\
-	out_internal_error:																				\
-		ret = RRR_MQTT_INTERNAL_ERROR;															\
-		return ret;																					\
-	out_reason_protocol_error:																		\
-		ret = RRR_MQTT_SOFT_ERROR;																\
-		callback_data->reason_v5 = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;								\
-	out:																							\
-		return ret;																					\
-	} while (0)
+#define HANDLE_PROPERTY_SWITCH_RETURN() 													\
+	goto out;																				\
+	out_internal_error:																		\
+		ret = RRR_MQTT_INTERNAL_ERROR;														\
+		return ret;																			\
+	out_reason_protocol_error:																\
+		ret = RRR_MQTT_SOFT_ERROR;															\
+		callback_data->reason_v5 = RRR_MQTT_P_5_REASON_PROTOCOL_ERROR;						\
+	out:																					\
+		return ret
 
 int rrr_mqtt_common_handler_connect_handle_properties_callback (
 		const struct rrr_mqtt_property *property,
@@ -409,32 +413,33 @@ int rrr_mqtt_common_handler_connect_handle_properties_callback (
 	struct rrr_mqtt_common_parse_properties_data_connect *callback_data = arg;
 	struct rrr_mqtt_session_properties *session_properties = callback_data->session_properties;
 
+	HANDLE_PROPERTY_SWITCH_INIT();
 	HANDLE_PROPERTY_SWITCH_BEGIN();
 		HANDLE_PROPERTY_U32_UNCHECKED (
-				session_properties->session_expiry,
+				session_properties->numbers.session_expiry,
 				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
 		);
 		HANDLE_PROPERTY_U32_NON_ZERO (
-				session_properties->receive_maximum,
+				session_properties->numbers.receive_maximum,
 				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
 				"Receive maximum was 0 in CONNECT packet"
 		);
 		HANDLE_PROPERTY_U32_NON_ZERO (
-				session_properties->maximum_packet_size,
+				session_properties->numbers.maximum_packet_size,
 				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
 				"Maximum packet size was 0 in CONNECT packet"
 		);
 		HANDLE_PROPERTY_U32_UNCHECKED (
-				session_properties->topic_alias_maximum,
+				session_properties->numbers.topic_alias_maximum,
 				RRR_MQTT_PROPERTY_TOPIC_ALIAS_MAXIMUM
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->request_response_information,
+				session_properties->numbers.request_response_information,
 				RRR_MQTT_PROPERTY_REQUEST_RESPONSE_INFO,
 				"Request response information field in CONNECT packet was not 0 or 1"
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->request_problem_information,
+				session_properties->numbers.request_problem_information,
 				RRR_MQTT_PROPERTY_REQUEST_PROBLEM_INFO,
 				"Request problem information field in CONNECT packet was not 0 or 1"
 		);
@@ -450,8 +455,12 @@ int rrr_mqtt_common_handler_connect_handle_properties_callback (
 				&session_properties->auth_data,
 				RRR_MQTT_PROPERTY_AUTH_DATA
 		);
-	HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+	HANDLE_PROPERTY_SWITCH_END();
+	HANDLE_PROPERTY_SWITCH_RETURN();
 }
+
+#define HANDLE_PROPERTY_UPDATE_DEFINED(target,property)				\
+		case property: (target) = 1; break;
 
 int rrr_mqtt_common_handler_connack_handle_properties_callback (
 		const struct rrr_mqtt_property *property,
@@ -459,29 +468,70 @@ int rrr_mqtt_common_handler_connack_handle_properties_callback (
 ) {
 	struct rrr_mqtt_common_parse_properties_data_connect *callback_data = arg;
 	struct rrr_mqtt_session_properties *session_properties = callback_data->session_properties;
+	struct rrr_mqtt_session_properties_numbers *defined = &callback_data->found_number_properties;
+
+	HANDLE_PROPERTY_SWITCH_INIT();
+	HANDLE_PROPERTY_SWITCH_BEGIN();
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->session_expiry,
+				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->receive_maximum,
+				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->maximum_qos,
+				RRR_MQTT_PROPERTY_MAXIMUM_QOS
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->retain_available,
+				RRR_MQTT_PROPERTY_RETAIN_AVAILABLE
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->maximum_packet_size,
+				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->wildcard_subscriptions_available,
+				RRR_MQTT_PROPERTY_WILDCARD_SUB_AVAILBABLE
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->subscription_identifiers_availbable,
+				RRR_MQTT_PROPERTY_SUBSCRIPTION_ID_AVAILABLE
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->shared_subscriptions_available,
+				RRR_MQTT_PROPERTY_SHARED_SUB_AVAILABLE
+		);
+		HANDLE_PROPERTY_UPDATE_DEFINED (
+				defined->server_keep_alive,
+				RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE
+		);
+	}; // Don't use the macro with the default: clause
 
 	HANDLE_PROPERTY_SWITCH_BEGIN();
 		HANDLE_PROPERTY_U32_UNCHECKED (
-				session_properties->session_expiry,
+				session_properties->numbers.session_expiry,
 				RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL
 		);
 		HANDLE_PROPERTY_U32_NON_ZERO (
-				session_properties->receive_maximum,
+				session_properties->numbers.receive_maximum,
 				RRR_MQTT_PROPERTY_RECEIVE_MAXIMUM,
 				"Receive maximum was 0 in CONNACK packet"
 		);
 		HANDLE_PROPERTY_U32_QOS (
-				session_properties->maximum_qos,
+				session_properties->numbers.maximum_qos,
 				RRR_MQTT_PROPERTY_MAXIMUM_QOS,
 				"QOS was not 0, 1 or 2 in CONNACK packet"
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->retain_available,
+				session_properties->numbers.retain_available,
 				RRR_MQTT_PROPERTY_RETAIN_AVAILABLE,
 				"Retain available field in CONNECT packet was not 0 or 1"
 		);
 		HANDLE_PROPERTY_U32_NON_ZERO (
-				session_properties->maximum_packet_size,
+				session_properties->numbers.maximum_packet_size,
 				RRR_MQTT_PROPERTY_MAXIMUM_PACKET_SIZE,
 				"Maximum packet size was 0 in CONNECT packet"
 		);
@@ -498,22 +548,22 @@ int rrr_mqtt_common_handler_connack_handle_properties_callback (
 				RRR_MQTT_PROPERTY_USER_PROPERTY
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->wildcard_subscriptions_available,
+				session_properties->numbers.wildcard_subscriptions_available,
 				RRR_MQTT_PROPERTY_WILDCARD_SUB_AVAILBABLE,
 				"Wildcard subscriptions available field in CONNECT packet was not 0 or 1"
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->subscription_identifiers_availbable,
+				session_properties->numbers.subscription_identifiers_availbable,
 				RRR_MQTT_PROPERTY_SUBSCRIPTION_ID_AVAILABLE,
 				"Subscription identifiers available field in CONNECT packet was not 0 or 1"
 		);
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
-				session_properties->shared_subscriptions_available,
+				session_properties->numbers.shared_subscriptions_available,
 				RRR_MQTT_PROPERTY_SHARED_SUB_AVAILABLE,
 				"Shared subscriptions available field in CONNECT packet was not 0 or 1"
 		);
 		HANDLE_PROPERTY_U32_UNCHECKED (
-				session_properties->server_keep_alive,
+				session_properties->numbers.server_keep_alive,
 				RRR_MQTT_PROPERTY_SERVER_KEEP_ALIVE
 		);
 		HANDLE_PROPERTY_CLONE (
@@ -532,7 +582,8 @@ int rrr_mqtt_common_handler_connack_handle_properties_callback (
 				&session_properties->auth_data,
 				RRR_MQTT_PROPERTY_AUTH_DATA
 		);
-	HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+	HANDLE_PROPERTY_SWITCH_END();
+	HANDLE_PROPERTY_SWITCH_RETURN();
 }
 
 int rrr_mqtt_common_handler_publish_handle_properties_callback (
@@ -542,6 +593,7 @@ int rrr_mqtt_common_handler_publish_handle_properties_callback (
 	struct rrr_mqtt_common_parse_properties_data_publish *callback_data = arg;
 	struct rrr_mqtt_p_publish *publish = callback_data->publish;
 
+	HANDLE_PROPERTY_SWITCH_INIT();
 	HANDLE_PROPERTY_SWITCH_BEGIN();
 		HANDLE_PROPERTY_U32_ON_OFF_TO_U8 (
 				publish->payload_format_indicator,
@@ -577,7 +629,8 @@ int rrr_mqtt_common_handler_publish_handle_properties_callback (
 				publish->content_type,
 				RRR_MQTT_PROPERTY_CONTENT_TYPE
 		);
-	HANDLE_PROPERTY_SWITCH_END_AND_RETURN();
+	HANDLE_PROPERTY_SWITCH_END();
+	HANDLE_PROPERTY_SWITCH_RETURN();
 }
 
 int rrr_mqtt_common_handle_properties (
