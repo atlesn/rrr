@@ -239,11 +239,16 @@ int rrr_mqtt_assemble_connect (RRR_MQTT_P_TYPE_ASSEMBLE_DEFINITION) {
 		PUT_PROPERTIES(&connect->properties);
 	}
 
-	PUT_AND_VERIFY_RAW_WITH_LENGTH(
-			connect->client_identifier,
-			strlen(connect->client_identifier),
-			" for client identifier in trr_mqtt_assemble_connect"
-	);
+	if (connect->client_identifier != NULL) {
+		PUT_AND_VERIFY_RAW_WITH_LENGTH(
+				connect->client_identifier,
+				strlen(connect->client_identifier),
+				" for client identifier in trr_mqtt_assemble_connect"
+		);
+	}
+	else {
+		PUT_U16(0);
+	}
 
 	if (RRR_MQTT_P_IS_V5(packet)) {
 		PUT_PROPERTIES(&connect->will_properties);

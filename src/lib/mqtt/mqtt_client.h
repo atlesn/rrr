@@ -37,7 +37,7 @@ struct rrr_mqtt_client_data {
 	/* MUST be first */
 	struct rrr_mqtt_data mqtt_data;
 
-	struct rrr_mqtt_session_properties session_properties;
+//	struct rrr_mqtt_session_properties session_properties;
 	ssize_t connection_count;
 	uint64_t last_pingreq_time;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
@@ -108,6 +108,15 @@ int rrr_mqtt_client_new (
 		void *suback_unsuback_handler_arg,
 		int (*packet_parsed_handler)(struct rrr_mqtt_client_data *data, struct rrr_mqtt_p *p, void *private_arg),
 		void *packet_parsed_handler_arg
+);
+int rrr_mqtt_client_late_set_client_identifier (
+		struct rrr_mqtt_client_data *client,
+		const char *client_identifier
+);
+int rrr_mqtt_client_get_session_properties (
+		struct rrr_mqtt_session_properties *target,
+		struct rrr_mqtt_client_data *client,
+		int transport_handle
 );
 int rrr_mqtt_client_synchronized_tick (
 		struct rrr_mqtt_session_iterate_send_queue_counters *session_counters,

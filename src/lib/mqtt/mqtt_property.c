@@ -112,6 +112,8 @@ int rrr_mqtt_property_clone (
 ) {
 	int ret = 0;
 
+	struct rrr_mqtt_property *result = NULL;
+
 	if (*target != NULL) {
 		RRR_BUG("Target was not NULL in rr_mqtt_property_clone\n");
 	}
@@ -120,7 +122,7 @@ int rrr_mqtt_property_clone (
 		goto out;
 	}
 
-	struct rrr_mqtt_property *result = malloc(sizeof(*result));
+	result = malloc(sizeof(*result));
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone A\n");
 		ret = 1;
@@ -128,6 +130,10 @@ int rrr_mqtt_property_clone (
 	}
 
 	memcpy(result, source, sizeof(*result));
+
+	// These pointers should be reset. The pointer to definition should be OK.
+	RRR_LL_NODE_INIT(result);
+	result->sibling = NULL;
 
 	if (result->length <= 0) {
 		RRR_BUG("Length was <= 0 in rrr_mqtt_property_clone\n");
@@ -137,17 +143,27 @@ int rrr_mqtt_property_clone (
 	if (result->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_mqtt_property_clone B\n");
 		ret = 1;
-		goto out_free_property;
+		goto out;
 	}
 
-	memcpy(result->data, source, result->length);
+	memcpy(result->data, source->data, result->length);
 	result->order = 0;
 
+	if (source->sibling != NULL) {
+		if ((ret = rrr_mqtt_property_clone(&result->sibling, source->sibling)) != 0) {
+			RRR_MSG_0("Could not clone sibling in rr_mqtt_property_clone\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
 	*target = result;
+	result = NULL;
 
 	goto out;
-	out_free_property:
-		free(result);
+		if (result != NULL) {
+			rrr_mqtt_property_destroy(result);
+		}
 	out:
 		return ret;
 }
@@ -218,6 +234,36 @@ const char *rrr_mqtt_property_get_blob (
 	}
 	*length = property->length;
 	return property->data;
+}
+
+int rrr_mqtt_property_get_blob_as_str (
+		char **result,
+		const struct rrr_mqtt_property *property
+) {
+	*result = NULL;
+
+	int ret = 0;
+
+	char *tmp = NULL;
+
+	ssize_t length;
+	const char *data = rrr_mqtt_property_get_blob(property, &length);
+
+	if ((tmp = malloc(length + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_propert_get_blob_as_str\n");
+		ret = 1;
+		goto out;
+	}
+
+	memcpy(tmp, data, length);
+	tmp[length] = '\0';
+
+	*result = tmp;
+	tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(tmp);
+	return ret;
 }
 
 static int __rrr_mqtt_property_clone (
@@ -434,6 +480,45 @@ unsigned int rrr_mqtt_property_collection_count_duplicates (
 
 	return ret;
 
+}
+
+static void __rrr_mqtt_property_dump (
+		const struct rrr_mqtt_property *property
+) {
+	char *tmp = NULL;
+
+	printf("%s: ", property->definition->name);
+	switch (property->internal_data_type) {
+		case RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB:
+			tmp = malloc(property->length + 1);
+			memcpy(tmp, property->data, property->length);
+			tmp[property->length] = '\0';
+			printf("%s", tmp);
+			break;
+		case RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_UINT32:
+			printf ("%" PRIu32 "", *((uint32_t*) property->data));
+			break;
+		default:
+			printf ("unknown internal type %u", property->internal_data_type);
+			break;
+	};
+	printf("\n");
+
+	if (property->sibling != NULL) {
+		__rrr_mqtt_property_dump(property->sibling);
+	}
+
+	RRR_FREE_IF_NOT_NULL(tmp);
+}
+
+void rrr_mqtt_property_collection_dump (
+		const struct rrr_mqtt_property_collection *collection
+) {
+	printf("--- DUMP PROPERTY COLLECTION ---------\n");
+	RRR_LL_ITERATE_BEGIN(collection, const struct rrr_mqtt_property);
+		__rrr_mqtt_property_dump(node);
+	RRR_LL_ITERATE_END();
+	printf("--- DUMP PROPERTY COLLECTION END -----\n");
 }
 
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (

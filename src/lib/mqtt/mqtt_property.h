@@ -142,6 +142,10 @@ const char *rrr_mqtt_property_get_blob (
 		const struct rrr_mqtt_property *property,
 		ssize_t *length
 );
+int rrr_mqtt_property_get_blob_as_str (
+		char **result,
+		const struct rrr_mqtt_property *property
+);
 int rrr_mqtt_property_collection_add_uint32 (
 		struct rrr_mqtt_property_collection *collection,
 		uint8_t id,
@@ -169,6 +173,9 @@ int rrr_mqtt_property_collection_iterate (
 unsigned int rrr_mqtt_property_collection_count_duplicates (
 		const struct rrr_mqtt_property_collection *collection,
 		const struct rrr_mqtt_property *self
+);
+void rrr_mqtt_property_collection_dump (
+		const struct rrr_mqtt_property_collection *collection
 );
 struct rrr_mqtt_property *rrr_mqtt_property_collection_get_property (
 		struct rrr_mqtt_property_collection *collection,
