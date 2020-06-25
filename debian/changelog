@@ -1,3 +1,11 @@
+rrr (1.3-3) buster; urgency=medium
+
+  * MQTT client identifier assigned by broker fixed
+  * Ability to prepend a topic in MQTT client
+  * Create runit files for Void linux
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 26 Jun 2020 01:44:52 +0200
+
 rrr (1.3-2) buster; urgency=medium
 
   * New binary rrr_auth used to test password files
