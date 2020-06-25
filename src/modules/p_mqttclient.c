@@ -55,6 +55,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/stats_instance.h"
+#include "../lib/gnu.h"
 #include "../lib/log.h"
 
 //#define RRR_BENCHMARK_ENABLE
@@ -114,6 +115,7 @@ struct mqtt_client_data {
 	rrr_setting_uint qos;
 	rrr_setting_uint version;
 
+	int do_prepend_publish_topic;
 	int do_force_publish_topic;
 	int do_publish_rrr_message;
 	int do_receive_rrr_message;
@@ -301,7 +303,6 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	RRR_SETTINGS_IF_EXISTS_THEN("mqtt_publish_rrr_message", publish_rrr_message_was_present = 1);
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_message", do_publish_rrr_message, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
 
 	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
 			&data->array_definition,
@@ -322,6 +323,15 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_message", do_receive_rrr_message, 0);
 
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
+
+	if (data->do_force_publish_topic != 0 && data->do_prepend_publish_topic != 0) {
+		RRR_MSG_0("Both mqtt_publish_topic_force and mqtt_publish_topic_prepend was yes for instance %s, this is an invalid configuration.\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_publish_topic", publish_topic);
 
 	if (data->publish_topic != NULL && rrr_mqtt_topic_validate_name(data->publish_topic) != 0) {
@@ -332,6 +342,12 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	if (data->publish_topic == NULL && data->do_force_publish_topic != 0) {
 		RRR_MSG_0("mqtt_force_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
+		ret = 1;
+		goto out;
+	}
+
+	if (data->publish_topic == NULL && data->do_prepend_publish_topic != 0) {
+		RRR_MSG_0("mqtt_prepend_publish_topic was yes but no mqtt_publish_topic was set for instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
@@ -689,24 +705,43 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 
-	if (MSG_TOPIC_LENGTH(reading) > 0 && private_data->do_force_publish_topic == 0) {
-		publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
-		if (publish->topic != NULL) {
-			memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
-			*(publish->topic + MSG_TOPIC_LENGTH(reading)) = '\0';
+	if (private_data->do_prepend_publish_topic) {
+		if (MSG_TOPIC_LENGTH(reading) == 0) {
+			RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and only a prepend topic is set in configuration. Dropping message.\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 0;
+			goto out_free;
 		}
-	}
-	else if (private_data->publish_topic != NULL) {
-		publish->topic = strdup(private_data->publish_topic);
+
+		// NOTE : Locally freed variable. Memory error is printed further down if we fail.
+		char *topic_tmp = malloc (MSG_TOPIC_LENGTH(reading) + 1);
+		if (topic_tmp != NULL) {
+			memcpy (topic_tmp, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
+			*(topic_tmp + MSG_TOPIC_LENGTH(reading)) = '\0';
+			rrr_asprintf(&publish->topic, "%s%s", private_data->publish_topic, topic_tmp);
+			free(topic_tmp);
+		}
 	}
 	else {
-		if (private_data->do_force_publish_topic != 0) {
-			RRR_BUG("do_force_publish_topic was 1 but topic was not set in mqttclient_poll_callback of mqttclient\n");
+		if (MSG_TOPIC_LENGTH(reading) > 0 && private_data->do_force_publish_topic == 0) {
+			publish->topic = malloc (MSG_TOPIC_LENGTH(reading) + 1);
+			if (publish->topic != NULL) {
+				memcpy (publish->topic, MSG_TOPIC_PTR(reading), MSG_TOPIC_LENGTH(reading));
+				*(publish->topic + MSG_TOPIC_LENGTH(reading)) = '\0';
+			}
 		}
-		RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
-				INSTANCE_D_NAME(thread_data));
-		ret = 0;
-		goto out_free;
+		else if (private_data->publish_topic != NULL) {
+			publish->topic = strdup(private_data->publish_topic);
+		}
+		else {
+			if (private_data->do_force_publish_topic != 0) {
+				RRR_BUG("do_force_publish_topic was 1 but topic was not set in mqttclient_poll_callback of mqttclient\n");
+			}
+			RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and no default topic was defined in the configuration. Dropping message.\n",
+					INSTANCE_D_NAME(thread_data));
+			ret = 0;
+			goto out_free;
+		}
 	}
 
 	if (publish->topic == NULL) {
