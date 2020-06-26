@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
 #include "log.h"
-#include "rrr_socket.h"
-#include "rrr_socket_read.h"
+#include "socket/rrr_socket.h"
+#include "socket/rrr_socket_read.h"
 #include "net_transport_plain.h"
 #include "read.h"
 #include "ip.h"

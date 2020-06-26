@@ -49,7 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../lib/rrr_socket.h"
+#include "../lib/socket/rrr_socket.h"
 #include "../lib/utf8.h"
 #include "../lib/linked_list.h"
 #include "../lib/map.h"

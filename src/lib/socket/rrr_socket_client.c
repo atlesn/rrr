@@ -23,16 +23,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
-#include "posix.h"
-#include "log.h"
-#include "linked_list.h"
 #include "rrr_socket.h"
 #include "rrr_socket_client.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
-#include "rrr_strerror.h"
-#include "read.h"
-#include "vl_time.h"
+
+#include "../rrr_strerror.h"
+#include "../posix.h"
+#include "../log.h"
+#include "../linked_list.h"
+#include "../read.h"
+#include "../vl_time.h"
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client

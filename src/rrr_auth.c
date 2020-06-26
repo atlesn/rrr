@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
-#include "lib/rrr_socket.h"
+#include "lib/socket/rrr_socket.h"
 #include "lib/linked_list.h"
 #include "lib/log.h"
 #include "lib/gnu.h"

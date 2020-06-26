@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_CONSTANTS_H
 #define RRR_SOCKET_CONSTANTS_H
 
-#include "read_constants.h"
+#include "../read_constants.h"
 
 #define RRR_SOCKET_OK				RRR_READ_OK
 #define RRR_SOCKET_HARD_ERROR		RRR_READ_HARD_ERROR

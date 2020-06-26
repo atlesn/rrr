@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_ADDR_H
 #define RRR_MESSAGE_ADDR_H
 
-#include "rrr_socket.h"
-#include "rrr_socket_msg.h"
+#include "socket/rrr_socket.h"
+#include "socket/rrr_socket_msg.h"
 #include "rrr_endian.h"
 
 #include <sys/socket.h>

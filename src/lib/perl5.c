@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "message_addr.h"
 #include "settings.h"
-#include "rrr_socket_msg.h"
+#include "socket/rrr_socket_msg.h"
 #include "rrr_strerror.h"
 #include "vl_time.h"
 #include "array.h"

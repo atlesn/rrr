@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Python.h>
 
 #include "../linked_list.h"
-#include "../rrr_socket_msg_head.h"
+#include "../socket/rrr_socket_msg_head.h"
 #include "../../../build_directory.h"
 
 struct rrr_setting_packed;

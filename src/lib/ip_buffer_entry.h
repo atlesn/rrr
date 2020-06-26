@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <pthread.h>
 
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "linked_list.h"
 
 struct rrr_ip_buffer_entry {

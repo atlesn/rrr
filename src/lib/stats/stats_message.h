@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "../linked_list.h"
-#include "../rrr_socket_msg.h"
+#include "../socket/rrr_socket_msg.h"
 
 #define RRR_STATS_MESSAGE_TYPE_KEEPALIVE	0
 #define RRR_STATS_MESSAGE_TYPE_TEXT			1

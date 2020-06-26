@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_MSG_HEAD_H
 #define RRR_SOCKET_MSG_HEAD_H
 
-#include "rrr_inttypes.h"
+#include "../rrr_inttypes.h"
 
 // All odd numbers are reserved for the control type where bits 1-15 are flags
 #define RRR_SOCKET_MSG_TYPE_CTRL			1

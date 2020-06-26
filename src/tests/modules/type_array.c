@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_MYSQL
 #include "../../lib/rrr_mysql.h"
 #endif
-#include "../../lib/rrr_socket.h"
+#include "../../lib/socket/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"

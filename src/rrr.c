@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/configuration.h"
 #include "lib/threads.h"
 #include "lib/version.h"
-#include "lib/rrr_socket.h"
+#include "lib/socket/rrr_socket.h"
 #include "lib/stats/stats_engine.h"
 #include "lib/stats/stats_message.h"
 #include "lib/rrr_strerror.h"

@@ -24,9 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "../global.h"
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"
+
+#include "../../global.h"
 
 void rrr_socket_msg_populate_head (
 		struct rrr_socket_msg *message,

@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../read.h"
 #include "../log.h"
-#include "../rrr_socket.h"
+#include "../socket/rrr_socket.h"
 #include "../messages.h"
 #include "../message_addr.h"
 #include "../settings.h"

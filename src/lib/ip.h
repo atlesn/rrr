@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "linked_list.h"
 
 #define RRR_IP_RECEIVE_OK 0

@@ -37,16 +37,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 #include <sys/stat.h>
 
-#include "posix.h"
-#include "linked_list.h"
-#include "rrr_endian.h"
-#include "log.h"
-#include "vl_time.h"
-#include "crc32.h"
-#include "rrr_strerror.h"
 #include "rrr_socket.h"
-#include "log.h"
-#include "rrr_umask.h"
+
+#include "../posix.h"
+#include "../linked_list.h"
+#include "../rrr_endian.h"
+#include "../log.h"
+#include "../vl_time.h"
+#include "../crc32.h"
+#include "../rrr_strerror.h"
+#include "../log.h"
+#include "../rrr_umask.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that

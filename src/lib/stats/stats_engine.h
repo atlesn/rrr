@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "../linked_list.h"
-#include "../rrr_socket_client.h"
+#include "../socket/rrr_socket_client.h"
 
 #define RRR_STATS_ENGINE_STICKY_SEND_INTERVAL_MS 1000
 

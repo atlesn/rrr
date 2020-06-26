@@ -21,14 +21,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "log.h"
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 #include "rrr_socket_common.h"
 #include "rrr_socket_read.h"
-#include "messages.h"
-#include "message_addr.h"
-#include "read.h"
+
+#include "../log.h"
+#include "../messages.h"
+#include "../message_addr.h"
+#include "../read.h"
 
 struct receive_callback_data {
 	struct rrr_socket_common_in_flight_counter *in_flight;

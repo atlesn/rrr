@@ -32,9 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <stdint.h>
 
-#include "linked_list.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_constants.h"
+
+#include "../linked_list.h"
 
 struct rrr_socket_options {
 	int fd;
