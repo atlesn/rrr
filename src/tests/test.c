@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "../lib/stats_engine.h"
+#include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 

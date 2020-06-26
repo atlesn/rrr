@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/message_broker.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
 #include "../lib/log.h"
 #include "../lib/array.h"

@@ -24,12 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#include "linked_list.h"
-#include "stats_message.h"
+#include "../linked_list.h"
 
 #define RRR_STATS_TREE_OK			0
 #define RRR_STATS_TREE_HARD_ERROR	1
 #define RRR_STATS_TREE_SOFT_ERROR	2
+
+struct rrr_stats_message;
 
 struct rrr_stats_tree_branch {
 	RRR_LL_NODE(struct rrr_stats_tree_branch);

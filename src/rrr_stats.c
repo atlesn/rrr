@@ -53,8 +53,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/read.h"
 #include "lib/rrr_socket_constants.h"
 #include "lib/rrr_readdir.h"
-#include "lib/stats_message.h"
-#include "lib/stats_tree.h"
+#include "lib/stats/stats_message.h"
+#include "lib/stats/stats_tree.h"
 #include "lib/rrr_strerror.h"
 
 #ifdef _GNU_SOURCE

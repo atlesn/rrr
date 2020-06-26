@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "linked_list.h"
+#include "../linked_list.h"
 
 // Should be done together with other pthread_cleanup_push at top of thread entry function
 #define RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH						\

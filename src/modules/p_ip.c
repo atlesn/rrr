@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/read.h"
 #include "../lib/poll_helper.h"
 #include "../lib/map.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/message_broker.h"
 #include "../lib/rrr_endian.h"
 #include "../lib/log.h"

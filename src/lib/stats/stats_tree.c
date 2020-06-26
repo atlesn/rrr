@@ -22,9 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
-#include "vl_time.h"
 #include "stats_tree.h"
+#include "stats_message.h"
+
+#include "../log.h"
+#include "../vl_time.h"
 
 static int __rrr_stats_tree_branch_new (
 		struct rrr_stats_tree_branch **target,

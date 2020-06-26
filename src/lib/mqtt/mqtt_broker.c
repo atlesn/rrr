@@ -551,7 +551,8 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connect->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			&session_properties
+			&session_properties,
+			{0}
 	};
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (

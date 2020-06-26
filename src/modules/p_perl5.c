@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_strerror.h"
 #include "../lib/rrr_socket_msg.h"
 #include "../lib/common.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/mmap_channel.h"
 #include "../lib/rrr_mmap.h"
 #include "../lib/rrr_socket.h"
