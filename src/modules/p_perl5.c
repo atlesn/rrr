@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/modules.h"
 #include "../lib/poll_helper.h"
 #include "../lib/threads.h"
-#include "../lib/perl5.h"
+#include "../lib/perl5/perl5.h"
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/socket/rrr_socket_msg.h"
