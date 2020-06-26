@@ -186,7 +186,6 @@ Look for the defined tags in array messages from other modules, and send these c
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
-.It ip 
 .El
 .PP
 .SS voltmonitor (SA)
@@ -731,11 +730,11 @@ with which users are authenticated. If left unspecified, all CONNECT packets con
 RRR does not allow CONNECT packets only containing usernames, a password must always be set.
 .It mqtt_broker_permission_name=PERMISSION
 The permission name to which a user must have been registered with by using
-.It mqtt_broker_require_authentication={yes|no}
-Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
 .Xr rrr_passwd(1)
 to become authenticated with this broker. Defaults to
 .B mqtt. 
+.It mqtt_broker_require_authentication={yes|no}
+Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
 .It mqtt_broker_acl_file=FILENAME
 ACL file to allow different users access to topics. If left unspecified, all access is granted. If a file is specified and a rule
 is not found upon a PUBLISH or SUBSCRIBE from a client, access will be denied.
@@ -754,7 +753,7 @@ followed by one or more spaces or tabs. Keywords are case-insensitive.
 .PP
 The
 .B DEFAULT
-keyword takes one argument, and ACL action (DENY, READ or WRITE). If left unspecified, the default action is DENY.
+keyword takes one argument, an ACL action (DENY, READ or WRITE). If left unspecified, the default action is DENY.
 .PP
 The
 .B USER
@@ -770,13 +769,13 @@ access is granted, a user may SUBSCRIBE and PUBLISH to the matching topics.
 will block all access to the matching topics. 
 .PP
 The ACL file is parsed from top to bottom, and the bottom most matching rule will take precedence.
-hence it should be placed on the first line in a topic block.
 .PP
 Comments may be placed on separate lines and begins with '#'. Spaces and tabs are allowed on the beginning of a line before keywords.
 .PP
 Below follows some example rules:
 .PP
 .nf
+# BEGIN ACL FILE
 # Allow access to everything from everyone
 TOPIC #
 	DEFAULT WRITE
@@ -785,17 +784,17 @@ TOPIC #
 TOPIC $SYS/#
 	DEFAULT READ
 	USER system_user WRITE
+# END ACL FILE
 .fi
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP
-.Bl -tag -width -indent
-.It UNSUBSCRIBE messages
-.It Retained topics
-.It Will topics
-.It Encryption
-.It Authorization
-.El
+\(bu Retained topics
+.br
+\(bu Will topics
+.br
+\(bu Authorization (simple username/password implemented)
+.PP
 .SS mqttclient (P)
 An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and
 other modules can read messages the client receives on subscribed topics.
@@ -805,6 +804,16 @@ other modules can read messages the client receives on subscribed topics.
 Host name or IP of the broker to connect to. Defaults to localhost.
 .It mqtt_server_port=PORT
 TCP port on the server for TLS connections, defaults to 1883 for plain transport and 8883 for TLS connection.
+.It mqtt_transport_type={plain|tls}
+The transport type to use when connecting to the server. Defaults to 'plain'.
+.It mqtt_certificate_file=FILENAME
+The certificate to use for TLS connections. Optional.
+.It mqtt_key_file=FILENAME
+The private key to use for TLS connections. Optional.
+.It mqtt_ca_path=PATH[:OTHER_PATH...]
+An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
+.It mqtt_ca_file=FILENAME
+A CA certificate to use when validating certificates.
 .It mqtt_client_identifier=IDENTIFIER
 Client identifier to use. If left unspecified, the broker picks one.
 .It mqtt_v5_recycle_assigned_client_identifier={yes|no}
@@ -818,26 +827,16 @@ Default action if connecting to the server failed. If set to
 all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
 .B retry,
 the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
-.It mqtt_username=USERNAME
-.It mqtt_password=PASSWORD
-Optional username and password to send in CONNECT packets. If a password is set, a username
-.It mqtt_certificate_file=FILENAME
-The certificate to use for TLS connections. Optional.
-.It mqtt_key_file=FILENAME
-The private key to use for TLS connections. Optional.
-.It mqtt_ca_path=PATH[:OTHER_PATH...]
-An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
-.It mqtt_ca_file=FILENAME
-A CA certificate to use when validating certificates.
-.It mqtt_transport_type={plain|tls}
-The transport type to use when connecting to the server. Defaults to 'plain'.
-.B must
-also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
 .It mqtt_connect_attempts=NUMBER OF ATTEMPTS
 How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting
 .B mqtt_connect_error_action.
 One connection attempt lasts approximately 100ms. Must be 1 or more, defaults to 20.
+.It mqtt_username=USERNAME
+.It mqtt_password=PASSWORD
+Optional username and password to send in CONNECT packets. If a password is set, a username
+.B must
+also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
 .It mqtt_qos={0|1|2}
 Default Quality of Service to use, defaults to 1.
 .It mqtt_version={3.1.1|5}
@@ -848,13 +847,23 @@ If left unspecified, RRR messages without a topic will be dropped.
 .It mqtt_publish_topic_force={yes|no}
 Force use of the topic specified in
 .B mqtt_publish_topic
-and disregard any topic in RRR messages.
+and disregard any topic in RRR messages. Cannot be used with
+.B mqtt_publish_topic_prepend.
+Defaults to no.
+.It mqtt_publish_topic_prepend={yes|no}
+The topic specified in
+.B mqtt_publish_topic
+is prepended to the topic RRR messages. No trailing or leading slashes are added. Cannot be used with
+.B mqtt_publish_topic_force.
+Messages without a topic are dropped if set to yes. Defaults to no.
 .It mqtt_publish_rrr_message={yes|no}
 If set to yes, the client will send full RRR messages.
-If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
+If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
+type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
-messages which does not contain an array are dropped. Any integer types will have big endianess. Cannot be used with
+messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
+Cannot be used with
 .B mqtt_publish_rrr_message=yes.
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
 MQTT topic patterns to subscribe to (if any).
