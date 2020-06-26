@@ -64,3 +64,23 @@ int rrr_message_addr_new (struct rrr_message_addr **target) {
 
 	return 0;
 }
+
+int rrr_message_addr_clone (
+		struct rrr_message_addr **target,
+		const struct rrr_message_addr *source
+) {
+	int ret = 0;
+
+	struct rrr_message_addr *new_message = NULL;
+
+	if ((ret = rrr_message_addr_new(&new_message)) != 0) {
+		goto out;
+	}
+
+	*new_message = *source;
+	*target = new_message;
+	new_message = NULL;
+
+	out:
+	return ret;
+}
