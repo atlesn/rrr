@@ -25,10 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <stdarg.h>
 
-#include "posix.h"
-#include "log.h"
 #include "http_util.h"
-#include "gnu.h"
+
+#include "../posix.h"
+#include "../log.h"
+#include "../gnu.h"
 
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||

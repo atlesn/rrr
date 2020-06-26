@@ -25,19 +25,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <unistd.h>
 
-#include "posix.h"
-#include "log.h"
-#include "gnu.h"
-#include "base64.h"
-#include "linked_list.h"
 #include "http_fields.h"
 #include "http_session.h"
 #include "http_util.h"
 #include "http_part.h"
-#include "net_transport.h"
-//#include "ip.h"
-#include "random.h"
-#include "read.h"
+
+#include "../posix.h"
+#include "../log.h"
+#include "../gnu.h"
+#include "../base64.h"
+#include "../linked_list.h"
+#include "../net_transport.h"
+#include "../random.h"
+#include "../read.h"
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);

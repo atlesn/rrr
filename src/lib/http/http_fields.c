@@ -22,10 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "log.h"
-#include "linked_list.h"
 #include "http_fields.h"
 #include "http_util.h"
+
+#include "../log.h"
+#include "../linked_list.h"
 
 void rrr_http_field_destroy(struct rrr_http_field *field) {
 	RRR_FREE_IF_NOT_NULL(field->name);

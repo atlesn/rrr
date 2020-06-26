@@ -26,20 +26,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <EXTERN.h>
 #include <perl.h>
 
-#include "posix.h"
-#include "log.h"
-#include "../../build_directory.h"
-#include "common.h"
+#include "../posix.h"
 #include "perl5.h"
 #include "perl5_types.h"
-#include "messages.h"
-#include "message_addr.h"
-#include "settings.h"
-#include "socket/rrr_socket_msg.h"
-#include "rrr_strerror.h"
-#include "vl_time.h"
-#include "array.h"
-#include "ip.h"
+
+#include "../log.h"
+#include "../../build_directory.h"
+#include "../common.h"
+#include "../messages.h"
+#include "../message_addr.h"
+#include "../settings.h"
+#include "../socket/rrr_socket_msg.h"
+#include "../rrr_strerror.h"
+#include "../vl_time.h"
+#include "../array.h"
+#include "../ip.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
 	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"

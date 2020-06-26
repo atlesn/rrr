@@ -24,10 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "linked_list.h"
 #include "http_fields.h"
 #include "http_common.h"
-#include "read_constants.h"
+
+#include "../linked_list.h"
+#include "../read_constants.h"
 
 #define RRR_HTTP_PARSE_OK			RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR 	RRR_READ_HARD_ERROR
