@@ -19,8 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <Python.h>
-#include <structmember.h>
+#include "python3_headers.h"
 
 #include "python3_array.h"
 #include "python3_module_common.h"
@@ -1159,7 +1158,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 }
 
 PyObject *rrr_python3_rrr_message_new_from_message_and_address (
-		const struct rrr_socket_msg *msg,
+		const struct rrr_message *msg,
 		const struct rrr_message_addr *message_addr
 ) {
 	struct rrr_python3_rrr_message_data *ret = NULL;
@@ -1167,12 +1166,6 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 	PyObject *node_list = NULL;
 	PyObject *node_element_value = NULL;
 	PyObject *node_tag = NULL;
-
-	const struct rrr_message *rrr_message = (struct rrr_message *) msg;
-
-	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
-		RRR_BUG("Received message in rrr_python3_rrr_message_new_from_message_and_address was not a rrr_message\n");
-	}
 
 	if (msg->msg_size < MSG_MIN_SIZE(&ret->message_static)) {
 		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message_and_address\n");
@@ -1205,7 +1198,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	ret->rrr_array = NULL;
 
-	if (!MSG_IS_ARRAY(rrr_message)) {
+	if (!MSG_IS_ARRAY(msg)) {
 		goto no_array;
 	}
 
@@ -1215,7 +1208,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		goto out_err;
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, rrr_message) != 0) {
+	if (rrr_array_message_to_collection(&array_tmp, msg) != 0) {
 		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
@@ -1312,7 +1305,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 }
 
 PyObject *rrr_python3_rrr_message_new_from_message (
-		const struct rrr_socket_msg *msg
+		const struct rrr_message *msg
 ) {
 	return rrr_python3_rrr_message_new_from_message_and_address(msg, NULL);
 }

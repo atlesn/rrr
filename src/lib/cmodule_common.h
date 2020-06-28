@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,28 +19,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_PYTHON3_SOCKET_H
-#define RRR_PYTHON3_SOCKET_H
+#ifndef RRR_CMODULE_COMMON_H
+#define RRR_CMODULE_COMMON_H
 
-#include "python3_headers.h"
+#include <sys/types.h>
 
-#include "../socket/rrr_socket_msg.h"
+#include "message_addr.h"
 
-// Tell a python3 fork to start calling it's function continuously without
-// sending data to it
-#define RRR_PYTHON3_SOCKET_MSG_CTRL_START_SOURCING \
-	RRR_SOCKET_MSG_CTRL_F_USR_A
-
+struct rrr_instance_thread_data;
+struct rrr_stats_instance;
+struct rrr_poll_collection;
 struct rrr_message;
 struct rrr_message_addr;
-struct rrr_mmap_channel;
-struct rrr_cmodule_worker;
 
-PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker);
-int rrr_python3_socket_send (
-		PyObject *socket,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
+struct rrr_cmodule_common_read_callback_data {
+	struct rrr_instance_thread_data *thread_data;
+	int count;
+	const struct rrr_message *message;
+	struct rrr_message_addr addr_message;
+};
+
+void rrr_cmodule_common_loop (
+		struct rrr_instance_thread_data *thread_data,
+		struct rrr_stats_instance *stats,
+		struct rrr_poll_collection *poll,
+		pid_t fork_pid,
+		int no_polling
 );
 
-#endif /* RRR_PYTHON3_SOCKET_H */
+#endif /* RRR_CMODULE_COMMON_H */

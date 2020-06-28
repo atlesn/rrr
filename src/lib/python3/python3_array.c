@@ -19,8 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <Python.h>
-#include <structmember.h>
+#include "python3_headers.h"
 
 #include "python3_array.h"
 #include "python3_module_common.h"

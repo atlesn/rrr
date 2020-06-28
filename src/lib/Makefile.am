@@ -8,7 +8,7 @@ endif
 
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3/python3.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
+librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
 							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
@@ -39,7 +39,7 @@ librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPE
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c \
 					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
-					message_broker.c cmodule.c \
+					message_broker.c cmodule.c cmodule_common.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \

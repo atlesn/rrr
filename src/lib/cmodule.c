@@ -814,7 +814,13 @@ int rrr_cmodule_start_worker_fork (
 		return ret;
 }
 
-void rrr_cmodule_stop_forks_and_cleanup (
+void rrr_cmodule_stop_forks (
+		struct rrr_cmodule *cmodule
+) {
+	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
+}
+
+void rrr_cmodule_stop_forks_and_destroy (
 		struct rrr_cmodule *cmodule
 ) {
 	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
@@ -822,30 +828,43 @@ void rrr_cmodule_stop_forks_and_cleanup (
 		rrr_mmap_destroy(cmodule->mmap);
 		cmodule->mmap = NULL;
 	}
+	free(cmodule);
 }
 
-void rrr_cmodule_stop_forks_and_cleanup_void (
+void rrr_cmodule_stop_forks_and_destroy_void (
 		void *arg
 ) {
-	rrr_cmodule_stop_forks_and_cleanup(arg);
+	rrr_cmodule_stop_forks_and_destroy(arg);
 }
 
-int rrr_cmodule_init (
-		struct rrr_cmodule *cmodule,
+int rrr_cmodule_new (
+		struct rrr_cmodule **result,
 		const char *name
 ) {
 	int ret = 0;
+
+	struct rrr_cmodule *cmodule = malloc(sizeof(*cmodule));
+	if (cmodule == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_cmodule_new\n");
+		ret = 1;
+		goto out;
+	}
 
 	memset(cmodule, '\0', sizeof(*cmodule));
 
 	if (rrr_mmap_new(&cmodule->mmap, RRR_CMODULE_MMAP_SIZE, name) != 0) {
 		RRR_MSG_0("Could not allocate mmap in rrr_cmodule_init\n");
 		ret = 1;
-		goto out;
+		goto out_free;
 	}
 
+	*result = cmodule;
+
+	goto out;
+	out_free:
+		free(cmodule);
 	out:
-	return ret;
+		return ret;
 }
 
 struct rrr_cmodule_read_from_fork_callback_data {

@@ -84,6 +84,9 @@ struct rrr_cmodule_worker {
 struct rrr_cmodule {
 	RRR_LL_HEAD(struct rrr_cmodule_worker);
 	struct rrr_mmap *mmap;
+
+	// Used by message_broker_cmodule poll functions
+	void *callback_data_tmp;
 };
 
 #define RRR_CMODULE_FINAL_CALLBACK_ARGS					\
@@ -144,14 +147,17 @@ int rrr_cmodule_start_worker_fork (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
-void rrr_cmodule_stop_forks_and_cleanup (
+void rrr_cmodule_stop_forks (
 		struct rrr_cmodule *cmodule
 );
-void rrr_cmodule_stop_forks_and_cleanup_void (
+void rrr_cmodule_stop_forks_and_destroy (
+		struct rrr_cmodule *cmodule
+);
+void rrr_cmodule_stop_forks_and_destroy_void (
 		void *arg
 );
-int rrr_cmodule_init (
-		struct rrr_cmodule *cmodule,
+int rrr_cmodule_new (
+		struct rrr_cmodule **result,
 		const char *name
 );
 int rrr_cmodule_read_from_forks (

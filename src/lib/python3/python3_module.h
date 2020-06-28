@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_MODULE_H
 #define RRR_PYTHON3_MODULE_H
 
+#include "python3_headers.h"
+
 extern PyTypeObject rrr_python3_socket_type;
 extern PyTypeObject rrr_python3_rrr_message_type;
 extern PyTypeObject rrr_python3_config_type;

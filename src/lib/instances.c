@@ -22,12 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
+#include "cmodule.h"
 #include "common.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
 #include "instance_config.h"
 #include "message_broker.h"
+#include "cmodule.h"
 
 struct instance_metadata *rrr_instance_find_by_thread (
 		struct instance_metadata_collection *collection,
@@ -423,6 +425,9 @@ unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_co
 }
 
 static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data) {
+	if (data->cmodule != NULL) {
+		rrr_cmodule_stop_forks_and_destroy(data->cmodule);
+	}
 	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
 	free(data);
 }
@@ -477,6 +482,43 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread
 		return data;
 }
 
+static void __rrr_instance_thread_cmodule_destroy_intermediate (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	// If thread is ghost, cleanup is done in ghost cleanup function. Only
+	// stop forks.
+	if (rrr_thread_is_ghost(thread)) {
+		rrr_cmodule_stop_forks(thread_data->cmodule);
+	}
+	else {
+		rrr_cmodule_stop_forks_and_destroy(thread_data->cmodule);
+		thread_data->cmodule = NULL;
+	}
+}
+
+static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	if ((rrr_cmodule_new(&thread_data->cmodule, INSTANCE_D_NAME(thread_data))) != 0) {
+		RRR_MSG_0("Could not initialize cmodule in __rrr_instance_thread_start_intermediate\n");
+		goto out;
+	}
+
+	pthread_cleanup_push(__rrr_instance_thread_cmodule_destroy_intermediate, thread);
+
+	// Ignore return value
+	thread_data->init_data.module->operations.thread_entry(thread);
+
+	pthread_cleanup_pop(1);
+
+	// Don't put code here, modules usually call pthread_exit which means we
+	// only do the cleanup functions
+
+	out:
+	return NULL;
+}
+
 int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
@@ -487,7 +529,7 @@ int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struc
 	}
 	data->thread = rrr_thread_preload_and_register (
 			collection,
-			module->operations.thread_entry,
+			__rrr_instance_thread_entry_intermediate,
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,

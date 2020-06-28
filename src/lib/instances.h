@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_collection.h"
 #include "threads.h"
 
+struct rrr_cmodule;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
@@ -90,6 +91,9 @@ struct rrr_instance_thread_data {
 
 	struct rrr_thread *thread;
 	rrr_message_broker_costumer_handle *message_broker_handle;
+
+	// Not used by all modules but managed by instances framework
+	struct rrr_cmodule *cmodule;
 
 	void *private_data;
 	void *preload_data;

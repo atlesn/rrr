@@ -22,12 +22,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_COMMON_H
 #define RRR_PYTHON3_COMMON_H
 
+#include "python3_headers.h"
+
 #include "../log.h"
 #include "../../global.h"
-
-// #define RRR_PYTHON3_DEBUG_REFCOUNT
-
-#include <Python.h>
 
 static inline void RRR_Py_XDECREF (PyObject *obj) {
 	if ((obj) != NULL && (obj)->ob_refcnt == 0) {
