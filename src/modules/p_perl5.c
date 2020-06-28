@@ -282,8 +282,9 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config *con
 	return ret;
 }
 
-static int perl5_send_to_fork (
+static int perl5_send_to_fork_entry_locked (
 		int *count,
+		int *do_put_back,
 		struct perl5_data *perl5_data,
 		struct rrr_cmodule *cmodule,
 		pid_t fork_pid,
@@ -292,14 +293,21 @@ static int perl5_send_to_fork (
 	struct rrr_instance_thread_data *thread_data = perl5_data->thread_data;
 
 	struct rrr_message *message = (struct rrr_message *) entry->message;
+
 	struct rrr_message_addr addr_msg;
 	int ret = 0;
+
+	*do_put_back = 0;
 
 	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
 
 	if ((*count) > 10) {
-		goto out_put_back;
+		*do_put_back = 1;
+		goto out;
 	}
+
+	// cmodule send will always free or take care of message memory
+	entry->message = NULL;
 
 //	printf ("perl5_input_callback: message %p\n", message);
 
@@ -322,14 +330,6 @@ static int perl5_send_to_fork (
 		goto out;
 	}
 
-	goto out;
-	out_put_back:
-		// Since we are in read_clear_forward-context, the whole buffer is empty at this point. The
-		// current message will be written at the beginning at the buffer, and any remaining messages
-		// will be joined in after it.
-//		printf ("perl5_send_to_fork: putback message %p\n", entry->message);
-		rrr_ip_buffer_entry_incref_while_locked(entry);
-		RRR_LL_APPEND(&perl5_data->input_buffer_ip, entry);
 	out:
 		rrr_ip_buffer_entry_unlock(entry);
 		return ret;
@@ -415,7 +415,7 @@ static int perl5_read_from_child_mmap_channel_message_callback (RRR_CMODULE_FINA
 	return 0;
 }
 
-static int perl5_read_from_child_fork(
+static int perl5_read_from_child_fork (
 		int *read_count,
 		int *config_complete,
 		struct rrr_cmodule *cmodule,
@@ -449,9 +449,13 @@ static int perl5_read_from_child_fork(
 static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	int ret = 0;
 
+	(void)(configuration_callback_arg);
+	(void)(process_callback_arg);
+
 	struct perl5_child_data child_data = {0};
 
 	child_data.parent_data = private_arg;
+	child_data.worker = worker;
 
 	if (preload_perl5 (child_data.parent_data->thread_data->thread) != 0) {
 		RRR_MSG_0("Could not preload perl5 in child fork of instance %s\n",
@@ -470,9 +474,9 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 	if ((ret = rrr_cmodule_worker_loop_start (
 			worker,
 			configuration_callback,
-			configuration_callback_arg,
+			&child_data,
 			process_callback,
-			process_callback_arg
+			&child_data
 	)) != 0) {
 		RRR_MSG_0("Error from worker loop in __rrr_cmodule_worker_loop_init_wrapper_default\n");
 		// Don't goto out, run cleanup functions
@@ -498,8 +502,11 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	struct rrr_perl5_settings_hv *settings_hv = NULL;
 
 	if (data->config_sub == NULL || *(data->config_sub) == '\0') {
+		RRR_DBG_2("Perl5 no configure sub defined in configuration\n", data->config_sub);
 		goto out;
 	}
+
+	RRR_DBG_2("Perl5 configuring, sub is %s\n", data->config_sub);
 
 	if ((ret = rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings)) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
@@ -511,7 +518,7 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	// The settings object from parent will get updated as the application accesses
 	// entries or writes new ones. Memory will however only get written to in the
 	// child fork, and all settings must be sent back to the parent over the mmap channel.
-	if ((ret = rrr_perl5_call_blessed_hvref(
+	if ((ret = rrr_perl5_call_blessed_hvref (
 			child_data->ctx,
 			data->config_sub,
 			"rrr::rrr_helper::rrr_settings",
@@ -548,9 +555,11 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
+		RRR_DBG_2("Perl5 spawning, sub is %s\n", data->source_sub);
 		ret = rrr_perl5_call_blessed_hvref(ctx, data->source_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 	else {
+		RRR_DBG_2("Perl5 processing, sub is %s\n", data->process_sub);
 		ret = rrr_perl5_call_blessed_hvref(ctx, data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 
@@ -595,6 +604,11 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	if (rrr_cmodule_init(&cmodule, INSTANCE_D_NAME(thread_data)) != 0) {
+		RRR_MSG_0("Error initializing cmodule in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
 	pid_t fork_pid = 0;
 
 	if (rrr_cmodule_start_worker_fork (
@@ -604,18 +618,18 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			data->spawn_interval_ms * 1000,
 			10 * 1000,
 			INSTANCE_D_NAME(thread_data),
-			1,
-			1,
+			(data->source_sub != NULL ? 1 : 0),
+			(data->process_sub != NULL ? 1 : 0),
 			data->do_drop_on_error,
 			INSTANCE_D_SETTINGS(thread_data),
 			perl5_init_wrapper_callback,
 			data,
 			perl5_configuration_callback,
-			data,
+			NULL, // <-- in the init wrapper, this callback arg is set to child_data
 			perl5_process_callback,
-			data
+			NULL  // <-- in the init wrapper, this callback is set to child_data
 	) != 0) {
-		RRR_MSG_0("Error while starting perl5 for for instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Error while starting perl5 worker fork for instance %s\n", INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
 
@@ -672,11 +686,18 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 				rrr_ip_buffer_entry_lock(node);
 
 				int old_count = input_count;
+				int do_put_back = 0;
 
-				int ret_tmp = perl5_send_to_fork(&input_count, data, &cmodule, fork_pid, node);
+				int ret_tmp = perl5_send_to_fork_entry_locked(&input_count, &do_put_back, data, &cmodule, fork_pid, node);
 				if (ret_tmp != 0) {
 					rrr_ip_buffer_entry_unlock(node);
 					RRR_LL_ITERATE_BREAK();
+				}
+
+				if (do_put_back) {
+					// Incref to prevent destruction on loop bottom
+					rrr_ip_buffer_entry_incref_while_locked(node);
+					RRR_LL_APPEND(&data->input_buffer_ip, node);
 				}
 
 				RRR_LL_ITERATE_SET_DESTROY();
@@ -686,6 +707,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 				}
 			RRR_LL_ITERATE_END_CHECK_DESTROY(&input_buffer_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 
+			// Add any entries we did not process back to the queue
 			RRR_LL_MERGE_AND_CLEAR_SOURCE_HEAD(&data->input_buffer_ip, &input_buffer_tmp);
 		}
 		else if (no_polling == 0) {

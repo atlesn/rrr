@@ -117,7 +117,7 @@ static int __rrr_cmodule_worker_new (
 	ALLOCATE_TMP_NAME(to_fork_name, name, "ch-to-fork");
 	ALLOCATE_TMP_NAME(to_parent_name, name, "ch-to-parent");
 
-	if ((worker = malloc(sizeof(*worker))) != 0) {
+	if ((worker = malloc(sizeof(*worker))) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_worker_new\n");
 		ret = 1;
 		goto out;
@@ -179,14 +179,32 @@ static int __rrr_cmodule_worker_new (
 		return ret;
 }
 
+// Parent need not to call this explicitly, done in destroy function.
+static void __rrr_cmodule_worker_clear_deferred_to_fork (
+		struct rrr_cmodule_worker *worker
+) {
+	RRR_LL_DESTROY(&worker->deferred_to_fork, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
+}
+
+// Called by child only before exiting
+static void __rrr_cmodule_worker_clear_deferred_to_parent (
+		struct rrr_cmodule_worker *worker
+) {
+	RRR_LL_DESTROY(&worker->deferred_to_parent, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
+}
+
+// Child MUST NOT call this when exiting
 static void __rrr_cmodule_worker_destroy (
 		struct rrr_cmodule_worker *worker
 ) {
 	RRR_FREE_IF_NOT_NULL(worker->name);
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
-	RRR_LL_DESTROY(&worker->deferred_to_fork, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
-	RRR_LL_DESTROY(&worker->deferred_to_parent, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
+	__rrr_cmodule_worker_clear_deferred_to_fork(worker);
+
+	if (RRR_LL_COUNT(&worker->deferred_to_parent) != 0) {
+		RRR_BUG("BUG: deferred_to_parent count was not 0 in __rrr_cmodule_worker_destroy. Either the parent has by accident added something, or destroy was called from child fork.\n");
+	}
 
 	free(worker);
 }
@@ -234,9 +252,16 @@ static void __rrr_cmodule_worker_kill (
 static void __rrr_cmodule_worker_kill_and_destroy (
 		struct rrr_cmodule_worker *worker
 ) {
+	// Must unregister exit handler prior to killing worker to
+	// prevent handler from getting called
+	rrr_fork_unregister_exit_handler(worker->fork_handler, worker->pid);
+
+	// This is to avoid warning when mmap channel is destroyed.
+	// Child fork will call write_free_blocks on channel_to_parent.
+	rrr_mmap_channel_writer_free_blocks(worker->channel_to_fork);
+
 	// OK to call kill etc. despite fork not being started
 	__rrr_cmodule_worker_kill(worker);
-	rrr_fork_unregister_exit_handler(worker->fork_handler, worker->pid);
 	__rrr_cmodule_worker_destroy(worker);
 }
 
@@ -321,7 +346,7 @@ static int __rrr_cmodule_send_message (
 
 		if ((ret = rrr_mmap_channel_write_using_callback (
 				channel,
-				MSG_TOTAL_SIZE(message) + sizeof(message_addr),
+				MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
 				__rrr_cmodule_mmap_channel_write_callback,
 				&callback_data
 		)) != 0) {
@@ -499,6 +524,7 @@ static int __rrr_cmodule_worker_loop (
 						ret = 1;
 						break;
 					}
+					ret = 0;
 				}
 				if (prev_total_msg_mmap_from_parent == worker->total_msg_mmap_to_fork) {
 					break;
@@ -741,9 +767,9 @@ int rrr_cmodule_start_worker_fork (
 		pthread_mutex_lock(&worker->pid_lock);
 		worker->pid = pid;
 		pthread_mutex_unlock(&worker->pid_lock);
-		worker = NULL;
 
 		RRR_LL_APPEND(cmodule, worker);
+		worker = NULL;
 
 		*handle_pid = pid;
 
@@ -775,9 +801,9 @@ int rrr_cmodule_start_worker_fork (
 	// Clear blocks allocated by us to avoid warnings in parent
 	rrr_mmap_channel_writer_free_blocks(worker->channel_to_parent);
 
-	// Some memory is also possibly allocated inside the worker, like
-	// deferred messages. Clean this up to ease working with memory profilers.
-	__rrr_cmodule_worker_destroy(worker);
+	// Clear deferred queue. DO NOT call the worker destroy function, doing this causes
+	// double free of mmap resources (parent calls destroy)
+	__rrr_cmodule_worker_clear_deferred_to_parent(worker);
 
 	exit(ret);
 

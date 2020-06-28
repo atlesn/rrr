@@ -131,8 +131,10 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (!MSG_IS_ARRAY(message)) {
-		TEST_MSG("Message received in test_type_array_callback was not an array\n");
-		ret = 1;
+		// Ignore non-array messages
+		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
+		result->result = 3;
+		ret = 0;
 		goto out;
 	}
 
@@ -373,8 +375,16 @@ int test_do_poll_loop (
 			goto out;
 		}
 
-		TEST_MSG("Result of polling from %s: %i\n",
-				INSTANCE_D_NAME(thread_data), test_result->result);
+		if (test_result->result == 3) {
+			// Ignore this message
+			ret = 0;
+			RRR_FREE_IF_NOT_NULL(test_result->message);
+			test_result->result = 1;
+		}
+		else {
+			TEST_MSG("Result of polling from %s: %i\n",
+					INSTANCE_D_NAME(thread_data), test_result->result);
+		}
 	}
 
 	out:
@@ -550,6 +560,7 @@ int test_array (
 	if (ret != 0) {
 		goto out;
 	}
+
 	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result_1.result);
 
 	// Error if result is not two from both polls
