@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGES_H
 #define RRR_MESSAGES_H
 
+#include <stdio.h>
+
 #include "socket/rrr_socket_msg_head.h"
 #include "messages_head.h"
 

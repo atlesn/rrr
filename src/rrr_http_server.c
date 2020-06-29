@@ -579,13 +579,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_server_data_init(&data);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(rrr_http_server_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
@@ -649,7 +643,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	rrr_signal_default_signal_actions_register();
 
 	while (main_running) {

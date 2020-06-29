@@ -24,12 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_common.h"
 
+#include "cmodule_native.h"
 #include "buffer.h"
 #include "modules.h"
 #include "ip_buffer_entry.h"
 #include "message_addr.h"
 #include "messages.h"
-#include "cmodule.h"
 #include "instances.h"
 #include "instance_config.h"
 #include "stats/stats_instance.h"

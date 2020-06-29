@@ -19,14 +19,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_H
-#define RRR_CMODULE_H
+#ifndef RRR_CMODULE_NATIVE_H
+#define RRR_CMODULE_NATIVE_H
+
+#define RRR_CMODULE_NATIVE_CTX
+#include "../cmodules/cmodule.h"
 
 #include <inttypes.h>
 #include <pthread.h>
 
 #include "linked_list.h"
 #include "socket/rrr_socket_constants.h"
+#include "cmodule_shared.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
 	RRR_SOCKET_MSG_CTRL_F_USR_A
@@ -113,12 +117,7 @@ struct rrr_cmodule {
 		void *process_callback_arg,												\
 		void *private_arg
 
-// Will always free the message also upon errors
-int rrr_cmodule_worker_send_message_to_parent (
-		struct rrr_cmodule_worker *worker,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
-);
+
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
@@ -179,4 +178,4 @@ int rrr_cmodule_send_to_fork (
 // Call once in a while, like every second
 void rrr_cmodule_maintain(struct rrr_fork_handler *handler);
 
-#endif
+#endif /* RRR_CMODULE_NATIVE_H */

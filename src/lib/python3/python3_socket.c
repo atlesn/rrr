@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_addr.h"
 #include "../settings.h"
 #include "../read.h"
-#include "../cmodule.h"
+#include "../cmodule_native.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD

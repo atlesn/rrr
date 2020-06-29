@@ -37,18 +37,13 @@ struct rrr_signal_handler {
 	void *private_arg;
 };
 
-struct rrr_signal_functions {
-	void (*set_active)(int active);
-	struct rrr_signal_handler *(*push_handler)(int (*hander)(int,void*), void *private_arg);
-	void (*remove_handler)(struct rrr_signal_handler *);
-};
-
 void rrr_exit_cleanup_method_push(void (*method)(void *arg), void *arg);
 void rrr_exit_cleanup_methods_run_and_free(void);
 void rrr_signal_handler_set_active (int active);
 struct rrr_signal_handler *rrr_signal_handler_push(int (*handler)(int signal, void *private_arg), void *private_arg);
 void rrr_signal_handler_remove(struct rrr_signal_handler *handler);
 void rrr_signal_handler_remove_all(void);
+void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr);
 void rrr_signal (int s);
 void rrr_signal_default_signal_actions_register(void);
 int rrr_signal_default_handler(int *main_running, int s, void *arg);

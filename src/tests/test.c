@@ -141,13 +141,8 @@ int main (int argc, const char **argv) {
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(signal_interrupt, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -218,7 +213,7 @@ int main (int argc, const char **argv) {
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
-		if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+		if (rrr_instance_metadata_collection_new (&instances) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -262,7 +257,7 @@ int main (int argc, const char **argv) {
 	action.sa_flags = 0;
 
 	// During preload stage, signals are temporarily deactivated.
-	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
@@ -270,7 +265,8 @@ int main (int argc, const char **argv) {
 
 	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
-			rrr_posix_usleep(10000);
+			rrr_posix_usleep(100000);
+			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler);
 		}
 
 		ret = main_get_test_result(instances);

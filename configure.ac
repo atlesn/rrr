@@ -440,7 +440,7 @@ AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				misc/Makefile 
+				misc/Makefile src/cmodules/Makefile
 )
 
 AC_OUTPUT

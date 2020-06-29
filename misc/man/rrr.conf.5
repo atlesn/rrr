@@ -923,7 +923,57 @@ Generate dummy messages for testing purposes. Defaults to no.
 .It journal_hostname=HOSTNAME
 Hostname to send along with log messages. Defaults to system hostname.
 .El
-
+.SS cmodule (P)
+This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
+written in the RRR source in the directory /src/cmodules/ and then compiled (just compile RRR as usual and
+directions will be given). There is an example file with appropriate licenses in the cmodules directory
+which may be used as a template for custom cmodules.
+.PP
+RRR will deal with communication with other modules and many other tasks, which makes it simpler to write a
+cmodule than to write a native RRR module.
+.PP
+All custom cmodules will be run in separate forks.
+.PP
+.Bl -tag -width -indent
+.It cmodule_name=NAME
+The name of the cmodule. If the name is
+.B dummy,
+RRR will look for the module
+.B dummy.so
+and the source file for this module should be called
+.B dummy.c.
+.It cmodule_drop_on_error={yes|no}
+If there is an error during processing of a message, just drop it instead of restarting the program. Defaults to no.
+.It cmodule_config_function=NAME
+The function to which to pass configuration parameters, called at program startup. Optional.
+.It cmodule_source_function=NAME
+The function to which to call to source new messages. Optional, but at least one of source and processor must be set.
+.It cmodule_process_function=NAME
+The function to which to call to process messages from senders. Optional, but at least one of source and processor must be set.
+.It cmodule_cleanup_function=NAME
+The function to call before the program shuts down. Optional.
+.It cmodule_source_interval_ms=MILLISECONDS
+How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
+.It cmodule_log_prefix=PREFIX
+Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
+macros to print messages like the reset of RRR does.
+.El
+.PP
+The source and process functions receives a new message which of they must manage the memory. The message must
+either be passed on to other modules by calling
+.B rrr_send_and_free(...)
+or be freed (if the message is to be discarded) by calling
+.B rrr_free(...)
+.
+A message, if it must be sent several times, may be duplicated by using.
+.B rrr_message_duplicate(...).
+.PP
+Please refer to the source code on how these functions work. Some headers which
+might be useful when working with for instance array messages are included in /src/cmodules/cmodule.h .
+It is not a priority at this time to document these, but they are easy to use and usage examples are to
+be found throughout the RRR source code (which is human- and machine readable).
+.PP
+Functions must return 0 on success and 1 if there are errors.  
 .SH SEE ALSO
 .Xr rrr(1),
 .Xr rrr_post(1),

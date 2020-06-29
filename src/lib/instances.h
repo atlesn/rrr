@@ -53,7 +53,6 @@ struct instance_metadata {
 struct instance_metadata_collection {
 	int length;
 	struct instance_metadata *first_entry;
-	struct rrr_signal_functions *signal_functions;
 };
 
 struct rrr_instance_dynamic_data {
@@ -105,6 +104,7 @@ struct rrr_instance_thread_data {
 #define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
+#define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
 		thread_data->init_data.message_broker, thread_data->message_broker_handle
@@ -122,8 +122,7 @@ int rrr_instance_count_library_users (struct instance_metadata_collection *targe
 void rrr_instance_unload_all(struct instance_metadata_collection *target);
 void rrr_instance_metadata_collection_destroy (struct instance_metadata_collection *target);
 int rrr_instance_metadata_collection_new (
-		struct instance_metadata_collection **target,
-		struct rrr_signal_functions *signal_functions
+		struct instance_metadata_collection **target
 );
 int rrr_instance_add_senders (
 		struct instance_metadata_collection *instances,

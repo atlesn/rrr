@@ -1,4 +1,4 @@
-SUBDIRS = lib modules tests python
+SUBDIRS = lib modules tests python cmodules
 bin_PROGRAMS = rrr rrr_post rrr_stats rrr_passwd rrr_auth
 noinst_PROGRAMS = rrr_http_client rrr_http_server
 
@@ -8,7 +8,7 @@ perl5_ldflags=$(PERL5_LDFLAGS)
 endif
 
 rrr_SOURCES = rrr.c global.c main.c
-rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\"" -DRRR_INTERCEPT_ALLOW_WAITPID
+rrr_CFLAGS = ${AM_CFLAGS} -DRRR_MODULE_PATH="\"${libdir}/rrr\"" -DRRR_MODULE_PATH="\"${libdir}/rrr/cmodules/\"" -DRRR_INTERCEPT_ALLOW_WAITPID
 rrr_LDFLAGS = -L./lib/.libs -lrrr ${perl5_ldflags}
 
 rrr_post_SOURCES = rrr_post.c global.c main.c

@@ -22,14 +22,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
-#include "cmodule.h"
+#include "cmodule_native.h"
 #include "common.h"
 #include "modules.h"
 #include "threads.h"
 #include "instances.h"
 #include "instance_config.h"
 #include "message_broker.h"
-#include "cmodule.h"
 
 struct instance_metadata *rrr_instance_find_by_thread (
 		struct instance_metadata_collection *collection,
@@ -96,9 +95,7 @@ static void __rrr_instance_metadata_destroy (
 	rrr_instance_collection_clear(&target->senders);
 	rrr_instance_collection_clear(&target->wait_for);
 
-	if (instances->signal_functions != NULL && target->signal_handler != NULL) {
-		instances->signal_functions->remove_handler(target->signal_handler);
-	}
+	rrr_signal_handler_remove(target->signal_handler);
 
 	free(target->dynamic_data);
 	free(target);
@@ -123,9 +120,7 @@ static int __rrr_instance_metadata_new (
 
 	meta->dynamic_data = data;
 
-	if (instances->signal_functions != NULL && data->signal_handler != NULL) {
-		meta->signal_handler = instances->signal_functions->push_handler(data->signal_handler, meta);
-	}
+	rrr_signal_handler_push(data->signal_handler, meta);
 
 	*target = meta;
 
@@ -393,8 +388,7 @@ void rrr_instance_metadata_collection_destroy (struct instance_metadata_collecti
 }
 
 int rrr_instance_metadata_collection_new (
-		struct instance_metadata_collection **target,
-		struct rrr_signal_functions *signal_functions
+		struct instance_metadata_collection **target
 ) {
 	int ret = 0;
 
@@ -406,8 +400,6 @@ int rrr_instance_metadata_collection_new (
 		ret = 1;
 		goto out;
 	}
-
-	(*target)->signal_functions = signal_functions;
 
 	out:
 	return ret;

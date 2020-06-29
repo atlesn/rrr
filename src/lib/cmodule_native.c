@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <signal.h>
 
-#include "cmodule.h"
+#include "cmodule_native.h"
 
 #include "../global.h"
 #include "rrr_mmap.h"
@@ -197,7 +197,6 @@ static void __rrr_cmodule_worker_clear_deferred_to_parent (
 static void __rrr_cmodule_worker_destroy (
 		struct rrr_cmodule_worker *worker
 ) {
-	RRR_FREE_IF_NOT_NULL(worker->name);
 	rrr_mmap_channel_destroy(worker->channel_to_fork);
 	rrr_mmap_channel_destroy(worker->channel_to_parent);
 	__rrr_cmodule_worker_clear_deferred_to_fork(worker);
@@ -206,6 +205,7 @@ static void __rrr_cmodule_worker_destroy (
 		RRR_BUG("BUG: deferred_to_parent count was not 0 in __rrr_cmodule_worker_destroy. Either the parent has by accident added something, or destroy was called from child fork.\n");
 	}
 
+	RRR_FREE_IF_NOT_NULL(worker->name);
 	free(worker);
 }
 
@@ -457,7 +457,7 @@ static int __rrr_cmodule_worker_spawn_message (
 			1, // <-- is spawn context
 			process_callback_arg
 	)) != 0) {
-		RRR_MSG_0("Error %i from spawn callback in __rrr_cmodule_worker_spawn_message %s\n", worker->name);
+		RRR_MSG_0("Error %i from spawn callback in __rrr_cmodule_worker_spawn_message %s\n", ret, worker->name);
 		ret = 1;
 		goto out;
 	}
@@ -754,7 +754,11 @@ int rrr_cmodule_start_worker_fork (
 
 	// Append to LL after forking is OK
 
-	pid_t pid = rrr_fork(fork_handler, __rrr_cmodule_parent_exit_notify_handler, worker);
+	pid_t pid = rrr_fork (
+			fork_handler,
+			__rrr_cmodule_parent_exit_notify_handler,
+			worker
+	);
 
 	if (pid < 0) {
 		RRR_MSG_0("Could not fork in rrr_cmodule_start_worker_fork: %s\n",
@@ -781,10 +785,16 @@ int rrr_cmodule_start_worker_fork (
 	rrr_log_hook_unregister_all_after_fork();
 
 	int log_hook_handle;
-
 	rrr_log_hook_register(&log_hook_handle, __rrr_cmodule_worker_fork_log_hook, worker);
 
-	rrr_signal_handler_remove_all();
+	int was_found = 0;
+
+	// Preserve fork signal andler in case child makes any forks
+	rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
+	if (was_found == 0) {
+		RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_start_worker_fork, should have been added in main()\n");
+	}
+
 	rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
 
 	ret = init_wrapper_callback (
@@ -998,6 +1008,13 @@ int rrr_cmodule_read_from_forks (
 
 	int read_total = 0;
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->pid == 0) {
+			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in rrr_cmodule_read_from_forks\n",
+					node->name);
+			ret = 1;
+			goto out;
+		}
+
 		struct rrr_cmodule_read_from_fork_callback_data callback_data = {
 				node,
 				0, // Counter
@@ -1102,5 +1119,6 @@ int rrr_cmodule_send_to_fork (
 
 // Call once in a while, like every second
 void rrr_cmodule_maintain(struct rrr_fork_handler *handler) {
-	rrr_fork_handle_sigchld_and_notify_if_needed(handler);
+	// Nothing to do
+	(void)(handler);
 }

@@ -185,7 +185,6 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
-		struct rrr_signal_functions *signal_functions,
 		struct rrr_fork_handler *fork_handler
 ) {
 	int ret = EXIT_SUCCESS;
@@ -216,7 +215,7 @@ static int main_loop (
 		}
 	}
 
-	if (rrr_instance_metadata_collection_new (&instances, signal_functions) != 0) {
+	if (rrr_instance_metadata_collection_new (&instances) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_config;
 	}
@@ -482,24 +481,18 @@ int main (int argc, const char *argv[]) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
 	if (rrr_fork_handler_new (&fork_handler) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_run_cleanup_methods;
 	}
 
 	// The fork signal handler must be first
-	signal_handler_fork = signal_functions.push_handler(rrr_fork_signal_handler, NULL);
-	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
-	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
@@ -548,12 +541,11 @@ int main (int argc, const char *argv[]) {
 
 		// CHILD CODE
 		is_child = 1;
-		signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+		rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 		ret = main_loop (
 				&cmd,
 				config_string,
-				&signal_functions,
 				fork_handler
 		);
 
@@ -577,10 +569,10 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out_cleanup_signal:
-		signal_functions.remove_handler(signal_handler);
-		signal_functions.remove_handler(signal_handler_fork);
+		rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler_fork);
 
-		signal_functions.set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
 			// Child forks must skip *ALL* the fork-cleanup stuff
