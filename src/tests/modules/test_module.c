@@ -121,6 +121,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		/* Test array type and data endian conversion */
 		ret = test_array (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from array test: %i\n", ret);
@@ -128,6 +129,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_averager") == 0) {
 		ret = test_averager (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from averager test: %i\n", ret);
@@ -135,6 +137,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_anything") == 0) {
 		ret = test_anything (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from anything test: %i\n", ret);
@@ -143,6 +146,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 #ifdef RRR_ENABLE_DB_TESTING
 		ret = test_type_array_mysql (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from MySQL test: %i\n", ret);

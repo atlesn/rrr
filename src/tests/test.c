@@ -266,7 +266,7 @@ int main (int argc, const char **argv) {
 	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			rrr_posix_usleep(100000);
-			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler);
+			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
 
 		ret = main_get_test_result(instances);
@@ -276,8 +276,6 @@ int main (int argc, const char **argv) {
 #endif
 
 		main_threads_stop(collection, instances);
-
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);
@@ -301,7 +299,7 @@ int main (int argc, const char **argv) {
 
 	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:

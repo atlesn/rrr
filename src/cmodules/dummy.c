@@ -78,5 +78,7 @@ int cleanup(RRR_CLEANUP_ARGS) {
 
 	RRR_FREE_IF_NOT_NULL(data->custom_setting);
 
+	ctx->application_ptr = NULL;
+
 	return 0;
 }

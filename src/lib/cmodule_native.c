@@ -660,8 +660,8 @@ static int __rrr_cmodule_worker_signal_handler (int signal, void *private_arg) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
 	if (signal == SIGUSR1 || signal == SIGINT || signal == SIGTERM) {
-		RRR_DBG_SIGNAL("script worker %s received SIGUSR1, SIGTERM or SIGINT, stopping\n",
-				worker->name);
+		RRR_DBG_SIGNAL("script worker %s pid %i received SIGUSR1, SIGTERM or SIGINT, stopping\n",
+				worker->name, getpid());
 		worker->received_stop_signal = 1;
 	}
 
@@ -698,11 +698,11 @@ static void __rrr_cmodule_worker_fork_log_hook (
 static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 	struct rrr_cmodule_worker *worker = arg;
 
-	RRR_MSG_0("Received SIGCHLD for child fork %i named %s\n",
+	RRR_DBG_1("Received SIGCHLD for child fork %i named %s\n",
 			pid, worker->name);
 
 	if (worker->pid == 0) {
-		RRR_MSG_0("Note: Child had already exited and we knew about it, worker is named %s\n",
+		RRR_DBG_1("Note: Child had already exited and we knew about it, worker is named %s\n",
 				worker->name);
 	}
 	else if (pid != worker->pid) {
@@ -715,7 +715,6 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 int rrr_cmodule_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
-		struct rrr_fork_handler *fork_handler,
 		uint64_t spawn_interval_us,
 		uint64_t sleep_interval_us,
 		const char *name,
@@ -746,7 +745,7 @@ int rrr_cmodule_start_worker_fork (
 			do_processing,
 			do_drop_on_error,
 			settings,
-			fork_handler
+			cmodule->fork_handler
 	)) != 0) {
 		RRR_MSG_0("Could not create worker in rrr_cmodule_start_worker_fork\n");
 		goto out_parent;
@@ -755,7 +754,7 @@ int rrr_cmodule_start_worker_fork (
 	// Append to LL after forking is OK
 
 	pid_t pid = rrr_fork (
-			fork_handler,
+			cmodule->fork_handler,
 			__rrr_cmodule_parent_exit_notify_handler,
 			worker
 	);
@@ -815,6 +814,8 @@ int rrr_cmodule_start_worker_fork (
 	// double free of mmap resources (parent calls destroy)
 	__rrr_cmodule_worker_clear_deferred_to_parent(worker);
 
+	RRR_DBG_1("cmodule %s pid %i exit\n", worker->name, getpid());
+
 	exit(ret);
 
 	out_parent:
@@ -828,12 +829,13 @@ void rrr_cmodule_stop_forks (
 		struct rrr_cmodule *cmodule
 ) {
 	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
+	rrr_fork_handle_sigchld_and_notify_if_needed(cmodule->fork_handler, 1);
 }
 
 void rrr_cmodule_stop_forks_and_destroy (
 		struct rrr_cmodule *cmodule
 ) {
-	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
+	rrr_cmodule_stop_forks(cmodule);
 	if (cmodule->mmap != NULL) {
 		rrr_mmap_destroy(cmodule->mmap);
 		cmodule->mmap = NULL;
@@ -849,7 +851,8 @@ void rrr_cmodule_stop_forks_and_destroy_void (
 
 int rrr_cmodule_new (
 		struct rrr_cmodule **result,
-		const char *name
+		const char *name,
+		struct rrr_fork_handler *fork_handler
 ) {
 	int ret = 0;
 
@@ -867,6 +870,8 @@ int rrr_cmodule_new (
 		ret = 1;
 		goto out_free;
 	}
+
+	cmodule->fork_handler = fork_handler;
 
 	*result = cmodule;
 
@@ -1120,5 +1125,6 @@ int rrr_cmodule_send_to_fork (
 // Call once in a while, like every second
 void rrr_cmodule_maintain(struct rrr_fork_handler *handler) {
 	// Nothing to do
+	// We also don't check for SIGCHLD, main handles that for us
 	(void)(handler);
 }

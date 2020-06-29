@@ -255,13 +255,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_BREAK()						\
 		linked_list_immediate_break = 1; break
 
-
-#define RRR_LL_ITERATE_END()																\
+#define __RRR_LL_ITERATE_END(no_check_destroy)													\
 		} while (0);																			\
 		if (linked_list_immediate_break != 0) {													\
 			break;																				\
 		}																						\
-		if (linked_list_iterate_destroy != 0) {													\
+		if (no_check_destroy == 0 && linked_list_iterate_destroy != 0) {						\
 			RRR_BUG("RRR_LL_SET_DESTROY was used without destroy "								\
 					"function, must use RRR_LL_ITERATE_END_CHECK_DESTROY instead\n");			\
 		}																						\
@@ -272,6 +271,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			node = next;																		\
 		}																						\
 	}} while(0)
+
+#define RRR_LL_ITERATE_END()																	\
+		__RRR_LL_ITERATE_END(0)
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, destroy_err, lock, unlock, lock_err) \
 		} while (0);																			\
@@ -299,12 +301,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_LL_ITERATE_END_CHECK_DESTROY(head, destroy_func)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, destroy_func, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())
 
-#define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(destroy_func)		\
-		if (linked_list_iterate_destroy) {								\
-			destroy_func;												\
-			linked_list_iterate_destroy = 0;							\
-		}																\
-	RRR_LL_ITERATE_END()
+#define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_REMOVE(destroy_func)			\
+			if (linked_list_iterate_destroy) {								\
+				destroy_func;												\
+				linked_list_iterate_destroy = 0;							\
+			}																\
+			__RRR_LL_ITERATE_END(1)
 
 #define RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(head)	\
 	RRR_LL_ITERATE_END_CHECK_DESTROY_WRAP_LOCK(head, rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop(), rrr_slow_noop())

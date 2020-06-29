@@ -105,6 +105,7 @@ struct rrr_instance_thread_data {
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
+#define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
 		thread_data->init_data.message_broker, thread_data->message_broker_handle

@@ -392,7 +392,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	if (rrr_cmodule_start_worker_fork (
 			&fork_pid,
 			thread_data->cmodule,
-			INSTANCE_D_FORK(thread_data),
 			data->source_interval_ms * 1000,
 			10 * 1000,
 			INSTANCE_D_NAME(thread_data),
@@ -413,7 +412,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING_FORKED);
 
-	RRR_DBG_1 ("cmodule instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
+	RRR_DBG_1 ("cmodule instance %s started thread %p fork handler ptr %p\n",
+			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
 	rrr_cmodule_common_loop (
 			thread_data,
@@ -424,7 +424,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	);
 
 	out_message:
-	RRR_DBG_1 ("cmodule instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
+	RRR_DBG_1 ("cmodule instance %s stopping thread %p fork handler ptr %p\n",
+			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
 	//pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

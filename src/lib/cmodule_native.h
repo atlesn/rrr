@@ -89,7 +89,10 @@ struct rrr_cmodule {
 	RRR_LL_HEAD(struct rrr_cmodule_worker);
 	struct rrr_mmap *mmap;
 
-	// Used by message_broker_cmodule poll functions
+	// Used when creating forks and cleaning up, not managed
+	struct rrr_fork_handler *fork_handler;
+
+	// Used by message_broker_cmodule poll functions, not managed
 	void *callback_data_tmp;
 };
 
@@ -131,7 +134,6 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 int rrr_cmodule_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
-		struct rrr_fork_handler *fork_handler,
 		uint64_t spawn_interval_us,
 		uint64_t sleep_interval_us,
 		const char *name,
@@ -157,7 +159,8 @@ void rrr_cmodule_stop_forks_and_destroy_void (
 );
 int rrr_cmodule_new (
 		struct rrr_cmodule **result,
-		const char *name
+		const char *name,
+		struct rrr_fork_handler *fork_handler
 );
 int rrr_cmodule_read_from_forks (
 		int *read_count,

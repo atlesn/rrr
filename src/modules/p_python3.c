@@ -352,7 +352,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	if (rrr_cmodule_start_worker_fork (
 			&fork_pid,
 			thread_data->cmodule,
-			INSTANCE_D_FORK(thread_data),
 			spawn_interval_ms * 1000,
 			10 * 1000,
 			INSTANCE_D_NAME(thread_data),

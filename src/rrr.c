@@ -64,6 +64,8 @@ const char *module_library_paths[] = {
 		"/usr/local/lib/",
 		"./src/modules/.libs",
 		"./src/modules",
+		"./src/tests/modules/.libs",
+		"./src/tests/modules",
 		"./modules",
 		"./",
 		""
@@ -271,6 +273,8 @@ static int main_loop (
 	// Main loop
 	while (main_running) {
 		rrr_posix_usleep (250000); // 250ms
+
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
@@ -558,7 +562,7 @@ int main (int argc, const char *argv[]) {
 	RRR_MAP_ITERATE_END();
 
 	while (main_running) {
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
 		if (some_fork_has_stopped) {
 			RRR_MSG_0("One or more forks has exited\n");
@@ -575,13 +579,16 @@ int main (int argc, const char *argv[]) {
 		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
-			// Child forks must skip *ALL* the fork-cleanup stuff
+			// Child forks must skip *ALL* the fork-cleanup stuff. It's possible that a
+			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
+			// will hande a SIGCHLD before we send signals to all forks, in which case
+			// it will clean up properly anyway.
 			goto out_run_cleanup_methods;
 		}
 
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
-		rrr_fork_handler_free(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
+		rrr_fork_handler_destroy (fork_handler);
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();

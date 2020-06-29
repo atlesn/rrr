@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "log.h"
 #include "linked_list.h"
@@ -117,7 +118,7 @@ void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
 }
 
 void rrr_signal (int s) {
-	RRR_DBG_SIGNAL("Received signal %i\n", s);
+	RRR_DBG_SIGNAL("Received signal %i int pid %i\n", s, getpid());
 
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;

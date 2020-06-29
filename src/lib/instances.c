@@ -490,7 +490,11 @@ static void __rrr_instance_thread_cmodule_destroy_intermediate (void *arg) {
 static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
-	if ((rrr_cmodule_new(&thread_data->cmodule, INSTANCE_D_NAME(thread_data))) != 0) {
+	if ((rrr_cmodule_new (
+			&thread_data->cmodule,
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_FORK(thread_data)
+	)) != 0) {
 		RRR_MSG_0("Could not initialize cmodule in __rrr_instance_thread_start_intermediate\n");
 		goto out;
 	}
