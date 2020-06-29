@@ -37,6 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
+#include "../lib/log.h"
 
 #include "test_usleep.h"
 #include "test_fixp.h"
@@ -125,11 +126,13 @@ int main (int argc, const char **argv) {
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
-		ret = 1;
-		goto out_cleanup_fork_handler;
+		fprintf(stderr, "Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
 	}
 
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
@@ -306,5 +309,7 @@ int main (int argc, const char **argv) {
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
 		return ret;
 }

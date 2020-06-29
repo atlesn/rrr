@@ -60,13 +60,11 @@ int source(RRR_SOURCE_ARGS) {
 
 	rrr_free(message);
 
-	rrr_posix_usleep(100000);
-
 	return 0;
 }
 
 int process(RRR_PROCESS_ARGS) {
-	RRR_MSG_1("cmodule process timestamp %" PRIu64 "\n", message->timestamp);
+	RRR_DBG_2("cmodule process timestamp %" PRIu64 "\n", message->timestamp);
 
 	return rrr_send_and_free(ctx, message, message_addr);
 }

@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "gnu.h"
 
 #define RRR_CMODULE_MMAP_SIZE (1024*1024*2)
+#define RRR_CMODULE_DEFERRED_QUEUE_MAX 1000
 
 static int __rrr_cmodule_deferred_message_destroy (
 		struct rrr_cmodule_deferred_message *msg
@@ -49,6 +50,17 @@ static int __rrr_cmodule_deferred_message_destroy (
 	RRR_FREE_IF_NOT_NULL(msg->msg_addr);
 	free(msg);
 	return 0;
+}
+
+static void __rrr_cmodule_deferred_message_extract (
+		struct rrr_message **message,
+		struct rrr_message_addr **message_addr,
+		struct rrr_cmodule_deferred_message *source
+) {
+	*message = source->msg;
+	*message_addr = source->msg_addr;
+	source->msg = NULL;
+	source->msg_addr = NULL;
 }
 
 static int __rrr_cmodule_deferred_message_new_and_push (
@@ -295,6 +307,23 @@ static int __rrr_cmodule_send_message (
 
 	int retry_max = 500;
 
+	// Extracted from deferred queue, freed every time before it is used and at out
+	struct rrr_message_addr *message_addr_to_free = NULL;
+
+	{
+		int count_before_cleanup = RRR_LL_COUNT(deferred_queue);
+
+		while (RRR_LL_COUNT(deferred_queue) > RRR_CMODULE_DEFERRED_QUEUE_MAX) {
+			struct rrr_cmodule_deferred_message *msg = RRR_LL_SHIFT(deferred_queue);
+			__rrr_cmodule_deferred_message_destroy(msg);
+		}
+
+		int count_after_cleanup = RRR_LL_COUNT(deferred_queue);
+		if (count_after_cleanup != count_before_cleanup) {
+			RRR_MSG_0("Warning: %i messages cleared from over-filled cmodule deferred queue in %s. Messages were lost.\n", count_before_cleanup - count_after_cleanup, channel->name);
+		}
+	}
+
 	// If there are deferred messages, immediately push the new message to
 	// deferred queue and instead process the first one in the queue
 	if (RRR_LL_COUNT(deferred_queue) > 0) {
@@ -304,6 +333,8 @@ static int __rrr_cmodule_send_message (
 	goto send_message;
 
 	retry_defer_message:
+		rrr_posix_usleep(5000); // 5 ms
+
 		if (__rrr_cmodule_deferred_message_new_and_push(deferred_queue, message, message_addr) != 0) {
 			RRR_MSG_0("Error while pushing deferred message in __rrr_cmodule_send_message\n");
 			ret = 1;
@@ -328,9 +359,10 @@ static int __rrr_cmodule_send_message (
 		if (message == NULL) {
 			if (RRR_LL_COUNT(deferred_queue) > 0) {
 				struct rrr_cmodule_deferred_message *deferred_message = RRR_LL_SHIFT(deferred_queue);
-				message = deferred_message->msg;
-				message_addr = deferred_message->msg_addr;
+				RRR_FREE_IF_NOT_NULL(message_addr_to_free);
+				__rrr_cmodule_deferred_message_extract(&message, &message_addr_to_free, deferred_message);
 				__rrr_cmodule_deferred_message_destroy(deferred_message);
+				message_addr = message_addr_to_free;
 			}
 		}
 
@@ -359,7 +391,9 @@ static int __rrr_cmodule_send_message (
 			goto out;
 		}
 
+		(*sent_total)++;
 	out:
+		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
 		RRR_FREE_IF_NOT_NULL(message);
 		return ret;
 }
@@ -372,6 +406,7 @@ int rrr_cmodule_worker_send_message_to_parent (
 ) {
 	int sent_total = 0;
 
+
 	// Will always free the message also upon errors
 	int ret = __rrr_cmodule_send_message (
 			&sent_total,
@@ -381,6 +416,7 @@ int rrr_cmodule_worker_send_message_to_parent (
 			message_addr
 	);
 
+	worker->total_msg_processed += 1;
 	worker->total_msg_mmap_to_parent += sent_total;
 
 	return ret;
@@ -414,7 +450,7 @@ int __rrr_cmodule_worker_loop_mmap_channel_read_callback (const void *data, size
 	);
 
 	if (ret != 0) {
-		RRR_MSG_0("Error %i from worker process fucntion in worker %s\n", callback_data->worker->name);
+		RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
 		if (callback_data->worker->do_drop_on_error) {
 			RRR_MSG_0("Dropping message per configuration in worker %s\n", callback_data->worker->name);
 			ret = 0;
@@ -504,7 +540,6 @@ static int __rrr_cmodule_worker_loop (
 	while (worker->received_stop_signal == 0) {
 		// Check for backlog on the socket. Don't process any more messages untill backlog is cleared up
 
-
 		time_now = rrr_time_get_64();
 
 		if (next_spawn_time == 0) {
@@ -522,7 +557,7 @@ static int __rrr_cmodule_worker_loop (
 						RRR_MSG_0("Error from mmap read function in worker fork named %s\n",
 								worker->name);
 						ret = 1;
-						break;
+						goto loop_out;
 					}
 					ret = 0;
 				}
@@ -535,7 +570,7 @@ static int __rrr_cmodule_worker_loop (
 		if (worker->do_spawning) {
 			if (time_now >= next_spawn_time) {
 				if (__rrr_cmodule_worker_spawn_message(worker, process_callback, process_callback_arg) != 0) {
-					break;
+					goto loop_out;
 				}
 				next_spawn_time = 0;
 			}
@@ -548,6 +583,7 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (++consecutive_nothing_happend > 250) {
+//			printf("Sleep %i - %i - %i\n", usleep_hits_b, consecutive_nothing_happend, worker->total_msg_processed);
 			usleep_hits_b++;
 			rrr_posix_usleep(worker->sleep_interval_us);
 		}
@@ -560,6 +596,8 @@ static int __rrr_cmodule_worker_loop (
 		prev_total_processed_msg = worker->total_msg_processed;
 		prev_total_msg_mmap_from_parent = worker->total_msg_mmap_to_fork;
 	}
+
+	loop_out:
 
 	RRR_DBG_1("child worker loop %s complete, received_stop_signal is %i ret is %i\n",
 			worker->name,
@@ -1013,6 +1051,10 @@ int rrr_cmodule_read_from_forks (
 
 	int read_total = 0;
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->config_complete == 0) {
+			*config_complete = 0;
+		}
+
 		if (node->pid == 0) {
 			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in rrr_cmodule_read_from_forks\n",
 					node->name);
@@ -1050,10 +1092,6 @@ int rrr_cmodule_read_from_forks (
 
 			read_total += callback_data.count;
 			callback_data.count = 0;
-		}
-
-		if (node->config_complete == 0) {
-			*config_complete = 0;
 		}
 	RRR_LL_ITERATE_END();
 

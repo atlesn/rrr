@@ -170,7 +170,7 @@ static int __cmodule_load (
 		sprintf(path, "%s/%s.so", cmodule_library_paths[i], data->cmodule_name);
 
 
-		printf("check path %s\n", path);
+//		printf("check path %s\n", path);
 		struct stat buf;
 		if (stat(path, &buf) != 0) {
 			if (errno == ENOENT) {
@@ -377,8 +377,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-
 	rrr_poll_add_from_thread_senders (&poll, thread_data);
 
 	if (rrr_poll_collection_count(&poll) > 0 && (data->process_function == NULL || *(data->process_function) == '\0')) {
@@ -393,7 +391,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 			&fork_pid,
 			thread_data->cmodule,
 			data->source_interval_ms * 1000,
-			10 * 1000,
+			2 * 1000, // 2ms sleep
 			INSTANCE_D_NAME(thread_data),
 			(data->source_function == NULL || *(data->source_function) == '\0' ? 0 : 1),
 			(data->process_function == NULL || *(data->process_function) == '\0' ? 0 : 1),

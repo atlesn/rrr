@@ -182,12 +182,12 @@ static int __rrr_cmodule_common_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 			entry
 	);
 
+	callback_data->count += input_count;
+
 	if (ret != 0) {
 		ret = RRR_FIFO_GLOBAL_ERR;
 		goto out;
 	}
-
-	callback_data->count += input_count;
 
 	if (callback_data->count > callback_data->max_count) {
 		ret = RRR_FIFO_SEARCH_STOP;
@@ -273,7 +273,7 @@ void rrr_cmodule_common_loop (
 
 		int input_count = 0;
 		if (no_polling == 0) {
-			if (__rrr_cmodule_common_poll_delete (&input_count, thread_data, poll, fork_pid, 0, 50) != 0) {
+			if (__rrr_cmodule_common_poll_delete (&input_count, thread_data, poll, fork_pid, 0, 500) != 0) {
 				break;
 			}
 		}
@@ -283,11 +283,12 @@ void rrr_cmodule_common_loop (
 		}
 
 		if (++consecutive_nothing_happend > 1000) {
-	//			printf ("Nothing happened  1 000: %i\n", consecutive_nothing_happend);
+//			printf ("Nothing happened  1 000: %i, from senders: %i, input_child: %i\n",
+//					consecutive_nothing_happend, from_senders_counter, from_child_counter );
 			rrr_posix_usleep(250); // 250 us
 		}
 		if (++consecutive_nothing_happend > 10000) {
-	//			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
+//			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
 			rrr_posix_usleep (50000); // 50 ms
 			usleep_hits++;
 		}

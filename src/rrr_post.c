@@ -510,13 +510,16 @@ static int __rrr_post_read (struct rrr_post_data *data) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	struct cmd_data cmd;
 	struct rrr_post_data data;
@@ -572,15 +575,17 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-	if (data.quiet == 0) {
-		__rrr_post_print_statistics(&data);
-	}
+		if (data.quiet == 0) {
+			__rrr_post_print_statistics(&data);
+		}
 
-	rrr_set_debuglevel_on_exit();
-	__rrr_post_close(&data);
-	__rrr_post_destroy_data(&data);
-	cmd_destroy(&cmd);
-	rrr_socket_close_all();
-	rrr_strerror_cleanup();
-	return ret;
+		rrr_set_debuglevel_on_exit();
+		__rrr_post_close(&data);
+		__rrr_post_destroy_data(&data);
+		cmd_destroy(&cmd);
+		rrr_socket_close_all();
+		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
+		return ret;
 }

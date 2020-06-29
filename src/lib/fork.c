@@ -192,8 +192,14 @@ void rrr_fork_send_sigusr1_and_wait (struct rrr_fork_handler *handler) {
  *		}*/
 	RRR_LL_ITERATE_END();
 
+	int max_rounds = 50; // ~5 seconds
+
 	int active_forks = 0;
 	do {
+		if (--max_rounds == 0) {
+			RRR_MSG_0("Timeout reached while waiting for forks to exit\n");
+			break;
+		}
 		active_forks = 0;
 		RRR_LL_ITERATE_BEGIN(handler, struct rrr_fork);
 			if (node->pid > 0) {

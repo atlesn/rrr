@@ -685,13 +685,16 @@ static int __rrr_stats_tick (struct rrr_stats_data *data) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	struct cmd_data cmd;
 	struct rrr_stats_data data = {0};
@@ -776,5 +779,7 @@ int main (int argc, const char *argv[]) {
 		__rrr_stats_data_cleanup(&data);
 	out:
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
 		return ret;
 }

@@ -460,15 +460,18 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
+	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out;
+	}
 	rrr_strerror_init();
 
 	int is_child = 0;
-
-	int ret = EXIT_SUCCESS;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -601,5 +604,7 @@ int main (int argc, const char *argv[]) {
 		cmd_destroy(&cmd);
 		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out:
 		return ret;
 }
