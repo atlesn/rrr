@@ -88,7 +88,6 @@ void rrr_instance_unload_all(struct instance_metadata_collection *instances) {
 }
 
 static void __rrr_instance_metadata_destroy (
-		struct instance_metadata_collection *instances,
 		struct instance_metadata *target
 ) {
 	rrr_instance_destroy_thread(target->thread_data);
@@ -102,7 +101,6 @@ static void __rrr_instance_metadata_destroy (
 }
 
 static int __rrr_instance_metadata_new (
-		struct instance_metadata_collection *instances,
 		struct instance_metadata **target,
 		struct rrr_instance_dynamic_data *data
 ) {
@@ -136,7 +134,7 @@ static struct instance_metadata *__rrr_instance_save (
 	RRR_DBG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct instance_metadata *target;
-	if (__rrr_instance_metadata_new (instances, &target, module) != 0) {
+	if (__rrr_instance_metadata_new (&target, module) != 0) {
 		RRR_MSG_0("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
@@ -379,7 +377,7 @@ void rrr_instance_metadata_collection_destroy (struct instance_metadata_collecti
 	while (meta != NULL) {
 		struct instance_metadata *next = meta->next;
 
-		__rrr_instance_metadata_destroy(target, meta);
+		__rrr_instance_metadata_destroy(meta);
 
 		meta = next;
 	}
