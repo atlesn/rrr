@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CMODULE_DEFINES_H
 #define RRR_CMODULE_DEFINES_H
 
-#include "socket/rrr_socket_constants.h"
-#include "read_constants.h"
+#include "../socket/rrr_socket_constants.h"
+#include "../read_constants.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
 	RRR_SOCKET_MSG_CTRL_F_USR_A

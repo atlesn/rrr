@@ -36,8 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/log.h"
-#include "../lib/cmodule_helper.h"
-#include "../lib/cmodule_main.h"
+#include "../lib/cmodule/cmodule_helper.h"
+#include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
 
 #define RRR_CMODULE_NATIVE_CTX

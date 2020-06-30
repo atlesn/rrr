@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "linked_list.h"
+#include "../linked_list.h"
 
 struct rrr_message;
 struct rrr_message_addr;

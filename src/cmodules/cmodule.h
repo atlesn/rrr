@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "messages.h"
 #	include "message_addr.h"
 #	include "instance_config.h"
-#	include "cmodule_ext.h"
+#	include "cmodule/cmodule_ext.h"
 #	include "../global.h"
 #endif
 

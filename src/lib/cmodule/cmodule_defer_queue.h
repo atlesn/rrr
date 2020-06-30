@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_CMODULE_DEFER_QUEUE_H
 #define RRR_CMODULE_DEFER_QUEUE_H
 
-#include "linked_list.h"
+#include "../linked_list.h"
 
 struct rrr_message;
 struct rrr_message_addr;

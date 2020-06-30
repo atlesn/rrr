@@ -23,16 +23,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CMODULE_NATIVE_H
 
 #define RRR_CMODULE_NATIVE_CTX
-#include "../cmodules/cmodule.h"
+#include "../../cmodules/cmodule.h"
 
 #include <inttypes.h>
 #include <pthread.h>
 
-#include "linked_list.h"
+#include "cmodule_defer_queue.h"
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
-#include "settings.h"
-#include "cmodule_defer_queue.h"
+
+#include "../linked_list.h"
+#include "../settings.h"
 
 struct rrr_instance_config;
 struct rrr_instance_settings;
