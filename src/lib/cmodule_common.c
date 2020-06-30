@@ -296,8 +296,12 @@ static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread
 //		printf("Tick: %i, read_count: %i\n", tick, read_count);
 
 		if (consecutive_nothing_happened > 250) {
+			usleep_count += 1000;
+			rrr_posix_usleep(100000); // 100 ms
+		}
+		else if (consecutive_nothing_happened > 100) {
 			usleep_count++;
-			rrr_posix_usleep(10000);
+			rrr_posix_usleep(100); // 100 us
 		}
 
 		uint64_t now_time = rrr_time_get_64();
