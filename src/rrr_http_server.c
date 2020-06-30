@@ -35,11 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/rrr_socket.h"
-#include "lib/rrr_socket_read.h"
-#include "lib/http_session.h"
-#include "lib/http_part.h"
-#include "lib/http_util.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_read.h"
+#include "lib/http/http_session.h"
+#include "lib/http/http_part.h"
+#include "lib/http/http_util.h"
 #include "lib/threads.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
@@ -553,13 +553,16 @@ int rrr_http_server_signal_handler(int s, void *arg) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	int count = 0;
 	struct cmd_data cmd;
@@ -579,13 +582,7 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_http_server_data_init(&data);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(rrr_http_server_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
@@ -649,7 +646,7 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 	rrr_signal_default_signal_actions_register();
 
 	while (main_running) {
@@ -683,35 +680,37 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-	rrr_set_debuglevel_on_exit();
+		rrr_set_debuglevel_on_exit();
 
-	if (threads != NULL) {
-		rrr_thread_stop_and_join_all (
-				threads,
-				__rrr_http_server_ghost_handler
-		);
-		rrr_thread_destroy_collection(threads, 1);
-	}
+		if (threads != NULL) {
+			rrr_thread_stop_and_join_all (
+					threads,
+					__rrr_http_server_ghost_handler
+			);
+			rrr_thread_destroy_collection(threads, 1);
+		}
 
-	rrr_thread_run_ghost_cleanup(&count);
-	RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
+		rrr_thread_run_ghost_cleanup(&count);
+		RRR_DBG_1("Cleaned up after %i ghost threads\n", count);
 
-	rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler);
 
-	if (transport_http != NULL) {
-		rrr_net_transport_destroy(transport_http);
-	}
-	if (transport_https != NULL) {
-		rrr_net_transport_destroy(transport_https);
-	}
+		if (transport_http != NULL) {
+			rrr_net_transport_destroy(transport_http);
+		}
+		if (transport_https != NULL) {
+			rrr_net_transport_destroy(transport_https);
+		}
 
-	__rrr_http_server_data_cleanup(&data);
+		__rrr_http_server_data_cleanup(&data);
 
-	cmd_destroy(&cmd);
+		cmd_destroy(&cmd);
 
-	rrr_socket_close_all();
+		rrr_socket_close_all();
 
-	rrr_strerror_cleanup();
+		rrr_strerror_cleanup();
+		rrr_log_cleanup();
 
-	return ret;
+	out_final:
+		return ret;
 }

@@ -39,9 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/configuration.h"
 #include "lib/threads.h"
 #include "lib/version.h"
-#include "lib/rrr_socket.h"
-#include "lib/stats_engine.h"
-#include "lib/stats_message.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/stats/stats_engine.h"
+#include "lib/stats/stats_message.h"
 #include "lib/rrr_strerror.h"
 #include "lib/message_broker.h"
 #include "lib/map.h"
@@ -64,6 +64,8 @@ const char *module_library_paths[] = {
 		"/usr/local/lib/",
 		"./src/modules/.libs",
 		"./src/modules",
+		"./src/tests/modules/.libs",
+		"./src/tests/modules",
 		"./modules",
 		"./",
 		""
@@ -185,7 +187,6 @@ static int main_stats_post_sticky_messages (struct stats_data *stats_data, struc
 static int main_loop (
 		struct cmd_data *cmd,
 		const char *config_file,
-		struct rrr_signal_functions *signal_functions,
 		struct rrr_fork_handler *fork_handler
 ) {
 	int ret = EXIT_SUCCESS;
@@ -216,7 +217,7 @@ static int main_loop (
 		}
 	}
 
-	if (rrr_instance_metadata_collection_new (&instances, signal_functions) != 0) {
+	if (rrr_instance_metadata_collection_new (&instances) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_config;
 	}
@@ -272,6 +273,8 @@ static int main_loop (
 	// Main loop
 	while (main_running) {
 		rrr_posix_usleep (250000); // 250ms
+
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
@@ -457,15 +460,18 @@ static int get_config_files (struct rrr_map *target, struct cmd_data *cmd) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
+	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out;
+	}
 	rrr_strerror_init();
 
 	int is_child = 0;
-
-	int ret = EXIT_SUCCESS;
 
 	struct rrr_signal_handler *signal_handler_fork = NULL;
 	struct rrr_signal_handler *signal_handler = NULL;
@@ -482,24 +488,18 @@ int main (int argc, const char *argv[]) {
 
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
 	if (rrr_fork_handler_new (&fork_handler) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_run_cleanup_methods;
 	}
 
 	// The fork signal handler must be first
-	signal_handler_fork = signal_functions.push_handler(rrr_fork_signal_handler, NULL);
-	signal_handler = signal_functions.push_handler(rrr_signal_handler, NULL);
+	signal_handler_fork = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_signal_handler, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
-	signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
@@ -548,12 +548,11 @@ int main (int argc, const char *argv[]) {
 
 		// CHILD CODE
 		is_child = 1;
-		signal_functions.set_active(RRR_SIGNALS_ACTIVE);
+		rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 		ret = main_loop (
 				&cmd,
 				config_string,
-				&signal_functions,
 				fork_handler
 		);
 
@@ -566,7 +565,7 @@ int main (int argc, const char *argv[]) {
 	RRR_MAP_ITERATE_END();
 
 	while (main_running) {
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 0);
 
 		if (some_fork_has_stopped) {
 			RRR_MSG_0("One or more forks has exited\n");
@@ -577,19 +576,22 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out_cleanup_signal:
-		signal_functions.remove_handler(signal_handler);
-		signal_functions.remove_handler(signal_handler_fork);
+		rrr_signal_handler_remove(signal_handler);
+		rrr_signal_handler_remove(signal_handler_fork);
 
-		signal_functions.set_active(RRR_SIGNALS_NOT_ACTIVE);
+		rrr_signal_handler_set_active(RRR_SIGNALS_NOT_ACTIVE);
 
 		if (is_child) {
-			// Child forks must skip *ALL* the fork-cleanup stuff
+			// Child forks must skip *ALL* the fork-cleanup stuff. It's possible that a
+			// child which regularly calls rrr_fork_handle_sigchld_and_notify_if_needed
+			// will hande a SIGCHLD before we send signals to all forks, in which case
+			// it will clean up properly anyway.
 			goto out_run_cleanup_methods;
 		}
 
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
-		rrr_fork_handler_free(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
+		rrr_fork_handler_destroy (fork_handler);
 
 	out_run_cleanup_methods:
 		rrr_exit_cleanup_methods_run_and_free();
@@ -602,5 +604,7 @@ int main (int argc, const char *argv[]) {
 		cmd_destroy(&cmd);
 		rrr_map_clear(&config_file_map);
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out:
 		return ret;
 }

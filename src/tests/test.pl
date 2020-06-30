@@ -29,6 +29,8 @@ sub source {
 
 	$message->send();
 
+	sleep(1);
+
 	return 1;
 }
 

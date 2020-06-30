@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <pthread.h>
 
-#include "rrr_socket_msg.h"
+#include "socket/rrr_socket_msg.h"
 #include "utf8.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
@@ -45,6 +45,10 @@ typedef unsigned long long int rrr_setting_uint;
 #define RRR_SETTING_ERROR 1
 #define RRR_SETTING_PARSE_ERROR 2
 #define RRR_SETTING_NOT_FOUND 3
+
+#define RRR_SETTINGS_IF_EXISTS_THEN(string, then)															\
+	do { if ( rrr_instance_config_setting_exists(config, string)) { then;									\
+	}} while (0)
 
 #define RRR_SETTINGS_PARSE_OPTIONAL_YESNO(string, target, default_yesno)									\
 do {int yesno = default_yesno;																				\

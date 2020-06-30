@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <pthread.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "log.h"
 #include "linked_list.h"
@@ -101,8 +102,23 @@ void rrr_signal_handler_remove_all(void) {
 	pthread_mutex_unlock(&signal_lock);
 }
 
+void rrr_signal_handler_remove_all_except(int *was_found, void *function_ptr) {
+	*was_found = 0;
+
+	pthread_mutex_lock(&signal_lock);
+	RRR_LL_ITERATE_BEGIN(&signal_handlers, struct rrr_signal_handler);
+		if (node->handler == function_ptr) {
+			*was_found = 1;
+		}
+		else {
+			RRR_LL_ITERATE_SET_DESTROY();
+		}
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&signal_handlers, 0; free(node));
+	pthread_mutex_unlock(&signal_lock);
+}
+
 void rrr_signal (int s) {
-	RRR_DBG_SIGNAL("Received signal %i\n", s);
+	RRR_DBG_SIGNAL("Received signal %i int pid %i\n", s, getpid());
 
 	if (signal_handlers_active == 1) {
 		int handler_res = 1;

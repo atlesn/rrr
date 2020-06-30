@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "../lib/http_session.h"
+#include "../lib/http/http_session.h"
 #include "../lib/array.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instances.h"
@@ -35,7 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/fixed_point.h"
 #include "../lib/linked_list.h"
-#include "../lib/http_session.h"
 #include "../lib/gnu.h"
 #include "../lib/map.h"
 #include "../lib/string_builder.h"

@@ -590,7 +590,7 @@ int rrr_net_transport_handle_with_transport_ctx_do (
 ) {
 	int ret = 0;
 
-	RRR_NET_TRANSPORT_HANDLE_GET_AND_LOCK("rrr_net_transport_handle_with_lock_do");
+	RRR_NET_TRANSPORT_HANDLE_GET_AND_LOCK("rrr_net_transport_handle_with_transport_ctx_do ");
 	ret = callback(handle, arg);
 	RRR_NET_TRANSPORT_HANDLE_UNLOCK();
 

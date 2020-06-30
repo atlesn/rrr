@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "net_transport.h"
 #include "net_transport_tls.h"
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "rrr_openssl.h"
 #include "rrr_strerror.h"
 #include "gnu.h"

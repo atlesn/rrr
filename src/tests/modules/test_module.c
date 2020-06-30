@@ -41,6 +41,7 @@ void set_test_module_result(int result) {
 }
 
 struct test_module_data {
+	rrr_setting_uint exit_delay_ms;
 	int dummy;
 	char *test_method;
 	char *test_output_instance;
@@ -72,6 +73,8 @@ int parse_config (struct test_module_data *data, struct rrr_instance_config *con
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
 
 	out:
 	if (ret != 0) {
@@ -118,6 +121,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		/* Test array type and data endian conversion */
 		ret = test_array (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from array test: %i\n", ret);
@@ -125,6 +129,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_averager") == 0) {
 		ret = test_averager (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from averager test: %i\n", ret);
@@ -132,6 +137,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_anything") == 0) {
 		ret = test_anything (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from anything test: %i\n", ret);
@@ -140,6 +146,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 #ifdef RRR_ENABLE_DB_TESTING
 		ret = test_type_array_mysql (
 				thread_data->init_data.module->all_instances,
+				thread_data,
 				data->test_output_instance
 		);
 		TEST_MSG("Result from MySQL test: %i\n", ret);
@@ -154,6 +161,11 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	}
 
 	set_test_module_result(ret);
+
+	if (data->exit_delay_ms > 0) {
+		TEST_MSG("Exit delay configured, %llu ms\n", data->exit_delay_ms);
+		rrr_posix_usleep(data->exit_delay_ms * 1000);
+	}
 
 	/* We exit without looping which also makes the other loaded modules exit */
 

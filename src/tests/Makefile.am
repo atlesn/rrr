@@ -20,10 +20,10 @@ test_CFLAGS = ${AM_CFLAGS} -O0 \
 	-DRRR_TEST_PATH="\"$(abs_top_builddir)/src/tests\"" \
 	-fprofile-arcs -ftest-coverage
 
-make_test_data_SOURCES = make_test_data.c ../lib/rrr_socket_msg_checksum.c ../lib/crc32.c ../lib/rrr_endian.c
+make_test_data_SOURCES = make_test_data.c ../lib/socket/rrr_socket_msg_checksum.c ../lib/crc32.c ../lib/rrr_endian.c
 make_test_data_CFLAGS = 
 
 send_ip_SOURCES = send_ip.c
 send_ip_CFLAGS = 
 
-TESTS = test.sh 
+TESTS = test.sh test_passwd.sh 

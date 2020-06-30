@@ -29,10 +29,56 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LOG_HOOK_MAX 5
 
-// TODO : Locking does not work across forks
+static volatile int rrr_log_is_initialized = 0;
 
 // This locking merely prevents (or attempts to prevent) output from different threads to getting mixed up
-static pthread_mutex_t rrr_log_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t rrr_log_lock;
+
+int rrr_log_init(void) {
+	if (rrr_log_is_initialized) {
+		// Don't use RRR_BUG, will deadlock
+		fprintf(stderr, "%s", "BUG: rrr_log_init() called twice\n");
+		abort();
+	}
+
+	int ret = 0;
+
+	pthread_mutexattr_t attr;
+	if ((pthread_mutexattr_init(&attr)) != 0) {
+		fprintf(stderr, "%s", "Could not initialize mutexattr in rrr_log_init()\n");
+		ret = 1;
+		goto out;
+	}
+
+	if ((pthread_mutexattr_setpshared(&attr, 1)) != 0) {
+		fprintf(stderr, "%s", "Could not set pshared on mutexattr in rrr_log_init()\n");
+		ret = 1;
+		goto out_cleanup_mutexattr;
+	}
+
+	if ((pthread_mutex_init(&rrr_log_lock, &attr)) != 0) {
+		fprintf(stderr, "%s", "Could not initialize lock in rrr_log_init()\n");
+		ret = 1;
+		goto out_cleanup_mutexattr;
+	}
+
+	rrr_log_is_initialized = 1;
+
+	goto out_cleanup_mutexattr;
+	out_cleanup_mutexattr:
+		pthread_mutexattr_destroy(&attr);
+	out:
+		return ret;
+}
+
+void rrr_log_cleanup(void) {
+	if (!rrr_log_is_initialized) {
+		return;
+	}
+	pthread_mutex_destroy(&rrr_log_lock);
+}
+
+// TODO : Locking does not work across forks
 
 // This must be separately locked to detect recursion (log functions called from inside hooks)
 static pthread_mutex_t rrr_log_hook_lock = PTHREAD_MUTEX_INITIALIZER;

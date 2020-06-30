@@ -11,6 +11,5 @@ install-data-local:
 clean-local:
 	echo "# DO NOT DELETE THIS FILE" > rrr.service
 
-confdir = @sysconfdir@/rrr.conf.d
-conf_DATA = rrr-dummy.conf
-
+distclean-local:
+	rm -f make-service.sh || true

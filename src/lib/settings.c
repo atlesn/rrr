@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "rrr_endian.h"
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "settings.h"
 #include "log.h"
 

@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
+#include "cmodule_main.h"
 #include "common.h"
 #include "modules.h"
 #include "threads.h"
@@ -87,23 +88,19 @@ void rrr_instance_unload_all(struct instance_metadata_collection *instances) {
 }
 
 static void __rrr_instance_metadata_destroy (
-		struct instance_metadata_collection *instances,
 		struct instance_metadata *target
 ) {
 	rrr_instance_destroy_thread(target->thread_data);
 	rrr_instance_collection_clear(&target->senders);
 	rrr_instance_collection_clear(&target->wait_for);
 
-	if (instances->signal_functions != NULL && target->signal_handler != NULL) {
-		instances->signal_functions->remove_handler(target->signal_handler);
-	}
+	rrr_signal_handler_remove(target->signal_handler);
 
 	free(target->dynamic_data);
 	free(target);
 }
 
 static int __rrr_instance_metadata_new (
-		struct instance_metadata_collection *instances,
 		struct instance_metadata **target,
 		struct rrr_instance_dynamic_data *data
 ) {
@@ -121,9 +118,7 @@ static int __rrr_instance_metadata_new (
 
 	meta->dynamic_data = data;
 
-	if (instances->signal_functions != NULL && data->signal_handler != NULL) {
-		meta->signal_handler = instances->signal_functions->push_handler(data->signal_handler, meta);
-	}
+	rrr_signal_handler_push(data->signal_handler, meta);
 
 	*target = meta;
 
@@ -139,7 +134,7 @@ static struct instance_metadata *__rrr_instance_save (
 	RRR_DBG_1 ("Saving dynamic_data instance %s\n", module->instance_name);
 
 	struct instance_metadata *target;
-	if (__rrr_instance_metadata_new (instances, &target, module) != 0) {
+	if (__rrr_instance_metadata_new (&target, module) != 0) {
 		RRR_MSG_0("Could not save instance %s\n", module->instance_name);
 		return NULL;
 	}
@@ -382,7 +377,7 @@ void rrr_instance_metadata_collection_destroy (struct instance_metadata_collecti
 	while (meta != NULL) {
 		struct instance_metadata *next = meta->next;
 
-		__rrr_instance_metadata_destroy(target, meta);
+		__rrr_instance_metadata_destroy(meta);
 
 		meta = next;
 	}
@@ -391,8 +386,7 @@ void rrr_instance_metadata_collection_destroy (struct instance_metadata_collecti
 }
 
 int rrr_instance_metadata_collection_new (
-		struct instance_metadata_collection **target,
-		struct rrr_signal_functions *signal_functions
+		struct instance_metadata_collection **target
 ) {
 	int ret = 0;
 
@@ -404,8 +398,6 @@ int rrr_instance_metadata_collection_new (
 		ret = 1;
 		goto out;
 	}
-
-	(*target)->signal_functions = signal_functions;
 
 	out:
 	return ret;
@@ -423,6 +415,9 @@ unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_co
 }
 
 static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data) {
+	if (data->cmodule != NULL) {
+		rrr_cmodule_destroy(data->cmodule);
+	}
 	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
 	free(data);
 }
@@ -477,6 +472,47 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct instance_thread
 		return data;
 }
 
+static void __rrr_instance_thread_cmodule_destroy_intermediate (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	// If thread is ghost, cleanup is done in ghost cleanup function. Only
+	// stop forks.
+	if (rrr_thread_is_ghost(thread)) {
+		rrr_cmodule_workers_stop(thread_data->cmodule);
+	}
+	else {
+		rrr_cmodule_destroy(thread_data->cmodule);
+		thread_data->cmodule = NULL;
+	}
+}
+
+static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	if ((rrr_cmodule_new (
+			&thread_data->cmodule,
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_FORK(thread_data)
+	)) != 0) {
+		RRR_MSG_0("Could not initialize cmodule in __rrr_instance_thread_start_intermediate\n");
+		goto out;
+	}
+
+	pthread_cleanup_push(__rrr_instance_thread_cmodule_destroy_intermediate, thread);
+
+	// Ignore return value
+	thread_data->init_data.module->operations.thread_entry(thread);
+
+	pthread_cleanup_pop(1);
+
+	// Don't put code here, modules usually call pthread_exit which means we
+	// only do the cleanup functions
+
+	out:
+	return NULL;
+}
+
 int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
@@ -487,7 +523,7 @@ int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struc
 	}
 	data->thread = rrr_thread_preload_and_register (
 			collection,
-			module->operations.thread_entry,
+			__rrr_instance_thread_entry_intermediate,
 			module->operations.preload,
 			module->operations.poststop,
 			module->operations.cancel_function,

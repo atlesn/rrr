@@ -186,7 +186,6 @@ Look for the defined tags in array messages from other modules, and send these c
 If this option is specified and a received message is not an array or does not have all of the tags defined,
 the message is dropped and an error message is produced.
 If this option is left unspecified, all values from arrays are sent, and messages which are not arrays will have their raw data sent if any.
-.It ip 
 .El
 .PP
 .SS voltmonitor (SA)
@@ -345,10 +344,20 @@ The name of the processing function in the python program which we send packets 
 .It python3_config_function=FUNCTION NAME
 The name of the function in the python program to which we send settings form the configuration file.
 All settings defined inside the python block in the configuration file are sent in here.
-The function might also notify that settings have been accessed to avoid warnings.
-The config function is called once for every setting.
 .It CUSTOM SETTING=VALUE
 Any number of custom settings for the python program might be set as needed.
+.El
+.PP
+Refer to the
+.B cmodule
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It python3_source_interval_ms=MILLISECONDS
+.It python3_sleep_time_ms=MILLISECONDS
+.It python3_nothing_happend_limit=UNSIGNED INTEGER
+.It python3_log_prefix=PREFIX
+.It python3_drop_on_error={yes|no}
 .El
 .PP
 Below follows an example python message processing and generating program. A socket is used to
@@ -362,20 +371,15 @@ import time
 
 my_global_variable = ""
 
-def config(socket : rrr_socket, rrr_setting : setting):
+def config(rrr_config : config):
 	global my_global_variable
 
-	# retrieve some custom settings from configuration file. The get()
-	# will update the "was-used" flag in the setting.
-	print ("Received a setting: " + setting.name + "=" + setting.get())
+	# retrieve a custom setting from the configuration file. The get()
+	# will update the "was-used" flag in the setting which stops a
+	# warning from being printed.
+	print ("Received configuration parameters")
+	my_global_variable = config.get("my_global_variable")
 
-	# set a global variable
-	if setting.name == "my_setting":
-		my_global_variable = setting.get()
-
-	# send settings back to update which have been read (optional)
-	socket.send(setting)
-	
 	return True
 
 def process(socket : rrr_socket, message: rrr_message):
@@ -392,11 +396,20 @@ def process(socket : rrr_socket, message: rrr_message):
 	
 	return True
 
-def source(socket : rrr_socket):
-	# create a new message
-	message = rrr_message(1, 2, 3, 4, 5, 6, bytearray("abcdefg", encoding='utf8'))
-	
+def source(socket : rrr_socket, message : rrr_message):
+	# Set an array value in the template message
+    my_array_value = rrr_array_value()
+    my_array_value.set_tag("my_tag")
+    my_array_value.set(0, "my_value")
+
+    my_array = rrr_array()
+    my_array.append(my_array_value)
+
+    message.set_array(my_array)
+
 	# queue the message to be sent back (optional) for python to give to readers
+	# skip this step if the message are not to be sent, it is then simply discarded
+	# may be called multiple times with the same message
 	socket.send(message)
 	
 	# sleep to limit output rate
@@ -473,13 +486,24 @@ is started. Any settings from the instance definition in the configuration file 
 this object, also custom settings. Settings may also be modified and new settings can be added. The
 settings object may also be stored in the script to be read from or modified from the source- and 
 generate-subroutines.
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the Perl script might be set as needed.
+.El
+.PP
+Refer to the
+.B cmodule
+section for descriptions of the following parameters:
+.PP
+.Bl -tag -width -indent
+.It perl5_source_interval_ms=MILLISECONDS
+.It perl5_sleep_time_ms=MILLISECONDS
+.It perl5_nothing_happend_limit=UNSIGNED INTEGER
+.It perl5_log_prefix=PREFIX
 .It perl5_drop_on_error={yes|no}
-Drop or retry a message when the processing function fails, like if it calls die(). Default is 'no'
-which means to retry indefinitely.
+.El
 .PP
 .B NOTE:
 Any modified settings will currently not be visible in the perl5 RRR module, only in the perl5 script.
-.El
 .PP
 There must always be either a source- or process subroutine specified, or both. If a process subroutine
 is specified, there must also be at least one sender specified.
@@ -620,6 +644,72 @@ sub process {
 	return 1;
 }
 .fi
+.SS cmodule (P)
+This module allows usage of custom cmodules (C-modules) in a simplified framework. To use this, a module must first be
+written in the RRR source in the directory /src/cmodules/ and then compiled (just compile RRR as usual and
+directions will be given). There is an example file with appropriate licenses in the cmodules directory
+which may be used as a template for custom cmodules.
+.PP
+RRR will deal with communication with other modules and many other tasks, which makes it simpler to write a
+cmodule than to write a native RRR module.
+.PP
+All custom cmodules will be run in separate forks.
+.PP
+.Bl -tag -width -indent
+.It cmodule_name=NAME
+The name of the cmodule. If the name is
+.B dummy,
+RRR will look for the module
+.B dummy.so
+and the source file for this module should be called
+.B dummy.c.
+.It cmodule_config_function=NAME
+The function to which to pass configuration parameters, called at program startup. Optional.
+.It cmodule_source_function=NAME
+The function to which to call to source new messages. Optional, but at least one of source and processor must be set.
+.It cmodule_process_function=NAME
+The function to which to call to process messages from senders. Optional, but at least one of source and processor must be set.
+.It cmodule_cleanup_function=NAME
+The function to call before the program shuts down. Optional.
+.It CUSTOM SETTING=VALUE
+Any number of custom settings for the C-module might be set as needed.
+.El
+.PP
+The following parameters are common for modules which use cmodule internally (only the cmodule_-prefix is different).
+.PP
+.Bl -tag -width -indent
+.It cmodule_source_interval_ms=MILLISECONDS
+How many milliseconds to wait between each call of the source function. Defaults to 1000, one second.
+.It cmodule_sleep_time_ms=MILLISECONDS
+How many milliseconds to sleep if nothing was processed in the worker after multiple processing loops.
+Sleeping is performed to limit CPU usage.
+It is possible to specify 0 which in practice creates a very small wait.
+The worker will sleep once every round until something happens again. Defaults to 50ms.
+.It cmodule_nothing_happend_limit=UNSIGNED INTEGER
+How many loops to perform in the worker with nothing being processed before starting to sleep.
+Defaults to 250, must be 1 or greater. 
+.It cmodule_log_prefix=PREFIX
+Set a custom log prefix to be prepended to any log messages printed out. Use the RRR_MSG_x and RRR_DBG_x (x is a number)
+macros to print messages like the reset of RRR does.
+.It cmodule_drop_on_error={yes|no}
+If there is an error during processing of a message, just drop it instead of restarting the program.
+Defaults to no.
+.El
+.PP
+The source and process functions receives a new message which of they must manage the memory. The message must
+either be passed on to other modules by calling
+.B rrr_send_and_free(...)
+or be freed (if the message is to be discarded) by calling
+.B rrr_free(...).
+A message, if it must be sent several times, may be duplicated by using.
+.B rrr_message_duplicate(...).
+.PP
+Please refer to the source code on how these functions work. Some headers which
+might be useful when working with for instance array messages are included in /src/cmodules/cmodule.h .
+It is not a priority at this time to document these, but they are easy to use and usage examples are to
+be found throughout the RRR source code (which is human- and machine readable).
+.PP
+Functions must return 0 on success and 1 if there are errors.  
 .SS raw (PI)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.
@@ -727,11 +817,11 @@ with which users are authenticated. If left unspecified, all CONNECT packets con
 RRR does not allow CONNECT packets only containing usernames, a password must always be set.
 .It mqtt_broker_permission_name=PERMISSION
 The permission name to which a user must have been registered with by using
-.It mqtt_broker_require_authentication={yes|no}
-Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
 .Xr rrr_passwd(1)
 to become authenticated with this broker. Defaults to
 .B mqtt. 
+.It mqtt_broker_require_authentication={yes|no}
+Disallow anonymous logins. This defaults to 'yes' if a password file is set, otherwise it defaults to 'no'.
 .It mqtt_broker_acl_file=FILENAME
 ACL file to allow different users access to topics. If left unspecified, all access is granted. If a file is specified and a rule
 is not found upon a PUBLISH or SUBSCRIBE from a client, access will be denied.
@@ -750,7 +840,7 @@ followed by one or more spaces or tabs. Keywords are case-insensitive.
 .PP
 The
 .B DEFAULT
-keyword takes one argument, and ACL action (DENY, READ or WRITE). If left unspecified, the default action is DENY.
+keyword takes one argument, an ACL action (DENY, READ or WRITE). If left unspecified, the default action is DENY.
 .PP
 The
 .B USER
@@ -766,13 +856,13 @@ access is granted, a user may SUBSCRIBE and PUBLISH to the matching topics.
 will block all access to the matching topics. 
 .PP
 The ACL file is parsed from top to bottom, and the bottom most matching rule will take precedence.
-hence it should be placed on the first line in a topic block.
 .PP
 Comments may be placed on separate lines and begins with '#'. Spaces and tabs are allowed on the beginning of a line before keywords.
 .PP
 Below follows some example rules:
 .PP
 .nf
+# BEGIN ACL FILE
 # Allow access to everything from everyone
 TOPIC #
 	DEFAULT WRITE
@@ -781,17 +871,17 @@ TOPIC #
 TOPIC $SYS/#
 	DEFAULT READ
 	USER system_user WRITE
+# END ACL FILE
 .fi
 .PP
 The MQTT server follows the specifications from Oasis, but lacks support for the following (will be implemented shortly):
 .PP
-.Bl -tag -width -indent
-.It UNSUBSCRIBE messages
-.It Retained topics
-.It Will topics
-.It Encryption
-.It Authorization
-.El
+\(bu Retained topics
+.br
+\(bu Will topics
+.br
+\(bu Authorization (simple username/password implemented)
+.PP
 .SS mqttclient (P)
 An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and
 other modules can read messages the client receives on subscribed topics.
@@ -801,17 +891,8 @@ other modules can read messages the client receives on subscribed topics.
 Host name or IP of the broker to connect to. Defaults to localhost.
 .It mqtt_server_port=PORT
 TCP port on the server for TLS connections, defaults to 1883 for plain transport and 8883 for TLS connection.
-.It mqtt_client_identifier=IDENTIFIER
-Client identifier to use. If left unspecified, broker pics one.
-.It mqtt_connect_error_action={restart|retry}
-Default action if connecting to the server failed. If set to
-.B restart,
-all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
-.B retry,
-the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
-.It mqtt_username=USERNAME
-.It mqtt_password=PASSWORD
-Optional username and password to send in CONNECT packets. If a password is set, a username
+.It mqtt_transport_type={plain|tls}
+The transport type to use when connecting to the server. Defaults to 'plain'.
 .It mqtt_certificate_file=FILENAME
 The certificate to use for TLS connections. Optional.
 .It mqtt_key_file=FILENAME
@@ -820,15 +901,29 @@ The private key to use for TLS connections. Optional.
 An alternative directory in which to search for CA certificates. Optional. Debuglevel 1 will expose the actual search path.
 .It mqtt_ca_file=FILENAME
 A CA certificate to use when validating certificates.
-.It mqtt_transport_type={plain|tls}
-The transport type to use when connecting to the server. Defaults to 'plain'.
-.B must
-also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
+.It mqtt_client_identifier=IDENTIFIER
+Client identifier to use. If left unspecified, the broker picks one.
+.It mqtt_v5_recycle_assigned_client_identifier={yes|no}
+If we let the broker pick a client identifier and we are using protocol version 5, the broker will inform the client
+about which client identifier it assigned. If this option is set to yes and the client needs to re-connect for some reason,
+it will attempt to use this assigned client identifier. In version 3, the broker does not inform the client about the
+picked client identifier and this option is then ignored. Defaults to 'yes'.
+.It mqtt_connect_error_action={restart|retry}
+Default action if connecting to the server failed. If set to
+.B restart,
+all RRR modules will be restarted after a few connection attempts (might cause messages to be lost). If set to
+.B retry,
+the client will keep trying to connect without any restart (messages will not be lost). Default action is to restart.
 .It mqtt_connect_attempts=NUMBER OF ATTEMPTS
 How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting
 .B mqtt_connect_error_action.
 One connection attempt lasts approximately 100ms. Must be 1 or more, defaults to 20.
+.It mqtt_username=USERNAME
+.It mqtt_password=PASSWORD
+Optional username and password to send in CONNECT packets. If a password is set, a username
+.B must
+also be set. Note that the RRR MQTT broker disallows connects with username only, other brokers might handle this differently.
 .It mqtt_qos={0|1|2}
 Default Quality of Service to use, defaults to 1.
 .It mqtt_version={3.1.1|5}
@@ -839,13 +934,23 @@ If left unspecified, RRR messages without a topic will be dropped.
 .It mqtt_publish_topic_force={yes|no}
 Force use of the topic specified in
 .B mqtt_publish_topic
-and disregard any topic in RRR messages.
+and disregard any topic in RRR messages. Cannot be used with
+.B mqtt_publish_topic_prepend.
+Defaults to no.
+.It mqtt_publish_topic_prepend={yes|no}
+The topic specified in
+.B mqtt_publish_topic
+is prepended to the topic RRR messages. No trailing or leading slashes are added. Cannot be used with
+.B mqtt_publish_topic_force.
+Messages without a topic are dropped if set to yes. Defaults to no.
 .It mqtt_publish_rrr_message={yes|no}
 If set to yes, the client will send full RRR messages.
-If set to no, only the measurement value of each RRR message will be sent as a string. Defaults to yes.
+If set to no, the raw data field of each RRR message will be sent, or a descriptive string with the message
+type, class and timestamp is put into the publish payload for messages which do not have any data. Defaults to yes.
 .It mqtt_publish_array_values={*|tag1[,tag2[,...]]}
 Put all values from an array (*) or selected values (by tag) into the payload of PUBLISH messages. RRR
-messages which does not contain an array are dropped. Any integer types will have big endianess. Cannot be used with
+messages which does not contain an array are dropped. Any integer types will have big endianess in the resulting publish message.
+Cannot be used with
 .B mqtt_publish_rrr_message=yes.
 .It mqtt_subscribe_topics=TOPIC1[,TOPIC2[,...]]
 MQTT topic patterns to subscribe to (if any).
@@ -905,7 +1010,6 @@ Generate dummy messages for testing purposes. Defaults to no.
 .It journal_hostname=HOSTNAME
 Hostname to send along with log messages. Defaults to system hostname.
 .El
-
 .SH SEE ALSO
 .Xr rrr(1),
 .Xr rrr_post(1),

@@ -34,7 +34,7 @@ endif
 lib_LTLIBRARIES = dummy.la raw.la buffer.la \
 	ipclient.la ip.la averager.la \
 	duplicator.la mqttbroker.la mqttclient.la socket.la \
-	influxdb.la journal.la \
+	influxdb.la journal.la cmodule.la \
 	${mysql} ${python3} ${voltmonitor} ${perl5}
 
 
@@ -75,5 +75,8 @@ influxdb_la_SOURCES = p_influxdb.c
 
 journal_la_LDFLAGS = ${module_ldflags}
 journal_la_SOURCES = src_journal.c
+
+cmodule_la_LDFLAGS = ${module_ldflags}
+cmodule_la_SOURCES = p_cmodule.c
 
 libdir=${exec_prefix}/lib/rrr

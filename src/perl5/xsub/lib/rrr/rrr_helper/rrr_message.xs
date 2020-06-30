@@ -4,7 +4,7 @@
 #include <XSUB.h>
 #include <stdlib.h>
 
-#include "../../../../../lib/perl5.h"
+#include "../../../../../lib/perl5/perl5.h"
 
 MODULE = rrr::rrr_helper::rrr_message PACKAGE = rrr::rrr_helper::rrr_message PREFIX = rrr_perl5_message_
 PROTOTYPES: ENABLE

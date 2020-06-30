@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "read.h"
-#include "rrr_socket_read.h"
+#include "socket/rrr_socket_read.h"
 #include "read_constants.h"
 #include "linked_list.h"
 
