@@ -178,7 +178,7 @@ int rrr_cmodule_new (
 int rrr_cmodule_read_from_forks (
 		int *config_complete,
 		struct rrr_cmodule *cmodule,
-		int loops,
+		int read_max,
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 );
@@ -192,7 +192,7 @@ int rrr_cmodule_send_to_fork (
 );
 // Call once in a while, like every second
 void rrr_cmodule_maintain (
-		struct rrr_fork_handler *handler
+		struct rrr_cmodule *cmodule
 );
 void rrr_cmodule_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,

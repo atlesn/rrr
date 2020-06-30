@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mmap_channel.h"
 #include "rrr_mmap.h"
 #include "random.h"
+#include "vl_time.h"
 
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
@@ -169,32 +170,103 @@ static int __rrr_mmap_channel_allocate (
 	return ret;
 }
 
+static int __rrr_mmap_channel_cond_wait (
+		pthread_mutex_t *mutex,
+		pthread_cond_t *cond,
+		unsigned int timeout_us
+) {
+	int ret = 0;
+
+	if (timeout_us == 0) {
+		ret = RRR_MMAP_CHANNEL_FULL_OR_EMPTY;
+		goto out;
+	}
+
+	pthread_mutex_lock(mutex);
+
+	struct timespec time;
+	rrr_time_gettimeofday_timespec(&time, timeout_us);
+
+	if ((ret = pthread_cond_timedwait (
+			cond,
+			mutex,
+			&time
+	)) != 0) {
+		switch (ret) {
+			case ETIMEDOUT:
+				ret = RRR_MMAP_CHANNEL_FULL_OR_EMPTY;
+				break;
+			default:
+				RRR_MSG_0("Error while waiting on condition in __rrr_mmap_channel_cond_wait: %i\n", ret);
+				ret = RRR_MMAP_CHANNEL_ERROR;
+				break;
+		};
+		goto out_unlock;
+	}
+
+	out_unlock:
+		pthread_mutex_unlock(mutex);
+	out:
+	return ret;
+}
+
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
 		size_t data_size,
+		unsigned int full_wait_time_us,
 		int (*callback)(void *target, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MMAP_CHANNEL_OK;
 
 	int do_unlock_block = 0;
+	int wait_attempts_max = 4;
 
-	pthread_mutex_lock(&target->index_lock);
-	struct rrr_mmap_channel_block *block = &(target->blocks[target->wpos]);
-	pthread_mutex_unlock(&target->index_lock);
+	struct rrr_mmap_channel_block *block = NULL;
 
-	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		target->write_full_counter++;
-		ret = RRR_MMAP_CHANNEL_FULL;
-		goto out_unlock;
-	}
-	do_unlock_block = 1;
+	goto attempt_block_lock;
+
+	attempt_write_wait:
+		// We MUST NOT hold index lock and block lock simultaneously. cond_wait will lock index.
+		// NOTE : Index lock is only locked and unlocked locally, not at out
+		if (do_unlock_block) {
+			pthread_mutex_unlock(&block->block_lock);
+			do_unlock_block = 0;
+		}
+
+		if (full_wait_time_us == 0 || wait_attempts_max-- == 0) {
+//			printf("mmap channel %p %s full wait time %u us attempts %i\n", target, target->name, full_wait_time_us, wait_attempts_max);
+			pthread_mutex_lock(&target->index_lock);
+			target->write_full_counter++;
+			pthread_mutex_unlock(&target->index_lock);
+			ret = RRR_MMAP_CHANNEL_FULL;
+			goto out_unlock;
+		}
+//		uint64_t time_start = rrr_time_get_64();
+//		printf("mmap channel %p %s full wait %u us\n", target, target->name, full_wait_time_us);
+		if ((ret = __rrr_mmap_channel_cond_wait(
+				&target->index_lock,
+				&target->full_cond,
+				full_wait_time_us
+		)) != 0) {
+//			printf("mmap channel %p %s full wait timeout result %i\n", target, target->name, ret);
+			goto out_unlock;
+		}
+//		printf("mmap channel %p %s full wait done in %" PRIu64 "\n", target, target->name, rrr_time_get_64() - time_start);
+
+	attempt_block_lock:
+		pthread_mutex_lock(&target->index_lock);
+		block = &(target->blocks[target->wpos]);
+		pthread_mutex_unlock(&target->index_lock);
+
+		if (pthread_mutex_trylock(&block->block_lock) != 0) {
+			goto attempt_write_wait;
+		}
+		do_unlock_block = 1;
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
-		target->write_full_counter++;
-		ret = RRR_MMAP_CHANNEL_FULL;
-		goto out_unlock;
+		goto attempt_write_wait;
 	}
 
 	if (__rrr_mmap_channel_allocate(target, block, data_size) != 0) {
@@ -225,9 +297,16 @@ int rrr_mmap_channel_write_using_callback (
 	}
 	pthread_mutex_unlock(&target->index_lock);
 
+	if ((ret = pthread_cond_signal(&target->empty_cond)) != 0) {
+		RRR_MSG_0("Error while signalling empty condition in rrr_mmap_channel_write_using_callback: %i\n", ret);
+		ret = RRR_MMAP_CHANNEL_ERROR;
+		goto out_unlock;
+	}
+
 	out_unlock:
 	if (do_unlock_block) {
 		pthread_mutex_unlock(&block->block_lock);
+		do_unlock_block = 0;
 	}
 
 	return ret;
@@ -247,17 +326,25 @@ static int __rrr_mmap_channel_write_callback (void *target_ptr, void *arg) {
 int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		const void *data,
-		size_t data_size
+		size_t data_size,
+		unsigned int full_wait_time_us
 ) {
 	struct rrr_mmap_channel_write_callback_arg callback_data = {
 			data,
 			data_size
 	};
-	return rrr_mmap_channel_write_using_callback(target, data_size, __rrr_mmap_channel_write_callback, &callback_data);
+	return rrr_mmap_channel_write_using_callback (
+			target,
+			data_size,
+			full_wait_time_us,
+			__rrr_mmap_channel_write_callback,
+			&callback_data
+	);
 }
 
-static int __rrr_mmap_channel_read_with_callback (
+int rrr_mmap_channel_read_with_callback (
 		struct rrr_mmap_channel *source,
+		unsigned int empty_wait_time_us,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
 ) {
@@ -266,26 +353,55 @@ static int __rrr_mmap_channel_read_with_callback (
 	int do_rpos_increment = 1;
 
 	int do_unlock_block = 0;
+	int wait_attempts_max = 4;
 
-	pthread_mutex_lock(&source->index_lock);
-	struct rrr_mmap_channel_block *block = &(source->blocks[source->rpos]);
-	pthread_mutex_unlock(&source->index_lock);
+	struct rrr_mmap_channel_block *block = NULL;
 
-	if (pthread_mutex_trylock(&block->block_lock) != 0) {
-		source->read_starvation_counter++;
-		ret = RRR_MMAP_CHANNEL_EMPTY;
-		goto out_unlock;
-	}
-	do_unlock_block = 1;
+	goto attempt_block_lock;
+
+	attempt_read_wait:
+		// We MUST NOT hold index lock and block lock simultaneously. cond_wait will lock index.
+		if (do_unlock_block) {
+			pthread_mutex_unlock(&block->block_lock);
+			do_unlock_block = 0;
+		}
+
+		if (empty_wait_time_us == 0 || wait_attempts_max-- == 0) {
+			pthread_mutex_lock(&source->index_lock);
+			source->read_starvation_counter++;
+			pthread_mutex_unlock(&source->index_lock);
+			ret = RRR_MMAP_CHANNEL_EMPTY;
+			goto out_unlock;
+		}
+//		uint64_t time_start = rrr_time_get_64();
+//		printf("mmap channel %p %s empty wait %u us\n", source, source->name, empty_wait_time_us);
+		if ((ret = __rrr_mmap_channel_cond_wait (
+				&source->index_lock,
+				&source->empty_cond,
+				empty_wait_time_us
+		)) != 0) {
+//			printf("mmap channel %p %s empty wait timeout result %i in %" PRIu64 "\n", source, source->name, ret, rrr_time_get_64() - time_start);
+			goto out_unlock;
+		}
+//		printf("mmap channel %p %s empty wait done in %" PRIu64 "\n", source, source->name, rrr_time_get_64() - time_start);
+
+	attempt_block_lock:
+		pthread_mutex_lock(&source->index_lock);
+		block = &(source->blocks[source->rpos]);
+		pthread_mutex_unlock(&source->index_lock);
+
+		if (pthread_mutex_trylock(&block->block_lock) != 0) {
+			goto attempt_read_wait;
+		}
+		do_unlock_block = 1;
 
 	if (block->size_data == 0) {
-		source->read_starvation_counter++;
-		ret = RRR_MMAP_CHANNEL_EMPTY;
-		goto out_unlock;
+		goto attempt_read_wait;
 	}
 
 	RRR_DBG_4("mmap channel %p %s rd blk %i size %li\n", source, source->name, source->rpos, block->size_data);
 
+//	uint64_t start_time = rrr_time_get_64();
 	if (block->shmid != 0) {
 		const char *data_pointer = NULL;
 
@@ -314,12 +430,19 @@ static int __rrr_mmap_channel_read_with_callback (
 			do_rpos_increment = 0;
 		}
 	}
+//	printf("read callback time %p: %" PRIu64 "\n", source, rrr_time_get_64() - start_time);
 
 	out_rpos_increment:
 	if (do_rpos_increment) {
 		block->size_data = 0;
 		pthread_mutex_unlock(&block->block_lock);
 		do_unlock_block = 0;
+
+		if ((ret = pthread_cond_signal(&source->full_cond)) != 0) {
+			RRR_MSG_0("Error while signalling full condition in __rrr_mmap_channel_read_with_callback: %i\n", ret);
+			ret = RRR_MMAP_CHANNEL_ERROR;
+			goto out_unlock;
+		}
 
 		pthread_mutex_lock(&source->index_lock);
 		source->rpos++;
@@ -338,22 +461,8 @@ static int __rrr_mmap_channel_read_with_callback (
 	return ret;
 }
 
-int rrr_mmap_channel_read_all (
-		struct rrr_mmap_channel *source,
-		int (*callback)(const void *data, size_t data_size, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	int i = RRR_MMAP_CHANNEL_SLOTS;
-
-	do {
-		ret = __rrr_mmap_channel_read_with_callback(source, callback, callback_arg);
-	} while(ret == 0 && --i > 0);
-
-	return ret;
-}
-
+/*
+ * Not currently used
 struct rrr_mmap_channel_read_callback_data {
 	void *data;
 	size_t data_size;
@@ -376,10 +485,13 @@ static int __rrr_mmap_channel_read_callback (const void *data, size_t data_size,
 	out:
 	return ret;
 }
-
+*/
+/*
+ * Not currently used
 int rrr_mmap_channel_read (
 		void **target,
 		size_t *target_size,
+		unsigned int empty_wait_time_us,
 		struct rrr_mmap_channel *source
 ) {
 	struct rrr_mmap_channel_read_callback_data callback_data = {0};
@@ -389,7 +501,12 @@ int rrr_mmap_channel_read (
 	*target = NULL;
 	*target_size = 0;
 
-	if ((ret = __rrr_mmap_channel_read_with_callback(source, __rrr_mmap_channel_read_callback, &callback_data)) != 0) {
+	if ((ret = __rrr_mmap_channel_read_with_callback (
+			source,
+			empty_wait_time_us,
+			__rrr_mmap_channel_read_callback,
+			&callback_data
+	)) != 0) {
 		return ret;
 	}
 
@@ -398,6 +515,7 @@ int rrr_mmap_channel_read (
 
 	return ret;
 }
+*/
 
 void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int *was_sorted) {
 	*was_sorted = 1;
@@ -451,6 +569,9 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target) {
 	pthread_mutex_destroy(&target->index_lock);
+	pthread_cond_destroy(&target->empty_cond);
+	pthread_cond_destroy(&target->full_cond);
+
 	int msg_count = 0;
 	for (int i = 0; i != RRR_MMAP_CHANNEL_SLOTS; i++) {
 		if (target->blocks[i].ptr_shm_or_mmap != NULL) {
@@ -489,35 +610,65 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 
 	int mutex_i = 0;
 	pthread_mutexattr_t attr;
+	pthread_condattr_t cattr;
 
 	if ((ret = pthread_mutexattr_init(&attr)) != 0) {
-		RRR_MSG_0("Could not initialize mutexattr inrrr_mmap_channel_new (%i)\n", ret);
+		RRR_MSG_0("Could not initialize mutexattr in rrr_mmap_channel_new (%i)\n", ret);
 		ret = 1;
 		goto out;
+	}
+
+	if ((ret = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) != 0) {
+		RRR_MSG_0("Could not set pshared on mutexattr in rrr_mmap_channel_new: %i\n", ret);
+		ret = 1;
+		goto out_destroy_mutexattr;
+	}
+
+	if ((ret = pthread_condattr_init(&cattr)) != 0) {
+		RRR_MSG_0("Could not initialize condattr in rrr_mmap_channel_new: %i\n", ret);
+		ret = 1;
+		goto out_destroy_mutexattr;
+	}
+
+	if ((ret = pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED)) != 0) {
+		RRR_MSG_0("Could not set pshared on condattr in rrr_mmap_channel_new: %i\n");
+		ret = 1;
+		goto out_destroy_condattr;
 	}
 
     if ((result = rrr_mmap_allocate(mmap, sizeof(*result))) == NULL) {
     	RRR_MSG_0("Could not allocate memory in rrr_mmap_channel_new\n");
     	ret = 1;
-    	goto out_destroy_mutexattr;
+    	goto out_destroy_condattr;
     }
 
 	memset(result, '\0', sizeof(*result));
 
-	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-
 	if ((ret = pthread_mutex_init(&result->index_lock, &attr)) != 0) {
-		RRR_MSG_0("Could not initialize mutex in rrr_mmap_new (%i)\n", ret);
+		RRR_MSG_0("Could not initialize mutex in rrr_mmap_channel_new (%i)\n", ret);
 		ret = 1;
 		goto out_free;
 	}
 
+	// Be careful with the counters, we should only destroy initialized locks if we fail
 	for (mutex_i = 0; mutex_i != RRR_MMAP_CHANNEL_SLOTS; mutex_i++) {
 		if ((ret = pthread_mutex_init(&result->blocks[mutex_i].block_lock, &attr)) != 0) {
-			RRR_MSG_0("Could not initialize mutex in rrr_mmap_new %i\n", ret);
+			RRR_MSG_0("Could not initialize mutex in rrr_mmap_channel_new %i\n", ret);
 			ret = 1;
 			goto out_destroy_mutexes;
 		}
+	}
+
+	if ((ret = pthread_cond_init(&result->empty_cond, &cattr)) != 0) {
+		RRR_MSG_0("Could not initialize empty condition mutex in rrr_mmap_channel_new: %i\n", ret);
+		ret = 1;
+		goto out_destroy_mutexes;
+	}
+
+	if ((ret = pthread_cond_init(&result->full_cond, &cattr)) != 0) {
+		RRR_MSG_0("Could not initialize full condition mutex in rrr_mmap_channel_new: %i\n", ret);
+		ret = 1;
+		goto out_destroy_empty_cond;
 	}
 
     strncpy(result->name, name, sizeof(result->name));
@@ -528,15 +679,21 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 	*target = result;
 	result = NULL;
 
-	goto out;
+	// Remember to destroy mutex attributes
+	goto out_destroy_condattr;
 
+	out_destroy_empty_cond:
+		pthread_cond_destroy(&result->empty_cond);
 	out_destroy_mutexes:
+		// Be careful with the counters, we should only destroy initialized locks
 		for (mutex_i = mutex_i - 1; mutex_i >= 0; mutex_i--) {
 			pthread_mutex_destroy(&result->blocks[mutex_i].block_lock);
 		}
 		pthread_mutex_destroy(&result->index_lock);
 	out_free:
 		rrr_mmap_free(mmap, result);
+	out_destroy_condattr:
+		pthread_condattr_destroy(&cattr);
 	out_destroy_mutexattr:
 		pthread_mutexattr_destroy(&attr);
 	out:

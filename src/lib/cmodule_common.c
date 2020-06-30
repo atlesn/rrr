@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 
 #define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS 1000
-#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS 50
+#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS 100
 #define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT 250
 
 static int __rrr_cmodule_common_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
@@ -221,7 +221,7 @@ static int __rrr_cmodule_commmon_read_thread_read_from_forks (
 		int *read_count,
 		int *config_complete,
 		struct rrr_instance_thread_data *parent_thread_data,
-		int loops
+		int read_max
 ) {
 	int ret = 0;
 
@@ -234,7 +234,7 @@ static int __rrr_cmodule_commmon_read_thread_read_from_forks (
 	ret = rrr_cmodule_read_from_forks (
 			config_complete,
 			INSTANCE_D_CMODULE(parent_thread_data),
-			loops,
+			read_max,
 			__rrr_cmodule_common_read_callback,
 			&callback_data
 	);
@@ -272,12 +272,14 @@ static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread
 				&read_count_tmp,
 				&config_complete,
 				data->parent_thread_data,
-				10
+				50
 		) != 0) {
 			break;
 		}
 
 		read_count += read_count_tmp;
+
+//		printf ("reader tick %i - %i\n", tick, read_count_tmp);
 
 		if (config_check_complete == 1 && config_check_complete_message_printed == 0) {
 			RRR_DBG_1("Instance %s child config function (if any) complete, checking for unused values\n",
@@ -461,11 +463,11 @@ void rrr_cmodule_common_loop (
 
 	int from_senders_counter = 0;
 
-	int current_poll_wait_ms = 0;
+//	int current_poll_wait_ms = 0;
 	int tick = 0;
 
 	// Let it overflow, DO NOT use signed
-	unsigned int consecutive_nothing_happend = 0;
+	unsigned int consecutive_nothing_happened = 0;
 
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && fork_pid != 0) {
@@ -481,7 +483,7 @@ void rrr_cmodule_common_loop (
 					thread_data,
 					poll,
 					fork_pid,
-					current_poll_wait_ms,
+					50, // 50 ms
 					250
 			) != 0) {
 				break;
@@ -491,20 +493,17 @@ void rrr_cmodule_common_loop (
 		from_senders_counter += from_senders_count_tmp;
 
 		if (from_senders_count_tmp == 0) {
-			consecutive_nothing_happend++;
+			consecutive_nothing_happened++;
 		}
 		else {
-			consecutive_nothing_happend = 0;
+			consecutive_nothing_happened = 0;
 		}
 
-		if (consecutive_nothing_happend > 1000) {
-			current_poll_wait_ms = 100;
+		if (consecutive_nothing_happened > 250) {
+			rrr_posix_usleep(100000); // 100 ms
 		}
-		else if (consecutive_nothing_happend > 25) {
-			current_poll_wait_ms = 50;
-		}
-		else {
-			current_poll_wait_ms = 10;
+		else if (consecutive_nothing_happened > 100) {
+			rrr_posix_usleep(100); // 100 us
 		}
 
 		uint64_t time_now = rrr_time_get_64();
@@ -564,7 +563,7 @@ void rrr_cmodule_common_loop (
 				rrr_stats_instance_post_base10_text(stats, "mmap_to_parent_deferred_queue_entries", 0, deferred_queue_entries);
 			}
 
-			rrr_stats_instance_post_base10_text(stats, "current_poll_timeout", 0, current_poll_wait_ms);
+//			rrr_stats_instance_post_base10_text(stats, "current_poll_timeout", 0, current_poll_wait_ms);
 			rrr_stats_instance_update_rate(stats, 10, "ticks", tick);
 			rrr_stats_instance_update_rate(stats, 11, "input_counter", from_senders_counter);
 			// Rate counter number 7 is used by read fork
@@ -582,7 +581,7 @@ void rrr_cmodule_common_loop (
 
 			next_stats_time = time_now + 1000000;
 
-			rrr_cmodule_maintain(INSTANCE_D_FORK(thread_data));
+			rrr_cmodule_maintain(INSTANCE_D_CMODULE(thread_data));
 		}
 
 		tick++;
