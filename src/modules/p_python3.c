@@ -42,8 +42,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_addr.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/log.h"
-#include "../lib/cmodule_helper.h"
-#include "../lib/cmodule_main.h"
+#include "../lib/cmodule/cmodule_helper.h"
+#include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 

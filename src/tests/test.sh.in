@@ -97,10 +97,7 @@ do_test_socket test_socket.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 
-echo "With mysql: $RRR_WITH_MYSQL"
-if test "x$RRR_WITH_MYSQL" != 'xno'; then
-	do_test_socket test_mysql.conf
-fi
+do_test_socket test_cmodule.conf
 
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then
@@ -110,6 +107,11 @@ fi
 echo "With python3: $RRR_WITH_PYTHON3"
 if test "x$RRR_WITH_PYTHON3" != 'xno'; then
 	do_test_socket test_python3.conf
+fi
+
+echo "With mysql: $RRR_WITH_MYSQL"
+if test "x$RRR_WITH_MYSQL" != 'xno'; then
+	do_test_socket test_mysql.conf
 fi
 
 echo "Tests complete\n"

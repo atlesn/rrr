@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
-#include "cmodule_main.h"
+#include "cmodule/cmodule_main.h"
 #include "common.h"
 #include "modules.h"
 #include "threads.h"

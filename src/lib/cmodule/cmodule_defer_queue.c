@@ -24,9 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmodule_defer_queue.h"
 
-#include "log.h"
-#include "message_addr.h"
-#include "linked_list.h"
+#include "../log.h"
+#include "../message_addr.h"
+#include "../linked_list.h"
 
 int rrr_cmodule_deferred_message_destroy (
 		struct rrr_cmodule_deferred_message *msg
