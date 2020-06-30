@@ -31,14 +31,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "socket/rrr_socket_constants.h"
 #include "cmodule_shared.h"
+#include "settings.h"
 
 #define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
 	RRR_SOCKET_MSG_CTRL_F_USR_A
 
 struct rrr_mmap;
 struct rrr_mmap_channel;
+struct rrr_instance_config;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
+
+struct rrr_cmodule_config_data {
+	rrr_setting_uint spawn_interval_us;
+	rrr_setting_uint sleep_time_us;
+	rrr_setting_uint nothing_happened_limit;
+
+	int do_spawning;
+	int do_processing;
+	int do_drop_on_error;
+
+	char *config_function;
+	char *process_function;
+	char *source_function;
+	char *log_prefix;
+};
 
 struct rrr_cmodule_deferred_message {
 	RRR_LL_NODE(struct rrr_cmodule_deferred_message);
@@ -53,6 +70,10 @@ struct rrr_cmodule_deferred_message_collection {
 struct rrr_cmodule_worker {
 	RRR_LL_NODE(struct rrr_cmodule_worker);
 
+	// Pointer managed by parent rrr_cmodule struct
+	struct rrr_cmodule_config_data *config_data;
+
+	// Managed pointer
 	char *name;
 
 	pthread_mutex_t pid_lock;
@@ -62,13 +83,6 @@ struct rrr_cmodule_worker {
 
 	int config_complete;
 
-	int do_spawning;
-	int do_processing;
-	int do_drop_on_error;
-
-	uint64_t spawn_interval_us;
-	uint64_t sleep_interval_us;
-
 	struct rrr_cmodule_deferred_message_collection deferred_to_fork;
 	struct rrr_cmodule_deferred_message_collection deferred_to_parent;
 
@@ -77,6 +91,9 @@ struct rrr_cmodule_worker {
 
 	uint64_t total_msg_mmap_to_fork;
 	uint64_t total_msg_mmap_to_parent;
+
+	unsigned long long int to_fork_write_retry_counter;
+	unsigned long long int to_parent_write_retry_counter;
 
 	uint64_t total_msg_processed;
 
@@ -88,6 +105,8 @@ struct rrr_cmodule_worker {
 struct rrr_cmodule {
 	RRR_LL_HEAD(struct rrr_cmodule_worker);
 	struct rrr_mmap *mmap;
+
+	struct rrr_cmodule_config_data config_data;
 
 	// Used when creating forks and cleaning up, not managed
 	struct rrr_fork_handler *fork_handler;
@@ -120,7 +139,6 @@ struct rrr_cmodule {
 		void *process_callback_arg,												\
 		void *private_arg
 
-
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
@@ -134,12 +152,7 @@ int rrr_cmodule_worker_loop_init_wrapper_default (
 int rrr_cmodule_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
-		uint64_t spawn_interval_us,
-		uint64_t sleep_interval_us,
 		const char *name,
-		int do_spawning,
-		int do_processing,
-		int do_drop_on_error,
 		struct rrr_instance_settings *settings,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_arg,
@@ -163,7 +176,6 @@ int rrr_cmodule_new (
 		struct rrr_fork_handler *fork_handler
 );
 int rrr_cmodule_read_from_forks (
-		int *read_count,
 		int *config_complete,
 		struct rrr_cmodule *cmodule,
 		int loops,
@@ -179,6 +191,24 @@ int rrr_cmodule_send_to_fork (
 		const struct rrr_message_addr *msg_addr
 );
 // Call once in a while, like every second
-void rrr_cmodule_maintain(struct rrr_fork_handler *handler);
+void rrr_cmodule_maintain (
+		struct rrr_fork_handler *handler
+);
+void rrr_cmodule_get_mmap_channel_to_fork_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+);
+void rrr_cmodule_get_mmap_channel_to_parent_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+);
 
 #endif /* RRR_CMODULE_NATIVE_H */

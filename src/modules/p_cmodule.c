@@ -59,28 +59,16 @@ struct cmodule_data {
 	int do_drop_on_error;
 
 	char *cmodule_name;
-
-	char *config_function;
-	char *source_function;
-	char *process_function;
 	char *cleanup_function;
 
 	rrr_setting_uint source_interval_ms;
-
-	char *log_prefix;
 };
 
 static void cmodule_data_cleanup(void *arg) {
 	struct cmodule_data *data = arg;
 
 	RRR_FREE_IF_NOT_NULL(data->cmodule_name);
-
-	RRR_FREE_IF_NOT_NULL(data->config_function);
-	RRR_FREE_IF_NOT_NULL(data->source_function);
-	RRR_FREE_IF_NOT_NULL(data->process_function);
 	RRR_FREE_IF_NOT_NULL(data->cleanup_function);
-
-	RRR_FREE_IF_NOT_NULL(data->log_prefix);
 }
 
 static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_thread_data *thread_data) {
@@ -106,20 +94,7 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("cmodule_drop_on_error", do_drop_on_error, 0);
 	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("cmodule_source_interval_ms", source_interval_ms, 1000);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_config_function", config_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_source_function", source_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_process_function", process_function);
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
-
-	if ((data->process_function == NULL || *(data->process_function) == '\0') &&
-		(data->source_function == NULL || *(data->source_function) == '\0')
-	) {
-		RRR_MSG_0("No process or source function defined in configuration for cmodule instance %s\n", config->name);
-		ret = 1;
-		goto out;
-	}
-
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_log_prefix", log_prefix);
 
 	out:
 	return ret;
@@ -137,11 +112,11 @@ struct cmodule_run_data {
 	int (*cleanup_function)(RRR_CLEANUP_ARGS);
 };
 
-#define GET_FUNCTION(name)																\
-	do { if (data->name != NULL && *(data->name) != '\0') {								\
-		if ((run_data->name = dlsym(handle, data->name)) == NULL) {						\
+#define GET_FUNCTION(from,name)															\
+	do { if (from->name != NULL && *(from->name) != '\0') {								\
+		if ((run_data->name = dlsym(handle, from->name)) == NULL) {						\
 			RRR_MSG_0("Could not load function '%s' from cmodule instance %s: %s\n",	\
-					data->name, INSTANCE_D_NAME(data->thread_data), dlerror());			\
+					from->name, INSTANCE_D_NAME(data->thread_data), dlerror());			\
 			function_err = 1;															\
 		}																				\
 	} } while(0)
@@ -161,6 +136,8 @@ static int __cmodule_load (
 		struct cmodule_run_data *run_data,
 		struct cmodule_data *data
 ) {
+	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+
 	int ret = 1; // Default is NOT OK
 
 	void *handle = NULL;
@@ -192,10 +169,10 @@ static int __cmodule_load (
 
 		int function_err = 0;
 
-		GET_FUNCTION(config_function);
-		GET_FUNCTION(source_function);
-		GET_FUNCTION(process_function);
-		GET_FUNCTION(cleanup_function);
+		GET_FUNCTION(cmodule_config_data,config_function);
+		GET_FUNCTION(cmodule_config_data,source_function);
+		GET_FUNCTION(cmodule_config_data,process_function);
+		GET_FUNCTION(data,cleanup_function);
 
 		if (function_err != 0) {
 			continue;
@@ -250,12 +227,6 @@ static int cmodule_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 				INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
-	}
-
-	// It's safe to use the char * from cmodule_data. It will never
-	// get freed by the fork.
-	if (data->log_prefix != NULL && *(data->log_prefix) != '\0') {
-		rrr_global_config_set_log_prefix(data->log_prefix);
 	}
 
 	run_data.data = data;
@@ -376,27 +347,17 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	if (cmodule_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
-
-	rrr_poll_add_from_thread_senders (&poll, thread_data);
-
-	if (rrr_poll_collection_count(&poll) > 0 && (data->process_function == NULL || *(data->process_function) == '\0')) {
-		RRR_MSG_0("Senders are specified for cmodule instance %s, but there is no process function defined. This is an invalid configuration.\n",
-				INSTANCE_D_NAME(thread_data));
+	if (rrr_cmodule_common_parse_config(thread_data, "cmodule", "function") != 0) {
 		goto out_message;
 	}
 
+	rrr_poll_add_from_thread_senders (&poll, thread_data);
+
 	pid_t fork_pid;
 
-	if (rrr_cmodule_start_worker_fork (
+	if (rrr_cmodule_common_start_worker_fork (
 			&fork_pid,
-			thread_data->cmodule,
-			data->source_interval_ms * 1000,
-			2 * 1000, // 2ms sleep
-			INSTANCE_D_NAME(thread_data),
-			(data->source_function == NULL || *(data->source_function) == '\0' ? 0 : 1),
-			(data->process_function == NULL || *(data->process_function) == '\0' ? 0 : 1),
-			data->do_drop_on_error,
-			INSTANCE_D_SETTINGS(thread_data),
+			thread_data,
 			cmodule_init_wrapper_callback,
 			data,
 			cmodule_configuration_callback,
@@ -417,8 +378,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 			thread_data,
 			stats,
 			&poll,
-			fork_pid,
-			rrr_poll_collection_count(&poll) == 0
+			fork_pid
 	);
 
 	out_message:

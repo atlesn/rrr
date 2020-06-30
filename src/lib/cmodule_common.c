@@ -35,7 +35,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats/stats_instance.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "threads.h"
 #include "../global.h"
+
+#define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS 1000
+#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS 50
+#define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT 250
 
 static int __rrr_cmodule_common_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct rrr_cmodule_common_read_callback_data *callback_data = arg;
@@ -92,33 +97,6 @@ static int __rrr_cmodule_common_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	}
 
 	return 0;
-}
-
-static int __rrr_cmodule_common_read_from_forks (
-		int *read_count,
-		int *config_complete,
-		struct rrr_instance_thread_data *thread_data,
-		int loops
-) {
-	int ret = 0;
-
-	*read_count = 0;
-
-	struct rrr_cmodule_common_read_callback_data callback_data = {0};
-
-	callback_data.thread_data = thread_data;
-
-	return rrr_cmodule_read_from_forks (
-			read_count,
-			config_complete,
-			thread_data->cmodule,
-			loops,
-			__rrr_cmodule_common_read_callback,
-			&callback_data
-	);
-
-	*read_count = callback_data.count;
-	return ret;
 }
 
 static int __rrr_cmodule_common_send_entry_to_fork_nolock (
@@ -230,71 +208,300 @@ static int __rrr_cmodule_common_poll_delete (
 	return ret;
 }
 
-void rrr_cmodule_common_loop (
-		struct rrr_instance_thread_data *thread_data,
-		struct rrr_stats_instance *stats,
-		struct rrr_poll_collection *poll,
-		pid_t fork_pid,
-		int no_polling
-) {
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+struct rrr_cmodule_common_reader_thread_data {
+	struct rrr_thread_collection *thread_collection;
 
-	int usleep_hits = 0;
-	int from_senders_counter = 0;
-	int from_child_counter = 0;
+	struct rrr_instance_thread_data *parent_thread_data;
+	struct rrr_stats_instance *stats;
+
+	int thread_became_ghost;
+};
+
+static int __rrr_cmodule_commmon_read_thread_read_from_forks (
+		int *read_count,
+		int *config_complete,
+		struct rrr_instance_thread_data *parent_thread_data,
+		int loops
+) {
+	int ret = 0;
+
+	*read_count = 0;
+
+	struct rrr_cmodule_common_read_callback_data callback_data = {0};
+
+	callback_data.thread_data = parent_thread_data;
+
+	ret = rrr_cmodule_read_from_forks (
+			config_complete,
+			INSTANCE_D_CMODULE(parent_thread_data),
+			loops,
+			__rrr_cmodule_common_read_callback,
+			&callback_data
+	);
+
+	*read_count = callback_data.count;
+
+	return ret;
+}
+
+static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread) {
+	struct rrr_cmodule_common_reader_thread_data *data = thread->private_data;
+
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
 	int config_check_complete = 0;
 	int config_check_complete_message_printed = 0;
 
+	int read_count = 0;
+	int usleep_count = 0;
+
+	// Let it overflow, DO NOT use signed
+	unsigned int consecutive_nothing_happened = 0;
+
+	uint64_t start_time = rrr_time_get_64();
 	int tick = 0;
-	int consecutive_nothing_happend = 0;
+	while (rrr_thread_check_encourage_stop(thread) == 0) {
+		rrr_thread_update_watchdog_time(thread);
+
+		int read_count_tmp = 0;
+		int config_complete = 0;
+
+		if (__rrr_cmodule_commmon_read_thread_read_from_forks (
+				&read_count_tmp,
+				&config_complete,
+				data->parent_thread_data,
+				10
+		) != 0) {
+			break;
+		}
+
+		read_count += read_count_tmp;
+
+		if (config_check_complete == 1 && config_check_complete_message_printed == 0) {
+			RRR_DBG_1("Instance %s child config function (if any) complete, checking for unused values\n",
+					INSTANCE_D_NAME(data->parent_thread_data));
+			rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(data->parent_thread_data));
+			config_check_complete_message_printed = 1;
+		}
+
+		if (read_count_tmp == 0) {
+			consecutive_nothing_happened++;
+		}
+		else {
+			consecutive_nothing_happened = 0;
+		}
+
+//		printf("Tick: %i, read_count: %i\n", tick, read_count);
+
+		if (consecutive_nothing_happened > 250) {
+			usleep_count++;
+			rrr_posix_usleep(10000);
+		}
+
+		uint64_t now_time = rrr_time_get_64();
+		if (now_time - start_time > 1000000) {
+			RRR_DBG_1("Instance %s read thread '%s' messages per second: %i\n",
+					INSTANCE_D_NAME(data->parent_thread_data), thread->name, read_count);
+
+			// When adding more stats parameters, check rate counter numbers with main thread to
+			// avoid collisions
+			rrr_stats_instance_update_rate(data->stats, 15, "from_fork_read_counter", read_count);
+			rrr_stats_instance_update_rate(data->stats, 16, "from_fork_ticks", tick);
+			rrr_stats_instance_update_rate(data->stats, 17, "from_fork_usleeps", usleep_count);
+
+			usleep_count = 0;
+			read_count = 0;
+			tick = 0;
+
+			start_time = rrr_time_get_64();
+		}
+
+		tick++;
+	}
+
+	if (config_check_complete == 0) {
+		RRR_MSG_0("Warning: Instance %s never completed configuration function\n",
+				INSTANCE_D_NAME(data->parent_thread_data));
+	}
+
+	pthread_exit(0);
+}
+
+// Memory in input variables must be available throughout the lifetime of the thread
+static int __rrr_cmodule_common_threads_start (
+		struct rrr_cmodule_common_reader_thread_data *data,
+		struct rrr_instance_thread_data *parent_thread_data,
+		struct rrr_stats_instance *stats
+) {
+	int ret = 0;
+
+	char name[128];
+	const char *name_template = "%s reader thread";
+
+	struct rrr_thread_collection *thread_collection = NULL;
+	struct rrr_thread *thread = NULL;
+
+	memset(data, '\0', sizeof(*data));
+
+	if (strlen(INSTANCE_D_NAME(parent_thread_data)) > sizeof(name) - strlen(name_template)) {
+		RRR_BUG("thread name was too long in  __rrr_cmodule_common_threads_start\n");
+	}
+
+	sprintf(name, name_template, INSTANCE_D_NAME(parent_thread_data));
+
+	if ((ret = rrr_thread_new_collection(&thread_collection)) != 0) {
+		RRR_MSG_0("Could not create thread collection in __rrr_cmodule_common_threads_start in instance %s\n",
+				INSTANCE_D_NAME(parent_thread_data));
+		goto out;
+	}
+
+	// Data members must be set now for the new thread to use
+	data->thread_collection = thread_collection;
+	data->parent_thread_data = parent_thread_data;
+	data->stats = stats;
+
+	if ((thread = rrr_thread_preload_and_register (
+			thread_collection,
+			__rrr_cmodule_common_reader_thread_entry,
+			NULL,
+			NULL,
+			NULL,
+			NULL, // We don't call cleanup_ghost_data, so this can be NULL
+			RRR_THREAD_START_PRIORITY_NORMAL,
+			data,
+			name
+	)) == NULL) {
+		RRR_MSG_0("Could not preload thread '%s' in  instance %s\n",
+				name, INSTANCE_D_NAME(parent_thread_data));
+		ret = 1;
+		goto out_destroy_collection;
+	}
+
+	if ((ret = rrr_thread_start(thread)) != 0) {
+		RRR_MSG_0("Could not start read thread in __rrr_cmodule_common_threads_start in instance %s, can't continue.\n",
+				INSTANCE_D_NAME(parent_thread_data));
+		goto out_destroy_collection;
+	}
+
+	if ((ret = rrr_thread_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
+		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_common_threads_start in instance %s, can't continue.\n",
+				INSTANCE_D_NAME(parent_thread_data));
+		ret = 1;
+		goto out_destroy_collection;
+	}
+
+	goto out;
+	out_destroy_collection:
+		rrr_thread_destroy_collection(thread_collection, 0);
+		// Set everything to zero to avoid confusing cleanup functions
+		memset(data, '\0', sizeof(*data));
+
+	out:
+		return ret;
+}
+
+// We shouldn't really end up here, but...
+static void __rrr_cmodule_common_ghost_handler (struct rrr_thread *thread) {
+	struct rrr_cmodule_common_reader_thread_data *data = thread->private_data;
+
+	// See threads_cleanup()-function
+	data->thread_became_ghost = 1;
+}
+
+static void __rrr_cmodule_common_threads_cleanup(void *arg) {
+	struct rrr_cmodule_common_reader_thread_data *data = arg;
+
+	if (data->thread_collection != NULL) {
+		rrr_thread_stop_and_join_all(data->thread_collection, __rrr_cmodule_common_ghost_handler);
+		rrr_thread_destroy_collection(data->thread_collection, 0);
+		data->thread_collection = NULL;
+	}
+
+	// Since the reader threads might continue to use our memory after they
+	// begin to run again, we cannot proceed.
+	if (data->thread_became_ghost != 0) {
+		RRR_MSG_0("Could not stop reader threads in cmodule instance %s. Can't continue.",
+				INSTANCE_D_NAME(data->parent_thread_data));
+		exit(EXIT_FAILURE);
+	}
+}
+
+void rrr_cmodule_common_loop (
+		struct rrr_instance_thread_data *thread_data,
+		struct rrr_stats_instance *stats,
+		struct rrr_poll_collection *poll,
+		pid_t fork_pid
+) {
+	int no_polling = 0;
+
+	if (rrr_poll_collection_count(poll) == 0) {
+		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
+			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n");
+			return;
+		}
+		no_polling = 1;
+	}
+
+	struct rrr_cmodule_common_reader_thread_data reader_thread_data = {0};
+
+	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
+
+	// Reader threads MUST be stopped before we clean up other data
+	pthread_cleanup_push(__rrr_cmodule_common_threads_cleanup, &reader_thread_data);
+
+	if (__rrr_cmodule_common_threads_start(&reader_thread_data, thread_data, stats) != 0) {
+		goto cleanup;
+	}
+
+	int from_senders_counter = 0;
+
+	int current_poll_wait_ms = 0;
+	int tick = 0;
+
+	// Let it overflow, DO NOT use signed
+	unsigned int consecutive_nothing_happend = 0;
+
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && fork_pid != 0) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		int from_fork_count = 0;
-		if (__rrr_cmodule_common_read_from_forks (
-				&from_fork_count,
-				&config_check_complete,
-				thread_data,
-				10
-		) != 0) {
-			RRR_MSG_ERR("Error while reading from child fork in instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-			break;
-		}
+		int from_senders_count_tmp = 0;
 
-		if (config_check_complete == 1 && config_check_complete_message_printed == 0) {
-			RRR_DBG_1("Instance %s child config function (if any) complete, checking for unused values\n",
-					INSTANCE_D_NAME(thread_data));
-			rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-			config_check_complete_message_printed = 1;
-		}
+//		printf ("From fork: %i\n", from_child_count_tmp);
 
-		int input_count = 0;
 		if (no_polling == 0) {
-			if (__rrr_cmodule_common_poll_delete (&input_count, thread_data, poll, fork_pid, 0, 500) != 0) {
+			if (__rrr_cmodule_common_poll_delete (
+					&from_senders_count_tmp,
+					thread_data,
+					poll,
+					fork_pid,
+					current_poll_wait_ms,
+					250
+			) != 0) {
 				break;
 			}
 		}
 
-		if (from_fork_count != 0 || input_count != 0) {
+		from_senders_counter += from_senders_count_tmp;
+
+		if (from_senders_count_tmp == 0) {
+			consecutive_nothing_happend++;
+		}
+		else {
 			consecutive_nothing_happend = 0;
 		}
 
-		if (++consecutive_nothing_happend > 1000) {
-//			printf ("Nothing happened  1 000: %i, from senders: %i, input_child: %i\n",
-//					consecutive_nothing_happend, from_senders_counter, from_child_counter );
-			rrr_posix_usleep(250); // 250 us
+		if (consecutive_nothing_happend > 1000) {
+			current_poll_wait_ms = 100;
 		}
-		if (++consecutive_nothing_happend > 10000) {
-//			printf ("Nothing happened 10 000: %i\n", consecutive_nothing_happend);
-			rrr_posix_usleep (50000); // 50 ms
-			usleep_hits++;
+		else if (consecutive_nothing_happend > 25) {
+			current_poll_wait_ms = 50;
 		}
-
-		from_child_counter += from_fork_count;
-		from_senders_counter += input_count;
+		else {
+			current_poll_wait_ms = 10;
+		}
 
 		uint64_t time_now = rrr_time_get_64();
 
@@ -312,10 +519,51 @@ void rrr_cmodule_common_loop (
 				break;
 			}
 
-			rrr_stats_instance_update_rate(stats, 2, "usleep_hits", usleep_hits);
-			rrr_stats_instance_update_rate(stats, 3, "ticks", tick);
-			rrr_stats_instance_update_rate(stats, 5, "input_counter", from_senders_counter);
-			rrr_stats_instance_update_rate(stats, 6, "from_child_counter", from_child_counter);
+			{
+				unsigned long long int read_starvation_counter = 0;
+				unsigned long long int write_full_counter = 0;
+				unsigned long long int write_retry_counter = 0;
+				unsigned long long int deferred_queue_entries = 0;
+
+				rrr_cmodule_get_mmap_channel_to_fork_stats (
+						&read_starvation_counter,
+						&write_full_counter,
+						&write_retry_counter,
+						&deferred_queue_entries,
+						INSTANCE_D_CMODULE(thread_data),
+						fork_pid
+				);
+
+				rrr_stats_instance_update_rate(stats, 1, "mmap_to_child_full_events", write_full_counter);
+				rrr_stats_instance_update_rate(stats, 2, "mmap_to_child_starvation_events", read_starvation_counter);
+				rrr_stats_instance_update_rate(stats, 3, "mmap_to_child_write_retry_events", write_retry_counter);
+				rrr_stats_instance_post_base10_text(stats, "mmap_to_child_deferred_queue_entries", 0, deferred_queue_entries);
+			}
+			{
+				unsigned long long int read_starvation_counter = 0;
+				unsigned long long int write_full_counter = 0;
+				unsigned long long int write_retry_counter = 0;
+				unsigned long long int deferred_queue_entries = 0;
+
+				rrr_cmodule_get_mmap_channel_to_parent_stats (
+						&read_starvation_counter,
+						&write_full_counter,
+						&write_retry_counter,
+						&deferred_queue_entries,
+						INSTANCE_D_CMODULE(thread_data),
+						fork_pid
+				);
+
+				rrr_stats_instance_update_rate(stats, 5, "mmap_to_parent_full_events", write_full_counter);
+				rrr_stats_instance_update_rate(stats, 6, "mmap_to_parent_starvation_events", read_starvation_counter);
+				rrr_stats_instance_update_rate(stats, 7, "mmap_to_parent_write_retry_events", write_retry_counter);
+				rrr_stats_instance_post_base10_text(stats, "mmap_to_parent_deferred_queue_entries", 0, deferred_queue_entries);
+			}
+
+			rrr_stats_instance_post_base10_text(stats, "current_poll_timeout", 0, current_poll_wait_ms);
+			rrr_stats_instance_update_rate(stats, 10, "ticks", tick);
+			rrr_stats_instance_update_rate(stats, 11, "input_counter", from_senders_counter);
+			// Rate counter number 7 is used by read fork
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, output_buffer_count);
 
 			struct rrr_fifo_buffer_stats fifo_stats;
@@ -326,7 +574,7 @@ void rrr_cmodule_common_loop (
 
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_total", 0, fifo_stats.total_entries_written);
 
-			usleep_hits = tick = from_senders_counter = from_child_counter = 0;
+			tick = from_senders_counter = 0;
 
 			next_stats_time = time_now + 1000000;
 
@@ -336,8 +584,112 @@ void rrr_cmodule_common_loop (
 		tick++;
 	}
 
-	if (config_check_complete == 0) {
-		RRR_MSG_0("Warning: Instance %s never completed configuration function\n",
-				INSTANCE_D_NAME(thread_data));
+	cleanup:
+	pthread_cleanup_pop(1);
+}
+
+int rrr_cmodule_common_parse_config (
+		struct rrr_instance_thread_data *thread_data,
+		const char *config_prefix,
+		const char *config_suffix
+) {
+	struct rrr_cmodule_config_data *data = &(INSTANCE_D_CMODULE(thread_data)->config_data);
+	struct rrr_instance_config *config = INSTANCE_D_CONFIG(thread_data);
+
+	int ret = 0;
+
+	if (strlen(config_prefix) > 20) {
+		RRR_BUG("BUG: Config prefix too long in __rrr_cmodule_parse_config\n");
 	}
+	if (strlen(config_suffix) > 20) {
+		RRR_BUG("BUG: Config suffix too long in __rrr_cmodule_parse_config\n");
+	}
+
+	char arg_config_function[128];
+	char arg_source_function[128];
+	char arg_process_function[128];
+
+	char arg_spawn_interval[128];
+	char arg_sleep_time[128];
+	char arg_nothing_happened_limit[128];
+
+	char arg_drop_on_error[128];
+	char arg_log_prefix[128];
+
+	// Prefix is usally module name, suffix is function/sub
+	sprintf(arg_config_function, "%s%s%s", config_prefix, "_config_", config_suffix);
+	sprintf(arg_source_function, "%s%s%s", config_prefix, "_source_", config_suffix);
+	sprintf(arg_process_function, "%s%s%s", config_prefix, "_process_", config_suffix);
+
+	sprintf(arg_spawn_interval, "%s%s", config_prefix, "_spawn_interval_ms");
+	sprintf(arg_sleep_time, "%s%s", config_prefix, "_sleep_time_ms");
+	sprintf(arg_nothing_happened_limit, "%s%s", config_prefix, "_nothing_happened_limit");
+
+	sprintf(arg_drop_on_error, "%s%s", config_prefix, "_drop_on_error");
+	sprintf(arg_log_prefix, "%s%s", config_prefix, "_log_prefix");
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_config_function, config_function);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_source_function, source_function);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_process_function, process_function);
+
+	if (data->source_function != NULL && *(data->source_function) != '\0') {
+		data->do_spawning = 1;
+	}
+
+	if (data->process_function != NULL && *(data->process_function) != '\0') {
+		data->do_processing = 1;
+	}
+
+	if (data->do_spawning == 0 && data->do_processing == 0) {
+		RRR_MSG_0("No process or source %s defined in configuration for instance %s\n",
+				config_suffix, config->name);
+		ret = 1;
+		goto out;
+	}
+
+	// Input in ms, multiply by 1000
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_spawn_interval, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
+	data->spawn_interval_us *= 1000;
+
+	// Input in ms, multiply by 1000
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_sleep_time, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
+	data->sleep_time_us *= 1000;
+
+	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_nothing_happened_limit, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
+	if (data->nothing_happened_limit < 1) {
+		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_SETTINGS_PARSE_OPTIONAL_YESNO(arg_drop_on_error, do_drop_on_error, 0);
+	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_log_prefix, log_prefix);
+
+	out:
+	return ret;
+}
+
+int rrr_cmodule_common_start_worker_fork (
+		pid_t *handle_pid,
+		struct rrr_instance_thread_data *thread_data,
+		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
+		void *init_wrapper_callback_arg,
+		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
+		void *configuration_callback_arg,
+		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
+		void *process_callback_arg
+) {
+	return rrr_cmodule_start_worker_fork (
+			handle_pid,
+			INSTANCE_D_CMODULE(thread_data),
+			INSTANCE_D_NAME(thread_data),
+			INSTANCE_D_SETTINGS(thread_data),
+			init_wrapper_callback,
+			init_wrapper_callback_arg,
+			configuration_callback,
+			configuration_callback_arg,
+			process_callback,
+			process_callback_arg
+	);
 }

@@ -50,11 +50,14 @@ struct rrr_mmap_channel {
 	int rpos;
 	struct rrr_mmap_channel_block blocks[RRR_MMAP_CHANNEL_SLOTS];
 	char name[64];
+
+	unsigned long long int read_starvation_counter;
+	unsigned long long int write_full_counter;
+
 //	char *tmpfile;
 //	int tmp_fd;
 };
 
-int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target);
 void rrr_mmap_channel_writer_free_unused_mmap_blocks (struct rrr_mmap_channel *target);
 int rrr_mmap_channel_write_using_callback (
 		struct rrr_mmap_channel *target,
@@ -66,11 +69,6 @@ int rrr_mmap_channel_write (
 		struct rrr_mmap_channel *target,
 		const void *data,
 		size_t data_size
-);
-int rrr_mmap_channel_read_with_callback (
-		struct rrr_mmap_channel *source,
-		int (*callback)(const void *data, size_t data_size, void *arg),
-		void *callback_arg
 );
 int rrr_mmap_channel_read_all (
 		struct rrr_mmap_channel *source,
@@ -86,5 +84,10 @@ void rrr_mmap_channel_bubblesort_pointers (struct rrr_mmap_channel *target, int 
 void rrr_mmap_channel_destroy (struct rrr_mmap_channel *target);
 void rrr_mmap_channel_writer_free_blocks (struct rrr_mmap_channel *target);
 int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mmap, const char *name);
+void rrr_mmap_channel_get_counters_and_reset (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		struct rrr_mmap_channel *source
+);
 
 #endif /* RRR_MMAP_CHANNEL_H */

@@ -51,9 +51,6 @@ struct python3_data {
 	struct rrr_instance_thread_data *thread_data;
 
 	char *python3_module;
-	char *source_function;
-	char *process_function;
-	char *config_function;
 	char *module_path;
 };
 
@@ -73,9 +70,6 @@ void data_cleanup(void *arg) {
 	struct python3_data *data = arg;
 
 	RRR_FREE_IF_NOT_NULL(data->python3_module);
-	RRR_FREE_IF_NOT_NULL(data->source_function);
-	RRR_FREE_IF_NOT_NULL(data->process_function);
-	RRR_FREE_IF_NOT_NULL(data->config_function);
 	RRR_FREE_IF_NOT_NULL(data->module_path);
 }
 
@@ -90,17 +84,7 @@ int parse_config(struct python3_data *data, struct rrr_instance_config *config) 
 		goto out;
 	}
 
-	rrr_instance_config_get_string_noconvert_silent (&data->source_function, config, "python3_source_function");
-	rrr_instance_config_get_string_noconvert_silent (&data->process_function, config, "python3_process_function");
-	rrr_instance_config_get_string_noconvert_silent (&data->config_function, config, "python3_config_function");
 	rrr_instance_config_get_string_noconvert_silent (&data->module_path, config, "python3_module_path");
-
-	if (data->source_function == NULL && data->process_function == NULL) {
-		RRR_MSG_0("No source or processor function defined for python3 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
 
 	out:
 	return ret;
@@ -201,6 +185,8 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 	struct python3_data *data = private_arg;
 	struct python3_child_data child_data = {0};
 
+	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
+
 	child_data.parent_data = data;
 
 	PyObject *module = NULL;
@@ -245,28 +231,28 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 		goto out_cleanup_runtime;
 	}
 
-	if (data->config_function != NULL) {
-		if ((config_function = rrr_py_import_function(module_dict, data->config_function)) == NULL) {
+	if (cmodule_config_data->config_function != NULL) {
+		if ((config_function = rrr_py_import_function(module_dict, cmodule_config_data->config_function)) == NULL) {
 			RRR_MSG_0("Could not get config function '%s' from module '%s' while starting python3 fork\n",
-					data->config_function, data->python3_module);
+					cmodule_config_data->config_function, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (data->source_function != NULL) {
-		if ((source_function = rrr_py_import_function(module_dict, data->source_function)) == NULL) {
+	if (cmodule_config_data->source_function != NULL) {
+		if ((source_function = rrr_py_import_function(module_dict, cmodule_config_data->source_function)) == NULL) {
 			RRR_MSG_0("Could not get source function '%s' from module '%s' while starting python3 fork\n",
-					data->source_function, data->python3_module);
+					cmodule_config_data->source_function, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
 	}
 
-	if (data->process_function != NULL) {
-		if ((process_function = rrr_py_import_function(module_dict, data->process_function)) == NULL) {
+	if (cmodule_config_data->process_function != NULL) {
+		if ((process_function = rrr_py_import_function(module_dict, cmodule_config_data->process_function)) == NULL) {
 			RRR_MSG_0("Could not get process function '%s' from module '%s' while starting python3 fork\n",
-					data->process_function, data->python3_module);
+					cmodule_config_data->process_function, data->python3_module);
 			ret = 1;
 			goto out_cleanup_runtime;
 		}
@@ -334,31 +320,17 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
+	if (rrr_cmodule_common_parse_config(thread_data, "python3", "function") != 0) {
+		goto out_message;
+	}
 
 	rrr_poll_add_from_thread_senders(&poll, thread_data);
 
-	int no_polling = 1;
-	if (rrr_poll_collection_count (&poll) > 0) {
-		if (!data->process_function) {
-			RRR_MSG_0("Python3 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
-		}
-		no_polling = 0;
-	}
-
 	pid_t fork_pid = 0;
-	rrr_setting_uint spawn_interval_ms = 0;
 
-	if (rrr_cmodule_start_worker_fork (
+	if (rrr_cmodule_common_start_worker_fork (
 			&fork_pid,
-			thread_data->cmodule,
-			spawn_interval_ms * 1000,
-			10 * 1000,
-			INSTANCE_D_NAME(thread_data),
-			(data->source_function != NULL ? 1 : 0),
-			(data->process_function != NULL ? 1 : 0),
-			0, // <-- Drop on error
-			INSTANCE_D_SETTINGS(thread_data),
+			thread_data,
 			python3_init_wrapper_callback,
 			data,
 			python3_configuration_callback,
@@ -378,8 +350,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 			thread_data,
 			stats,
 			&poll,
-			fork_pid,
-			no_polling
+			fork_pid
 	);
 
 	out_message:

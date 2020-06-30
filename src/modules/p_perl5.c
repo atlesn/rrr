@@ -68,14 +68,7 @@ struct perl5_data {
 
 	struct cmd_argv_copy *cmdline;
 
-	uint64_t spawn_interval_ms;
-
 	char *perl5_file;
-	char *source_sub;
-	char *process_sub;
-	char *config_sub;
-
-	int do_drop_on_error;
 
 	// For test suite, put build dirs in @INC
 	int do_include_build_directories;
@@ -219,10 +212,6 @@ static void data_cleanup(void *arg) {
 	struct perl5_data *data = arg;
 
 	RRR_FREE_IF_NOT_NULL(data->perl5_file);
-	RRR_FREE_IF_NOT_NULL(data->source_sub);
-	RRR_FREE_IF_NOT_NULL(data->process_sub);
-	RRR_FREE_IF_NOT_NULL(data->config_sub);
-
 	cmd_destroy_argv_copy(data->cmdline);
 }
 
@@ -236,41 +225,6 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config *con
 		ret = 1;
 		goto out;
 	}
-
-	rrr_instance_config_get_string_noconvert_silent (&data->source_sub, config, "perl5_source_sub");
-	rrr_instance_config_get_string_noconvert_silent (&data->process_sub, config, "perl5_process_sub");
-	rrr_instance_config_get_string_noconvert_silent (&data->config_sub, config, "perl5_config_sub");
-
-	if (data->source_sub == NULL && data->process_sub == NULL) {
-		RRR_MSG_0("No source or processor sub defined for perl5 instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
-		ret = 1;
-		goto out;
-	}
-
-	rrr_setting_uint uint_tmp = 0;
-	if ((ret = rrr_instance_config_read_unsigned_integer(&uint_tmp, config, "perl5_source_interval")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error in setting perl5_source_interval of perl5 instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-		else {
-			uint_tmp = PERL5_DEFAULT_SOURCE_INTERVAL_MS;
-		}
-		ret = 0;
-	}
-	else {
-		if (data->source_sub == NULL) {
-			RRR_MSG_0("perl5_source_interval of perl5 instance %s was set but no source function was defined with perl5_source_sub\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->spawn_interval_ms = uint_tmp;
-
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_drop_on_error", do_drop_on_error, 0);
 
 	// For test suite, but build directories into @INC
 	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
@@ -330,16 +284,17 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 
 	struct perl5_child_data *child_data = private_arg;
 	struct perl5_data *data = child_data->parent_data;
+	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
 
 	struct rrr_instance_settings *settings = data->thread_data->init_data.instance_config->settings;
 	struct rrr_perl5_settings_hv *settings_hv = NULL;
 
-	if (data->config_sub == NULL || *(data->config_sub) == '\0') {
-		RRR_DBG_2("Perl5 no configure sub defined in configuration\n", data->config_sub);
+	if (cmodule_config_data->config_function == NULL || *(cmodule_config_data->config_function) == '\0') {
+		RRR_DBG_2("Perl5 instance %s no configure sub defined in configuration\n", INSTANCE_D_NAME(data->thread_data));
 		goto out;
 	}
 
-	RRR_DBG_2("Perl5 configuring, sub is %s\n", data->config_sub);
+	RRR_DBG_2("Perl5 configuring, sub is %s\n", cmodule_config_data->config_function);
 
 	if ((ret = rrr_perl5_settings_to_hv(&settings_hv, child_data->ctx, settings)) != 0) {
 		RRR_MSG_0("Could not convert settings of perl5 instance %s to hash value\n",
@@ -353,12 +308,12 @@ static int perl5_configuration_callback (RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS
 	// child fork, and all settings must be sent back to the parent over the mmap channel.
 	if ((ret = rrr_perl5_call_blessed_hvref (
 			child_data->ctx,
-			data->config_sub,
+			cmodule_config_data->config_function,
 			"rrr::rrr_helper::rrr_settings",
 			settings_hv->hv
 	)) != 0) {
 		RRR_MSG_0("Error while sending settings to sub %s in perl5 instance %s\n",
-				data->config_sub, INSTANCE_D_NAME(data->thread_data));
+				cmodule_config_data->config_function, INSTANCE_D_NAME(data->thread_data));
 		ret = 1;
 		goto out;
 	}
@@ -376,6 +331,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct perl5_child_data *child_data = private_arg;
 	struct perl5_data *data = child_data->parent_data;
 	struct rrr_perl5_ctx *ctx = child_data->ctx;
+	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
 
 	struct rrr_perl5_message_hv *hv_message = NULL;
 	struct rrr_message_addr addr_msg_tmp = *message_addr;
@@ -388,12 +344,12 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	}
 
 	if (is_spawn_ctx) {
-		RRR_DBG_2("Perl5 spawning, sub is %s\n", data->source_sub);
-		ret = rrr_perl5_call_blessed_hvref(ctx, data->source_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
+		RRR_DBG_2("Perl5 spawning, sub is %s\n", cmodule_config_data->source_function);
+		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->source_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 	else {
-		RRR_DBG_2("Perl5 processing, sub is %s\n", data->process_sub);
-		ret = rrr_perl5_call_blessed_hvref(ctx, data->process_sub, "rrr::rrr_helper::rrr_message", hv_message->hv);
+		RRR_DBG_2("Perl5 processing, sub is %s\n", cmodule_config_data->process_function);
+		ret = rrr_perl5_call_blessed_hvref(ctx, cmodule_config_data->process_function, "rrr::rrr_helper::rrr_message", hv_message->hv);
 	}
 
 	if (ret != 0) {
@@ -430,29 +386,17 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
+	if (rrr_cmodule_common_parse_config(thread_data, "perl5", "sub") != 0) {
+		goto out_message;
+	}
 
 	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
-	int no_polling = 1;
-	if (rrr_poll_collection_count (&poll_ip) > 0) {
-		if (!data->process_sub) {
-			RRR_MSG_0("Perl5 instance %s cannot have senders specified and no process function\n", INSTANCE_D_NAME(thread_data));
-			goto out_message;
-		}
-		no_polling = 0;
-	}
 
 	pid_t fork_pid = 0;
 
-	if (rrr_cmodule_start_worker_fork (
+	if (rrr_cmodule_common_start_worker_fork (
 			&fork_pid,
-			thread_data->cmodule,
-			data->spawn_interval_ms * 1000,
-			10 * 1000,
-			INSTANCE_D_NAME(thread_data),
-			(data->source_sub != NULL ? 1 : 0),
-			(data->process_sub != NULL ? 1 : 0),
-			data->do_drop_on_error,
-			INSTANCE_D_SETTINGS(thread_data),
+			thread_data,
 			perl5_init_wrapper_callback,
 			data,
 			perl5_configuration_callback,
@@ -472,8 +416,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 			thread_data,
 			stats,
 			&poll_ip,
-			fork_pid,
-			no_polling
+			fork_pid
 	);
 
 	out_message:

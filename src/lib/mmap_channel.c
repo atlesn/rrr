@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Messages larger than this limit are transferred using SHM
 #define RRR_MMAP_CHANNEL_SHM_LIMIT 1024
 #define RRR_MMAP_CHANNEL_SHM_MIN_ALLOC_SIZE 4096
-
+/* Currently not used
 int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target) {
 	int possible = 1;
 
@@ -52,7 +52,7 @@ int rrr_mmap_channel_write_is_possible (struct rrr_mmap_channel *target) {
 
 	return possible;
 }
-
+*/
 static int __rrr_mmap_channel_block_free (
 		struct rrr_mmap_channel *target,
 		struct rrr_mmap_channel_block *block
@@ -184,6 +184,7 @@ int rrr_mmap_channel_write_using_callback (
 	pthread_mutex_unlock(&target->index_lock);
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
+		target->write_full_counter++;
 		ret = RRR_MMAP_CHANNEL_FULL;
 		goto out_unlock;
 	}
@@ -191,6 +192,7 @@ int rrr_mmap_channel_write_using_callback (
 
 	// When the other end is done with the data, it sets size to 0
 	if (block->size_data != 0) {
+		target->write_full_counter++;
 		ret = RRR_MMAP_CHANNEL_FULL;
 		goto out_unlock;
 	}
@@ -254,7 +256,7 @@ int rrr_mmap_channel_write (
 	return rrr_mmap_channel_write_using_callback(target, data_size, __rrr_mmap_channel_write_callback, &callback_data);
 }
 
-int rrr_mmap_channel_read_with_callback (
+static int __rrr_mmap_channel_read_with_callback (
 		struct rrr_mmap_channel *source,
 		int (*callback)(const void *data, size_t data_size, void *arg),
 		void *callback_arg
@@ -270,12 +272,14 @@ int rrr_mmap_channel_read_with_callback (
 	pthread_mutex_unlock(&source->index_lock);
 
 	if (pthread_mutex_trylock(&block->block_lock) != 0) {
+		source->read_starvation_counter++;
 		ret = RRR_MMAP_CHANNEL_EMPTY;
 		goto out_unlock;
 	}
 	do_unlock_block = 1;
 
 	if (block->size_data == 0) {
+		source->read_starvation_counter++;
 		ret = RRR_MMAP_CHANNEL_EMPTY;
 		goto out_unlock;
 	}
@@ -292,7 +296,7 @@ int rrr_mmap_channel_read_with_callback (
 		}
 
 		if ((ret = callback(data_pointer, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_0("Error from callback in rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in __rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
@@ -305,7 +309,7 @@ int rrr_mmap_channel_read_with_callback (
 	}
 	else {
 		if ((ret = callback(block->ptr_shm_or_mmap, block->size_data, callback_arg)) != 0) {
-			RRR_MSG_0("Error from callback in rrr_mmap_channel_read_with_callback\n");
+			RRR_MSG_0("Error from callback in __rrr_mmap_channel_read_with_callback\n");
 			ret = 1;
 			do_rpos_increment = 0;
 		}
@@ -344,7 +348,7 @@ int rrr_mmap_channel_read_all (
 	int i = RRR_MMAP_CHANNEL_SLOTS;
 
 	do {
-		ret = rrr_mmap_channel_read_with_callback(source, callback, callback_arg);
+		ret = __rrr_mmap_channel_read_with_callback(source, callback, callback_arg);
 	} while(ret == 0 && --i > 0);
 
 	return ret;
@@ -385,7 +389,7 @@ int rrr_mmap_channel_read (
 	*target = NULL;
 	*target_size = 0;
 
-	if ((ret = rrr_mmap_channel_read_with_callback(source, __rrr_mmap_channel_read_callback, &callback_data)) != 0) {
+	if ((ret = __rrr_mmap_channel_read_with_callback(source, __rrr_mmap_channel_read_callback, &callback_data)) != 0) {
 		return ret;
 	}
 
@@ -537,4 +541,20 @@ int rrr_mmap_channel_new (struct rrr_mmap_channel **target, struct rrr_mmap *mma
 		pthread_mutexattr_destroy(&attr);
 	out:
 		return ret;
+}
+
+void rrr_mmap_channel_get_counters_and_reset (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		struct rrr_mmap_channel *source
+) {
+	pthread_mutex_lock(&source->index_lock);
+
+	*read_starvation_counter = source->read_starvation_counter;
+	*write_full_counter = source->write_full_counter;
+
+	source->read_starvation_counter = 0;
+	source->write_full_counter = 0;
+
+	pthread_mutex_unlock(&source->index_lock);
 }

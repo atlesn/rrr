@@ -109,13 +109,8 @@ static int __rrr_cmodule_deferred_message_new_and_push (
 
 static int __rrr_cmodule_worker_new (
 		struct rrr_cmodule_worker **result,
-		struct rrr_mmap *mmap,
-		uint64_t spawn_interval_us,
-		uint64_t sleep_interval_us,
+		struct rrr_cmodule *cmodule,
 		const char *name,
-		int do_spawning,
-		int do_processing,
-		int do_drop_on_error,
 		struct rrr_instance_settings *settings,
 		struct rrr_fork_handler *fork_handler
 ) {
@@ -137,12 +132,12 @@ static int __rrr_cmodule_worker_new (
 
 	memset(worker, '\0', sizeof(*worker));
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_fork, mmap, name)) != 0) {
+	if ((rrr_mmap_channel_new(&worker->channel_to_fork, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_free;
 	}
 
-	if ((rrr_mmap_channel_new(&worker->channel_to_parent, mmap, name)) != 0) {
+	if ((rrr_mmap_channel_new(&worker->channel_to_parent, cmodule->mmap, name)) != 0) {
 		RRR_MSG_0("Could not create mmap channel in __rrr_cmodule_worker_new\n");
 		goto out_destroy_channel_to_fork;
 	}
@@ -159,13 +154,7 @@ static int __rrr_cmodule_worker_new (
 		goto out_free_name;
 	}
 
-	worker->spawn_interval_us = spawn_interval_us;
-	worker->sleep_interval_us = sleep_interval_us;
-
-	worker->do_spawning = do_spawning;
-	worker->do_processing = do_processing;
-	worker->do_drop_on_error = do_drop_on_error;
-
+	worker->config_data = &cmodule->config_data;
 	worker->settings = settings;
 	worker->fork_handler = fork_handler;
 
@@ -296,6 +285,7 @@ static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
 
 static int __rrr_cmodule_send_message (
 		int *sent_total,
+		int *retries,
 		struct rrr_mmap_channel *channel,
 		struct rrr_cmodule_deferred_message_collection *deferred_queue,
 		struct rrr_message *message,
@@ -304,8 +294,11 @@ static int __rrr_cmodule_send_message (
 	int ret = 0;
 
 	*sent_total = 0;
+	*retries = 0;
 
-	int retry_max = 500;
+	// When adjusting retry and usleep, test for throughput afterwards. These numbers
+	// have no implication in low-traffic situations.
+	int retry_max = 7500;
 
 	// Extracted from deferred queue, freed every time before it is used and at out
 	struct rrr_message_addr *message_addr_to_free = NULL;
@@ -327,14 +320,12 @@ static int __rrr_cmodule_send_message (
 	// If there are deferred messages, immediately push the new message to
 	// deferred queue and instead process the first one in the queue
 	if (RRR_LL_COUNT(deferred_queue) > 0) {
-		goto retry_defer_message;
+		goto defer_message;
 	}
 
 	goto send_message;
 
-	retry_defer_message:
-		rrr_posix_usleep(5000); // 5 ms
-
+	defer_message:
 		if (__rrr_cmodule_deferred_message_new_and_push(deferred_queue, message, message_addr) != 0) {
 			RRR_MSG_0("Error while pushing deferred message in __rrr_cmodule_send_message\n");
 			ret = 1;
@@ -347,9 +338,11 @@ static int __rrr_cmodule_send_message (
 		// Not to be used anymore for now
 		message_addr = NULL;
 
-		if (--retry_max == 0) {
-			RRR_MSG_0("Retries exceeded in __rrr_cmodule_send_message\n");
-			ret = 1;
+		if (retry_max-- == 0) {
+			(*retries)++;
+			rrr_posix_usleep(1500); // 1500us
+//			RRR_MSG_0("Note: Retries exceeded in __rrr_cmodule_send_message\n");
+			ret = 0;
 			goto out;
 		}
 
@@ -384,7 +377,7 @@ static int __rrr_cmodule_send_message (
 		)) != 0) {
 			if (ret == RRR_MMAP_CHANNEL_FULL) {
 				ret = 0;
-				goto retry_defer_message;
+				goto defer_message;
 			}
 			RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
 			ret = 1;
@@ -392,7 +385,15 @@ static int __rrr_cmodule_send_message (
 		}
 
 		(*sent_total)++;
-	out:
+
+		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
+		RRR_FREE_IF_NOT_NULL(message);
+
+		if (RRR_LL_COUNT(deferred_queue) > 0) {
+			goto send_message;
+		}
+
+		out:
 		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
 		RRR_FREE_IF_NOT_NULL(message);
 		return ret;
@@ -405,11 +406,12 @@ int rrr_cmodule_worker_send_message_to_parent (
 		const struct rrr_message_addr *message_addr
 ) {
 	int sent_total = 0;
-
+	int retries = 0;
 
 	// Will always free the message also upon errors
 	int ret = __rrr_cmodule_send_message (
 			&sent_total,
+			&retries,
 			worker->channel_to_parent,
 			&worker->deferred_to_parent,
 			message,
@@ -418,6 +420,7 @@ int rrr_cmodule_worker_send_message_to_parent (
 
 	worker->total_msg_processed += 1;
 	worker->total_msg_mmap_to_parent += sent_total;
+	worker->to_parent_write_retry_counter += retries;
 
 	return ret;
 }
@@ -451,7 +454,7 @@ int __rrr_cmodule_worker_loop_mmap_channel_read_callback (const void *data, size
 
 	if (ret != 0) {
 		RRR_MSG_0("Error %i from worker process function in worker %s\n", ret, callback_data->worker->name);
-		if (callback_data->worker->do_drop_on_error) {
+		if (callback_data->worker->config_data->do_drop_on_error) {
 			RRR_MSG_0("Dropping message per configuration in worker %s\n", callback_data->worker->name);
 			ret = 0;
 		}
@@ -510,7 +513,7 @@ static int __rrr_cmodule_worker_loop (
 ) {
 	int ret = 0;
 
-	if (worker->do_spawning == 0 && worker->do_processing == 0) {
+	if (worker->config_data->do_spawning == 0 && worker->config_data->do_processing == 0) {
 		RRR_BUG("BUG: Spawning  nor processing mode not set in __rrr_cmodule_worker_loop\n");
 	}
 
@@ -524,8 +527,8 @@ static int __rrr_cmodule_worker_loop (
 	uint64_t time_now = rrr_time_get_64();
 	uint64_t next_spawn_time = 0;
 
-	if (worker->sleep_interval_us > worker->spawn_interval_us) {
-		worker->sleep_interval_us = worker->spawn_interval_us;
+	if (worker->config_data->sleep_time_us > worker->config_data->spawn_interval_us) {
+		worker->config_data->sleep_time_us = worker->config_data->spawn_interval_us;
 	}
 
 	int usleep_hits_b = 0;
@@ -533,7 +536,7 @@ static int __rrr_cmodule_worker_loop (
 	uint64_t prev_total_processed_msg = 0;
 	uint64_t prev_total_msg_mmap_from_parent = 0;
 
-	int consecutive_nothing_happend = 0;
+	rrr_setting_uint consecutive_nothing_happend = 0;
 
 	uint64_t prev_stats_time = 0;
 
@@ -543,10 +546,10 @@ static int __rrr_cmodule_worker_loop (
 		time_now = rrr_time_get_64();
 
 		if (next_spawn_time == 0) {
-			next_spawn_time = time_now + worker->spawn_interval_us;
+			next_spawn_time = time_now + worker->config_data->spawn_interval_us;
 		}
 
-		if (worker->do_processing) {
+		if (worker->config_data->do_processing) {
 			for (int i = 0; i < 10; i++) {
 				if ((ret = rrr_mmap_channel_read_all (
 						worker->channel_to_fork,
@@ -567,7 +570,7 @@ static int __rrr_cmodule_worker_loop (
 			}
 		}
 
-		if (worker->do_spawning) {
+		if (worker->config_data->do_spawning) {
 			if (time_now >= next_spawn_time) {
 				if (__rrr_cmodule_worker_spawn_message(worker, process_callback, process_callback_arg) != 0) {
 					goto loop_out;
@@ -576,16 +579,18 @@ static int __rrr_cmodule_worker_loop (
 			}
 		}
 
+//		printf("%" PRIu64 " - %" PRIu64 "\n", prev_total_msg_mmap_from_parent, prev_total_processed_msg);
+
 		if (	prev_total_msg_mmap_from_parent != worker->total_msg_mmap_to_fork ||
 				prev_total_processed_msg != worker->total_msg_processed
 		) {
 			consecutive_nothing_happend = 0;
 		}
 
-		if (++consecutive_nothing_happend > 250) {
+		if (++consecutive_nothing_happend > worker->config_data->nothing_happened_limit) {
 //			printf("Sleep %i - %i - %i\n", usleep_hits_b, consecutive_nothing_happend, worker->total_msg_processed);
 			usleep_hits_b++;
-			rrr_posix_usleep(worker->sleep_interval_us);
+			rrr_posix_usleep(worker->config_data->sleep_time_us);
 		}
 
 		if (time_now - prev_stats_time > 1000000) {
@@ -753,12 +758,7 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 int rrr_cmodule_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
-		uint64_t spawn_interval_us,
-		uint64_t sleep_interval_us,
 		const char *name,
-		int do_spawning,
-		int do_processing,
-		int do_drop_on_error,
 		struct rrr_instance_settings *settings,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
 		void *init_wrapper_arg,
@@ -775,13 +775,8 @@ int rrr_cmodule_start_worker_fork (
 
 	if ((ret = __rrr_cmodule_worker_new (
 			&worker,
-			cmodule->mmap,
-			spawn_interval_us,
-			sleep_interval_us,
+			cmodule,
 			name,
-			do_spawning,
-			do_processing,
-			do_drop_on_error,
 			settings,
 			cmodule->fork_handler
 	)) != 0) {
@@ -834,6 +829,12 @@ int rrr_cmodule_start_worker_fork (
 
 	rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
 
+	// It's safe to use the char * from cmodule_data. It will never
+	// get freed by the fork, instances framework does that when the thread is exiting.
+	if (cmodule->config_data.log_prefix != NULL && *(cmodule->config_data.log_prefix) != '\0') {
+		rrr_global_config_set_log_prefix(cmodule->config_data.log_prefix);
+	}
+
 	ret = init_wrapper_callback (
 			worker,
 			configuration_callback,
@@ -870,6 +871,15 @@ void rrr_cmodule_stop_forks (
 	rrr_fork_handle_sigchld_and_notify_if_needed(cmodule->fork_handler, 1);
 }
 
+static void __rrr_cmodule_config_data_cleanup (
+	struct rrr_cmodule_config_data *config_data
+) {
+	RRR_FREE_IF_NOT_NULL(config_data->config_function);
+	RRR_FREE_IF_NOT_NULL(config_data->process_function);
+	RRR_FREE_IF_NOT_NULL(config_data->source_function);
+	RRR_FREE_IF_NOT_NULL(config_data->log_prefix);
+}
+
 void rrr_cmodule_stop_forks_and_destroy (
 		struct rrr_cmodule *cmodule
 ) {
@@ -878,6 +888,7 @@ void rrr_cmodule_stop_forks_and_destroy (
 		rrr_mmap_destroy(cmodule->mmap);
 		cmodule->mmap = NULL;
 	}
+	__rrr_cmodule_config_data_cleanup(&cmodule->config_data);
 	free(cmodule);
 }
 
@@ -922,7 +933,6 @@ int rrr_cmodule_new (
 
 struct rrr_cmodule_read_from_fork_callback_data {
 		struct rrr_cmodule_worker *worker;
-		int count;
 		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
 		void *final_callback_arg;
 };
@@ -1035,7 +1045,6 @@ static int __rrr_cmodule_read_from_fork_callback (const void *data, size_t data_
 }
 
 int rrr_cmodule_read_from_forks (
-		int *read_count,
 		int *config_complete,
 		struct rrr_cmodule *cmodule,
 		int loops,
@@ -1044,12 +1053,9 @@ int rrr_cmodule_read_from_forks (
 ) {
 	int ret = 0;
 
-	*read_count = 0;
-
 	// Set to 1 first, and if any worker has config_complete set to zero, set it to zero
 	*config_complete = 1;
 
-	int read_total = 0;
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
 		if (node->config_complete == 0) {
 			*config_complete = 0;
@@ -1064,7 +1070,6 @@ int rrr_cmodule_read_from_forks (
 
 		struct rrr_cmodule_read_from_fork_callback_data callback_data = {
 				node,
-				0, // Counter
 				final_callback,
 				final_callback_arg
 		};
@@ -1085,13 +1090,6 @@ int rrr_cmodule_read_from_forks (
 					goto out;
 				}
 			}
-
-			if (callback_data.count == 0) {
-				break;
-			}
-
-			read_total += callback_data.count;
-			callback_data.count = 0;
 		}
 	RRR_LL_ITERATE_END();
 
@@ -1113,7 +1111,6 @@ int rrr_cmodule_read_from_forks (
 	 */
 
 	out:
-	*read_count = read_total;
 	return ret;
 }
 
@@ -1132,9 +1129,12 @@ int rrr_cmodule_send_to_fork (
 		if (node->pid == worker_handle_pid) {
 			pid_was_found = 1;
 
+			int retries = 0;
+
 			// Will always free the message also upon errors
 			if ((ret = __rrr_cmodule_send_message (
 					sent_total,
+					&retries,
 					node->channel_to_fork,
 					&node->deferred_to_fork,
 					msg,
@@ -1144,6 +1144,8 @@ int rrr_cmodule_send_to_fork (
 				ret = 1;
 				goto out;
 			}
+
+			node->to_fork_write_retry_counter += retries;
 
 			RRR_LL_ITERATE_LAST();
 		}
@@ -1161,8 +1163,70 @@ int rrr_cmodule_send_to_fork (
 }
 
 // Call once in a while, like every second
-void rrr_cmodule_maintain(struct rrr_fork_handler *handler) {
+void rrr_cmodule_maintain (
+		struct rrr_fork_handler *handler
+) {
 	// Nothing to do
 	// We also don't check for SIGCHLD, main handles that for us
 	(void)(handler);
+}
+
+void rrr_cmodule_get_mmap_channel_to_fork_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+) {
+	*read_starvation_counter = 0;
+	*write_full_counter = 0;
+	*write_retry_counter = 0;
+	*deferred_queue_entries = 0;
+
+	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->pid == pid) {
+			rrr_mmap_channel_get_counters_and_reset (
+					read_starvation_counter,
+					write_full_counter,
+					node->channel_to_fork
+			);
+
+			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_fork);
+			*write_retry_counter = node->to_fork_write_retry_counter;
+			node->to_fork_write_retry_counter = 0;
+
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+}
+
+void rrr_cmodule_get_mmap_channel_to_parent_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+) {
+	*read_starvation_counter = 0;
+	*write_full_counter = 0;
+	*write_retry_counter = 0;
+	*deferred_queue_entries = 0;
+
+	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->pid == pid) {
+			rrr_mmap_channel_get_counters_and_reset (
+					read_starvation_counter,
+					write_full_counter,
+					node->channel_to_parent
+			);
+
+			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_parent);
+			*write_retry_counter = node->to_parent_write_retry_counter;
+			node->to_parent_write_retry_counter = 0;
+
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
 }
