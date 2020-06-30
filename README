@@ -43,6 +43,9 @@ the `LICENSE.*`-files regarding this.
 If you are a developer and would like to see more functionallity or have some ideas, please consider
 forking the GitHub repository.
 
+It is possible to write custom modules in Perl, Python and C. All three have similar easy to use
+interfaces to RRR. The man page for rrr.conf has more information on this.
+
 ## QUICK START
 
 ### DOWNLOAD
