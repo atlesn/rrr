@@ -1,8 +1,8 @@
-AC_INIT([Read Route Record], 1.3-2)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.3-2", [Full version])
+AC_INIT([Read Route Record], 1.4)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.4", [Full version])
 AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 1, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 3, [Minor version])
-AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 2, [Revision number])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 4, [Minor version])
+AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 0, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
 AC_DEFINE([RRR_TMP_PATH], "/tmp", [Temporary directory])
@@ -50,6 +50,8 @@ AC_ARG_WITH([mysql],[AS_HELP_STRING([--without-mysql],[build without the MySQL b
 AC_ARG_WITH([perl5],[AS_HELP_STRING([--without-perl5],[build without the Perl5 bindings])],[enable_perl5=no],[enable_perl5=yes])
 AC_ARG_WITH([usb],[AS_HELP_STRING([--with-usb],[build with USB bindings])],[enable_usb=yes],[enable_usb=no])
 AC_ARG_WITH([python3],[AS_HELP_STRING([--without-python3],[build without the python bindings])],[enable_python3=no],[enable_python3=yes])
+AC_ARG_WITH([runit],[AS_HELP_STRING([--with-runit],[build with the runit bindings])],[enable_runit=yes],[enable_runit=no])
+AC_ARG_WITH([confdir],[AS_HELP_STRING([--without-confdir],[do not install /etc/rrr.conf.d/])],[enable_confdir=no],[enable_confdir=yes])
 AC_ARG_ENABLE([python3-debug],[AS_HELP_STRING([--enable-python3-debug],[build with Python 3 debugging])],[enable_python3_debug=yes],[enable_python3_debug=no])
 AC_ARG_ENABLE([perl5-debug],[AS_HELP_STRING([--enable-perl5-debug],[build with Perl5 debugging])],[enable_perl5_debug=yes],[enable_perl5_debug=no])
 AC_ARG_ENABLE([gnu-debug],[AS_HELP_STRING([--enable-gnu-debug],[build with debugging of RRR GNU functions; always enable compat functions])],[enable_gnu_debug=yes],[enable_gnu_debug=no])
@@ -82,11 +84,6 @@ AC_SUBST([CFLAGS_CODECOV])
 AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
-AC_MSG_CHECKING([for RRR config file directory])
-RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
-AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
-AC_SUBST(RRR_CONF_DIR)
-
 SHELL_VARS_INIT([variables.sh])
 
 SHELL_VARS_EXPORT([RRR_WITH_SYSTEMD], $enable_systemd)
@@ -97,6 +94,8 @@ SHELL_VARS_EXPORT([RRR_WITH_MYSQL], $enable_mysql)
 
 SHELL_VARS_OUTPUT
 
+AM_CONDITIONAL([RRR_WITH_RUNIT], [test "x$enable_runit" != xno])
+AM_CONDITIONAL([RRR_WITH_CONFDIR], [test "x$enable_confdir" != xno])
 AM_CONDITIONAL([RRR_WITH_SYSTEMD], [test "x$enable_systemd" != xno])
 AM_CONDITIONAL([RRR_WITH_USB], [test "x$enable_usb" != xno])
 AM_CONDITIONAL([RRR_WITH_PYTHON3], [test "x$enable_python3" != xno])
@@ -372,8 +371,31 @@ AS_IF([test "x$enable_database_testing" = xyes], [
 	AC_MSG_RESULT([no])
 ])
 
+AC_DEFUN([REQUIRE_CONFDIR], [
+	if [test "x$enable_confdir" != "xyes"]; then
+		AC_MSG_ERROR([confdir was not enabled, but is required])
+	fi
+])
+
+AC_MSG_CHECKING([for RRR config file directory])
+RRR_CONF_DIR="${sysconfdir}/rrr.conf.d"
+AC_MSG_RESULT([${sysconfdir}/rrr.conf.d])
+AC_SUBST(RRR_CONF_DIR)
+
+AC_MSG_CHECKING([for confdir usage])
+AS_IF([test "x$enable_confdir" = xyes], [
+	AC_CONFIG_FILES([misc/confdir/Makefile])
+
+	AC_MSG_RESULT([yes, ${RRR_CONF_DIR}])
+],[
+	AC_MSG_RESULT([no])
+])
+
+AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
+
 AC_MSG_CHECKING([for systemd usage])
 AS_IF([test "x$enable_systemd" = xyes], [
+	REQUIRE_CONFDIR
 	SYSTEMD_INIT
 	AC_SUBST([SYSTEMD_DIR], [SYSTEMD_SYSTEM_UNIT_DIR])
 
@@ -381,26 +403,37 @@ AS_IF([test "x$enable_systemd" = xyes], [
 	AC_CONFIG_FILES([misc/systemd/Makefile])
 
 	AC_MSG_RESULT([yes, unit directory is SYSTEMD_SYSTEM_UNIT_DIR])
+
+	AC_MSG_CHECKING([for systemd service file no installation command])
+	AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
+		AC_MSG_RESULT([yes])
+	], [
+		AC_MSG_RESULT([no])
+	])
 ],[
 	AC_MSG_RESULT([no])
 ])
 
-AC_MSG_CHECKING([for systemd service file no installation command])
-AM_CONDITIONAL([RRR_SYSTEMD_NO_INSTALL], [test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"])
-AS_IF([test "x$RRR_SYSTEMD_NO_INSTALL" = "x1"] , [
-	AC_MSG_RESULT([yes])
+
+AC_MSG_CHECKING([for daemon username])
+AS_IF([test "x$RRR_DAEMON_USERNAME" != "x"] , [
+	AC_MSG_RESULT([${RRR_DAEMON_USERNAME}])
 ], [
+	RRR_DAEMON_USERNAME=daemon
+	AC_MSG_RESULT([${RRR_DAEMON_USERNAME} (by default)])
+])
+AC_SUBST(RRR_DAEMON_USERNAME)
+
+AC_MSG_CHECKING([for runit usage])
+AS_IF([test "x$enable_runit" = xyes], [
+	REQUIRE_CONFDIR
+	AC_SUBST([RUNIT_SV_DIR], [/etc/sv/rrr/])
+	AC_CONFIG_FILES([misc/runit/Makefile])
+	AC_CONFIG_FILES([misc/runit/make-runit.sh])
+	AC_MSG_RESULT([yes, sv directory is ${RUNIT_SV_DIR}])
+],[
 	AC_MSG_RESULT([no])
 ])
-
-AC_MSG_CHECKING([for systemd username])
-AS_IF([test "x$RRR_SYSTEMD_USERNAME" != "x"] , [
-	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME}])
-], [
-	RRR_SYSTEMD_USERNAME=daemon
-	AC_MSG_RESULT([${RRR_SYSTEMD_USERNAME} (by default)])
-])
-AC_SUBST(RRR_SYSTEMD_USERNAME)
 
 
 
@@ -411,7 +444,7 @@ AC_CONFIG_FILES([src/tests/test.sh],[chmod +x src/tests/test.sh])
 
 AC_CONFIG_FILES(Makefile src/Makefile src/modules/Makefile src/lib/Makefile
 				src/tests/Makefile src/tests/modules/Makefile
-				misc/Makefile 
+				misc/Makefile src/cmodules/Makefile
 )
 
 AC_OUTPUT

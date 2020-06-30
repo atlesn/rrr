@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/vl_time.h"
 #include "../lib/ip.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/log.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883

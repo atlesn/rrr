@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 #include "../lib/log.h"
 

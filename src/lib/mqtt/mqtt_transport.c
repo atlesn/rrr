@@ -302,7 +302,7 @@ int rrr_mqtt_transport_with_iterator_ctx_do_custom (
 	);
 
 	if (callback_data.connection_found != 1) {
-		RRR_MSG_0("Connection not found in rrr_mqtt_connection_with_iterator_ctx_do\n");
+		RRR_MSG_0("Connection not found in rrr_mqtt_transport_with_iterator_ctx_do_custom\n");
 		ret = RRR_MQTT_SOFT_ERROR;
 	}
 

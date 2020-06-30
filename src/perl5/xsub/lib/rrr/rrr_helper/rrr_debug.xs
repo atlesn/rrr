@@ -4,7 +4,7 @@
 #include <XSUB.h>
 #include <stdlib.h>
 
-#include "../../../../../lib/perl5.h"
+#include "../../../../../lib/perl5/perl5.h"
 
 MODULE = rrr::rrr_helper::rrr_debug PACKAGE = rrr::rrr_helper::rrr_debug PREFIX = rrr_perl5_debug_
 PROTOTYPES: ENABLE

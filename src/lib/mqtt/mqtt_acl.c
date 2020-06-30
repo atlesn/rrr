@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../linked_list.h"
 #include "../log.h"
 #include "../rrr_strerror.h"
-#include "../rrr_socket.h"
+#include "../socket/rrr_socket.h"
 #include "../parse.h"
 
 #define RRR_MQTT_ACL_ACTION_TO_STR(action) \

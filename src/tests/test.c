@@ -34,9 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/version.h"
 #include "../lib/instances.h"
 #include "../lib/cmdlineparser/cmdline.h"
-#include "../lib/stats_engine.h"
+#include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
+#include "../lib/log.h"
 
 #include "test_usleep.h"
 #include "test_fixp.h"
@@ -125,11 +126,13 @@ int main (int argc, const char **argv) {
 	int ret = 0;
 
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
-		ret = 1;
-		goto out_cleanup_fork_handler;
+		fprintf(stderr, "Library build version mismatch.\n");
+		exit(EXIT_FAILURE);
 	}
 
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
 	rrr_strerror_init();
 
 	// TODO : Implement stats engine for test program
@@ -141,13 +144,8 @@ int main (int argc, const char **argv) {
 	struct cmd_data cmd;
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
-	struct rrr_signal_functions signal_functions = {
-			rrr_signal_handler_set_active,
-			rrr_signal_handler_push,
-			rrr_signal_handler_remove
-	};
-
-	signal_handler = signal_functions.push_handler(signal_interrupt, NULL);
+	signal_handler = rrr_signal_handler_push(rrr_fork_signal_handler, NULL);
+	signal_handler = rrr_signal_handler_push(signal_interrupt, NULL);
 
 	rrr_signal_default_signal_actions_register();
 
@@ -218,7 +216,7 @@ int main (int argc, const char **argv) {
 
 	struct instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
-		if (rrr_instance_metadata_collection_new (&instances, &signal_functions) != 0) {
+		if (rrr_instance_metadata_collection_new (&instances) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -262,7 +260,7 @@ int main (int argc, const char **argv) {
 	action.sa_flags = 0;
 
 	// During preload stage, signals are temporarily deactivated.
-	instances->signal_functions->set_active(RRR_SIGNALS_ACTIVE);
+	rrr_signal_handler_set_active(RRR_SIGNALS_ACTIVE);
 
 	sigaction (SIGTERM, &action, NULL);
 	sigaction (SIGINT, &action, NULL);
@@ -270,7 +268,8 @@ int main (int argc, const char **argv) {
 
 	TEST_BEGIN(config_file) {
 		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
-			rrr_posix_usleep(10000);
+			rrr_posix_usleep(100000);
+			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
 
 		ret = main_get_test_result(instances);
@@ -280,8 +279,6 @@ int main (int argc, const char **argv) {
 #endif
 
 		main_threads_stop(collection, instances);
-
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);
@@ -303,14 +300,16 @@ int main (int argc, const char **argv) {
 	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
 
-	out_cleanup_fork_handler:
+//	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
-		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler);
+		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
 
 	out_cleanup_signal:
 		rrr_signal_handler_remove(signal_handler);
 		rrr_exit_cleanup_methods_run_and_free();
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
 		return ret;
 }

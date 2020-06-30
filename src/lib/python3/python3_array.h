@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_ARRAY_H
 #define RRR_PYTHON3_ARRAY_H
 
-#include <Python.h>
-#include <structmember.h>
+#include "python3_headers.h"
+
 #include <stdio.h>
 
 struct rrr_python3_array_data;

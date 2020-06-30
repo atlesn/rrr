@@ -274,8 +274,8 @@ int rrr_mqtt_client_connect (
 	*session = NULL;
 
 	struct rrr_mqtt_data *mqtt_data = &data->mqtt_data;
-
 	struct rrr_mqtt_p_connect *connect = NULL;
+	struct rrr_mqtt_session_properties session_properties_tmp = rrr_mqtt_common_default_session_properties;
 
 	// Sleep a bit in case server runs in the same RRR program
 	rrr_posix_usleep(500000); // 500ms
@@ -294,7 +294,8 @@ int rrr_mqtt_client_connect (
 
 	if (*transport_handle == 0) {
 		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
-		return 1;
+		ret = 1;
+		goto out_nolock;
 	}
 
 	const struct rrr_mqtt_p_protocol_version *protocol_version = rrr_mqtt_p_get_protocol_version(version);
@@ -305,14 +306,13 @@ int rrr_mqtt_client_connect (
 	connect = (struct rrr_mqtt_p_connect *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_CONNECT, protocol_version);
 	RRR_MQTT_P_LOCK(connect);
 
-	// TODO : Support zero-byte client identifier
-	connect->client_identifier = malloc(strlen(data->mqtt_data.client_name) + 1);
-	if (connect->client_identifier == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_connect\n");
-		ret = 1;
-		goto out;
+	if (data->mqtt_data.client_name != NULL && *(data->mqtt_data.client_name) != '\0') {
+		if ((connect->client_identifier = strdup(data->mqtt_data.client_name)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_connect\n");
+			ret = 1;
+			goto out;
+		}
 	}
-	strcpy(connect->client_identifier, data->mqtt_data.client_name);
 
 	connect->keep_alive = keep_alive;
 	connect->connect_flags |= (clean_start != 0)<<1;
@@ -355,12 +355,12 @@ int rrr_mqtt_client_connect (
 		if (session_expiry == NULL) {
 			// Default for version 3.1 is that sessions do not expire,
 			// only use clean session to control this
-			data->session_properties.session_expiry = 0xffffffff;
+			session_properties_tmp.numbers.session_expiry = 0xffffffff;
 
 			if (rrr_mqtt_property_collection_add_uint32 (
 					&connect->properties,
 					RRR_MQTT_PROPERTY_SESSION_EXPIRY_INTERVAL,
-					data->session_properties.session_expiry
+					session_properties_tmp.numbers.session_expiry
 			) != 0) {
 				RRR_MSG_0("Could not set session expiry for CONNECT packet in rrr_mqtt_client_connect\n");
 				ret = 1;
@@ -370,35 +370,37 @@ int rrr_mqtt_client_connect (
 	}
 
 	data->protocol_version = protocol_version;
-	data->session_properties = rrr_mqtt_common_default_session_properties;
 
-	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
-			&connect->properties,
-			RRR_MQTT_P_5_REASON_OK,
-			&data->session_properties
-	};
+	{
+		struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
+				&connect->properties,
+				RRR_MQTT_P_5_REASON_OK,
+				&session_properties_tmp,
+				{0}
+		};
 
-	// After adding properties to the CONNECT packet, read out all values and
-	// update the session properties. This will fail if non-CONNECT properties
-	// has been used.
-	uint8_t reason_v5 = 0;
-	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
-			&connect->properties,
-			connect,
-			rrr_mqtt_common_handler_connect_handle_properties_callback,
-			goto out
-	);
+		// After adding properties to the CONNECT packet, read out all values and
+		// update the session properties. This will fail if non-CONNECT properties
+		// has been used.
+		uint8_t reason_v5 = 0;
+		RRR_MQTT_COMMON_HANDLE_PROPERTIES (
+				&connect->properties,
+				connect,
+				rrr_mqtt_common_handler_connect_handle_properties_callback,
+				goto out
+		);
+	}
 
 	int session_present = 0;
 	if ((ret = mqtt_data->sessions->methods->get_session (
 			session,
 			mqtt_data->sessions,
-			connect->client_identifier,
+			data->mqtt_data.client_name, // May be NULL
 			&session_present,
-			0 // Create if non-existent client ID
+			0 // no_creation: 0 means to create on non-existent client ID
 	)) != RRR_MQTT_SESSION_OK || *session == NULL) {
 		ret = RRR_MQTT_INTERNAL_ERROR;
-		RRR_MSG_0("Internal error getting session in rrr_mqtt_client_connect\n");
+		RRR_MSG_0("Internal error while getting session in rrr_mqtt_client_connect\n");
 		goto out;
 	}
 
@@ -411,7 +413,7 @@ int rrr_mqtt_client_connect (
 	if ((ret = mqtt_data->sessions->methods->init_session (
 			mqtt_data->sessions,
 			session,
-			callback_data.session_properties,
+			&session_properties_tmp,
 			mqtt_data->retry_interval_usec,
 			RRR_MQTT_CLIENT_MAX_IN_FLIGHT,
 			RRR_MQTT_CLIENT_COMPLETE_PUBLISH_GRACE_TIME,
@@ -480,6 +482,7 @@ int rrr_mqtt_client_connect (
 		RRR_MQTT_P_UNLOCK(connect);
 	out_nolock:
 		RRR_MQTT_P_DECREF_IF_NOT_NULL(connect);
+		rrr_mqtt_session_properties_clear(&session_properties_tmp);
 		return ret;
 }
 
@@ -510,8 +513,11 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	int ret = RRR_MQTT_OK;
 
+	struct rrr_mqtt_session_properties session_properties_tmp = {0};
 	struct rrr_mqtt_client_data *client_data = (struct rrr_mqtt_client_data *) mqtt_data;
 	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
+
+	(void)(client_data);
 
 	if (connack->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		RRR_MSG_0("CONNACK: Connection failed with reason '%s'\n", connack->reason->description);
@@ -533,7 +539,8 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	struct rrr_mqtt_common_parse_properties_data_connect callback_data = {
 			&connack->properties,
 			RRR_MQTT_P_5_REASON_OK,
-			&client_data->session_properties
+			&session_properties_tmp,
+			{0}
 	};
 
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
@@ -544,22 +551,24 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 
 	RRR_MQTT_COMMON_CALL_SESSION_CHECK_RETURN_TO_CONN_ERRORS_GENERAL(
-			mqtt_data->sessions->methods->reset_properties(
+			mqtt_data->sessions->methods->update_properties(
 					mqtt_data->sessions,
 					&connection->session,
-					&client_data->session_properties
+					&session_properties_tmp,
+					&callback_data.found_number_properties,
+					RRR_MQTT_P_IS_V5(connack)
 			),
 			goto out,
 			" while resetting properties in __rrr_mqtt_client_handle_connack"
 	);
 
-	if (client_data->session_properties.server_keep_alive > 0) {
-		if (client_data->session_properties.server_keep_alive > 0xffff) {
+	if (session_properties_tmp.numbers.server_keep_alive > 0) {
+		if (session_properties_tmp.numbers.server_keep_alive > 0xffff) {
 			RRR_BUG("Session server keep alive was >0xffff in __rrr_mqtt_client_handle_connack\n");
 		}
 		if ((ret = rrr_mqtt_conn_set_data_from_connect_and_connack (
 				connection,
-				client_data->session_properties.server_keep_alive,
+				session_properties_tmp.numbers.server_keep_alive,
 				connack->protocol_version,
 				connection->session,
 				NULL // Don't reset username upon CONNACK, will cause corruption
@@ -569,9 +578,10 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		}
 	}
 
-	RRR_DBG_1("Received CONNACK with keep-alive %u, now connected\n", client_data->session_properties.server_keep_alive);
+	RRR_DBG_1("Received CONNACK with keep-alive %u, now connected\n", session_properties_tmp.numbers.server_keep_alive);
 
 	out:
+		rrr_mqtt_session_properties_clear(&session_properties_tmp);
 		return ret;
 }
 
@@ -702,7 +712,6 @@ static int __rrr_mqtt_client_acl_handler (
 
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client) {
 	rrr_mqtt_common_data_destroy(&client->mqtt_data);
-	rrr_mqtt_session_properties_destroy(&client->session_properties);
 	free(client);
 }
 
@@ -763,6 +772,68 @@ int rrr_mqtt_client_new (
 		free(result);
 	out:
 		return ret;
+}
+
+int rrr_mqtt_client_late_set_client_identifier (
+		struct rrr_mqtt_client_data *client,
+		const char *client_identifier
+) {
+	struct rrr_mqtt_data *data = &client->mqtt_data;
+	if (data->client_name != NULL && strcmp(data->client_name, client_identifier) != 0) {
+		RRR_DBG_1("MQTT client late change of client identifier from %s to %s\n",
+				data->client_name, client_identifier);
+	}
+	else {
+		RRR_DBG_1("MQTT client late set of client identifier to %s\n",
+				client_identifier);
+	}
+
+	RRR_FREE_IF_NOT_NULL(data->client_name);
+
+	if ((data->client_name = strdup(client_identifier)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_mqtt_client_set_client_identifier\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+struct get_session_properties_callback_data {
+	struct rrr_mqtt_session_properties *target;
+	struct rrr_mqtt_client_data *client;
+};
+
+int __rrr_mqtt_client_get_session_properties_callback (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct get_session_properties_callback_data *callback_data = arg;
+
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	return callback_data->client->mqtt_data.sessions->methods->get_properties (
+			callback_data->target,
+			callback_data->client->mqtt_data.sessions,
+			&connection->session
+	);
+}
+
+int rrr_mqtt_client_get_session_properties (
+		struct rrr_mqtt_session_properties *target,
+		struct rrr_mqtt_client_data *client,
+		int transport_handle
+) {
+	struct get_session_properties_callback_data callback_data = {
+			target,
+			client
+	};
+
+	return rrr_mqtt_transport_with_iterator_ctx_do_custom (
+			client->mqtt_data.transport,
+			transport_handle,
+			__rrr_mqtt_client_get_session_properties_callback,
+			&callback_data
+	);
 }
 
 struct exceeded_keep_alive_callback_data {

@@ -8,7 +8,7 @@ endif
 
 if RRR_WITH_PYTHON3
 libadd_python3 = librrrpython3.la
-librrrpython3_la_SOURCES = python3/python3.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
+librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
 							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
 librrrpython3_la_LDFLAGS = ${PYTHON3_LDFLAGS}
@@ -16,7 +16,7 @@ endif
 
 if RRR_WITH_PERL5
 libadd_perl5 = librrrperl5.la
-librrrperl5_la_SOURCES = perl5.c perl5_xsi.c perl5_types.c
+librrrperl5_la_SOURCES = perl5/perl5.c perl5/perl5_xsi.c perl5/perl5_types.c
 librrrperl5_la_CFLAGS = ${PERL5_CFLAGS} 
 librrrperl5_la_LDFLAGS = ${PERL5_LDFLAGS}
 perl5_extra_ld = ${PERL5_LDFLAGS}
@@ -26,6 +26,13 @@ mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 	mqtt/mqtt_session.c mqtt/mqtt_session_ram.c mqtt/mqtt_assemble.c mqtt/mqtt_payload_buf.c mqtt/mqtt_subscription.c  \
 	mqtt/mqtt_topic.c mqtt/mqtt_id_pool.c mqtt/mqtt_client.c mqtt/mqtt_acl.c mqtt/mqtt_transport.c
 
+stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
+
+socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
+			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
+
+http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c
+
 lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
@@ -33,15 +40,13 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					ip.c ip_accept_data.c ip_buffer_entry.c \
 					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c \
-					rrr_socket_msg.c rrr_socket_read.c rrr_socket_common.c rrr_socket_client.c rrr_socket_msg_checksum.c \
+					cmodule_main.c cmodule_helper.c cmodule_channel.c cmodule_ext.c cmodule_defer_queue.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
-					instances.c instance_collection.c poll_helper.c modules.c rrr_socket.c udpstream.c udpstream_asd.c \
+					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
-					stats_engine.c stats_instance.c stats_message.c stats_tree.c \
-					http_session.c http_util.c http_fields.c http_part.c \
 					net_transport.c net_transport_plain.c \
 					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${mysql} ${encryption} ${mqtt}
+					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http}
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = rrr_readdir.c

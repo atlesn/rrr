@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/message_broker.h"
-#include "../lib/stats_instance.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
 #include "../lib/log.h"
 
@@ -234,11 +234,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		}
 
 		uint64_t time_now = rrr_time_get_64();
-
-		if (generated_count_to_stats > 500) {
-			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
-			generated_count_to_stats = 0;
-		}
 
 		if (time_now - time_start > 1000000) {
 			RRR_DBG_1("dummy instance %s messages per second %i total %llu of %llu\n",

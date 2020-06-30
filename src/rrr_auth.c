@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../build_timestamp.h"
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
-#include "lib/rrr_socket.h"
+#include "lib/socket/rrr_socket.h"
 #include "lib/linked_list.h"
 #include "lib/log.h"
 #include "lib/gnu.h"
@@ -121,14 +121,17 @@ static int __rrr_auth_parse_config (struct rrr_auth_data *data, struct cmd_data 
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	// By default return failure
 	int ret = EXIT_FAILURE;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	char *input_password = NULL;
 
@@ -192,5 +195,7 @@ int main (int argc, const char *argv[]) {
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
 		rrr_strerror_cleanup();
+		rrr_log_cleanup();
+	out_final:
 		return ret;
 }

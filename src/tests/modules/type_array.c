@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifdef RRR_WITH_MYSQL
 #include "../../lib/rrr_mysql.h"
 #endif
-#include "../../lib/rrr_socket.h"
+#include "../../lib/socket/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
@@ -131,8 +131,10 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	if (!MSG_IS_ARRAY(message)) {
-		TEST_MSG("Message received in test_type_array_callback was not an array\n");
-		ret = 1;
+		// Ignore non-array messages
+		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
+		result->result = 3;
+		ret = 0;
 		goto out;
 	}
 
@@ -350,18 +352,23 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 int test_do_poll_loop (
 		struct test_result *test_result,
-		struct rrr_instance_thread_data *thread_data,
+		struct rrr_instance_thread_data *self_thread_data,
+		struct rrr_instance_thread_data *output_thread_data,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
 ) {
 	int ret = 0;
 
 	// Poll from output
 	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
+		if (rrr_thread_check_encourage_stop(self_thread_data->thread) == 1) {
+			break;
+		}
+
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
-				INSTANCE_D_NAME(thread_data), i);
+				INSTANCE_D_NAME(output_thread_data), i);
 
 		ret = rrr_message_broker_poll_delete (
-				INSTANCE_D_BROKER_ARGS(thread_data),
+				INSTANCE_D_BROKER_ARGS(output_thread_data),
 				callback,
 				test_result,
 				150
@@ -373,8 +380,16 @@ int test_do_poll_loop (
 			goto out;
 		}
 
-		TEST_MSG("Result of polling from %s: %i\n",
-				INSTANCE_D_NAME(thread_data), test_result->result);
+		if (test_result->result == 3) {
+			// Ignore this message
+			ret = 0;
+			RRR_FREE_IF_NOT_NULL(test_result->message);
+			test_result->result = 1;
+		}
+		else {
+			TEST_MSG("Result of polling from %s: %i\n",
+					INSTANCE_D_NAME(output_thread_data), test_result->result);
+		}
 	}
 
 	out:
@@ -500,6 +515,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 int test_averager (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name_averager
 ) {
 
@@ -521,7 +537,7 @@ int test_averager (
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
-	ret |= test_do_poll_loop(&test_result, output->thread_data, test_averager_callback);
+	ret |= test_do_poll_loop(&test_result, self_thread_data, output->thread_data, test_averager_callback);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 
 	out:
@@ -531,6 +547,7 @@ int test_averager (
 
 int test_array (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name
 ) {
 	int ret = 0;
@@ -546,10 +563,11 @@ int test_array (
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
-	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_type_array_callback);
+	ret |= test_do_poll_loop(&test_result_1, self_thread_data, output_1->thread_data, test_type_array_callback);
 	if (ret != 0) {
 		goto out;
 	}
+
 	TEST_MSG("Result of test_type_array, should be 2: %i\n", test_result_1.result);
 
 	// Error if result is not two from both polls
@@ -562,6 +580,7 @@ int test_array (
 
 int test_anything (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name
 ) {
 	int ret = 0;
@@ -577,7 +596,7 @@ int test_anything (
 
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
-	ret |= test_do_poll_loop(&test_result_1, output_1->thread_data, test_anything_callback);
+	ret |= test_do_poll_loop(&test_result_1, self_thread_data, output_1->thread_data, test_anything_callback);
 	if (ret != 0) {
 		goto out;
 	}
@@ -717,6 +736,7 @@ void test_type_array_mysql_data_cleanup(void *arg) {
 
 int test_type_array_mysql (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *tag_buffer_name
 ) {
 	int ret = 0;
@@ -763,7 +783,7 @@ int test_type_array_mysql (
 	}
 
 	TEST_MSG("Polling MySQL\n");
-	ret |= test_do_poll_loop(&test_result, tag_buffer->thread_data, test_type_array_mysql_and_network_callback);
+	ret |= test_do_poll_loop(&test_result, self_thread_data, tag_buffer->thread_data, test_type_array_mysql_and_network_callback);
 	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
 
 	ret = test_result.result;

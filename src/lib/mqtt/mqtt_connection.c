@@ -215,10 +215,7 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 
 	rrr_mqtt_parse_session_destroy(&connection->parse_session);
 
-	if (connection->client_id != NULL) {
-		free(connection->client_id);
-	}
-
+	RRR_FREE_IF_NOT_NULL(connection->client_id);
 	RRR_FREE_IF_NOT_NULL(connection->username);
 
 	free(connection);
@@ -321,7 +318,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 			connection->close_wait_start = time_now;
 			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if neeeded)\n",
 					connection,
-					(connection->client_id != NULL ? connection->client_id : ""),
+					(connection->client_id != NULL ? connection->client_id : "(empty)"),
 					connection->disconnect_reason_v5_
 			);
 			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {

@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "udpstream.h"
-#include "rrr_socket.h"
-#include "rrr_socket_read.h"
+#include "socket/rrr_socket.h"
+#include "socket/rrr_socket_read.h"
 #include "linked_list.h"
 #include "vl_time.h"
 #include "crc32.h"

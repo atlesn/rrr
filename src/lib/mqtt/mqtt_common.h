@@ -213,6 +213,7 @@ struct rrr_mqtt_common_parse_properties_data {
 struct rrr_mqtt_common_parse_properties_data_connect {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
 	struct rrr_mqtt_session_properties *session_properties;
+	struct rrr_mqtt_session_properties_numbers found_number_properties;
 };
 
 struct rrr_mqtt_common_parse_properties_data_publish {

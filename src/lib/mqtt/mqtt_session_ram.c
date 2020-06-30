@@ -71,7 +71,7 @@ struct rrr_mqtt_session_ram {
 
 	// These fields must be protected by the session lock
 	pthread_mutex_t lock;
-	char *client_id;
+	char *client_id_;
 	uint64_t last_seen;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
@@ -318,13 +318,13 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 		goto out_destroy_from_remote_queue;
 	}
 
-	result->client_id = malloc(strlen(client_id) + 1);
-	if (result->client_id == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked B\n");
-		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
-		goto out_destroy_publish_grace_queue;
+	if (client_id != NULL && *client_id != '\0') {
+		if ((result->client_id_ = strdup(client_id)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_collection_ram_create_session_unlocked B\n");
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out_destroy_publish_grace_queue;
+		}
 	}
-	strcpy (result->client_id, client_id);
 
 	if ((ret = rrr_mqtt_subscription_collection_new(&result->subscriptions)) != 0) {
 		RRR_MSG_0("Could not create subscription collection in __rrr_mqtt_session_collection_ram_create_session_unlocked\n");
@@ -360,7 +360,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 	out_destroy_subscriptions:
 		rrr_mqtt_subscription_collection_destroy(result->subscriptions);
 	out_free_client_id:
-		free(result->client_id);
+		RRR_FREE_IF_NOT_NULL(result->client_id_);
 	out_destroy_publish_grace_queue:
 		rrr_fifo_buffer_clear(&result->from_remote_queue.buffer);
 	out_destroy_from_remote_queue:
@@ -370,7 +370,7 @@ static int __rrr_mqtt_session_collection_ram_create_and_add_session_unlocked (
 
 	out_free_result:
 		if (result != NULL) {
-			RRR_FREE_IF_NOT_NULL(result->client_id);
+			RRR_FREE_IF_NOT_NULL(result->client_id_);
 			RRR_FREE_IF_NOT_NULL(result);
 		}
 
@@ -410,10 +410,10 @@ static int __rrr_mqtt_session_ram_decref_unlocked (
 	rrr_fifo_buffer_clear_with_callback(&session->from_remote_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 	rrr_fifo_buffer_clear_with_callback(&session->publish_grace_queue.buffer, __rrr_mqtt_session_ram_packet_id_release_callback, NULL);
 
-	RRR_FREE_IF_NOT_NULL(session->client_id);
+	RRR_FREE_IF_NOT_NULL(session->client_id_);
 
 	rrr_mqtt_subscription_collection_destroy(session->subscriptions);
-	rrr_mqtt_session_properties_destroy(&session->session_properties);
+	rrr_mqtt_session_properties_clear(&session->session_properties);
 	rrr_mqtt_id_pool_destroy(&session->id_pool);
 
 	pthread_mutex_destroy(&session->lock);
@@ -461,7 +461,12 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
 		SESSION_RAM_LOCK(node);
-		if (strcmp(node->client_id, client_id) == 0) {
+		if (client_id == NULL) {
+			if (node->client_id_ == NULL || *(node->client_id_) == '\0') {
+				result = node;
+			}
+		}
+		else if (strcmp(node->client_id_, client_id) == 0) {
 			if (result != NULL) {
 				RRR_BUG("Found two equal client ids in __rrr_mqtt_session_collection_ram_find_session_unlocked\n");
 			}
@@ -469,7 +474,6 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 		}
 		SESSION_RAM_UNLOCK(node);
 	RRR_LL_ITERATE_END();
-
 
 	return result;
 }
@@ -589,10 +593,10 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	struct receive_forwarded_publish_data *callback_data = arg;
 	struct rrr_mqtt_session_ram *session = callback_data->session;
 
-	if (session->session_properties.receive_maximum != 0 &&
-		publish->received_size > session->session_properties.receive_maximum) {
+	if (session->session_properties.numbers.receive_maximum != 0 &&
+		publish->received_size > session->session_properties.numbers.receive_maximum) {
 		RRR_DBG_1("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
-				publish->received_size, session->session_properties.receive_maximum);
+				publish->received_size, session->session_properties.numbers.receive_maximum);
 		return RRR_MQTT_SESSION_OK;
 	}
 
@@ -840,7 +844,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		SESSION_RAM_LOCK(node);
 
 		time_diff = time_now - node->last_seen;
-		session_expiry = node->session_properties.session_expiry;
+		session_expiry = node->session_properties.numbers.session_expiry;
 		__rrr_mqtt_session_ram_heartbeat_unlocked(node);
 
 		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
@@ -857,7 +861,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 		) {
 			SESSION_RAM_LOCK(node);
 			RRR_DBG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
-					node->client_id);
+					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
 			SESSION_RAM_UNLOCK(node);
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
@@ -1048,6 +1052,7 @@ static int __rrr_mqtt_session_ram_init (
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK(ram_session);
 
+	// The clone function clears the target first
 	ret = rrr_mqtt_session_properties_clone(&ram_session->session_properties, session_properties);
 	if (ret != 0) {
 		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_ram_init\n");
@@ -1065,15 +1070,13 @@ static int __rrr_mqtt_session_ram_init (
 		__rrr_mqtt_session_ram_clean_unlocked(ram_session);
 	}
 
-
 	ram_session->delivery_method = (local_delivery != 0
 			? __rrr_mqtt_session_ram_delivery_local
 			: __rrr_mqtt_session_ram_delivery_forward
 	);
 
-
 	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 "\n",
-			ram_session->session_properties.session_expiry);
+			ram_session->session_properties.numbers.session_expiry);
 
 	out_unlock:
 	SESSION_RAM_UNLOCK(ram_session);
@@ -1098,18 +1101,101 @@ static int __rrr_mqtt_session_ram_clean (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_reset_properties (
+static int __rrr_mqtt_session_ram_update_client_identifier (
+		struct rrr_mqtt_session_ram *session,
+		uint8_t is_v5
+) {
+	int ret = 0;
+
+	char *assigned_identifier_tmp = NULL;
+
+	if (session->session_properties.assigned_client_identifier != NULL) {
+		// Only V5 CONNACK has properties
+
+		if (rrr_mqtt_property_get_blob_as_str (
+				&assigned_identifier_tmp,
+				session->session_properties.assigned_client_identifier
+		) != 0) {
+			RRR_MSG_0("Could not allocate memory in __rrr_mqtt_session_ram_update_client_identifier\n");
+			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
+			goto out;
+		}
+
+		if (session->client_id_ != NULL && *(session->client_id_) != '\0') {
+			RRR_MSG_1("Warning: Received an assigned client ID in CONNACK as a response to a CONNECT with set client identifier, server should not do this.\n");
+			if (strcmp(assigned_identifier_tmp, session->client_id_) != 0) {
+				RRR_MSG_0("Server responded with assigned client identifier '%s' while '%s' was used in CONNECT, closing connection\n",
+						assigned_identifier_tmp, session->client_id_);
+				ret = RRR_MQTT_SESSION_ERROR;
+				goto out;
+			}
+		}
+
+		RRR_DBG_1("MQTT client session %p: Server assigned client identifier '%s' in V5 CONNACK\n",
+				session, assigned_identifier_tmp);
+
+		RRR_FREE_IF_NOT_NULL(session->client_id_);
+		session->client_id_ = assigned_identifier_tmp;
+		assigned_identifier_tmp = NULL;
+	}
+	else {
+		if (is_v5) {
+			if (session->client_id_ == NULL || *(session->client_id_) == '\0') {
+				RRR_MSG_0("Received V5 CONNACK without assigned client identifier property in response to CONNECT with empty client identifier, this is a protocol error.\n");
+				ret = RRR_MQTT_SESSION_ERROR;
+				goto out;
+			}
+		}
+		else {
+			RRR_DBG_1("MQTT client session %p: Server assigned a client ID but we don't know what it is when using V3. Use V5 to make the server reveal the ID used.\n", session);
+		}
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(assigned_identifier_tmp);
+	return ret;
+}
+
+static int __rrr_mqtt_session_ram_update_properties (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
-		const struct rrr_mqtt_session_properties *session_properties
+		const struct rrr_mqtt_session_properties *session_properties,
+		const struct rrr_mqtt_session_properties_numbers *numbers_to_update,
+		uint8_t is_v5
 ) {
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK(ram_session);
 
-	rrr_mqtt_session_properties_destroy(&ram_session->session_properties);
-	ret = rrr_mqtt_session_properties_clone(&ram_session->session_properties, session_properties);
+	ret = rrr_mqtt_session_properties_update(&ram_session->session_properties, session_properties, numbers_to_update);
+	if (ret != 0) {
+		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_reset_properties\n");
+		goto out_unlock;
+	}
+
+	ret = __rrr_mqtt_session_ram_update_client_identifier(ram_session, is_v5);
+
+	out_unlock:
+	SESSION_RAM_UNLOCK(ram_session);
+	SESSION_RAM_DECREF();
+
+	return ret;
+}
+
+// Get session properties. Target is cleaned up before used.
+static int __rrr_mqtt_session_ram_get_properties (
+		struct rrr_mqtt_session_properties *target,
+		struct rrr_mqtt_session_collection *collection,
+		struct rrr_mqtt_session **session_to_find
+) {
+	int ret = RRR_MQTT_SESSION_OK;
+
+	SESSION_RAM_INCREF_OR_RETURN();
+	SESSION_RAM_LOCK(ram_session);
+
+	// The clone function clears the target first
+	ret = rrr_mqtt_session_properties_clone(target, &ram_session->session_properties);
 	if (ret != 0) {
 		RRR_MSG_0("Could not clone properties in __rrr_mqtt_session_reset_properties\n");
 		goto out_unlock;
@@ -2275,7 +2361,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			counters->maintain_ack_complete_counter > 0 ||
 			counters->maintain_ack_missing_counter > 0
 	) {
-		RRR_DBG_3("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+		RRR_DBG_4("Queue to remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->to_remote_queue.buffer,
 				counters->maintain_deleted_counter,
 				counters->maintain_ack_complete_counter,
@@ -2310,7 +2396,7 @@ static int __rrr_mqtt_session_ram_iterate_send_queue (
 			counters->maintain_ack_complete_counter > 0 ||
 			counters->maintain_ack_missing_counter > 0
 	) {
-		RRR_DBG_3("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
+		RRR_DBG_4("Queue from remote %p delete %i ACK complete %i ACK missing %i buffer size is %i\n",
 				&ram_session->from_remote_queue.buffer,
 				counters->maintain_deleted_counter,
 				counters->maintain_ack_complete_counter,
@@ -2346,7 +2432,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	SESSION_RAM_LOCK(ram_session);
 
 	RRR_DBG_2("Session notify disconnect expiry interval: %" PRIu32 " clean session: %i reason: %u\n",
-			ram_session->session_properties.session_expiry,
+			ram_session->session_properties.numbers.session_expiry,
 			ram_session->clean_session,
 			reason_v5
 	);
@@ -2360,7 +2446,7 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 		RRR_DBG_2("Destroying session which had clean session set upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
-	else if (ram_session->session_properties.session_expiry == 0) {
+	else if (ram_session->session_properties.numbers.session_expiry == 0) {
 		RRR_DBG_2("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
@@ -2550,7 +2636,8 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_session,
 		__rrr_mqtt_session_ram_init,
 		__rrr_mqtt_session_ram_clean,
-		__rrr_mqtt_session_ram_reset_properties,
+		__rrr_mqtt_session_ram_update_properties,
+		__rrr_mqtt_session_ram_get_properties,
 		__rrr_mqtt_session_ram_heartbeat,
 		__rrr_mqtt_session_ram_iterate_send_queue,
 		__rrr_mqtt_session_ram_notify_disconnect,

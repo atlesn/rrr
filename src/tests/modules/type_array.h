@@ -23,23 +23,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_message;
 struct instance_metadata_collection;
+struct rrr_instance_thread_data;
 
 int test_averager (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name_averager
 );
 
 int test_array (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name
 );
 
 int test_anything (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *output_name
 );
 
 int test_type_array_mysql (
 		struct instance_metadata_collection *instances,
+		struct rrr_instance_thread_data *self_thread_data,
 		const char *tag_buffer_name
 );

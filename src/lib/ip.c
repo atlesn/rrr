@@ -48,15 +48,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "messages.h"
 #include "array.h"
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "vl_time.h"
 #include "crc32.h"
-#include "rrr_socket_common.h"
-#include "rrr_socket_msg.h"
-#include "rrr_socket_read.h"
+#include "socket/rrr_socket_common.h"
+#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_socket_read.h"
 #include "rrr_strerror.h"
 #include "read_constants.h"
-#include "rrr_socket_constants.h"
+#include "socket/rrr_socket_constants.h"
 
 // TODO : This graylist-stuff is not ip-specific
 

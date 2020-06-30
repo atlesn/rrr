@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "passwd.h"
 #include "base64.h"
-#include "rrr_socket.h"
+#include "socket/rrr_socket.h"
 #include "rrr_strerror.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512

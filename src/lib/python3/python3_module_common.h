@@ -22,10 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_MODULE_COMMON_H
 #define RRR_PYTHON3_MODULE_COMMON_H
 
-#include <Python.h>
-#include <structmember.h>
+#include "python3_headers.h"
 
-#include "../rrr_socket_msg_head.h"
+#include "../socket/rrr_socket_msg_head.h"
 #include "../../global.h"
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"

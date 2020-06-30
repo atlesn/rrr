@@ -30,39 +30,35 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
-// Keep these above unistd.h and Python.h
+// Keep these above unistd.h
 #include "python3_common.h"
 #include "python3_module.h"
 #include "python3_module_common.h"
 #include "python3_socket.h"
 #include "python3_vl_message.h"
-#include <unistd.h>
-#include <Python.h>
 
-#include "../read.h"
+#include <unistd.h>
+
 #include "../log.h"
-#include "../rrr_socket.h"
+#include "../socket/rrr_socket.h"
 #include "../messages.h"
 #include "../message_addr.h"
 #include "../settings.h"
 #include "../read.h"
-#include "../mmap_channel.h"
+#include "../cmodule_ext.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
-	struct rrr_mmap_channel *channel;
+	struct rrr_cmodule_worker *worker;
 	uint64_t time_start;
 	// Protects sending in case we have threads in the pythond program
 	pthread_mutex_t send_lock;
-	struct rrr_read_session_collection read_sessions;
 };
 
 static void __rrr_python3_socket_dealloc_internals (PyObject *self) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) self;
 
-	socket_data->channel = NULL;
-
-	rrr_read_session_collection_clear(&socket_data->read_sessions);
+	socket_data->worker = NULL;
 }
 
 static void rrr_python3_socket_f_dealloc (PyObject *self) {
@@ -90,38 +86,29 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	int ret = 0;
 
 	struct rrr_message_addr message_addr = {0};
+	const struct rrr_message *message_orig = NULL;
+	struct rrr_message *message = NULL;
 
-	struct rrr_socket_msg *message = NULL;
-	if (rrr_python3_rrr_message_check(arg)) {
-		struct rrr_message *rrr_message = rrr_python3_rrr_message_get_message (&message_addr, arg);
-
-		if (rrr_message == NULL) {
-			RRR_MSG_0("Could not get RRR message from python3 object in rrr_python3_socket_f_send\n");
-			ret = 1;
-			goto out;
-		}
-
-		RRR_DBG_3("python3 socket sending message with timestamp %" PRIu64 " from application\n",
-				rrr_message->timestamp);
-
-		message = rrr_message_safe_cast(rrr_message);
-	}
-	else {
+	if (!rrr_python3_rrr_message_check(arg)) {
 		RRR_MSG_0("Received unknown object type in python3 socket send\n");
 		ret = 1;
 		goto out;
 	}
 
-	if (MSG_TOTAL_SIZE(&message_addr) > 0 && RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr) > 0) {
-		rrr_message_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
-		if ((ret = rrr_python3_socket_send(self, (struct rrr_socket_msg *)  &message_addr)) != 0) {
-			RRR_MSG_0("Received error in python3 socket send function\n");
-			ret = 1;
-			goto out;
-		}
+	message_orig = rrr_python3_rrr_message_get_message (&message_addr, arg);
+
+	message = rrr_message_duplicate(message_orig);
+	if (message == NULL) {
+		RRR_MSG_0("Could not duplicate message in rrr_python3_socket_f_send\n");
+		ret = 1;
+		goto out;
 	}
 
-	if ((ret = rrr_python3_socket_send(self, message)) != 0) {
+
+	rrr_message_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
+
+	// socket_send always handles memory of message
+	if ((ret = rrr_python3_socket_send(self, message, &message_addr)) != 0) {
 		RRR_MSG_0("Received error in python3 socket send function\n");
 		ret = 1;
 		goto out;
@@ -195,7 +182,7 @@ PyTypeObject rrr_python3_socket_type = {
 	    .tp_finalize	= NULL
 };
 
-PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel) {
+PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 	struct rrr_python3_socket_data *new_socket = NULL;
 
 	int ret = 0;
@@ -208,8 +195,8 @@ PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel) {
 		goto out;
 	}
 
-	new_socket->channel = channel;
-	memset (&new_socket->read_sessions, '\0', sizeof(new_socket->read_sessions));
+	new_socket->worker = worker;
+
 	pthread_mutex_init(&new_socket->send_lock, 0);
 
 	new_socket->time_start = rrr_time_get_64();
@@ -222,7 +209,11 @@ PyObject *rrr_python3_socket_new (struct rrr_mmap_channel *channel) {
 	return (PyObject *) new_socket;
 }
 
-int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *message) {
+int rrr_python3_socket_send (
+		PyObject *socket,
+		struct rrr_message *message,
+		const struct rrr_message_addr *message_addr
+) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
 
@@ -236,12 +227,16 @@ int rrr_python3_socket_send (PyObject *socket, const struct rrr_socket_msg *mess
 
 	pthread_mutex_lock(&socket_data->send_lock);
 
-	if (rrr_mmap_channel_write(socket_data->channel, message, MSG_TOTAL_SIZE(message)) != 0) {
-		RRR_MSG_0("Could not write to mmap channel in python3 socket\n");
+	// Always frees message
+	if ((ret = rrr_cmodule_ext_send_message_to_parent(
+			socket_data->worker,
+			message,
+			message_addr
+	)) != 0) {
+		RRR_MSG_0("Could not send address message on memory map channel in python3.\n");
 		ret = 1;
 	}
 
 	pthread_mutex_unlock(&socket_data->send_lock);
-
 	return ret;
 }

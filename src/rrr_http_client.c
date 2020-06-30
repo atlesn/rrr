@@ -34,11 +34,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/posix.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
-#include "lib/rrr_socket.h"
-#include "lib/rrr_socket_read.h"
-#include "lib/http_session.h"
-#include "lib/http_part.h"
-#include "lib/http_util.h"
+#include "lib/socket/rrr_socket.h"
+#include "lib/socket/rrr_socket_read.h"
+#include "lib/http/http_session.h"
+#include "lib/http/http_part.h"
+#include "lib/http/http_util.h"
 #include "lib/net_transport.h"
 #include "lib/vl_time.h"
 #include "lib/ip.h"
@@ -549,13 +549,16 @@ static int __rrr_http_client_send_request (struct rrr_http_client_data *data) {
 
 int main (int argc, const char *argv[]) {
 	if (!rrr_verify_library_build_timestamp(RRR_BUILD_TIMESTAMP)) {
-		RRR_MSG_0("Library build version mismatch.\n");
+		fprintf(stderr, "Library build version mismatch.\n");
 		exit(EXIT_FAILURE);
 	}
 
-	rrr_strerror_init();
-
 	int ret = EXIT_SUCCESS;
+
+	if (rrr_log_init() != 0) {
+		goto out_final;
+	}
+	rrr_strerror_init();
 
 	struct cmd_data cmd;
 	struct rrr_http_client_data data;
@@ -595,10 +598,11 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-	rrr_set_debuglevel_on_exit();
-	__rrr_http_client_data_cleanup(&data);
-	cmd_destroy(&cmd);
-	rrr_socket_close_all();
-	rrr_strerror_cleanup();
-	return ret;
+		rrr_set_debuglevel_on_exit();
+		__rrr_http_client_data_cleanup(&data);
+		cmd_destroy(&cmd);
+		rrr_socket_close_all();
+		rrr_strerror_cleanup();
+	out_final:
+		return ret;
 }
