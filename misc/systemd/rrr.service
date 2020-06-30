@@ -1,11 +1,1 @@
-[Unit]
-Description=Read Route Record 1.4
-
-[Service]
-ExecStart=/usr/bin/rrr -s -l /etc/rrr.conf.d/
-KillSignal=SIGTERM
-User=daemon
-Group=daemon
-
-[Install]
-WantedBy=multi-user.target
+# DO NOT DELETE THIS FILE

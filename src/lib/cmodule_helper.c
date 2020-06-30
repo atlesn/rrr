@@ -496,11 +496,11 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 		rrr_thread_update_watchdog_time(thread);
 
 		int read_count_tmp = 0;
-		int config_complete = 0;
+		int config_complete_tmp = 0;
 
 		if (__rrr_cmodule_helper_read_thread_read_from_forks (
 				&read_count_tmp,
-				&config_complete,
+				&config_complete_tmp,
 				data->parent_thread_data,
 				50
 		) != 0) {
@@ -511,11 +511,12 @@ static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread
 
 //		printf ("reader tick %i - %i\n", tick, read_count_tmp);
 
-		if (config_check_complete == 1 && config_check_complete_message_printed == 0) {
+		if (config_complete_tmp == 1 && config_check_complete_message_printed == 0) {
 			RRR_DBG_1("Instance %s child config function (if any) complete, checking for unused values\n",
 					INSTANCE_D_NAME(data->parent_thread_data));
 			rrr_instance_config_check_all_settings_used(INSTANCE_D_CONFIG(data->parent_thread_data));
 			config_check_complete_message_printed = 1;
+			config_check_complete = 1;
 		}
 
 		if (read_count_tmp == 0) {
