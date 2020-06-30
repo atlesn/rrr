@@ -24,7 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <signal.h>
 
-#include "cmodule_native.h"
+#include "cmodule_defer_queue.h"
+#include "cmodule_main.h"
 
 #include "../global.h"
 #include "rrr_mmap.h"
@@ -39,68 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "common.h"
 #include "ip_buffer_entry.h"
 #include "gnu.h"
-
-#define RRR_CMODULE_MMAP_SIZE (1024*1024*2)
-#define RRR_CMODULE_MMAP_WAIT_TIME_US 10000
-// Max total read time spent in mmap read_all function
-#define RRR_CMODULE_DEFERRED_QUEUE_MAX 1000
-
-static int __rrr_cmodule_deferred_message_destroy (
-		struct rrr_cmodule_deferred_message *msg
-) {
-	RRR_FREE_IF_NOT_NULL(msg->msg);
-	RRR_FREE_IF_NOT_NULL(msg->msg_addr);
-	free(msg);
-	return 0;
-}
-
-static void __rrr_cmodule_deferred_message_extract (
-		struct rrr_message **message,
-		struct rrr_message_addr **message_addr,
-		struct rrr_cmodule_deferred_message *source
-) {
-	*message = source->msg;
-	*message_addr = source->msg_addr;
-	source->msg = NULL;
-	source->msg_addr = NULL;
-}
-
-static int __rrr_cmodule_deferred_message_new_and_push (
-		struct rrr_cmodule_deferred_message_collection *collection,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
-) {
-	int ret = 0;
-
-	struct rrr_cmodule_deferred_message *node = NULL;
-	struct rrr_message_addr *msg_addr_tmp = NULL;
-
-	if ((ret = rrr_message_addr_clone(&msg_addr_tmp, msg_addr)) != 0) {
-		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_deferred_message_push\n");
-		goto out;
-	}
-
-	if ((node = malloc(sizeof(*node))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_cmodule_deferred_message_push\n");
-		goto out;
-	}
-
-	memset(node, '\0', sizeof(*node));
-
-	node->msg = msg;
-	node->msg_addr = msg_addr_tmp;
-	msg_addr_tmp = NULL;
-
-	RRR_LL_APPEND(collection, node);
-	node = NULL;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(msg_addr_tmp);
-	if (node != NULL) {
-		__rrr_cmodule_deferred_message_destroy(node);
-	}
-	return ret;
-}
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)															\
 	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
@@ -186,14 +125,14 @@ static int __rrr_cmodule_worker_new (
 static void __rrr_cmodule_worker_clear_deferred_to_fork (
 		struct rrr_cmodule_worker *worker
 ) {
-	RRR_LL_DESTROY(&worker->deferred_to_fork, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
+	RRR_LL_DESTROY(&worker->deferred_to_fork, struct rrr_cmodule_deferred_message, rrr_cmodule_deferred_message_destroy(node));
 }
 
 // Called by child only before exiting
 static void __rrr_cmodule_worker_clear_deferred_to_parent (
 		struct rrr_cmodule_worker *worker
 ) {
-	RRR_LL_DESTROY(&worker->deferred_to_parent, struct rrr_cmodule_deferred_message, __rrr_cmodule_deferred_message_destroy(node));
+	RRR_LL_DESTROY(&worker->deferred_to_parent, struct rrr_cmodule_deferred_message, rrr_cmodule_deferred_message_destroy(node));
 }
 
 // Child MUST NOT call this when exiting
@@ -268,190 +207,20 @@ static void __rrr_cmodule_worker_kill_and_destroy (
 	__rrr_cmodule_worker_destroy(worker);
 }
 
-struct rrr_cmodule_mmap_channel_callback_data {
-	const struct rrr_message_addr *addr_msg;
-	const struct rrr_message *msg;
-};
-
-static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
-	struct rrr_cmodule_mmap_channel_callback_data *data = arg;
-
-	void *msg_pos = target;
-	void *msg_addr_pos = target + MSG_TOTAL_SIZE(data->msg);
-
-	memcpy(msg_pos, data->msg, MSG_TOTAL_SIZE(data->msg));
-	memcpy(msg_addr_pos, data->addr_msg, sizeof(*(data->addr_msg)));
-
-	return 0;
-}
-
-static int __rrr_cmodule_send_message (
-		int *sent_total,
-		int *retries,
-		struct rrr_mmap_channel *channel,
-		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
-		unsigned int wait_time_us
-) {
-	int ret = 0;
-
-	*sent_total = 0;
-	*retries = 0;
-
-	// When adjusting retry and usleep, test for throughput afterwards. These numbers
-	// have no implication in low-traffic situations.
-	int retry_max_ = 50;
-
-	// Enable conditional wait in mmap after this many retries
-	int retry_sleep_start_max_ = 40;
-
-	// Extracted from deferred queue, freed every time before it is used and at out
-	struct rrr_message_addr *message_addr_to_free = NULL;
-
-	{
-		int count_before_cleanup = RRR_LL_COUNT(deferred_queue);
-
-		while (RRR_LL_COUNT(deferred_queue) > RRR_CMODULE_DEFERRED_QUEUE_MAX) {
-			struct rrr_cmodule_deferred_message *msg = RRR_LL_SHIFT(deferred_queue);
-			__rrr_cmodule_deferred_message_destroy(msg);
-		}
-
-		int count_after_cleanup = RRR_LL_COUNT(deferred_queue);
-		if (count_after_cleanup != count_before_cleanup) {
-			RRR_MSG_0("Warning: %i messages cleared from over-filled cmodule deferred queue in %s. Messages were lost.\n", count_before_cleanup - count_after_cleanup, channel->name);
-		}
-	}
-
-	// If there are deferred messages, immediately push the new message to
-	// deferred queue and instead process the first one in the queue
-	if (RRR_LL_COUNT(deferred_queue) > 0) {
-		goto defer_message;
-	}
-
-	goto send_message;
-
-	defer_message:
-		if (__rrr_cmodule_deferred_message_new_and_push(deferred_queue, message, message_addr) != 0) {
-			RRR_MSG_0("Error while pushing deferred message in __rrr_cmodule_send_message\n");
-			ret = 1;
-			goto out;
-		}
-
-		// Ownership taken by queue
-		message = NULL;
-
-		// Not to be used anymore for now
-		message_addr = NULL;
-
-		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in __rrr_cmodule_send_message\n");
-			ret = 0;
-			goto out;
-		}
-
-	// We allow the function to be called with NULL message, in which case
-	// we just try to read from the deferred queue
-	send_message:
-		if (message == NULL) {
-			if (RRR_LL_COUNT(deferred_queue) > 0) {
-				struct rrr_cmodule_deferred_message *deferred_message = RRR_LL_SHIFT(deferred_queue);
-				RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-				__rrr_cmodule_deferred_message_extract(&message, &message_addr_to_free, deferred_message);
-				__rrr_cmodule_deferred_message_destroy(deferred_message);
-				message_addr = message_addr_to_free;
-			}
-		}
-
-		if (message == NULL) {
-			// Nothing to do if message still is NULL
-			goto out;
-		}
-
-		struct rrr_cmodule_mmap_channel_callback_data callback_data = {
-			message_addr,
-			message
-		};
-
-		while ((--retry_max_) >= 0) {
-			if ((ret = rrr_mmap_channel_write_using_callback (
-					channel,
-					MSG_TOTAL_SIZE(message) + sizeof(*message_addr),
-					(--retry_sleep_start_max_ <= 0 ? wait_time_us : 0),
-					__rrr_cmodule_mmap_channel_write_callback,
-					&callback_data
-			)) != 0) {
-				if (ret == RRR_MMAP_CHANNEL_FULL) {
-//					rrr_posix_usleep(5); // Symbolic sleep
-					(*retries)++;
-					ret = 0;
-					goto defer_message;
-				}
-				RRR_MSG_0("Could not send address message on mmap channel in __rrr_cmodule_send_message name\n");
-				ret = 1;
-				goto out;
-			}
-			else {
-				break;
-			}
-		}
-
-		(*sent_total)++;
-
-		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-		RRR_FREE_IF_NOT_NULL(message);
-
-		if (RRR_LL_COUNT(deferred_queue) > 0) {
-			goto send_message;
-		}
-
-		out:
-		RRR_FREE_IF_NOT_NULL(message_addr_to_free);
-		RRR_FREE_IF_NOT_NULL(message);
-		return ret;
-}
-
-// Will always free the message also upon errors
-int rrr_cmodule_worker_send_message_to_parent (
-		struct rrr_cmodule_worker *worker,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
-) {
-	int sent_total = 0;
-	int retries = 0;
-
-	// Will always free the message also upon errors
-	int ret = __rrr_cmodule_send_message (
-			&sent_total,
-			&retries,
-			worker->channel_to_parent,
-			&worker->deferred_to_parent,
-			message,
-			message_addr,
-			RRR_CMODULE_MMAP_WAIT_TIME_US
-	);
-
-	worker->total_msg_processed += 1;
-	worker->total_msg_mmap_to_parent += sent_total;
-	worker->to_parent_write_retry_counter += retries;
-
-	return ret;
-}
-
 struct rrr_cmodule_process_callback_data {
 	struct rrr_cmodule_worker *worker;
 	int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS);
 	void *process_callback_arg;
 };
 
-int __rrr_cmodule_worker_loop_mmap_channel_read_callback (const void *data, size_t data_size, void *arg) {
+static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_process_callback_data *callback_data = arg;
 
 	const struct rrr_message *msg = data;
 	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_mmap_channel_read_callback %i+%lu != %lu\n",
+		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
 				MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
 	}
 
@@ -519,29 +288,6 @@ static int __rrr_cmodule_worker_spawn_message (
 	return ret;
 }
 
-static int __rrr_cmodule_receive_messages (
-		struct rrr_mmap_channel *channel,
-		unsigned int empty_wait_time_us,
-		int (*callback)(const void *data, size_t data_size, void *arg),
-		void *callback_arg
-) {
-	int ret = 0;
-
-	int retry_max = 100;
-	int retry_sleep_start = 90;
-
-	do {
-		ret = rrr_mmap_channel_read_with_callback (
-				channel,
-				(--retry_sleep_start > 0 ? 0 : empty_wait_time_us),
-				callback,
-				callback_arg
-		);
-	} while (--retry_max >= 0 && ret != 0 && ret != RRR_MMAP_CHANNEL_EMPTY);
-
-	return ret;
-}
-
 static int __rrr_cmodule_worker_loop (
 		struct rrr_cmodule_worker *worker,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
@@ -586,13 +332,13 @@ static int __rrr_cmodule_worker_loop (
 		}
 
 		if (worker->config_data->do_processing) {
-			if ((ret = __rrr_cmodule_receive_messages (
+			if ((ret = rrr_cmodule_channel_receive_messages (
 					worker->channel_to_fork,
-					RRR_CMODULE_MMAP_WAIT_TIME_US,
-					__rrr_cmodule_worker_loop_mmap_channel_read_callback,
+					RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+					__rrr_cmodule_worker_loop_read_callback,
 					&read_callback_data
 			)) != 0) {
-				if (ret != RRR_MMAP_CHANNEL_EMPTY) {
+				if (ret != RRR_CMODULE_CHANNEL_EMPTY) {
 					RRR_MSG_0("Error from mmap read function in worker fork named %s\n",
 							worker->name);
 					ret = 1;
@@ -659,7 +405,7 @@ static int __rrr_cmodule_worker_send_setting_to_parent (
 			worker->channel_to_parent,
 			setting,
 			sizeof(*setting),
-			RRR_CMODULE_MMAP_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	) != 0) {
 		RRR_MSG_0("Error while writing settings to mmap channel in __rrr_cmodule_worker_send_setting_to_parent\n");
 		return 1;
@@ -696,7 +442,7 @@ int rrr_cmodule_worker_loop_start (
 			worker->channel_to_parent,
 			&control_msg,
 			sizeof(control_msg),
-			RRR_CMODULE_MMAP_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	) != 0) {
 		RRR_MSG_0("Error while writing config complete control message to mmap channel in __rrr_cmodule_worker_loop_start \n");
 		return 1;
@@ -776,7 +522,7 @@ static void __rrr_cmodule_worker_fork_log_hook (
 			worker->channel_to_parent,
 			message_log,
 			message_log->msg_size,
-			RRR_CMODULE_MMAP_WAIT_TIME_US
+			RRR_CMODULE_CHANNEL_WAIT_TIME_US
 	)) != 0) {
 		if (ret == RRR_MMAP_CHANNEL_FULL) {
 			RRR_MSG_0("mmap channel was full in __rrr_cmodule_worker_fork_log_hook for worker %s\n",
@@ -806,7 +552,7 @@ static void __rrr_cmodule_parent_exit_notify_handler (pid_t pid, void *arg) {
 	worker->pid = 0;
 }
 
-int rrr_cmodule_start_worker_fork (
+int rrr_cmodule_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
 		const char *name,
@@ -831,7 +577,7 @@ int rrr_cmodule_start_worker_fork (
 			settings,
 			cmodule->fork_handler
 	)) != 0) {
-		RRR_MSG_0("Could not create worker in rrr_cmodule_start_worker_fork\n");
+		RRR_MSG_0("Could not create worker in rrr_cmodule_worker_fork_start\n");
 		goto out_parent;
 	}
 
@@ -875,7 +621,7 @@ int rrr_cmodule_start_worker_fork (
 	// Preserve fork signal andler in case child makes any forks
 	rrr_signal_handler_remove_all_except(&was_found, &rrr_fork_signal_handler);
 	if (was_found == 0) {
-		RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_start_worker_fork, should have been added in main()\n");
+		RRR_BUG("BUG: rrr_fork_signal_handler was not registered in rrr_cmodule_worker_fork_start, should have been added in main()\n");
 	}
 
 	rrr_signal_handler_push(__rrr_cmodule_worker_signal_handler, worker);
@@ -915,7 +661,7 @@ int rrr_cmodule_start_worker_fork (
 		return ret;
 }
 
-void rrr_cmodule_stop_forks (
+void rrr_cmodule_workers_stop (
 		struct rrr_cmodule *cmodule
 ) {
 	RRR_LL_DESTROY(cmodule, struct rrr_cmodule_worker, __rrr_cmodule_worker_kill_and_destroy(node));
@@ -931,10 +677,10 @@ static void __rrr_cmodule_config_data_cleanup (
 	RRR_FREE_IF_NOT_NULL(config_data->log_prefix);
 }
 
-void rrr_cmodule_stop_forks_and_destroy (
+void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 ) {
-	rrr_cmodule_stop_forks(cmodule);
+	rrr_cmodule_workers_stop(cmodule);
 	if (cmodule->mmap != NULL) {
 		rrr_mmap_destroy(cmodule->mmap);
 		cmodule->mmap = NULL;
@@ -943,10 +689,10 @@ void rrr_cmodule_stop_forks_and_destroy (
 	free(cmodule);
 }
 
-void rrr_cmodule_stop_forks_and_destroy_void (
+void rrr_cmodule_destroy_void (
 		void *arg
 ) {
-	rrr_cmodule_stop_forks_and_destroy(arg);
+	rrr_cmodule_destroy(arg);
 }
 
 int rrr_cmodule_new (
@@ -965,7 +711,7 @@ int rrr_cmodule_new (
 
 	memset(cmodule, '\0', sizeof(*cmodule));
 
-	if (rrr_mmap_new(&cmodule->mmap, RRR_CMODULE_MMAP_SIZE, name) != 0) {
+	if (rrr_mmap_new(&cmodule->mmap, RRR_CMODULE_CHANNEL_SIZE, name) != 0) {
 		RRR_MSG_0("Could not allocate mmap in rrr_cmodule_init\n");
 		ret = 1;
 		goto out_free;
@@ -982,248 +728,12 @@ int rrr_cmodule_new (
 		return ret;
 }
 
-struct rrr_cmodule_read_from_fork_callback_data {
-		struct rrr_cmodule_worker *worker;
-		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
-		void *final_callback_arg;
-};
-
-static int __rrr_cmodule_read_from_fork_message_callback (
-		const void *data,
-		size_t data_size,
-		struct rrr_cmodule_read_from_fork_callback_data *callback_data
-) {
-	const struct rrr_message *msg = data;
-	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
-
-	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
-		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %i+%lu != %lu\n",
-				callback_data->worker->name, MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
-	}
-
-	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
-}
-
-int __rrr_cmodule_read_from_fork_log_callback (
-		const struct rrr_message_log *msg_log,
-		size_t data_size,
-		struct rrr_cmodule_read_from_fork_callback_data *callback_data
-) {
-	(void)(callback_data);
-
-	if (!RRR_MSG_LOG_SIZE_OK(msg_log) || data_size != msg_log->msg_size) {
-		RRR_BUG("BUG: Size error of message in __rrr_cmodule_read_from_fork_log_callback\n");
-	}
-
-//	printf("worker %s in log msg read - %s\n", callback_data->worker->name, RRR_MSG_LOG_MSG_POS(msg_log));
-
-	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
-	// only (includes statistics engine)
-	rrr_log_hooks_call_raw(msg_log->loglevel, msg_log->prefix_and_message, RRR_MSG_LOG_MSG_POS(msg_log));
-
-	return 0;
-}
-
-int __rrr_cmodule_read_from_fork_setting_callback (
-		const struct rrr_setting_packed *setting_packed,
-		size_t data_size,
-		struct rrr_cmodule_read_from_fork_callback_data *callback_data
-) {
-	int ret = 0;
-
-	(void)(data_size);
-
-	rrr_settings_update_used (
-			callback_data->worker->settings,
-			setting_packed->name,
-			(setting_packed->was_used != 0 ? 1 : 0),
-			rrr_settings_iterate_nolock
-	);
-
-	return ret;
-}
-
-static int __rrr_cmodule_read_from_fork_control_callback (
-		const struct rrr_socket_msg *msg,
-		size_t data_size,
-		struct rrr_cmodule_read_from_fork_callback_data *callback_data
-) {
-	struct rrr_socket_msg msg_copy = *msg;
-
-	(void)(data_size);
-
-	if (RRR_SOCKET_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
-		if (callback_data->worker->config_complete != 0) {
-			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
-		}
-		callback_data->worker->config_complete = 1;
-		RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
-	}
-
-	// CTRL type is returned by FLAGS() macro, clear it to
-	// make sure no unknown flags are set
-	RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_SOCKET_MSG_TYPE_CTRL);
-
-	if (RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy) != 0) {
-		RRR_BUG("Unknown flags %u in control message from worker fork %s\n",
-				RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
-	}
-
-	return 0;
-}
-
-static int __rrr_cmodule_read_from_fork_callback (const void *data, size_t data_size, void *arg) {
-	struct rrr_cmodule_read_from_fork_callback_data *callback_data = arg;
-
-	const struct rrr_socket_msg *msg = data;
-
-	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
-		return __rrr_cmodule_read_from_fork_message_callback(data, data_size, callback_data);
-	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		return __rrr_cmodule_read_from_fork_log_callback((const struct rrr_message_log *) msg, data_size, callback_data);
-	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(msg)) {
-		return __rrr_cmodule_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
-	}
-	else if (RRR_SOCKET_MSG_IS_CTRL(msg)) {
-		return __rrr_cmodule_read_from_fork_control_callback(msg, data_size, callback_data);
-	}
-
-	RRR_BUG("BUG: Unknown message type %u in __rrr_cmodule_read_from_fork_callback\n", msg->msg_type);
-
-	return 0;
-}
-
-int rrr_cmodule_read_from_forks (
-		int *config_complete,
-		struct rrr_cmodule *cmodule,
-		int read_max,
-		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
-) {
-	int ret = 0;
-
-	// Set to 1 first, and if any worker has config_complete set to zero, set it to zero
-	*config_complete = 1;
-
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		int read_max_tmp = read_max;
-
-		if (node->config_complete == 0) {
-			*config_complete = 0;
-		}
-
-		if (node->pid == 0) {
-			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in rrr_cmodule_read_from_forks\n",
-					node->name);
-			ret = 1;
-			goto out;
-		}
-
-		struct rrr_cmodule_read_from_fork_callback_data callback_data = {
-				node,
-				final_callback,
-				final_callback_arg
-		};
-
-		read_again:
-		if ((ret = __rrr_cmodule_receive_messages (
-				node->channel_to_parent,
-				RRR_CMODULE_MMAP_WAIT_TIME_US,
-				__rrr_cmodule_read_from_fork_callback,
-				&callback_data
-		)) != 0) {
-			if (ret == RRR_MMAP_CHANNEL_EMPTY) {
-				ret = 0;
-				break;
-			}
-			else {
-				RRR_MSG_0("Error while reading from worker fork %s\n",
-						node->name);
-				ret = 1;
-				goto out;
-			}
-		}
-		else {
-			if (--read_max_tmp > 0) {
-				goto read_again;
-			}
-		}
-	RRR_LL_ITERATE_END();
-
-	out:
-	return ret;
-}
-
-// Will always free the message also upon errors
-int rrr_cmodule_send_to_fork (
-		int *sent_total,
-		struct rrr_cmodule *cmodule,
-		pid_t worker_handle_pid,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
-) {
-	int ret = 0;
-	int pid_was_found = 0;
-
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		if (node->pid == worker_handle_pid) {
-			pid_was_found = 1;
-
-			int retries = 0;
-
-			// Will always free the message also upon errors
-			if ((ret = __rrr_cmodule_send_message (
-					sent_total,
-					&retries,
-					node->channel_to_fork,
-					&node->deferred_to_fork,
-					msg,
-					msg_addr,
-					RRR_CMODULE_MMAP_WAIT_TIME_US
-			)) != 0) {
-				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
-				ret = 1;
-				goto out;
-			}
-
-			node->to_fork_write_retry_counter += retries;
-
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END();
-
-	if (pid_was_found == 0) {
-		free(msg);
-		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n");
-		ret = 1;
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
-static void __rrr_cmodule_mmap_channel_bubblesort (struct rrr_mmap_channel *channel) {
-	int was_sorted = 0;
-	int max_rounds = 100;
-
-	do {
-		rrr_mmap_channel_bubblesort_pointers (channel, &was_sorted);
-	} while (was_sorted == 0 && --max_rounds > 0);
-
-//	if (was_sorted != 0) {
-//		printf("was sorted\n");
-//	}
-}
-
 static void __rrr_cmodule_worker_maintain (struct rrr_cmodule_worker *worker) {
 	// Speed up memory access. Sorting is usually only performed
 	// when the first few thousand messages are received, after that
 	// no sorting is needed.
-	__rrr_cmodule_mmap_channel_bubblesort(worker->channel_to_fork);
-	__rrr_cmodule_mmap_channel_bubblesort(worker->channel_to_parent);
+	rrr_cmodule_channel_bubblesort(worker->channel_to_fork);
+	rrr_cmodule_channel_bubblesort(worker->channel_to_parent);
 }
 
 // Call once in a while, like every second
@@ -1237,62 +747,26 @@ void rrr_cmodule_maintain (
 	RRR_LL_ITERATE_END();
 }
 
-void rrr_cmodule_get_mmap_channel_to_fork_stats (
+void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule_worker *worker
 ) {
-	*read_starvation_counter = 0;
-	*write_full_counter = 0;
-	*write_retry_counter = 0;
-	*deferred_queue_entries = 0;
-
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		if (node->pid == pid) {
-			rrr_mmap_channel_get_counters_and_reset (
-					read_starvation_counter,
-					write_full_counter,
-					node->channel_to_fork
-			);
-
-			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_fork);
-			*write_retry_counter = node->to_fork_write_retry_counter;
-			node->to_fork_write_retry_counter = 0;
-
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END();
+	rrr_mmap_channel_get_counters_and_reset (
+			read_starvation_counter,
+			write_full_counter,
+			worker->channel_to_fork
+	);
 }
 
-void rrr_cmodule_get_mmap_channel_to_parent_stats (
+void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule_worker *worker
 ) {
-	*read_starvation_counter = 0;
-	*write_full_counter = 0;
-	*write_retry_counter = 0;
-	*deferred_queue_entries = 0;
-
-	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
-		if (node->pid == pid) {
-			rrr_mmap_channel_get_counters_and_reset (
-					read_starvation_counter,
-					write_full_counter,
-					node->channel_to_parent
-			);
-
-			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_parent);
-			*write_retry_counter = node->to_parent_write_retry_counter;
-			node->to_parent_write_retry_counter = 0;
-
-			RRR_LL_ITERATE_LAST();
-		}
-	RRR_LL_ITERATE_END();
+	rrr_mmap_channel_get_counters_and_reset (
+			read_starvation_counter,
+			write_full_counter,
+			worker->channel_to_parent
+	);
 }

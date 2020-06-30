@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 
 #include "log.h"
-#include "cmodule_native.h"
+#include "cmodule_main.h"
 #include "common.h"
 #include "modules.h"
 #include "threads.h"
@@ -416,7 +416,7 @@ unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_co
 
 static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data) {
 	if (data->cmodule != NULL) {
-		rrr_cmodule_stop_forks_and_destroy(data->cmodule);
+		rrr_cmodule_destroy(data->cmodule);
 	}
 	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
 	free(data);
@@ -479,10 +479,10 @@ static void __rrr_instance_thread_cmodule_destroy_intermediate (void *arg) {
 	// If thread is ghost, cleanup is done in ghost cleanup function. Only
 	// stop forks.
 	if (rrr_thread_is_ghost(thread)) {
-		rrr_cmodule_stop_forks(thread_data->cmodule);
+		rrr_cmodule_workers_stop(thread_data->cmodule);
 	}
 	else {
-		rrr_cmodule_stop_forks_and_destroy(thread_data->cmodule);
+		rrr_cmodule_destroy(thread_data->cmodule);
 		thread_data->cmodule = NULL;
 	}
 }

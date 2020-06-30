@@ -36,9 +36,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/log.h"
-#include "../lib/cmodule_common.h"
-#include "../lib/cmodule_native.h"
+#include "../lib/cmodule_helper.h"
+#include "../lib/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
+
+#define RRR_CMODULE_NATIVE_CTX
+#include "../cmodules/cmodule.h"
 
 const char *cmodule_library_paths[] = {
 		"/usr/lib/rrr/cmodules",
@@ -56,12 +59,8 @@ const char *cmodule_library_paths[] = {
 struct cmodule_data {
 	struct rrr_instance_thread_data *thread_data;
 
-	int do_drop_on_error;
-
 	char *cmodule_name;
 	char *cleanup_function;
-
-	rrr_setting_uint source_interval_ms;
 };
 
 static void cmodule_data_cleanup(void *arg) {
@@ -90,9 +89,6 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 		ret = 1;
 		goto out;
 	}
-
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("cmodule_drop_on_error", do_drop_on_error, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("cmodule_source_interval_ms", source_interval_ms, 1000);
 
 	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
 
@@ -145,7 +141,6 @@ static int __cmodule_load (
 	for (int i = 0; *(cmodule_library_paths[i]) != '\0'; i++) {
 		char path[256 + strlen(data->cmodule_name) + 1];
 		sprintf(path, "%s/%s.so", cmodule_library_paths[i], data->cmodule_name);
-
 
 //		printf("check path %s\n", path);
 		struct stat buf;
@@ -328,7 +323,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll;
 
 	if (cmodule_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -338,7 +333,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(cmodule_data_cleanup, data);
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -347,7 +341,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	if (cmodule_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
-	if (rrr_cmodule_common_parse_config(thread_data, "cmodule", "function") != 0) {
+	if (rrr_cmodule_helper_parse_config(thread_data, "cmodule", "function") != 0) {
 		goto out_message;
 	}
 
@@ -355,7 +349,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	pid_t fork_pid;
 
-	if (rrr_cmodule_common_start_worker_fork (
+	if (rrr_cmodule_helper_start_worker_fork (
 			&fork_pid,
 			thread_data,
 			cmodule_init_wrapper_callback,
@@ -374,7 +368,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	RRR_DBG_1 ("cmodule instance %s started thread %p fork handler ptr %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
-	rrr_cmodule_common_loop (
+	rrr_cmodule_helper_loop (
 			thread_data,
 			stats,
 			&poll,
@@ -385,7 +379,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	RRR_DBG_1 ("cmodule instance %s stopping thread %p fork handler ptr %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
-	//pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;

@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include "messages.h"
 #	include "message_addr.h"
 #	include "instance_config.h"
-#	include "cmodule_shared.h"
+#	include "cmodule_ext.h"
 #	include "../global.h"
 #endif
 
@@ -58,7 +58,7 @@ static inline int rrr_send_and_free (
 		struct rrr_message *message,
 		const struct rrr_message_addr *message_addr
 ) {
-	return rrr_cmodule_worker_send_message_to_parent (
+	return rrr_cmodule_ext_send_message_to_parent (
 			ctx->worker, message, message_addr
 	);
 }

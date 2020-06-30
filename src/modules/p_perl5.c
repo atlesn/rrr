@@ -49,10 +49,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/message_broker.h"
-#include "../lib/cmodule_common.h"
 #include "../lib/log.h"
 #include "../lib/gnu.h"
-#include "../lib/cmodule_native.h"
+#include "../lib/cmodule_helper.h"
+#include "../lib/cmodule_main.h"
+#include "../lib/cmodule_ext.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -89,7 +90,7 @@ static int xsub_send_message (
 	int ret = 0;
 
 	// Always frees message
-	if ((ret = rrr_cmodule_worker_send_message_to_parent(
+	if ((ret = rrr_cmodule_ext_send_message_to_parent(
 			child_data->worker,
 			message,
 			message_addr
@@ -386,7 +387,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
 		goto out_message;
 	}
-	if (rrr_cmodule_common_parse_config(thread_data, "perl5", "sub") != 0) {
+	if (rrr_cmodule_helper_parse_config(thread_data, "perl5", "sub") != 0) {
 		goto out_message;
 	}
 
@@ -394,7 +395,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	pid_t fork_pid = 0;
 
-	if (rrr_cmodule_common_start_worker_fork (
+	if (rrr_cmodule_helper_start_worker_fork (
 			&fork_pid,
 			thread_data,
 			perl5_init_wrapper_callback,
@@ -412,7 +413,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("perl5 instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
-	rrr_cmodule_common_loop (
+	rrr_cmodule_helper_loop (
 			thread_data,
 			stats,
 			&poll_ip,

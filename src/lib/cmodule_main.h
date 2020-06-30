@@ -29,18 +29,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "linked_list.h"
-#include "socket/rrr_socket_constants.h"
-#include "cmodule_shared.h"
+#include "cmodule_channel.h"
+#include "cmodule_defines.h"
 #include "settings.h"
+#include "cmodule_defer_queue.h"
 
-#define RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE \
-	RRR_SOCKET_MSG_CTRL_F_USR_A
-
-struct rrr_mmap;
-struct rrr_mmap_channel;
 struct rrr_instance_config;
 struct rrr_instance_settings;
 struct rrr_fork_handler;
+struct rrr_mmap_channel;
 
 struct rrr_cmodule_config_data {
 	rrr_setting_uint spawn_interval_us;
@@ -55,16 +52,6 @@ struct rrr_cmodule_config_data {
 	char *process_function;
 	char *source_function;
 	char *log_prefix;
-};
-
-struct rrr_cmodule_deferred_message {
-	RRR_LL_NODE(struct rrr_cmodule_deferred_message);
-	struct rrr_message *msg;
-	struct rrr_message_addr *msg_addr;
-};
-
-struct rrr_cmodule_deferred_message_collection {
-	RRR_LL_HEAD(struct rrr_cmodule_deferred_message);
 };
 
 struct rrr_cmodule_worker {
@@ -115,30 +102,6 @@ struct rrr_cmodule {
 	void *callback_data_tmp;
 };
 
-#define RRR_CMODULE_FINAL_CALLBACK_ARGS					\
-		const struct rrr_message *msg,					\
-		const struct rrr_message_addr *msg_addr,		\
-		void *arg
-
-#define RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS			\
-		struct rrr_cmodule_worker *worker,				\
-		void *private_arg
-
-#define RRR_CMODULE_PROCESS_CALLBACK_ARGS					\
-		struct rrr_cmodule_worker *worker,					\
-		const struct rrr_message *message,					\
-		const struct rrr_message_addr *message_addr,		\
-		int is_spawn_ctx,									\
-		void *private_arg
-
-#define RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS 									\
-		struct rrr_cmodule_worker *worker,										\
-		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),	\
-		void *configuration_callback_arg,										\
-		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),			\
-		void *process_callback_arg,												\
-		void *private_arg
-
 int rrr_cmodule_worker_loop_start (
 		struct rrr_cmodule_worker *worker,
 		int (*configuration_callback)(RRR_CMODULE_CONFIGURATION_CALLBACK_ARGS),
@@ -149,7 +112,7 @@ int rrr_cmodule_worker_loop_start (
 int rrr_cmodule_worker_loop_init_wrapper_default (
 		RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS
 );
-int rrr_cmodule_start_worker_fork (
+int rrr_cmodule_worker_fork_start (
 		pid_t *handle_pid,
 		struct rrr_cmodule *cmodule,
 		const char *name,
@@ -161,13 +124,13 @@ int rrr_cmodule_start_worker_fork (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 );
-void rrr_cmodule_stop_forks (
+void rrr_cmodule_workers_stop (
 		struct rrr_cmodule *cmodule
 );
-void rrr_cmodule_stop_forks_and_destroy (
+void rrr_cmodule_destroy (
 		struct rrr_cmodule *cmodule
 );
-void rrr_cmodule_stop_forks_and_destroy_void (
+void rrr_cmodule_destroy_void (
 		void *arg
 );
 int rrr_cmodule_new (
@@ -175,40 +138,19 @@ int rrr_cmodule_new (
 		const char *name,
 		struct rrr_fork_handler *fork_handler
 );
-int rrr_cmodule_read_from_forks (
-		int *config_complete,
-		struct rrr_cmodule *cmodule,
-		int read_max,
-		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
-		void *final_callback_arg
-);
-// Will always free the message also upon errors
-int rrr_cmodule_send_to_fork (
-		int *sent_total,
-		struct rrr_cmodule *cmodule,
-		pid_t worker_handle_pid,
-		struct rrr_message *msg,
-		const struct rrr_message_addr *msg_addr
-);
 // Call once in a while, like every second
 void rrr_cmodule_maintain (
 		struct rrr_cmodule *cmodule
 );
-void rrr_cmodule_get_mmap_channel_to_fork_stats (
+void rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule_worker *worker
 );
-void rrr_cmodule_get_mmap_channel_to_parent_stats (
+void rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
 		unsigned long long int *read_starvation_counter,
 		unsigned long long int *write_full_counter,
-		unsigned long long int *write_retry_counter,
-		unsigned long long int *deferred_queue_entries,
-		struct rrr_cmodule *cmodule,
-		pid_t pid
+		struct rrr_cmodule_worker *worker
 );
 
 #endif /* RRR_CMODULE_NATIVE_H */

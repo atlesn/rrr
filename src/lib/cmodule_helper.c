@@ -22,13 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdlib.h>
 
-#include "cmodule_common.h"
+#include "cmodule_helper.h"
+#include "cmodule_main.h"
+#include "cmodule_channel.h"
 
-#include "cmodule_native.h"
 #include "buffer.h"
 #include "modules.h"
 #include "ip_buffer_entry.h"
 #include "message_addr.h"
+#include "message_log.h"
 #include "messages.h"
 #include "instances.h"
 #include "instance_config.h"
@@ -36,14 +38,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_broker.h"
 #include "poll_helper.h"
 #include "threads.h"
+#include "log.h"
 #include "../global.h"
 
-#define RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS 1000
-#define RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS 100
-#define RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT 250
+struct rrr_cmodule_helper_read_callback_data {
+	struct rrr_instance_thread_data *thread_data;
+	const struct rrr_message *message;
+	int count;
+	struct rrr_message_addr addr_message;
+};
 
-static int __rrr_cmodule_common_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
-	struct rrr_cmodule_common_read_callback_data *callback_data = arg;
+static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -77,8 +83,8 @@ static int __rrr_cmodule_common_read_final_callback (struct rrr_ip_buffer_entry 
 	return ret;
 }
 
-static int __rrr_cmodule_common_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) {
-	struct rrr_cmodule_common_read_callback_data *callback_data = arg;
+static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) {
+	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
@@ -88,7 +94,7 @@ static int __rrr_cmodule_common_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			NULL,
 			0,
 			0,
-			__rrr_cmodule_common_read_final_callback,
+			__rrr_cmodule_helper_read_final_callback,
 			callback_data
 	) != 0) {
 		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
@@ -99,7 +105,56 @@ static int __rrr_cmodule_common_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	return 0;
 }
 
-static int __rrr_cmodule_common_send_entry_to_fork_nolock (
+// Will always free the message also upon errors
+static int __rrr_cmodule_helper_send_message_to_fork (
+		int *sent_total,
+		struct rrr_cmodule *cmodule,
+		pid_t worker_handle_pid,
+		struct rrr_message *msg,
+		const struct rrr_message_addr *msg_addr
+) {
+	int ret = 0;
+	int pid_was_found = 0;
+
+	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->pid == worker_handle_pid) {
+			pid_was_found = 1;
+
+			int retries = 0;
+
+			// Will always free the message also upon errors
+			if ((ret = rrr_cmodule_channel_send_message (
+					sent_total,
+					&retries,
+					node->channel_to_fork,
+					&node->deferred_to_fork,
+					msg,
+					msg_addr,
+					RRR_CMODULE_CHANNEL_WAIT_TIME_US
+			)) != 0) {
+				RRR_MSG_0("Error while sending message in rrr_cmodule_send_to_fork\n");
+				ret = 1;
+				goto out;
+			}
+
+			node->to_fork_write_retry_counter += retries;
+
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+
+	if (pid_was_found == 0) {
+		free(msg);
+		RRR_MSG_0("Pid %i to rrr_cmodule_send_to_fork not found\n");
+		ret = 1;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 		int *count,
 		struct rrr_instance_thread_data *thread_data,
 		pid_t fork_pid,
@@ -123,7 +178,7 @@ static int __rrr_cmodule_common_send_entry_to_fork_nolock (
 		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, entry->addr_len);
 	}
 
-	if ((ret = rrr_cmodule_send_to_fork (
+	if ((ret = __rrr_cmodule_helper_send_message_to_fork (
 			count,
 			thread_data->cmodule,
 			fork_pid,
@@ -140,20 +195,20 @@ static int __rrr_cmodule_common_send_entry_to_fork_nolock (
 		return ret;
 }
 
-struct rrr_cmodule_common_poll_callback_data {
+struct rrr_cmodule_helper_poll_callback_data {
 	pid_t pid;
 	int count;
 	int max_count;
 };
 
-static int __rrr_cmodule_common_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
-	struct rrr_cmodule_common_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
+	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
 	int input_count = 0;
 
-	ret = __rrr_cmodule_common_send_entry_to_fork_nolock (
+	ret = __rrr_cmodule_helper_send_entry_to_fork_nolock (
 			&input_count,
 			thread_data,
 			callback_data->pid,
@@ -176,7 +231,7 @@ static int __rrr_cmodule_common_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	return ret;
 }
 
-static int __rrr_cmodule_common_poll_delete (
+static int __rrr_cmodule_helper_poll_delete (
 		int *count,
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_poll_collection *poll,
@@ -188,7 +243,7 @@ static int __rrr_cmodule_common_poll_delete (
 
 	*count = 0;
 
-	struct rrr_cmodule_common_poll_callback_data callback_data = {
+	struct rrr_cmodule_helper_poll_callback_data callback_data = {
 		target_pid,
 		0,
 		max_count
@@ -196,7 +251,7 @@ static int __rrr_cmodule_common_poll_delete (
 
 	thread_data->cmodule->callback_data_tmp = &callback_data;
 
-	if (rrr_poll_do_poll_delete (thread_data, poll, __rrr_cmodule_common_poll_callback, wait_ms) != 0) {
+	if (rrr_poll_do_poll_delete (thread_data, poll, __rrr_cmodule_helper_poll_callback, wait_ms) != 0) {
 		RRR_MSG_ERR("Error while polling in instance %s\n",
 			INSTANCE_D_NAME(thread_data));
 		ret = 1;
@@ -208,7 +263,7 @@ static int __rrr_cmodule_common_poll_delete (
 	return ret;
 }
 
-struct rrr_cmodule_common_reader_thread_data {
+struct rrr_cmodule_helper_reader_thread_data {
 	struct rrr_thread_collection *thread_collection;
 
 	struct rrr_instance_thread_data *parent_thread_data;
@@ -217,7 +272,182 @@ struct rrr_cmodule_common_reader_thread_data {
 	int thread_became_ghost;
 };
 
-static int __rrr_cmodule_commmon_read_thread_read_from_forks (
+
+struct rrr_cmodule_read_from_fork_callback_data {
+		struct rrr_cmodule_worker *worker;
+		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS);
+		void *final_callback_arg;
+};
+
+static int __rrr_cmodule_helper_read_from_fork_message_callback (
+		const void *data,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	const struct rrr_message *msg = data;
+	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+
+	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
+		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_read_from_fork_message_callback for worker %s: %i+%lu != %lu\n",
+				callback_data->worker->name, MSG_TOTAL_SIZE(msg), sizeof(*msg_addr), data_size);
+	}
+
+	return callback_data->final_callback(msg, msg_addr, callback_data->final_callback_arg);
+}
+
+int __rrr_cmodule_helper_from_fork_log_callback (
+		const struct rrr_message_log *msg_log,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	(void)(callback_data);
+
+	if (!RRR_MSG_LOG_SIZE_OK(msg_log) || data_size != msg_log->msg_size) {
+		RRR_BUG("BUG: Size error of message in __rrr_cmodule_read_from_fork_log_callback\n");
+	}
+
+//	printf("worker %s in log msg read - %s\n", callback_data->worker->name, RRR_MSG_LOG_MSG_POS(msg_log));
+
+	// Messages are already printed to STDOUT or STDERR in the fork. Send to hooks
+	// only (includes statistics engine)
+	rrr_log_hooks_call_raw(msg_log->loglevel, msg_log->prefix_and_message, RRR_MSG_LOG_MSG_POS(msg_log));
+
+	return 0;
+}
+
+int __rrr_cmodule_helper_read_from_fork_setting_callback (
+		const struct rrr_setting_packed *setting_packed,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	int ret = 0;
+
+	(void)(data_size);
+
+	rrr_settings_update_used (
+			callback_data->worker->settings,
+			setting_packed->name,
+			(setting_packed->was_used != 0 ? 1 : 0),
+			rrr_settings_iterate_nolock
+	);
+
+	return ret;
+}
+
+static int __rrr_cmodule_helper_read_from_fork_control_callback (
+		const struct rrr_socket_msg *msg,
+		size_t data_size,
+		struct rrr_cmodule_read_from_fork_callback_data *callback_data
+) {
+	struct rrr_socket_msg msg_copy = *msg;
+
+	(void)(data_size);
+
+	if (RRR_SOCKET_MSG_CTRL_F_HAS(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE)) {
+		if (callback_data->worker->config_complete != 0) {
+			RRR_BUG("Config complete was not 0 in __rrr_cmodule_read_from_fork_control_callback\n");
+		}
+		callback_data->worker->config_complete = 1;
+		RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE);
+	}
+
+	// CTRL type is returned by FLAGS() macro, clear it to
+	// make sure no unknown flags are set
+	RRR_SOCKET_MSG_CTRL_F_CLEAR(&msg_copy, RRR_SOCKET_MSG_TYPE_CTRL);
+
+	if (RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy) != 0) {
+		RRR_BUG("Unknown flags %u in control message from worker fork %s\n",
+				RRR_SOCKET_MSG_CTRL_FLAGS(&msg_copy), callback_data->worker->name);
+	}
+
+	return 0;
+}
+
+static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_t data_size, void *arg) {
+	struct rrr_cmodule_read_from_fork_callback_data *callback_data = arg;
+
+	const struct rrr_socket_msg *msg = data;
+
+	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(msg)) {
+		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
+	}
+	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(msg)) {
+		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_message_log *) msg, data_size, callback_data);
+	}
+	else if (RRR_SOCKET_MSG_IS_SETTING(msg)) {
+		return __rrr_cmodule_helper_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);
+	}
+	else if (RRR_SOCKET_MSG_IS_CTRL(msg)) {
+		return __rrr_cmodule_helper_read_from_fork_control_callback(msg, data_size, callback_data);
+	}
+
+	RRR_BUG("BUG: Unknown message type %u in __rrr_cmodule_read_from_fork_callback\n", msg->msg_type);
+
+	return 0;
+}
+
+static int __rrr_cmodule_helper_read_from_forks (
+		int *config_complete,
+		struct rrr_cmodule *cmodule,
+		int read_max,
+		int (*final_callback)(RRR_CMODULE_FINAL_CALLBACK_ARGS),
+		void *final_callback_arg
+) {
+	int ret = 0;
+
+	// Set to 1 first, and if any worker has config_complete set to zero, set it to zero
+	*config_complete = 1;
+
+	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		int read_max_tmp = read_max;
+
+		if (node->config_complete == 0) {
+			*config_complete = 0;
+		}
+
+		if (node->pid == 0) {
+			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in rrr_cmodule_read_from_forks\n",
+					node->name);
+			ret = 1;
+			goto out;
+		}
+
+		struct rrr_cmodule_read_from_fork_callback_data callback_data = {
+				node,
+				final_callback,
+				final_callback_arg
+		};
+
+		read_again:
+		if ((ret = rrr_cmodule_channel_receive_messages (
+				node->channel_to_parent,
+				RRR_CMODULE_CHANNEL_WAIT_TIME_US,
+				__rrr_cmodule_helper_read_from_fork_callback,
+				&callback_data
+		)) != 0) {
+			if (ret == RRR_CMODULE_CHANNEL_EMPTY) {
+				ret = 0;
+				break;
+			}
+			else {
+				RRR_MSG_0("Error while reading from worker fork %s\n",
+						node->name);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			if (--read_max_tmp > 0) {
+				goto read_again;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
+static int __rrr_cmodule_helper_read_thread_read_from_forks (
 		int *read_count,
 		int *config_complete,
 		struct rrr_instance_thread_data *parent_thread_data,
@@ -227,15 +457,15 @@ static int __rrr_cmodule_commmon_read_thread_read_from_forks (
 
 	*read_count = 0;
 
-	struct rrr_cmodule_common_read_callback_data callback_data = {0};
+	struct rrr_cmodule_helper_read_callback_data callback_data = {0};
 
 	callback_data.thread_data = parent_thread_data;
 
-	ret = rrr_cmodule_read_from_forks (
+	ret = __rrr_cmodule_helper_read_from_forks (
 			config_complete,
 			INSTANCE_D_CMODULE(parent_thread_data),
 			read_max,
-			__rrr_cmodule_common_read_callback,
+			__rrr_cmodule_helper_read_callback,
 			&callback_data
 	);
 
@@ -244,8 +474,8 @@ static int __rrr_cmodule_commmon_read_thread_read_from_forks (
 	return ret;
 }
 
-static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread) {
-	struct rrr_cmodule_common_reader_thread_data *data = thread->private_data;
+static void *__rrr_cmodule_helper_reader_thread_entry (struct rrr_thread *thread) {
+	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread, RRR_THREAD_SIGNAL_START);
@@ -268,7 +498,7 @@ static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread
 		int read_count_tmp = 0;
 		int config_complete = 0;
 
-		if (__rrr_cmodule_commmon_read_thread_read_from_forks (
+		if (__rrr_cmodule_helper_read_thread_read_from_forks (
 				&read_count_tmp,
 				&config_complete,
 				data->parent_thread_data,
@@ -336,8 +566,8 @@ static void *__rrr_cmodule_common_reader_thread_entry (struct rrr_thread *thread
 }
 
 // Memory in input variables must be available throughout the lifetime of the thread
-static int __rrr_cmodule_common_threads_start (
-		struct rrr_cmodule_common_reader_thread_data *data,
+static int __rrr_cmodule_helper_threads_start (
+		struct rrr_cmodule_helper_reader_thread_data *data,
 		struct rrr_instance_thread_data *parent_thread_data,
 		struct rrr_stats_instance *stats
 ) {
@@ -352,13 +582,13 @@ static int __rrr_cmodule_common_threads_start (
 	memset(data, '\0', sizeof(*data));
 
 	if (strlen(INSTANCE_D_NAME(parent_thread_data)) > sizeof(name) - strlen(name_template)) {
-		RRR_BUG("thread name was too long in  __rrr_cmodule_common_threads_start\n");
+		RRR_BUG("thread name was too long in  __rrr_cmodule_helper_threads_start\n");
 	}
 
 	sprintf(name, name_template, INSTANCE_D_NAME(parent_thread_data));
 
 	if ((ret = rrr_thread_new_collection(&thread_collection)) != 0) {
-		RRR_MSG_0("Could not create thread collection in __rrr_cmodule_common_threads_start in instance %s\n",
+		RRR_MSG_0("Could not create thread collection in __rrr_cmodule_helper_threads_start in instance %s\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		goto out;
 	}
@@ -370,7 +600,7 @@ static int __rrr_cmodule_common_threads_start (
 
 	if ((thread = rrr_thread_preload_and_register (
 			thread_collection,
-			__rrr_cmodule_common_reader_thread_entry,
+			__rrr_cmodule_helper_reader_thread_entry,
 			NULL,
 			NULL,
 			NULL,
@@ -386,13 +616,13 @@ static int __rrr_cmodule_common_threads_start (
 	}
 
 	if ((ret = rrr_thread_start(thread)) != 0) {
-		RRR_MSG_0("Could not start read thread in __rrr_cmodule_common_threads_start in instance %s, can't continue.\n",
+		RRR_MSG_0("Could not start read thread in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		goto out_destroy_collection;
 	}
 
 	if ((ret = rrr_thread_start_all_after_initialized(data->thread_collection, NULL, NULL)) != 0) {
-		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_common_threads_start in instance %s, can't continue.\n",
+		RRR_MSG_0("Error while waiting for read thread to initialize in __rrr_cmodule_helper_threads_start in instance %s, can't continue.\n",
 				INSTANCE_D_NAME(parent_thread_data));
 		ret = 1;
 		goto out_destroy_collection;
@@ -409,18 +639,18 @@ static int __rrr_cmodule_common_threads_start (
 }
 
 // We shouldn't really end up here, but...
-static void __rrr_cmodule_common_ghost_handler (struct rrr_thread *thread) {
-	struct rrr_cmodule_common_reader_thread_data *data = thread->private_data;
+static void __rrr_cmodule_helper_ghost_handler (struct rrr_thread *thread) {
+	struct rrr_cmodule_helper_reader_thread_data *data = thread->private_data;
 
 	// See threads_cleanup()-function
 	data->thread_became_ghost = 1;
 }
 
-static void __rrr_cmodule_common_threads_cleanup(void *arg) {
-	struct rrr_cmodule_common_reader_thread_data *data = arg;
+static void __rrr_cmodule_helper_threads_cleanup(void *arg) {
+	struct rrr_cmodule_helper_reader_thread_data *data = arg;
 
 	if (data->thread_collection != NULL) {
-		rrr_thread_stop_and_join_all(data->thread_collection, __rrr_cmodule_common_ghost_handler);
+		rrr_thread_stop_and_join_all(data->thread_collection, __rrr_cmodule_helper_ghost_handler);
 		rrr_thread_destroy_collection(data->thread_collection, 0);
 		data->thread_collection = NULL;
 	}
@@ -434,7 +664,7 @@ static void __rrr_cmodule_common_threads_cleanup(void *arg) {
 	}
 }
 
-void rrr_cmodule_common_loop (
+void rrr_cmodule_helper_loop (
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_stats_instance *stats,
 		struct rrr_poll_collection *poll,
@@ -450,14 +680,14 @@ void rrr_cmodule_common_loop (
 		no_polling = 1;
 	}
 
-	struct rrr_cmodule_common_reader_thread_data reader_thread_data = {0};
+	struct rrr_cmodule_helper_reader_thread_data reader_thread_data = {0};
 
 	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	// Reader threads MUST be stopped before we clean up other data
-	pthread_cleanup_push(__rrr_cmodule_common_threads_cleanup, &reader_thread_data);
+	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
 
-	if (__rrr_cmodule_common_threads_start(&reader_thread_data, thread_data, stats) != 0) {
+	if (__rrr_cmodule_helper_threads_start(&reader_thread_data, thread_data, stats) != 0) {
 		goto cleanup;
 	}
 
@@ -478,7 +708,7 @@ void rrr_cmodule_common_loop (
 //		printf ("From fork: %i\n", from_child_count_tmp);
 
 		if (no_polling == 0) {
-			if (__rrr_cmodule_common_poll_delete (
+			if (__rrr_cmodule_helper_poll_delete (
 					&from_senders_count_tmp,
 					thread_data,
 					poll,
@@ -528,7 +758,7 @@ void rrr_cmodule_common_loop (
 				unsigned long long int write_retry_counter = 0;
 				unsigned long long int deferred_queue_entries = 0;
 
-				rrr_cmodule_get_mmap_channel_to_fork_stats (
+				rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
@@ -548,7 +778,7 @@ void rrr_cmodule_common_loop (
 				unsigned long long int write_retry_counter = 0;
 				unsigned long long int deferred_queue_entries = 0;
 
-				rrr_cmodule_get_mmap_channel_to_parent_stats (
+				rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
 						&read_starvation_counter,
 						&write_full_counter,
 						&write_retry_counter,
@@ -591,7 +821,7 @@ void rrr_cmodule_common_loop (
 	pthread_cleanup_pop(1);
 }
 
-int rrr_cmodule_common_parse_config (
+int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_thread_data *thread_data,
 		const char *config_prefix,
 		const char *config_suffix
@@ -673,7 +903,7 @@ int rrr_cmodule_common_parse_config (
 	return ret;
 }
 
-int rrr_cmodule_common_start_worker_fork (
+int rrr_cmodule_helper_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_instance_thread_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -683,7 +913,7 @@ int rrr_cmodule_common_start_worker_fork (
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
 ) {
-	return rrr_cmodule_start_worker_fork (
+	return rrr_cmodule_worker_fork_start (
 			handle_pid,
 			INSTANCE_D_CMODULE(thread_data),
 			INSTANCE_D_NAME(thread_data),
@@ -694,5 +924,81 @@ int rrr_cmodule_common_start_worker_fork (
 			configuration_callback_arg,
 			process_callback,
 			process_callback_arg
+	);
+}
+
+static void __rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid,
+		int is_to_parent
+) {
+	*read_starvation_counter = 0;
+	*write_full_counter = 0;
+	*write_retry_counter = 0;
+	*deferred_queue_entries = 0;
+
+	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
+		if (node->pid == pid) {
+			if (is_to_parent) {
+				rrr_cmodule_worker_get_mmap_channel_to_parent_stats (
+						read_starvation_counter,
+						write_full_counter,
+						node
+				);
+			}
+			else {
+				rrr_cmodule_worker_get_mmap_channel_to_fork_stats (
+						read_starvation_counter,
+						write_full_counter,
+						node
+				);
+			}
+			*deferred_queue_entries = RRR_LL_COUNT(&node->deferred_to_fork);
+			*write_retry_counter = node->to_fork_write_retry_counter;
+			node->to_fork_write_retry_counter = 0;
+			RRR_LL_ITERATE_LAST();
+		}
+	RRR_LL_ITERATE_END();
+}
+
+void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+) {
+	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			read_starvation_counter,
+			write_full_counter,
+			write_retry_counter,
+			deferred_queue_entries,
+			cmodule,
+			pid,
+			0 // <-- 0 = is not to parent, but to fork
+	);
+}
+
+void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+) {
+	__rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+			read_starvation_counter,
+			write_full_counter,
+			write_retry_counter,
+			deferred_queue_entries,
+			cmodule,
+			pid,
+			1 // <-- 1 = is to parent
 	);
 }

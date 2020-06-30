@@ -19,39 +19,33 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_COMMON_H
-#define RRR_CMODULE_COMMON_H
+#ifndef RRR_CMODULE_HELPER_H
+#define RRR_CMODULE_HELPER_H
 
 #include <sys/types.h>
 
 #include "message_addr.h"
-#include "cmodule_native.h"
+#include "cmodule_defines.h"
 
 struct rrr_instance_thread_data;
 struct rrr_stats_instance;
 struct rrr_poll_collection;
 struct rrr_message;
 struct rrr_message_addr;
+struct rrr_cmodule;
 
-struct rrr_cmodule_common_read_callback_data {
-	struct rrr_instance_thread_data *thread_data;
-	const struct rrr_message *message;
-	int count;
-	struct rrr_message_addr addr_message;
-};
-
-void rrr_cmodule_common_loop (
+void rrr_cmodule_helper_loop (
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_stats_instance *stats,
 		struct rrr_poll_collection *poll,
 		pid_t fork_pid
 );
-int rrr_cmodule_common_parse_config (
+int rrr_cmodule_helper_parse_config (
 		struct rrr_instance_thread_data *thread_data,
 		const char *config_prefix,
 		const char *config_suffix
 );
-int rrr_cmodule_common_start_worker_fork (
+int rrr_cmodule_helper_start_worker_fork (
 		pid_t *handle_pid,
 		struct rrr_instance_thread_data *thread_data,
 		int (*init_wrapper_callback)(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS),
@@ -60,6 +54,22 @@ int rrr_cmodule_common_start_worker_fork (
 		void *configuration_callback_arg,
 		int (*process_callback) (RRR_CMODULE_PROCESS_CALLBACK_ARGS),
 		void *process_callback_arg
+);
+void rrr_cmodule_helper_get_mmap_channel_to_fork_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
+);
+void rrr_cmodule_helper_get_mmap_channel_to_parent_stats (
+		unsigned long long int *read_starvation_counter,
+		unsigned long long int *write_full_counter,
+		unsigned long long int *write_retry_counter,
+		unsigned long long int *deferred_queue_entries,
+		struct rrr_cmodule *cmodule,
+		pid_t pid
 );
 
 #endif /* RRR_CMODULE_COMMON_H */

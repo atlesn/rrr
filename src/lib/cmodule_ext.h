@@ -19,21 +19,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_CMODULE_SHARED_H
-#define RRR_CMODULE_SHARED_H
+#ifndef RRR_CMODULE_EXT_H
+#define RRR_CMODULE_EXT_H
 
 struct rrr_cmodule_worker;
 struct rrr_message;
 struct rrr_message_addr;
 
-// Functions from cmodule_native which are accessed by user cmodules must be
-// declared here and not in cmodule_native.h
-
-// Will always free the message also upon errors
-int rrr_cmodule_worker_send_message_to_parent (
+int rrr_cmodule_ext_send_message_to_parent (
 		struct rrr_cmodule_worker *worker,
 		struct rrr_message *message,
 		const struct rrr_message_addr *message_addr
 );
 
-#endif /* RRR_CMODULE_SHARED_H */
+#endif /* RRR_CMODULE_EXT_H */

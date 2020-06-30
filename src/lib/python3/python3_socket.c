@@ -45,7 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_addr.h"
 #include "../settings.h"
 #include "../read.h"
-#include "../cmodule_native.h"
+#include "../cmodule_ext.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD
@@ -228,7 +228,7 @@ int rrr_python3_socket_send (
 	pthread_mutex_lock(&socket_data->send_lock);
 
 	// Always frees message
-	if ((ret = rrr_cmodule_worker_send_message_to_parent(
+	if ((ret = rrr_cmodule_ext_send_message_to_parent(
 			socket_data->worker,
 			message,
 			message_addr

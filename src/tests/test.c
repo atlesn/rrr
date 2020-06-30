@@ -300,7 +300,7 @@ int main (int argc, const char **argv) {
 	out_cleanup_message_broker:
 		rrr_message_broker_cleanup(&message_broker);
 
-	out_cleanup_fork_handler:
+//	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);
 		rrr_fork_handle_sigchld_and_notify_if_needed(fork_handler, 1);
 		rrr_fork_handler_destroy (fork_handler);
