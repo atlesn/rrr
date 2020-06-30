@@ -22,6 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_TIME_H
 #define RRR_TIME_H
 
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+
+#include "log.h"
+#include "rrr_strerror.h"
+
 // Allow gettimeofday on BSD
 
 #undef __XSI_VISIBLE
@@ -31,15 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define __XSI_VISIBLE 1
 
 #include <sys/time.h>
-
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-#include <errno.h>
-#include <stdlib.h>
-
-#include "log.h"
-#include "rrr_strerror.h"
 
 static inline uint64_t rrr_time_get_64(void) {
 	struct timeval tv;

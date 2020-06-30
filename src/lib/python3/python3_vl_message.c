@@ -28,7 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages.h"
 #include "../array.h"
 #include "../fixed_point.h"
-#include "../vl_time.h"
 #include "../message_addr.h"
 #include "../log.h"
 

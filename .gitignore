@@ -115,3 +115,7 @@ src/lib/perl5_xsi.c
 # http://www.gnu.org/software/texinfo
 
 /texinfo.tex
+
+# FreeBSD
+*~
+.test_composite.sh

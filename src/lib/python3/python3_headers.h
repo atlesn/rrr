@@ -22,6 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_PYTHON3_HEADERS_H
 #define RRR_PYTHON3_HEADERS_H
 
+// Must be included BEFORE libc-files due to problems on BSD
+#include "../vl_time.h"
+
+// Must include these BEFORE python due to problems on BSD
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
 // Due to warnings in python (which defines this)
 #undef _POSIX_C_SOURCE
 #define PY_SSIZE_T_CLEAN
