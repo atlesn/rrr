@@ -121,3 +121,4 @@ src/lib/perl5_xsi.c
 
 # FreeBSD
 *~
+.test_composite.sh
