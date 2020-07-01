@@ -73,8 +73,8 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		goto out;
 	}
 
-	data->hostname= strdup(server);
-	if (data->hostname == NULL) {
+	data->server= strdup(server);
+	if (data->server == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
@@ -233,10 +233,12 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 
 	if (rrr_http_client_data_init(&data, RRR_HTTP_CLIENT_USER_AGENT) != 0) {
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 
@@ -245,6 +247,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if ((ret = __rrr_http_client_parse_config(&data, &cmd)) != 0) {
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 
@@ -253,13 +256,14 @@ int main (int argc, const char *argv[]) {
 	retry:
 	if (--retry_max == 0) {
 		RRR_MSG_0("Maximum number of retries reached\n");
-		ret = 1;
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	data.do_retry = 0;
 
 	if ((ret = rrr_http_client_send_request(&data, __rrr_http_client_final_callback, NULL)) != 0) {
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 

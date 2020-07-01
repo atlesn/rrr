@@ -421,6 +421,8 @@ static int __rrr_net_transport_connect (
 	struct sockaddr_storage addr;
 	socklen_t socklen = sizeof(addr);
 
+	// TODO : Distinguish between soft and hard connect errors
+
 	if (transport->methods->connect (
 			&handle,
 			(struct sockaddr *) &addr,

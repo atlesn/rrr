@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <sys/types.h>
 
+#include "http_common.h"
+
 #define RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS				\
 		struct rrr_http_client_data *data, 				\
 		int response_code,								\
@@ -37,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_http_client_data {
 	char *protocol;
-	char *hostname;
+	char *server;
 	char *endpoint;
 	char *query;
 	char *user_agent;
@@ -46,13 +48,17 @@ struct rrr_http_client_data {
 	int ssl_force;
 	int ssl_no_cert_verify;
 
-	int http_session_ret;
 	int do_retry;
 };
 
 struct rrr_http_client_receive_callback_data {
 	int response_code;
 	char *response_argument;
+
+	// Errors do not propagate through net transport framework. Return
+	// value of http callbacks is saved here.
+	int http_receive_ret;
+
 	struct rrr_http_client_data *data;
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
@@ -65,6 +71,7 @@ int rrr_http_client_data_init (
 void rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 );
+// Note that data in the struct may change if there are any redirects
 int rrr_http_client_send_request (
 		struct rrr_http_client_data *data,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),

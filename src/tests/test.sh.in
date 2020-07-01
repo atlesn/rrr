@@ -94,6 +94,7 @@ do_test_simple test_journal.conf
 do_test_ip test_ip.conf
 
 do_test_socket test_socket.conf
+do_test_socket test_http.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 
