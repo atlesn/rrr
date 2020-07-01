@@ -48,6 +48,13 @@ enum rrr_http_parse_type {
 #define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
 #define RRR_HTTP_HEADER_FIELD_NO_PAIRS		(1<<1)
 
+#define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
+		int chunk_idx,								\
+		int chunk_total,							\
+		const char *data_start,						\
+		ssize_t data_size,							\
+		void *arg
+
 struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
@@ -124,7 +131,7 @@ int rrr_http_part_update_data_ptr (
 int rrr_http_part_iterate_chunks (
 		struct rrr_http_part *part,
 		const char *data_ptr,
-		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
+		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
 int rrr_http_part_process_multipart (

@@ -31,7 +31,7 @@ stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/
 socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
 			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
 
-http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c
+http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c
 
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
 			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
