@@ -26,7 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
@@ -39,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct buffer_data {
 	struct rrr_fifo_buffer storage;
-	struct rrr_instance_thread_data *data;
+	struct rrr_instance_thread_data *thread_data;
 };
 
 int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -88,7 +87,7 @@ void data_cleanup(void *arg) {
 
 int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
-	data->data = thread_data;
+	data->thread_data = thread_data;
 	ret |= rrr_fifo_buffer_init(&data->storage);
 	if (ret != 0) {
 		data_cleanup(data);
@@ -102,11 +101,11 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	struct rrr_poll_collection poll;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initalize thread_data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	RRR_DBG_1 ("buffer thread data is %p\n", thread_data);
+	RRR_DBG_1 ("buffer thread thread_data is %p\n", thread_data);
 
 	rrr_poll_collection_init(&poll);
 	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
