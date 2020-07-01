@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 struct buffer_data {
-	struct rrr_fifo_buffer storage;
 	struct rrr_instance_thread_data *thread_data;
 };
 
@@ -82,13 +81,14 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 void data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
-	rrr_fifo_buffer_clear(&data->storage);
+	(void)(data);
 }
 
 int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
+
 	data->thread_data = thread_data;
-	ret |= rrr_fifo_buffer_init(&data->storage);
+
 	if (ret != 0) {
 		data_cleanup(data);
 	}
