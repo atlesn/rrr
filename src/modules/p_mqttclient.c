@@ -57,6 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/gnu.h"
 #include "../lib/log.h"
+#include "../lib/net_transport/net_transport_config.h"
 
 //#define RRR_BENCHMARK_ENABLE
 #include "../lib/benchmark.h"
@@ -132,13 +133,8 @@ struct mqtt_client_data {
 	uint64_t total_ticks_count;
 	char *username;
 	char *password;
-	char *tls_certificate_file;
-	char *tls_key_file;
-	char *tls_ca_file;
-	char *tls_ca_path;
-	char *transport_type;
-	int do_transport_tls;
-	int do_transport_plain;
+
+	struct rrr_net_transport_config net_transport_config;
 };
 
 static void mqttclient_data_cleanup(void *arg) {
@@ -152,15 +148,11 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->connect_error_action);
 	RRR_FREE_IF_NOT_NULL(data->username);
 	RRR_FREE_IF_NOT_NULL(data->password);
-	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
-	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
 	rrr_mqtt_property_collection_destroy(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
+	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }
 
 static int mqttclient_data_init (
@@ -425,50 +417,12 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_certificate_file", tls_certificate_file);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_key_file", tls_key_file);
-
-	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
-			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
-	) {
-		RRR_MSG_0("Only one of mqtt_certificate_file and mqtt_key_file was specified, either both or none are required in mqttclient instance %s",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_file", tls_ca_file);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_path", tls_ca_path);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_transport_type", transport_type);
-
-	if (data->transport_type != NULL) {
-		if (strcasecmp(data->transport_type, "plain") == 0) {
-			data->do_transport_plain = 1;
-		}
-		else if (strcasecmp(data->transport_type, "tls") == 0) {
-			data->do_transport_tls = 1;
-		}
-		else {
-			RRR_MSG_0("Unknown value '%s' for mqtt_transport_type in mqttclient instance %s\n",
-					data->transport_type, config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		data->do_transport_plain = 1;
-	}
-
-	// Note : It's allowed not to specify a certificate
-	if (data->tls_certificate_file != NULL && data->do_transport_tls == 0) {
-		RRR_MSG_0("TLS certificate specified in mqtt_certificate_file but mqtt_transport_type was not 'tls' for mqttclient instance %s\n",
-				config->name);
-		ret = 1;
+	if ((rrr_net_transport_config_parse(&data->net_transport_config, config, "mqtt", 0)) != 0) {
 		goto out;
 	}
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_server_port", server_port, (
-			data->do_transport_tls
+			data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
 				? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
 				: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN
 	));
@@ -1629,25 +1583,13 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		goto out_destroy_client;
 	}
 
-	if (data->do_transport_plain && rrr_mqtt_client_start_plain(data->mqtt_client_data) != 0) {
-		RRR_MSG_0("Could not start plain network transport in mqtt client instance %s\n",
-				INSTANCE_D_NAME(thread_data));
-		goto out_destroy_client;
-	}
-	else if (data->do_transport_tls && rrr_mqtt_client_start_tls (
+	if (rrr_mqtt_client_start (
 			data->mqtt_client_data,
-			data->tls_certificate_file,
-			data->tls_key_file,
-			data->tls_ca_file,
-			data->tls_ca_path
+			&data->net_transport_config
 	) != 0) {
-		RRR_MSG_0("Could not start tls network transport in mqtt client instance %s\n",
+		RRR_MSG_0("Could not start transport in mqtt client instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_destroy_client;
-	}
-
-	if ((data->do_transport_plain ^ data->do_transport_tls) != 1) {
-		RRR_BUG("BUG: No transport or both transports started in mqttclient, configuration parse bug\n");
 	}
 
 	// We have do use clean start the first time we connect as the server

@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 #include "net_transport_tls.h"
 #include "net_transport_plain.h"
+#include "net_transport_config.h"
 
 #include "../log.h"
 
@@ -264,12 +265,8 @@ void rrr_net_transport_common_cleanup (
 
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
-		enum rrr_net_transport_type transport,
-		int flags,
-		const char *certificate_file,
-		const char *private_key_file,
-		const char *ca_file,
-		const char *ca_path
+		const struct rrr_net_transport_config *config,
+		int flags
 ) {
 	int ret = 0;
 
@@ -292,12 +289,12 @@ int rrr_net_transport_new (
 
 	}
 
-	switch (transport) {
+	switch (config->transport_type) {
 		case RRR_NET_TRANSPORT_PLAIN:
 			if (flags != 0) {
 				RRR_BUG("BUG: Plain method does not support flags in rrr_net_transport_new but flags were given\n");
 			}
-			if (certificate_file != NULL || private_key_file != NULL || ca_file != NULL || ca_path != NULL) {
+			if (config->tls_certificate_file != NULL || config->tls_key_file != NULL || config->tls_ca_file != NULL || config->tls_ca_path != NULL) {
 				RRR_BUG("BUG: Plain method does not support TLS parameters in rrr_net_transport_new but they were given\n");
 			}
 			ret = rrr_net_transport_plain_new((struct rrr_net_transport_plain **) &new_transport);
@@ -307,15 +304,15 @@ int rrr_net_transport_new (
 			ret = rrr_net_transport_tls_new (
 					(struct rrr_net_transport_tls **) &new_transport,
 					flags,
-					certificate_file,
-					private_key_file,
-					ca_file,
-					ca_path
+					config->tls_certificate_file,
+					config->tls_key_file,
+					config->tls_ca_file,
+					config->tls_ca_path
 			);
 			break;
 #endif
 		default:
-			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", transport);
+			RRR_BUG("Transport method %i not implemented in rrr_net_transport_new\n", config->transport_type);
 			break;
 	};
 
@@ -347,6 +344,10 @@ void rrr_net_transport_destroy (struct rrr_net_transport *transport) {
 	transport->methods->destroy(transport);
 	pthread_mutex_destroy(&transport->handles.lock);
 	free(transport);
+}
+
+void rrr_net_transport_destroy_void (void *arg) {
+	rrr_net_transport_destroy(arg);
 }
 
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection) {

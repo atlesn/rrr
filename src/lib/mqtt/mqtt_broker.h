@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_acl;
 struct rrr_net_transport;
+struct rrr_net_transport_config;
 
 struct rrr_mqtt_broker_stats {
 	uint64_t connections_active;
@@ -91,18 +92,10 @@ int rrr_mqtt_broker_new (
 		int (*session_initializer)(struct rrr_mqtt_session_collection **sessions, void *arg),
 		void *session_initializer_arg
 );
-int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
+int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		int *listen_handle,
 		struct rrr_mqtt_broker_data *broker,
-		int port,
-		const char *certificate_file,
-		const char *key_file,
-		const char *ca_file,
-		const char *ca_path
-);
-int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
-		int *listen_handle,
-		struct rrr_mqtt_broker_data *broker,
+		const struct rrr_net_transport_config *net_transport_config,
 		int port
 );
 

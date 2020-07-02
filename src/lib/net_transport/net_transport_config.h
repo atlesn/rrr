@@ -19,9 +19,31 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_NET_TRANSPORT_TLS_CONFIG_H
-#define RRR_NET_TRANSPORT_TLS_CONFIG_H
+#ifndef RRR_NET_TRANSPORT_CONFIG_H
+#define RRR_NET_TRANSPORT_CONFIG_H
 
+#include "net_transport_defines.h"
 
+struct rrr_instance_config;
+
+struct rrr_net_transport_config {
+	char *tls_certificate_file;
+	char *tls_key_file;
+	char *tls_ca_file;
+	char *tls_ca_path;
+	char *transport_type_str;
+	enum rrr_net_transport_type transport_type;
+};
+
+void rrr_net_transport_config_cleanup (
+		struct rrr_net_transport_config *data
+);
+
+int rrr_net_transport_config_parse (
+		struct rrr_net_transport_config *data,
+		struct rrr_instance_config *config,
+		const char *prefix,
+		int allow_both_transport_type
+);
 
 #endif /* RRR_NET_TRANSPORT_TLS_CONFIG_H */

@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/gnu.h"
 #include "lib/random.h"
 #include "lib/net_transport/net_transport.h"
+#include "lib/net_transport/net_transport_config.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_server");
 
@@ -600,7 +601,17 @@ int main (int argc, const char *argv[]) {
 	int https_handle = 0;
 
 	if (data.plain_disable != 1) {
-		if ((ret = rrr_net_transport_new(&transport_http, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL)) != 0) {
+		// DO NOT run config cleanup for this, memory managed elsewhere
+		struct rrr_net_transport_config net_transport_config_plain = {
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				RRR_NET_TRANSPORT_PLAIN
+		};
+
+		if ((ret = rrr_net_transport_new(&transport_http, &net_transport_config_plain, 0)) != 0) {
 			RRR_MSG_0("Could not create HTTP transport\n");
 			goto out;
 		}
@@ -616,14 +627,19 @@ int main (int argc, const char *argv[]) {
 	}
 
 	if (data.certificate_file != NULL && data.private_key_file != NULL) {
-		if ((ret = rrr_net_transport_new (
-				&transport_https,
-				RRR_NET_TRANSPORT_TLS,
-				(data.ssl_no_cert_verify ? RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY : 0),
+		// DO NOT run config cleanup for this, memory managed elsewhere
+		struct rrr_net_transport_config net_transport_config_tls = {
 				data.certificate_file,
 				data.private_key_file,
 				NULL,
-				NULL
+				NULL,
+				NULL,
+				RRR_NET_TRANSPORT_TLS
+		};
+		if ((ret = rrr_net_transport_new (
+				&transport_https,
+				&net_transport_config_tls,
+				(data.ssl_no_cert_verify ? RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY : 0)
 		)) != 0) {
 			RRR_MSG_0("Could not create HTTPS transport\n");
 			goto out;

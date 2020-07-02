@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/string_builder.h"
 #include "../lib/net_transport/net_transport.h"
+#include "../lib/net_transport/net_transport_config.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/log.h"
@@ -62,19 +63,17 @@ struct influxdb_data {
 	struct rrr_map fixed_tags;
 	struct rrr_map fixed_fields;
 	struct rrr_ip_buffer_entry_collection error_buf;
+
+	struct rrr_net_transport_config net_transport_config;
+
+	// NOT managed by cleanup function, separate cleanup_push/pop
 	struct rrr_net_transport *transport;
 };
 
-int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
+static int influxdb_data_init(struct influxdb_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 
 	memset (data, '\0', sizeof(*data));
-
-	if (rrr_net_transport_new(&data->transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL) != 0) {
-		RRR_MSG_0("Could not create transport in influxdb data_init\n");
-		ret = 1;
-		goto out;
-	}
 
 	data->thread_data = thread_data;
 
@@ -88,7 +87,7 @@ int data_init(struct influxdb_data *data, struct rrr_instance_thread_data *threa
 		return ret;
 }
 
-void data_destroy (void *arg) {
+static void influxdb_data_destroy (void *arg) {
 	struct influxdb_data *data = arg;
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->database);
@@ -98,12 +97,11 @@ void data_destroy (void *arg) {
 	rrr_map_clear(&data->fixed_tags);
 	rrr_map_clear(&data->fixed_fields);
 	rrr_ip_buffer_entry_collection_clear(&data->error_buf);
-	if (data->transport != NULL) {
-		rrr_net_transport_destroy(data->transport);
-	}
+	rrr_net_transport_config_cleanup(&data->net_transport_config);
+	// DO NOT cleanup net_transport pointer, done in separate pthread_cleanup push/pop
 }
 
-static int __escape_field (char **target, const char *source, ssize_t length, int add_double_quotes) {
+static int influxdb_escape_field (char **target, const char *source, ssize_t length, int add_double_quotes) {
 	ssize_t new_size = length * 2 + 1 + 2;
 
 	*target = NULL;
@@ -139,7 +137,7 @@ static int __escape_field (char **target, const char *source, ssize_t length, in
 	return 0;
 }
 
-static int __query_append_values_from_array (
+static int influxdb_query_append_values_from_array (
 		struct rrr_string_builder *string_builder,
 		struct rrr_map *columns,
 		struct rrr_array *array,
@@ -180,10 +178,10 @@ static int __query_append_values_from_array (
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
 		if (*node_value != '\0') {
-			ret = __escape_field(&name_tmp, node_value, strlen(node_value), 0);
+			ret = influxdb_escape_field(&name_tmp, node_value, strlen(node_value), 0);
 		}
 		else {
-			ret = __escape_field(&name_tmp, node->tag, strlen(node_tag), 0);
+			ret = influxdb_escape_field(&name_tmp, node->tag, strlen(node_tag), 0);
 		}
 		if (ret != 0) {
 			RRR_MSG_0("Could not escape field in influxdb __query_append_values_from_array\n");
@@ -219,7 +217,7 @@ static int __query_append_values_from_array (
 			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append 64 type to query buffer in influxdb __query_append_values_from_array\n");
 		}
 		else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
-			if (__escape_field(&value_tmp, value->data, value->total_stored_length, 1) != 0) {
+			if (influxdb_escape_field(&value_tmp, value->data, value->total_stored_length, 1) != 0) {
 				RRR_MSG_0("Could not escape blob field in influxdb __query_append_values_from_array\n");
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
@@ -242,7 +240,7 @@ static int __query_append_values_from_array (
 	return ret;
 }
 
-static int __query_append_values (
+static int influxdb_query_append_values (
 		struct rrr_string_builder *string_builder,
 		struct rrr_map *columns,
 		int no_comma_on_first
@@ -258,7 +256,7 @@ static int __query_append_values (
 		RRR_FREE_IF_NOT_NULL(name_tmp);
 		RRR_FREE_IF_NOT_NULL(value_tmp);
 
-		if (__escape_field(&name_tmp, node_tag, strlen(node_tag), 0) != 0) {
+		if (influxdb_escape_field(&name_tmp, node_tag, strlen(node_tag), 0) != 0) {
 			RRR_MSG_0("Could not escape field in influxdb __query_append_values\n");
 			ret = INFLUXDB_HARD_ERR;
 			goto out;
@@ -272,7 +270,7 @@ static int __query_append_values (
 		if (*node_value != '\0') {
 			RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, "=", "Could not append equal sign to query buffer in influxdb __query_append_values\n");
 
-			if (__escape_field(&value_tmp, node_value, strlen(node_value), 0) != 0) {
+			if (influxdb_escape_field(&value_tmp, node_value, strlen(node_value), 0) != 0) {
 				RRR_MSG_0("Could not escape field in influxdb __query_append_values\n");
 				ret = INFLUXDB_HARD_ERR;
 				goto out;
@@ -310,7 +308,7 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int __receive_http_response (struct rrr_http_part *part, const char *data_ptr, void *arg) {
+static int influxdb_receive_http_response (struct rrr_http_part *part, const char *data_ptr, void *arg) {
 	struct response_callback_data *data = arg;
 
 	int ret = 0;
@@ -336,7 +334,7 @@ struct send_data_callback_data {
 	int ret;
 };
 
-static void __send_data_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
+static void influxdb_send_data_callback (struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg) {
 	struct send_data_callback_data *callback_data = arg;
 
 	(void)(sockaddr);
@@ -371,22 +369,22 @@ static void __send_data_callback (struct rrr_net_transport_handle *handle, const
 	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder, data->table, "Could not append table name in influxdb send_data\n");
 
 	// Append tags from array
-	ret = __query_append_values_from_array(&string_builder, &data->tags, array, 0);
+	ret = influxdb_query_append_values_from_array(&string_builder, &data->tags, array, 0);
 	CHECK_RET();
 
 	// Append fixed tags from config
-	ret = __query_append_values(&string_builder, &data->fixed_tags, 0);
+	ret = influxdb_query_append_values(&string_builder, &data->fixed_tags, 0);
 	CHECK_RET();
 
 	// Append separator
 	RRR_STRING_BUILDER_APPEND_AND_CHECK(&string_builder, " ", "Could not append space in influxdb send_data\n");
 
 	// Append fields from array
-	ret = __query_append_values_from_array(&string_builder, &data->fields, array, 1);
+	ret = influxdb_query_append_values_from_array(&string_builder, &data->fields, array, 1);
 	CHECK_RET();
 
 	// Append fixed fields from config
-	ret = __query_append_values(&string_builder, &data->fixed_fields,  RRR_LL_COUNT(&data->fields) == 0);
+	ret = influxdb_query_append_values(&string_builder, &data->fixed_fields,  RRR_LL_COUNT(&data->fields) == 0);
 	CHECK_RET();
 
 	// TODO : Better distingushing of soft/hard errors from HTTP layer
@@ -405,7 +403,7 @@ static void __send_data_callback (struct rrr_net_transport_handle *handle, const
 			data, 0
 	};
 
-	if (rrr_http_session_transport_ctx_receive(handle, __receive_http_response, &response_callback_data) != 0) {
+	if (rrr_http_session_transport_ctx_receive(handle, influxdb_receive_http_response, &response_callback_data) != 0) {
 		RRR_MSG_0("Could not receive HTTP response in influxdb instance %sd\n",
 				INSTANCE_D_NAME(data->thread_data));
 		ret = INFLUXDB_HARD_ERR;
@@ -425,7 +423,10 @@ static void __send_data_callback (struct rrr_net_transport_handle *handle, const
 	callback_data->ret = ret;
 }
 
-static int send_data (struct influxdb_data *data, struct rrr_array *array) {
+static int influxdb_send_data (
+		struct influxdb_data *data,
+		struct rrr_array *array
+) {
 	struct send_data_callback_data callback_data = {
 			data,
 			array,
@@ -438,7 +439,7 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 			data->transport,
 			data->server_port,
 			data->server,
-			__send_data_callback,
+			influxdb_send_data_callback,
 			&callback_data
 	);
 	ret |= callback_data.ret;
@@ -446,7 +447,10 @@ static int send_data (struct influxdb_data *data, struct rrr_array *array) {
 	return ret;
 }
 
-static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_data *influxdb_data) {
+static int influxdb_common_callback (
+		struct rrr_ip_buffer_entry *entry,
+		struct influxdb_data *influxdb_data
+) {
 	struct rrr_message *reading = entry->message;
 
 	int ret = 0;
@@ -470,7 +474,7 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 		goto discard;
 	}
 
-	ret = send_data(influxdb_data, &array);
+	ret = influxdb_send_data(influxdb_data, &array);
 	if (ret != 0) {
 		if (ret == INFLUXDB_SOFT_ERR) {
 			RRR_MSG_0("Storing message with error in buffer for later retry in influxdb instance %s\n",
@@ -493,11 +497,14 @@ static int common_callback(struct rrr_ip_buffer_entry *entry, struct influxdb_da
 	return ret;
 }
 
-static int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	return common_callback(entry, thread_data->private_data);
+static int influxdb_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	return influxdb_common_callback(entry, thread_data->private_data);
 }
 
-int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) {
+static int influxdb_parse_tags (
+		struct influxdb_data *data,
+		struct rrr_instance_config *config
+) {
 	int ret = 0;
 
 	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, "influxdb_tags", rrr_map_parse_pair_arrow, &data->tags)) != 0) {
@@ -543,12 +550,11 @@ int parse_tags (struct influxdb_data *data, struct rrr_instance_config *config) 
 	return ret;
 }
 
-int parse_config (struct influxdb_data *data, struct rrr_instance_config *config) {
+static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instance_config *config) {
+	// NOTE : Special return handling, all parsing is done upon errors, we don't
+	//        stop if something fail. Make sure ret is not overwritten if it has
+	//        been set to 1
 	int ret = 0;
-	int ret_final = 0;
-//	int yesno = 0;
-
-	rrr_setting_uint port = 0;
 
 	rrr_instance_config_get_string_noconvert_silent (&data->server, config, "influxdb_server");
 	rrr_instance_config_get_string_noconvert_silent (&data->database, config, "influxdb_database");
@@ -556,46 +562,42 @@ int parse_config (struct influxdb_data *data, struct rrr_instance_config *config
 
 	if (data->server == NULL) {
 		RRR_MSG_0("No influxdb_server specified for instance %s\n", config->name);
-		ret_final = 1;
+		ret = 1;
 	}
 
 	if (data->database == NULL) {
 		RRR_MSG_0("No influxdb_database specified for instance %s\n", config->name);
-		ret_final = 1;
+		ret = 1;
 	}
 
 	if (data->table == NULL) {
 		RRR_MSG_0("No influxdb_table specified for instance %s\n", config->name);
-		ret_final = 1;
+		ret = 1;
 	}
 
-	if ((ret = rrr_instance_config_read_port_number (&port, config, "influxdb_port")) != 0) {
-		if (ret != RRR_SETTING_NOT_FOUND) {
-			RRR_MSG_0("Error while parsing server port in influxdb instance %s\n", config->name);
-			ret_final = 1;
-		}
-	}
-	if (port == 0) {
-		port = INFLUXDB_DEFAULT_PORT;
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("influxdb_port", server_port, INFLUXDB_DEFAULT_PORT);
+
+	if (influxdb_parse_tags (data, config) != 0) {
+		ret = 1;
 	}
 
-	data->server_port = port;
-
-	if ((ret = parse_tags (data, config)) != 0) {
-		ret_final = 1;
+	if (rrr_net_transport_config_parse(&data->net_transport_config, config, "influxdb", 0) != 0) {
+		ret = 1;
 	}
 
 	/* On error, memory is freed by data_cleanup */
 
-	return ret_final;
+	out:
+	return ret;
 }
 
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
 	struct rrr_ip_buffer_entry_collection error_buf_tmp = {0};
+	struct rrr_net_transport *transport = NULL;
 
-	if (data_init(influxdb_data, thread_data) != 0) {
+	if (influxdb_data_init(influxdb_data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in influxdb instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_exit;
@@ -603,18 +605,31 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_destroy, influxdb_data);
+	pthread_cleanup_push(influxdb_data_destroy, influxdb_data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &error_buf_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	if (parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
+	if (influxdb_parse_config(influxdb_data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Error while parsing configuration for influxdb instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	if (rrr_net_transport_new (
+			&transport,
+			&influxdb_data->net_transport_config,
+			0
+	) != 0) {
+		RRR_MSG_0("Could not create transport in influxdb data_init\n");
+		goto out_message;
+	}
+
+	influxdb_data->transport = transport;
+
+	pthread_cleanup_push(rrr_net_transport_destroy_void, transport);
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
@@ -626,7 +641,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, influxdb_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -646,16 +661,19 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 			// The callback might add entries back into data->error_buf
 			RRR_LL_ITERATE_BEGIN(&error_buf_tmp, struct rrr_ip_buffer_entry);
 				rrr_ip_buffer_entry_lock(node);
-				if (common_callback(node, influxdb_data) != 0) {
+				if (influxdb_common_callback(node, influxdb_data) != 0) {
 					RRR_MSG_ERR("Error while iterating error buffer in influxdb instance %s\n",
 							INSTANCE_D_NAME(thread_data));
 					rrr_ip_buffer_entry_unlock(node);
-					goto out_message;
+					goto out_cleanup_transport;
 				}
 				RRR_LL_ITERATE_SET_DESTROY();
 			RRR_LL_ITERATE_END_CHECK_DESTROY(&error_buf_tmp, 0; rrr_ip_buffer_entry_decref_while_locked_and_unlock(node));
 		}
 	}
+
+	out_cleanup_transport:
+	pthread_cleanup_pop(1);
 
 	out_message:
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",

@@ -25,47 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <pthread.h>
 
+#include "net_transport_defines.h"
+
 #include "../read.h"
-#include "../socket/rrr_socket_read.h"
 #include "../read_constants.h"
 #include "../linked_list.h"
 
-#define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY	(1<<0)
-#define RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1	(1<<1)
-
-// Use same numbering system as socket subsystem, saves us from translating
-// return values in many cases
-#define RRR_NET_TRANSPORT_READ_OK				RRR_READ_OK
-#define RRR_NET_TRANSPORT_READ_HARD_ERROR		RRR_READ_HARD_ERROR
-#define RRR_NET_TRANSPORT_READ_SOFT_ERROR		RRR_READ_SOFT_ERROR
-#define RRR_NET_TRANSPORT_READ_INCOMPLETE		RRR_READ_INCOMPLETE
-#define RRR_NET_TRANSPORT_READ_READ_EOF			RRR_READ_EOF
-
-#define RRR_NET_TRANSPORT_SEND_OK				RRR_NET_TRANSPORT_READ_OK
-#define RRR_NET_TRANSPORT_SEND_HARD_ERROR		RRR_NET_TRANSPORT_READ_HARD_ERROR
-#define RRR_NET_TRANSPORT_SEND_SOFT_ERROR		RRR_NET_TRANSPORT_READ_SOFT_ERROR
-#define RRR_NET_TRANSPORT_SEND_INCOMPLETE		RRR_NET_TRANSPORT_READ_INCOMPLETE
-
-
-#define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH \
-	RRR_READ_COMPLETE_METHOD_TARGET_LENGTH
-
-#define RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE \
-	RRR_READ_COMPLETE_METHOD_ZERO_BYTES_READ
-
-enum rrr_net_transport_type {
-	RRR_NET_TRANSPORT_PLAIN,
-	RRR_NET_TRANSPORT_TLS // TODO : Consider wrapping in RRR_WITH_OPENSSL
-};
-
-enum rrr_net_transport_socket_mode {
-	RRR_NET_TRANSPORT_SOCKET_MODE_ANY,
-	RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
-	RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION
-};
-
 struct rrr_read_session;
 struct rrr_net_transport;
+struct rrr_net_transport_config;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
@@ -185,14 +153,11 @@ void rrr_net_transport_common_cleanup (
 
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
-		enum rrr_net_transport_type transport,
-		int flags,
-		const char *certificate_file,
-		const char *private_key_file,
-		const char *ca_file,
-		const char *ca_path
+		const struct rrr_net_transport_config *config,
+		int flags
 );
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
+void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
 void rrr_net_transport_ctx_handle_close (
 		struct rrr_net_transport_handle *handle

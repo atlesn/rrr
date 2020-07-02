@@ -37,10 +37,10 @@ http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c 
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
 			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
 
-net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c
+net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
 
 if RRR_WITH_OPENSSL
-net_transport_tls = net_transport/net_transport_tls.c net_transport/net_transport_tls_config.c
+net_transport_tls = net_transport/net_transport_tls.c
 endif
 
 lib_LTLIBRARIES = librrr.la

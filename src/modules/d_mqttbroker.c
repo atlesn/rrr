@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/log.h"
+#include "../lib/net_transport/net_transport_config.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883
@@ -64,16 +65,15 @@ struct mqtt_broker_data {
 	char *password_file;
 	char *acl_file;
 	char *permission_name;
-	char *tls_certificate_file;
-	char *tls_key_file;
-	char *tls_ca_file;
-	char *tls_ca_path;
-	char *transport_type;
-	int do_transport_plain;
-	int do_transport_tls;
+
 	int do_require_authentication;
 	int do_disconnect_on_v31_publish_deny;
 	struct rrr_mqtt_acl acl;
+
+	int do_transport_plain;
+	int do_transport_tls;
+
+	struct rrr_net_transport_config net_transport_config;
 };
 
 static void mqttbroker_data_cleanup(void *arg) {
@@ -82,12 +82,8 @@ static void mqttbroker_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password_file);
 	RRR_FREE_IF_NOT_NULL(data->acl_file);
 	RRR_FREE_IF_NOT_NULL(data->permission_name);
-	RRR_FREE_IF_NOT_NULL(data->tls_certificate_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_key_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_ca_file);
-	RRR_FREE_IF_NOT_NULL(data->tls_ca_path);
-	RRR_FREE_IF_NOT_NULL(data->transport_type);
 	rrr_mqtt_acl_entry_collection_clear(&data->acl);
+	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }
 
 static int mqttbroker_data_init (
@@ -183,43 +179,16 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_certificate_file", tls_certificate_file);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_key_file", tls_key_file);
-
-	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
-			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
-	) {
-		RRR_MSG_0("Only one of mqtt_broker_certificate_file and mqtt_broker_key_file was specified, either both or none are required in mqttbroker instance %s",
-				config->name);
-		ret = 1;
+	if ((rrr_net_transport_config_parse(&data->net_transport_config, config, "mqtt_broker", 1)) != 0) {
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_file", tls_ca_file);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_path", tls_ca_path);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
-
-	if (data->transport_type != NULL) {
-		if (strcasecmp(data->transport_type, "plain") == 0) {
-			data->do_transport_plain = 1;
-		}
-		else if (strcasecmp(data->transport_type, "tls") == 0) {
-			data->do_transport_tls = 1;
-		}
-		else if (strcasecmp(data->transport_type, "both") == 0) {
-			data->do_transport_tls = 1;
-			data->do_transport_plain = 1;
-		}
-		else {
-			RRR_MSG_0("Unknown value '%s' for mqtt_broker_transport_type in mqtt broker instance %s\n",
-					data->transport_type, config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-	else {
-		data->do_transport_plain = 1;
-	}
+	data->do_transport_plain = (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH ||
+								data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN
+	);
+	data->do_transport_tls = (	data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH ||
+								data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS
+	);
 
 	if (rrr_settings_exists(config->settings, "mqtt_broker_port") && !data->do_transport_plain) {
 		RRR_MSG_0("mqtt_broker_port was set but plain transport method was not enabled in mqtt broker instance %s\n", config->name);
@@ -233,13 +202,8 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
-	if (data->tls_certificate_file != NULL && data->do_transport_tls == 0) {
-		RRR_MSG_0("TLS certificate specified in mqtt_broker_certificate_file but mqtt_transport_type was not 'both' or 'tls' for mqtt broker instance %s\n",
-				config->name);
-		ret = 1;
-		goto out;
-	}
-	if (data->tls_certificate_file == NULL && data->do_transport_tls != 0) {
+	// We require certificate for listening
+	if (data->net_transport_config.tls_certificate_file == NULL && data->do_transport_tls != 0) {
 		RRR_MSG_0("TLS certificate not specified in mqtt_broker_certificate_file but mqtt_transport_type was 'both' or 'tls' for mqtt broker instance %s\n",
 				config->name);
 		ret = 1;
@@ -361,10 +325,25 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 	int listen_handle_tls = 0;
 
 	if (data->do_transport_plain) {
-		RRR_DBG_1("Broker starting plain listening on port %i\n", data->server_port_plain);
-		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
+		RRR_DBG_1("MQTT broker instance %s starting plain listening on port %i\n",
+				INSTANCE_D_NAME(thread_data), data->server_port_plain);
+
+		// We're not allowed to pass in TLS parameters when starting plain mode,
+		// create temporary config struct with TLS parameters set to NULL
+		struct rrr_net_transport_config net_transport_config_tmp = {
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			RRR_NET_TRANSPORT_PLAIN
+		};
+
+		// In case transport type is set to BOTH, we must reset
+		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 				&listen_handle_plain,
 				data->mqtt_broker_data,
+				&net_transport_config_tmp,
 				data->server_port_plain
 		) != 0) {
 			RRR_MSG_0("Could not start plain network transport in mqtt broker instance %s\n",
@@ -373,15 +352,20 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 		}
 	}
 	if (data->do_transport_tls) {
-		RRR_DBG_1("Broker starting TLS listening on port %i\n", data->server_port_tls);
-		if (rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
-				&listen_handle_tls,
+		RRR_DBG_1("MQTT broker instance %s starting TLS listening on port %i\n",
+				INSTANCE_D_NAME(thread_data), data->server_port_tls);
+
+		// In case transport type is set to BOTH, we set it to TLS
+		struct rrr_net_transport_config net_transport_config_tmp = data->net_transport_config;
+
+		// Only change temporary struct
+		net_transport_config_tmp.transport_type = RRR_NET_TRANSPORT_TLS;
+
+		if (rrr_mqtt_broker_listen_ipv4_and_ipv6 (
+				&listen_handle_plain,
 				data->mqtt_broker_data,
-				data->server_port_tls,
-				data->tls_certificate_file,
-				data->tls_key_file,
-				data->tls_ca_file,
-				data->tls_ca_path
+				&net_transport_config_tmp, // <-- Pass in *temporary* struct
+				data->server_port_tls
 		) != 0) {
 			RRR_MSG_0("Could not start tls network transport in mqtt broker instance %s\n",
 					INSTANCE_D_NAME(thread_data));

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../posix.h"
 #include "../log.h"
 #include "../net_transport/net_transport.h"
+#include "../net_transport/net_transport_config.h"
 #include "../gnu.h"
 #include "../../global.h"
 
@@ -359,14 +360,20 @@ int rrr_http_client_send_request (
 		tls_flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
 	}
 
-	if (transport_code == RRR_HTTP_TRANSPORT_HTTPS) {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_TLS, tls_flags, NULL, NULL, NULL, NULL);
-	}
-	else {
-		ret = rrr_net_transport_new(&transport, RRR_NET_TRANSPORT_PLAIN, 0, NULL, NULL, NULL, NULL);
-	}
+	struct rrr_net_transport_config net_transport_config = {
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			(transport_code == RRR_HTTP_TRANSPORT_HTTPS ? RRR_NET_TRANSPORT_TLS : RRR_NET_TRANSPORT_PLAIN)
+	};
 
-	if (ret != 0) {
+	if ((ret = rrr_net_transport_new (
+			&transport,
+			&net_transport_config,
+			(transport_code == RRR_HTTP_TRANSPORT_HTTPS ? tls_flags : 0)
+	)) != 0) {
 		RRR_MSG_0("Could not create transport in __rrr_http_client_send_request\n");
 		ret = RRR_HTTP_HARD_ERROR;
 		goto out;
