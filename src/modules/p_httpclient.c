@@ -192,8 +192,8 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_endpoint", http_client_data.endpoint);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server", http_client_data.server);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_endpoint", http_client_data.endpoint);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server", http_client_data.server);
 
 	if (data->http_client_data.server == NULL || *(data->http_client_data.server) == '\0') {
 		RRR_MSG_0("http_server configuration parameter missing for httpclient instance %s\n", config->name);
@@ -201,9 +201,9 @@ static int httpclient_parse_config (
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("http_send_timeout_ms", send_timeout_us, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_send_timeout_ms", send_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.
 	data->send_timeout_us *= 1000;
 

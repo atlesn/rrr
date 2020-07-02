@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/gnu.h"
 #include "../lib/map.h"
 #include "../lib/string_builder.h"
-#include "../lib/net_transport.h"
+#include "../lib/net_transport/net_transport.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/log.h"

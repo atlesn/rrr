@@ -62,19 +62,19 @@ void data_cleanup(void *_data) {
 int parse_config (struct test_module_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
 	if (data->test_output_instance == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
 
 	out:
 	if (ret != 0) {

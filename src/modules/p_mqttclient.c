@@ -248,7 +248,7 @@ static int mqttclient_parse_publish_value_tag (const char *value, void *arg) {
 static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_connect_attempts", connect_attempts, RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_connect_attempts", connect_attempts, RRR_MQTT_DEFAULT_RECONNECT_ATTEMPTS);
 	if (data->connect_attempts < 1) {
 		RRR_MSG_0("Setting mqtt_reconnect_attempts must be 1 or more in MQTT client instance %s. %llu was given.",
 				config->name, data->connect_attempts);
@@ -256,15 +256,15 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_qos", qos, RRR_MQTT_DEFAULT_QOS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_qos", qos, RRR_MQTT_DEFAULT_QOS);
 	if (data->qos > 2) {
 		RRR_MSG_0("Setting mqtt_qos was >2 in config of instance %s\n", config->name);
 		ret = 1;
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_client_identifier", client_identifier);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_client_identifier", client_identifier);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_v5_recycle_assigned_client_identifier", do_recycle_assigned_client_identifier, 1); // Default is 1, yes
 
 	if ((ret = rrr_instance_config_get_string_noconvert_silent(&data->version_str, config, "mqtt_version")) != 0) {
 		data->version = RRR_MQTT_DEFAULT_VERSION;
@@ -301,8 +301,8 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	int publish_rrr_message_was_present = 0;
 
-	RRR_SETTINGS_IF_EXISTS_THEN("mqtt_publish_rrr_message", publish_rrr_message_was_present = 1);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_message", do_publish_rrr_message, 0);
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("mqtt_publish_rrr_message", publish_rrr_message_was_present = 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_message", do_publish_rrr_message, 0);
 
 	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
 			&data->array_definition,
@@ -321,10 +321,10 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_message", do_receive_rrr_message, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_message", do_receive_rrr_message, 0);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
 
 	if (data->do_force_publish_topic != 0 && data->do_prepend_publish_topic != 0) {
 		RRR_MSG_0("Both mqtt_publish_topic_force and mqtt_publish_topic_prepend was yes for instance %s, this is an invalid configuration.\n", config->name);
@@ -332,7 +332,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_publish_topic", publish_topic);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_publish_topic", publish_topic);
 
 	if (data->publish_topic != NULL && rrr_mqtt_topic_validate_name(data->publish_topic) != 0) {
 		RRR_MSG_0("Topic name in mqtt_publish_topic was invalid for instance %s\n", config->name);
@@ -416,8 +416,8 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_username", username);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_password", password);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_username", username);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_password", password);
 
 	if (data->password != NULL && data->username == NULL) {
 		RRR_MSG_0("mqtt_password set without mqtt_username being so, this in an error.\n");
@@ -425,8 +425,8 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_certificate_file", tls_certificate_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_key_file", tls_key_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_certificate_file", tls_certificate_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_key_file", tls_key_file);
 
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
@@ -437,9 +437,9 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_file", tls_ca_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_path", tls_ca_path);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_transport_type", transport_type);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_file", tls_ca_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_ca_path", tls_ca_path);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_transport_type", transport_type);
 
 	if (data->transport_type != NULL) {
 		if (strcasecmp(data->transport_type, "plain") == 0) {
@@ -467,7 +467,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_server_port", server_port, (
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_server_port", server_port, (
 			data->do_transport_tls
 				? RRR_MQTT_DEFAULT_SERVER_PORT_TLS
 				: RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN
@@ -475,7 +475,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 
 	// Undocumented parameter. Causes client to send UNSUBSCRIBE, wait for UNSUBACK and then
 	// subscribe to all topics once more.
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_client_debug_unsubscribe_cycle", do_debug_unsubscribe_cycle, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_client_debug_unsubscribe_cycle", do_debug_unsubscribe_cycle, 0);
 	if (data->do_debug_unsubscribe_cycle != 0 && rrr_mqtt_subscription_collection_count(data->requested_subscriptions) == 0) {
 		RRR_MSG_0("debug_unsubscribe_cycle set without any subscriptions in mqtt client instance %s\n", INSTANCE_D_NAME(data->thread_data));
 		ret = 1;

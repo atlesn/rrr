@@ -152,7 +152,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		return 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
 
 	out:
 	return ret;

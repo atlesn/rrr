@@ -120,8 +120,8 @@ static void journal_data_cleanup(void *arg) {
 static int journal_parse_config (struct journal_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("journal_hostname", hostname);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("journal_hostname", hostname);
 
 	if (data->hostname == NULL || *(data->hostname) == '\0') {
 		char hostname[RRR_JOURNAL_HOSTNAME_MAX_LEN+1];

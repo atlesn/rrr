@@ -384,8 +384,8 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	data->usb_channel = channel;
 
 	// Undocumented parameters, used in test suite
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
 
 	out:
 

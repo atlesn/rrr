@@ -25,10 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <pthread.h>
 
-#include "read.h"
-#include "socket/rrr_socket_read.h"
-#include "read_constants.h"
-#include "linked_list.h"
+#include "../read.h"
+#include "../socket/rrr_socket_read.h"
+#include "../read_constants.h"
+#include "../linked_list.h"
 
 #define RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY	(1<<0)
 #define RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1	(1<<1)

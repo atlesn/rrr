@@ -119,10 +119,10 @@ static int mqttbroker_data_init (
 static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
-	RRR_SETTINGS_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_TLS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port", server_port_plain, RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_PORT("mqtt_broker_port_tls", server_port_tls, RRR_MQTT_DEFAULT_SERVER_PORT_TLS);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_max_keep_alive", max_keep_alive, RRR_MQTT_DEFAULT_SERVER_KEEP_ALIVE);
 	if (data->max_keep_alive > 0xffff) {
 		RRR_MSG_0("mqtt_broker_max_keep_alive was too big for instance %s, max is 65535\n", config->name);
 		ret = 1;
@@ -134,7 +134,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_retry_interval", retry_interval, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_retry_interval", retry_interval, 1);
 	if (data->retry_interval > 0xffff) {
 		RRR_MSG_0("mqtt_broker_retry_interval was too big for instance %s, max is 65535\n", config->name);
 		ret = 1;
@@ -146,7 +146,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_close_wait_time", close_wait_time, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("mqtt_broker_close_wait_time", close_wait_time, 1);
 	if (data->close_wait_time > 0xffff) {
 		RRR_MSG_0("mqtt_broker_close_wait_time was too big for instance %s, max is 65535\n", config->name);
 		ret = 1;
@@ -158,9 +158,9 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_password_file", password_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_permission_name", permission_name);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_acl_file", acl_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_password_file", password_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_permission_name", permission_name);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_acl_file", acl_file);
 
 	if (data->permission_name == NULL || *(data->permission_name) == '\0') {
 		RRR_FREE_IF_NOT_NULL(data->permission_name);
@@ -171,7 +171,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		}
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_require_authentication", do_require_authentication, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_broker_require_authentication", do_require_authentication, 0);
 
 	if (!rrr_instance_config_setting_exists(config, "mqtt_broker_require_authentication")) {
 		if (data->password_file != NULL) {
@@ -182,10 +182,10 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		}
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_broker_v31_disconnect_on_publish_deny", do_disconnect_on_v31_publish_deny, 0);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_certificate_file", tls_certificate_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_key_file", tls_key_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_certificate_file", tls_certificate_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_key_file", tls_key_file);
 
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
@@ -196,9 +196,9 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_file", tls_ca_file);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_path", tls_ca_path);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_file", tls_ca_file);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_ca_path", tls_ca_path);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("mqtt_broker_transport_type", transport_type);
 
 	if (data->transport_type != NULL) {
 		if (strcasecmp(data->transport_type, "plain") == 0) {

@@ -862,9 +862,9 @@ int rrr_cmodule_helper_parse_config (
 	sprintf(arg_drop_on_error, "%s%s", config_prefix, "_drop_on_error");
 	sprintf(arg_log_prefix, "%s%s", config_prefix, "_log_prefix");
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_config_function, config_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_source_function, source_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_process_function, process_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_config_function, config_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_source_function, source_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_process_function, process_function);
 
 	if (data->source_function != NULL && *(data->source_function) != '\0') {
 		data->do_spawning = 1;
@@ -882,14 +882,14 @@ int rrr_cmodule_helper_parse_config (
 	}
 
 	// Input in ms, multiply by 1000
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_spawn_interval, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(arg_spawn_interval, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
 	data->spawn_interval_us *= 1000;
 
 	// Input in ms, multiply by 1000
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_sleep_time, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(arg_sleep_time, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
 	data->sleep_time_us *= 1000;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_nothing_happened_limit, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(arg_nothing_happened_limit, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
 	if (data->nothing_happened_limit < 1) {
 		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
 				config->name);
@@ -897,8 +897,8 @@ int rrr_cmodule_helper_parse_config (
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO(arg_drop_on_error, do_drop_on_error, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_log_prefix, log_prefix);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(arg_drop_on_error, do_drop_on_error, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_log_prefix, log_prefix);
 
 	out:
 	return ret;

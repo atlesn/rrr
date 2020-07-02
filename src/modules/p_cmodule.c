@@ -82,7 +82,7 @@ static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_thre
 static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
 
 	if (data->cmodule_name == NULL || *(data->cmodule_name) == '\0') {
 		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name);
@@ -90,7 +90,7 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
 
 	out:
 	return ret;

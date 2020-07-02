@@ -228,7 +228,7 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config *con
 	}
 
 	// For test suite, but build directories into @INC
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
 
 	out:
 	return ret;
