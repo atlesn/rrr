@@ -534,7 +534,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	thread_data->thread = thread;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 

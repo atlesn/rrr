@@ -875,18 +875,15 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll_ip;
 	struct rrr_ip_buffer_entry_collection process_buffer_tmp = {0};
 
 	if (data_init(data) != 0) {
-		RRR_MSG_0("Could not initalize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("mysql thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	rrr_poll_collection_init(&poll_ip);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &process_buffer_tmp);
@@ -905,14 +902,14 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	RRR_DBG_1 ("mysql started thread %p\n", thread_data);
 
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &poll_ip, poll_callback_ip, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback_ip, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in mysql instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 			break;
@@ -932,7 +929,6 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 	out_message:
 	RRR_DBG_1 ("Thread mysql %p exiting\n", thread_data->thread);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);

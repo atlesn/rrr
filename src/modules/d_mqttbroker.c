@@ -36,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/mqtt/mqtt_common.h"
 #include "../lib/mqtt/mqtt_session_ram.h"
 #include "../lib/mqtt/mqtt_acl.h"
-#include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
 #include "../lib/instances.h"
@@ -305,7 +304,7 @@ static void *thread_entry_mqttbroker (struct rrr_thread *thread) {
 
 	int init_ret = 0;
 	if ((init_ret = mqttbroker_data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initalize data in mqtt broker instance %s flags %i\n",
+		RRR_MSG_0("Could not initialize data in mqtt broker instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}

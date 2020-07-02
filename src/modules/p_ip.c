@@ -1069,22 +1069,19 @@ static int ip_send_message (
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
 	struct rrr_ip_graylist tcp_graylist = {0};
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -1099,9 +1096,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
-	int has_senders = (rrr_poll_collection_count(&poll) > 0 ? 1 : 0);
+	int has_senders = (rrr_poll_collection_count(thread_data->poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1160,7 +1157,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 //		printf ("IP ticks: %u\n", tick);
 
 		if (has_senders != 0) {
-			if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback_ip, 0) != 0) {
 				RRR_MSG_ERR("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -1327,7 +1324,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 		rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 	}
 //	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);

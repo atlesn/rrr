@@ -492,17 +492,13 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initalize data in averager instance %s flags %i\n",
+		RRR_MSG_0("Could not initialize data in averager instance %s flags %i\n",
 				INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
 
-	struct rrr_poll_collection poll;
-
 	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -521,7 +517,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	RRR_DBG_1 ("Averager started thread %p\n", thread_data);
 
@@ -533,7 +529,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (rrr_poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete(thread_data, thread_data->poll, poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -567,7 +563,6 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread_data->thread);
 
 //	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

@@ -29,6 +29,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "map.h"
 #include "array.h"
+#include "gnu.h"
+
+int rrr_instance_config_string_set (
+		char **target,
+		const char *prefix,
+		const char *name,
+		const char *suffix
+) {
+	RRR_FREE_IF_NOT_NULL(*target);
+	if (rrr_asprintf(target, "%s%s%s", prefix, name, (suffix != NULL ? suffix : "")) < 0) {
+		RRR_MSG_0("Could not allocate memory in rrr_instance_config_string_set\n");
+		return 1;
+	}
+	return 0;
+}
 
 void rrr_instance_config_destroy(struct rrr_instance_config *config) {
 	rrr_settings_destroy(config->settings);

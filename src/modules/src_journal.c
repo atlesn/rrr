@@ -341,7 +341,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	pthread_cleanup_push(journal_delivery_lock_cleanup, data);
 
 	if (journal_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 

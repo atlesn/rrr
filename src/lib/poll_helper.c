@@ -45,6 +45,29 @@ void rrr_poll_collection_init(struct rrr_poll_collection *collection) {
 	memset(collection, '\0', sizeof(*collection));
 }
 
+int rrr_poll_collection_new(struct rrr_poll_collection **target) {
+	*target = NULL;
+
+	struct rrr_poll_collection *collection = malloc(sizeof(*collection));
+	if (collection == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_poll_collection_new\n");
+		return 1;
+	}
+	rrr_poll_collection_init(collection);
+
+	*target = collection;
+
+	return 0;
+}
+
+void rrr_poll_collection_destroy(struct rrr_poll_collection *collection) {
+	rrr_poll_collection_clear(collection);
+	free(collection);
+}
+
+void rrr_poll_collection_destroy_void(void *data) {
+	rrr_poll_collection_destroy(data);
+}
 
 void rrr_poll_collection_remove (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find) {
 	int found = 0;

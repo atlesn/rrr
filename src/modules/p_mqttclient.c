@@ -1554,11 +1554,10 @@ static void mqttlient_update_stats (
 static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mqtt_client_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	int init_ret = 0;
 	if ((init_ret = mqttclient_data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initalize data in mqtt client instance %s flags %i\n",
+		RRR_MSG_0("Could not initialize data in mqtt client instance %s flags %i\n",
 			INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
@@ -1569,8 +1568,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(mqttclient_data_cleanup, data);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
@@ -1613,9 +1610,9 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_mqtt_client_destroy_void, data->mqtt_client_data);
 	pthread_cleanup_push(rrr_mqtt_client_notify_pthread_cancel_void, data->mqtt_client_data);
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
-	if (rrr_poll_collection_count(&poll) == 0) {
+	if (rrr_poll_collection_count(thread_data->poll) == 0) {
 		if (data->publish_topic != NULL) {
 			RRR_MSG_0("Warning: mqtt client instance %s has publish topic set but there are not senders specified in configuration\n",
 					INSTANCE_D_NAME(thread_data));
@@ -1778,7 +1775,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 				data->total_usleep_count++;
 			}
 			RRR_BENCHMARK_IN(mqtt_client_sleep);
-			rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, poll_sleep);
+			rrr_poll_do_poll_delete (thread_data, thread_data->poll, mqttclient_poll_callback, poll_sleep);
 			RRR_BENCHMARK_OUT(mqtt_client_sleep);
 		}
 
@@ -1804,7 +1801,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		RRR_DBG_1 ("Thread mqtt client %p instance %s exiting\n", thread_data->thread, INSTANCE_D_NAME(thread_data));
 //		pthread_cleanup_pop(1);
 		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
-		pthread_cleanup_pop(1);
 		pthread_cleanup_pop(1);
 		RRR_BENCHMARK_DUMP(mqtt_client_tick);
 		RRR_BENCHMARK_DUMP(mqtt_client_sleep);

@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_strerror.h"
 #include "lib/gnu.h"
 #include "lib/random.h"
-#include "lib/net_transport.h"
+#include "lib/net_transport/net_transport.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_server");
 

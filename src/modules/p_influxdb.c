@@ -593,7 +593,6 @@ int parse_config (struct influxdb_data *data, struct rrr_instance_config *config
 static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct influxdb_data *influxdb_data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 	struct rrr_ip_buffer_entry_collection error_buf_tmp = {0};
 
 	if (data_init(influxdb_data, thread_data) != 0) {
@@ -604,8 +603,6 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("InfluxDB thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_destroy, influxdb_data);
 	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &error_buf_tmp);
 
@@ -621,7 +618,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders (&poll, thread_data);
+	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
 
 	RRR_DBG_1 ("InfluxDB started thread %p\n", thread_data);
 
@@ -629,7 +626,7 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in influxdb instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -664,7 +661,6 @@ static void *thread_entry_influxdb (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread influxdb %p instance %s exiting 1 state is %i\n",
 			thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 

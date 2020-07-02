@@ -177,7 +177,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
-		RRR_MSG_0("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 

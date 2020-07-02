@@ -25,6 +25,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../global.h"
 #include "settings.h"
 
+#define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)															\
+	do { const char *__prefix = prefix; char *config_string = NULL
+
+// Define the out: here to make sure we free upon errors, user must remove existing out: label
+#define RRR_INSTANCE_CONFIG_PREFIX_END()																	\
+	out:																									\
+	RRR_FREE_IF_NOT_NULL(config_string); } while(0)
+
+#define RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name_,suffix)											\
+	do {if (rrr_instance_config_string_set(&config_string, __prefix, name_, suffix) != 0) {					\
+		RRR_MSG_0("Could not generate config string from prefix in instance %s\n", config->name);			\
+		ret = 1; goto out;																					\
+	}} while(0)
+
+#define RRR_INSTANCE_CONFIG_STRING_SET(name)																\
+	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX(name,NULL)
+
 #define RRR_INSTANCE_CONFIG_IF_EXISTS_THEN(string, then)													\
 	do { if ( rrr_instance_config_setting_exists(config, string)) { then;									\
 	}} while (0)
@@ -143,6 +160,13 @@ static inline int rrr_instance_config_dump (
 ) {
 	return rrr_settings_dump (source->settings);
 }
+
+int rrr_instance_config_string_set (
+		char **target,
+		const char *prefix,
+		const char *name,
+		const char *suffix
+);
 
 void rrr_instance_config_destroy (
 		struct rrr_instance_config *config

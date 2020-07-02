@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "threads.h"
 
 struct rrr_cmodule;
+struct rrr_poll_collection;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
@@ -93,6 +94,7 @@ struct rrr_instance_thread_data {
 
 	// Not used by all modules but managed by instances framework
 	struct rrr_cmodule *cmodule;
+	struct rrr_poll_collection *poll;
 
 	void *private_data;
 	void *preload_data;

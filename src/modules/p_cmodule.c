@@ -320,7 +320,6 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	if (cmodule_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -329,9 +328,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("cmodule thread thread_data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
 	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(cmodule_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -345,7 +342,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_poll_add_from_thread_senders (&poll, thread_data);
+	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
 
 	pid_t fork_pid;
 
@@ -371,7 +368,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	rrr_cmodule_helper_loop (
 			thread_data,
 			stats,
-			&poll,
+			thread_data->poll,
 			fork_pid
 	);
 
@@ -379,7 +376,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	RRR_DBG_1 ("cmodule instance %s stopping thread %p fork handler ptr %p\n",
 			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
