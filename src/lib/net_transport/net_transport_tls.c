@@ -30,18 +30,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
-#include "posix.h"
-#include "log.h"
 #include "net_transport.h"
 #include "net_transport_tls.h"
-#include "socket/rrr_socket.h"
-#include "rrr_openssl.h"
-#include "rrr_strerror.h"
-#include "gnu.h"
-#include "read.h"
-#include "read_constants.h"
-#include "ip.h"
-#include "ip_accept_data.h"
+
+#include "../posix.h"
+#include "../log.h"
+#include "../socket/rrr_socket.h"
+#include "../rrr_openssl.h"
+#include "../rrr_strerror.h"
+#include "../gnu.h"
+#include "../read.h"
+#include "../read_constants.h"
+#include "../ip.h"
+#include "../ip_accept_data.h"
 
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;

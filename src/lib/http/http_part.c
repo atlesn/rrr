@@ -23,11 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
-#include "log.h"
 #include "http_part.h"
 #include "http_fields.h"
 #include "http_util.h"
-#include "threads.h"
+
+#include "../log.h"
+#include "../threads.h"
 
 #define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
 		const char *data_start =								\

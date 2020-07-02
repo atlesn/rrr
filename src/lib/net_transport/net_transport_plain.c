@@ -25,13 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
-#include "log.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_read.h"
 #include "net_transport_plain.h"
-#include "read.h"
-#include "ip.h"
-#include "ip_accept_data.h"
+
+#include "../log.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_read.h"
+#include "../read.h"
+#include "../ip.h"
+#include "../ip_accept_data.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {

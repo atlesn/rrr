@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_transport.h"
 #include "mqtt_connection.h"
 #include "../log.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 #include "../passwd.h"
 #include "../linked_list.h"
 #include "../gnu.h"

@@ -27,10 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_util.h"
 #include "http_session.h"
-#include "posix.h"
-#include "log.h"
-#include "net_transport.h"
-#include "gnu.h"
+
+#include "../posix.h"
+#include "../log.h"
+#include "../net_transport/net_transport.h"
+#include "../gnu.h"
 #include "../../global.h"
 
 int rrr_http_client_data_init (

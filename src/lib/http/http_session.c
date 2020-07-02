@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../gnu.h"
 #include "../base64.h"
 #include "../linked_list.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 #include "../random.h"
 #include "../read.h"
 
