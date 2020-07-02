@@ -1569,8 +1569,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	RRR_DBG_1 ("mqtt client thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(mqttclient_data_cleanup, data);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -1681,8 +1679,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 	// will respond with CONNACK with session present=0 if we need to clean up our state.
 	clean_start = 0;
 
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
-
 	// Main loop
 
 	// Defaults to 1, is set to 0 when to many PUBLISH are undelivered
@@ -1784,7 +1780,7 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		if (time_now > (prev_stats_time + RRR_MQTT_CLIENT_STATS_INTERVAL_MS * 1000)) {
 			mqttlient_update_stats (
 					data,
-					stats,
+					INSTANCE_D_STATS(thread_data),
 					counters.buffer_size,
 					counters.incomplete_qos_publish_counter
 			);
@@ -1799,8 +1795,6 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 		pthread_cleanup_pop(1);
 	out_message:
 		RRR_DBG_1 ("Thread mqtt client %p instance %s exiting\n", thread_data->thread, INSTANCE_D_NAME(thread_data));
-//		pthread_cleanup_pop(1);
-		RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 		pthread_cleanup_pop(1);
 		RRR_BENCHMARK_DUMP(mqtt_client_tick);
 		RRR_BENCHMARK_DUMP(mqtt_client_sleep);

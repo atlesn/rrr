@@ -374,7 +374,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		pthread_exit(0);
 	}
 
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -412,7 +411,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			stats,
+			INSTANCE_D_STATS(thread_data),
 			thread_data->poll,
 			fork_pid
 	);
@@ -421,7 +420,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n", INSTANCE_D_NAME(thread_data), thread_data->thread);
 
 	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

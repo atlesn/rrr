@@ -184,8 +184,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -203,8 +201,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		RRR_DBG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
 		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
-
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	uint64_t time_start = rrr_time_get_64();
 	int generated_count = 0;
@@ -241,7 +237,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 			generated_count = 0;
 			time_start = time_now;
 
-			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "generated", generated_count_to_stats);
 			generated_count_to_stats = 0;
 		}
 
@@ -252,8 +248,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 	out_cleanup:
 	RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-//	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

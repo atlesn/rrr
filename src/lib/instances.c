@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "stats/stats_instance.h"
 
 struct instance_metadata *rrr_instance_find_by_thread (
 		struct instance_metadata_collection *collection,
@@ -422,6 +423,9 @@ static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data)
 	if (data->poll != NULL) {
 		rrr_poll_collection_destroy(data->poll);
 	}
+	if (data->stats != NULL) {
+		rrr_stats_instance_destroy(data->stats);
+	}
 	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
 	free(data);
 }
@@ -480,7 +484,7 @@ static void __rrr_instance_thread_intermediate_cleanup (void *arg) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
-	if (thread_data->cmodule != NULL) {
+	if (thread_data->cmodule == NULL) {
 		return;
 	}
 
@@ -507,11 +511,24 @@ static void __rrr_instance_thread_poll_collection_destroy (void *arg) {
 	thread_data->poll = NULL;
 }
 
+static void __rrr_instance_thread_stats_instance_cleanup (void *arg) {
+	struct rrr_thread *thread = arg;
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+
+	if (thread_data->stats == NULL || rrr_thread_is_ghost(thread)) {
+		return;
+	}
+
+	rrr_stats_instance_destroy(thread_data->stats);
+	thread_data->stats = NULL;
+}
+
 static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
 	pthread_cleanup_push(__rrr_instance_thread_intermediate_cleanup, thread);
 	pthread_cleanup_push(__rrr_instance_thread_poll_collection_destroy, thread);
+	pthread_cleanup_push(__rrr_instance_thread_stats_instance_cleanup, thread);
 
 	if ((rrr_cmodule_new (
 			&thread_data->cmodule,
@@ -529,16 +546,37 @@ static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread
 		goto out;
 	}
 
+	if (rrr_stats_instance_new (
+		&thread_data->stats,
+		INSTANCE_D_STATS_ENGINE(thread_data),
+		INSTANCE_D_NAME(thread_data)
+	) != 0) {
+		RRR_MSG_0("Could not initialize stats engine for instance %s in __rrr_instance_thread_entry_intermediate\n",
+				INSTANCE_D_NAME(thread_data)
+		);
+		goto out;
+	}
+
+	if (rrr_stats_instance_post_default_stickies(thread_data->stats) != 0) {
+		RRR_MSG_0("Error while posting default sticky statistics instance %s in __rrr_instance_thread_entry_intermediate\n",
+				INSTANCE_D_NAME(thread_data)
+		);
+		goto out;
+	}
+
 	// Ignore return value
 	thread_data->init_data.module->operations.thread_entry(thread);
 
+	// Keep out label ABOVE cleanup_pops
+	out:
+
+	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	// Don't put code here, modules usually call pthread_exit which means we
 	// only do the cleanup functions
 
-	out:
 	return NULL;
 }
 

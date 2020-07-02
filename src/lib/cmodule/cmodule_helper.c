@@ -683,8 +683,6 @@ void rrr_cmodule_helper_loop (
 
 	struct rrr_cmodule_helper_reader_thread_data reader_thread_data = {0};
 
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
-
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
 

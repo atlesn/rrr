@@ -1081,7 +1081,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -1141,8 +1140,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	pthread_cleanup_push(rrr_ip_graylist_clear_void, &tcp_graylist);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
-
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	uint64_t prev_read_error_count = 0;
 	uint64_t prev_read_count = 0;
@@ -1259,7 +1256,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		uint64_t time_now = rrr_time_get_64();
 
-		if (stats != NULL && time_now > next_stats_time) {
+		if (INSTANCE_D_STATS(thread_data) != NULL && time_now > next_stats_time) {
 			int delivery_entry_count = 0;
 			int delivery_ratelimit_active = 0;
 
@@ -1273,11 +1270,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				break;
 			}
 
-			rrr_stats_instance_update_rate(stats, 1, "read_error_count", data->read_error_count);
-			rrr_stats_instance_update_rate(stats, 2, "read_count", data->messages_count_read);
-			rrr_stats_instance_update_rate(stats, 3, "polled_count", data->messages_count_polled);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "read_error_count", data->read_error_count);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", data->messages_count_read);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "polled_count", data->messages_count_polled);
 			rrr_stats_instance_post_unsigned_base10_text (
-					stats,
+					INSTANCE_D_STATS(thread_data),
 					"delivery_buffer_count",
 					0,
 					delivery_entry_count
@@ -1323,9 +1320,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING)) {
 		rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 	}
-//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

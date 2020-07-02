@@ -348,7 +348,6 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	RRR_DBG_1 ("journal thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(journal_data_cleanup, data);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(journal_unregister_handle, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -361,8 +360,6 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	}
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
-
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data);
 
@@ -413,9 +410,9 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 		if (time_now - time_start > 1000000) {
 			time_start = time_now;
-			rrr_stats_instance_update_rate (stats, 0, "processed", data->count_processed - prev_processed);
-			rrr_stats_instance_update_rate (stats, 1, "suppressed", data->count_suppressed - prev_suppressed);
-			rrr_stats_instance_update_rate (stats, 2, "total", data->count_total - prev_total);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "processed", data->count_processed - prev_processed);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "suppressed", data->count_suppressed - prev_suppressed);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 2, "total", data->count_total - prev_total);
 
 			prev_processed = data->count_processed;
 			prev_suppressed = data->count_suppressed;
@@ -428,7 +425,6 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	out_cleanup:
 	RRR_DBG_1 ("Thread journal instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 

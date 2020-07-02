@@ -300,7 +300,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
@@ -345,7 +344,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			stats,
+			INSTANCE_D_STATS(thread_data),
 			thread_data->poll,
 			fork_pid
 	);
@@ -354,7 +353,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 
