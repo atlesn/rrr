@@ -19,10 +19,10 @@ for file in $CFILES; do
 	echo "${file}_la_SOURCES = ${file}.c" >> $OUTFILE
 done
 
-echo -n "lib_LTLIBRARIES = " >> $OUTFILE
+echo -n "lib_LTLIBRARIES =" >> $OUTFILE
 
 for file in $CFILES; do
-	echo -n "${file}.la" >> $OUTFILE
+	echo -n " ${file}.la" >> $OUTFILE
 done
 
 echo >> $OUTFILE
