@@ -43,17 +43,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		void *arg
 
 struct rrr_net_transport_config;
+struct rrr_http_client_config;
 struct rrr_http_session;
 
 struct rrr_http_client_data {
-	char *protocol;
+	enum rrr_http_transport transport_force;
+
 	char *server;
-	char *endpoint;
-//	char *query;
-	char *user_agent;
 	uint16_t http_port;
-	int plain_force;
-	int ssl_force;
+	char *endpoint;
+	char *user_agent;
+
 	int ssl_no_cert_verify;
 
 	int do_retry;
@@ -83,9 +83,8 @@ int rrr_http_client_data_init (
 );
 int rrr_http_client_data_reset (
 		struct rrr_http_client_data *data,
-		const char *protocol,
-		const char *server,
-		const char *endpoint
+		const struct rrr_http_client_config *config,
+		enum rrr_http_transport transport_force
 );
 void rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data

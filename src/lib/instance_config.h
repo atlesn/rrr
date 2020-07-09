@@ -46,6 +46,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	do { if ( rrr_instance_config_setting_exists(config, string)) { then;									\
 	}} while (0)
 
+#define RRR_INSTANCE_CONFIG_IF_NOT_EXISTS_THEN(string, then)												\
+	do { if (!rrr_instance_config_setting_exists(config, string)) { then;									\
+	}} while (0)
+
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(string, target, default_yesno)								\
 do {int yesno = default_yesno;																				\
 	if ((ret = rrr_instance_config_check_yesno(&yesno, config, string)) != 0) {								\

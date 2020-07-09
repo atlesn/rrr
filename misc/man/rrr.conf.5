@@ -746,6 +746,92 @@ for syntax.
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
+.SS httpclient (DA)
+This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
+may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
+use any data sent from the server, any data received is ignored.
+.PP
+.Bl -tag -width -indent
+.It http_server=SERVER OR IP
+Server to send data to, defaults to 'localhost'.
+.B httpclient
+will follow any redirects from the server, also to other servers. Redirects may be disabled.  
+.It http_endpoint=ENDPOINT
+The endpoint to request from the server, e.g.
+.B /index.php.
+If the server responds with a redirect, this new endpoint will be used.
+It is possible to specify a query string in the endpoint, like
+.B /index.php?a=1&b=2.
+If the server responds with redirect, this query string will not be included in the folling request.
+If GET method is used, any query values from RRR messages will be appended to the query string, also if there are redirects.
+.B httpclient
+will detect whether a query string already exists in the URL and prefix the first parameter with either ? or &.
+Defaults to
+.B /.
+.It http_transport_type={tls|plain|both}
+If transport type is set to 'plain' or 'tls', HTTP or HTTPS will be
+.B enforced,
+which means that redirects fro the server to a different transport type than the chosen one will be rejected.
+Use 'both' or leave unspecified for automatic transport type.
+.It http_port=PORT
+Port to use when connecting to the server. Defaults to 80 for HTTP and 443 for HTTPS. Redirects from the server to other
+ports will override this value.
+.It http_method={get|post_urlencoded|post_multipart}
+Which method to use when sending data to the server. Defaults to
+.B get.
+.br
+\(bu If
+.B get
+is used, any fields will be appended to the endpoint after a questionmark ?. GET requests have no body.
+.br
+\(bu If
+.B post_urlencoded
+is used, any fields will be made into a query string and sent in the POST body of type 'application/x-www-form-urlencoded'.
+.br
+\(bu If
+.B post_multipart
+is used, any fields will be made into separate mime parts and sent in the POST body of type 'multipart/form-data'. This method is recommended for large data fields. 
+.It http_tags=ARRAY TAG[->HTTP FIELD NAME][,...]
+A comma separated list of array tags to find in RRR messages from other modules.
+If left unspecified, all array values found will be sent to the HTTP server.
+If a tag is postfixed with a
+.B HTTP FIELD NAME,
+this name instead of the array tag name when sending data to the HTTP server.
+If tags are specified and an RRR message from a sender is missing one or more of the specified tags, and error is produced. 
+.It http_fields=HTTP FIELD NAME[=VALUE][,...]
+A set of fixed fields to send to the HTTP server, optionally with values. Values from
+.B http_fields
+are always sent regardless of
+.B http_tags.
+.It http_rrr_msg_to_array={yes|no}
+Convert fields in RRR messages from other modules to array values. The fields used are
+.B timestamp, topic
+and
+.B data.
+These values may be used in the same way as any other array values from the messages, they may also be matched in the
+.B http_tags
+parameter. If
+.B http_tags
+is specified, values from the RRR message will only be sent if they are specified here. Defaults to 'no'.
+.It http_no_data={yes|no}
+Ignore all data in RRR messages from other modules. Only query values in
+.B http_endpoint
+and
+.B http_fields
+, if specified, will be sent to the server. Defaults to 'no'.
+.It http_drop_on_error={yes|no}
+If there is any error while sending a message, drop it instead of deferring it and trying again later. Errors will be logged regardless of this setting. Defaults to 'no'.
+.It http_message_timeout_ms=MILLISECONDS
+Timeout for deferred messages, defaults to 0 which means no timeout.
+.It http_max_redirects=UNSIGNED INTEGER
+The maximum number of redirects to allow from the server for a single message. May be set to 0 to disallow redirects. Defaults to 5, maximum is 500.
+.It http_tls_*
+Refer to the
+.B TLS
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of TLS parameters. All TLS parameters are optional.
+.EL
 .SS influxdb (DA)
 This module receives array messages from other modules and sends their data to an Influx database using HTTP.
 .Bl -tag -width -indent

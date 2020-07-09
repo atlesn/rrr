@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 #include "http_util.h"
 #include "http_session.h"
+#include "http_client_config.h"
 
 #include "../posix.h"
 #include "../log.h"
@@ -55,31 +56,27 @@ int rrr_http_client_data_init (
 
 int rrr_http_client_data_reset (
 		struct rrr_http_client_data *data,
-		const char *protocol,
-		const char *server,
-		const char *endpoint
+		const struct rrr_http_client_config *config,
+		enum rrr_http_transport transport_force
 ) {
 	int ret = 0;
 
-	RRR_FREE_IF_NOT_NULL(data->protocol);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 
-	if (protocol != NULL && (data->protocol = strdup(protocol)) == NULL) {
-		RRR_MSG_0("Could not allocate memory for protocol in rrr_http_client_data_reset\n");
-		ret = 1;
-		goto out;
-	}
-	if (server != NULL && (data->server = strdup(server)) == NULL) {
+	if (config->server != NULL && (data->server = strdup(config->server)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for server in rrr_http_client_data_reset\n");
 		ret = 1;
 		goto out;
 	}
-	if (endpoint != NULL && (data->endpoint = strdup(endpoint)) == NULL) {
+	if (config->endpoint != NULL && (data->endpoint = strdup(config->endpoint)) == NULL) {
 		RRR_MSG_0("Could not allocate memory for endpoint in rrr_http_client_data_reset\n");
 		ret = 1;
 		goto out;
 	}
+
+	data->transport_force = transport_force;
+	data->http_port = config->server_port;
 
 	out:
 	return ret;
@@ -88,7 +85,6 @@ int rrr_http_client_data_reset (
 void rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 ) {
-	RRR_FREE_IF_NOT_NULL(data->protocol);
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_FREE_IF_NOT_NULL(data->user_agent);
@@ -167,21 +163,29 @@ static int __rrr_http_client_receive_http_part_callback (
 static int __rrr_http_client_update_target_if_not_null (
 		struct rrr_http_client_data *data,
 		const char *protocol,
-		const char *hostname,
+		const char *server,
 		const char *endpoint,
 		unsigned int port
 ) {
 	if (protocol != NULL) {
-		RRR_FREE_IF_NOT_NULL(data->protocol);
-		if ((data->protocol = strdup(protocol)) == NULL) {
-			RRR_MSG_0("Could not allocate memory for protocol in __rrr_http_client_update_target_if_not_null\n");
-			return RRR_HTTP_HARD_ERROR;
+		if (*protocol == '\0' || rrr_posix_strcasecmp(protocol, "any") == 0) {
+			data->transport_force = RRR_HTTP_TRANSPORT_ANY;
+		}
+		else if (rrr_posix_strcasecmp(protocol, "http") == 0) {
+			data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
+		}
+		else if (rrr_posix_strcasecmp(protocol, "https") == 0) {
+			data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+		}
+		else {
+			RRR_MSG_0("Unknown transport protocol '%s' in __rrr_http_client_update_target_if_not_null, expected 'any', 'http' or 'https'\n", protocol);
+			return 1;
 		}
 	}
 
-	if (hostname != NULL) {
+	if (server != NULL) {
 		RRR_FREE_IF_NOT_NULL(data->server);
-		if ((data->server = strdup(hostname)) == NULL) {
+		if ((data->server = strdup(server)) == NULL) {
 			RRR_MSG_0("Could not allocate memory for hostname in __rrr_http_client_update_target_if_not_null\n");
 			return RRR_HTTP_HARD_ERROR;
 		}
@@ -347,6 +351,9 @@ static void __rrr_http_client_send_request_callback (
 		RRR_FREE_IF_NOT_NULL(endpoint_to_free);
 		RRR_FREE_IF_NOT_NULL(endpoint_and_query_to_free);
 		RRR_FREE_IF_NOT_NULL(query_to_free);
+
+		// There is not return, set return value in callback data struct for
+		// caller to assess
 		callback_data->http_receive_ret = ret;
 }
 
@@ -381,21 +388,7 @@ int rrr_http_client_send_request (
 
 	enum rrr_http_transport transport_code = RRR_HTTP_TRANSPORT_ANY;
 
-	if (data->protocol != NULL) {
-		if (rrr_posix_strcasecmp(data->protocol, "http") == 0) {
-			transport_code = RRR_HTTP_TRANSPORT_HTTP;
-		}
-		else if (rrr_posix_strcasecmp(data->protocol, "https") == 0) {
-			transport_code = RRR_HTTP_TRANSPORT_HTTPS;
-		}
-		else {
-			RRR_MSG_0("Unknown transport protocol '%s' in __rrr_http_client_send_request, expected 'http' or 'https'\n", data->protocol);
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-	}
-
-	if (data->ssl_force != 0) {
+	if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 		RRR_DBG_3("Forcing SSL/TLS\n");
 		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-https transport while force SSL was active, cannot continue\n");
@@ -404,7 +397,7 @@ int rrr_http_client_send_request (
 		}
 		transport_code = RRR_HTTP_TRANSPORT_HTTPS;
 	}
-	if (data->plain_force != 0) {
+	if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTP) {
 		RRR_DBG_3("Forcing plaintext non-SSL/TLS\n");
 		if (transport_code != RRR_HTTP_TRANSPORT_HTTPS && transport_code != RRR_HTTP_TRANSPORT_ANY) {
 			RRR_MSG_0("Requested URI contained non-http transport while force plaintext was active, cannot continue\n");
@@ -443,7 +436,7 @@ int rrr_http_client_send_request (
 				tls_flags
 		);
 	}
-	else if (data->ssl_force != 0) {
+	else if (data->transport_force != 0 && data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 		RRR_MSG_0("Warning: HTTPS force was enabled but plain HTTP was attempted (possibly following redirect), aborting request\n");
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
@@ -488,7 +481,6 @@ int rrr_http_client_send_request (
 	}
 
 	if ((ret = callback_data.http_receive_ret) != RRR_HTTP_OK) {
-		RRR_MSG_0("HTTP error, return was %i\n", ret);
 		goto out;
 	}
 

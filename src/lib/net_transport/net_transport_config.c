@@ -44,7 +44,8 @@ int rrr_net_transport_config_parse (
 		struct rrr_net_transport_config *data,
 		struct rrr_instance_config *config,
 		const char *prefix,
-		int allow_both_transport_type
+		int allow_both_transport_type,
+		enum rrr_net_transport_type default_transport
 ) {
 	int ret = 0;
 
@@ -92,7 +93,7 @@ int rrr_net_transport_config_parse (
 		}
 	}
 	else {
-		data->transport_type = RRR_NET_TRANSPORT_PLAIN;
+		data->transport_type = default_transport;
 	}
 
 	// Note : It's allowed not to specify a certificate

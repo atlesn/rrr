@@ -698,6 +698,10 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 			goto out_destroy;
 		}
 	}
+	else {
+		new_pos = pos;
+		result_len = 0;
+	}
 
 	pos = new_pos + result_len;
 

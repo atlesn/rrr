@@ -30,8 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_instance_config;
 
 struct rrr_http_client_config {
-	char *protocol;
 	char *server;
+	char *endpoint;
 
 	char *method_str;
 	enum rrr_http_method method;
@@ -53,7 +53,8 @@ int rrr_http_client_config_parse (
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
-		int enable_fixed
+		int enable_fixed,
+		int enable_endpoint
 );
 
 #endif /* RRR_HTTP_CLIENT_CONFIG_H */

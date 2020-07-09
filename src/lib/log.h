@@ -69,6 +69,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_PLAIN(...) \
 	do {rrr_log_printf_plain (__VA_ARGS__);}while(0)
 
+#define RRR_MSG_PLAIN_N(value,size) \
+	do {rrr_log_printn_plain ((const char *) value, size);}while(0)
+
 // Non-critical errors always to be logged
 #define RRR_MSG_0(...) \
 	do {rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_global_config.log_prefix, __VA_ARGS__);}while(0)
@@ -198,6 +201,7 @@ void rrr_log_hooks_call_raw (
 );
 void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_printf_plain (const char *__restrict __format, ...);
+void rrr_log_printn_plain (const char *value, size_t value_size);
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 void rrr_log_fprintf (FILE *file, unsigned short loglevel, const char *prefix, const char *__restrict __format, ...);
 

@@ -808,6 +808,7 @@ int rrr_http_session_transport_ctx_receive (
 			break;
 		}
 
+		// TODO : Maybe this is not needed or we should sleep only if nothing was read
 		rrr_posix_usleep(500);
 
 		uint64_t time_now = rrr_time_get_64();
@@ -829,8 +830,13 @@ int rrr_http_session_transport_ctx_receive (
 	} while (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE);
 
 	if (ret != 0) {
-		RRR_MSG_0("Error while reading from server in rrr_http_session_transport_ctx_receive\n");
-		ret = 1;
+		if (ret == RRR_NET_TRANSPORT_READ_INCOMPLETE || ret == RRR_NET_TRANSPORT_READ_SOFT_ERROR) {
+			ret = RRR_HTTP_SOFT_ERROR;
+		}
+		else {
+			ret = RRR_HTTP_HARD_ERROR;
+		}
+		// Don't print error here, not needed.
 		goto out;
 	}
 

@@ -41,17 +41,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/array.h"
 
-#define RRR_HTTPCLIENT_DEFAULT_SERVER	"localhost"
-#define RRR_HTTPCLIENT_DEFAULT_PORT		0 // 0=automatic
+#define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
+#define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
+#define RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX	5
+#define RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX		500
 
 struct httpclient_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_http_client_data http_client_data;
 	struct rrr_ip_buffer_entry_collection defer_queue;
 
+	int do_no_data;
 	int do_rrr_msg_to_array;
 	int do_drop_on_error;
-	rrr_setting_uint send_timeout_us;
+	rrr_setting_uint message_timeout_us;
+
+	rrr_setting_uint redirects_max;
 
 	struct rrr_net_transport_config net_transport_config;
 
@@ -211,6 +216,10 @@ static int httpclient_session_add_fields_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	if (data->do_no_data != 0 && (RRR_MAP_COUNT(&data->http_client_config.tags) + RRR_LL_COUNT(callback_data->array) > 0)) {
+		RRR_BUG("BUG: HTTP do_no_data is set but tags map and array are not empty in httpclient_session_add_fields_callback\n");
+	}
+
 	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
 		// Add all array fields
 		RRR_LL_ITERATE_BEGIN(callback_data->array, const struct rrr_type_value);
@@ -229,13 +238,13 @@ static int httpclient_session_add_fields_callback (
 		RRR_MAP_ITERATE_BEGIN(&data->http_client_config.tags);
 			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(callback_data->array, node_tag);
 			if (value == NULL) {
-				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s\n",
+				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s.\n",
 						node_tag, INSTANCE_D_NAME(data->thread_data));
 				goto out;
 			}
 
 			// If value is set in map, tag is to be translated
-			const char *tag_to_use = node_value != NULL ? node_value : node_tag;
+			const char *tag_to_use = (node_value != NULL && *node_value != '\0') ? node_value : node_tag;
 
 			if ((ret = httpclient_session_add_field (
 					data,
@@ -246,8 +255,21 @@ static int httpclient_session_add_fields_callback (
 				goto out;
 			}
 		RRR_MAP_ITERATE_END();
-
 	}
+
+	RRR_MAP_ITERATE_BEGIN(&data->http_client_config.fields);
+		RRR_DBG_3("HTTP add field value with tag '%s' value '%s'\n",
+				node_tag, node_value != NULL ? node_value : "(no value)");
+		if ((ret = rrr_http_session_query_field_add (
+				session,
+				node_tag,
+				node_value,
+				strlen(node_value),
+				"text/plain"
+		)) != RRR_HTTP_OK) {
+			goto out;
+		}
+	RRR_MAP_ITERATE_END();
 
 	if (RRR_DEBUGLEVEL_3) {
 		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(session->method));
@@ -256,6 +278,92 @@ static int httpclient_session_add_fields_callback (
 
 	out:
 		return ret;
+}
+
+static int httpclient_reset_client_data (
+		struct httpclient_data *data
+) {
+	enum rrr_http_transport http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+
+	switch (data->net_transport_config.transport_type) {
+		case RRR_NET_TRANSPORT_TLS:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTPS;
+			 break;
+		case RRR_NET_TRANSPORT_PLAIN:
+			http_transport_force = RRR_HTTP_TRANSPORT_HTTP;
+			 break;
+		default:
+			http_transport_force = RRR_HTTP_TRANSPORT_ANY;
+			break;
+	};
+
+	if (rrr_http_client_data_reset (
+			&data->http_client_data,
+			&data->http_client_config,
+			http_transport_force
+	) != 0) {
+		RRR_MSG_0("Could not store HTTP client configuration in httpclient instance %s\n",
+				INSTANCE_D_NAME(data->thread_data));
+		return RRR_HTTP_HARD_ERROR;
+	}
+
+	return RRR_HTTP_OK;
+}
+
+static int httpclient_get_values_from_message (
+		struct rrr_array *target_array,
+		struct httpclient_data *data,
+		const struct rrr_message *message
+) {
+	int ret = 0;
+
+	if (data->do_rrr_msg_to_array) {
+		// Push timestamp
+		if (rrr_array_push_value_64_with_tag(target_array, "timestamp", message->timestamp) != 0) {
+			RRR_MSG_0("Could not create timestamp array value in httpclient_get_values_from_message\n");
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+
+		// Push topic
+		if (MSG_TOPIC_LENGTH(message) > 0) {
+			if (rrr_array_push_value_str_with_tag_with_size (
+					target_array,
+					"topic",
+					MSG_TOPIC_PTR(message),
+					MSG_TOPIC_LENGTH(message)
+			) != 0) {
+				RRR_MSG_0("Could not create topic array value in httpclient_get_values_from_message\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+
+		// Push data
+		if (MSG_DATA_LENGTH(message) > 0) {
+			if (rrr_array_push_value_blob_with_tag_with_size (
+					target_array,
+					"data",
+					MSG_DATA_PTR(message),
+					MSG_DATA_LENGTH(message)
+			) != 0) {
+				RRR_MSG_0("Could not create data array value in httpclient_get_values_from_message\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+	}
+
+	if (MSG_IS_ARRAY(message)) {
+		if (rrr_array_message_append_to_collection(target_array, message) != 0) {
+			RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
 }
 
 static int httpclient_send_request_locked (
@@ -272,100 +380,73 @@ static int httpclient_send_request_locked (
 	RRR_DBG_3("httpclient instance %s sending message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(data->thread_data), message->timestamp);
 
+	if ((ret = httpclient_reset_client_data(data)) != RRR_HTTP_OK) {
+		goto out;
+	}
+
 	(void)(message);
 
-	if (data->send_timeout_us != 0) {
-		if (rrr_time_get_64() > entry->send_time + data->send_timeout_us) {
-			RRR_DBG_1("Send timeout for message in httpclient instance %s, dropping it.\n",
+	if (data->message_timeout_us != 0) {
+		if (rrr_time_get_64() > entry->send_time + data->message_timeout_us) {
+			RRR_MSG_0("Send timeout for message in httpclient instance %s, dropping it.\n",
 					INSTANCE_D_NAME(data->thread_data));
 			goto out;
 		}
 	}
 
-	if (data->do_rrr_msg_to_array) {
-		// Push timestamp
-		if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp", message->timestamp) != 0) {
-			RRR_MSG_0("Could not create timestamp array value in httpclient_send_request_locked\n");
-			ret = RRR_HTTP_HARD_ERROR;
-			goto out;
-		}
-
-		// Push topic
-		if (MSG_TOPIC_LENGTH(message) > 0) {
-			if (rrr_array_push_value_str_with_tag_with_size (
-					&array_tmp,
-					"topic",
-					MSG_TOPIC_PTR(message),
-					MSG_TOPIC_LENGTH(message)
-			) != 0) {
-				RRR_MSG_0("Could not create topic array value in httpclient_send_request_locked\n");
-				ret = RRR_HTTP_HARD_ERROR;
-				goto out;
-			}
-		}
-
-		// Push data
-		if (MSG_DATA_LENGTH(message) > 0) {
-			if (rrr_array_push_value_blob_with_tag_with_size (
-					&array_tmp,
-					"data",
-					MSG_DATA_PTR(message),
-					MSG_DATA_LENGTH(message)
-			) != 0) {
-				RRR_MSG_0("Could not create data array value in httpclient_send_request_locked\n");
-				ret = RRR_HTTP_HARD_ERROR;
-				goto out;
-			}
-		}
-	}
-
-	if (MSG_IS_ARRAY(message)) {
-		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
-			RRR_MSG_0("Error while converying message to collection in httpclient_send_request_locked\n");
-			ret = RRR_HTTP_SOFT_ERROR;
+	// If tag filtering is performed, this is done in add_fields_callback. Here, all
+	// values are prepared in the temporary array.
+	if (data->do_no_data == 0) {
+		if ((ret = httpclient_get_values_from_message(&array_tmp, data, message)) != RRR_HTTP_OK) {
 			goto out;
 		}
 	}
 
-	if (rrr_array_count(&array_tmp) > 0) {
-		struct httpclient_add_fields_callback_data add_fields_callback_data = {
-			data,
-			&array_tmp
-		};
+	// DO NOT use unsigned here.
+	long long int redirect_retry_max = data->redirects_max;
 
-		ret = rrr_http_client_send_request (
-				&data->http_client_data,
-				data->http_client_config.method,
-				&data->net_transport_config,
-				httpclient_session_add_fields_callback,
-				&add_fields_callback_data,
-				httpclient_send_request_callback,
-				data
-		);
-	}
-	else {
-		ret = rrr_http_client_send_request (
-				&data->http_client_data,
-				data->http_client_config.method,
-				&data->net_transport_config,
-				NULL,
-				NULL,
-				httpclient_send_request_callback,
-				data
-		);
+	retry:
+
+	if (redirect_retry_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX || redirect_retry_max < 0) {
+		RRR_BUG("Redirect counter error in httpclient_send_request_locked, value is now %i\n", redirect_retry_max);
 	}
 
-	if (ret != 0) {
-		RRR_MSG_0("Error while sending HTTP request in httpclient instance %s\n",
-				INSTANCE_D_NAME(data->thread_data));
+	struct httpclient_add_fields_callback_data add_fields_callback_data = {
+		data,
+		&array_tmp
+	};
+
+	if ((ret = rrr_http_client_send_request (
+			&data->http_client_data,
+			data->http_client_config.method,
+			&data->net_transport_config,
+			httpclient_session_add_fields_callback,
+			&add_fields_callback_data,
+			httpclient_send_request_callback,
+			data
+	)) != RRR_HTTP_OK) {
+		RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
+				INSTANCE_D_NAME(data->thread_data), ret);
 
 		if (data->do_drop_on_error) {
-			RRR_DBG_1("Dropping message per configuration after error in httpclient instance %s\n",
+			RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			ret = RRR_HTTP_OK;
 		}
 
 		goto out;
+	}
+
+	if (data->http_client_data.do_retry != 0) {
+		if (--redirect_retry_max >= 0) {
+			goto retry;
+		}
+		else {
+			RRR_MSG_0("Maximum numbers of redirects reached in httpclient instance %s\n",
+					INSTANCE_D_NAME(data->thread_data));
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
 	}
 
 	out:
@@ -448,35 +529,61 @@ static int httpclient_parse_config (
 ) {
 	int ret = 0;
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_endpoint", http_client_data.endpoint);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("http_server", http_client_data.server);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_no_data", do_no_data, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 
-	if (data->http_client_data.server == NULL || *(data->http_client_data.server) == '\0') {
-		RRR_MSG_0("http_server configuration parameter missing for httpclient instance %s\n", config->name);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_message_timeout_ms", message_timeout_us, 0);
+	// Remember to mulitply to get useconds. Zero means no timeout.
+	data->message_timeout_us *= 1000;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_max_redirects", redirects_max, RRR_HTTPCLIENT_DEFAULT_REDIRECTS_MAX);
+
+	if (data->redirects_max > RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX) {
+		RRR_MSG_0("Setting http_max_redirects of instance %s oustide range, maximum is %i\n",
+				config->name, RRR_HTTPCLIENT_LIMIT_REDIRECTS_MAX);
 		ret = 1;
 		goto out;
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
-
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_send_timeout_ms", send_timeout_us, 0);
-	// Remember to mulitply to get useconds. Zero means no timeout.
-	data->send_timeout_us *= 1000;
-
 	if (rrr_http_client_config_parse (
 			&data->http_client_config,
-			config, "http",
+			config,
+			"http",
 			RRR_HTTPCLIENT_DEFAULT_SERVER,
 			RRR_HTTPCLIENT_DEFAULT_PORT,
-			0 // <-- Disable fixed tags and fields
+			0, // <-- Disable fixed tags and fields
+			1  // <-- Enable endpoint
 	) != 0) {
 		ret = 1;
 		goto out;
 	}
 
-	if (rrr_net_transport_config_parse(&data->net_transport_config, config, "http", 0) != 0) {
+	if (data->do_no_data) {
+		if (RRR_MAP_COUNT(&data->http_client_config.tags) > 0) {
+			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_tags was also set. This is an error.\n",
+					config->name);
+			ret = 1;
+		}
+		if (data->do_rrr_msg_to_array) {
+			RRR_MSG_0("Setting http_no_data in instance %s was 'yes' while http_rrr_msg_to_array was also 'yes'. This is an error.\n",
+					config->name);
+			ret = 1;
+		}
+		if (ret != 0) {
+			goto out;
+		}
+	}
+
+	if (rrr_net_transport_config_parse (
+			&data->net_transport_config,
+			config,
+			"http",
+			1,
+			RRR_NET_TRANSPORT_BOTH
+	) != 0) {
 		ret = 1;
+		goto out;
 	}
 
 	out:
@@ -577,7 +684,7 @@ __attribute__((constructor)) void load(void) {
 void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
 	data->module_name = module_name;
-	data->type = RRR_MODULE_TYPE_PROCESSOR;
+	data->type = RRR_MODULE_TYPE_DEADEND;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }

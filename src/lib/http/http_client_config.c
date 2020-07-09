@@ -35,6 +35,7 @@ void rrr_http_client_config_cleanup (
 ) {
 	RRR_FREE_IF_NOT_NULL(data->server);
 	RRR_FREE_IF_NOT_NULL(data->method_str);
+	RRR_FREE_IF_NOT_NULL(data->endpoint);
 	RRR_MAP_CLEAR(&data->tags);
 	RRR_MAP_CLEAR(&data->fixed_tags);
 	RRR_MAP_CLEAR(&data->fields);
@@ -47,7 +48,8 @@ int rrr_http_client_config_parse (
 		const char *prefix,
 		const char *default_server,
 		uint16_t default_port,
-		int enable_fixed
+		int enable_fixed,
+		int enable_endpoint
 ) {
 	int ret = 0;
 
@@ -55,6 +57,11 @@ int rrr_http_client_config_parse (
 
 	RRR_INSTANCE_CONFIG_STRING_SET("_server");
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(config_string, server, default_server);
+
+	if (enable_endpoint) {
+		RRR_INSTANCE_CONFIG_STRING_SET("_endpoint");
+		RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(config_string, endpoint, "/");
+	}
 
 	// Allow default port to be set to 0
 	RRR_INSTANCE_CONFIG_STRING_SET("_port");
@@ -113,8 +120,16 @@ int rrr_http_client_config_parse (
 		}
 	}
 
+	// In the httpclient module, which does not use fixed tags and fields parameters, this
+	// paramaters consists of name=value pairs.
+	int (*fields_parse_callback)(const char *input, void *arg) = (
+			enable_fixed
+			? rrr_map_parse_pair_arrow
+			: rrr_map_parse_pair_equal
+	);
+
 	RRR_INSTANCE_CONFIG_STRING_SET("_fields");
-	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, rrr_map_parse_pair_arrow, &data->fields)) != 0) {
+	if ((ret = rrr_settings_traverse_split_commas_silent_fail(config->settings, config_string, fields_parse_callback, &data->fields)) != 0) {
 		if (ret != RRR_SETTING_NOT_FOUND) {
 			RRR_MSG_0("Error while parsing %s of instance %s\n", config_string, config->name);
 			ret = 1;

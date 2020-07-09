@@ -390,7 +390,8 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 			"influxdb",
 			INFLUXDB_DEFAULT_SERVER,
 			INFLUXDB_DEFAULT_PORT,
-			1 // <-- Enable fixed tags and fields
+			1, // <-- Enable fixed tags and fields
+			0  // <-- Do not enable endpoint
 	) != 0) {
 		ret = 1;
 	}
@@ -400,7 +401,13 @@ static int influxdb_parse_config (struct influxdb_data *data, struct rrr_instanc
 		ret = 1;
 	}
 
-	if (rrr_net_transport_config_parse(&data->net_transport_config, config, "influxdb", 0) != 0) {
+	if (rrr_net_transport_config_parse(
+			&data->net_transport_config,
+			config,
+			"influxdb",
+			0,
+			RRR_NET_TRANSPORT_PLAIN
+	) != 0) {
 		ret = 1;
 	}
 

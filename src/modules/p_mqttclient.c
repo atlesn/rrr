@@ -417,7 +417,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		goto out;
 	}
 
-	if ((rrr_net_transport_config_parse(&data->net_transport_config, config, "mqtt", 0)) != 0) {
+	if ((rrr_net_transport_config_parse(
+			&data->net_transport_config,
+			config,
+			"mqtt",
+			0,
+			RRR_NET_TRANSPORT_PLAIN
+	)) != 0) {
 		goto out;
 	}
 

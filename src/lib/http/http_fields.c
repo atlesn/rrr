@@ -100,15 +100,28 @@ int rrr_http_field_set_value (
 void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
 ) {
+	char *urlencoded_tmp = NULL;
+	ssize_t urlencoded_size = 0;
+
 	RRR_MSG_3 ("== DUMP FIELD COLLECTION ====================================\n");
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
 		RRR_MSG_3 ("%s", node->name);
-		if (node->value_size != 0) {
-			RRR_MSG_PLAIN("=(binary %lu bytes)", node->value_size);
+
+		if (node->value != NULL && node->value_size > 0) {
+			RRR_FREE_IF_NOT_NULL(urlencoded_tmp);
+			if ((urlencoded_tmp = rrr_http_util_encode_uri(&urlencoded_size, node->value, node->value_size)) == NULL) {
+				RRR_MSG_0("Warning: Error while encoding value in rrr_http_field_collection_dump\n");
+				RRR_LL_ITERATE_NEXT();
+			}
+			RRR_MSG_PLAIN("=(%lu bytes) ", node->value_size);
+			RRR_MSG_PLAIN_N(urlencoded_tmp, urlencoded_size);
 		}
+
 		RRR_MSG_PLAIN("\n");
 	RRR_LL_ITERATE_END();
 	RRR_MSG_3 ("== DUMP FIELD COLLECTION END ================================\n");
+
+	RRR_FREE_IF_NOT_NULL(urlencoded_tmp);
 }
 
 void rrr_http_field_collection_clear (
