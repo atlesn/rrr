@@ -430,6 +430,8 @@ int __rrr_net_http_server_worker_net_transport_ctx_do_work (struct rrr_net_trans
 
 	if ((ret = rrr_http_session_transport_ctx_receive (
 			handle,
+			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
+			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			__rrr_net_http_server_worker_http_session_receive_callback,
 			worker_data
 	)) != 0) {

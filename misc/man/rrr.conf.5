@@ -123,6 +123,8 @@ Don't sleep between creating messages, but create as many messages as the reader
 Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
 .It dummy_random_payload_max_size={BYTES}
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
+.It dummy_topic={TOPIC}
+Set an MQTT topic in generated messages.
 .El
 .SS ip (PAI)
 This module is capable of listening on an UDP or TCP port and read messages or arrays, as well as sending data to remote hosts.

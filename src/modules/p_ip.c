@@ -978,7 +978,7 @@ static int ip_send_message (
 	else if (MSG_IS_ARRAY(message)) {
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
-		if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = 1; // Probably bug in some other module or with array parsing
 			goto out;

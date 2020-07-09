@@ -36,11 +36,6 @@ void rrr_map_clear (struct rrr_map *map) {
 	RRR_LL_DESTROY(map, struct rrr_map_item, rrr_map_item_destroy(node));
 }
 
-int rrr_map_init (struct rrr_map *map) {
-	memset (map, '\0', sizeof(*map));
-	return 0;
-}
-
 int rrr_map_item_new (struct rrr_map_item **target, ssize_t field_size) {
 	int ret = 0;
 

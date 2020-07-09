@@ -744,7 +744,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				: &private_data->publish_values_from_array_list
 		);
 
-		if (rrr_array_message_to_collection(&array_tmp, reading) != 0) {
+		if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
 			RRR_MSG_0("Could not create temporary array collection in mqttclient_poll_callback of mqtt client instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			ret = 1;

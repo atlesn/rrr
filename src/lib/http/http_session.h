@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_SESSION_H
 #define RRR_HTTP_SESSION_H
 
+#include <stdint.h>
+
 #include "http_common.h"
 #include "http_fields.h"
 #include "http_part.h"
@@ -41,23 +43,40 @@ struct rrr_net_transport_handle;
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_net_transport_handle *handle
 );
+int rrr_http_session_transport_ctx_set_endpoint (
+		struct rrr_net_transport_handle *handle,
+		const char *endpoint
+);
 int rrr_http_session_transport_ctx_client_new (
 		struct rrr_net_transport_handle *handle,
 		enum rrr_http_method method,
-		const char *endpoint,
 		const char *user_agent
 );
 int rrr_http_session_transport_ctx_add_query_field (
 		struct rrr_net_transport_handle *handle,
 		const char *name,
-		const char *value
+		const char *value,
+		ssize_t value_size,
+		const char *content_type
 );
-int rrr_http_session_transport_ctx_send_request (
+int rrr_http_session_query_field_add (
+		struct rrr_http_session *session,
+		const char *name,
+		const char *value,
+		ssize_t value_size,
+		const char *content_type
+);
+void rrr_http_session_query_fields_dump (
+		struct rrr_http_session *session
+);
+int rrr_http_session_transport_ctx_request_send (
 		struct rrr_net_transport_handle *handle,
 		const char *host
 );
 int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
+		uint64_t timeout_stall_us,
+		uint64_t timeout_total_us,
 		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
 		void *callback_arg
 );

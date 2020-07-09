@@ -57,19 +57,13 @@ do {int yesno = default_yesno;																				\
 		ret = 0;																							\
 	} data->target = (yesno >= 0 ? yesno : default_yesno); } while(0)
 
+#define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, def)										\
+do {if ((ret = rrr_instance_config_parse_optional_utf8(&data->target, config, string, def)) != 0) {			\
+		goto out;																							\
+	}} while(0)
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(string, target)								\
-do {if ((ret = rrr_settings_get_string_noconvert_silent(&data->target, config->settings, string)) != 0) {	\
-		if (ret != RRR_SETTING_NOT_FOUND) {																	\
-			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);				\
-			ret = 1; goto out;																				\
-		} ret = 0;																							\
-	} else {																								\
-		if (rrr_utf8_validate(data->target, strlen(data->target)) != 0) {									\
-			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);				\
-			ret = 1; goto out;																				\
-		}																									\
-	}} while(0)
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8(string, target, NULL)
 
 #define RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(string, target, default_uint)							\
 do {rrr_setting_uint tmp_uint = (default_uint);																\
@@ -167,44 +161,43 @@ int rrr_instance_config_string_set (
 		const char *name,
 		const char *suffix
 );
-
 void rrr_instance_config_destroy (
 		struct rrr_instance_config *config
 );
-
 struct rrr_instance_config *rrr_instance_config_new (
 		const char *name_begin,
 		const int name_length,
 		const int max_settings
 );
-
 int rrr_instance_config_read_port_number (
 		rrr_setting_uint *target,
 		struct rrr_instance_config *source,
 		const char *name
 );
-
 int rrr_instance_config_check_all_settings_used (
 		struct rrr_instance_config *config
 );
-
 int rrr_instance_config_parse_array_definition_from_config_silent_fail (
 		struct rrr_array *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key
 );
-
 int rrr_instance_config_parse_comma_separated_associative_to_map (
 		struct rrr_map *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key,
 		const char *delimeter
 );
-
 int rrr_instance_config_parse_comma_separated_to_map (
 		struct rrr_map *target,
 		struct rrr_instance_config *config,
 		const char *cmd_key
+);
+int rrr_instance_config_parse_optional_utf8 (
+		char **target,
+		struct rrr_instance_config *config,
+		const char *string,
+		const char *def
 );
 
 #endif /* RRR_INSTANCE_CONFIG_H */

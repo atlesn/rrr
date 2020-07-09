@@ -189,14 +189,18 @@ void rrr_http_util_print_where_message (
 }
 
 int rrr_http_util_decode_urlencoded_string (
-		char *target
+		ssize_t *output_size,
+		char *target,
+		ssize_t input_size
 ) {
 	int ret = 0;
 
-	const char *start = target;
-	const char *end = start + strlen(start);
+	*output_size = 0;
 
-	size_t wpos = 0;
+	const char *start = target;
+	const char *end = start + input_size;
+
+	ssize_t wpos = 0;
 
 	while (start < end) {
 		unsigned char c = *start;
@@ -231,7 +235,7 @@ int rrr_http_util_decode_urlencoded_string (
 		start++;
 	}
 
-	target[wpos] = '\0';
+	*output_size = wpos;
 
 	out:
 	return ret;
@@ -239,14 +243,17 @@ int rrr_http_util_decode_urlencoded_string (
 
 // We allow non-ASCII here
 char *rrr_http_util_encode_uri (
-		const char *input
+		ssize_t *output_size,
+		const char *input,
+		ssize_t input_size
 ) {
-	ssize_t input_length = strlen(input);
-	ssize_t result_max_length = input_length * 3 + 1;
+	ssize_t result_max_length = input_size * 3;
+
+	*output_size = 0;
 
 	int err = 0;
 
-	char *result = malloc(result_max_length);
+	char *result = malloc(result_max_length + 1); // Allocate extra byte for 0 from sprintf
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_encode_uri\n");
 		err = 1;
@@ -257,7 +264,7 @@ char *rrr_http_util_encode_uri (
 	char *wpos = result;
 	char *wpos_max = result + result_max_length;
 
-	for (int i = 0; i < input_length; i++) {
+	for (int i = 0; i < input_size; i++) {
 		unsigned char c = *((unsigned char *) input + i);
 
 		if (__rrr_http_util_is_alphanumeric(c) || __rrr_http_util_is_uri_unreserved_rfc2396(c)) {
@@ -273,6 +280,8 @@ char *rrr_http_util_encode_uri (
 	if (wpos > wpos_max) {
 		RRR_BUG("Result string was too long in rrr_http_util_encode_uri\n");
 	}
+
+	*output_size = wpos - result;
 
 	out:
 	if (err != 0) {
@@ -303,13 +312,17 @@ const char *rrr_http_util_find_quoted_string_end (
 	return NULL;
 }
 
-int rrr_http_util_unquote_string (char *target) {
-	size_t length = strlen(target);
-
+int rrr_http_util_unquote_string (
+		ssize_t *output_size,
+		char *target,
+		ssize_t length
+) {
 	char *start = target;
 	char *end = target + length;
 
-	size_t wpos = 0;
+	*output_size = 0;
+
+	ssize_t wpos = 0;
 
 	while (start < end) {
 		if (*start == '"' || *start == '(') {
@@ -349,7 +362,7 @@ int rrr_http_util_unquote_string (char *target) {
 		start++;
 	}
 
-	target[wpos] = '\0';
+	*output_size = wpos;
 
 	return 0;
 }

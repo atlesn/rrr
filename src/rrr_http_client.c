@@ -35,12 +35,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/http/http_client.h"
+#include "lib/net_transport/net_transport_config.h"
 #include "lib/vl_time.h"
 #include "lib/rrr_strerror.h"
 
 RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_client");
-
-#define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
@@ -96,22 +95,6 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
 		ret = 1;
 		goto out;
-	}
-
-	// Query
-	const char *query = cmd_get_value(cmd, "query", 0);
-	if (cmd_get_value (cmd, "query", 1) != NULL) {
-		RRR_MSG_0("Error: Only one query argument may be specified\n");
-		ret = 1;
-		goto out;
-	}
-	if (query != NULL) {
-		data->query = strdup(query);
-		if (data->query == NULL) {
-			RRR_MSG_0("Could not allocate memory in __rrr_post_parse_config\n");
-			ret = 1;
-			goto out;
-		}
 	}
 
 	// No certificate verification
@@ -262,7 +245,24 @@ int main (int argc, const char *argv[]) {
 
 	data.do_retry = 0;
 
-	if ((ret = rrr_http_client_send_request(&data, __rrr_http_client_final_callback, NULL)) != 0) {
+	struct rrr_net_transport_config net_transport_config = {
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			RRR_NET_TRANSPORT_BOTH
+	};
+
+	if ((ret = rrr_http_client_send_request (
+			&data,
+			RRR_HTTP_METHOD_GET,
+			&net_transport_config,
+			NULL,
+			NULL,
+			__rrr_http_client_final_callback,
+			NULL
+	)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

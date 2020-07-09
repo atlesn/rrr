@@ -209,7 +209,7 @@ int averager_process_message (
 		goto out;
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_MSG_0("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;

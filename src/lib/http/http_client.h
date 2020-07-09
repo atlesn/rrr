@@ -37,11 +37,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 		ssize_t data_size,								\
 		void *arg
 
+#define RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS		\
+		char **query_string,							\
+		struct rrr_http_session *session,				\
+		void *arg
+
+struct rrr_net_transport_config;
+struct rrr_http_session;
+
 struct rrr_http_client_data {
 	char *protocol;
 	char *server;
 	char *endpoint;
-	char *query;
+//	char *query;
 	char *user_agent;
 	uint16_t http_port;
 	int plain_force;
@@ -51,7 +59,9 @@ struct rrr_http_client_data {
 	int do_retry;
 };
 
-struct rrr_http_client_receive_callback_data {
+struct rrr_http_client_request_callback_data {
+	enum rrr_http_method method;
+
 	int response_code;
 	char *response_argument;
 
@@ -60,6 +70,9 @@ struct rrr_http_client_receive_callback_data {
 	int http_receive_ret;
 
 	struct rrr_http_client_data *data;
+
+	int (*before_send_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS);
+	void *before_send_callback_arg;
 	int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS);
 	void *final_callback_arg;
 };
@@ -68,12 +81,22 @@ int rrr_http_client_data_init (
 		struct rrr_http_client_data *data,
 		const char *user_agent
 );
+int rrr_http_client_data_reset (
+		struct rrr_http_client_data *data,
+		const char *protocol,
+		const char *server,
+		const char *endpoint
+);
 void rrr_http_client_data_cleanup (
 		struct rrr_http_client_data *data
 );
 // Note that data in the struct may change if there are any redirects
 int rrr_http_client_send_request (
 		struct rrr_http_client_data *data,
+		enum rrr_http_method method,
+		const struct rrr_net_transport_config *net_transport_config,
+		int (*before_send_callback)(RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS),
+		void *before_send_callback_arg,
 		int (*final_callback)(RRR_HTTP_CLIENT_FINAL_CALLBACK_ARGS),
 		void *final_callback_arg
 );

@@ -138,7 +138,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	if (rrr_array_message_to_collection(&collection, message) != 0) {
+	if (rrr_array_message_append_to_collection(&collection, message) != 0) {
 		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
 		ret = 1;
 		goto out;
@@ -453,7 +453,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_array array_tmp = {0};
 
 	if (MSG_IS_ARRAY(message)) {
-		if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 			TEST_MSG("Could not create array collection in test_averager_callback\n");
 			ret = 1;
 			goto out;

@@ -172,20 +172,24 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (node->value == NULL || *(node->value) == '\0') {
+		if (node->value == NULL || node->value_size == 0) {
 			RRR_DBG_1("Warning: Empty field '%s' in content-disposition\n", node->name);
 			RRR_LL_ITERATE_NEXT();
 		}
 
 		if (rrr_posix_strcasecmp(node->name, "name") || rrr_posix_strcasecmp(node->name, "filename")) {
-			if (rrr_http_util_unquote_string(node->value) != 0) {
+			ssize_t output_size = 0;
+			if (rrr_http_util_unquote_string(&output_size, node->value, node->value_size) != 0) {
 				RRR_DBG_1("Warning: Syntax error in 'name' or 'filename' field of content-disposition header\n");
 				RRR_LL_ITERATE_NEXT();
 			}
-			if (rrr_http_util_decode_urlencoded_string(node->value) != 0) {
+			node->value_size = output_size;
+
+			if (rrr_http_util_decode_urlencoded_string(&output_size, node->value, node->value_size) != 0) {
 				RRR_DBG_1("Warning: Error while decoding url encoding of 'name' or 'filename' field of content-disposition header\n");
 				RRR_LL_ITERATE_NEXT();
 			}
+			node->value_size = output_size;
 		}
 		else {
 			RRR_DBG_1("Warning: Unknown field '%s' in content-disposition header\n", node->name);
@@ -1234,7 +1238,7 @@ int rrr_http_part_parse (
 			}
 			else if (rrr_posix_strcasecmp(result->request_method_str, "POST") == 0) {
 				if (content_type == NULL || rrr_posix_strcasecmp(content_type->name, "application/octet-stream")) {
-					result->request_method = RRR_HTTP_METHOD_POST_APPLICATON_OCTET_STREAM;
+					result->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
 				}
 				else if (rrr_posix_strcasecmp(content_type->name, "multipart/form-data")) {
 					result->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
@@ -1520,7 +1524,7 @@ int rrr_http_part_process_multipart (
 
 	const char *boundary_str = boundary->value;
 
-	ssize_t boundary_length = strlen(boundary_str);
+	ssize_t boundary_length = boundary->value_size;
 	if (boundary_length == 0) {
 		RRR_MSG_0("Boundary too short while parsing HTTP multipart body\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -1734,12 +1738,12 @@ int rrr_http_part_extract_post_and_query_fields (
 			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node, data_ptr);
 
 			const struct rrr_http_field *field_name = __rrr_http_part_get_header_field_subvalue(node, "content-disposition", "name");
-			if (field_name == NULL || field_name->value == NULL || *(field_name)->value == '\0') {
+			if (field_name == NULL || field_name->value == NULL || field_name->value_size == 0) {
 				RRR_DBG_1("Warning: Unknown field or invalid content-disposition of multipart part\n");
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value, strlen(field_name->value))) != 0) {
+			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value, field_name->value_size)) != 0) {
 				RRR_MSG_0("Could not create new field in rrr_http_part_extract_post_and_query_fields\n");
 				goto out;
 			}
@@ -1766,7 +1770,7 @@ static void __rrr_http_part_dump_header_field (struct rrr_http_header_field *fie
 			field->name, field->value_unsigned, field->value_signed, field->value);
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		printf("\t%s: '%s'\n", node->name, (node->is_binary ? "BINARY" : node->value));
+		printf("\t%s: %li bytes\n", node->name, node->value_size);
 	RRR_LL_ITERATE_END();
 }
 

@@ -42,6 +42,9 @@ struct dummy_data {
 	int no_sleeping;
 	rrr_setting_uint max_generated;
 	rrr_setting_uint random_payload_max_size;
+
+	char *topic;
+	size_t topic_len; // Optimization, don't calculate length for every message
 };
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -73,63 +76,20 @@ int data_init(struct dummy_data *data) {
 
 void data_cleanup(void *arg) {
 	struct dummy_data *data = (struct dummy_data *) arg;
-	(void)(data);
+	RRR_FREE_IF_NOT_NULL(data->topic);
 }
 
 int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-	int yesno = 0;
 
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 1; // Default to yes
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_sleeping", no_sleeping, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_max_generated", max_generated, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
 
-	data->no_generation = yesno;
-
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_sleeping")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 0; // Default to no
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->no_sleeping = yesno;
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&data->max_generated, config, "dummy_max_generated")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			data->max_generated = 0;
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&data->random_payload_max_size, config, "dummy_random_payload_max_size")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			data->random_payload_max_size = 0;
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_random_payload_max_size setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
+	if (data->topic != NULL) {
+		data->topic_len = strlen(data->topic);
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -157,11 +117,15 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
 			time,
-			0,
+			data->topic_len + 1,
 			payload_size
 	) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	if (data->topic != NULL) {
+		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len + 1);
 	}
 
 	entry->message = reading;

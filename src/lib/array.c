@@ -470,36 +470,79 @@ int rrr_array_push_value_64_with_tag (
 	return 0;
 }
 
-int rrr_array_push_value_str_with_tag (
+static int __rrr_array_push_value_x_with_tag_with_size (
 		struct rrr_array *collection,
 		const char *tag,
-		const char *value
+		const char *value,
+		size_t value_size,
+		const struct rrr_type_definition *type
 ) {
-	int ret = 0;
-
-	size_t str_size = strlen(value) + 1;
-
 	struct rrr_type_value *new_value = NULL;
 	if (rrr_type_value_new (
 			&new_value,
-			&rrr_type_definition_str,
+			type,
 			0,
 			strlen(tag),
 			tag,
-			str_size,
+			value_size,
 			1,
-			str_size
+			value_size
 	) != 0) {
-		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag\n");
+		RRR_MSG_0("Could not create value in rrr_array_push_value_str_with_tag_with_size\n");
 		return 1;
 	}
 
 	RRR_LL_UNSHIFT(collection, new_value);
 
 	// Don't use the import function, it reads strings with quotes around it
-	memcpy(new_value->data, value, str_size);
+	memcpy(new_value->data, value, value_size);
 
-	return ret;
+	return 0;
+}
+
+int rrr_array_push_value_str_with_tag_with_size (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value,
+		size_t value_size
+) {
+	return __rrr_array_push_value_x_with_tag_with_size (
+			collection,
+			tag,
+			value,
+			value_size,
+			&rrr_type_definition_str
+	);
+}
+
+int rrr_array_push_value_blob_with_tag_with_size (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value,
+		size_t value_size
+) {
+	return __rrr_array_push_value_x_with_tag_with_size (
+			collection,
+			tag,
+			value,
+			value_size,
+			&rrr_type_definition_blob
+	);
+}
+
+int rrr_array_push_value_str_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value
+) {
+	size_t value_size = strlen(value) + 1;
+
+	return rrr_array_push_value_str_with_tag_with_size(
+			collection,
+			tag,
+			value,
+			value_size
+	);
 }
 
 int rrr_array_get_value_unsigned_64_by_tag (
@@ -561,12 +604,26 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 	return NULL;
 }
 
-
 struct rrr_type_value *rrr_array_value_get_by_tag (
 		struct rrr_array *definition,
 		const char *tag
 ) {
 	RRR_LL_ITERATE_BEGIN(definition, struct rrr_type_value);
+		if (node->tag != NULL) {
+			if (strcmp(node->tag, tag) == 0) {
+				return node;
+			}
+		}
+	RRR_LL_ITERATE_END();
+
+	return NULL;
+}
+
+const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+		const struct rrr_array *definition,
+		const char *tag
+) {
+	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
 		if (node->tag != NULL) {
 			if (strcmp(node->tag, tag) == 0) {
 				return node;
@@ -1081,29 +1138,25 @@ int rrr_array_new_message_from_collection (
 	return ret;
 }
 
-int rrr_array_message_to_collection (
+int rrr_array_message_append_to_collection (
 		struct rrr_array *target,
 		const struct rrr_message *message_orig
 ) {
-	memset(target, '\0', sizeof(*target));
-
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
 		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");
 	}
 
-	const struct rrr_message *array = (struct rrr_message *) message_orig;
-
 	// Modules should also check for array version to make sure they support any recent changes.
-	uint16_t version = array->version;
+	uint16_t version = message_orig->version;
 	if (version != RRR_ARRAY_VERSION) {
 		RRR_MSG_0("Array message version mismatch in rrr_array_message_to_collection. Need V%i but got V%u.\n",
-				RRR_ARRAY_VERSION, array->version);
+				RRR_ARRAY_VERSION, message_orig->version);
 		goto out_free_data;
 	}
 	target->version = version;
 
-	const char *pos = MSG_DATA_PTR(array);
-	const char *end = MSG_DATA_PTR(array) + MSG_DATA_LENGTH(array);
+	const char *pos = MSG_DATA_PTR(message_orig);
+	const char *end = MSG_DATA_PTR(message_orig) + MSG_DATA_LENGTH(message_orig);
 
 	if (RRR_DEBUGLEVEL_3) {
 		/* TODO : This needs to be put in a buffer then written out

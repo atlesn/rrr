@@ -35,10 +35,14 @@ void rrr_http_util_print_where_message (
 		const char *start
 );
 int rrr_http_util_decode_urlencoded_string (
-		char *target
+		ssize_t *output_size,
+		char *target,
+		ssize_t input_size
 );
 char *rrr_http_util_encode_uri (
-		const char *input
+		ssize_t *output_size,
+		const char *input,
+		ssize_t input_size
 );
 const char *rrr_http_util_find_quoted_string_end (
 		const char *start,
@@ -46,7 +50,9 @@ const char *rrr_http_util_find_quoted_string_end (
 		char endchr
 );
 int rrr_http_util_unquote_string (
-		char *target
+		ssize_t *output_size,
+		char *target,
+		ssize_t length
 );
 char *rrr_http_util_quote_header_value (
 		const char *input,

@@ -227,3 +227,39 @@ int rrr_instance_config_parse_comma_separated_to_map (
 			&callback_data
 	);
 }
+
+int rrr_instance_config_parse_optional_utf8 (
+		char **target,
+		struct rrr_instance_config *config,
+		const char *string,
+		const char *def
+) {
+	int ret = 0;
+
+	if ((ret = rrr_settings_get_string_noconvert_silent(target, config->settings, string)) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			if (def != NULL && (*target = strdup(def)) == NULL) {
+				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
+					string, config->name);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		if (rrr_utf8_validate(*target, strlen(*target)) != 0) {
+			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}

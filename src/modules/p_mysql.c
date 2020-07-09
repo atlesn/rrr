@@ -330,11 +330,10 @@ int colplan_array_bind_execute (
 ) {
 	int ret = 0;
 
-	struct rrr_array collection;
-	memset(&collection, '\0', sizeof(collection));
+	struct rrr_array collection = {0};
 	pthread_cleanup_push(free_collection, &collection);
 
-	if (rrr_array_message_to_collection(&collection, entry->message) != 0) {
+	if (rrr_array_message_append_to_collection(&collection, entry->message) != 0) {
 		RRR_MSG_0("Could not convert array message to data collection in mysql\n");
 		ret = 1;
 		goto out_cleanup;

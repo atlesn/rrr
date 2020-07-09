@@ -24,3 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 const char *rrr_http_transport_str_any = "ANY";
 const char *rrr_http_transport_str_http = "HTTP";
 const char *rrr_http_transport_str_https = "HTTPS";
+
+const char *rrr_http_method_str_get = "GET";
+const char *rrr_http_method_str_post_multipart_form_data = "POST_MULTIPART_FORM_DATA";
+const char *rrr_http_method_str_post_urlencoded = "POST_URLENCODED";
+const char *rrr_http_method_str_post_urlencoded_no_quoting = "POST_URLENCODED_NO_QUOTING";
+const char *rrr_http_method_str_post_application_octet_stream = "POST_APPLICATION_OCTET_STREAM";
+const char *rrr_http_method_str_post_application_text_plain = "POST_TEXT_PLAIN";

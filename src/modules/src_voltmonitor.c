@@ -506,7 +506,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 		RRR_BUG("Message to voltmonitor inject was not an array\n");
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
 	}
 

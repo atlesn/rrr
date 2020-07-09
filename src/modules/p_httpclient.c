@@ -27,6 +27,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/http/http_client.h"
+#include "../lib/http/http_client_config.h"
+#include "../lib/http/http_query_builder.h"
+#include "../lib/http/http_session.h"
+#include "../lib/net_transport/net_transport_config.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
@@ -35,16 +39,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/log.h"
+#include "../lib/array.h"
 
-#define RRR_HTTP_CLIENT_USER_AGENT "RRR/" PACKAGE_VERSION
+#define RRR_HTTPCLIENT_DEFAULT_SERVER	"localhost"
+#define RRR_HTTPCLIENT_DEFAULT_PORT		0 // 0=automatic
 
 struct httpclient_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_http_client_data http_client_data;
 	struct rrr_ip_buffer_entry_collection defer_queue;
 
+	int do_rrr_msg_to_array;
 	int do_drop_on_error;
 	rrr_setting_uint send_timeout_us;
+
+	struct rrr_net_transport_config net_transport_config;
+
+	// Array fields, server name etc.
+	struct rrr_http_client_config http_client_config;
 };
 
 static int httpclient_send_request_callback (
@@ -77,11 +89,183 @@ static int httpclient_send_request_callback (
 	return ret;
 }
 
+static int httpclient_session_add_field (
+		struct httpclient_data *data,
+		struct rrr_http_session *session,
+		const struct rrr_type_value *value,
+		const char *tag_to_use
+) {
+	int ret = 0;
+
+	struct rrr_http_query_builder query_builder;
+
+	char *buf_tmp = NULL;
+
+	if ((rrr_http_query_builder_init(&query_builder)) != 0) {
+		RRR_MSG_0("Could not initialize query builder in httpclient_add_multipart_array_value\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_DBG_3("HTTP add array value with tag '%s' type '%s'\n",
+			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
+
+	if (RRR_TYPE_IS_MSG(value->definition->type)) {
+		ssize_t buf_size = 0;
+
+		value->definition->get_export_length(&buf_size, value);
+
+		if ((buf_tmp = malloc(buf_size)) == NULL) {
+			RRR_MSG_0("Error while allocating memory before exporting RRR message in httpclient_add_multipart_array_value\n");
+			ret = 1;
+			goto out_cleanup_query_builder;
+		}
+
+		if (value->definition->export(buf_tmp, &buf_size, value) != 0) {
+			RRR_MSG_0("Error while exporting RRR message in httpclient_add_multipart_array_value\n");
+			ret = 1;
+			goto out_cleanup_query_builder;
+		}
+
+		ret = rrr_http_session_query_field_add (
+				session,
+				tag_to_use,
+				buf_tmp,
+				buf_size,
+				RRR_MESSAGE_MIME_TYPE
+		);
+	}
+	else if (RRR_TYPE_IS_STR(value->definition->type)) {
+		int64_t buf_size = value->total_stored_length; // MUST be signed
+		const char *buf = value->data;
+
+		// Remove trailing 0's
+		while (buf_size > 0 && buf[buf_size - 1] == '\0') {
+			buf_size--;
+		}
+
+		if (buf_size > 0) {
+			ret = rrr_http_session_query_field_add (
+					session,
+					tag_to_use,
+					buf,
+					buf_size,
+					"text/plain"
+			);
+		}
+	}
+	else if (RRR_TYPE_IS_BLOB(value->definition->type)) {
+		ret = rrr_http_session_query_field_add (
+				session,
+				tag_to_use,
+				value->data,
+				value->total_stored_length,
+				"application/octet-stream"
+		);
+	}
+	else {
+		// BLOB and STR must be treated as special case above, this
+		// function would otherwise modify the data by escaping
+		if ((ret = rrr_http_query_builder_append_type_value_as_escaped_string (
+				&query_builder,
+				value,
+				0
+		)) != 0) {
+			RRR_MSG_0("Error while exporting non-BLOB in httpclient_add_multipart_array_value\n");
+			goto out_cleanup_query_builder;
+		}
+
+		ret = rrr_http_session_query_field_add (
+				session,
+				tag_to_use,
+				rrr_http_query_builder_buf_get(&query_builder),
+				rrr_http_query_builder_wpos_get(&query_builder),
+				"text/plain"
+		);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Could not add data to HTTP query in instance %s\n", INSTANCE_D_NAME(data->thread_data));
+		goto out_cleanup_query_builder;
+	}
+
+	out_cleanup_query_builder:
+		rrr_http_query_builder_cleanup(&query_builder);
+	out:
+		RRR_FREE_IF_NOT_NULL(buf_tmp);
+		return ret;
+}
+
+struct httpclient_add_fields_callback_data {
+	struct httpclient_data *data;
+	const struct rrr_array *array;
+};
+
+static int httpclient_session_add_fields_callback (
+		RRR_HTTP_CLIENT_BEFORE_SEND_CALLBACK_ARGS
+) {
+	struct httpclient_add_fields_callback_data *callback_data = arg;
+	struct httpclient_data *data = callback_data->data;
+
+	*query_string = NULL;
+
+	int ret = RRR_HTTP_OK;
+
+	if (RRR_MAP_COUNT(&data->http_client_config.tags) == 0) {
+		// Add all array fields
+		RRR_LL_ITERATE_BEGIN(callback_data->array, const struct rrr_type_value);
+			if ((ret = httpclient_session_add_field (
+					data,
+					session,
+					node,
+					node->tag
+			)) != RRR_HTTP_OK) {
+				goto out;
+			}
+		RRR_LL_ITERATE_END();
+	}
+	else {
+		// Add chosen array fields
+		RRR_MAP_ITERATE_BEGIN(&data->http_client_config.tags);
+			const struct rrr_type_value *value = rrr_array_value_get_by_tag_const(callback_data->array, node_tag);
+			if (value == NULL) {
+				RRR_MSG_0("Could not find array tag %s while adding HTTP query values in instance %s\n",
+						node_tag, INSTANCE_D_NAME(data->thread_data));
+				goto out;
+			}
+
+			// If value is set in map, tag is to be translated
+			const char *tag_to_use = node_value != NULL ? node_value : node_tag;
+
+			if ((ret = httpclient_session_add_field (
+					data,
+					session,
+					value,
+					tag_to_use
+			)) != RRR_HTTP_OK) {
+				goto out;
+			}
+		RRR_MAP_ITERATE_END();
+
+	}
+
+	if (RRR_DEBUGLEVEL_3) {
+		RRR_MSG_3("HTTP using method %s\n", RRR_HTTP_METHOD_TO_STR(session->method));
+		rrr_http_session_query_fields_dump(session);
+	}
+
+	out:
+		return ret;
+}
+
 static int httpclient_send_request_locked (
 		struct httpclient_data *data,
 		struct rrr_ip_buffer_entry *entry
 ) {
 	struct rrr_message *message = entry->message;
+	struct rrr_array array_tmp = {0};
+
+	array_tmp.version = RRR_ARRAY_VERSION;
 
 	int ret = RRR_HTTP_OK;
 
@@ -98,11 +282,80 @@ static int httpclient_send_request_locked (
 		}
 	}
 
-	if ((ret = rrr_http_client_send_request (
-			&data->http_client_data,
-			httpclient_send_request_callback,
-			data
-	)) != 0) {
+	if (data->do_rrr_msg_to_array) {
+		// Push timestamp
+		if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp", message->timestamp) != 0) {
+			RRR_MSG_0("Could not create timestamp array value in httpclient_send_request_locked\n");
+			ret = RRR_HTTP_HARD_ERROR;
+			goto out;
+		}
+
+		// Push topic
+		if (MSG_TOPIC_LENGTH(message) > 0) {
+			if (rrr_array_push_value_str_with_tag_with_size (
+					&array_tmp,
+					"topic",
+					MSG_TOPIC_PTR(message),
+					MSG_TOPIC_LENGTH(message)
+			) != 0) {
+				RRR_MSG_0("Could not create topic array value in httpclient_send_request_locked\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+
+		// Push data
+		if (MSG_DATA_LENGTH(message) > 0) {
+			if (rrr_array_push_value_blob_with_tag_with_size (
+					&array_tmp,
+					"data",
+					MSG_DATA_PTR(message),
+					MSG_DATA_LENGTH(message)
+			) != 0) {
+				RRR_MSG_0("Could not create data array value in httpclient_send_request_locked\n");
+				ret = RRR_HTTP_HARD_ERROR;
+				goto out;
+			}
+		}
+	}
+
+	if (MSG_IS_ARRAY(message)) {
+		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
+			RRR_MSG_0("Error while converying message to collection in httpclient_send_request_locked\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+	}
+
+	if (rrr_array_count(&array_tmp) > 0) {
+		struct httpclient_add_fields_callback_data add_fields_callback_data = {
+			data,
+			&array_tmp
+		};
+
+		ret = rrr_http_client_send_request (
+				&data->http_client_data,
+				data->http_client_config.method,
+				&data->net_transport_config,
+				httpclient_session_add_fields_callback,
+				&add_fields_callback_data,
+				httpclient_send_request_callback,
+				data
+		);
+	}
+	else {
+		ret = rrr_http_client_send_request (
+				&data->http_client_data,
+				data->http_client_config.method,
+				&data->net_transport_config,
+				NULL,
+				NULL,
+				httpclient_send_request_callback,
+				data
+		);
+	}
+
+	if (ret != 0) {
 		RRR_MSG_0("Error while sending HTTP request in httpclient instance %s\n",
 				INSTANCE_D_NAME(data->thread_data));
 
@@ -116,6 +369,7 @@ static int httpclient_send_request_locked (
 	}
 
 	out:
+	rrr_array_clear(&array_tmp);
 	return ret;
 }
 
@@ -160,6 +414,8 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 static void httpclient_data_cleanup(void *arg) {
 	struct httpclient_data *data = arg;
 	rrr_http_client_data_cleanup(&data->http_client_data);
+	rrr_net_transport_config_cleanup(&data->net_transport_config);
+	rrr_http_client_config_cleanup(&data->http_client_config);
 	rrr_ip_buffer_entry_collection_clear(&data->defer_queue);
 }
 
@@ -201,11 +457,27 @@ static int httpclient_parse_config (
 		goto out;
 	}
 
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_rrr_msg_to_array", do_rrr_msg_to_array, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_drop_on_error", do_drop_on_error, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("http_send_timeout_ms", send_timeout_us, 0);
 	// Remember to mulitply to get useconds. Zero means no timeout.
 	data->send_timeout_us *= 1000;
+
+	if (rrr_http_client_config_parse (
+			&data->http_client_config,
+			config, "http",
+			RRR_HTTPCLIENT_DEFAULT_SERVER,
+			RRR_HTTPCLIENT_DEFAULT_PORT,
+			0 // <-- Disable fixed tags and fields
+	) != 0) {
+		ret = 1;
+		goto out;
+	}
+
+	if (rrr_net_transport_config_parse(&data->net_transport_config, config, "http", 0) != 0) {
+		ret = 1;
+	}
 
 	out:
 	return ret;
@@ -313,4 +585,3 @@ void init(struct rrr_instance_dynamic_data *data) {
 void unload(void) {
 	RRR_DBG_1 ("Destroy httpclient module\n");
 }
-
