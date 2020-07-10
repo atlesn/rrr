@@ -96,7 +96,8 @@ static int __rrr_http_server_start (
 		int *result_handle,
 		struct rrr_net_transport **result_transport,
 		uint16_t port,
-		const struct rrr_net_transport_config *net_transport_config
+		const struct rrr_net_transport_config *net_transport_config,
+		int net_transport_flags
 ) {
 	int ret = 0;
 
@@ -104,7 +105,7 @@ static int __rrr_http_server_start (
 		RRR_BUG("BUG: Double call to __rrr_http_server_start, pointer already set\n");
 	}
 
-	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, 0)) != 0) {
+	if ((ret = rrr_net_transport_new (result_transport, net_transport_config, net_transport_flags)) != 0) {
 		RRR_MSG_0("Could not create HTTP transport in __rrr_http_server_start \n");
 		ret = 1;
 		goto out;
@@ -139,7 +140,7 @@ int rrr_http_server_start_plain (
 			RRR_NET_TRANSPORT_PLAIN
 	};
 
-	ret = __rrr_http_server_start (&server->handle_http, &server->transport_http, port, &net_transport_config_plain);
+	ret = __rrr_http_server_start (&server->handle_http, &server->transport_http, port, &net_transport_config_plain, 0);
 
 	return ret;
 }
@@ -147,7 +148,8 @@ int rrr_http_server_start_plain (
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		uint16_t port,
-		const struct rrr_net_transport_config *net_transport_config_template
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
 ) {
 	int ret = 0;
 
@@ -155,7 +157,7 @@ int rrr_http_server_start_tls (
 
 	net_transport_config_tls.transport_type = RRR_NET_TRANSPORT_TLS;
 
-	ret = __rrr_http_server_start (&server->handle_https, &server->transport_https, port, &net_transport_config_tls);
+	ret = __rrr_http_server_start (&server->handle_https, &server->transport_https, port, &net_transport_config_tls, net_transport_flags);
 
 	return ret;
 }

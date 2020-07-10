@@ -52,7 +52,7 @@ static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
 		{0,							'P',	"plain-disable",		"[-P|--plain-disable]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"ssl-port",				"[-s|--ssl-port[=]HTTPS PORT]"},
-		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"cerficicate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
+		{CMD_ARG_FLAG_HAS_ARGUMENT,	'c',	"certificate",			"[-c|--certificate[=]PEM SSL CERTIFICATE]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'k',	"key",					"[-k|--key[=]PEM SSL PRIVATE KEY]"},
 		{0,							'N',	"no-cert-verify",		"[-N|--no-cert-verify]"},
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'd',	"debuglevel",			"[-d|--debuglevel[=]DEBUG FLAGS]"},
@@ -278,10 +278,17 @@ int main (int argc, const char *argv[]) {
 				RRR_NET_TRANSPORT_TLS
 		};
 
+		int flags = 0;
+
+		if (data.ssl_no_cert_verify) {
+			flags |= RRR_NET_TRANSPORT_F_TLS_NO_CERT_VERIFY;
+		}
+
 		if ((ret = rrr_http_server_start_tls (
 				http_server,
-				data.http_port,
-				&net_transport_config_tls
+				data.https_port,
+				&net_transport_config_tls,
+				flags
 		)) != 0) {
 			ret = EXIT_FAILURE;
 			goto out;

@@ -51,7 +51,8 @@ int rrr_http_server_start_plain (
 int rrr_http_server_start_tls (
 		struct rrr_http_server *server,
 		uint16_t port,
-		const struct rrr_net_transport_config *net_transport_config_template
+		const struct rrr_net_transport_config *net_transport_config_template,
+		int net_transport_flags
 );
 int rrr_http_server_tick (
 		int *accept_count_final,
