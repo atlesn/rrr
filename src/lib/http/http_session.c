@@ -844,6 +844,24 @@ int rrr_http_session_transport_ctx_receive (
 	return ret;
 }
 
+int rrr_http_session_transport_ctx_check_response_part_initilized (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return session->response_part != NULL;
+}
+
+int rrr_http_session_transport_ctx_set_response_code (
+		struct rrr_net_transport_handle *handle,
+		unsigned int code
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+
+	session->response_part->response_code = code;
+
+	return 0;
+}
+
 int rrr_http_session_transport_ctx_send_response (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -861,16 +879,16 @@ int rrr_http_session_transport_ctx_send_response (
 	const char *response_str = NULL;
 
 	switch (session->response_part->response_code) {
-		case 200:
+		case RRR_HTTP_RESPONSE_CODE_OK:
 			response_str = "HTTP/1.1 200 OK\r\n";
 			break;
-		case 204:
+		case RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT:
 			response_str = "HTTP/1.1 204 No Content\r\n";
 			break;
-		case 404:
+		case RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND:
 			response_str = "HTTP/1.1 404 Not Found\r\n";
 			break;
-		case 500:
+		case RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR:
 			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
 			break;
 		default:

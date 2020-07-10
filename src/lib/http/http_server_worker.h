@@ -35,6 +35,8 @@ struct rrr_http_server_worker_thread_data {
 	int transport_handle;
 	int error;
 	int receive_complete;
+
+	unsigned int response_code;
 };
 
 int rrr_http_server_worker_thread_data_new (

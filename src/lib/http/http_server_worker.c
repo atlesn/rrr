@@ -99,11 +99,12 @@ static int __rrr_net_http_server_worker_http_session_receive_callback (
 //	printf("In HTTP worker receive callback\n");
 
 	worker_data->receive_complete = 1;
+	worker_data->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
 
 	return 0;
 }
 
-static int __rrr_net_http_server_worker_net_transport_ctx_do_work (
+static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -126,6 +127,34 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_work (
 
 	out:
 	return ret;
+}
+
+static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
+		struct rrr_net_transport_handle *handle,
+		void *arg
+) {
+	struct rrr_http_server_worker_thread_data *worker_data = arg;
+
+	// We allow send_response to be called as long as transpoort handle is OK,
+	// but the response part must have been initialized for us to be able to
+	// send a response. If it is NULL, we cannot send a response.
+	if (!rrr_http_session_transport_ctx_check_response_part_initilized(handle)) {
+		return 0;
+	}
+
+	(void)(worker_data);
+
+	if (worker_data->response_code == 0) {
+		RRR_MSG_0("No response code was set in __rrr_net_http_server_worker_net_transport_ctx_send_response, sending 500 to client.\n");
+		worker_data->response_code = 500;
+	}
+
+	if (rrr_http_session_transport_ctx_set_response_code(handle, worker_data->response_code) != 0) {
+		RRR_MSG_0("Could not set response code in __rrr_net_http_server_worker_net_transport_ctx_send_response\n");
+		return 1;
+	}
+
+	return rrr_http_session_transport_ctx_send_response(handle);
 }
 
 void *rrr_http_server_worker_thread_entry (
@@ -154,13 +183,17 @@ void *rrr_http_server_worker_thread_entry (
 		goto out;
 	}
 
-	// All usage of private data pointer (http_session) of work_data must be done
-	// with net transport handle lock held. The transport handle integer is always
+	// All usage of private data pointer (http_session) of the transport handle
+	// must be done with net transport handle lock held.
+
+	// The transport handle integer is always
 	// usable, even if the handle it points to has been freed. The lock wrapper
 	// function in net transport will fail if the handle has been freed, this means
 	// that the HTTP session has also been freed.
 
 	pthread_cleanup_push(__rrr_net_http_server_worker_close_transport, &worker_data);
+
+	RRR_DBG_8("HTTP worker thread %p started\n", thread);
 
 	while (rrr_thread_check_encourage_stop(thread) == 0) {
 		rrr_thread_update_watchdog_time(thread);
@@ -168,7 +201,7 @@ void *rrr_http_server_worker_thread_entry (
 		if (rrr_net_transport_handle_with_transport_ctx_do (
 				worker_data.transport,
 				worker_data.transport_handle,
-				__rrr_net_http_server_worker_net_transport_ctx_do_work,
+				__rrr_net_http_server_worker_net_transport_ctx_do_reading,
 				&worker_data
 		) != 0) {
 			RRR_MSG_0("Failed while working with HTTP client in thread %p\n", thread);
@@ -182,7 +215,18 @@ void *rrr_http_server_worker_thread_entry (
 		rrr_posix_usleep(1000);
 	}
 
-	RRR_DBG_1("HTTP Worker thread %p exiting\n", thread);
+	// Always try to send response (if response part is initialized)
+	if (rrr_net_transport_handle_with_transport_ctx_do (
+			worker_data.transport,
+			worker_data.transport_handle,
+			__rrr_net_http_server_worker_net_transport_ctx_send_response,
+			&worker_data
+	) != 0) {
+		RRR_MSG_0("Failed while sending response to HTTP client in thread %p\n", thread);
+		break;
+	}
+
+	RRR_DBG_8("HTTP worker thread %p exiting\n", thread);
 
 	// This cleans up HTTP data
 	pthread_cleanup_pop(1);

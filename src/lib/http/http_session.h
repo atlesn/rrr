@@ -80,6 +80,13 @@ int rrr_http_session_transport_ctx_receive (
 		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
 		void *callback_arg
 );
+int rrr_http_session_transport_ctx_check_response_part_initilized (
+		struct rrr_net_transport_handle *handle
+);
+int rrr_http_session_transport_ctx_set_response_code (
+		struct rrr_net_transport_handle *handle,
+		unsigned int code
+);
 int rrr_http_session_transport_ctx_send_response (
 		struct rrr_net_transport_handle *handle
 );
