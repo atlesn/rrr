@@ -102,20 +102,20 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		data->ssl_no_cert_verify = 1;
 	}
 
+	if (cmd_exists(cmd, "ssl-force", 0) && cmd_exists(cmd, "plain-force", 0)) {
+		RRR_MSG_0("Both SSL-force and Plain-force (-S and -P) was set at the same time, but only one of them may be set simultaneously\n");
+		ret = 1;
+		goto out;
+	}
+
 	// Force SSL
 	if (cmd_exists(cmd, "ssl-force", 0)) {
-		data->ssl_force = 1;
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTPS;
 	}
 
 	// Force Plaintext
 	if (cmd_exists(cmd, "plain-force", 0)) {
-		data->plain_force = 1;
-	}
-
-	if (data->ssl_force != 0 && data->plain_force != 0) {
-		RRR_MSG_0("Both SSL-force and Plain-force (-S and -P) was set at the same time, but only one of them may be set simultaneously\n");
-		ret = 1;
-		goto out;
+		data->transport_force = RRR_HTTP_TRANSPORT_HTTP;
 	}
 
 	// HTTP port
@@ -134,7 +134,7 @@ static int __rrr_http_client_parse_config (struct rrr_http_client_data *data, st
 		}
 	}
 	if (port_tmp == 0) {
-		if (data->ssl_force != 0) {
+		if (data->transport_force == RRR_HTTP_TRANSPORT_HTTPS) {
 			port_tmp = 443;
 		}
 		else {

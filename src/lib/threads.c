@@ -182,7 +182,7 @@ int rrr_thread_run_ghost_cleanup(int *count) {
 void rrr_thread_set_state (struct rrr_thread *thread, int state) {
 	rrr_thread_lock(thread);
 
-	RRR_DBG_4 ("Thread %s set state %i\n", thread->name, state);
+	RRR_DBG_4 ("Thread %s setting state %i\n", thread->name, state);
 
 	if (state == RRR_THREAD_STATE_INIT) {
 		RRR_BUG("Attempted to set STARTING state of thread outside reserve_thread function\n");
@@ -533,7 +533,6 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_RUNNING);
 
-
 #ifdef VL_THREAD_INCAPACITATE_WATCHDOGS
 	while (1) {
 		rrr_posix_usleep(5000000);
@@ -548,7 +547,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 		// We or others might try to kill the thread
 		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
-			RRR_DBG_1 ("Thread %s/%p received kill signal\n", thread->name, thread);
+			RRR_DBG_1 ("Thread %s/%p received kill signal or encourage stop\n", thread->name, thread);
 			break;
 		}
 
@@ -585,27 +584,40 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	// If thread is about to start, wait a bit. If main thread hasn't completed with the
 	// INIT / INITIALIZED / START-sequence, we attempt to do that now.
 
+	// Wait for INIT stage to complete
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_INIT)) {
 		RRR_DBG_1("Thread %s/%p wasn't finished starting, wait for it to initialize\n", thread->name, thread);
 		int limit = 10;
-		while (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED) && limit > 0) {
+
+		while (--limit >= 0 && !rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
 			RRR_DBG_1("Thread %s/%p wasn't finished starting, wait for it to initialize (try %i)\n", thread->name, thread, limit);
 			rrr_posix_usleep (50000); // 50 ms (x 10)
-			limit--;
 		}
 		if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
 			RRR_DBG_1("Thread %s/%p won't initialize, maybe we have to force it to quit\n", thread->name, thread);
 		}
 	}
 
+	// Wait for INIT and INITIALIZED stage to complete (thread should set RUNNING or STOPPED).
+	// We do not print a debug message if the thread is in INITIALIZED stage, it is normal
+	// in some circumstances that the thread hasn't been started yet when we want to stop it down.
 	int state = rrr_thread_get_state(thread);
-	if (state < RRR_THREAD_STATE_RUNNING && state > RRR_THREAD_STATE_STOPPED) {
-		RRR_MSG_0("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
+	if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT) {
+		int limit = 10;
+
+		do {
+			state = rrr_thread_get_state(thread);
+			rrr_posix_usleep (50000); // 50 ms (x 10)
+		} while(--limit >= 0 && (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT));
+
+		if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT) {
+			RRR_MSG_0("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
+		}
 	}
 
 	rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_KILL);
 
-	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
+	// Wait for thread to set STOPPED
 	uint64_t prevtime = rrr_time_get_64();
 #ifndef VL_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
@@ -670,8 +682,6 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	RRR_DBG_1 ("Thread %s/%p finished.\n", thread->name, thread);
 
 	out_nostop:
-
-//	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_STOPPING);
 
 	RRR_DBG_1 ("Thread %s/%p state after stopping: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
@@ -989,7 +999,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
-int rrr_thread_iterate_by_state (
+int rrr_thread_iterate_non_wd_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),
@@ -1001,11 +1011,14 @@ int rrr_thread_iterate_by_state (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
-		if (node->state == state) {
-			ret = callback(node, callback_data);
-		}
-		if (ret != 0) {
-			RRR_LL_ITERATE_LAST();
+		if (node->is_watchdog == 0) {
+			if (node->state == state) {
+				ret = callback(node, callback_data);
+			}
+			if (ret != 0) {
+				// NOTE : Return value from caller MUST propagate to caller, many depend on this
+				RRR_LL_ITERATE_LAST();
+			}
 		}
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();
