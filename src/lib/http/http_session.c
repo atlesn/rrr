@@ -222,7 +222,7 @@ int rrr_http_session_transport_ctx_add_query_field (
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
 
-	if (pthread_mutex_trylock(&handle->lock) == 0) {
+	if (pthread_mutex_trylock(&handle->lock_) == 0) {
 		RRR_BUG("BUG: Handle not locked in rrr_http_session_transport_ctx_add_query_field\n");
 	}
 

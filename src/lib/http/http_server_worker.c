@@ -86,8 +86,7 @@ static void __rrr_net_http_server_worker_close_transport (
 		void *arg
 ) {
 	struct rrr_http_server_worker_thread_data *worker_data = arg;
-
-	rrr_net_transport_handle_close(worker_data->transport, worker_data->transport_handle);
+	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
 }
 
 static int __rrr_net_http_server_worker_http_session_receive_callback (
@@ -95,6 +94,12 @@ static int __rrr_net_http_server_worker_http_session_receive_callback (
 		const char *data_ptr,
 		void *arg
 ) {
+	struct rrr_http_server_worker_thread_data *worker_data = arg;
+
+//	printf("In HTTP worker receive callback\n");
+
+	worker_data->receive_complete = 1;
+
 	return 0;
 }
 
@@ -167,6 +172,10 @@ void *rrr_http_server_worker_thread_entry (
 				&worker_data
 		) != 0) {
 			RRR_MSG_0("Failed while working with HTTP client in thread %p\n", thread);
+			break;
+		}
+
+		if (worker_data.receive_complete) {
 			break;
 		}
 

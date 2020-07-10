@@ -1286,7 +1286,7 @@ int rrr_http_part_parse (
 			if (parse_type == RRR_HTTP_PARSE_REQUEST || result->response_code == 204) {
 				// No content
 				result->data_length = 0;
-				*target_size = 0;
+				*target_size = parsed_bytes_total;
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {

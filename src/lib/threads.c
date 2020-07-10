@@ -999,7 +999,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
-int rrr_thread_iterate_non_wd_by_state (
+int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),
@@ -1011,7 +1011,7 @@ int rrr_thread_iterate_non_wd_by_state (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
-		if (node->is_watchdog == 0) {
+		if (node->is_watchdog == 0 && node->signal == 0) {
 			if (node->state == state) {
 				ret = callback(node, callback_data);
 			}

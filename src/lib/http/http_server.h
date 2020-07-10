@@ -54,6 +54,7 @@ int rrr_http_server_start_tls (
 		const struct rrr_net_transport_config *net_transport_config_template
 );
 int rrr_http_server_tick (
+		int *accept_count_final,
 		struct rrr_http_server *server
 );
 

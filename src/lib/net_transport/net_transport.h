@@ -37,7 +37,7 @@ struct rrr_net_transport_config;
 
 struct rrr_net_transport_handle {
 	RRR_LL_NODE(struct rrr_net_transport_handle);
-	pthread_mutex_t lock;
+	pthread_mutex_t lock_;
 	struct rrr_net_transport *transport;
 	int handle;
 	enum rrr_net_transport_socket_mode mode;
@@ -60,10 +60,21 @@ struct rrr_net_transport_handle {
 	int (*application_ptr_iterator_pre_destroy)(struct rrr_net_transport_handle *handle, void *ptr);
 };
 
+struct rrr_net_transport_handle_close_tag_node {
+	RRR_LL_NODE(struct rrr_net_transport_handle_close_tag_node);
+	int transport_handle;
+};
+
+struct rrr_net_transport_handle_close_tag_list {
+	RRR_LL_HEAD(struct rrr_net_transport_handle_close_tag_node);
+};
+
 struct rrr_net_transport_handle_collection {
 	RRR_LL_HEAD(struct rrr_net_transport_handle);
 	int next_handle_position;
 	pthread_mutex_t lock;
+	pthread_t owner;
+	struct rrr_net_transport_handle_close_tag_list close_tags;
 };
 
 #define RRR_NET_TRANSPORT_HEAD(type)							\
@@ -79,6 +90,14 @@ struct rrr_net_transport_collection {
 	RRR_LL_HEAD(struct rrr_net_transport);
 };
 
+#define RRR_NET_TRANSPORT_CONNECT_ARGS											\
+	int *handle,																\
+	struct sockaddr *addr,														\
+	socklen_t *socklen,															\
+	struct rrr_net_transport *transport,										\
+	unsigned int port,															\
+	const char *host
+
 #define RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD								\
 	struct rrr_net_transport_handle *handle;									\
 	int (*get_target_size)(struct rrr_read_session *read_session, void *arg);	\
@@ -86,6 +105,46 @@ struct rrr_net_transport_collection {
 	int (*complete_callback)(struct rrr_read_session *read_session, void *arg);	\
 	void *complete_callback_arg;												\
 
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS					\
+	struct rrr_net_transport_handle *handle,									\
+	void *arg
+
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS					\
+	struct rrr_net_transport *transport,												\
+	int transport_handle,																\
+	void (*final_callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
+	void *final_callback_arg,															\
+	void *arg
+
+#define RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS											\
+	struct rrr_net_transport *transport,												\
+	unsigned int port,																	\
+	int (*callback)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_INTERMEDIATE_ARGS),		\
+	void *callback_arg,																	\
+	void (*callback_final)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_CALLBACK_FINAL_ARGS),		\
+	void *callback_final_arg
+
+#define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS							\
+	struct rrr_net_transport_handle *handle,									\
+	const struct sockaddr *sockaddr,											\
+	socklen_t socklen,															\
+	void *arg
+
+#define RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS						\
+	struct rrr_net_transport *transport,										\
+	int transport_handle, 														\
+	const struct sockaddr *sockaddr,											\
+	socklen_t socklen,															\
+	void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),		\
+	void *final_callback_arg,													\
+	void *arg
+
+#define RRR_NET_TRANSPORT_ACCEPT_ARGS											\
+	struct rrr_net_transport_handle *listen_handle,								\
+	int (*callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_INTERMEDIATE_ARGS),		\
+	void *callback_arg,															\
+	void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),		\
+	void *final_callback_arg
 
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
@@ -95,25 +154,9 @@ struct rrr_net_transport_methods {
 	void (*destroy)(
 			struct rrr_net_transport *transport
 	);
-	int (*connect)(
-			struct rrr_net_transport_handle **handle,
-			struct sockaddr *addr,
-			socklen_t *socklen,
-			struct rrr_net_transport *transport,
-			unsigned int port,
-			const char *host
-	);
-	int (*bind_and_listen)(
-			struct rrr_net_transport *transport,
-			unsigned int port,
-			void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-			void *callback_arg
-	);
-	int (*accept)(
-			struct rrr_net_transport_handle *listen_handle,
-			void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
-			void *callback_arg
-	);
+	int (*connect)(RRR_NET_TRANSPORT_CONNECT_ARGS);
+	int (*bind_and_listen)(RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS);
+	int (*accept)(RRR_NET_TRANSPORT_ACCEPT_ARGS);
 	// Only call close() from parent mode destroy function
 	int (*close)(
 			struct rrr_net_transport_handle *handle
@@ -139,8 +182,8 @@ struct rrr_net_transport_methods {
 };
 
 #ifdef RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
-int rrr_net_transport_handle_allocate_and_add_return_locked (
-		struct rrr_net_transport_handle **handle_final,
+int rrr_net_transport_handle_allocate_and_add (
+		int *handle_final,
 		struct rrr_net_transport *transport,
 		enum rrr_net_transport_socket_mode mode,
 		void *submodule_private_ptr,
@@ -151,6 +194,10 @@ void rrr_net_transport_common_cleanup (
 );
 #endif
 
+int rrr_net_transport_handle_close_tag_list_push (
+		struct rrr_net_transport *transport,
+		int handle
+);
 int rrr_net_transport_new (
 		struct rrr_net_transport **result,
 		const struct rrr_net_transport_config *config,
@@ -159,7 +206,7 @@ int rrr_net_transport_new (
 void rrr_net_transport_destroy (struct rrr_net_transport *transport);
 void rrr_net_transport_destroy_void (void *arg);
 void rrr_net_transport_collection_destroy (struct rrr_net_transport_collection *collection);
-void rrr_net_transport_ctx_handle_close (
+void rrr_net_transport_ctx_handle_close_while_locked (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_net_transport_handle_close (

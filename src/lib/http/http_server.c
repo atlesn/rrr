@@ -264,6 +264,7 @@ static int __rrr_http_server_accept_if_free_thread_callback (
 }
 
 static int __rrr_http_server_accept_if_free_thread (
+		int *accept_count,
 		struct rrr_net_transport *transport,
 		int transport_handle,
 		struct rrr_thread_collection *threads
@@ -276,7 +277,9 @@ static int __rrr_http_server_accept_if_free_thread (
 			NULL
 	};
 
-	if ((ret = rrr_thread_iterate_non_wd_by_state (
+	*accept_count = 0;
+
+	if ((ret = rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 			threads,
 			RRR_THREAD_STATE_INITIALIZED,
 			__rrr_http_server_accept_if_free_thread_callback,
@@ -286,9 +289,13 @@ static int __rrr_http_server_accept_if_free_thread (
 			if (callback_data.result_thread_to_start == NULL) {
 				RRR_BUG("BUG: Broke out of iteration but result thread was still NULL in __rrr_http_server_accept_if_free_thread\n");
 			}
+
 			// Thread is locked in callback so we must start it here outside the iteration
+			// The thread which received the start signal will not be iterated again
 			rrr_thread_set_signal(callback_data.result_thread_to_start, RRR_THREAD_SIGNAL_START);
 			ret = 0;
+
+			(*accept_count)++;
 		}
 		else {
 			RRR_MSG_0("Error while accepting connections\n");
@@ -348,37 +355,50 @@ static int __rrr_http_server_allocate_threads (
 }
 
 int rrr_http_server_tick (
+		int *accept_count_final,
 		struct rrr_http_server *server
 ) {
 	int ret = 0;
+
+	*accept_count_final = 0;
 
 	if ((ret = __rrr_http_server_allocate_threads(server->threads)) != 0) {
 		RRR_MSG_0("Could not allocate threads in rrr_http_server_tick\n");
 		goto out;
 	}
 
+	int accept_count = 0;
+
 	if (server->transport_http != NULL) {
+		int accept_count_tmp = 0;
 		if ((ret = __rrr_http_server_accept_if_free_thread (
+				&accept_count_tmp,
 				server->transport_http,
 				server->handle_http,
 				server->threads
 		)) != 0) {
 			goto out;
 		}
+		accept_count += accept_count_tmp;
 	}
 
 	if (server->transport_https != NULL) {
+		int accept_count_tmp = 0;
 		if ((ret = __rrr_http_server_accept_if_free_thread (
+				&accept_count_tmp,
 				server->transport_https,
 				server->handle_https,
 				server->threads
 		)) != 0) {
 			goto out;
 		}
+		accept_count += accept_count_tmp;
 	}
 
 	int count;
 	rrr_thread_join_and_destroy_stopped_threads(&count, server->threads, 1);
+
+	*accept_count_final = accept_count;
 
 	out:
 	return ret;
