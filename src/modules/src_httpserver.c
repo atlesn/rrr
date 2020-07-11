@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/log.h"
 #include "../lib/array.h"
+#include "../lib/map.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS			443
@@ -48,11 +49,17 @@ struct httpserver_data {
 
 	rrr_setting_uint port_plain;
 	rrr_setting_uint port_tls;
+
+	struct rrr_map http_fields_accept;
+
+	int do_http_fields_accept_any;
+	int do_allow_empty_messages;
 };
 
 static void httpserver_data_cleanup(void *arg) {
 	struct httpserver_data *data = arg;
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
+	rrr_map_clear(&data->http_fields_accept);
 }
 
 static int httpserver_data_init (
@@ -108,6 +115,23 @@ static int httpserver_parse_config (
 			}
 	);
 
+	if ((ret = rrr_instance_config_parse_comma_separated_associative_to_map(&data->http_fields_accept, config, "http_server_fields_accept", "->")) != 0) {
+		RRR_MSG_0("Could not parse setting http_server_fields_accept for instance %s\n",
+				config->name);
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_fields_accept_any", do_http_fields_accept_any, 0);
+
+	if (RRR_MAP_COUNT(&data->http_fields_accept) > 0 && data->do_http_fields_accept_any != 0) {
+		RRR_MSG_0("Setting http_server_fields_accept in instance %s was set while http_server_fields_accept_any was 'yes', this is an invalid configuration.\n",
+				config->name);
+		ret = 1;
+		goto out;
+	}
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("http_server_allow_empty_messages", do_allow_empty_messages, 0);
+
 	out:
 	return ret;
 }
@@ -146,10 +170,9 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 	return ret;
 }
 
-
-
 struct httpserver_worker_process_field_callback {
 	struct rrr_array *array;
+	struct httpserver_data *parent_data;
 };
 
 static int httpserver_worker_process_field_callback (
@@ -160,10 +183,33 @@ static int httpserver_worker_process_field_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	int do_add_field = 0;
+	const char *name_to_use = field->name;
+
+	if (callback_data->parent_data->do_http_fields_accept_any) {
+		do_add_field = 1;
+	}
+	else if (RRR_MAP_COUNT(&callback_data->parent_data->http_fields_accept) > 0) {
+		RRR_MAP_ITERATE_BEGIN(&callback_data->parent_data->http_fields_accept);
+			if (strcmp(node_tag, field->name) == 0) {
+				do_add_field = 1;
+				if (node->value != NULL && *(node->value) != '\0') {
+					// Do name translation
+					name_to_use = node->value;
+					RRR_LL_ITERATE_LAST();
+				}
+			}
+		RRR_MAP_ITERATE_END();
+	}
+
+	if (do_add_field != 1) {
+		goto out;
+	}
+
 	if (field->value != NULL && field->value_size > 0) {
 		ret = rrr_array_push_value_str_with_tag_with_size (
 				callback_data->array,
-				field->name,
+				name_to_use,
 				field->value,
 				field->value_size
 		);
@@ -171,7 +217,7 @@ static int httpserver_worker_process_field_callback (
 	else {
 		ret = rrr_array_push_value_64_with_tag (
 				callback_data->array,
-				field->name,
+				name_to_use,
 				0
 		);
 	}
@@ -201,13 +247,27 @@ static int httpserver_write_message_callback (
 
 	struct rrr_message *new_message = NULL;
 
-	if ((ret = rrr_array_new_message_from_collection (
-			&new_message,
-			callback_data->array,
-			rrr_time_get_64(),
-			NULL,
-			0
-	)) != 0) {
+	if (RRR_LL_COUNT(callback_data->array) > 0) {
+		ret = rrr_array_new_message_from_collection (
+				&new_message,
+				callback_data->array,
+				rrr_time_get_64(),
+				NULL,
+				0
+		);
+	}
+	else {
+		ret = rrr_message_new_empty (
+				&new_message,
+				MSG_TYPE_MSG,
+				MSG_CLASS_DATA,
+				rrr_time_get_64(),
+				0,
+				0
+		);
+	}
+
+	if (ret != 0) {
 		RRR_MSG_0("Could not create message in httpserver_write_message_callback\n");
 		ret = RRR_MESSAGE_BROKER_ERR;
 		goto out;
@@ -239,7 +299,8 @@ static int httpserver_receive_callback (
 	struct rrr_array array_tmp = {0};
 
 	struct httpserver_worker_process_field_callback field_callback_data = {
-			&array_tmp
+			&array_tmp,
+			receive_callback_data->parent_data
 	};
 
 	if ((ret = rrr_http_part_fields_iterate (
@@ -250,7 +311,7 @@ static int httpserver_receive_callback (
 		goto out;
 	}
 
-	if (RRR_LL_COUNT(&array_tmp) == 0) {
+	if (RRR_LL_COUNT(&array_tmp) == 0 && receive_callback_data->parent_data->do_allow_empty_messages == 0) {
 		RRR_DBG_3("No data fields received from HTTP client, not creating RRR message\n");
 		goto out;
 	}

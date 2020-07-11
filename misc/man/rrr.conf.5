@@ -1,4 +1,4 @@
-.Dd 2020-06-22
+.Dd 2020-07-11
 .TH RRR.CONF 5
 .SH NAME
 Read Route Record is a dynamic module-based message handling program
@@ -70,7 +70,7 @@ Some modules support parsing data arrays from externally or from other modules. 
 list of expected data types to be specified in their configuration. If the total size of the input
 does not match the received input, parsing of the message will fail.
 .PP
-The general syntax is a comma separated list of types with length and item count specifications. 
+The general syntax for an array parsing specification is a comma separated list of types with length and item count specifications. 
 .PP
 .Dl type1[length1][@count1][#tag1][,type2[length2][@count2][#tag2]][,...]
 .PP
@@ -79,11 +79,11 @@ Refer to the
 section of
 .Xr rrr_post(1)
 for the complete specification of all the types.
+.PP
+Arrays are also constructed from structured data sources, like an HTTP request. 
 .SS IP MESSAGES
-Some modules support parsing of IP messages. These are simply normal messages apart from that they also contain information
-about the originating IP addresses. They are used for instance when sending replies back to a sender over network to know
-where to send them. Some modules require that readers are IP capable when reading from them and vice versa. Some modules
-are also flexible and may accept or give out either.
+Some messages contain IP data, for instance messages created by a module which reads from the network. The address
+of the sender will be contained within the message. All modules may use IP-messages, but not all of them use the IP-data. 
 .SH MODULES AND CONFIGURATION PARAMETERS
 .PP
 Modules have different special capabilites, denoted by the following letters. The actual implementation may
@@ -91,13 +91,13 @@ vary between modules. Many modules can despite this handle all types of messages
 .PP
 .Bl -tag -width -indent
 .It S
-Source module, cannot have senders
+Source module, can't read from other modules
 .It P
-Processor modules, can have senders specified to read from (set with
+Processor module, can have senders specified to read from (set with
 .B senders=
-)
+) and may also be read from by other modules
 .It D
-Dead-end module, cannot be used as sender
+Dead-end module, can only read from other modules
 .It N
 Network-oriented module, cannot be used as sender nor have senders specified itself.
 .It A
@@ -105,14 +105,19 @@ Module supports data arrays (see above)
 .It I
 Module supports IP messages
 .El
-If
-.B A
-is not specified for a module, it doesn't care about the contents of messages but simply forwards them. 
 .PP
-The following modules and module-specific arguments are available and can be used
+All modules support array and/or IP-messages, also those who do not have  
+.B A
+or
+.B I
+specified. Array- and IP-capable modules may however use or modify data from such messages.
+.PP
+A message may have both IP- and Array-data simultaneously. 
+.PP
+The following modules and module-specific arguments are available:
 .PP
 .SS dummy (S)
-Constantly generates empty messages only with a timestamp set.
+This module constantly generates empty messages, optionally containing some dummy data.
 .PP
 .Bl -tag -width -indent
 .It dummy_no_generation={yes|no}
@@ -120,7 +125,7 @@ No messages are generated, defaults to yes.
 .It dummy_no_sleeping={yes|no}
 Don't sleep between creating messages, but create as many messages as the reader can handle. Defaults to no.
 .It dummy_max_generated={unsigned number}
-Stop generating messages after this number is reached. 0 value or not defined means that generation will not stop.
+Stop generating messages after this number is reached. 0 value or not defined means that generation will never stop.
 .It dummy_random_payload_max_size={BYTES}
 When generating messages, give them an empty payload with a random size in the range 0 to BYTES. Default is 0 (no payload for messages).
 .It dummy_topic={TOPIC}
@@ -133,6 +138,7 @@ If the received data does not match the specified data array, the packet is drop
 .PP
 If an instance is configured to wait for this module before starting, the we will set up any listening sockets before the
 waiting instance is started.
+.PP
 .Bl -tag -width -indent
 .It ip_udp_port=LISTEN PORT
 .It ip_tcp_port=LISTEN PORT
@@ -323,7 +329,7 @@ In addition to the other columns, write to a column named `timestamp` and save t
 .It mysql_strip_array_separators={yes|no}
 Disregard any separator items in received array messages. Defaults to yes.
 .El
-.SS python3 (P)
+.SS python3 (PAI)
 This module can send messages to a custom python program and read them back.
 All messages read from the senders are sent to the python program to the process function specified.
 A read-only source function may also be specified if the python program should only generate messages by itself and not receive any.
@@ -709,7 +715,7 @@ It is not a priority at this time to document these, but they are easy to use an
 be found throughout the RRR source code (which is human- and machine readable).
 .PP
 Functions must return 0 on success and 1 if there are errors.  
-.SS raw (PI)
+.SS raw (PAI)
 This module simply drains data from it's senders and deletes it after printing a message if debugging is active. It
 can read from both IP modules and non-IP.
 .PP
@@ -746,7 +752,57 @@ for syntax.
 If array parsing fails according to definition, keep skipping one byte forward in the stream until a match is found.
 Defaults to no, which means to only sync on boundaries of incoming messages.
 .El
-.SS httpclient (DA)
+.SS httpserver (SAI)
+This module accepts connections from HTTP clients, extracts POST or GET data fields and puts it into RRR array messages
+for other modules to use. The query string from the URI is parsed in both GET and POST requests. Duplicate field names are allowed.
+.PP
+.B DO NOT USE
+this HTTP server openly on the Internet. It has
+.B NO PROTECTION MECHANISMS
+against DoS attacks, flooding etc. There is also
+.B NO AUTHENTICATION.
+Use a server like Apache to run a public server.
+.PP
+This module does not respond with any data. If a request was successfully processed, a
+.B 204 No Data
+response is returned to the client. If there was any errors,
+.B 400 Bad Request
+or
+.B 500 Internal Server Error
+response may be returned.
+.PP  
+.Bl -tag -width -indent
+.It http_server_transport_type={tls|plain|both}
+Listen with TLS mode, plaintext mode or both. Defaults to 'plain'.
+.It http_server_port_tls=PORT
+Port to use for TLS listening, defaults to 443.
+.It http_server_port_plain=PORT
+Port to use for plaintext listening, defaults to 80.
+.It http_server_fields_accept=HTTP FIELD[->ARRAY TAG][,...]
+Specify a comma separated list POST and GET fields to allow from clients. Fields not specified here are ignored unless
+.B http_server_fields_accept_any
+is set to 'yes'.
+An optional array tag may be specified for each field if the field name should be translated when added to the RRR array message. This parameter is optional.
+.It http_server_fields_accept_any={yes|no}
+Accept any field names from incoming requests. May not be used with
+.B http_server_fields_accept_any. 
+Defaults to 'no'.
+.It http_server_allow_empty_messages={yes|no}
+Create RRR messages for incoming request even if no field names would be added to the message. Defaults to 'no'.
+.It http_server_tls_*
+Refer to the
+.B TLS
+part of the
+.B COMMON CONFIGURATION PARAMETERS
+section for descriptions of TLS parameters. All TLS parameters are optional.
+.El
+.PP
+If none of
+.B http_server_fields_accept_any, http_server_allow_empty_messages
+and
+.B http_server_fields_accept
+are specified, no received requests will result into RRR messages being produced. 
+.SS httpclient (DAI)
 This module takes RRR messages from other modules and sends them to an HTTP server. Array values in received messages
 may be sent as HTTP form fields. GET and POST are supported using either HTTP or HTTPS. This module does not
 use any data sent from the server, any data received is ignored.
@@ -831,7 +887,7 @@ Refer to the
 part of the
 .B COMMON CONFIGURATION PARAMETERS
 section for descriptions of TLS parameters. All TLS parameters are optional.
-.EL
+.El
 .SS influxdb (DA)
 This module receives array messages from other modules and sends their data to an Influx database using HTTP.
 .Bl -tag -width -indent
@@ -972,7 +1028,7 @@ The MQTT server follows the specifications from Oasis, but lacks support for the
 .br
 \(bu Authorization (simple username/password implemented)
 .PP
-.SS mqttclient (P)
+.SS mqttclient (PA)
 An MQTT client supporting V3.1.1 and V5. The client will publish RRR messages it receives from other modules, and
 other modules can read messages the client receives on subscribed topics.
 .PP
