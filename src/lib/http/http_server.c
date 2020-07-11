@@ -172,7 +172,7 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		socklen_t socklen,
 		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct rrr_http_server_worker_preliminary_data *worker_data = arg;
 
 	(void)(sockaddr);
 	(void)(socklen);
@@ -198,7 +198,7 @@ static int __rrr_http_server_accept (
 		int *did_accept,
 		struct rrr_net_transport *transport,
 		int handle,
-		struct rrr_http_server_worker_thread_data *worker_data
+		struct rrr_http_server_worker_preliminary_data *worker_data
 ) {
 	int ret = 0;
 
@@ -323,7 +323,7 @@ static int __rrr_http_server_allocate_threads (
 
 	int to_allocate = RRR_HTTP_SERVER_WORKER_THREADS - rrr_thread_collection_count(threads);
 	for (int i = 0; i < to_allocate; i++) {
-		if ((ret = rrr_http_server_worker_thread_data_new(&worker_data)) != 0) {
+		if ((ret = rrr_http_server_worker_preliminary_data_new(&worker_data)) != 0) {
 			RRR_MSG_0("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
 			goto out;
 		}
@@ -334,7 +334,7 @@ static int __rrr_http_server_allocate_threads (
 				NULL,
 				NULL,
 				NULL,
-				rrr_http_server_worker_thread_data_destroy_void,
+				rrr_http_server_worker_preliminary_data_destroy_void,
 				RRR_THREAD_START_PRIORITY_NORMAL,
 				worker_data,
 				"httpserver_worker"
@@ -355,7 +355,7 @@ static int __rrr_http_server_allocate_threads (
 
 	out:
 	if (worker_data != NULL) {
-		rrr_http_server_worker_thread_data_destroy(worker_data);
+		rrr_http_server_worker_preliminary_data_destroy(worker_data);
 	}
 	return ret;
 }

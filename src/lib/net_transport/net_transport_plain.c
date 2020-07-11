@@ -119,16 +119,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
-	uint64_t *bytes_read,
-	struct rrr_net_transport_handle *handle,
-	int read_attempts,
-	ssize_t read_step_initial,
-	ssize_t read_step_max_size,
-	int read_flags,
-	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-	void *complete_callback_arg
+		RRR_NET_TRANSPORT_READ_ARGS
 ) {
 	int ret = 0;
 
@@ -150,6 +141,7 @@ static int __rrr_net_transport_plain_read_message (
 				handle->submodule_private_fd,
 				read_step_initial,
 				read_step_max_size,
+				read_max_size,
 				read_flags,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,

@@ -298,6 +298,7 @@ static void __rrr_http_client_send_request_callback (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
+			data->read_max_size,
 			__rrr_http_client_receive_http_part_callback,
 			callback_data
 	)) != 0) {

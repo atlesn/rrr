@@ -664,6 +664,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 				2, // Read two times this round
 				2, // Read only two bytes the first time
 				read_step_max_size,
+				0, // No max read size
 				RRR_READ_F_NO_SLEEPING,
 				__rrr_mqtt_conn_read_get_target_size,
 				&callback_data,

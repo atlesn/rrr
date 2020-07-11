@@ -675,16 +675,7 @@ static int __rrr_net_transport_tls_read_read (
 }
 
 static int __rrr_net_transport_tls_read_message (
-	uint64_t *bytes_read,
-	struct rrr_net_transport_handle *handle,
-	int read_attempts,
-	ssize_t read_step_initial,
-	ssize_t read_step_max_size,
-	int read_flags,
-	int (*get_target_size)(struct rrr_read_session *read_callback_data, void *arg),
-	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_read_session *read_callback_data, void *arg),
-	void *complete_callback_arg
+		RRR_NET_TRANSPORT_READ_ARGS
 ) {
 	int ret = 0;
 
@@ -724,6 +715,7 @@ static int __rrr_net_transport_tls_read_message (
 				&bytes_read_tmp,
 				read_step_initial,
 				read_step_max_size,
+				read_max_size,
 				read_flags,
 				__rrr_net_transport_tls_read_get_target_size,
 				__rrr_net_transport_tls_read_complete_callback,

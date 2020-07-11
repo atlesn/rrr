@@ -208,6 +208,7 @@ static int __rrr_stats_read_message (
 			sizeof(struct rrr_socket_msg),
 			1024,
 			0,
+			0,
 			RRR_SOCKET_READ_METHOD_RECV,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
 			NULL,

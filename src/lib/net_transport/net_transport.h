@@ -146,6 +146,19 @@ struct rrr_net_transport_collection {
 	void (*final_callback)(RRR_NET_TRANSPORT_ACCEPT_CALLBACK_FINAL_ARGS),		\
 	void *final_callback_arg
 
+#define RRR_NET_TRANSPORT_READ_ARGS												\
+	uint64_t *bytes_read,														\
+	struct rrr_net_transport_handle *handle,									\
+	int read_attempts,															\
+	ssize_t read_step_initial,													\
+	ssize_t read_step_max_size,													\
+	ssize_t read_max_size,														\
+	int read_flags,																\
+	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),	\
+	void *get_target_size_arg,													\
+	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),	\
+	void *complete_callback_arg
+
 struct rrr_net_transport_read_callback_data {
 	RRR_NET_TRANSPORT_READ_CALLBACK_DATA_HEAD;
 };
@@ -161,18 +174,7 @@ struct rrr_net_transport_methods {
 	int (*close)(
 			struct rrr_net_transport_handle *handle
 	);
-	int (*read_message)(
-			uint64_t *bytes_read,
-			struct rrr_net_transport_handle *handle,
-			int read_attempts,
-			ssize_t read_step_initial,
-			ssize_t read_step_max_size,
-			int read_flags,
-			int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-			void *get_target_size_arg,
-			int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-			void *complete_callback_arg
-	);
+	int (*read_message)(RRR_NET_TRANSPORT_READ_ARGS);
 	int (*send)(
 			uint64_t *bytes_written,
 			struct rrr_net_transport_handle *handle,
@@ -232,6 +234,7 @@ int rrr_net_transport_ctx_read_message (
 		int read_attempts,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max_size,
 		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,

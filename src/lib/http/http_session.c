@@ -763,6 +763,7 @@ int rrr_http_session_transport_ctx_receive (
 		struct rrr_net_transport_handle *handle,
 		uint64_t timeout_stall_us,
 		uint64_t timeout_total_us,
+		ssize_t read_max_size,
 		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
 		void *callback_arg
 ) {
@@ -795,6 +796,7 @@ int rrr_http_session_transport_ctx_receive (
 					100,
 					4096,
 					65535,
+					read_max_size,
 					0, // Flags
 					__rrr_http_session_receive_get_target_size,
 					&callback_data,

@@ -234,6 +234,7 @@ int rrr_socket_client_collection_read (
 				node->connected_fd,
 				read_step_initial,
 				read_step_max_size,
+				0, // No max size
 				read_flags,
 				read_flags_socket,
 				get_target_size,

@@ -56,6 +56,8 @@ struct rrr_http_client_data {
 
 	int ssl_no_cert_verify;
 
+	ssize_t read_max_size;
+
 	int do_retry;
 };
 

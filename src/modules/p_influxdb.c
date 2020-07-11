@@ -265,6 +265,7 @@ static void influxdb_send_data_callback (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
+			0, // No max read size
 			influxdb_receive_http_response,
 			&response_callback_data
 	) != 0) {

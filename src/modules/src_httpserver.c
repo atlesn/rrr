@@ -59,17 +59,11 @@ static int httpserver_data_init (
 		struct httpserver_data *data,
 		struct rrr_instance_thread_data *thread_data
 ) {
-	int ret = 0;
-
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
 
-	goto out;
-//	out_cleanup_data:
-//		httpserver_data_cleanup(data);
-	out:
-		return ret;
+	return 0;
 }
 
 static int httpserver_parse_config (

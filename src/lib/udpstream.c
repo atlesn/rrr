@@ -1504,6 +1504,7 @@ int rrr_udpstream_do_read_tasks (
 				data->ip.fd,
 				1024,
 				1024,
+				0, // No maximum size
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				__rrr_udpstream_read_get_target_size,

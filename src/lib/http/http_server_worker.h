@@ -22,30 +22,45 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_HTTP_SERVER_WORKER_H
 #define RRR_HTTP_SERVER_WORKER_H
 
+#include <stdio.h>
 #include <pthread.h>
 
 struct rrr_net_transport;
 struct rrr_thread;
 
-struct rrr_http_server_worker_thread_data {
+struct rrr_http_server_worker_preliminary_data {
 	// This lock only protects our data members, not what they point to.
 	pthread_mutex_t lock;
 
+	// DO NOT put allocated data in this struct, like char *, such data
+	// would not have proper memory fencing.
+
+	int error;
+
 	struct rrr_net_transport *transport;
 	int transport_handle;
-	int error;
+
+	ssize_t read_max_size;
+};
+
+struct rrr_http_server_worker_data {
+	struct rrr_net_transport *transport;
+	int transport_handle;
+
+	ssize_t read_max_size;
+
 	int receive_complete;
 
 	unsigned int response_code;
 };
 
-int rrr_http_server_worker_thread_data_new (
-		struct rrr_http_server_worker_thread_data **result
+int rrr_http_server_worker_preliminary_data_new (
+		struct rrr_http_server_worker_preliminary_data **result
 );
-void rrr_http_server_worker_thread_data_destroy (
-		struct rrr_http_server_worker_thread_data *worker_data
+void rrr_http_server_worker_preliminary_data_destroy (
+		struct rrr_http_server_worker_preliminary_data *worker_data
 );
-void rrr_http_server_worker_thread_data_destroy_void (
+void rrr_http_server_worker_preliminary_data_destroy_void (
 		void *private_data
 );
 void *rrr_http_server_worker_thread_entry (

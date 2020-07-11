@@ -60,6 +60,9 @@ static struct rrr_net_transport_handle *__rrr_net_transport_handle_get_and_lock 
 
 	struct rrr_net_transport_handle *result = NULL;
 
+	// May be used to print debug messages
+	(void)(source);
+
 	RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK();
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
@@ -546,6 +549,7 @@ int rrr_net_transport_ctx_read_message (
 		int read_attempts,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max_size,
 		int read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
 		void *get_target_size_arg,
@@ -563,6 +567,7 @@ int rrr_net_transport_ctx_read_message (
 			read_attempts,
 			read_step_initial,
 			read_step_max_size,
+			read_max_size,
 			read_flags,
 			get_target_size,
 			get_target_size_arg,

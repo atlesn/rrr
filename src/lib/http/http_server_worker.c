@@ -33,14 +33,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../posix.h"
 
-int rrr_http_server_worker_thread_data_new (
-		struct rrr_http_server_worker_thread_data **result
+int rrr_http_server_worker_preliminary_data_new (
+		struct rrr_http_server_worker_preliminary_data **result
 ) {
 	int ret = 0;
 
 	*result = NULL;
 
-	struct rrr_http_server_worker_thread_data *data = malloc(sizeof(*data));
+	struct rrr_http_server_worker_preliminary_data *data = malloc(sizeof(*data));
 	if (data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_server_worker_thread_data_new\n");
 		ret = 1;
@@ -64,8 +64,8 @@ int rrr_http_server_worker_thread_data_new (
 		return ret;
 }
 
-void rrr_http_server_worker_thread_data_destroy (
-		struct rrr_http_server_worker_thread_data *worker_data
+void rrr_http_server_worker_preliminary_data_destroy (
+		struct rrr_http_server_worker_preliminary_data *worker_data
 ) {
 	if (worker_data == NULL) {
 		return;
@@ -74,18 +74,16 @@ void rrr_http_server_worker_thread_data_destroy (
 	free(worker_data);
 }
 
-void rrr_http_server_worker_thread_data_destroy_void (
-		void *private_data
+void rrr_http_server_worker_preliminary_data_destroy_void (
+		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = private_data;
-
-	rrr_http_server_worker_thread_data_destroy(worker_data);
+	rrr_http_server_worker_preliminary_data_destroy(arg);
 }
 
 static void __rrr_net_http_server_worker_close_transport (
 		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct rrr_http_server_worker_data *worker_data = arg;
 	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
 }
 
@@ -94,7 +92,7 @@ static int __rrr_net_http_server_worker_http_session_receive_callback (
 		const char *data_ptr,
 		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct rrr_http_server_worker_data *worker_data = arg;
 
 //	printf("In HTTP worker receive callback\n");
 
@@ -108,7 +106,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct rrr_http_server_worker_data *worker_data = arg;
 //	struct http_session_data *session = handle->application_private_ptr;
 
 	int ret = 0;
@@ -117,6 +115,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 			handle,
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
+			worker_data->read_max_size,
 			__rrr_net_http_server_worker_http_session_receive_callback,
 			worker_data
 	)) != 0) {
@@ -133,7 +132,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data = arg;
+	struct rrr_http_server_worker_data *worker_data = arg;
 
 	// We allow send_response to be called as long as transpoort handle is OK,
 	// but the response part must have been initialized for us to be able to
@@ -160,23 +159,24 @@ static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
 void *rrr_http_server_worker_thread_entry (
 		struct rrr_thread *thread
 ) {
-	struct rrr_http_server_worker_thread_data *worker_data_preliminary = thread->private_data;
+	struct rrr_http_server_worker_preliminary_data *worker_data_preliminary = thread->private_data;
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait_with_watchdog_update(thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	struct rrr_http_server_worker_thread_data worker_data;
+	struct rrr_http_server_worker_data worker_data = {0};
 
 	// There is no more communication with main thread over this struct after this point.
-	// Make a copy and invalidate the lock. Pointer to main transport will always
+	// Copy the data to a local struct. Pointer to main transport will always
 	// be valid, main thread will not destroy it before threads have shut down.
-	// This lock only protects the data members of the worker data struct, not
-	// what they point to.
+	// The lock only protects the data members of the worker data struct, not
+	// what they point to. DO NOT have members like char * in the struct.
 	pthread_mutex_lock(&worker_data_preliminary->lock);
-	worker_data = *worker_data_preliminary;
+	worker_data.read_max_size = worker_data_preliminary->read_max_size;
+	worker_data.transport = worker_data_preliminary->transport;
+	worker_data.transport_handle = worker_data_preliminary->transport_handle;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
-	memset (&worker_data.lock, '\0', sizeof(worker_data.lock));
 
 	// This might happen upon server shutdown
 	if (worker_data.transport_handle == 0) {
