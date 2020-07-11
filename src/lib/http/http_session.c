@@ -855,7 +855,7 @@ int rrr_http_session_transport_ctx_check_data_received (
 	return (session->request_part->request_or_response_length > 0);
 }
 
-int rrr_http_session_transport_ctx_check_response_part_initilized (
+int rrr_http_session_transport_ctx_check_response_part_initialized (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
@@ -873,23 +873,84 @@ int rrr_http_session_transport_ctx_set_response_code (
 	return 0;
 }
 
+int rrr_http_session_transport_ctx_push_response_header (
+		struct rrr_net_transport_handle *handle,
+		const char *name,
+		const char *value
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return rrr_http_part_header_field_push(session->response_part, name, value);
+}
+
+struct rrr_http_session_send_header_field_callback_data {
+	struct rrr_net_transport_handle *handle;
+};
+
+static int __rrr_http_session_send_header_field_callback (struct rrr_http_header_field *field, void *arg) {
+	struct rrr_http_session_send_header_field_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *send_data = NULL;
+	size_t send_data_length = 0;
+
+	if (field->name == NULL || field->value == NULL) {
+		RRR_BUG("BUG: Name or value was NULL in __rrr_http_session_send_header_field_callback\n");
+	}
+	if (RRR_LL_COUNT(&field->fields) > 0) {
+		RRR_BUG("BUG: Subvalues were present in __rrr_http_session_send_header_field_callback, this is not supported\n");
+	}
+
+	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", field->name, field->value)) <= 0) {
+		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_session_send_header_field_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Hack to create Camel-Case header names (before : only)
+	int next_to_upper = 1;
+	for (size_t i = 0; i < send_data_length; i++) {
+		if (send_data[i] == ':' || send_data[i] == '\0') {
+			break;
+		}
+
+		if (next_to_upper) {
+			if (send_data[i] >= 'a' && send_data[i] <= 'z') {
+				send_data[i] -= ('a' - 'A');
+			}
+		}
+
+		next_to_upper = (send_data[i] == '-' ? 1 : 0);
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, send_data, send_data_length)) != 0) {
+		RRR_MSG_0("Error: Send failed in __rrr_http_session_send_header_field_callback\n");
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(send_data);
+	return ret;
+}
+
 int rrr_http_session_transport_ctx_send_response (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_part *response_part = session->response_part;
 
 	int ret = 0;
 
-	if (session->response_part == NULL) {
+	if (response_part == NULL) {
 		RRR_BUG("BUG: Response part was NULL in rrr_http_session_send_response\n");
 	}
-	if (session->response_part->response_code == 0) {
+	if (response_part->response_code == 0) {
 		RRR_BUG("BUG: Response code was not set in rrr_http_session_send_response\n");
 	}
 
 	const char *response_str = NULL;
 
-	switch (session->response_part->response_code) {
+	switch (response_part->response_code) {
 		case RRR_HTTP_RESPONSE_CODE_OK:
 			response_str = "HTTP/1.1 200 OK\r\n";
 			break;
@@ -903,10 +964,30 @@ int rrr_http_session_transport_ctx_send_response (
 			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
 			break;
 		default:
-			RRR_BUG("BUG: Respone code %i not implemented in rrr_http_session_send_response\n", session->response_part->response_code);
+			RRR_BUG("BUG: Response code %i not implemented in rrr_http_session_send_response\n",
+					response_part->response_code);
 	}
 
-	ret |= rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str));
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str))) != 0) {
+		goto out_err;
+	}
 
-	return ret;
+	struct rrr_http_session_send_header_field_callback_data callback_data = {
+			handle
+	};
+
+	if ((ret = rrr_http_part_header_fields_iterate(response_part, __rrr_http_session_send_header_field_callback, &callback_data)) != 0) {
+		goto out_err;
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "\r\n", 2)) != 0 ) {
+		goto out_err;
+	}
+
+	goto out;
+	out_err:
+		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_session_transport_ctx_send_response\n",
+				handle->handle);
+	out:
+		return ret;
 }

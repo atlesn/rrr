@@ -84,12 +84,17 @@ int rrr_http_session_transport_ctx_receive (
 int rrr_http_session_transport_ctx_check_data_received (
 		struct rrr_net_transport_handle *handle
 );
-int rrr_http_session_transport_ctx_check_response_part_initilized (
+int rrr_http_session_transport_ctx_check_response_part_initialized (
 		struct rrr_net_transport_handle *handle
 );
 int rrr_http_session_transport_ctx_set_response_code (
 		struct rrr_net_transport_handle *handle,
 		unsigned int code
+);
+int rrr_http_session_transport_ctx_push_response_header (
+		struct rrr_net_transport_handle *handle,
+		const char *name,
+		const char *value
 );
 int rrr_http_session_transport_ctx_send_response (
 		struct rrr_net_transport_handle *handle

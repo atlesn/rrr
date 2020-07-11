@@ -59,12 +59,18 @@ struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
 	RRR_LL_NODE(struct rrr_http_header_field);
+
+	// This list is filled while parsing the header field
 	struct rrr_http_field_collection fields;
+
 	const struct rrr_http_header_field_definition *definition;
+
+	char *name;
+
+	// This is filled by known header field parsers
 	long long int value_signed;
 	long long unsigned int value_unsigned;
 	char *value;
-	char *name;
 };
 
 struct rrr_http_header_field_collection {
@@ -128,7 +134,17 @@ const struct rrr_http_header_field *rrr_http_part_get_header_field (
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part
 );
-int rrr_http_part_iterate_chunks (
+int rrr_http_part_header_field_push (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+);
+int rrr_http_part_header_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_header_field *field, void *arg),
+		void *callback_arg
+);
+int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
 		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),

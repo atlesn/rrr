@@ -89,6 +89,7 @@ int rrr_http_field_set_value (
 
 	RRR_FREE_IF_NOT_NULL(target->value);
 	target->value = value_tmp;
+	target->value_size = value_size;
 
 	value_tmp = NULL;
 
@@ -105,7 +106,7 @@ void rrr_http_field_collection_dump (
 
 	RRR_MSG_3 ("== DUMP FIELD COLLECTION ====================================\n");
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
-		RRR_MSG_3 ("%s", node->name);
+		RRR_MSG_3 ("%s", node->name, node->value);
 
 		if (node->value != NULL && node->value_size > 0) {
 			RRR_FREE_IF_NOT_NULL(urlencoded_tmp);

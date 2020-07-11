@@ -142,7 +142,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
 	// We allow send_response to be called as long as transpoort handle is OK,
 	// but the response part must have been initialized for us to be able to
 	// send a response. If it is NULL, we cannot send a response.
-	if (!rrr_http_session_transport_ctx_check_response_part_initilized(handle)) {
+	if (!rrr_http_session_transport_ctx_check_response_part_initialized(handle)) {
 		RRR_DBG_3("HTTP worker %i: No HTTP parts initialized, not sending response\n", worker_data->transport_handle);
 		return 0;
 	}
@@ -164,7 +164,13 @@ static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
 				worker_data->transport_handle);
 		return 1;
 	}
-
+/*
+ * For now, no content is sent back to client
+	if (rrr_http_session_transport_ctx_push_response_header(handle, "Content-Type", "application/json; charset=utf-8") != 0) {
+		RRR_MSG_0("Could not push header field to response part in __rrr_net_http_server_worker_net_transport_ctx_send_response\n");
+		return 1;
+	}
+*/
 	RRR_DBG_2("HTTP worker %i: Sending response %lu\n",
 			worker_data->transport_handle, worker_data->response_code);
 

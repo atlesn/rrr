@@ -146,7 +146,7 @@ static int __rrr_http_client_receive_http_part_callback (
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_iterate_chunks (
+	if ((ret = rrr_http_part_chunks_iterate (
 			part,
 			data_ptr,
 			__rrr_http_client_receive_chunk_callback,

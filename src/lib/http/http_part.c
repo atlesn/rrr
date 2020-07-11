@@ -696,6 +696,7 @@ static int __rrr_http_parse_header_field (
 	const char *crlf = NULL;
 	int bad_client_missing_space_after_comma = 0;
 
+	// >>>> Duplicate field goto target
 	do_duplicate_field:
 
 	bad_client_missing_space_after_comma = 0;
@@ -1089,7 +1090,52 @@ static int __rrr_http_part_parse_chunk (
 	return ret;
 }
 
-int rrr_http_part_iterate_chunks (
+int rrr_http_part_header_field_push (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = __rrr_http_header_field_new(&field, name, strlen(name))) != 0) {
+		RRR_MSG_0("Could not create header field in rrr_http_part_push_header_field\n");
+		goto out;
+	}
+
+	if ((field->value = strdup(value)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for value in rrr_http_part_push_header_field\n");
+		goto out_destroy;
+	}
+
+	RRR_LL_APPEND(&part->headers, field);
+	field = NULL;
+
+	goto out;
+	out_destroy:
+		__rrr_http_header_field_destroy(field);
+	out:
+	return ret;
+}
+
+int rrr_http_part_header_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_header_field *field, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if ((ret = callback(node, callback_arg)) != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
+int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
 		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
@@ -1717,6 +1763,35 @@ static int __rrr_http_part_parse_query_string (
 	return ret;
 }
 
+static int __rrr_http_part_extract_query_fields_from_uri (
+		struct rrr_http_part *target
+) {
+	int ret = 0;
+
+	const char *query_end = target->request_uri + strlen(target->request_uri);
+	const char *query_start = strchr(target->request_uri, '?');
+
+	if (query_start == NULL) {
+		ret = 0;
+		goto out;
+	}
+
+	// Skip ?
+	query_start++;
+
+	if (strlen(query_start) == 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_part_parse_query_string (&target->fields, query_start, query_end)) != 0) {
+		RRR_MSG_0("Error while parsing query string in __rrr_http_part_extract_query_fields_from_uri\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_extract_post_and_query_fields (
 		struct rrr_http_part *target,
 		const char *data_ptr
@@ -1724,6 +1799,10 @@ int rrr_http_part_extract_post_and_query_fields (
 	int ret = 0;
 
 	struct rrr_http_field *field_tmp = NULL;
+
+	if ((ret =  __rrr_http_part_extract_query_fields_from_uri(target)) != 0) {
+		goto out;
+	}
 
 	if (__rrr_http_part_check_content_type(target, "application/x-www-form-urlencoded")) {
 		RRR_HTTP_PART_DECLARE_DATA_START_AND_END(target, data_ptr);
