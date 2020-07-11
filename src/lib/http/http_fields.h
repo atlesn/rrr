@@ -51,6 +51,11 @@ int rrr_http_field_set_value (
 		const char *value,
 		ssize_t value_size
 );
+int rrr_http_field_collection_iterate (
+		struct rrr_http_field_collection *fields,
+		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+);
 void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
 );

@@ -47,8 +47,12 @@ struct rrr_read_session *rrr_read_session_new (
 	}
 	memset(read_session, '\0', sizeof(*read_session));
 
+	if (src_addr_len > sizeof(read_session->src_addr)) {
+		RRR_BUG("BUG: Address too long (%lu>%lu) in rrr_read_session_new\n", src_addr_len, sizeof(read_session->src_addr));
+	}
+
 	read_session->last_read_time = rrr_time_get_64();
-	read_session->src_addr = *src_addr;
+	memcpy(&read_session->src_addr, src_addr, src_addr_len);
 	read_session->src_addr_len = src_addr_len;
 
 	return read_session;

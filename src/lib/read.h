@@ -53,7 +53,7 @@ struct rrr_read_session {
 	int socket_options;
 
 	// Used to distinguish clients from each other
-	struct sockaddr src_addr;
+	struct sockaddr_storage src_addr;
 	socklen_t src_addr_len;
 
 	/* Read untill target size is reached (default) or set to read until

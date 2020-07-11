@@ -98,6 +98,22 @@ int rrr_http_field_set_value (
 	return ret;
 }
 
+int rrr_http_field_collection_iterate (
+		struct rrr_http_field_collection *fields,
+		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
+		if ((ret = callback(node, callback_arg)) != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
 void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
 ) {

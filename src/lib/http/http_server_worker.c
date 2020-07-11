@@ -32,9 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../log.h"
 #include "../posix.h"
+#include "../array.h"
 
 int rrr_http_server_worker_preliminary_data_new (
-		struct rrr_http_server_worker_preliminary_data **result
+		struct rrr_http_server_worker_preliminary_data **result,
+		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_arg
 ) {
 	int ret = 0;
 
@@ -54,6 +57,9 @@ int rrr_http_server_worker_preliminary_data_new (
 		ret = 1;
 		goto out_free;
 	}
+
+	data->final_callback = final_callback;
+	data->final_callback_arg = final_callback_arg;
 
 	*result = data;
 
@@ -87,22 +93,36 @@ static void __rrr_net_http_server_worker_close_transport (
 	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
 }
 
-static int __rrr_net_http_server_worker_http_session_receive_callback (
-		struct rrr_http_part *part,
-		const char *data_ptr,
-		void *arg
+static int __rrr_http_server_worker_http_session_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 
-//	printf("In HTTP worker receive callback\n");
+	(void)(data_ptr);
+
+	int ret = 0;
 
 	RRR_DBG_2("HTTP worker %i: %s %s HTTP/1.1\n",
 			worker_data->transport_handle, part->request_method_str, part->request_uri);
 
 	worker_data->receive_complete = 1;
-	worker_data->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
 
-	return 0;
+	if (worker_data->final_callback != NULL) {
+		ret = worker_data->final_callback(part, data_ptr, sockaddr, socklen, worker_data->final_callback_arg);
+	}
+
+	switch (ret) {
+		case RRR_HTTP_OK:
+			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+			break;
+		case RRR_HTTP_SOFT_ERROR:
+			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+			break;
+		default:
+			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+			break;
+	};
+	return ret;
 }
 
 static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
@@ -110,7 +130,6 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 		void *arg
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
-//	struct http_session_data *session = handle->application_private_ptr;
 
 	int ret = 0;
 
@@ -119,7 +138,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 			RRR_HTTP_CLIENT_TIMEOUT_STALL_MS * 1000,
 			RRR_HTTP_CLIENT_TIMEOUT_TOTAL_MS * 1000,
 			worker_data->read_max_size,
-			__rrr_net_http_server_worker_http_session_receive_callback,
+			__rrr_http_server_worker_http_session_receive_callback,
 			worker_data
 	)) != 0) {
 		if (ret != RRR_HTTP_SOFT_ERROR) {
@@ -164,6 +183,7 @@ static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
 				worker_data->transport_handle);
 		return 1;
 	}
+
 /*
  * For now, no content is sent back to client
 	if (rrr_http_session_transport_ctx_push_response_header(handle, "Content-Type", "application/json; charset=utf-8") != 0) {
@@ -197,6 +217,8 @@ void *rrr_http_server_worker_thread_entry (
 	worker_data.read_max_size = worker_data_preliminary->read_max_size;
 	worker_data.transport = worker_data_preliminary->transport;
 	worker_data.transport_handle = worker_data_preliminary->transport_handle;
+	worker_data.final_callback = worker_data_preliminary->final_callback;
+	worker_data.final_callback_arg = worker_data_preliminary->final_callback_arg;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
 
 	// This might happen upon server shutdown

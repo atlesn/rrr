@@ -315,15 +315,21 @@ static int __rrr_http_server_accept_if_free_thread (
 }
 
 static int __rrr_http_server_allocate_threads (
-		struct rrr_thread_collection *threads
+		struct rrr_thread_collection *threads,
+		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_arg
 ) {
 	int ret = 0;
 
-	struct rrr_http_server_worker_thread_data *worker_data = NULL;
+	struct rrr_http_server_worker_preliminary_data *worker_data = NULL;
 
 	int to_allocate = RRR_HTTP_SERVER_WORKER_THREADS - rrr_thread_collection_count(threads);
 	for (int i = 0; i < to_allocate; i++) {
-		if ((ret = rrr_http_server_worker_preliminary_data_new(&worker_data)) != 0) {
+		if ((ret = rrr_http_server_worker_preliminary_data_new (
+				&worker_data,
+				final_callback,
+				final_callback_arg
+		)) != 0) {
 			RRR_MSG_0("Could not allocate worker thread data in __rrr_http_server_allocate_threads\n");
 			goto out;
 		}
@@ -362,13 +368,19 @@ static int __rrr_http_server_allocate_threads (
 
 int rrr_http_server_tick (
 		int *accept_count_final,
-		struct rrr_http_server *server
+		struct rrr_http_server *server,
+		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_arg
 ) {
 	int ret = 0;
 
 	*accept_count_final = 0;
 
-	if ((ret = __rrr_http_server_allocate_threads(server->threads)) != 0) {
+	if ((ret = __rrr_http_server_allocate_threads(
+			server->threads,
+			final_callback,
+			final_callback_arg
+	)) != 0) {
 		RRR_MSG_0("Could not allocate threads in rrr_http_server_tick\n");
 		goto out;
 	}

@@ -639,7 +639,7 @@ struct rrr_http_session_receive_data {
 	struct rrr_http_session *session;
 	ssize_t parse_complete_pos;
 	ssize_t received_bytes;
-	int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg);
+	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 };
 
@@ -659,7 +659,13 @@ static int __rrr_http_session_response_receive_callback (
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
 			part->data_length,  part->request_or_response_length, part->header_length);
 
-	return receive_data->callback(part, read_session->rx_buf_ptr, receive_data->callback_arg);
+	return receive_data->callback (
+			part,
+			read_session->rx_buf_ptr,
+			(const struct sockaddr *) &read_session->src_addr,
+			read_session->src_addr_len,
+			receive_data->callback_arg
+	);
 }
 
 static int __rrr_http_session_request_receive_callback (
@@ -694,7 +700,13 @@ static int __rrr_http_session_request_receive_callback (
 		rrr_http_field_collection_dump (&part->fields);
 	}
 
-	ret = receive_data->callback(part, read_session->rx_buf_ptr, receive_data->callback_arg);
+	ret = receive_data->callback (
+			part,
+			read_session->rx_buf_ptr,
+			(const struct sockaddr *) &read_session->src_addr,
+			read_session->src_addr_len,
+			receive_data->callback_arg
+	);
 
 	out:
 	return ret;
@@ -764,7 +776,7 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_stall_us,
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
-		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
@@ -956,6 +968,9 @@ int rrr_http_session_transport_ctx_send_response (
 			break;
 		case RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT:
 			response_str = "HTTP/1.1 204 No Content\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST:
+			response_str = "HTTP/1.1 400 Bad Request\r\n";
 			break;
 		case RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND:
 			response_str = "HTTP/1.1 404 Not Found\r\n";

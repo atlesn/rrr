@@ -146,6 +146,138 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 	return ret;
 }
 
+
+
+struct httpserver_worker_process_field_callback {
+	struct rrr_array *array;
+};
+
+static int httpserver_worker_process_field_callback (
+		struct rrr_http_field *field,
+		void *arg
+) {
+	struct httpserver_worker_process_field_callback *callback_data = arg;
+
+	int ret = RRR_HTTP_OK;
+
+	if (field->value != NULL && field->value_size > 0) {
+		ret = rrr_array_push_value_str_with_tag_with_size (
+				callback_data->array,
+				field->name,
+				field->value,
+				field->value_size
+		);
+	}
+	else {
+		ret = rrr_array_push_value_64_with_tag (
+				callback_data->array,
+				field->name,
+				0
+		);
+	}
+
+	if (ret != 0) {
+		RRR_MSG_0("Error while pushing field to array in __rrr_http_server_worker_process_field_callback\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
+struct httpserver_write_message_callback_data {
+	struct rrr_array *array;
+};
+
+// NOTE : Worker thread CTX in httpserver_write_message_callback
+static int httpserver_write_message_callback (
+		struct rrr_ip_buffer_entry *new_entry,
+		void *arg
+) {
+	struct httpserver_write_message_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	struct rrr_message *new_message = NULL;
+
+	if ((ret = rrr_array_new_message_from_collection (
+			&new_message,
+			callback_data->array,
+			rrr_time_get_64(),
+			NULL,
+			0
+	)) != 0) {
+		RRR_MSG_0("Could not create message in httpserver_write_message_callback\n");
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	new_entry->message = new_message;
+	new_entry->data_length = MSG_TOTAL_SIZE(new_message);
+	new_message = NULL;
+
+	out:
+	rrr_ip_buffer_entry_unlock(new_entry);
+	return ret;
+}
+
+struct httpserver_receive_callback_data {
+	struct httpserver_data *parent_data;
+};
+
+// NOTE : Worker thread CTX in httpserver_receive_callback
+static int httpserver_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+) {
+	struct httpserver_receive_callback_data *receive_callback_data = arg;
+
+	(void)(data_ptr);
+
+	int ret = 0;
+
+	struct rrr_array array_tmp = {0};
+
+	struct httpserver_worker_process_field_callback field_callback_data = {
+			&array_tmp
+	};
+
+	if ((ret = rrr_http_part_fields_iterate (
+			part,
+			httpserver_worker_process_field_callback,
+			&field_callback_data
+	)) != RRR_HTTP_OK) {
+		goto out;
+	}
+
+	if (RRR_LL_COUNT(&array_tmp) == 0) {
+		RRR_DBG_3("No data fields received from HTTP client, not creating RRR message\n");
+		goto out;
+	}
+
+	struct httpserver_write_message_callback_data write_callback_data = {
+			&array_tmp
+	};
+
+	if ((ret = rrr_message_broker_write_entry (
+			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
+			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
+			sockaddr,
+			socklen,
+			0,
+			httpserver_write_message_callback,
+			&write_callback_data
+	)) != 0) {
+		RRR_MSG_0("Error while saving message in httpserver_receive_callback\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	out:
+	rrr_array_clear(&array_tmp);
+	return ret;
+}
+
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
@@ -188,12 +320,21 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	unsigned int accept_count_total = 0;
 	uint64_t prev_stats_time = rrr_time_get_64();
 
+	struct httpserver_receive_callback_data callback_data = {
+			data
+	};
+
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		int accept_count = 0;
 
-		if (rrr_http_server_tick(&accept_count, http_server) != 0) {
+		if (rrr_http_server_tick (
+				&accept_count,
+				http_server,
+				httpserver_receive_callback,
+				&callback_data
+		) != 0) {
 			RRR_MSG_0("Failure in main loop in httpserver instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;

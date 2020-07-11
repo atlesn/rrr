@@ -39,6 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_HTTP_RESPONSE_CODE_OK						200
 #define RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT			204
+#define RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST		400
 #define RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND			404
 #define RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR	500
 

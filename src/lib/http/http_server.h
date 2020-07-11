@@ -24,9 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+#include "http_session.h"
+
 struct rrr_net_transport;
 struct rrr_thread_collection;
 struct rrr_net_transport_config;
+struct rrr_http_part;
 
 struct rrr_http_server {
 	struct rrr_net_transport *transport_http;
@@ -59,7 +62,9 @@ int rrr_http_server_start_tls (
 );
 int rrr_http_server_tick (
 		int *accept_count_final,
-		struct rrr_http_server *server
+		struct rrr_http_server *server,
+		int (*final_callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
+		void *final_callback_arg
 );
 
 #endif /* RRR_HTTP_SERVER_H */

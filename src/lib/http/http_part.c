@@ -1119,6 +1119,14 @@ int rrr_http_part_header_field_push (
 	return ret;
 }
 
+int rrr_http_part_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+) {
+	return rrr_http_field_collection_iterate(&part->fields, callback, callback_arg);
+}
+
 int rrr_http_part_header_fields_iterate (
 		struct rrr_http_part *part,
 		int (*callback)(struct rrr_http_header_field *field, void *arg),

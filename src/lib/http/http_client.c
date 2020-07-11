@@ -108,11 +108,12 @@ static int __rrr_http_client_receive_chunk_callback (
 }
 
 static int __rrr_http_client_receive_http_part_callback (
-		struct rrr_http_part *part,
-		const char *data_ptr,
-		void *arg
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
 ) {
 	struct rrr_http_client_request_callback_data *callback_data = arg;
+
+	(void)(sockaddr);
+	(void)(socklen);
 
 	int ret = RRR_HTTP_OK;
 

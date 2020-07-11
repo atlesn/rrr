@@ -139,6 +139,11 @@ int rrr_http_part_header_field_push (
 		const char *name,
 		const char *value
 );
+int rrr_http_part_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+);
 int rrr_http_part_header_fields_iterate (
 		struct rrr_http_part *part,
 		int (*callback)(struct rrr_http_header_field *field, void *arg),

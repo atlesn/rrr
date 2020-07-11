@@ -23,10 +23,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_HTTP_SESSION_H
 
 #include <stdint.h>
+#include <sys/socket.h>
 
 #include "http_common.h"
 #include "http_fields.h"
 #include "http_part.h"
+
+#define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS	\
+	struct rrr_http_part *part,					\
+	const char *data_ptr,						\
+	const struct sockaddr *sockaddr,			\
+	socklen_t socklen,							\
+	void *arg
 
 struct rrr_http_session {
 	int is_client;
@@ -78,7 +86,7 @@ int rrr_http_session_transport_ctx_receive (
 		uint64_t timeout_stall_us,
 		uint64_t timeout_total_us,
 		ssize_t read_max_size,
-		int (*callback)(struct rrr_http_part *part, const char *data_ptr, void *arg),
+		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg
 );
 int rrr_http_session_transport_ctx_check_data_received (

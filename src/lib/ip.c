@@ -268,7 +268,7 @@ static int __ip_receive_callback (
 			callback_data->target_entry,
 			read_session->rx_buf_ptr,
 			read_session->target_size,
-			&read_session->src_addr,
+			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			protocol
 	);

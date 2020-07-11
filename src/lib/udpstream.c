@@ -1033,7 +1033,7 @@ static int __rrr_udpstream_read_callback (
 	if ((ret = __rrr_udpstream_handle_received_frame (
 			data,
 			frame,
-			&read_session->src_addr,
+			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			callback_data->control_frame_listener,
 			callback_data->control_frame_listener_arg

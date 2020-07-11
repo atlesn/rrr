@@ -109,10 +109,14 @@ struct response_callback_data {
 	int save_ok;
 };
 
-static int influxdb_receive_http_response (struct rrr_http_part *part, const char *data_ptr, void *arg) {
+static int influxdb_receive_http_response (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+) {
 	struct response_callback_data *data = arg;
 
 	(void)(data_ptr);
+	(void)(sockaddr);
+	(void)(socklen);
 
 	int ret = 0;
 
