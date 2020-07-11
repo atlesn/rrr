@@ -54,6 +54,10 @@ void rrr_http_server_destroy (struct rrr_http_server *server) {
 	free(server);
 }
 
+void rrr_http_server_destroy_void (void *server) {
+	rrr_http_server_destroy(server);
+}
+
 int rrr_http_server_new (struct rrr_http_server **target) {
 	int ret = 0;
 

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../lib/http/http_session.h"
+#include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/instance_config.h"
@@ -116,6 +117,40 @@ static int httpserver_parse_config (
 	return ret;
 }
 
+static int httpserver_start_listening (struct httpserver_data *data, struct rrr_http_server *http_server) {
+	int ret = 0;
+
+	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_PLAIN ||
+		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
+	) {
+		if ((ret = rrr_http_server_start_plain(http_server, data->port_plain)) != 0) {
+			RRR_MSG_0("Could not start listening in plain mode on port %u in httpserver instance %s\n",
+					data->port_plain, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
+
+	if (data->net_transport_config.transport_type == RRR_NET_TRANSPORT_TLS ||
+		data->net_transport_config.transport_type == RRR_NET_TRANSPORT_BOTH
+	) {
+		if ((ret = rrr_http_server_start_tls (
+				http_server,
+				data->port_tls,
+				&data->net_transport_config,
+				0
+		)) != 0) {
+			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
+					data->port_plain, INSTANCE_D_NAME(data->thread_data));
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct httpserver_data *data = thread_data->private_data = thread_data->private_memory;
@@ -141,11 +176,38 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("httpserver started thread %p\n", thread_data);
 
+	struct rrr_http_server *http_server = NULL;
+
+	if (rrr_http_server_new(&http_server) != 0) {
+		RRR_MSG_0("Could not create HTTP server in httpserver instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+		goto out_message;
+	}
+
+	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
+
+	if (httpserver_start_listening(data, http_server) != 0) {
+		goto out_cleanup_httpserver;
+	}
+
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		rrr_posix_usleep(150000);
+		int accept_count = 0;
+
+		if (rrr_http_server_tick(&accept_count, http_server) != 0) {
+			RRR_MSG_0("Failure in main loop in httpserver instance %s\n",
+					INSTANCE_D_NAME(thread_data));
+			break;
+		}
+
+		if (accept_count == 0) {
+			rrr_posix_usleep(150000);
+		}
 	}
+
+	out_cleanup_httpserver:
+	pthread_cleanup_pop(1);
 
 	out_message:
 	RRR_DBG_1 ("Thread httpserver %p exiting\n", thread_data->thread);

@@ -41,6 +41,9 @@ struct rrr_http_server {
 void rrr_http_server_destroy (
 		struct rrr_http_server *server
 );
+void rrr_http_server_destroy_void (
+		void *server
+);
 int rrr_http_server_new (
 		struct rrr_http_server **target
 );
