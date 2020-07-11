@@ -179,11 +179,37 @@ static int __rrr_http_util_is_ascii_non_ctl (unsigned char c) {
 }
 
 void rrr_http_util_print_where_message (
-		const char *start
+		const char *start,
+		const char *end
 ) {
-	char buf[21];
-	strncpy(buf, start, 20);
-	buf[20] = '\0';
+	const ssize_t max = 20;
+
+	char buf[max+1];
+
+	ssize_t bytes_to_copy = max;
+	if (start + bytes_to_copy >= end) {
+		bytes_to_copy = end - start;
+	}
+
+	if (bytes_to_copy < 0 || bytes_to_copy > max) {
+		RRR_BUG("BUG: Overflow or underflow in rrr_http_util_print_where_message, bytes to copy was %li\n", bytes_to_copy);
+	}
+
+	strncpy(buf, start, bytes_to_copy);
+	buf[bytes_to_copy] = '\0';
+
+	// Stop message at newline
+
+	for (ssize_t i = 0; i < bytes_to_copy; i++) {
+		if (buf[i] == '\0') {
+			break;
+		}
+		else if (buf[i] == '\r' || buf[i] == '\n') {
+			buf[i] = '\0';
+			break;
+		}
+	}
+
 	RRR_MSG_0("Where: %s\n", buf);
 	RRR_MSG_0("       /\\ <-- HERE\n");
 }
@@ -217,7 +243,7 @@ int rrr_http_util_decode_urlencoded_string (
 
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in urlencoded string\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 				ret = 1;
 				goto out;
 			}

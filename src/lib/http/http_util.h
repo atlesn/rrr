@@ -32,7 +32,8 @@ struct rrr_http_uri {
 };
 
 void rrr_http_util_print_where_message (
-		const char *start
+		const char *start,
+		const char *end
 );
 int rrr_http_util_decode_urlencoded_string (
 		ssize_t *output_size,

@@ -488,7 +488,7 @@ static int __rrr_http_parse_request (
 
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
 		RRR_MSG_0("Whitespace missing after request method in HTTP request\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -505,7 +505,7 @@ static int __rrr_http_parse_request (
 
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
 		RRR_MSG_0("Whitespace missing after request uri in HTTP request\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -513,7 +513,7 @@ static int __rrr_http_parse_request (
 	RRR_FREE_IF_NOT_NULL(result->request_uri);
 	if (__rrr_http_parse_allocate_string (&result->request_uri, start, space) != 0) {
 		RRR_MSG_0("Could not allocate string for uri in __rrr_http_parse_request \n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -618,7 +618,7 @@ static int __rrr_http_parse_header_field_subvalue (
 	ssize_t name_length = name_end - start;
 	if (name_length <= 0) {
 		RRR_MSG_0("No name found while parsing subvalues of HTTP header field\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -710,7 +710,7 @@ static int __rrr_http_parse_header_field (
 		const char *colon = rrr_http_util_strchr(start, crlf, ':');
 		if (colon == NULL) {
 			RRR_MSG_0("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
-			rrr_http_util_print_where_message(start);
+			rrr_http_util_print_where_message(start, end);
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
@@ -769,7 +769,7 @@ static int __rrr_http_parse_header_field (
 		if (bad_client_missing_space_after_comma) {
 			if (RRR_DEBUGLEVEL_1) {
 				RRR_MSG_0("Warning: No whitespace after comma while parsing HTTP header field subvalues\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 			}
 		}
 		else {
@@ -819,7 +819,7 @@ static int __rrr_http_parse_header_field (
 			if (*next == ',') {
 				if (RRR_DEBUGLEVEL_1) {
 					RRR_MSG_0("Warning: Comma found after semicolon in HTTP header, bad implementation\n");
-					rrr_http_util_print_where_message(start);
+					rrr_http_util_print_where_message(start, end);
 				}
 				start++;
 			}
@@ -1618,7 +1618,7 @@ static int __rrr_http_part_parse_query_string (
 
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in HTTP query string\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
@@ -1637,7 +1637,7 @@ static int __rrr_http_part_parse_query_string (
 		else if (c == '=') {
 			if (c == '=' && value_target != NULL) {
 				RRR_MSG_0("Unexpected = in query string\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}

@@ -425,8 +425,14 @@ static int httpclient_send_request_locked (
 			httpclient_send_request_callback,
 			data
 	)) != RRR_HTTP_OK) {
-		RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
-				INSTANCE_D_NAME(data->thread_data), ret);
+		if (ret == RRR_HTTP_SOFT_ERROR) {
+			RRR_DBG_2("HTTP request failed in httpclient instance %s, return was %i\n",
+					INSTANCE_D_NAME(data->thread_data), ret);
+		}
+		else {
+			RRR_MSG_0("HTTP request failed in httpclient instance %s, return was %i\n",
+					INSTANCE_D_NAME(data->thread_data), ret);
+		}
 
 		if (data->do_drop_on_error) {
 			RRR_MSG_0("Dropping message per configuration after error in httpclient instance %s\n",

@@ -820,11 +820,13 @@ int rrr_http_session_transport_ctx_receive (
 		}
 
 		if (time_now - time_start > timeout_total_us) {
-			RRR_MSG_0("HTTP total receive timeout of %" PRIu64 " ms reached\n", timeout_total_us / 1000);
+			RRR_DBG_2("HTTP total receive timeout of %" PRIu64 " ms reached for client %i\n",
+					timeout_total_us / 1000, handle->handle);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
 		if (time_now - time_last_change > timeout_stall_us) {
-			RRR_MSG_0("HTTP stall receive timeout of %" PRIu64 " ms reached\n", timeout_stall_us / 1000);
+			RRR_DBG_2("HTTP stall receive timeout of %" PRIu64 " ms reached for client %i\n",
+					timeout_stall_us / 1000, handle->handle);
 			ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 		}
 
@@ -844,6 +846,13 @@ int rrr_http_session_transport_ctx_receive (
 
 	out:
 	return ret;
+}
+
+int rrr_http_session_transport_ctx_check_data_received (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	return (session->request_part->request_or_response_length > 0);
 }
 
 int rrr_http_session_transport_ctx_check_response_part_initilized (
