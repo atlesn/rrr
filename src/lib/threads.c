@@ -1016,7 +1016,8 @@ int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 				ret = callback(node, callback_data);
 			}
 			if (ret != 0) {
-				// NOTE : Return value from caller MUST propagate to caller, many depend on this
+				// NOTE : Return value from callback MUST propagate to caller. Return
+				//        values are not only errors.
 				RRR_LL_ITERATE_LAST();
 			}
 		}

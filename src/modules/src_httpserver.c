@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/stats/stats_instance.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -190,6 +191,9 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		goto out_cleanup_httpserver;
 	}
 
+	unsigned int accept_count_total = 0;
+	uint64_t prev_stats_time = rrr_time_get_64();
+
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
@@ -202,7 +206,19 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		}
 
 		if (accept_count == 0) {
-			rrr_posix_usleep(150000);
+			rrr_posix_usleep(25000); // 25 ms
+		}
+		else {
+			accept_count_total += accept_count;
+		}
+
+		uint64_t time_now = rrr_time_get_64();
+		if (time_now > prev_stats_time + 1000000) {
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "accepted", accept_count_total);
+
+			accept_count_total = 0;
+
+			prev_stats_time = time_now;
 		}
 	}
 
