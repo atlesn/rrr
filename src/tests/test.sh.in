@@ -30,12 +30,14 @@ fail () {
 }
 
 do_rrr_post() {
+	sleep 1
 	echo \$ $RRR_POST $RRR_POST_ARGS \< $TEST_DATA_FILE
 	sleep 0.3
 	$RRR_POST $RRR_POST_ARGS < $TEST_DATA_FILE
 }
 
 do_send_ip() {
+	sleep 1
 	echo \$ $SEND_IP $SEND_IP_PORT \< $TEST_DATA_FILE
 	sleep 0.3
 	$SEND_IP $SEND_IP_PORT < $TEST_DATA_FILE

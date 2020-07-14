@@ -133,7 +133,9 @@ static int httpclient_session_add_field (
 		);
 	}
 	else if (RRR_TYPE_IS_STR(value->definition->type)) {
-		int64_t buf_size = rrr_type_value_get_export_length(value); // MUST be signed due to decrement counting
+		// MUST be signed due to decrement counting. Also, do not get
+		// export length as it will add two bytes for quotes ""
+		int64_t buf_size = value->total_stored_length;
 		const char *buf = value->data;
 
 		// Remove trailing 0's

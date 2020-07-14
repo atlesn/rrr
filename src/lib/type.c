@@ -1357,6 +1357,7 @@ int rrr_type_value_allocate_and_export (
 
 	*target = buf_tmp;
 	*written_bytes = buf_size;
+	buf_tmp = NULL;
 
 	out:
 	RRR_FREE_IF_NOT_NULL(buf_tmp);
