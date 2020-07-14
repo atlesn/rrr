@@ -116,7 +116,7 @@ int rrr_socket_msg_head_to_host_and_verify (
 
 int rrr_socket_msg_get_target_size_and_check_checksum (
 		ssize_t *target_size,
-		struct rrr_socket_msg *socket_msg,
+		const struct rrr_socket_msg *socket_msg,
 		ssize_t buf_size
 ) {
 	if (buf_size < (ssize_t) sizeof(struct rrr_socket_msg)) {
@@ -126,7 +126,7 @@ int rrr_socket_msg_get_target_size_and_check_checksum (
 	*target_size = 0;
 
 	if (crc32cmp (
-			((char*) socket_msg) + sizeof(socket_msg->header_crc32),
+			((const char*) socket_msg) + sizeof(socket_msg->header_crc32),
 			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
 			rrr_be32toh(socket_msg->header_crc32)
 	) != 0) {

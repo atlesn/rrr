@@ -204,6 +204,7 @@ struct rrr_cmodule_helper_poll_callback_data {
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
 	int input_count = 0;

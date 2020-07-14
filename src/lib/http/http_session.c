@@ -657,7 +657,7 @@ static int __rrr_http_session_response_receive_callback (
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
-			part->data_length,  part->request_or_response_length, part->header_length);
+			part->data_length,  part->headroom_length, part->header_length);
 
 	return receive_data->callback (
 			part,
@@ -679,6 +679,8 @@ static int __rrr_http_session_request_receive_callback (
 
 	int ret = 0;
 
+	char *merged_chunks = NULL;
+
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
 	if (RRR_DEBUGLEVEL_3) {
@@ -686,13 +688,19 @@ static int __rrr_http_session_request_receive_callback (
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
-			part->data_length,  part->request_or_response_length, part->header_length);
+			part->data_length,  part->headroom_length, part->header_length);
 
-	if ((ret = rrr_http_part_process_multipart(part, read_session->rx_buf_ptr)) != 0) {
+	if ((ret = rrr_http_part_merge_chunks(&merged_chunks, part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_extract_post_and_query_fields(part, read_session->rx_buf_ptr)) != 0) {
+	const char *data_to_use = (merged_chunks != NULL ? merged_chunks : read_session->rx_buf_ptr);
+
+	if ((ret = rrr_http_part_process_multipart(part, data_to_use)) != 0) {
+		goto out;
+	}
+
+	if ((ret = rrr_http_part_extract_post_and_query_fields(part, data_to_use)) != 0) {
 		goto out;
 	}
 
@@ -702,13 +710,14 @@ static int __rrr_http_session_request_receive_callback (
 
 	ret = receive_data->callback (
 			part,
-			read_session->rx_buf_ptr,
+			data_to_use,
 			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			receive_data->callback_arg
 	);
 
 	out:
+	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
 
@@ -725,30 +734,35 @@ static int __rrr_http_session_receive_get_target_size (
 	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
 
-	if (receive_data->session->is_client == 1) {
-		ret = rrr_http_part_parse (
-				receive_data->session->response_part,
-				&target_size,
-				&parsed_bytes,
-				read_session->rx_buf_ptr,
-				receive_data->parse_complete_pos,
-				end,
-				RRR_HTTP_PARSE_RESPONSE
-		);
-	}
-	else {
-		ret = rrr_http_part_parse (
-				receive_data->session->request_part,
-				&target_size,
-				&parsed_bytes,
-				read_session->rx_buf_ptr,
-				receive_data->parse_complete_pos,
-				end,
-				RRR_HTTP_PARSE_REQUEST
-		);
-	}
+	// There might be more than one chunk in each read cycle, we have to
+	// go through all of them in a loop here. The parses will always return
+	// after a chunk is found.
+	do {
+		if (receive_data->session->is_client == 1) {
+			ret = rrr_http_part_parse (
+					receive_data->session->response_part,
+					&target_size,
+					&parsed_bytes,
+					read_session->rx_buf_ptr,
+					receive_data->parse_complete_pos,
+					end,
+					RRR_HTTP_PARSE_RESPONSE
+			);
+		}
+		else {
+			ret = rrr_http_part_parse (
+					receive_data->session->request_part,
+					&target_size,
+					&parsed_bytes,
+					read_session->rx_buf_ptr,
+					receive_data->parse_complete_pos,
+					end,
+					RRR_HTTP_PARSE_REQUEST
+			);
+		}
 
-	receive_data->parse_complete_pos += parsed_bytes;
+		receive_data->parse_complete_pos += parsed_bytes;
+	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
 
 	// Used only for stall timeout
 	receive_data->received_bytes = read_session->rx_buf_wpos;
@@ -864,7 +878,7 @@ int rrr_http_session_transport_ctx_check_data_received (
 		struct rrr_net_transport_handle *handle
 ) {
 	struct rrr_http_session *session = handle->application_private_ptr;
-	return (session->request_part->request_or_response_length > 0);
+	return (session->request_part->headroom_length > 0);
 }
 
 int rrr_http_session_transport_ctx_check_response_part_initialized (

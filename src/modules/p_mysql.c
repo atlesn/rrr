@@ -716,6 +716,7 @@ int parse_config(struct mysql_data *data, struct rrr_instance_config *config) {
 }
 
 int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct mysql_data *mysql_data = thread_data->private_data;
 
 	struct rrr_message *message = entry->message;

@@ -46,6 +46,10 @@ int rrr_http_field_new_no_value (
 		const char *name,
 		ssize_t name_length
 );
+int rrr_http_field_set_content_type (
+		struct rrr_http_field *target,
+		const char *content_type
+);
 int rrr_http_field_set_value (
 		struct rrr_http_field *target,
 		const char *value,

@@ -43,6 +43,7 @@ struct buffer_data {
 int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 //	printf ("buffer got entry %p\n", entry);
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct rrr_message *message = entry->message;
 
 	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",

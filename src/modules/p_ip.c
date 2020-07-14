@@ -451,7 +451,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 				goto out_no_loop;
 			}
 			else {
-				RRR_MSG_0("Received invalid data in ip_receive_packets in ip instance %s\n",
+				RRR_MSG_0("Received invalid data in ip instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				// Don't allow invalid data to stop processing
 				ret = RRR_MESSAGE_BROKER_OK;
@@ -459,7 +459,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			}
 		}
 		else {
-			RRR_MSG_0("Error from ip_receive_packets in ip instance %s return was %i\n",
+			RRR_MSG_0("Error from rrr_ip_receive_array in ip_read_array_intermediate in ip instance %s return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
@@ -592,6 +592,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 }
 
 static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct ip_data *data = thread_data->private_data;
 
 	struct rrr_message *message = entry->message;

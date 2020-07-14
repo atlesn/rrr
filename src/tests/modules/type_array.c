@@ -45,9 +45,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
 
-struct test_result {
+struct rrr_test_result {
 	int result;
 	struct rrr_message *message;
+};
+
+struct rrr_test_callback_data {
+	struct rrr_test_result *test_result;
+	void *private_data;
 };
 
 /* udpr_input_types=be4,be3,be2,be1,sep1,le4,le3,le2,le1,sep2,array2@blob8 */
@@ -95,243 +100,11 @@ struct test_final_data {
 	struct rrr_message msg;
 };
 
-#define TEST_DATA_ELEMENTS 12
-
-
-/*
- *  The main output receives an identical message_1 as the one we sent in,
- *  we check for correct endianess among other things
- */
-int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
-	int ret = 0;
-
-	// This cast is really weird, only done in test module. Our caller
-	// does not send thread_data struct but test_data struct.
-	struct test_result *result = (struct test_result *) thread_data;
-
-	result->message = NULL;
-	result->result = 1;
-
-	struct rrr_message *message = (struct rrr_message *) entry->message;
-	struct rrr_array collection = {0};
-
-	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
-
-	if (RRR_DEBUGLEVEL_3) {
-// TODO : Needs to be put in a buffer then written out
-/*		RRR_DBG("dump message: 0x");
-		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
-			char c = ((char*)message)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
-
-	if (!MSG_IS_ARRAY(message)) {
-		// Ignore non-array messages
-		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
-		result->result = 3;
-		ret = 0;
-		goto out;
-	}
-
-	if (rrr_array_message_append_to_collection(&collection, message) != 0) {
-		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
-		ret = 1;
-		goto out;
-	}
-
-	if (collection.node_count < TEST_DATA_ELEMENTS) {
-		TEST_MSG("Not enough elements in result from output in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_collection;
-	}
-
-	rrr_type_length final_length = 0;
-	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
-		final_length += node->total_stored_length;
-	RRR_LL_ITERATE_END();
-
-	struct rrr_type_value *types[12];
-
-	// After the array has been assembled and then disassembled again, all numbers
-	// become be64
-	types[0] = rrr_array_value_get_by_index(&collection, 0);
-	types[1] = rrr_array_value_get_by_index(&collection, 1);
-	types[2] = rrr_array_value_get_by_index(&collection, 2);
-	types[3] = rrr_array_value_get_by_index(&collection, 3);
-
-	types[4] = rrr_array_value_get_by_index(&collection, 4);
-
-	types[5] = rrr_array_value_get_by_index(&collection, 5);
-	types[6] = rrr_array_value_get_by_index(&collection, 6);
-	types[7] = rrr_array_value_get_by_index(&collection, 7);
-	types[8] = rrr_array_value_get_by_index(&collection, 8);
-
-	types[9] = rrr_array_value_get_by_index(&collection, 9);
-
-	types[10] = rrr_array_value_get_by_index(&collection, 10);
-
-	types[11] = rrr_array_value_get_by_index(&collection, 11);
-
-	for (int i = 0; i < 4; i++) {
-		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
-	}
-	TEST_MSG("Type 4: %u\n", types[4]->definition->type);
-	for (int i = 5; i < 9; i++) {
-		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
-	}
-	TEST_MSG("Type 9: %u\n", types[4]->definition->type);
-	for (int i = 10; i < 11; i++) {
-		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_BLOB(types[i]->definition->type) ? "OK" : "NOT OK"));
-	}
-	for (int i = 11; i < 12; i++) {
-		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_MSG ? "OK" : "NOT OK"));
-	}
-
-	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
-		!RRR_TYPE_IS_64(types[1]->definition->type) ||
-		!RRR_TYPE_IS_64(types[2]->definition->type) ||
-		!RRR_TYPE_IS_64(types[3]->definition->type) ||
-
-		!RRR_TYPE_IS_64(types[5]->definition->type) ||
-		!RRR_TYPE_IS_64(types[6]->definition->type) ||
-		!RRR_TYPE_IS_64(types[7]->definition->type) ||
-		!RRR_TYPE_IS_64(types[8]->definition->type) ||
-
-		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
-		types[11]->definition->type != RRR_TYPE_MSG
-	) {
-		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_collection;
-	}
-
-	struct test_final_data *final_data_raw = malloc(sizeof(*final_data_raw));
-
-	memset(final_data_raw, '\0', sizeof(*final_data_raw));
-
-	final_data_raw->be4 = *((uint64_t*) (types[0]->data));
-	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
-	final_data_raw->be2 = *((int64_t*) (types[2]->data));
-	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
-
-	TEST_MSG("Result for BE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
-			final_data_raw->be4, final_data_raw->be3, final_data_raw->be2, final_data_raw->be1);
-
-	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
-	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
-	final_data_raw->le2 = *((int64_t*) (types[7]->data));
-	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
-
-	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 "\n",
-			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
-
-	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
-	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
-
-	if (types[10]->element_count != 2) {
-		RRR_MSG_0("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	const char *blob_a = types[10]->data;
-	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
-
-	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
-		RRR_MSG_0("Blob sizes not equal in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (blob_a[blob_a_length - 1] != '\0' || blob_b[blob_b_length - 1] != '\0') {
-		RRR_MSG_0("Returned blobs were not zero terminated in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (strcmp(blob_a, "abcdefg") != 0 || strcmp(blob_b, "gfedcba") != 0) {
-		RRR_MSG_0("Returned blobs did not match input in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	strcpy(final_data_raw->blob_a, blob_a);
-	strcpy(final_data_raw->blob_b, blob_b);
-
-	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
-
-	if (RRR_DEBUGLEVEL_3) {
-		// TODO : This needs to be put in a buffer then written out
-/*		RRR_DBG("dump final_data_raw: 0x");
-		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
-			char c = ((char*)final_data_raw)[i];
-			if (c < 0x10) {
-				RRR_DBG("0");
-			}
-			RRR_DBG("%x", c);
-		}
-		RRR_DBG("\n");*/
-	}
-
-	if (final_data_raw->be1 != final_data_raw->le1 ||
-		final_data_raw->be2 != final_data_raw->le2 ||
-		final_data_raw->be3 != final_data_raw->le3 ||
-		final_data_raw->be4 != final_data_raw->le4
-	) {
-		TEST_MSG("Mismatch of data, possible corruption in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (final_data_raw->be1 == 0 ||
-		final_data_raw->be2 == 0 ||
-		final_data_raw->be3 == 0 ||
-		final_data_raw->be4 == 0
-	) {
-		TEST_MSG("Received zero data from collection in test_type_array_callback\n");
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	if (final_data_raw->be2 != -33 ||
-		final_data_raw->le2 != -33
-	) {
-		TEST_MSG("Received wrong data from collection in test_type_array_callback, expects -33 but got 0x%" PRIx64 " and 0x%" PRIx64 "\n",
-				final_data_raw->be2, final_data_raw->le2);
-		ret = 1;
-		goto out_free_final_data;
-	}
-
-	result->result = 2;
-
-	out_free_final_data:
-	RRR_FREE_IF_NOT_NULL(final_data_raw);
-
-	out_free_collection:
-	rrr_array_clear(&collection);
-
-	out:
-	if (ret != 0) {
-	}
-	else {
-		result->message = message;
-		entry->message = NULL;
-	}
-
-	rrr_ip_buffer_entry_unlock(entry);
-
-	return ret;
-}
-
 int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// This cast is really weird, only done in test module. Our caller
 	// does not send thread_data struct but test_data struct.
-	struct test_result *result = (struct test_result *) thread_data;
+	struct rrr_test_callback_data *callback_data = arg;
+	struct rrr_test_result *result = callback_data->test_result;
 
 	result->message = NULL;
 	result->result = 1;
@@ -351,12 +124,14 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 int test_do_poll_loop (
-		struct test_result *test_result,
 		struct rrr_instance_thread_data *self_thread_data,
 		struct rrr_instance_thread_data *output_thread_data,
-		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE)
+		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
+		struct rrr_test_callback_data *callback_data
 ) {
 	int ret = 0;
+
+	struct rrr_test_result *test_result = callback_data->test_result;
 
 	// Poll from output
 	for (int i = 1; i <= 200 && test_result->message == NULL; i++) {
@@ -370,7 +145,7 @@ int test_do_poll_loop (
 		ret = rrr_message_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(output_thread_data),
 				callback,
-				test_result,
+				callback_data,
 				150
 		);
 
@@ -444,7 +219,8 @@ int test_type_array_write_to_socket (struct test_data *data, struct instance_met
 int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	// This cast is really weird, only done in test module. Our caller
 	// does not send thread_data struct but test_data struct.
-	struct test_result *result = (struct test_result *) thread_data;
+	struct rrr_test_callback_data *callback_data = arg;
+	struct rrr_test_result *result = callback_data->test_result;
 
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 
@@ -514,10 +290,9 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 }
 
 int test_averager (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name_averager
+		RRR_TEST_FUNCTION_ARGS
 ) {
+	(void)(test_function_data);
 
 	// Preconditions for this test:
 	// - Sender of the averager module is a voltmonitor module with configuration
@@ -525,19 +300,26 @@ int test_averager (
 
 	int ret = 0;
 
-	struct test_result test_result = {0, NULL};
+	struct rrr_test_result test_result = {0, NULL};
 
-	struct instance_metadata *output = rrr_instance_find(instances, output_name_averager);
+	struct instance_metadata *output = rrr_instance_find(instances, output_name);
 	if (output == NULL) {
 		TEST_MSG("Could not find output instances %s in test_averager\n",
-				output_name_averager);
+				output_name);
 		ret = 1;
 		goto out;
 	}
 
+	struct rrr_test_callback_data callback_data = { &test_result, NULL };
+
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output->thread_data));
-	ret |= test_do_poll_loop(&test_result, self_thread_data, output->thread_data, test_averager_callback);
+	ret |= test_do_poll_loop(
+			self_thread_data,
+			output->thread_data,
+			test_averager_callback,
+			&callback_data
+	);
 	TEST_MSG("Result of test_averager, should be 2: %i\n", test_result.result);
 
 	out:
@@ -545,14 +327,344 @@ int test_averager (
 	return ret;
 }
 
+#define TEST_DATA_ELEMENTS 12
+
+struct rrr_test_type_array_callback_data {
+	const struct rrr_test_function_data *config;
+};
+
+/*
+ *  The main output receives an identical message_1 as the one we sent in,
+ *  we check for correct endianess among other things
+ */
+int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	int ret = 0;
+
+	// This cast is really weird, only done in test module. Our caller
+	// does not send thread_data struct but test_data struct.
+	struct rrr_test_callback_data *callback_data = arg;
+	struct rrr_test_result *result = callback_data->test_result;
+	struct rrr_test_type_array_callback_data *array_callback_data = callback_data->private_data;
+	const struct rrr_test_function_data *config = array_callback_data->config;
+
+	result->message = NULL;
+	result->result = 1;
+
+	struct rrr_message *message = (struct rrr_message *) entry->message;
+
+	char *str_to_h_tmp = NULL;
+
+	struct rrr_array collection = {0};
+	struct rrr_array collection_converted = {0};
+
+	struct test_final_data *final_data_raw = NULL;
+
+	TEST_MSG("Received a message in test_type_array_callback of class %" PRIu32 "\n", MSG_CLASS(message));
+
+	if (RRR_DEBUGLEVEL_3) {
+// TODO : Needs to be put in a buffer then written out
+/*		RRR_DBG("dump message: 0x");
+		for (unsigned int i = 0; i < MSG_TOTAL_SIZE(message); i++) {
+			char c = ((char*)message)[i];
+			if (c < 0x10) {
+				RRR_DBG("0");
+			}
+			RRR_DBG("%x", c);
+		}
+		RRR_DBG("\n");*/
+	}
+
+	if (!MSG_IS_ARRAY(message)) {
+		// Ignore non-array messages
+		TEST_MSG("Message received in test_type_array_callback was not an array, ignoring\n");
+		result->result = 3;
+		ret = 0;
+		goto out;
+	}
+
+	if (rrr_array_message_append_to_collection(&collection, message) != 0) {
+		TEST_MSG("Error while parsing message from output function in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (collection.node_count < TEST_DATA_ELEMENTS) {
+		TEST_MSG("Not enough elements in result from output in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	rrr_type_length final_length = 0;
+	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
+		final_length += node->total_stored_length;
+	RRR_LL_ITERATE_END();
+
+	const struct rrr_type_value *types[12];
+
+	// After the array has been assembled and then disassembled again, all
+	// short numbers become full length 8 bytes numbers
+	types[0] = rrr_array_value_get_by_index(&collection, 0);
+	types[1] = rrr_array_value_get_by_index(&collection, 1);
+	types[2] = rrr_array_value_get_by_index(&collection, 2);
+	types[3] = rrr_array_value_get_by_index(&collection, 3);
+
+	types[4] = rrr_array_value_get_by_index(&collection, 4);
+
+	types[5] = rrr_array_value_get_by_index(&collection, 5);
+	types[6] = rrr_array_value_get_by_index(&collection, 6);
+	types[7] = rrr_array_value_get_by_index(&collection, 7);
+	types[8] = rrr_array_value_get_by_index(&collection, 8);
+
+	types[9] = rrr_array_value_get_by_index(&collection, 9);
+
+	types[10] = rrr_array_value_get_by_index(&collection, 10);
+
+	types[11] = rrr_array_value_get_by_index(&collection, 11);
+
+	// In some tests chains, the integers become text strings
+	if (config->do_array_str_to_h_conversion) {
+		for (int i = 0; i < 9; i++) {
+			if (i == 4) {
+				// Skip separator
+				i++;
+			}
+
+			if (RRR_TYPE_IS_BLOB(types[i]->definition->type)) {
+				RRR_FREE_IF_NOT_NULL(str_to_h_tmp);
+				if (types[i]->definition->to_str(&str_to_h_tmp, types[i]) != 0) {
+					TEST_MSG("Error while converting blob to string in test_type_array_callback\n");
+					ret = 1;
+					goto out;
+				}
+
+				TEST_MSG("Doing str to h conversion for value at position %i string is '%s'\n", i, str_to_h_tmp);
+
+				if (*str_to_h_tmp == '-') {
+					char *tail = NULL;
+					int64_t num = strtoll(str_to_h_tmp, &tail, 10);
+					if (rrr_array_push_value_i64_with_tag(&collection_converted, "", num) != 0) {
+						TEST_MSG("Error while pushing temporary signed value to array in test_type_array_callback\n");
+						ret = 1;
+						goto out;
+					}
+				}
+				else {
+					char *tail = NULL;
+					uint64_t num = strtoull(str_to_h_tmp, &tail, 10);
+					if (rrr_array_push_value_u64_with_tag(&collection_converted, "", num) != 0) {
+						TEST_MSG("Error while pushing temporary unsigned value to array in test_type_array_callback\n");
+						ret = 1;
+						goto out;
+					}
+				}
+
+				// types[] is not responsible for memory, safe to replace pointer
+				types[i] = RRR_LL_LAST(&collection_converted);
+			}
+		}
+	}
+
+	// In some tests chains, the blob field is merged into one single value
+	if (config->do_blob_field_divide) {
+		const struct rrr_type_value *value_blob = types[10];
+		if (RRR_TYPE_IS_BLOB(value_blob->definition->type)) {
+			if (value_blob->element_count == 1) {
+				rrr_type_length length_new = value_blob->total_stored_length / 2;
+
+				if (length_new * 2 != value_blob->total_stored_length) {
+					TEST_MSG("Could not split blob field, stored length was not divisible by 2\n");
+					ret = 1;
+					goto out;
+				}
+
+				struct rrr_type_value *value_new;
+				if (rrr_type_value_allocate_and_import_raw (
+						&value_new,
+						&rrr_type_definition_blob, // Has to be blob to support two values
+						value_blob->data,
+						value_blob->data + value_blob->total_stored_length,
+						0,
+						NULL,
+						length_new,
+						2
+				) != 0) {
+					TEST_MSG("Could not import blob when splitting\n");
+					ret = 1;
+					goto out;
+				}
+
+				RRR_LL_APPEND(&collection_converted, value_new);
+
+				// types[] is not responsible for memory, safe to replace pointer
+				types[10] = value_new;
+			}
+		}
+	}
+
+	for (int i = 0; i < 4; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	TEST_MSG("Type 4: %u\n", types[4]->definition->type);
+	for (int i = 5; i < 9; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_64(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	TEST_MSG("Type 9: %u\n", types[4]->definition->type);
+	for (int i = 10; i < 11; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (RRR_TYPE_IS_BLOB(types[i]->definition->type) ? "OK" : "NOT OK"));
+	}
+	for (int i = 11; i < 12; i++) {
+		TEST_MSG("Type %i: %u (%s)\n", i, types[i]->definition->type, (types[i]->definition->type == RRR_TYPE_MSG ? "OK" : "NOT OK"));
+	}
+
+	if (!RRR_TYPE_IS_64(types[0]->definition->type) ||
+		!RRR_TYPE_IS_64(types[1]->definition->type) ||
+		!RRR_TYPE_IS_64(types[2]->definition->type) ||
+		!RRR_TYPE_IS_64(types[3]->definition->type) ||
+
+		!RRR_TYPE_IS_64(types[5]->definition->type) ||
+		!RRR_TYPE_IS_64(types[6]->definition->type) ||
+		!RRR_TYPE_IS_64(types[7]->definition->type) ||
+		!RRR_TYPE_IS_64(types[8]->definition->type) ||
+
+		!RRR_TYPE_IS_BLOB(types[10]->definition->type) ||
+		types[11]->definition->type != RRR_TYPE_MSG
+	) {
+		TEST_MSG("Wrong types in collection in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	final_data_raw = malloc(sizeof(*final_data_raw));
+
+	memset(final_data_raw, '\0', sizeof(*final_data_raw));
+
+	final_data_raw->be4 = *((uint64_t*) (types[0]->data));
+	final_data_raw->be3 = *((uint64_t*) (types[1]->data));
+	final_data_raw->be2 = *((int64_t*) (types[2]->data));
+	final_data_raw->be1 = *((uint64_t*) (types[3]->data));
+
+	TEST_MSG("Result for BE fields: %" PRIu64 ", %" PRIu64 ", %" PRIi64 ", %" PRIu64 "\n",
+			final_data_raw->be4, final_data_raw->be3, final_data_raw->be2, final_data_raw->be1);
+
+	final_data_raw->le4 = *((uint64_t*) (types[5]->data));
+	final_data_raw->le3 = *((uint64_t*) (types[6]->data));
+	final_data_raw->le2 = *((int64_t*) (types[7]->data));
+	final_data_raw->le1 = *((uint64_t*) (types[8]->data));
+
+	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIi64 ", %" PRIu64 "\n",
+			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
+
+	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
+
+	if (types[10]->element_count != 2) {
+		RRR_MSG_0("Error while extracting blobs in test_type_array_callback, array size was not 2\n");
+		ret = 1;
+		goto out;
+	}
+
+	const char *blob_a = types[10]->data;
+	const char *blob_b = types[10]->data + types[10]->total_stored_length / types[10]->element_count;
+
+	if (blob_a_length != sizeof(final_data_raw->blob_a)) {
+		RRR_MSG_0("Blob sizes not equal in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (blob_a[blob_a_length - 1] != '\0' || blob_b[blob_b_length - 1] != '\0') {
+		RRR_MSG_0("Returned blobs were not zero terminated in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (strcmp(blob_a, "abcdefg") != 0 || strcmp(blob_b, "gfedcba") != 0) {
+		RRR_MSG_0("Returned blobs did not match input in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	strcpy(final_data_raw->blob_a, blob_a);
+	strcpy(final_data_raw->blob_b, blob_b);
+
+	memcpy (&final_data_raw->msg, types[11]->data, types[11]->total_stored_length);
+
+	if (RRR_DEBUGLEVEL_3) {
+		// TODO : This needs to be put in a buffer then written out
+/*		RRR_DBG("dump final_data_raw: 0x");
+		for (unsigned int i = 0; i < sizeof(*final_data_raw); i++) {
+			char c = ((char*)final_data_raw)[i];
+			if (c < 0x10) {
+				RRR_DBG("0");
+			}
+			RRR_DBG("%x", c);
+		}
+		RRR_DBG("\n");*/
+	}
+
+	if (final_data_raw->le1 == final_data_raw->le3 ||
+		final_data_raw->le3 == final_data_raw->le4 ||
+		final_data_raw->le4 == final_data_raw->le1
+	) {
+		TEST_MSG("Values did not differ in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (final_data_raw->be1 != final_data_raw->le1 ||
+		final_data_raw->be2 != final_data_raw->le2 ||
+		final_data_raw->be3 != final_data_raw->le3 ||
+		final_data_raw->be4 != final_data_raw->le4
+	) {
+		TEST_MSG("Mismatch of data, possible corruption in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (final_data_raw->be1 == 0 ||
+		final_data_raw->be2 == 0 ||
+		final_data_raw->be3 == 0 ||
+		final_data_raw->be4 == 0
+	) {
+		TEST_MSG("Received zero data from collection in test_type_array_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (final_data_raw->be2 != -33 ||
+		final_data_raw->le2 != -33
+	) {
+		TEST_MSG("Received wrong data from collection in test_type_array_callback, expects -33 but got 0x%" PRIx64 " and 0x%" PRIx64 "\n",
+				final_data_raw->be2, final_data_raw->le2);
+		ret = 1;
+		goto out;
+	}
+
+	result->result = 2;
+
+	out:
+		RRR_FREE_IF_NOT_NULL(final_data_raw);
+		rrr_array_clear(&collection);
+		rrr_array_clear(&collection_converted);
+		RRR_FREE_IF_NOT_NULL(str_to_h_tmp);
+		if (ret != 0) {
+		}
+		else {
+			result->message = message;
+			entry->message = NULL;
+		}
+
+		rrr_ip_buffer_entry_unlock(entry);
+
+		return ret;
+}
+
 int test_array (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name
+		RRR_TEST_FUNCTION_ARGS
 ) {
 	int ret = 0;
 
-	struct test_result test_result_1 = {1, NULL};
+	struct rrr_test_result test_result_1 = {1, NULL};
 
 	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
@@ -561,9 +673,17 @@ int test_array (
 		return 1;
 	}
 
+	struct rrr_test_type_array_callback_data array_callback_data = { test_function_data };
+	struct rrr_test_callback_data callback_data = { &test_result_1, &array_callback_data };
+
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
-	ret |= test_do_poll_loop(&test_result_1, self_thread_data, output_1->thread_data, test_type_array_callback);
+	ret |= test_do_poll_loop(
+			self_thread_data,
+			output_1->thread_data,
+			test_type_array_callback,
+			&callback_data
+	);
 	if (ret != 0) {
 		goto out;
 	}
@@ -579,13 +699,13 @@ int test_array (
 }
 
 int test_anything (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name
+		RRR_TEST_FUNCTION_ARGS
 ) {
+	(void)(test_function_data);
+
 	int ret = 0;
 
-	struct test_result test_result_1 = {1, NULL};
+	struct rrr_test_result test_result_1 = {1, NULL};
 
 	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
@@ -594,9 +714,16 @@ int test_anything (
 		return 1;
 	}
 
+	struct rrr_test_callback_data callback_data = { &test_result_1, NULL };
+
 	// Poll from first output
 	TEST_MSG("Polling from %s\n", INSTANCE_D_NAME(output_1->thread_data));
-	ret |= test_do_poll_loop(&test_result_1, self_thread_data, output_1->thread_data, test_anything_callback);
+	ret |= test_do_poll_loop(
+			self_thread_data,
+			output_1->thread_data,
+			test_anything_callback,
+			&callback_data
+	);
 	if (ret != 0) {
 		goto out;
 	}
@@ -612,13 +739,15 @@ int test_anything (
 
 #ifdef RRR_WITH_MYSQL
 int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_test_callback_data *callback_data = arg;
+	struct rrr_test_result *test_result = callback_data->test_result;
+
 	int ret = 0;
 
 	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
 	struct rrr_message *message = (struct rrr_message *) entry->message;
-	struct test_result *test_result = (struct test_result *) thread_data;
 
 	test_result->message = message;
 	test_result->result = 0;
@@ -735,21 +864,21 @@ void test_type_array_mysql_data_cleanup(void *arg) {
 }
 
 int test_type_array_mysql (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *tag_buffer_name
+		RRR_TEST_FUNCTION_ARGS
 ) {
+	(void)(test_function_data);
+
 	int ret = 0;
 
-	struct test_result test_result = {1, NULL};
+	struct rrr_test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 	struct rrr_ip_buffer_entry *entry = NULL;
 
-	struct instance_metadata *tag_buffer = rrr_instance_find(instances, tag_buffer_name);
+	struct instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
 
 	if (tag_buffer == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array_mysql_and_network\n",
-				tag_buffer_name);
+				output_name);
 		ret = 1;
 		goto out;
 	}
@@ -782,8 +911,15 @@ int test_type_array_mysql (
 		goto out;
 	}
 
+	struct rrr_test_callback_data callback_data = { &test_result, NULL };
+
 	TEST_MSG("Polling MySQL\n");
-	ret |= test_do_poll_loop(&test_result, self_thread_data, tag_buffer->thread_data, test_type_array_mysql_and_network_callback);
+	ret |= test_do_poll_loop(
+			self_thread_data,
+			tag_buffer->thread_data,
+			test_type_array_mysql_and_network_callback,
+			&callback_data
+	);
 	TEST_MSG("Result from MySQL buffer callback: %i\n", test_result.result);
 
 	ret = test_result.result;

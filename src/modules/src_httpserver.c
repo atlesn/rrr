@@ -160,7 +160,7 @@ static int httpserver_start_listening (struct httpserver_data *data, struct rrr_
 				0
 		)) != 0) {
 			RRR_MSG_0("Could not start listening in TLS mode on port %u in httpserver instance %s\n",
-					data->port_plain, INSTANCE_D_NAME(data->thread_data));
+					data->port_tls, INSTANCE_D_NAME(data->thread_data));
 			ret = 1;
 			goto out;
 		}
@@ -183,6 +183,7 @@ static int httpserver_worker_process_field_callback (
 
 	int ret = RRR_HTTP_OK;
 
+	struct rrr_type_value *value_tmp = NULL;
 	int do_add_field = 0;
 	const char *name_to_use = field->name;
 
@@ -193,7 +194,7 @@ static int httpserver_worker_process_field_callback (
 		RRR_MAP_ITERATE_BEGIN(&callback_data->parent_data->http_fields_accept);
 			if (strcmp(node_tag, field->name) == 0) {
 				do_add_field = 1;
-				if (node->value != NULL && *(node->value) != '\0') {
+				if (node->value != NULL && node->value_size > 0 && *(node->value) != '\0') {
 					// Do name translation
 					name_to_use = node->value;
 					RRR_LL_ITERATE_LAST();
@@ -206,7 +207,26 @@ static int httpserver_worker_process_field_callback (
 		goto out;
 	}
 
-	if (field->value != NULL && field->value_size > 0) {
+	if (field->content_type != NULL && strcmp(field->content_type, RRR_MESSAGE_MIME_TYPE) == 0) {
+		if (rrr_type_value_allocate_and_import_raw (
+				&value_tmp,
+				&rrr_type_definition_msg,
+				field->value,
+				field->value + field->value_size,
+				strlen(name_to_use),
+				name_to_use,
+				field->value_size,
+				1 // <-- We only support one message per field
+		) != 0) {
+			RRR_MSG_0("Failed to import RRR message from HTTP field\n");
+			ret = 1;
+			goto out;
+		}
+
+		RRR_LL_APPEND(callback_data->array, value_tmp);
+		value_tmp = NULL;
+	}
+	else if (field->value != NULL && field->value_size > 0) {
 		ret = rrr_array_push_value_str_with_tag_with_size (
 				callback_data->array,
 				name_to_use,
@@ -215,7 +235,7 @@ static int httpserver_worker_process_field_callback (
 		);
 	}
 	else {
-		ret = rrr_array_push_value_64_with_tag (
+		ret = rrr_array_push_value_u64_with_tag (
 				callback_data->array,
 				name_to_use,
 				0
@@ -229,6 +249,9 @@ static int httpserver_worker_process_field_callback (
 	}
 
 	out:
+	if (value_tmp != NULL) {
+		rrr_type_value_destroy(value_tmp);
+	}
 	return ret;
 }
 

@@ -55,7 +55,9 @@ int data_init(struct duplicator_data *data, struct rrr_instance_thread_data *thr
 }
 
 static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct duplicator_data *data = thread_data->private_data;
+
 	(void)(data);
 
 	const struct rrr_message *message = entry->message;

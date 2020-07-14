@@ -44,6 +44,7 @@ struct raw_data {
 };
 
 int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_array array_tmp = {0};
 

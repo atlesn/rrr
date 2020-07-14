@@ -199,6 +199,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 }
 
 static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct ipclient_data *private_data = thread_data->private_data;
 
 	struct rrr_message *message = entry->message;

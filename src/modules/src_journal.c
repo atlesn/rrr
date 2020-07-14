@@ -216,7 +216,7 @@ static void journal_log_hook (
 	}
 
 	int ret = 0;
-	ret |= rrr_array_push_value_64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
+	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_prefix", prefix);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_message", message);
 

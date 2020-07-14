@@ -66,6 +66,7 @@ struct averager_data {
 int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_message *message = entry->message;
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct averager_data *averager_data = thread_data->private_data;
 
 	int ret = 0;
@@ -304,27 +305,27 @@ int averager_spawn_message (
 
 	int ret = 0;
 
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_from) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_from) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_to) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_to) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "average", average) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "average", average) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "max", max) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "max", max) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "min", min) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "min", min) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;

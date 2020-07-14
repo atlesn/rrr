@@ -85,10 +85,15 @@ int rrr_array_definition_collection_clone (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
-int rrr_array_push_value_64_with_tag (
+int rrr_array_push_value_u64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
 		uint64_t value
+);
+int rrr_array_push_value_i64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		int64_t value
 );
 int rrr_array_push_value_str_with_tag_with_size (
 		struct rrr_array *collection,

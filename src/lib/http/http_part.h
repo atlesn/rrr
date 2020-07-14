@@ -118,7 +118,7 @@ struct rrr_http_part {
 
 //	const void *data_ptr;
 
-	ssize_t request_or_response_length;
+	ssize_t headroom_length;
 	ssize_t header_length;
 	ssize_t data_length;
 };
@@ -170,6 +170,11 @@ int rrr_http_part_parse (
 );
 int rrr_http_part_extract_post_and_query_fields (
 		struct rrr_http_part *target,
+		const char *data_ptr
+);
+int rrr_http_part_merge_chunks (
+		char **result_data,
+		struct rrr_http_part *part,
 		const char *data_ptr
 );
 void rrr_http_part_dump_header (struct rrr_http_part *part);

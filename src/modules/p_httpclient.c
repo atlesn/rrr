@@ -118,15 +118,7 @@ static int httpclient_session_add_field (
 	if (RRR_TYPE_IS_MSG(value->definition->type)) {
 		ssize_t buf_size = 0;
 
-		value->definition->get_export_length(&buf_size, value);
-
-		if ((buf_tmp = malloc(buf_size)) == NULL) {
-			RRR_MSG_0("Error while allocating memory before exporting RRR message in httpclient_add_multipart_array_value\n");
-			ret = 1;
-			goto out_cleanup_query_builder;
-		}
-
-		if (value->definition->export(buf_tmp, &buf_size, value) != 0) {
+		if (rrr_type_value_allocate_and_export(&buf_tmp, &buf_size, value) != 0) {
 			RRR_MSG_0("Error while exporting RRR message in httpclient_add_multipart_array_value\n");
 			ret = 1;
 			goto out_cleanup_query_builder;
@@ -141,7 +133,7 @@ static int httpclient_session_add_field (
 		);
 	}
 	else if (RRR_TYPE_IS_STR(value->definition->type)) {
-		int64_t buf_size = value->total_stored_length; // MUST be signed
+		int64_t buf_size = rrr_type_value_get_export_length(value); // MUST be signed due to decrement counting
 		const char *buf = value->data;
 
 		// Remove trailing 0's
@@ -317,9 +309,17 @@ static int httpclient_get_values_from_message (
 ) {
 	int ret = 0;
 
+	if (MSG_IS_ARRAY(message)) {
+		if (rrr_array_message_append_to_collection(target_array, message) != 0) {
+			RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
+			ret = RRR_HTTP_SOFT_ERROR;
+			goto out;
+		}
+	}
+
 	if (data->do_rrr_msg_to_array) {
 		// Push timestamp
-		if (rrr_array_push_value_64_with_tag(target_array, "timestamp", message->timestamp) != 0) {
+		if (rrr_array_push_value_u64_with_tag(target_array, "timestamp", message->timestamp) != 0) {
 			RRR_MSG_0("Could not create timestamp array value in httpclient_get_values_from_message\n");
 			ret = RRR_HTTP_HARD_ERROR;
 			goto out;
@@ -351,14 +351,6 @@ static int httpclient_get_values_from_message (
 				ret = RRR_HTTP_HARD_ERROR;
 				goto out;
 			}
-		}
-	}
-
-	if (MSG_IS_ARRAY(message)) {
-		if (rrr_array_message_append_to_collection(target_array, message) != 0) {
-			RRR_MSG_0("Error while converting message to collection in httpclient_get_values_from_message\n");
-			ret = RRR_HTTP_SOFT_ERROR;
-			goto out;
 		}
 	}
 
@@ -463,6 +455,7 @@ static int httpclient_send_request_locked (
 static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 //	printf ("httpclient got entry %p\n", entry);
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
 	struct rrr_message *message = entry->message;
 

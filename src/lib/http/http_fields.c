@@ -71,6 +71,26 @@ int rrr_http_field_new_no_value (
 	return ret;
 }
 
+int rrr_http_field_set_content_type (
+		struct rrr_http_field *target,
+		const char *content_type
+) {
+	int ret = 0;
+
+	RRR_FREE_IF_NOT_NULL(target->content_type);
+	if (content_type != NULL && *content_type != '\0') {
+		if ((target->content_type = strdup(content_type)) == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_field_set_content_type\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+
+}
+
 int rrr_http_field_set_value (
 		struct rrr_http_field *target,
 		const char *value,
@@ -78,14 +98,18 @@ int rrr_http_field_set_value (
 ) {
 	int ret = 0;
 
-	char *value_tmp = malloc(value_size);
-	if (value_tmp == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_http_field_set_value\n");
-		ret = 1;
-		goto out;
-	}
+	char *value_tmp = NULL;
 
-	memcpy(value_tmp, value, value_size);
+	if (value_size > 0) {
+		value_tmp = malloc(value_size);
+		if (value_tmp == NULL) {
+			RRR_MSG_0("Could not allocate memory in rrr_http_field_set_value\n");
+			ret = 1;
+			goto out;
+		}
+
+		memcpy(value_tmp, value, value_size);
+	}
 
 	RRR_FREE_IF_NOT_NULL(target->value);
 	target->value = value_tmp;
@@ -130,7 +154,7 @@ void rrr_http_field_collection_dump (
 				RRR_MSG_0("Warning: Error while encoding value in rrr_http_field_collection_dump\n");
 				RRR_LL_ITERATE_NEXT();
 			}
-			RRR_MSG_PLAIN("=(%lu bytes) ", node->value_size);
+			RRR_MSG_PLAIN("=(%lu bytes of type '%s') ", node->value_size, node->content_type != NULL ? node->content_type : "undefined");
 			RRR_MSG_PLAIN_N(urlencoded_tmp, urlencoded_size);
 		}
 
@@ -302,7 +326,7 @@ static char *__rrr_http_field_collection_to_form_data (
 			}
 		}
 
-		if (node->value != NULL) {
+		if (node->value != NULL && node->value_size > 0) {
 			if (no_urlencoding == 0) {
 				RRR_FREE_IF_NOT_NULL(value);
 				ssize_t output_size = 0;

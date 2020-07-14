@@ -443,17 +443,17 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 
 	uint64_t time_now = rrr_time_get_64();
 
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", value) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "measurement", value) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;

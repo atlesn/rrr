@@ -438,28 +438,29 @@ int rrr_array_definition_collection_clone (
 		return 1;
 }
 
-int rrr_array_push_value_64_with_tag (
+static int __rrr_array_push_value_64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
-		uint64_t value
+		uint64_t value,
+		int is_signed
 ) {
 	struct rrr_type_value *new_value = NULL;
 
 	if (rrr_type_value_new (
 			&new_value,
 			&rrr_type_definition_h,
-			0, // unsigned
+			(is_signed ? RRR_TYPE_FLAG_SIGNED : 0),
 			strlen(tag),
 			tag,
 			sizeof(uint64_t),
 			1,
-			0
+			0 // <!-- Don't send store length, import function will allocate
 	) != 0) {
 		RRR_MSG_0("Could not create value in rrr_array_push_value_64_with_tag\n");
 		return 1;
 	}
 
-	RRR_LL_UNSHIFT(collection, new_value);
+	RRR_LL_APPEND(collection, new_value);
 
 	ssize_t parsed_bytes = 0;
 	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
@@ -468,6 +469,22 @@ int rrr_array_push_value_64_with_tag (
 	}
 
 	return 0;
+}
+
+int rrr_array_push_value_u64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		uint64_t value
+) {
+	return __rrr_array_push_value_64_with_tag(collection, tag, value, 0);
+}
+
+int rrr_array_push_value_i64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		int64_t value
+) {
+	return __rrr_array_push_value_64_with_tag(collection, tag, (uint64_t) value, 1);
 }
 
 static int __rrr_array_push_value_x_with_tag_with_size (
@@ -492,7 +509,7 @@ static int __rrr_array_push_value_x_with_tag_with_size (
 		return 1;
 	}
 
-	RRR_LL_UNSHIFT(collection, new_value);
+	RRR_LL_APPEND(collection, new_value);
 
 	// Don't use the import function, it reads strings with quotes around it
 	memcpy(new_value->data, value, value_size);
@@ -688,16 +705,7 @@ static ssize_t __rrr_array_get_exported_length (
 ) {
 	ssize_t result = 0;
 	RRR_LL_ITERATE_BEGIN(definition, const struct rrr_type_value);
-		ssize_t exported_length = 0;
-
-		if (node->definition->get_export_length != NULL) {
-			node->definition->get_export_length(&exported_length, node);
-		}
-		else {
-			exported_length = node->total_stored_length;
-		}
-
-		result += exported_length;
+		result += rrr_type_value_get_export_length(node);
 	RRR_LL_ITERATE_END();
 	return result;
 }
