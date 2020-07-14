@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_mqtt_session_collection;
 struct rrr_mqtt_p_suback_unsuback;
+struct rrr_net_transport_config;
 
 struct rrr_mqtt_client_stats {
 	struct rrr_mqtt_session_collection_stats session_stats;
@@ -81,15 +82,9 @@ int rrr_mqtt_client_connect (
 		const char *password,
 		const struct rrr_mqtt_property_collection *connect_properties
 );
-int rrr_mqtt_client_start_plain (
-		struct rrr_mqtt_client_data *data
-);
-int rrr_mqtt_client_start_tls (
+int rrr_mqtt_client_start (
 		struct rrr_mqtt_client_data *data,
-		const char *certificate_file,
-		const char *key_file,
-		const char *ca_file,
-		const char *ca_path
+		const struct rrr_net_transport_config *net_transport_config
 );
 void rrr_mqtt_client_destroy (struct rrr_mqtt_client_data *client);
 static inline void rrr_mqtt_client_destroy_void (void *client) {

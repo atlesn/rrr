@@ -1111,7 +1111,7 @@ static int __rrr_perl5_message_hv_arrays_populate (
 	AV *array_tags = (AV*) SvRV(array_tags_ref);
 	AV *array_types = (AV*) SvRV(array_types_ref);
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_array_populate\n");
 		ret = 1;
 		goto out;

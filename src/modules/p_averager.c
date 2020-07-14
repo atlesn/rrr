@@ -66,6 +66,7 @@ struct averager_data {
 int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_message *message = entry->message;
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct averager_data *averager_data = thread_data->private_data;
 
 	int ret = 0;
@@ -209,7 +210,7 @@ int averager_process_message (
 		goto out;
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_MSG_0("Could not create array in averager_callback of instance %s\n",
 				INSTANCE_D_NAME(averager_data->thread_data));
 		ret = 1;
@@ -304,27 +305,27 @@ int averager_spawn_message (
 
 	int ret = 0;
 
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_from) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_from) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_to) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_to) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "average", average) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "average", average) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "max", max) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "max", max) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "min", min) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "min", min) != 0) {
 		RRR_MSG_0("Could not push 64-value onto array in averager_spawn_message\n");
 		ret = 1;
 		goto out;
@@ -492,17 +493,13 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	int init_ret = 0;
 	if ((init_ret = data_init(data, thread_data)) != 0) {
-		RRR_MSG_0("Could not initalize data in averager instance %s flags %i\n",
+		RRR_MSG_0("Could not initialize data in averager instance %s flags %i\n",
 				INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
 	}
 
-	struct rrr_poll_collection poll;
-
 	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -521,7 +518,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Averager: Interval: %u, Timespan: %u, Preserve points: %i\n",
 			data->interval, data->timespan, data->preserve_point_measurements);
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	RRR_DBG_1 ("Averager started thread %p\n", thread_data);
 
@@ -533,7 +530,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (rrr_poll_do_poll_delete(thread_data, &poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete(thread_data, thread_data->poll, poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -567,7 +564,6 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread averager %p exiting\n", thread_data->thread);
 
 //	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

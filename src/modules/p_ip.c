@@ -204,7 +204,7 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		}
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_target_host", target_host);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_target_host", target_host);
 
 	if (data->target_port != 0 && (data->target_host == NULL || *(data->target_host) == '\0')) {
 		RRR_MSG_0("ip_target_port was set but ip_target_host was not, both of them must be either set or left unset in ip instance %s\n", config->name);
@@ -236,15 +236,15 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		// Listening disabled
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("ip_default_topic", default_topic);
 
 	if (data->default_topic != NULL) {
 		data->default_topic_length = strlen(data->default_topic);
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_send_rrr_message", do_send_rrr_message, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_sync_byte_by_byte", do_sync_byte_by_byte, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_send_rrr_message", do_send_rrr_message, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_force_target", do_force_target, 0);
 
 	if (data->do_force_target == 1 && data->target_port == 0) {
 		RRR_MSG_0("ip_force_target was set to yes but no target was specified in ip_target_host and ip_target_port in ip instance %s\n",
@@ -253,10 +253,10 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_ordered_send, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_drop_on_error", do_drop_on_error, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_extract_rrr_messages", do_extract_rrr_messages, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_preserve_order", do_ordered_send, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_drop_on_error", do_drop_on_error, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("ip_persistent_connections", do_persistent_connections, 0);
 
 	// Array columns to send if we receive array messages from other modules
 	ret = rrr_instance_config_parse_comma_separated_to_map(&data->array_send_tags, config, "ip_array_send_tags");
@@ -266,8 +266,8 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 	RRR_DBG_1("%i array tags specified for ip instance %s to send\n", RRR_MAP_COUNT(&data->array_send_tags), config->name);
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("ip_receive_message_max", message_max_size, IP_DEFAULT_MAX_MESSAGE_SIZE);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_send_timeout", message_send_timeout_s, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("ip_receive_message_max", message_max_size, IP_DEFAULT_MAX_MESSAGE_SIZE);
 
 	out:
 	RRR_FREE_IF_NOT_NULL(protocol);
@@ -451,7 +451,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 				goto out_no_loop;
 			}
 			else {
-				RRR_MSG_0("Received invalid data in ip_receive_packets in ip instance %s\n",
+				RRR_MSG_0("Received invalid data in ip instance %s\n",
 						INSTANCE_D_NAME(data->thread_data));
 				// Don't allow invalid data to stop processing
 				ret = RRR_MESSAGE_BROKER_OK;
@@ -459,7 +459,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			}
 		}
 		else {
-			RRR_MSG_0("Error from ip_receive_packets in ip instance %s return was %i\n",
+			RRR_MSG_0("Error from rrr_ip_receive_array in ip_read_array_intermediate in ip instance %s return was %i\n",
 					INSTANCE_D_NAME(data->thread_data), ret);
 			ret = RRR_MESSAGE_BROKER_ERR;
 			goto out;
@@ -592,6 +592,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 }
 
 static int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct ip_data *data = thread_data->private_data;
 
 	struct rrr_message *message = entry->message;
@@ -978,7 +979,7 @@ static int ip_send_message (
 	else if (MSG_IS_ARRAY(message)) {
 		int tag_count = RRR_MAP_COUNT(&ip_data->array_send_tags);
 
-		if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+		if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 			RRR_MSG_0("Could not convert array message to collection in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 			ret = 1; // Probably bug in some other module or with array parsing
 			goto out;
@@ -1069,22 +1070,18 @@ static int ip_send_message (
 static void *thread_entry_ip (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ip_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	struct rrr_ip_accept_data_collection tcp_accept_data = {0};
 	struct rrr_ip_accept_data_collection tcp_connect_data = {0};
 	struct rrr_ip_graylist tcp_graylist = {0};
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in ip instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("ip thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -1099,9 +1096,9 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
-	int has_senders = (rrr_poll_collection_count(&poll) > 0 ? 1 : 0);
+	int has_senders = (rrr_poll_collection_count(thread_data->poll) > 0 ? 1 : 0);
 
 	if (has_senders == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
 		RRR_MSG_0("Error: ip instance %s has no senders defined and also has no array definition. Cannot do anything with this configuration.\n",
@@ -1145,8 +1142,6 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
-
 	uint64_t prev_read_error_count = 0;
 	uint64_t prev_read_count = 0;
 	uint64_t prev_polled_count = 0;
@@ -1160,7 +1155,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 //		printf ("IP ticks: %u\n", tick);
 
 		if (has_senders != 0) {
-			if (rrr_poll_do_poll_delete (thread_data, &poll, poll_callback_ip, 0) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback_ip, 0) != 0) {
 				RRR_MSG_ERR("Error while polling in ip instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -1262,7 +1257,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 
 		uint64_t time_now = rrr_time_get_64();
 
-		if (stats != NULL && time_now > next_stats_time) {
+		if (INSTANCE_D_STATS(thread_data) != NULL && time_now > next_stats_time) {
 			int delivery_entry_count = 0;
 			int delivery_ratelimit_active = 0;
 
@@ -1276,11 +1271,11 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				break;
 			}
 
-			rrr_stats_instance_update_rate(stats, 1, "read_error_count", data->read_error_count);
-			rrr_stats_instance_update_rate(stats, 2, "read_count", data->messages_count_read);
-			rrr_stats_instance_update_rate(stats, 3, "polled_count", data->messages_count_polled);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 1, "read_error_count", data->read_error_count);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 2, "read_count", data->messages_count_read);
+			rrr_stats_instance_update_rate(INSTANCE_D_STATS(thread_data), 3, "polled_count", data->messages_count_polled);
 			rrr_stats_instance_post_unsigned_base10_text (
-					stats,
+					INSTANCE_D_STATS(thread_data),
 					"delivery_buffer_count",
 					0,
 					delivery_entry_count
@@ -1326,10 +1321,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 	if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_RUNNING)) {
 		rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 	}
-//	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

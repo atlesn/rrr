@@ -204,6 +204,7 @@ struct rrr_cmodule_helper_poll_callback_data {
 static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	int ret = 0;
 
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct rrr_cmodule_helper_poll_callback_data *callback_data = thread_data->cmodule->callback_data_tmp;
 
 	int input_count = 0;
@@ -683,8 +684,6 @@ void rrr_cmodule_helper_loop (
 
 	struct rrr_cmodule_helper_reader_thread_data reader_thread_data = {0};
 
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
-
 	// Reader threads MUST be stopped before we clean up other data
 	pthread_cleanup_push(__rrr_cmodule_helper_threads_cleanup, &reader_thread_data);
 
@@ -832,39 +831,16 @@ int rrr_cmodule_helper_parse_config (
 
 	int ret = 0;
 
-	if (strlen(config_prefix) > 20) {
-		RRR_BUG("BUG: Config prefix too long in __rrr_cmodule_parse_config\n");
-	}
-	if (strlen(config_suffix) > 20) {
-		RRR_BUG("BUG: Config suffix too long in __rrr_cmodule_parse_config\n");
-	}
+	RRR_INSTANCE_CONFIG_PREFIX_BEGIN(config_prefix);
 
-	char arg_config_function[128];
-	char arg_source_function[128];
-	char arg_process_function[128];
+	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_config_", config_suffix);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, config_function);
 
-	char arg_spawn_interval[128];
-	char arg_sleep_time[128];
-	char arg_nothing_happened_limit[128];
+	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_source_", config_suffix);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, source_function);
 
-	char arg_drop_on_error[128];
-	char arg_log_prefix[128];
-
-	// Prefix is usally module name, suffix is function/sub
-	sprintf(arg_config_function, "%s%s%s", config_prefix, "_config_", config_suffix);
-	sprintf(arg_source_function, "%s%s%s", config_prefix, "_source_", config_suffix);
-	sprintf(arg_process_function, "%s%s%s", config_prefix, "_process_", config_suffix);
-
-	sprintf(arg_spawn_interval, "%s%s", config_prefix, "_spawn_interval_ms");
-	sprintf(arg_sleep_time, "%s%s", config_prefix, "_sleep_time_ms");
-	sprintf(arg_nothing_happened_limit, "%s%s", config_prefix, "_nothing_happened_limit");
-
-	sprintf(arg_drop_on_error, "%s%s", config_prefix, "_drop_on_error");
-	sprintf(arg_log_prefix, "%s%s", config_prefix, "_log_prefix");
-
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_config_function, config_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_source_function, source_function);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_process_function, process_function);
+	RRR_INSTANCE_CONFIG_STRING_SET_WITH_SUFFIX("_process_", config_suffix);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, process_function);
 
 	if (data->source_function != NULL && *(data->source_function) != '\0') {
 		data->do_spawning = 1;
@@ -882,14 +858,17 @@ int rrr_cmodule_helper_parse_config (
 	}
 
 	// Input in ms, multiply by 1000
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_spawn_interval, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
+	RRR_INSTANCE_CONFIG_STRING_SET("_spawn_interval_ms");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, spawn_interval_us, RRR_CMODULE_WORKER_DEFAULT_SPAWN_INTERVAL_MS);
 	data->spawn_interval_us *= 1000;
 
 	// Input in ms, multiply by 1000
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_sleep_time, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
+	RRR_INSTANCE_CONFIG_STRING_SET("_sleep_time_ms");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, sleep_time_us, RRR_CMODULE_WORKER_DEFAULT_SLEEP_TIME_MS);
 	data->sleep_time_us *= 1000;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED(arg_nothing_happened_limit, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
+	RRR_INSTANCE_CONFIG_STRING_SET("_nothing_happened_limit");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED(config_string, nothing_happened_limit, RRR_CMODULE_WORKER_DEFAULT_NOTHING_HAPPENED_LIMIT);
 	if (data->nothing_happened_limit < 1) {
 		RRR_MSG_0("Invalid value for nothing_happened_limit for instance %s, must be greater than zero.\n",
 				config->name);
@@ -897,10 +876,14 @@ int rrr_cmodule_helper_parse_config (
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO(arg_drop_on_error, do_drop_on_error, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(arg_log_prefix, log_prefix);
+	RRR_INSTANCE_CONFIG_STRING_SET("_drop_on_error");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO(config_string, do_drop_on_error, 0);
 
-	out:
+	RRR_INSTANCE_CONFIG_STRING_SET("_log_prefix");
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL(config_string, log_prefix);
+
+	RRR_INSTANCE_CONFIG_PREFIX_END();
+
 	return ret;
 }
 

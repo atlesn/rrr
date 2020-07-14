@@ -28,7 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_collection.h"
 #include "threads.h"
 
+struct rrr_stats_instance;
 struct rrr_cmodule;
+struct rrr_poll_collection;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
@@ -91,17 +93,22 @@ struct rrr_instance_thread_data {
 	struct rrr_thread *thread;
 	rrr_message_broker_costumer_handle *message_broker_handle;
 
-	// Not used by all modules but managed by instances framework
-	struct rrr_cmodule *cmodule;
-
 	void *private_data;
 	void *preload_data;
 	char private_memory[RRR_MODULE_PRIVATE_MEMORY_SIZE];
 	char preload_memory[RRR_MODULE_PRELOAD_MEMORY_SIZE];
+
+	// Not used by all modules but managed by instances framework.
+	// * Init and cleanup in intermediate thread entry function
+	// * Cleanup in ghost handler
+	struct rrr_cmodule *cmodule;
+	struct rrr_poll_collection *poll;
+	struct rrr_stats_instance *stats;
 };
 
 #define INSTANCE_D_FORK(thread_data) thread_data->init_data.fork_handler
-#define INSTANCE_D_STATS(thread_data) thread_data->init_data.stats
+#define INSTANCE_D_STATS(thread_data) thread_data->stats
+#define INSTANCE_D_STATS_ENGINE(thread_data) thread_data->init_data.stats
 #define INSTANCE_D_BROKER(thread_data) thread_data->init_data.message_broker
 #define INSTANCE_D_HANDLE(thread_data) thread_data->message_broker_handle
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config

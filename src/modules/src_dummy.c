@@ -42,6 +42,9 @@ struct dummy_data {
 	int no_sleeping;
 	rrr_setting_uint max_generated;
 	rrr_setting_uint random_payload_max_size;
+
+	char *topic;
+	size_t topic_len; // Optimization, don't calculate length for every message
 };
 
 static int inject (RRR_MODULE_INJECT_SIGNATURE) {
@@ -73,63 +76,20 @@ int data_init(struct dummy_data *data) {
 
 void data_cleanup(void *arg) {
 	struct dummy_data *data = (struct dummy_data *) arg;
-	(void)(data);
+	RRR_FREE_IF_NOT_NULL(data->topic);
 }
 
 int parse_config (struct dummy_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
-	int yesno = 0;
 
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_generation")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 1; // Default to yes
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_no_generation setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_generation", no_generation, 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("dummy_no_sleeping", no_sleeping, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_max_generated", max_generated, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("dummy_random_payload_max_size", random_payload_max_size, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("dummy_topic", topic);
 
-	data->no_generation = yesno;
-
-	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "dummy_no_sleeping")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			yesno = 0; // Default to no
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_no_sleeping setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	data->no_sleeping = yesno;
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&data->max_generated, config, "dummy_max_generated")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			data->max_generated = 0;
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_max_generated setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
-	}
-
-	if ((ret = rrr_instance_config_read_unsigned_integer(&data->random_payload_max_size, config, "dummy_random_payload_max_size")) != 0) {
-		if (ret == RRR_SETTING_NOT_FOUND) {
-			data->random_payload_max_size = 0;
-			ret = 0;
-		}
-		else {
-			RRR_MSG_0("Error while parsing dummy_random_payload_max_size setting of instance %s\n", config->name);
-			ret = 1;
-			goto out;
-		}
+	if (data->topic != NULL) {
+		data->topic_len = strlen(data->topic);
 	}
 
 	/* On error, memory is freed by data_cleanup */
@@ -157,11 +117,15 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
 			time,
-			0,
+			data->topic_len + 1,
 			payload_size
 	) != 0) {
 		ret = 1;
 		goto out;
+	}
+
+	if (data->topic != NULL) {
+		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len + 1);
 	}
 
 	entry->message = reading;
@@ -177,15 +141,13 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	struct dummy_data *data = thread_data->private_data = thread_data->private_memory;
 
 	if (data_init(data) != 0) {
-		RRR_MSG_0("Could not initalize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in dummy instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("Dummy thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(data_cleanup, data);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-//	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
@@ -203,8 +165,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		RRR_DBG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
 		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
-
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
 
 	uint64_t time_start = rrr_time_get_64();
 	int generated_count = 0;
@@ -241,7 +201,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 			generated_count = 0;
 			time_start = time_now;
 
-			rrr_stats_instance_update_rate (stats, 0, "generated", generated_count_to_stats);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "generated", generated_count_to_stats);
 			generated_count_to_stats = 0;
 		}
 
@@ -252,8 +212,6 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 
 	out_cleanup:
 	RRR_DBG_1 ("Thready dummy instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
-//	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_exit(0);
 }

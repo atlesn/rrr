@@ -25,13 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_NET_TRANSPORT_H_ENABLE_INTERNALS
 
-#include "log.h"
-#include "socket/rrr_socket.h"
-#include "socket/rrr_socket_read.h"
 #include "net_transport_plain.h"
-#include "read.h"
-#include "ip.h"
-#include "ip_accept_data.h"
+
+#include "../log.h"
+#include "../socket/rrr_socket.h"
+#include "../socket/rrr_socket_read.h"
+#include "../read.h"
+#include "../ip.h"
+#include "../ip_accept_data.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
@@ -51,16 +52,11 @@ static void __rrr_net_transport_plain_destroy (struct rrr_net_transport *transpo
 }
 
 static int __rrr_net_transport_plain_connect (
-		struct rrr_net_transport_handle **handle,
-		struct sockaddr *addr,
-		socklen_t *socklen,
-		struct rrr_net_transport *transport,
-		unsigned int port,
-		const char *host
+		RRR_NET_TRANSPORT_CONNECT_ARGS
 ) {
 	(void)(transport);
 
-	*handle = NULL;
+	*handle = 0;
 
 	int ret = 0;
 
@@ -76,8 +72,8 @@ static int __rrr_net_transport_plain_connect (
 		goto out;
 	}
 
-	struct rrr_net_transport_handle *new_handle = NULL;
-	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked(
+	int new_handle = 0;
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
@@ -92,7 +88,6 @@ static int __rrr_net_transport_plain_connect (
 	memcpy(addr, &accept_data->addr, accept_data->len);
 	*socklen = accept_data->len;
 
-	// Return locked handle
 	*handle = new_handle;
 
 	goto out;
@@ -124,16 +119,7 @@ static int __rrr_net_transport_plain_read_complete_callback (
 }
 
 static int __rrr_net_transport_plain_read_message (
-	uint64_t *bytes_read,
-	struct rrr_net_transport_handle *handle,
-	int read_attempts,
-	ssize_t read_step_initial,
-	ssize_t read_step_max_size,
-	int read_flags,
-	int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
-	void *get_target_size_arg,
-	int (*complete_callback)(struct rrr_read_session *read_session, void *arg),
-	void *complete_callback_arg
+		RRR_NET_TRANSPORT_READ_ARGS
 ) {
 	int ret = 0;
 
@@ -155,6 +141,7 @@ static int __rrr_net_transport_plain_read_message (
 				handle->submodule_private_fd,
 				read_step_initial,
 				read_step_max_size,
+				read_max_size,
 				read_flags,
 				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,
@@ -207,10 +194,7 @@ static int __rrr_net_transport_plain_send (
 }
 
 int __rrr_net_transport_plain_bind_and_listen (
-		struct rrr_net_transport *transport,
-		unsigned int port,
-		void (*callback)(struct rrr_net_transport_handle *handle, void *arg),
-		void *callback_arg
+		RRR_NET_TRANSPORT_BIND_AND_LISTEN_ARGS
 ) {
 //	struct rrr_net_transport_plain *plain = (struct rrr_net_transport_plain *) transport;
 
@@ -224,9 +208,9 @@ int __rrr_net_transport_plain_bind_and_listen (
 		goto out;
 	}
 
-	struct rrr_net_transport_handle *handle;
-	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked (
-			&handle,
+	int new_handle = 0;
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
+			&new_handle,
 			transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_LISTEN,
 			NULL,
@@ -236,9 +220,7 @@ int __rrr_net_transport_plain_bind_and_listen (
 		goto out_destroy_ip;
 	}
 
-	callback(handle, callback_arg);
-
-	pthread_mutex_unlock(&handle->lock);
+	ret = callback(transport, new_handle, callback_final, callback_final_arg, callback_arg);
 
 	goto out;
 	out_destroy_ip:
@@ -248,12 +230,9 @@ int __rrr_net_transport_plain_bind_and_listen (
 }
 
 int __rrr_net_transport_plain_accept (
-		struct rrr_net_transport_handle *listen_handle,
-		void (*callback)(struct rrr_net_transport_handle *handle, const struct sockaddr *sockaddr, socklen_t socklen, void *arg),
-		void *callback_arg
+		RRR_NET_TRANSPORT_ACCEPT_ARGS
 ) {
 	struct rrr_ip_accept_data *accept_data = NULL;
-	struct rrr_net_transport_handle *new_handle = NULL;
 
 	int ret = 0;
 
@@ -271,7 +250,8 @@ int __rrr_net_transport_plain_accept (
 		goto out;
 	}
 
-	if ((ret = rrr_net_transport_handle_allocate_and_add_return_locked(
+	int new_handle = 0;
+	if ((ret = rrr_net_transport_handle_allocate_and_add (
 			&new_handle,
 			listen_handle->transport,
 			RRR_NET_TRANSPORT_SOCKET_MODE_CONNECTION,
@@ -283,9 +263,15 @@ int __rrr_net_transport_plain_accept (
 		goto out_destroy_ip;
 	}
 
-	callback(new_handle, (struct sockaddr *) &accept_data->addr, accept_data->len, callback_arg);
-
-	pthread_mutex_unlock(&new_handle->lock);
+	ret = callback (
+			listen_handle->transport,
+			new_handle,
+			(struct sockaddr *) &accept_data->addr,
+			accept_data->len,
+			final_callback,
+			final_callback_arg,
+			callback_arg
+	);
 
 	goto out;
 	out_destroy_ip:

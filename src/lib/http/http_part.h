@@ -48,16 +48,29 @@ enum rrr_http_parse_type {
 #define RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE (1<<0)
 #define RRR_HTTP_HEADER_FIELD_NO_PAIRS		(1<<1)
 
+#define RRR_HTTP_PART_ITERATE_CALLBACK_ARGS			\
+		int chunk_idx,								\
+		int chunk_total,							\
+		const char *data_start,						\
+		ssize_t data_size,							\
+		void *arg
+
 struct rrr_http_header_field_definition;
 
 struct rrr_http_header_field {
 	RRR_LL_NODE(struct rrr_http_header_field);
+
+	// This list is filled while parsing the header field
 	struct rrr_http_field_collection fields;
+
 	const struct rrr_http_header_field_definition *definition;
+
+	char *name;
+
+	// This is filled by known header field parsers
 	long long int value_signed;
 	long long unsigned int value_unsigned;
 	char *value;
-	char *name;
 };
 
 struct rrr_http_header_field_collection {
@@ -105,7 +118,7 @@ struct rrr_http_part {
 
 //	const void *data_ptr;
 
-	ssize_t request_or_response_length;
+	ssize_t headroom_length;
 	ssize_t header_length;
 	ssize_t data_length;
 };
@@ -121,10 +134,25 @@ const struct rrr_http_header_field *rrr_http_part_get_header_field (
 int rrr_http_part_update_data_ptr (
 		struct rrr_http_part *part
 );
-int rrr_http_part_iterate_chunks (
+int rrr_http_part_header_field_push (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+);
+int rrr_http_part_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+);
+int rrr_http_part_header_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_header_field *field, void *arg),
+		void *callback_arg
+);
+int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
-		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
+		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 );
 int rrr_http_part_process_multipart (
@@ -142,6 +170,11 @@ int rrr_http_part_parse (
 );
 int rrr_http_part_extract_post_and_query_fields (
 		struct rrr_http_part *target,
+		const char *data_ptr
+);
+int rrr_http_part_merge_chunks (
+		char **result_data,
+		struct rrr_http_part *part,
 		const char *data_ptr
 );
 void rrr_http_part_dump_header (struct rrr_http_part *part);

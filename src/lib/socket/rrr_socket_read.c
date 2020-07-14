@@ -234,6 +234,7 @@ int rrr_socket_read_message_default (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max,
 		int read_flags,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
@@ -251,10 +252,12 @@ int rrr_socket_read_message_default (
 	callback_data.complete_callback_arg = complete_callback_arg;
 	callback_data.socket_read_flags = socket_read_flags;
 
+	// NOTE : Double check order of integer arguments, don't mix them up
 	return rrr_read_message_using_callbacks (
 			bytes_read,
 			read_step_initial,
 			read_step_max_size,
+			read_max,
 			read_flags,
 			__rrr_socket_read_message_default_get_target_size,
 			__rrr_socket_read_message_default_complete_callback,

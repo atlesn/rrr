@@ -43,12 +43,16 @@ void set_test_module_result(int result) {
 struct test_module_data {
 	rrr_setting_uint exit_delay_ms;
 	int dummy;
+
 	char *test_method;
 	char *test_output_instance;
+
+	struct rrr_test_function_data test_function_data;
 };
 
 
 void data_init(struct test_module_data *data) {
+	memset(data, '\0', sizeof(*data));
 	data->dummy = 1;
 }
 
@@ -62,19 +66,22 @@ void data_cleanup(void *_data) {
 int parse_config (struct test_module_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_method", test_method);
 	if (data->test_method == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("test_output_instance", test_output_instance);
 	if (data->test_output_instance == NULL) {
 		RRR_MSG_0("test_method not set for test module instance %s\n", config->name);
 		ret = 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UNSIGNED("test_exit_delay_ms", exit_delay_ms, 0);
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_str_to_h_conversion", test_function_data.do_array_str_to_h_conversion, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("test_array_blob_field_divide", test_function_data.do_blob_field_divide, 0);
 
 	out:
 	if (ret != 0) {
@@ -118,8 +125,8 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 		ret = 0;
 	}
 	else if (strcmp(data->test_method, "test_array") == 0) {
-		/* Test array type and data endian conversion */
 		ret = test_array (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
 				thread_data,
 				data->test_output_instance
@@ -128,6 +135,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	}
 	else if (strcmp(data->test_method, "test_averager") == 0) {
 		ret = test_averager (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
 				thread_data,
 				data->test_output_instance
@@ -136,6 +144,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	}
 	else if (strcmp(data->test_method, "test_anything") == 0) {
 		ret = test_anything (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
 				thread_data,
 				data->test_output_instance
@@ -145,6 +154,7 @@ static void *thread_entry_test_module (struct rrr_thread *thread) {
 	else if (strcmp(data->test_method, "test_mysql") == 0) {
 #ifdef RRR_ENABLE_DB_TESTING
 		ret = test_type_array_mysql (
+				&data->test_function_data,
 				thread_data->init_data.module->all_instances,
 				thread_data,
 				data->test_output_instance

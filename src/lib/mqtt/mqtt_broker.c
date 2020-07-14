@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_transport.h"
 #include "mqtt_connection.h"
 #include "../log.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 #include "../passwd.h"
 #include "../linked_list.h"
 #include "../gnu.h"
@@ -82,46 +82,10 @@ static int __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 	return ret;
 }
 
-int rrr_mqtt_broker_listen_ipv4_and_ipv6_tls (
+int rrr_mqtt_broker_listen_ipv4_and_ipv6 (
 		int *listen_handle,
 		struct rrr_mqtt_broker_data *broker,
-		int port,
-		const char *certificate_file,
-		const char *key_file,
-		const char *ca_file,
-		const char *ca_path
-) {
-	int ret = 0;
-
-	*listen_handle = 0;
-
-	// TODO : For multiple ports, transport may be re-used
-
-	if ((ret = rrr_mqtt_transport_start_tls (
-			broker->mqtt_data.transport,
-			certificate_file,
-			key_file,
-			ca_file,
-			ca_path
-	)) != 0) {
-		RRR_MSG_0("Could not start TLS transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls\n");
-		ret = 1;
-		goto out;
-	}
-
-	ret = __rrr_mqtt_broker_listen_ipv4_and_ipv6 (
-			listen_handle,
-			rrr_mqtt_transport_get_latest(broker->mqtt_data.transport),
-			port
-	);
-
-	out:
-	return ret;
-}
-
-int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
-		int *listen_handle,
-		struct rrr_mqtt_broker_data *broker,
+		const struct rrr_net_transport_config *net_transport_config,
 		int port
 ) {
 	int ret = 0;
@@ -130,8 +94,9 @@ int rrr_mqtt_broker_listen_ipv4_and_ipv6_plain (
 
 	// TODO : For multiple ports, transport may be re-used
 
-	if ((ret = rrr_mqtt_transport_start_plain (
-			broker->mqtt_data.transport
+	if ((ret = rrr_mqtt_transport_start (
+			broker->mqtt_data.transport,
+			net_transport_config
 	)) != 0) {
 		RRR_MSG_0("Could not start plain transport in rrr_mqtt_broker_listen_ipv4_and_ipv6_tls\n");
 		ret = 1;

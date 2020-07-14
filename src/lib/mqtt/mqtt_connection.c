@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../buffer.h"
 #include "../vl_time.h"
 #include "../log.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
 
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
@@ -664,6 +664,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 				2, // Read two times this round
 				2, // Read only two bytes the first time
 				read_step_max_size,
+				0, // No max read size
 				RRR_READ_F_NO_SLEEPING,
 				__rrr_mqtt_conn_read_get_target_size,
 				&callback_data,

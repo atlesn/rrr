@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_session.h"
 #include "mqtt_acl.h"
 #include "../log.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 
 #define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)

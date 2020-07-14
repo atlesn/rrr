@@ -333,7 +333,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		struct rrr_thread_collection *collection,
 		int do_destroy_private_data
 );
-int rrr_thread_iterate_by_state (
+int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),

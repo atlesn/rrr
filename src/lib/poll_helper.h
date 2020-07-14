@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2019-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -48,6 +48,10 @@ struct rrr_poll_collection {
 void rrr_poll_collection_clear(struct rrr_poll_collection *collection);
 void rrr_poll_collection_clear_void(void *data);
 void rrr_poll_collection_init(struct rrr_poll_collection *collection);
+
+int rrr_poll_collection_new(struct rrr_poll_collection **target);
+void rrr_poll_collection_destroy(struct rrr_poll_collection *collection);
+void rrr_poll_collection_destroy_void(void *data);
 
 void rrr_poll_collection_remove (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find);
 

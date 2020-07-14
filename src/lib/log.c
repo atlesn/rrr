@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "log.h"
 
@@ -312,6 +313,14 @@ void rrr_log_printf_plain (const char *__restrict __format, ...) {
 	LOCK_END;
 
 	va_end(args);
+}
+
+void rrr_log_printn_plain (const char *value, size_t value_size) {
+	LOCK_BEGIN;
+
+	printf("%.*s", (int) value_size, value);
+
+	LOCK_END;
 }
 
 void rrr_log_printf (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {

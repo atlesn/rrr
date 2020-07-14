@@ -3,7 +3,7 @@ mysql = mysql.c
 endif
 
 if RRR_WITH_OPENSSL
-encryption = rrr_openssl.c net_transport_tls.c
+encryption = rrr_openssl.c
 endif
 
 if RRR_WITH_PYTHON3
@@ -31,10 +31,18 @@ stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/
 socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
 			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
 
-http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c
+http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
+		http/http_common.c http/http_query_builder.c http/http_client_config.c \
+		http/http_server.c http/http_server_worker.c
 
 cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
 			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
+
+net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
+
+if RRR_WITH_OPENSSL
+net_transport_tls = net_transport/net_transport_tls.c
+endif
 
 lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
@@ -46,9 +54,9 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
-					net_transport.c net_transport_plain.c \
 					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule}
+					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
+					${net_transport} ${net_transport_tls}
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = rrr_readdir.c

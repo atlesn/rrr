@@ -131,6 +131,7 @@ int rrr_socket_common_receive_array (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			4096,
+			0, // No max size
 			read_flags,
 			socket_read_flags,
 			rrr_read_common_get_session_target_length_from_array,

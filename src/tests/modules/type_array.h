@@ -25,26 +25,29 @@ struct rrr_message;
 struct instance_metadata_collection;
 struct rrr_instance_thread_data;
 
+struct rrr_test_function_data {
+	int do_array_str_to_h_conversion;
+	int do_blob_field_divide;
+};
+
+#define RRR_TEST_FUNCTION_ARGS									\
+	const struct rrr_test_function_data *test_function_data,	\
+	struct instance_metadata_collection *instances,				\
+	struct rrr_instance_thread_data *self_thread_data,			\
+	const char *output_name
+
 int test_averager (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name_averager
+		RRR_TEST_FUNCTION_ARGS
 );
 
 int test_array (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name
+		RRR_TEST_FUNCTION_ARGS
 );
 
 int test_anything (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *output_name
+		RRR_TEST_FUNCTION_ARGS
 );
 
 int test_type_array_mysql (
-		struct instance_metadata_collection *instances,
-		struct rrr_instance_thread_data *self_thread_data,
-		const char *tag_buffer_name
+		RRR_TEST_FUNCTION_ARGS
 );

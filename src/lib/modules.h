@@ -50,8 +50,9 @@ struct rrr_module_load_data {
 	void (*unload)(void);
 };
 
-#define RRR_MODULE_POLL_CALLBACK_SIGNATURE \
-	struct rrr_ip_buffer_entry *entry, struct rrr_instance_thread_data *thread_data
+#define RRR_MODULE_POLL_CALLBACK_SIGNATURE		\
+	struct rrr_ip_buffer_entry *entry,			\
+	void *arg
 /*
 #define RRR_MODULE_POLL_SIGNATURE \
 		struct rrr_instance_thread_data *data, \

@@ -154,7 +154,7 @@ static int __rrr_type_import_int (
 		RRR_BUG("BUG: __rrr_type_import_u received length > %lu", sizeof(uint64_t));
 	}
 	if (node->data != NULL) {
-		RRR_BUG("data was not NULL in import_le\n");
+		RRR_BUG("data was not NULL in __rrr_type_import_int\n");
 	}
 
 	ssize_t array_size = node->import_elements;
@@ -165,7 +165,7 @@ static int __rrr_type_import_int (
 	node->total_stored_length = node->import_elements * sizeof(uint64_t);
 	node->data = malloc(node->total_stored_length);
 	if (node->data == NULL) {
-		RRR_MSG_0("Could not allocate memory in import_le\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_type_import_int\n");
 		return RRR_TYPE_PARSE_HARD_ERR;
 	}
 
@@ -493,6 +493,9 @@ static int __rrr_type_msg_to_host_single (
 static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 	int ret = 0;
 
+	// It is not possible to specify a multi-value msg definition, but we
+	// support it here for now anyway
+
 	ssize_t pos = 0;
 	int count = 0;
 	while (pos < node->total_stored_length) {
@@ -690,25 +693,53 @@ static int __rrr_type_blob_export (RRR_TYPE_EXPORT_ARGS) {
 	return __rrr_type_blob_export_or_pack(target, written_bytes, node);
 }
 
-static int __rrr_type_msg_export (RRR_TYPE_EXPORT_ARGS) {
-	memcpy(target, node->data, node->total_stored_length);
-	struct rrr_message *msg = (struct rrr_message *) target;
+static int __rrr_type_msg_pack_or_export (
+		char *target,
+		ssize_t *written_bytes,
+		const struct rrr_type_value *node
+) {
+	ssize_t pos = 0;
 
-	if (msg->msg_size != node->total_stored_length) {
-		RRR_MSG_0("Invalid size of message in __rrr_type_msg_export\n");
+	// It is not possible to specify a multi-value msg definition, but we
+	// support it here for now anyway
+
+	while (pos < node->total_stored_length) {
+		void *wpos = target + pos;
+		void *rpos = node->data + pos;
+
+		struct rrr_message *msg_at_source = rpos;
+
+		if (MSG_TOTAL_SIZE(msg_at_source) < sizeof(struct rrr_message) - 1) {
+			RRR_MSG_0("Message too short in __rrr_type_msg_pack_or_export\n");
+			return 1;
+		}
+
+		if (pos + MSG_TOTAL_SIZE(msg_at_source) > node->total_stored_length) {
+			RRR_MSG_0("Message longer than stated length __rrr_type_msg_pack_or_export\n");
+			return 1;
+		}
+
+		memcpy(wpos, rpos, MSG_TOTAL_SIZE(msg_at_source));
+		struct rrr_message *msg_at_target = wpos;
+
+		pos += MSG_TOTAL_SIZE(msg_at_target);
+
+		rrr_message_prepare_for_network(msg_at_target);
+		rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) msg_at_target);
+	}
+
+	if (pos != node->total_stored_length) {
+		RRR_MSG_0("Invalid size of messages in __rrr_type_msg_pack_or_export\n");
 		return 1;
 	}
-	if (msg->msg_size < sizeof(struct rrr_message) - 1) {
-		RRR_MSG_0("Message too short in __rrr_type_msg_export\n");
-		return 1;
-	}
 
-	rrr_message_prepare_for_network(msg);
-	rrr_socket_msg_checksum_and_to_network_endian((struct rrr_socket_msg *) msg);
-
-	*written_bytes = node->total_stored_length;
+	*written_bytes = pos;
 
 	return 0;
+}
+
+static int __rrr_type_msg_export (RRR_TYPE_EXPORT_ARGS) {
+	return __rrr_type_msg_pack_or_export(target, written_bytes, node);
 }
 
 static void __rrr_type_str_get_export_length (RRR_TYPE_GET_EXPORT_LENGTH_ARGS) {
@@ -748,37 +779,14 @@ static int __rrr_type_str_export (RRR_TYPE_EXPORT_ARGS) {
 }
 
 static int __rrr_type_msg_pack (RRR_TYPE_PACK_ARGS) {
-	ssize_t pos = 0;
-
-	while (pos < node->total_stored_length) {
-		void *wpos = target + pos;
-		void *rpos = node->data + pos;
-
-		struct rrr_socket_msg *head = rpos;
-		struct rrr_message *msg = rpos;
-
-		if (pos + msg->msg_size > node->total_stored_length) {
-			RRR_BUG("Size mismatch in __rrr_type_msg_pack A\n");
-		}
-
-		memcpy(wpos, rpos, msg->msg_size);
-
-		head = wpos;
-		msg = wpos;
-
-		pos += msg->msg_size;
-
-		rrr_message_prepare_for_network(msg);
-		rrr_socket_msg_checksum_and_to_network_endian(head);
-	}
-
-	if (pos != node->total_stored_length) {
-		RRR_BUG("Size mismatch in __rrr_type_msg_pack B\n");
+	int ret = __rrr_type_msg_pack_or_export(target, written_bytes, node);
+	if (ret != 0) {
+		goto out;
 	}
 
 	*new_type_id = RRR_TYPE_MSG;
-	*written_bytes = pos;
 
+	out:
 	return 0;
 }
 
@@ -1304,5 +1312,125 @@ int rrr_type_value_new (
 		rrr_type_value_destroy(value);
 	}
 
+	return ret;
+}
+
+ssize_t rrr_type_value_get_export_length (
+		const struct rrr_type_value *value
+) {
+	ssize_t exported_length = 0;
+
+	if (value->definition->get_export_length != NULL) {
+		value->definition->get_export_length(&exported_length, value);
+	}
+	else {
+		exported_length = value->total_stored_length;
+	}
+
+	return exported_length;
+}
+
+int rrr_type_value_allocate_and_export (
+		char **target,
+		ssize_t *written_bytes,
+		const struct rrr_type_value *node
+) {
+	int ret = 0;
+
+	*target = NULL;
+	*written_bytes = 0;
+
+	char *buf_tmp = NULL;
+	ssize_t buf_size = rrr_type_value_get_export_length(node);
+
+	if ((buf_tmp = malloc(buf_size)) == NULL) {
+		RRR_MSG_0("Error while allocating memory before exporting in rrr_type_value_allocate_and_export \n");
+		ret = 1;
+		goto out;
+	}
+
+	if (node->definition->export(buf_tmp, &buf_size, node) != 0) {
+		RRR_MSG_0("Error while exporting in rrr_type_value_allocate_and_export \n");
+		ret = 1;
+		goto out;
+	}
+
+	*target = buf_tmp;
+	*written_bytes = buf_size;
+	buf_tmp = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(buf_tmp);
+	return ret;
+}
+
+// It is only possible to use this with types for which
+// import length and stored (unpacked) length is equal.
+// It is not possible to import 3 byte ints for instance,
+// they have to be full length 8 bytes.
+int rrr_type_value_allocate_and_import_raw (
+		struct rrr_type_value **result_value,
+		const struct rrr_type_definition *definition,
+		const char *data_start,
+		const char *data_end,
+		rrr_type_length tag_length,
+		const char *tag,
+		rrr_type_length import_length,
+		rrr_type_array_size element_count
+) {
+	int ret = 0;
+
+	rrr_type_length stored_length = import_length * element_count;
+
+	if (stored_length != data_end - data_start) {
+		RRR_BUG("BUG: Incorrect lengths to rrr_type_value_allocate_and_import_raw, import and stored lengths must be equal");
+	}
+
+	struct rrr_type_value *value = NULL;
+	if ((rrr_type_value_new (
+			&value,
+			definition,
+			0,
+			tag_length,
+			tag,
+			import_length,
+			element_count,
+			0 // <-- Do not pass stored length, causes allocation which should be done by import function
+	)) != 0) {
+		RRR_MSG_0("Could not allocate value in rrr_type_value_allocate_and_import_raw\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (value->data != NULL) {
+		RRR_BUG("BUG: Data was allocated by new function in rrr_type_value_allocate_and_import_raw\n");
+	}
+
+	ssize_t parsed_bytes = 0;
+
+	if (definition->import (
+			value,
+			&parsed_bytes,
+			data_start,
+			data_end
+	) != 0) {
+		RRR_MSG_0("Import failed in rrr_type_value_allocate_and_import_raw\n");
+		ret = 1;
+		goto out;
+	}
+
+	if (parsed_bytes != stored_length) {
+		RRR_MSG_0("Parsed bytes mismatch, parsed %li bytes while %li was expected\n", parsed_bytes, stored_length);
+		ret = 1;
+		goto out;
+	}
+
+	*result_value = value;
+	value = NULL;
+
+	out:
+	if (value != NULL) {
+		rrr_type_value_destroy(value);
+	}
 	return ret;
 }

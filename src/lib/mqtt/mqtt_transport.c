@@ -26,7 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 #include "../log.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
+#include "../net_transport/net_transport_config.h"
 
 void rrr_mqtt_transport_destroy (
 		struct rrr_mqtt_transport *transport
@@ -77,54 +78,36 @@ int rrr_mqtt_transport_new (
 		return ret;
 }
 
-int rrr_mqtt_transport_start_tls (
+int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
-		const char *tls_certificate_file,
-		const char *tls_key_file,
-		const char *tls_ca_file,
-		const char *tls_ca_path
+		const struct rrr_net_transport_config *net_transport_config
 ) {
 	int ret = 0;
 
 	struct rrr_net_transport *tmp = NULL;
 
-	if ((ret = rrr_net_transport_new (
-			&tmp,
-			RRR_NET_TRANSPORT_TLS,
-			RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1,
-			tls_certificate_file,
-			tls_key_file,
-			tls_ca_file,
-			tls_ca_path
-	)) != 0) {
-		RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
-		goto out;
+	if (net_transport_config->transport_type == RRR_NET_TRANSPORT_TLS) {
+		if ((ret = rrr_net_transport_new (
+				&tmp,
+				net_transport_config,
+				RRR_NET_TRANSPORT_F_MIN_VERSION_TLS_1_1
+		)) != 0) {
+			RRR_MSG_0("Could not initialize TLS network type in rrr_mqtt_transport_start_tls\n");
+			goto out;
+		}
 	}
-
-	RRR_LL_APPEND(&transport->transports, tmp);
-
-	out:
-	return ret;
-}
-
-int rrr_mqtt_transport_start_plain (
-		struct rrr_mqtt_transport *transport
-) {
-	int ret = 0;
-
-	struct rrr_net_transport *tmp = NULL;
-
-	if ((ret = rrr_net_transport_new (
-			&tmp,
-			RRR_NET_TRANSPORT_PLAIN,
-			0,
-			NULL,
-			NULL,
-			NULL,
-			NULL
-	)) != 0) {
-		RRR_MSG_0("Could not initialize plain network type in rrr_mqtt_transport_start_plain\n");
-		goto out;
+	else if (net_transport_config->transport_type == RRR_NET_TRANSPORT_PLAIN) {
+		if ((ret = rrr_net_transport_new (
+				&tmp,
+				net_transport_config,
+				0
+		)) != 0) {
+			RRR_MSG_0("Could not initialize plain network type in rrr_mqtt_transport_start_plain\n");
+			goto out;
+		}
+	}
+	else {
+		RRR_BUG("BUG: Unknown transport type %i to rrr_mqtt_transport_start\n", net_transport_config->transport_type);
 	}
 
 	RRR_LL_APPEND(&transport->transports, tmp);

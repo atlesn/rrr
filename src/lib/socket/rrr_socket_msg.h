@@ -49,7 +49,7 @@ int rrr_socket_msg_head_to_host_and_verify (
 );
 int rrr_socket_msg_get_target_size_and_check_checksum (
 		ssize_t *target_size,
-		struct rrr_socket_msg *socket_msg,
+		const struct rrr_socket_msg *socket_msg,
 		ssize_t buf_size
 );
 int rrr_socket_msg_check_data_checksum_and_length (

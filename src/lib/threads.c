@@ -139,7 +139,7 @@ int rrr_thread_run_ghost_cleanup(int *count) {
 		// collection cleanup is complete, we must free the thread struct as well.
 		rrr_thread_lock(data->thread);
 
-		RRR_DBG_1("Running ghost cleanup for thread %s\n", data->thread->name);
+		RRR_DBG_8("Running ghost cleanup for thread %s\n", data->thread->name);
 
 		if (data->thread->free_by_ghost) {
 			do_thread_free = 1;
@@ -149,7 +149,7 @@ int rrr_thread_run_ghost_cleanup(int *count) {
 		}
 
 		if (data->thread->poststop_routine != NULL) {
-			RRR_DBG_1("Running post stop routine for thread %s\n", data->thread->name);
+			RRR_DBG_8("Running post stop routine for thread %s\n", data->thread->name);
 			data->thread->poststop_routine(data->thread);
 		}
 		data->poststop_routine = NULL; // Make sure things aren't done twice
@@ -182,7 +182,7 @@ int rrr_thread_run_ghost_cleanup(int *count) {
 void rrr_thread_set_state (struct rrr_thread *thread, int state) {
 	rrr_thread_lock(thread);
 
-	RRR_DBG_4 ("Thread %s set state %i\n", thread->name, state);
+	RRR_DBG_4 ("Thread %s setting state %i\n", thread->name, state);
 
 	if (state == RRR_THREAD_STATE_INIT) {
 		RRR_BUG("Attempted to set STARTING state of thread outside reserve_thread function\n");
@@ -245,7 +245,7 @@ static int __rrr_thread_allocate_thread (struct rrr_thread **target) {
 		goto out;
 	}
 
-	RRR_DBG_1 ("Allocate thread %p\n", thread);
+	RRR_DBG_8 ("Allocate thread %p\n", thread);
 	memset(thread, '\0', sizeof(struct rrr_thread));
 	pthread_mutex_init(&thread->mutex, NULL);
 
@@ -348,7 +348,7 @@ int rrr_thread_start_all_after_initialized (
 		}
 		for (int j = 0; j < 100; j++)  {
 			int state = rrr_thread_get_state(node);
-			RRR_DBG_1 ("Wait for thread %p name %s, state is now %i\n", node, node->name, state);
+			RRR_DBG_8 ("Wait for thread %p name %s, state is now %i\n", node, node->name, state);
 			if (	state == RRR_THREAD_STATE_FREE ||
 					state == RRR_THREAD_STATE_INITIALIZED ||
 					state == RRR_THREAD_STATE_STOPPED
@@ -407,7 +407,7 @@ int rrr_thread_start_all_after_initialized (
 			}
 
 			if (do_start == 1) {
-				RRR_DBG_1 ("Start signal to thread %p name %s with priority NORMAL or FORK\n", node, node->name);
+				RRR_DBG_8 ("Start signal to thread %p name %s with priority NORMAL or FORK\n", node, node->name);
 				rrr_thread_set_signal(node, RRR_THREAD_SIGNAL_START);
 				node->start_signal_sent = 1;
 			}
@@ -419,7 +419,7 @@ int rrr_thread_start_all_after_initialized (
 	}
 	while (must_retry == 1);
 
-	RRR_DBG_1 ("Wait for %i fork threads to set RUNNNIG_FORKED\n", fork_priority_threads_count);
+	RRR_DBG_8 ("Wait for %i fork threads to set RUNNNIG_FORKED\n", fork_priority_threads_count);
 
 	/* Wait for forking threads to finish off their forking-business. They might
 	 * also have failed at this point in which they would set STOPPED or STOPPING */
@@ -434,7 +434,7 @@ int rrr_thread_start_all_after_initialized (
 					state == RRR_THREAD_STATE_STOPPED
 //					|| state == RRR_THREAD_STATE_STOPPING
 			) {
-				RRR_DBG_1 ("Fork thread %p name %s set RUNNING_FORKED\n", node, node->name);
+				RRR_DBG_8 ("Fork thread %p name %s set RUNNING_FORKED\n", node, node->name);
 				fork_priority_threads_count--;
 				break;
 			}
@@ -473,7 +473,7 @@ int rrr_thread_start_all_after_initialized (
 			}
 
 			if (do_start == 1) {
-				RRR_DBG_1 ("Start signal to thread %p name %s with priority NETWORK\n", node, node->name);
+				RRR_DBG_8 ("Start signal to thread %p name %s with priority NETWORK\n", node, node->name);
 				rrr_thread_set_signal(node, RRR_THREAD_SIGNAL_START);
 				node->start_signal_sent = 1;
 			}
@@ -520,19 +520,18 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	struct rrr_thread *thread = data.watched_thread;
 	struct rrr_thread *self_thread = data.watchdog_thread;
 
-	RRR_DBG_1 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
+	RRR_DBG_8 ("Watchdog %p started for thread %s/%p, waiting 1 second.\n", self_thread, thread->name, thread);
 
 	// Wait a bit in case main thread does stuff
 	rrr_posix_usleep(20000);
 
-	RRR_DBG_1 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
+	RRR_DBG_8 ("Watchdog %p for thread %s/%p, finished waiting.\n", self_thread, thread->name, thread);
 
 
 	rrr_thread_update_watchdog_time(thread);
 
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_RUNNING);
-
 
 #ifdef VL_THREAD_INCAPACITATE_WATCHDOGS
 	while (1) {
@@ -548,7 +547,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 
 		// We or others might try to kill the thread
 		if (rrr_thread_check_kill_signal(thread) || rrr_thread_check_encourage_stop(thread)) {
-			RRR_DBG_1 ("Thread %s/%p received kill signal\n", thread->name, thread);
+			RRR_DBG_8 ("Thread %s/%p received kill signal or encourage stop\n", thread->name, thread);
 			break;
 		}
 
@@ -557,7 +556,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 				!rrr_thread_check_state(thread, RRR_THREAD_STATE_INIT) &&
 				!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)
 		) {
-			RRR_DBG_1 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
+			RRR_DBG_8 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
 			break;
 		}
 		else if (!rrr_global_config.no_watchdog_timers &&
@@ -585,27 +584,40 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 	// If thread is about to start, wait a bit. If main thread hasn't completed with the
 	// INIT / INITIALIZED / START-sequence, we attempt to do that now.
 
+	// Wait for INIT stage to complete
 	if (rrr_thread_check_state(thread, RRR_THREAD_STATE_INIT)) {
-		RRR_DBG_1("Thread %s/%p wasn't finished starting, wait for it to initialize\n", thread->name, thread);
+		RRR_DBG_8("Thread %s/%p wasn't finished starting, wait for it to initialize\n", thread->name, thread);
 		int limit = 10;
-		while (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED) && limit > 0) {
-			RRR_DBG_1("Thread %s/%p wasn't finished starting, wait for it to initialize (try %i)\n", thread->name, thread, limit);
+
+		while (--limit >= 0 && !rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
+			RRR_DBG_8("Thread %s/%p wasn't finished starting, wait for it to initialize (try %i)\n", thread->name, thread, limit);
 			rrr_posix_usleep (50000); // 50 ms (x 10)
-			limit--;
 		}
 		if (!rrr_thread_check_state(thread, RRR_THREAD_STATE_INITIALIZED)) {
-			RRR_DBG_1("Thread %s/%p won't initialize, maybe we have to force it to quit\n", thread->name, thread);
+			RRR_DBG_8("Thread %s/%p won't initialize, maybe we have to force it to quit\n", thread->name, thread);
 		}
 	}
 
+	// Wait for INIT and INITIALIZED stage to complete (thread should set RUNNING or STOPPED).
+	// We do not print a debug message if the thread is in INITIALIZED stage, it is normal
+	// in some circumstances that the thread hasn't been started yet when we want to stop it down.
 	int state = rrr_thread_get_state(thread);
-	if (state < RRR_THREAD_STATE_RUNNING && state > RRR_THREAD_STATE_STOPPED) {
-		RRR_MSG_0("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
+	if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT) {
+		int limit = 10;
+
+		do {
+			state = rrr_thread_get_state(thread);
+			rrr_posix_usleep (50000); // 50 ms (x 10)
+		} while(--limit >= 0 && (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT));
+
+		if (state == RRR_THREAD_STATE_INITIALIZED || state == RRR_THREAD_STATE_INIT) {
+			RRR_MSG_0("Warning: Thread %s/%p slow to leave INIT/INITIALIZED state, maybe we have to force it to exit. State is now %i.\n", thread->name, thread, thread->state);
+		}
 	}
 
 	rrr_thread_set_signal(thread, RRR_THREAD_SIGNAL_KILL);
 
-	// Wait for thread to set STOPPED or STOPPING, some simply skip STOPPING or we don't execute fast enough to trap it
+	// Wait for thread to set STOPPED
 	uint64_t prevtime = rrr_time_get_64();
 #ifndef VL_THREAD_DISABLE_CANCELLING
 	while (rrr_thread_get_state(thread) != RRR_THREAD_STATE_STOPPED) {
@@ -626,10 +638,10 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (10000); // 10 ms
 	}
 #else
-	RRR_DBG_1 ("Thread watchdog cancelling disabled, soft stop signals only\n");
+	RRR_DBG_8 ("Thread watchdog cancelling disabled, soft stop signals only\n");
 #endif
 
-	RRR_DBG_1 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
+	RRR_DBG_8 ("Wait for thread %s/%p to set STOPPED, current state is: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
 	// Wait for thread to set STOPPED only (this tells that the thread is finished cleaning up)
 	prevtime = rrr_time_get_64();
@@ -667,13 +679,11 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 		rrr_posix_usleep (10000); // 10 ms
 	}
 
-	RRR_DBG_1 ("Thread %s/%p finished.\n", thread->name, thread);
+	RRR_DBG_8 ("Thread %s/%p finished.\n", thread->name, thread);
 
 	out_nostop:
 
-//	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_STOPPING);
-
-	RRR_DBG_1 ("Thread %s/%p state after stopping: %i\n", thread->name, thread, rrr_thread_get_state(thread));
+	RRR_DBG_8 ("Thread %s/%p state after stopping: %i\n", thread->name, thread, rrr_thread_get_state(thread));
 
 	rrr_thread_set_state(self_thread, RRR_THREAD_STATE_STOPPED);
 
@@ -718,7 +728,7 @@ void rrr_thread_stop_and_join_all (
 		struct rrr_thread_collection *collection,
 		void (*upstream_ghost_handler)(struct rrr_thread *thread)
 ) {
-	RRR_DBG_1 ("Stopping all threads\n");
+	RRR_DBG_8 ("Stopping all threads\n");
 
 	pthread_mutex_lock(&collection->threads_mutex);
 
@@ -732,7 +742,7 @@ void rrr_thread_stop_and_join_all (
 				node->state == RRR_THREAD_STATE_INIT ||
 				node->state == RRR_THREAD_STATE_INITIALIZED
 		) {
-			RRR_DBG_1 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
+			RRR_DBG_8 ("Setting encourage stop and start signal thread %s/%p\n", node->name, node);
 			node->signal = RRR_THREAD_SIGNAL_ENCOURAGE_STOP|RRR_THREAD_SIGNAL_START;
 		}
 		rrr_thread_unlock(node);
@@ -744,10 +754,10 @@ void rrr_thread_stop_and_join_all (
 	// Join with the watchdogs. The other threads might be in hung up state.
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		if (node->is_watchdog) {
-			RRR_DBG_1 ("Joining with thread watchdog %s\n", node->name);
+			RRR_DBG_8 ("Joining with thread watchdog %s\n", node->name);
 			void *ret;
 			pthread_join(node->thread, &ret);
-			RRR_DBG_1 ("Joined with thread watchdog %s\n", node->name);
+			RRR_DBG_8 ("Joined with thread watchdog %s\n", node->name);
 		}
 	RRR_LL_ITERATE_END();
 
@@ -759,7 +769,7 @@ void rrr_thread_stop_and_join_all (
 		rrr_thread_lock(node);
 		if (node->poststop_routine != NULL) {
 			if (node->state == RRR_THREAD_STATE_STOPPED) {
-				RRR_DBG_1 ("Running post stop routine for %s\n", node->name);
+				RRR_DBG_8 ("Running post stop routine for %s\n", node->name);
 				node->poststop_routine(node);
 			}
 			else {
@@ -788,7 +798,7 @@ int rrr_thread_start (struct rrr_thread *thread) {
 		goto out_error;
 	}
 
-	RRR_DBG_1 ("Started thread %s pthread address %p\n", thread->name, &thread->thread);
+	RRR_DBG_8 ("Started thread %s pthread address %p\n", thread->name, &thread->thread);
 
 	pthread_detach(thread->thread);
 
@@ -813,7 +823,7 @@ int rrr_thread_start (struct rrr_thread *thread) {
 
 	thread->watchdog->is_watchdog = 1;
 
-	RRR_DBG_1 ("Thread %s Watchdog started\n", thread->name);
+	RRR_DBG_8 ("Thread %s Watchdog started\n", thread->name);
 
 	// Thread tries to set a signal first and therefore can't proceed untill we unlock
 	rrr_thread_unlock(thread);
@@ -913,7 +923,7 @@ int rrr_thread_check_any_stopped (
 //				rrr_thread_get_state(node) == RRR_THREAD_STATE_STOPPING ||
 				rrr_thread_is_ghost(node)
 		) {
-			RRR_DBG_1("Thread instance %s has stopped or is ghost\n", node->name);
+			RRR_DBG_8("Thread instance %s has stopped or is ghost\n", node->name);
 			ret = 1;
 		}
 	RRR_LL_ITERATE_END();
@@ -975,7 +985,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 		if (node->ready_to_destroy) {
 			(*count)++;
 			void *thread_ret;
-			RRR_DBG_1("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
+			RRR_DBG_8("Join with %p, is watchdog: %i, pthread_t %lu\n", node, node->is_watchdog, node->thread);
 			if (node->is_watchdog) {
 				// Non-watchdogs are already detatched, only join watchdogs
 				pthread_join(node->thread, &thread_ret);
@@ -989,7 +999,7 @@ void rrr_thread_join_and_destroy_stopped_threads (
 	pthread_mutex_unlock(&collection->threads_mutex);
 }
 
-int rrr_thread_iterate_by_state (
+int rrr_thread_iterate_non_wd_and_not_signalled_by_state (
 		struct rrr_thread_collection *collection,
 		int state,
 		int (*callback)(struct rrr_thread *locked_thread, void *arg),
@@ -1001,11 +1011,15 @@ int rrr_thread_iterate_by_state (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_thread);
 		rrr_thread_lock(node);
-		if (node->state == state) {
-			ret = callback(node, callback_data);
-		}
-		if (ret != 0) {
-			RRR_LL_ITERATE_LAST();
+		if (node->is_watchdog == 0 && node->signal == 0) {
+			if (node->state == state) {
+				ret = callback(node, callback_data);
+			}
+			if (ret != 0) {
+				// NOTE : Return value from callback MUST propagate to caller. Return
+				//        values are not only errors.
+				RRR_LL_ITERATE_LAST();
+			}
 		}
 		rrr_thread_unlock(node);
 	RRR_LL_ITERATE_END();

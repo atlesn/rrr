@@ -384,8 +384,8 @@ int parse_config(struct voltmonitor_data *data, struct rrr_instance_config *conf
 	data->usb_channel = channel;
 
 	// Undocumented parameters, used in test suite
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_inject_only", do_inject_only, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("vm_spawn_test_measurements", do_spawn_test_measurements, 0);
 
 	out:
 
@@ -443,17 +443,17 @@ static int voltmonitor_spawn_message (struct voltmonitor_data *data, uint64_t va
 
 	uint64_t time_now = rrr_time_get_64();
 
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "measurement", value) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "measurement", value) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_from", time_now) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
 	}
-	if (rrr_array_push_value_64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
+	if (rrr_array_push_value_u64_with_tag(&array_tmp, "timestamp_to", time_now) != 0) {
 		RRR_MSG_0("Error while pushing value to array in volmonitor_spawn_message of voltmonitor\n");
 		ret = 1;
 		goto out;
@@ -506,7 +506,7 @@ int inject (struct rrr_instance_thread_data *thread_data, struct rrr_ip_buffer_e
 		RRR_BUG("Message to voltmonitor inject was not an array\n");
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_BUG("Could not create array collection from message in voltmonitor inject\n");
 	}
 
@@ -534,7 +534,7 @@ static void *thread_entry_voltmonitor (struct rrr_thread *thread) {
 	thread_data->thread = thread;
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in voltmonitor instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
