@@ -273,8 +273,7 @@ void *rrr_http_server_worker_thread_entry (
 			__rrr_net_http_server_worker_net_transport_ctx_send_response,
 			&worker_data
 	) != 0) {
-		RRR_MSG_0("Failed while sending response to HTTP client in thread %p\n", thread);
-		break;
+		RRR_MSG_0("Warning: Failed while sending response to HTTP client in thread %p\n", thread);
 	}
 
 	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.transport_handle);
