@@ -441,8 +441,7 @@ int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 			data->do_sync_byte_by_byte,
 			data->message_max_size,
 			ip_read_raw_data_callback,
-			data,
-			NULL
+			data
 	)) != 0) {
 		if (ret == RRR_ARRAY_PARSE_SOFT_ERR) {
 			if (callback_data->handle_soft_error) {

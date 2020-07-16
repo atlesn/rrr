@@ -34,9 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_IP_RECEIVE_MAX_STEP_SIZE 8096
 
-// Print/reset stats every X seconds
-#define RRR_IP_STATS_DEFAULT_PERIOD 3
-
 #define RRR_IP_AUTO	0
 #define RRR_IP_UDP	1
 #define RRR_IP_TCP	2
@@ -47,21 +44,6 @@ struct rrr_read_session_collection;
 struct rrr_read_session;
 struct rrr_ip_buffer_entry;
 struct rrr_ip_accept_data;
-
-struct ip_stats {
-	pthread_mutex_t lock;
-	unsigned int period;
-	uint64_t time_from;
-	unsigned long int packets;
-	unsigned long int bytes;
-	const char *type;
-	const char *name;
-};
-
-struct ip_stats_twoway {
-	struct ip_stats send;
-	struct ip_stats receive;
-};
 
 struct rrr_ip_send_packet_info {
 	void *data;
@@ -86,10 +68,6 @@ struct rrr_ip_graylist {
 	RRR_LL_HEAD(struct rrr_ip_graylist_entry);
 };
 
-#define RRR_IP_STATS_UPDATE_OK 0		// Stats was updated
-#define RRR_IP_STATS_UPDATE_ERR 1	// Error
-#define RRR_IP_STATS_UPDATE_READY 2	// Limit is reached, we should print
-
 int rrr_ip_graylist_exists (
 		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
 );
@@ -108,18 +86,6 @@ static inline void rrr_ip_graylist_clear_void (
 void rrr_ip_to_str (
 		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
 );
-int rrr_ip_stats_init (
-		struct ip_stats *stats, unsigned int period, const char *type, const char *name
-);
-int rrr_ip_stats_init_twoway (
-		struct ip_stats_twoway *stats, unsigned int period, const char *name
-);
-int rrr_ip_stats_update (
-		struct ip_stats *stats, unsigned long int packets, unsigned long int bytes
-);
-int rrr_ip_stats_print_reset (
-		struct ip_stats *stats, int do_reset
-);
 int rrr_ip_receive_array (
 		struct rrr_ip_buffer_entry *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
@@ -129,8 +95,7 @@ int rrr_ip_receive_array (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
+		void *arg
 );
 int rrr_ip_send (
 	int *err,

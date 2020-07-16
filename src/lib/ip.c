@@ -168,69 +168,10 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 	dest[dest_size - 1] = '\0';
 }
 
-// TODO : Remove stats, not currently being used
-
-int rrr_ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
-	stats->period = period;
-	stats->name = name;
-	stats->type = type;
-	return (pthread_mutex_init(&stats->lock, NULL) != 0);
-}
-
-int rrr_ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
-	memset(stats, '\0', sizeof(*stats));
-	int ret = 0;
-	ret |= rrr_ip_stats_init(&stats->send, period, "send", name);
-	ret |= rrr_ip_stats_init(&stats->receive, period, "receive", name);
-	return ret;
-}
-
-int rrr_ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {
-	int ret = RRR_IP_STATS_UPDATE_OK;
-
-	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return RRR_IP_STATS_UPDATE_ERR;
-	}
-
-	stats->packets += packets;
-	stats->bytes += bytes;
-
-	if (stats->time_from == 0) {
-		stats->time_from = rrr_time_get_64();
-	}
-	else if (stats->time_from + stats->period * 1000000 < rrr_time_get_64()) {
-		ret = RRR_IP_STATS_UPDATE_READY;
-	}
-
-	pthread_mutex_unlock(&stats->lock);
-	return ret;
-}
-
-int rrr_stats_print_reset(struct ip_stats *stats, int do_reset) {
-	int ret = RRR_IP_STATS_UPDATE_OK;
-
-	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return RRR_IP_STATS_UPDATE_ERR;
-	}
-
-	RRR_DBG_2("IP stats for %s %s: %lu packets/s %lu bytes/s, period is %u\n",
-			stats->name, stats->type, stats->packets/stats->period, stats->bytes/stats->period, stats->period);
-
-	if (do_reset) {
-		stats->time_from = 0;
-		stats->packets = 0;
-		stats->bytes = 0;
-	}
-
-	pthread_mutex_unlock(&stats->lock);
-	return ret;
-}
-
 struct ip_receive_callback_data {
 	struct rrr_ip_buffer_entry *target_entry;
 	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
-	struct ip_stats *stats;
 };
 
 static int __ip_receive_callback (
@@ -291,20 +232,6 @@ static int __ip_receive_callback (
 		RRR_BUG("Unknown return value %i from callback in __ip_receive_callback\n", ret);
 	}
 
-	if (callback_data->stats != NULL) {
-		ret = rrr_ip_stats_update(callback_data->stats, 1, RRR_IP_RECEIVE_MAX_STEP_SIZE);
-		if (ret == RRR_IP_STATS_UPDATE_ERR) {
-			RRR_MSG_0("ip: Error returned from stats update function\n");
-			return 1;
-		}
-		if (ret == RRR_IP_STATS_UPDATE_READY) {
-			if (rrr_stats_print_reset(callback_data->stats, 1) != RRR_IP_STATS_UPDATE_OK) {
-				RRR_MSG_0("ip: Error returned from stats print function\n");
-				return 1;
-			}
-		}
-	}
-
 	out:
 	return ret;
 }
@@ -318,14 +245,12 @@ int rrr_ip_receive_array (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
+		void *arg
 ) {
 	struct ip_receive_callback_data callback_data = {
 		target_entry,
 		callback,
-		arg,
-		stats
+		arg
 	};
 
 	return rrr_socket_common_receive_array (
