@@ -2,7 +2,7 @@ rrr (1.5) buster; urgency=medium
 
   * New HTTP modules for client and server
 
- -- Atle Solbakken <atle@goliathdns.no> Wed, 15 Jul 2020 00:59:10 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 15 Jul 2020 00:59:10 +0200
 
 rrr (1.4-1) buster; urgency=medium
 
