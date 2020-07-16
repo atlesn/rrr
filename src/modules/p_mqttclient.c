@@ -1721,20 +1721,15 @@ static void *thread_entry_mqtt_client (struct rrr_thread *thread) {
 			if (poll_sleep > 0) {
 				data->total_usleep_count++;
 			}
-<<<<<<< HEAD
-			RRR_BENCHMARK_IN(mqtt_client_sleep);
-			rrr_poll_do_poll_delete (thread_data, thread_data->poll, mqttclient_poll_callback, poll_sleep);
-			RRR_BENCHMARK_OUT(mqtt_client_sleep);
-=======
+
 			if (no_senders) {
 				rrr_posix_usleep(10000); // 10ms
 			}
 			else {
 				RRR_BENCHMARK_IN(mqtt_client_sleep);
-				rrr_poll_do_poll_delete (thread_data, &poll, mqttclient_poll_callback, poll_sleep);
+				rrr_poll_do_poll_delete (thread_data, thread_data->poll, mqttclient_poll_callback, poll_sleep);
 				RRR_BENCHMARK_OUT(mqtt_client_sleep);
 			}
->>>>>>> master
 		}
 
 		data->total_ticks_count++;
