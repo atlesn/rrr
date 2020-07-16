@@ -23,17 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_BUFFER_H
 
 #include <pthread.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
 #include <inttypes.h>
-#include <unistd.h>
 #include <semaphore.h>
-
-// TODO : Re-order functions in .c-file and in this file
-// TODO : Move static inline functions from .h to .c
-// TODO : Fix so that mutexes may be destroyed properly
 
 //#define FIFO_DEBUG_COUNTER
 //#define FIFO_SPIN_DELAY 0 // microseconds
@@ -128,7 +119,28 @@ struct rrr_fifo_buffer {
 	sem_t new_data_available;
 };
 
-static inline int rrr_fifo_buffer_get_entry_count (struct rrr_fifo_buffer *buffer) {
+int rrr_fifo_buffer_get_stats (
+		struct rrr_fifo_buffer_stats *stats,
+		struct rrr_fifo_buffer *buffer
+);
+void rrr_fifo_buffer_destroy (
+		struct rrr_fifo_buffer *buffer
+);
+int rrr_fifo_buffer_init (
+		struct rrr_fifo_buffer *buffer
+);
+int rrr_fifo_buffer_init_custom_free (
+		struct rrr_fifo_buffer *buffer,
+		void (*custom_free)(void *arg)
+);
+void rrr_fifo_buffer_set_do_ratelimit (
+		struct rrr_fifo_buffer *buffer,
+		int set
+);
+
+static inline int rrr_fifo_buffer_get_entry_count (
+		struct rrr_fifo_buffer *buffer
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
@@ -138,7 +150,9 @@ static inline int rrr_fifo_buffer_get_entry_count (struct rrr_fifo_buffer *buffe
 	return ret;
 }
 
-static inline int rrr_fifo_buffer_get_ratelimit_active (struct rrr_fifo_buffer *buffer) {
+static inline int rrr_fifo_buffer_get_ratelimit_active (
+		struct rrr_fifo_buffer *buffer
+) {
 	int ret = 0;
 
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
@@ -146,12 +160,6 @@ static inline int rrr_fifo_buffer_get_ratelimit_active (struct rrr_fifo_buffer *
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 
 	return ret;
-}
-
-static inline void rrr_fifo_buffer_set_do_ratelimit(struct rrr_fifo_buffer *buffer, int set) {
-	pthread_mutex_lock(&buffer->ratelimit_mutex);
-	buffer->buffer_do_ratelimit = set;
-	pthread_mutex_unlock(&buffer->ratelimit_mutex);
 }
 
 /*
@@ -186,16 +194,8 @@ void rrr_fifo_buffer_clear (
 );
 int rrr_fifo_buffer_search (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
-		unsigned int wait_milliseconds
-);
-int rrr_fifo_buffer_read_minimum (
-		struct rrr_fifo_buffer *buffer,
-		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
-		void *callback_data,
-		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 );
 int rrr_fifo_buffer_clear_order_lt (
@@ -205,7 +205,7 @@ int rrr_fifo_buffer_clear_order_lt (
 int rrr_fifo_buffer_read_clear_forward (
 		struct rrr_fifo_buffer *buffer,
 		struct rrr_fifo_buffer_entry *last_element,
-		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
 		void *callback_data,
 		unsigned int wait_milliseconds
 );
@@ -213,6 +213,14 @@ int rrr_fifo_buffer_read (
 		struct rrr_fifo_buffer *buffer,
 		int (*callback)(RRR_FIFO_READ_CALLBACK_ARGS),
 		void *callback_data,
+		unsigned int wait_milliseconds
+);
+int rrr_fifo_buffer_read_minimum (
+		struct rrr_fifo_buffer *buffer,
+		struct rrr_fifo_buffer_entry *last_element,
+		int (*callback)(void *callback_data, char *data, unsigned long int size),
+		void *callback_data,
+		uint64_t minimum_order,
 		unsigned int wait_milliseconds
 );
 int rrr_fifo_buffer_with_write_lock_do (
@@ -223,18 +231,13 @@ int rrr_fifo_buffer_with_write_lock_do (
 );
 int rrr_fifo_buffer_write (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
 		void *callback_arg
 );
 int rrr_fifo_buffer_write_delayed (
 		struct rrr_fifo_buffer *buffer,
-		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		int (*callback)(char **data, unsigned long int *size, uint64_t *order, void *arg),
 		void *callback_arg
 );
-
-void rrr_fifo_buffer_destroy(struct rrr_fifo_buffer *buffer);
-int rrr_fifo_buffer_init(struct rrr_fifo_buffer *buffer);
-int rrr_fifo_buffer_init_custom_free(struct rrr_fifo_buffer *buffer, void (*custom_free)(void *arg));
-int rrr_fifo_buffer_get_stats (struct rrr_fifo_buffer_stats *stats, struct rrr_fifo_buffer *buffer);
 
 #endif
