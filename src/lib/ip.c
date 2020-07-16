@@ -63,7 +63,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_TCP_GRAYLIST_TIME_MS				2000
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
 
-int rrr_ip_graylist_exists (
+static int __rrr_ip_graylist_exists (
 		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
 ) {
 	uint64_t time_now = rrr_time_get_64();
@@ -80,14 +80,14 @@ int rrr_ip_graylist_exists (
 	return 0;
 }
 
-int rrr_ip_graylist_push (
+static int __rrr_ip_graylist_push (
 		struct rrr_ip_graylist *target, const struct sockaddr *addr, socklen_t len, int timeout_ms
 ) {
 	int ret = 0;
 
 	struct rrr_ip_graylist_entry *new_entry = NULL;
 
-	if (rrr_ip_graylist_exists(target, addr, len)) {
+	if (__rrr_ip_graylist_exists(target, addr, len)) {
 		goto out;
 	}
 
@@ -100,7 +100,7 @@ int rrr_ip_graylist_push (
 	);
 
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_ip_graylist_push\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_ip_graylist_push\n");
 		ret = 1;
 		goto out;
 	}
@@ -108,7 +108,7 @@ int rrr_ip_graylist_push (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in rrr_ip_graylist_push\n");
+		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push\n");
 	}
 
 	memcpy (&new_entry->addr, addr, len);
@@ -127,6 +127,12 @@ void rrr_ip_graylist_clear (
 		struct rrr_ip_graylist *target
 ) {
 	RRR_LL_DESTROY(target, struct rrr_ip_graylist_entry, free(node));
+}
+
+void rrr_ip_graylist_clear_void (
+		void *target
+) {
+	return rrr_ip_graylist_clear(target);
 }
 
 void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
@@ -168,17 +174,17 @@ void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, s
 	dest[dest_size - 1] = '\0';
 }
 
-struct ip_receive_callback_data {
+struct rrr_ip_receive_callback_data {
 	struct rrr_ip_buffer_entry *target_entry;
 	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
 };
 
-static int __ip_receive_callback (
+static int __rrr_ip_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct ip_receive_callback_data *callback_data = arg;
+	struct rrr_ip_receive_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -247,7 +253,7 @@ int rrr_ip_receive_array (
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
 		void *arg
 ) {
-	struct ip_receive_callback_data callback_data = {
+	struct rrr_ip_receive_callback_data callback_data = {
 		target_entry,
 		callback,
 		arg
@@ -261,7 +267,7 @@ int rrr_ip_receive_array (
 			definition,
 			do_sync_byte_by_byte,
 			message_max_size,
-			__ip_receive_callback,
+			__rrr_ip_receive_callback,
 			&callback_data
 	);
 }
@@ -326,7 +332,9 @@ int rrr_ip_send (
 	return ret;
 }
 
-void rrr_ip_network_cleanup (void *arg) {
+void rrr_ip_network_cleanup (
+		void *arg
+) {
 	struct rrr_ip_data *data = arg;
 	if (data->fd != 0) {
 		rrr_socket_close(data->fd);
@@ -334,7 +342,9 @@ void rrr_ip_network_cleanup (void *arg) {
 	}
 }
 
-int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
+int rrr_ip_network_start_udp_ipv4_nobind (
+		struct rrr_ip_data *data
+) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
@@ -352,7 +362,9 @@ int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
 	return 0;
 }
 
-int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
+int rrr_ip_network_start_udp_ipv4 (
+		struct rrr_ip_data *data
+) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
@@ -455,7 +467,7 @@ static int __rrr_ip_network_connect_tcp_check_graylist (
 		goto out;
 	}
 
-	if (rrr_ip_graylist_exists(graylist, addr, addr_len)) {
+	if (__rrr_ip_graylist_exists(graylist, addr, addr_len)) {
 		ret = RRR_SOCKET_SOFT_ERROR;
 		return ret;
 	}
@@ -527,7 +539,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 
 	out_free_accept:
 	 	if (graylist != NULL) {
-	 		 rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
 	 	}
 		free(accept_result);
 	out_close_socket:
@@ -599,7 +611,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     	// This means connection refused or some other error, skip to next address suggestion
 
 		if (graylist != NULL) {
-			rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
+			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
 		}
 
 		graylist_next:
@@ -642,7 +654,10 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		return 1;
 }
 
-int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections) {
+int rrr_ip_network_start_tcp_ipv4_and_ipv6 (
+		struct rrr_ip_data *data,
+		int max_connections
+) {
 	int fd = rrr_socket (
 			AF_INET6,
 			SOCK_NONBLOCK|SOCK_STREAM,
@@ -682,7 +697,9 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 	return 1;
 }
 
-int rrr_ip_close (struct rrr_ip_data *data) {
+int rrr_ip_close (
+		struct rrr_ip_data *data
+) {
 	if (data->fd == 0) {
 		RRR_BUG("Received zero-value FD in ip_close\n");
 	}
@@ -693,7 +710,12 @@ int rrr_ip_close (struct rrr_ip_data *data) {
 	return ret;
 }
 
-int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay) {
+int rrr_ip_accept (
+		struct rrr_ip_accept_data **accept_data,
+		struct rrr_ip_data *listen_data,
+		const char *creator,
+		int tcp_nodelay
+) {
 	int ret = 0;
 
 	struct sockaddr_storage sockaddr_tmp = {0};

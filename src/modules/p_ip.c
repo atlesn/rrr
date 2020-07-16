@@ -426,7 +426,7 @@ struct ip_read_array_intermediate_callback_data {
 	int loops;
 };
 
-int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
+static int ip_read_array_intermediate(struct rrr_ip_buffer_entry *entry, void *arg) {
 	struct ip_read_array_intermediate_callback_data *callback_data = arg;
 	struct ip_data *data = callback_data->data;
 
