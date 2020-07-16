@@ -43,7 +43,7 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 
 	*do_start = 1;
 
-	// TODO : Check for wait loops
+	// TODO : Check for wait_for loops in configuration
 
 	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_collection_entry);
 		struct rrr_instance_metadata *check = node->instance;

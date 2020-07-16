@@ -712,7 +712,6 @@ int __rrr_settings_update_used_callback (struct rrr_setting *settings, void *cal
 	return 0;
 }
 
-// TODO : Support updating the actual value
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,

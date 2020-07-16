@@ -71,7 +71,6 @@ int rrr_openssl_load_verify_locations (SSL_CTX *ctx, const char *ca_file, const 
 
 	RRR_DBG_1("Using path '%s' for CA certificates in OpenSSL\n", ca_path_use);
 
-	// TODO : Add user-configurable cerfificates and paths
 	if (SSL_CTX_load_verify_locations(ctx, ca_file_use, ca_path_use) != 1) {
 		RRR_SSL_ERR("Could not set certificate verification path\n");
 		ret = 1;

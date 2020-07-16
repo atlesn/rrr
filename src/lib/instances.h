@@ -35,8 +35,6 @@ struct rrr_stats_engine;
 struct rrr_message_broker;
 typedef void rrr_message_broker_costumer_handle;
 
-// TODO : Many pointers in different structs are probably redundant
-
 struct rrr_instance_metadata {
 	struct rrr_instance_metadata *next;
 	struct rrr_instance_dynamic_data *dynamic_data;

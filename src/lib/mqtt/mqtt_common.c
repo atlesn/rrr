@@ -935,11 +935,6 @@ static int __rrr_mqtt_common_handle_pubrec_pubrel (
 		goto out;
 	}
 
-	// TODO : Check if it's OK just to continue a QoS2 handshake which we did not know about
-/*	if (match_count != 1) {
-		VL_BUG("match_count was not 1 in __rrr_mqtt_broker_handle_pubrec_pubrel, session system should have triggered an error\n");
-	}*/
-
 	out_send_ack:
 	next_ack = rrr_mqtt_p_allocate (
 			next_ack_type,

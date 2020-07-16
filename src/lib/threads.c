@@ -339,7 +339,6 @@ void rrr_thread_destroy_collection (
 		}
 		else {
 			rrr_thread_unlock(node);
-			// TODO : Add pthread_mutex_destroy(threads[i]->....) and test
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node, do_destroy_private_data));

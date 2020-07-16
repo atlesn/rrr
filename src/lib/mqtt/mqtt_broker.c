@@ -874,8 +874,6 @@ static int __rrr_mqtt_broker_acl_handler_publish (
 ) {
 	int ret = RRR_MQTT_ACL_RESULT_DENY;
 
-	// TODO : Replace NULL with connection->username
-
 	ret = rrr_mqtt_acl_check_access (
 			broker->acl,
 			publish->token_tree_,

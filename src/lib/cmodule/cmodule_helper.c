@@ -63,7 +63,6 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 
 //	printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
 
-	// TODO : Look into warning "taking address of packed member of blabla latest_message_addr.addr"
 	rrr_ip_buffer_entry_set_unlocked (
 			entry,
 			message_new,

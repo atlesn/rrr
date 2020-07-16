@@ -117,7 +117,6 @@ int rrr_http_query_builder_append_type_value_as_escaped_string (
 		RRR_STRING_BUILDER_APPEND_AND_CHECK(string_builder, buf, "Could not append fixed point to query buffer in  __rrr_http_query_builder_append_type_value_raw\n");
 	}
 	else if (RRR_TYPE_IS_64(value->definition->type)) {
-		// TODO : Support signed
 		char buf[64];
 		if (RRR_TYPE_FLAG_IS_SIGNED(value->flags)) {
 			sprintf(buf, "%" PRIi64, *((int64_t*) value->data));

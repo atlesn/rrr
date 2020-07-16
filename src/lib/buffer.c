@@ -387,8 +387,6 @@ static void __rrr_fifo_buffer_set_data_available (
 	}
 }
 
-// TODO : Allow to call this function while holding read lock
-
 static void __rrr_fifo_attempt_write_queue_merge (
 		struct rrr_fifo_buffer *buffer
 ) {
