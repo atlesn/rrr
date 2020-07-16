@@ -901,9 +901,9 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	SESSION_COLLECTION_RAM_LOCK(data);
-	rrr_fifo_buffer_clear(&data->retain_queue.buffer);
-	rrr_fifo_buffer_clear(&data->publish_forward_queue.buffer);
-	rrr_fifo_buffer_clear(&data->publish_local_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->retain_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->publish_forward_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->publish_local_queue.buffer);
 
 	// TODO : implement destroy
 	// fifo_buffer_destroy(&data->retain_queue);
