@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read.h"
 #include "read_constants.h"
 #include "linked_list.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "messages.h"
 #include "message_addr.h"
 #include "message_log.h"

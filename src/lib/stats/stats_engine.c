@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_client.h"
 #include "../read.h"
 #include "../linked_list.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../random.h"
 #include "../macro_utils.h"
 

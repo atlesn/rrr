@@ -48,7 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/socket/rrr_socket.h"

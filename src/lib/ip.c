@@ -49,7 +49,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "array.h"
 #include "socket/rrr_socket.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "crc32.h"
 #include "socket/rrr_socket_common.h"
 #include "socket/rrr_socket_msg.h"

@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_buffer_entry.h"
 #include "udpstream_asd.h"
 #include "buffer.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "read.h"
 #include "socket/rrr_socket_constants.h"
 #include "socket/rrr_socket_msg_checksum.h"

@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "log.h"
 #include "slow_noop.h"
+#include "rrr_time.h"
 
 //#define RRR_FIFO_BUFFER_DEBUG 1
 
@@ -390,6 +391,38 @@ static void __rrr_fifo_attempt_write_queue_merge(struct rrr_fifo_buffer *buffer)
 	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
 
 	__rrr_fifo_buffer_set_data_available(buffer);
+}
+
+static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigned int wait_milliseconds) {
+	if (wait_milliseconds == 0) {
+		return 0;
+	}
+
+//	printf ("Waiting for %u milliseconds\n", wait_milliseconds);
+
+	uint64_t time_start = rrr_time_get_64();
+	uint64_t time_end = time_start + (wait_milliseconds * 1000);
+
+	uint64_t microseconds = time_end % 1000000;
+	uint64_t seconds = (time_end - microseconds) / 1000 / 1000;
+
+	struct timespec wait_time;
+	wait_time.tv_sec = seconds;
+	wait_time.tv_nsec = microseconds * 1000;
+	int res = sem_timedwait(&buffer->new_data_available, &wait_time);
+
+/*	uint64_t time_end_real = time_get_64();
+
+	printf ("Waiting time was %" PRIu64 " result was %i\n", (time_end_real - time_start) / 1000, res);*/
+/*	if (res != 0) {
+		char buf[1024];
+		buf[0] = '\0';
+		strerror_r(errno, buf, sizeof(buf));
+		VL_MSG_0("Could wait on semaphore in buffer: %s\n", buf);
+		VL_MSG_0("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
+	}
+*/
+	return res;
 }
 
 /*

@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "rrr_mmap.h"
 #include "rrr_strerror.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 
 /*
  * Description of allocator:

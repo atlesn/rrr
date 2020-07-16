@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "vl_time.h"
+#include "rrr_time.h"
 
 #include <string.h>
 #include <fcntl.h>

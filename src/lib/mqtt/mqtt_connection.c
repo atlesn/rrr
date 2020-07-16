@@ -37,7 +37,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../ip.h"
 #include "../ip_accept_data.h"
 #include "../buffer.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
 #include "../macro_utils.h"

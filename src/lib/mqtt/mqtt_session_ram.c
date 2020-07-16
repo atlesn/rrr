@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_id_pool.h"
 
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../linked_list.h"
 #include "../macro_utils.h"
 

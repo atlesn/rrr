@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_read.h"
 #include "linked_list.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "crc32.h"
 #include "random.h"
 #include "macro_utils.h"

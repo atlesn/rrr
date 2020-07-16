@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "rrr_strerror.h"
 #include "log.h"
 #include "macro_utils.h"

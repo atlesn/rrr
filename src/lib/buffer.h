@@ -31,8 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <semaphore.h>
 
-#include "vl_time.h"
-
 // TODO : Re-order functions in .c-file and in this file
 // TODO : Move static inline functions from .h to .c
 // TODO : Fix so that mutexes may be destroyed properly
@@ -154,38 +152,6 @@ static inline void rrr_fifo_buffer_set_do_ratelimit(struct rrr_fifo_buffer *buff
 	pthread_mutex_lock(&buffer->ratelimit_mutex);
 	buffer->buffer_do_ratelimit = set;
 	pthread_mutex_unlock(&buffer->ratelimit_mutex);
-}
-
-static inline int rrr_fifo_wait_for_data(struct rrr_fifo_buffer *buffer, unsigned int wait_milliseconds) {
-	if (wait_milliseconds == 0) {
-		return 0;
-	}
-
-//	printf ("Waiting for %u milliseconds\n", wait_milliseconds);
-
-	uint64_t time_start = rrr_time_get_64();
-	uint64_t time_end = time_start + (wait_milliseconds * 1000);
-
-	uint64_t microseconds = time_end % 1000000;
-	uint64_t seconds = (time_end - microseconds) / 1000 / 1000;
-
-	struct timespec wait_time;
-	wait_time.tv_sec = seconds;
-	wait_time.tv_nsec = microseconds * 1000;
-	int res = sem_timedwait(&buffer->new_data_available, &wait_time);
-
-/*	uint64_t time_end_real = time_get_64();
-
-	printf ("Waiting time was %" PRIu64 " result was %i\n", (time_end_real - time_start) / 1000, res);*/
-/*	if (res != 0) {
-		char buf[1024];
-		buf[0] = '\0';
-		strerror_r(errno, buf, sizeof(buf));
-		VL_MSG_0("Could wait on semaphore in buffer: %s\n", buf);
-		VL_MSG_0("Start time was %" PRIu64 " end time was %" PRIu64 "\n", time_start, time_end);
-	}
-*/
-	return res;
 }
 
 /*

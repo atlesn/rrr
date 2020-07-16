@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_acl.h"
 
+#include "../rrr_time.h"
 #include "../posix.h"
 #include "../macro_utils.h"
 
