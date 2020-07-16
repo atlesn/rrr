@@ -172,7 +172,7 @@ int test_do_poll_loop (
 	return ret;
 }
 
-int test_type_array_write_to_socket (struct test_data *data, struct instance_metadata *socket_metadata) {
+int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance_metadata *socket_metadata) {
 	char *socket_path = NULL;
 	int ret = 0;
 	int socket_fd = 0;
@@ -303,7 +303,7 @@ int test_averager (
 
 	struct rrr_test_result test_result = {0, NULL};
 
-	struct instance_metadata *output = rrr_instance_find(instances, output_name);
+	struct rrr_instance_metadata *output = rrr_instance_find(instances, output_name);
 	if (output == NULL) {
 		TEST_MSG("Could not find output instances %s in test_averager\n",
 				output_name);
@@ -667,7 +667,7 @@ int test_array (
 
 	struct rrr_test_result test_result_1 = {1, NULL};
 
-	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	struct rrr_instance_metadata *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array\n",
 				output_name);
@@ -708,7 +708,7 @@ int test_anything (
 
 	struct rrr_test_result test_result_1 = {1, NULL};
 
-	struct instance_metadata *output_1 = rrr_instance_find(instances, output_name);
+	struct rrr_instance_metadata *output_1 = rrr_instance_find(instances, output_name);
 	if (output_1 == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array\n",
 				output_name);
@@ -834,7 +834,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 	return ret;
 }
 
-int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, struct instance_metadata *mysql) {
+int test_type_array_mysql_steal_config(struct test_type_array_mysql_data *data, struct rrr_instance_metadata *mysql) {
 	int ret = 0;
 
 	memset(data, '\0', sizeof(*data));
@@ -875,7 +875,7 @@ int test_type_array_mysql (
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
 	struct rrr_ip_buffer_entry *entry = NULL;
 
-	struct instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
+	struct rrr_instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
 
 	if (tag_buffer == NULL) {
 		TEST_MSG("Could not find output instance %s in test_type_array_mysql_and_network\n",
@@ -884,7 +884,7 @@ int test_type_array_mysql (
 		goto out;
 	}
 
-	struct instance_metadata *mysql = NULL;
+	struct rrr_instance_metadata *mysql = NULL;
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (strcmp(INSTANCE_M_MODULE_NAME(instance), "mysql") == 0) {
 			mysql = instance;

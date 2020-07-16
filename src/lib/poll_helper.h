@@ -59,12 +59,12 @@ int rrr_poll_collection_has (struct rrr_poll_collection *collection, struct rrr_
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
-		struct instance_metadata *instance
+		struct rrr_instance_metadata *instance
 );
 
 int rrr_poll_collection_add_from_senders (
 		struct rrr_poll_collection *poll_collection,
-		struct instance_metadata **faulty_instance,
+		struct rrr_instance_metadata **faulty_instance,
 		struct rrr_instance_collection *senders
 );
 

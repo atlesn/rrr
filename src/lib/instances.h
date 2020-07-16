@@ -37,8 +37,8 @@ typedef void rrr_message_broker_costumer_handle;
 
 // TODO : Many pointers in different structs are probably redundant
 
-struct instance_metadata {
-	struct instance_metadata *next;
+struct rrr_instance_metadata {
+	struct rrr_instance_metadata *next;
 	struct rrr_instance_dynamic_data *dynamic_data;
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_instance_collection senders;
@@ -51,9 +51,9 @@ struct instance_metadata {
 #define INSTANCE_M_NAME(instance) instance->dynamic_data->instance_name
 #define INSTANCE_M_MODULE_NAME(instance) instance->dynamic_data->module_name
 
-struct instance_metadata_collection {
+struct rrr_instance_metadata_collection {
 	int length;
-	struct instance_metadata *first_entry;
+	struct rrr_instance_metadata *first_entry;
 };
 
 struct rrr_instance_dynamic_data {
@@ -67,13 +67,13 @@ struct rrr_instance_dynamic_data {
 	void *private_data;
 	void (*unload)(void);
 	int (*signal_handler)(int s, void *priv);
-	struct instance_metadata_collection *all_instances;
+	struct rrr_instance_metadata_collection *all_instances;
 };
 
 #define INSTANCE_D_NAME(thread_data) thread_data->init_data.module->instance_name
 #define INSTANCE_D_MODULE_NAME(thread_data) thread_data->init_data.module->module_name
 
-struct instance_thread_init_data {
+struct rrr_instance_thread_init_data {
 	struct cmd_data *cmd_data;
 	struct rrr_instance_config *instance_config;
 	struct rrr_config *global_config;
@@ -85,7 +85,7 @@ struct instance_thread_init_data {
 };
 
 struct rrr_instance_thread_data {
-	struct instance_thread_init_data init_data;
+	struct rrr_instance_thread_init_data init_data;
 
 	int used_by_ghost;
 
@@ -117,45 +117,45 @@ struct rrr_instance_thread_data {
 		thread_data->init_data.message_broker, thread_data->message_broker_handle
 
 #define RRR_INSTANCE_LOOP(target,collection) \
-	for (struct instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
+	for (struct rrr_instance_metadata *target = collection->first_entry; target != NULL; target = target->next)
 
-struct instance_metadata *rrr_instance_find_by_thread (
-		struct instance_metadata_collection *collection,
+struct rrr_instance_metadata *rrr_instance_find_by_thread (
+		struct rrr_instance_metadata_collection *collection,
 		struct rrr_thread *thread
 );
-int rrr_instance_check_threads_stopped(struct instance_metadata_collection *target);
-void rrr_instance_free_all_thread_data(struct instance_metadata_collection *target);
-int rrr_instance_count_library_users (struct instance_metadata_collection *target, void *dl_ptr);
-void rrr_instance_unload_all(struct instance_metadata_collection *target);
-void rrr_instance_metadata_collection_destroy (struct instance_metadata_collection *target);
+int rrr_instance_check_threads_stopped(struct rrr_instance_metadata_collection *target);
+void rrr_instance_free_all_thread_data(struct rrr_instance_metadata_collection *target);
+int rrr_instance_count_library_users (struct rrr_instance_metadata_collection *target, void *dl_ptr);
+void rrr_instance_unload_all(struct rrr_instance_metadata_collection *target);
+void rrr_instance_metadata_collection_destroy (struct rrr_instance_metadata_collection *target);
 int rrr_instance_metadata_collection_new (
-		struct instance_metadata_collection **target
+		struct rrr_instance_metadata_collection **target
 );
 int rrr_instance_add_senders (
-		struct instance_metadata_collection *instances,
-		struct instance_metadata *instance
+		struct rrr_instance_metadata_collection *instances,
+		struct rrr_instance_metadata *instance
 );
 int rrr_instance_add_wait_for_instances (
-		struct instance_metadata_collection *instances,
-		struct instance_metadata *instance
+		struct rrr_instance_metadata_collection *instances,
+		struct rrr_instance_metadata *instance
 );
 int rrr_instance_load_and_save (
-		struct instance_metadata_collection *instances,
+		struct rrr_instance_metadata_collection *instances,
 		struct rrr_instance_config *instance_config,
 		const char **library_paths
 );
-struct instance_metadata *rrr_instance_find (
-		struct instance_metadata_collection *target,
+struct rrr_instance_metadata *rrr_instance_find (
+		struct rrr_instance_metadata_collection *target,
 		const char *name
 );
-unsigned int rrr_instance_metadata_collection_count (struct instance_metadata_collection *collection);
+unsigned int rrr_instance_metadata_collection_count (struct rrr_instance_metadata_collection *collection);
 void rrr_instance_destroy_thread(struct rrr_instance_thread_data *data);
 void rrr_instance_destroy_thread_by_ghost (void *private_data);
-struct rrr_instance_thread_data *rrr_instance_new_thread(struct instance_thread_init_data *init_data);
+struct rrr_instance_thread_data *rrr_instance_new_thread(struct rrr_instance_thread_init_data *init_data);
 int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);
 int rrr_instance_start_thread (struct rrr_instance_thread_data *data);
 int rrr_instance_process_from_config(
-		struct instance_metadata_collection *instances,
+		struct rrr_instance_metadata_collection *instances,
 		struct rrr_config *config,
 		const char **library_paths
 );

@@ -126,7 +126,7 @@ static int main_stats_post_sticky_text_message (struct stats_data *stats_data, c
 	return EXIT_SUCCESS;
 }
 
-static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct instance_metadata_collection *instances) {
+static int main_stats_post_sticky_messages (struct stats_data *stats_data, struct rrr_instance_metadata_collection *instances) {
 	int ret = 0;
 	if (rrr_stats_engine_handle_obtain(&stats_data->handle, &stats_data->engine) != 0) {
 		RRR_MSG_0("Error while obtaining statistics handle in main\n");
@@ -196,7 +196,7 @@ static int main_loop (
 	struct rrr_message_broker message_broker = {0};
 
 	struct rrr_config *config = NULL;
-	struct instance_metadata_collection *instances = NULL;
+	struct rrr_instance_metadata_collection *instances = NULL;
 	struct rrr_thread_collection *collection = NULL;
 
 	rrr_config_set_log_prefix(config_file);

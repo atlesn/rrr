@@ -55,8 +55,8 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_test_result(struct instance_metadata_collection *instances) {
-	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
+int main_get_test_result(struct rrr_instance_metadata_collection *instances) {
+	struct rrr_instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
@@ -215,7 +215,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	struct instance_metadata_collection *instances;
+	struct rrr_instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
 		if (rrr_instance_metadata_collection_new (&instances) != 0) {
 			ret = 1;

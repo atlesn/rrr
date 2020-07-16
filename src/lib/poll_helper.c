@@ -100,7 +100,7 @@ int rrr_poll_collection_has (struct rrr_poll_collection *collection, struct rrr_
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
-		struct instance_metadata *instance
+		struct rrr_instance_metadata *instance
 ) {
 	int ret = 0;
 	*flags_result = 0;
@@ -129,10 +129,10 @@ int rrr_poll_collection_add (
 
 struct poll_callback_data {
 	struct rrr_poll_collection *collection;
-	struct instance_metadata *faulty_instance;
+	struct rrr_instance_metadata *faulty_instance;
 };
 
-int __poll_collection_add_from_senders_callback (struct instance_metadata *instance, void *arg) {
+int __poll_collection_add_from_senders_callback (struct rrr_instance_metadata *instance, void *arg) {
 	int ret = 0;
 
 	struct poll_callback_data *data = arg;
@@ -155,7 +155,7 @@ int __poll_collection_add_from_senders_callback (struct instance_metadata *insta
 
 int rrr_poll_collection_add_from_senders (
 		struct rrr_poll_collection *poll_collection,
-		struct instance_metadata **faulty_instance,
+		struct rrr_instance_metadata **faulty_instance,
 		struct rrr_instance_collection *senders
 ) {
 	*faulty_instance = NULL;
@@ -253,7 +253,7 @@ void rrr_poll_add_from_thread_senders (
 		struct rrr_poll_collection *collection,
 		struct rrr_instance_thread_data *thread_data
 ) {
-	struct instance_metadata *faulty_sender;
+	struct rrr_instance_metadata *faulty_sender;
 	rrr_poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders);
 }
 

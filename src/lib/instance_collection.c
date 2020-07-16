@@ -32,7 +32,7 @@ int rrr_instance_collection_check_empty (struct rrr_instance_collection *collect
 	return RRR_LL_IS_EMPTY(collection);
 }
 
-int rrr_instance_collection_check_exists (struct rrr_instance_collection *collection, struct instance_metadata *sender) {
+int rrr_instance_collection_check_exists (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_instance_collection_entry);
 		if (node->instance == sender) {
 			return 1;
@@ -42,7 +42,7 @@ int rrr_instance_collection_check_exists (struct rrr_instance_collection *collec
 	return 0;
 }
 
-int rrr_instance_collection_append (struct rrr_instance_collection *collection, struct instance_metadata *sender) {
+int rrr_instance_collection_append (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender) {
 	int ret = 0;
 
 	if (rrr_instance_collection_check_exists(collection,sender)) {
@@ -77,7 +77,7 @@ int rrr_instance_collection_count (struct rrr_instance_collection *collection) {
 
 int rrr_instance_collection_iterate (
 		struct rrr_instance_collection *collection,
-		int (*callback)(struct instance_metadata *instance, void *arg),
+		int (*callback)(struct rrr_instance_metadata *instance, void *arg),
 		void *arg
 ) {
 	int ret = 0;

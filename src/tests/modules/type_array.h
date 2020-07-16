@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 struct rrr_message;
-struct instance_metadata_collection;
+struct rrr_instance_metadata_collection;
 struct rrr_instance_thread_data;
 
 struct rrr_test_function_data {

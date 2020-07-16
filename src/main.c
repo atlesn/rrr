@@ -30,12 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 
 struct rrr_main_check_wait_for_data {
-	struct instance_metadata_collection *instances;
+	struct rrr_instance_metadata_collection *instances;
 };
 
 static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, struct rrr_thread *thread, void *arg) {
 	struct rrr_main_check_wait_for_data *data = arg;
-	struct instance_metadata *instance = rrr_instance_find_by_thread(data->instances, thread);
+	struct rrr_instance_metadata *instance = rrr_instance_find_by_thread(data->instances, thread);
 
 	if (instance == NULL) {
 		RRR_BUG("Instance not found in __main_start_threads_check_wait_for_callback\n");
@@ -46,7 +46,7 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 	// TODO : Check for wait loops
 
 	RRR_LL_ITERATE_BEGIN(&instance->wait_for, struct rrr_instance_collection_entry);
-		struct instance_metadata *check = node->instance;
+		struct rrr_instance_metadata *check = node->instance;
 		if (check == instance) {
 			RRR_MSG_0("Instance %s was set up to wait for itself before starting with wait_for, this is an error.\n",
 					INSTANCE_M_NAME(instance));
@@ -71,7 +71,7 @@ static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, stru
 
 int rrr_main_start_threads (
 		struct rrr_thread_collection **thread_collection,
-		struct instance_metadata_collection *instances,
+		struct rrr_instance_metadata_collection *instances,
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
@@ -86,7 +86,7 @@ int rrr_main_start_threads (
 			break;
 		}
 
-		struct instance_thread_init_data init_data;
+		struct rrr_instance_thread_init_data init_data;
 		init_data.module = instance->dynamic_data;
 		init_data.senders = &instance->senders;
 		init_data.cmd_data = cmd;
@@ -165,7 +165,7 @@ void rrr_main_ghost_handler (struct rrr_thread *thread) {
 	thread->free_private_data_by_ghost = 1;
 }
 
-void rrr_main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
+void rrr_main_threads_stop (struct rrr_thread_collection *collection, struct rrr_instance_metadata_collection *instances) {
 	rrr_thread_stop_and_join_all(collection, rrr_main_ghost_handler);
 	rrr_instance_free_all_thread_data(instances);
 }
