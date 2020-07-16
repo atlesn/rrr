@@ -143,13 +143,13 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_passwd_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	// Don't require arguments here, separate check in parse_config
-	if (rrr_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

@@ -233,12 +233,12 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}

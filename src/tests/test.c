@@ -170,7 +170,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
+		if (rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -179,7 +179,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -238,7 +238,7 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (main_start_threads (
+		if (rrr_main_start_threads (
 				&collection,
 				instances,
 				config,
@@ -279,7 +279,7 @@ int main (int argc, const char **argv) {
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
-		main_threads_stop(collection, instances);
+		rrr_main_threads_stop(collection, instances);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);

@@ -32,7 +32,7 @@ struct rrr_stats_engine;
 struct rrr_message_broker;
 struct rrr_fork_handler;
 
-int main_start_threads (
+int rrr_main_start_threads (
 		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
@@ -42,9 +42,9 @@ int main_start_threads (
 		struct rrr_fork_handler *fork_handler
 );
 
-void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances);
-int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
-int rrr_print_help_and_version (
+void rrr_main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances);
+int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
+int rrr_main_print_help_and_version (
 		struct cmd_data *cmd,
 		int argc_minimum
 );

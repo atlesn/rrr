@@ -29,12 +29,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/instance_config.h"
 #include "lib/threads.h"
 
-struct check_wait_for_data {
+struct rrr_main_check_wait_for_data {
 	struct instance_metadata_collection *instances;
 };
 
-static int __main_start_threads_check_wait_for_callback (int *do_start, struct rrr_thread *thread, void *arg) {
-	struct check_wait_for_data *data = arg;
+static int __rrr_main_start_threads_check_wait_for_callback (int *do_start, struct rrr_thread *thread, void *arg) {
+	struct rrr_main_check_wait_for_data *data = arg;
 	struct instance_metadata *instance = rrr_instance_find_by_thread(data->instances, thread);
 
 	if (instance == NULL) {
@@ -69,7 +69,7 @@ static int __main_start_threads_check_wait_for_callback (int *do_start, struct r
 	return 0;
 }
 
-int main_start_threads (
+int rrr_main_start_threads (
 		struct rrr_thread_collection **thread_collection,
 		struct instance_metadata_collection *instances,
 		struct rrr_config *global_config,
@@ -142,11 +142,11 @@ int main_start_threads (
 		return EXIT_FAILURE;
 	}
 
-	struct check_wait_for_data callback_data = { instances };
+	struct rrr_main_check_wait_for_data callback_data = { instances };
 
 	if (rrr_thread_start_all_after_initialized (
 			*thread_collection,
-			__main_start_threads_check_wait_for_callback,
+			__rrr_main_start_threads_check_wait_for_callback,
 			&callback_data
 	) != 0) {
 		RRR_MSG_0("Error while waiting for threads to initialize\n");
@@ -159,18 +159,18 @@ int main_start_threads (
 
 // The thread framework calls us back to here if a thread is marked as ghost.
 // Make sure we do not free the memory the thread uses.
-void main_ghost_handler (struct rrr_thread *thread) {
+void rrr_main_ghost_handler (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	thread_data->used_by_ghost = 1;
 	thread->free_private_data_by_ghost = 1;
 }
 
-void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
-	rrr_thread_stop_and_join_all(collection, main_ghost_handler);
+void rrr_main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances) {
+	rrr_thread_stop_and_join_all(collection, rrr_main_ghost_handler);
 	rrr_instance_free_all_thread_data(instances);
 }
 
-int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
+int rrr_main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	if (cmd_parse(cmd, config) != 0) {
 		RRR_MSG_0("Error while parsing command line\n");
 		return EXIT_FAILURE;
@@ -248,7 +248,7 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 	return 0;
 }
 
-int rrr_print_help_and_version (
+int rrr_main_print_help_and_version (
 		struct cmd_data *cmd,
 		int argc_minimum
 ) {

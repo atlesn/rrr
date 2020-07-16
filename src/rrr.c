@@ -246,7 +246,7 @@ static int main_loop (
 	rrr_socket_close_all_except(stats_data.engine.socket);
 
 	rrr_config_set_debuglevel_orig();
-	if ((ret = main_start_threads (
+	if ((ret = rrr_main_start_threads (
 			&collection,
 			instances,
 			config,
@@ -281,7 +281,7 @@ static int main_loop (
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
 
 			rrr_config_set_debuglevel_on_exit();
-			main_threads_stop(collection, instances);
+			rrr_main_threads_stop(collection, instances);
 			rrr_thread_destroy_collection (collection, 0);
 
 			// Allow re-use of costumer names. Any ghosts currently using a handle will be detected
@@ -318,7 +318,7 @@ static int main_loop (
 		}
 		rrr_config_set_debuglevel_on_exit();
 		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
-		main_threads_stop(collection, instances);
+		rrr_main_threads_stop(collection, instances);
 		rrr_thread_destroy_collection (collection, 0);
 		int count;
 		rrr_thread_run_ghost_cleanup(&count);
@@ -504,11 +504,11 @@ int main (int argc, const char *argv[]) {
 
 	// Everything which might print debug stuff must be called after this
 	// as the global debuglevel is 0 up to now
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out_cleanup_signal;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_signal;
 	}
 
