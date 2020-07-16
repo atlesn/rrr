@@ -180,8 +180,7 @@ static int mqttclient_data_init (
 //		rrr_mqtt_subscription_collection_destroy(&data->requested_subscriptions);
 	out_destroy_fifo_buffer:
 		rrr_fifo_buffer_clear(&data->output_buffer);
-		// TODO: implement
-		//rrr_fifo_buffer_destroy(&data->output_buffer);
+		rrr_fifo_buffer_destroy(&data->output_buffer);
 	out:
 		return ret;
 }
