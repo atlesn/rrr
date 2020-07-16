@@ -32,7 +32,7 @@ struct rrr_test_function_data {
 
 #define RRR_TEST_FUNCTION_ARGS									\
 	const struct rrr_test_function_data *test_function_data,	\
-	struct instance_metadata_collection *instances,				\
+	struct rrr_instance_metadata_collection *instances,			\
 	struct rrr_instance_thread_data *self_thread_data,			\
 	const char *output_name
 
