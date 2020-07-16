@@ -252,14 +252,14 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	// A packed frame created locally has the payload stored separately
 	if (data_size > 0) {
-		frame->data_crc32 = rrr_htobe32(crc32buf((char *) data, data_size));
+		frame->data_crc32 = rrr_htobe32(rrr_crc32buf((char *) data, data_size));
 		frame->data_size = rrr_htobe16(data_size);
 	}
 
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
-	frame->header_crc32 = rrr_htobe32(crc32buf(crc32_start_pos, crc32_size));
+	frame->header_crc32 = rrr_htobe32(rrr_crc32buf(crc32_start_pos, crc32_size));
 
 	RRR_DBG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
 			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
@@ -510,7 +510,7 @@ static int __rrr_udpstream_frame_packed_validate (
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
-	if (crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
+	if (rrr_crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
 		RRR_MSG_0("Header CRC32 mismatch in __rrr_udpstream_frame_pack_validate\n");
 		if (RRR_DEBUGLEVEL_2) {
 			__rrr_udpstream_frame_packed_dump(frame);
@@ -1024,7 +1024,7 @@ static int __rrr_udpstream_read_callback (
 
 	ssize_t data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
 	if (data_size > 0) {
-		if (crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
+		if (rrr_crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
 			RRR_MSG_0("CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
