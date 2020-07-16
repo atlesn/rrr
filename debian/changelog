@@ -4,6 +4,12 @@ rrr (1.5) buster; urgency=medium
 
  -- Atle Solbakken <atle@goliathdns.no> Wed, 15 Jul 2020 00:59:10 +0200
 
+rrr (1.4-1) buster; urgency=medium
+
+  * Fix bug in MQTT client causing 100% CPU usage
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 16 Jul 2020 13:04:09 +0200
+
 rrr (1.4) buster; urgency=medium
 
   * New cmodule framework for easy creation of custom C-modules
