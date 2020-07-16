@@ -123,11 +123,22 @@ struct rrr_instance_metadata *rrr_instance_find_by_thread (
 		struct rrr_instance_metadata_collection *collection,
 		struct rrr_thread *thread
 );
-int rrr_instance_check_threads_stopped(struct rrr_instance_metadata_collection *target);
-void rrr_instance_free_all_thread_data(struct rrr_instance_metadata_collection *target);
-int rrr_instance_count_library_users (struct rrr_instance_metadata_collection *target, void *dl_ptr);
-void rrr_instance_unload_all(struct rrr_instance_metadata_collection *target);
-void rrr_instance_metadata_collection_destroy (struct rrr_instance_metadata_collection *target);
+int rrr_instance_check_threads_stopped(
+		struct rrr_instance_metadata_collection *target
+);
+void rrr_instance_free_all_thread_data(
+		struct rrr_instance_metadata_collection *target
+);
+int rrr_instance_count_library_users (
+		struct rrr_instance_metadata_collection *target,
+		void *dl_ptr
+);
+void rrr_instance_unload_all(
+		struct rrr_instance_metadata_collection *target
+);
+void rrr_instance_metadata_collection_destroy (
+		struct rrr_instance_metadata_collection *target
+);
 int rrr_instance_metadata_collection_new (
 		struct rrr_instance_metadata_collection **target
 );
@@ -148,18 +159,33 @@ struct rrr_instance_metadata *rrr_instance_find (
 		struct rrr_instance_metadata_collection *target,
 		const char *name
 );
-unsigned int rrr_instance_metadata_collection_count (struct rrr_instance_metadata_collection *collection);
-void rrr_instance_destroy_thread(struct rrr_instance_thread_data *data);
-void rrr_instance_destroy_thread_by_ghost (void *private_data);
-struct rrr_instance_thread_data *rrr_instance_new_thread(struct rrr_instance_thread_init_data *init_data);
-int rrr_instance_preload_thread(struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data);
-int rrr_instance_start_thread (struct rrr_instance_thread_data *data);
+unsigned int rrr_instance_metadata_collection_count (
+		struct rrr_instance_metadata_collection *collection
+);
+void rrr_instance_destroy_thread(
+		struct rrr_instance_thread_data *data
+);
+void rrr_instance_destroy_thread_by_ghost (
+		void *private_data
+);
+struct rrr_instance_thread_data *rrr_instance_new_thread(
+		struct rrr_instance_thread_init_data *init_data
+);
+int rrr_instance_preload_thread(
+		struct rrr_thread_collection *collection,
+		struct rrr_instance_thread_data *data
+);
+int rrr_instance_start_thread (
+		struct rrr_instance_thread_data *data
+);
 int rrr_instance_process_from_config(
 		struct rrr_instance_metadata_collection *instances,
 		struct rrr_config *config,
 		const char **library_paths
 );
-int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self);
+int rrr_instance_count_receivers_of_self (
+		struct rrr_instance_thread_data *self
+);
 int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 		int *delivery_entry_count,
 		int *delivery_ratelimit_active,

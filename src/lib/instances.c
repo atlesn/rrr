@@ -44,7 +44,9 @@ struct rrr_instance_metadata *rrr_instance_find_by_thread (
 	return NULL;
 }
 
-int rrr_instance_check_threads_stopped(struct rrr_instance_metadata_collection *instances) {
+int rrr_instance_check_threads_stopped (
+		struct rrr_instance_metadata_collection *instances
+) {
 	int ret = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
 		if (
@@ -59,14 +61,19 @@ int rrr_instance_check_threads_stopped(struct rrr_instance_metadata_collection *
 	return ret;
 }
 
-void rrr_instance_free_all_thread_data(struct rrr_instance_metadata_collection *instances) {
+void rrr_instance_free_all_thread_data (
+		struct rrr_instance_metadata_collection *instances
+) {
 	RRR_INSTANCE_LOOP(instance, instances) {
 		rrr_instance_destroy_thread(instance->thread_data);
 		instance->thread_data = NULL;
 	}
 }
 
-int rrr_instance_count_library_users (struct rrr_instance_metadata_collection *instances, void *dl_ptr) {
+int rrr_instance_count_library_users (
+		struct rrr_instance_metadata_collection *instances,
+		void *dl_ptr
+) {
 	int users = 0;
 	RRR_INSTANCE_LOOP(instance, instances) {
 		struct rrr_instance_dynamic_data *data = instance->dynamic_data;
@@ -77,7 +84,9 @@ int rrr_instance_count_library_users (struct rrr_instance_metadata_collection *i
 	return users;
 }
 
-void rrr_instance_unload_all(struct rrr_instance_metadata_collection *instances) {
+void rrr_instance_unload_all (
+		struct rrr_instance_metadata_collection *instances
+) {
 	RRR_INSTANCE_LOOP(instance, instances) {
 		struct rrr_instance_dynamic_data *data = instance->dynamic_data;
 		int dl_users = rrr_instance_count_library_users(instances, data->dl_ptr);
@@ -480,7 +489,9 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct rrr_instance_th
 		return data;
 }
 
-static void __rrr_instance_thread_intermediate_cleanup (void *arg) {
+static void __rrr_instance_thread_intermediate_cleanup (
+		void *arg
+) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
@@ -499,7 +510,9 @@ static void __rrr_instance_thread_intermediate_cleanup (void *arg) {
 	}
 }
 
-static void __rrr_instance_thread_poll_collection_destroy (void *arg) {
+static void __rrr_instance_thread_poll_collection_destroy (
+		void *arg
+) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
@@ -511,7 +524,9 @@ static void __rrr_instance_thread_poll_collection_destroy (void *arg) {
 	thread_data->poll = NULL;
 }
 
-static void __rrr_instance_thread_stats_instance_cleanup (void *arg) {
+static void __rrr_instance_thread_stats_instance_cleanup (
+		void *arg
+) {
 	struct rrr_thread *thread = arg;
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
@@ -523,7 +538,9 @@ static void __rrr_instance_thread_stats_instance_cleanup (void *arg) {
 	thread_data->stats = NULL;
 }
 
-static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread) {
+static void *__rrr_instance_thread_entry_intermediate (
+		struct rrr_thread *thread
+) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 
 	pthread_cleanup_push(__rrr_instance_thread_intermediate_cleanup, thread);
@@ -580,7 +597,10 @@ static void *__rrr_instance_thread_entry_intermediate (struct rrr_thread *thread
 	return NULL;
 }
 
-int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struct rrr_instance_thread_data *data) {
+int rrr_instance_preload_thread (
+		struct rrr_thread_collection *collection,
+		struct rrr_instance_thread_data *data
+) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
 	RRR_DBG_1 ("Preloading thread %s\n", module->instance_name);
@@ -608,7 +628,9 @@ int rrr_instance_preload_thread (struct rrr_thread_collection *collection, struc
 	return 0;
 }
 
-int rrr_instance_start_thread (struct rrr_instance_thread_data *data) {
+int rrr_instance_start_thread (
+		struct rrr_instance_thread_data *data
+) {
 	struct rrr_instance_dynamic_data *module = data->init_data.module;
 
 	RRR_DBG_1 ("Starting thread %s\n", module->instance_name);
@@ -663,7 +685,10 @@ struct rrr_instance_count_receivers_of_self_callback_data {
 	int count;
 };
 
-static int __rrr_instance_count_receivers_of_self_callback (struct rrr_instance_metadata *instance, void *arg) {
+static int __rrr_instance_count_receivers_of_self_callback (
+		struct rrr_instance_metadata *instance,
+		void *arg
+) {
 	struct rrr_instance_count_receivers_of_self_callback_data *callback_data = arg;
 	if (instance->thread_data == callback_data->self) {
 		callback_data->count++;
@@ -671,7 +696,9 @@ static int __rrr_instance_count_receivers_of_self_callback (struct rrr_instance_
 	return 0;
 }
 
-int rrr_instance_count_receivers_of_self (struct rrr_instance_thread_data *self) {
+int rrr_instance_count_receivers_of_self (
+		struct rrr_instance_thread_data *self
+) {
 	struct rrr_instance_metadata_collection *instances = self->init_data.module->all_instances;
 
 	struct rrr_instance_count_receivers_of_self_callback_data callback_data = {
