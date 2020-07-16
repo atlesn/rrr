@@ -39,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../poll_helper.h"
 #include "../threads.h"
 #include "../log.h"
-#include "../../global.h"
+#include "../macro_utils.h"
 
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_thread_data *thread_data;

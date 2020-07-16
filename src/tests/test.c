@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "../main.h"
-#include "../global.h"
 #include "../../build_timestamp.h"
+#include "../lib/rrr_strerror.h"
 #include "../lib/posix.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
@@ -38,11 +38,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/log.h"
+#include "../lib/rrr_config.h"
 
 #include "test_usleep.h"
 #include "test_fixp.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("test");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -267,7 +268,7 @@ int main (int argc, const char **argv) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
+		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}

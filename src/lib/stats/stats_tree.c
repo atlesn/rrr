@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../vl_time.h"
+#include "../macro_utils.h"
 
 static int __rrr_stats_tree_branch_new (
 		struct rrr_stats_tree_branch **target,

@@ -32,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <semaphore.h>
 
 #include "vl_time.h"
-#include "../global.h"
 
 // TODO : Re-order functions in .c-file and in this file
 // TODO : Move static inline functions from .h to .c

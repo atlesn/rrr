@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "vl_time.h"
 #include "log.h"
-#include "../macro_utils.h"
+#include "macro_utils.h"
 
 #define RRR_BENCHMARK_TOTAL(name)	\
 		RRR_PASTE(_benchmark_total_,name)

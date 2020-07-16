@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
 #include "../lib/log.h"
+#include "../lib/macro_utils.h"
 
 struct dummy_data {
 	int no_generation;

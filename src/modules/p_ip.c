@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include "../lib/rrr_strerror.h"
 #include "../lib/settings.h"
 #include "../lib/vl_time.h"
 #include "../lib/messages.h"

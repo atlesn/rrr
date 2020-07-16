@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <stdlib.h>
 
+#include "../log.h"
+
 #include "mqtt_client.h"
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
@@ -29,8 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_subscription.h"
 #include "mqtt_packet.h"
 #include "mqtt_acl.h"
+
 #include "../posix.h"
-#include "../log.h"
+#include "../macro_utils.h"
 
 #define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3

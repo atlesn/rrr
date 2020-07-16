@@ -48,6 +48,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"
+#include "../macro_utils.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that

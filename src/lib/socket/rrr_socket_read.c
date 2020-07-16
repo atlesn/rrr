@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"

@@ -32,6 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <poll.h>
 
+#include "../lib/log.h"
+
 #include "../lib/mqtt/mqtt_topic.h"
 #include "../lib/mqtt/mqtt_client.h"
 #include "../lib/mqtt/mqtt_common.h"
@@ -56,7 +58,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/gnu.h"
-#include "../lib/log.h"
 #include "../lib/net_transport/net_transport_config.h"
 
 //#define RRR_BENCHMARK_ENABLE

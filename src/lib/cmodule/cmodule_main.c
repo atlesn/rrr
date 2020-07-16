@@ -23,11 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdint.h>
 #include <signal.h>
+#include <errno.h>
 
 #include "cmodule_defer_queue.h"
 #include "cmodule_main.h"
 
-#include "../../global.h"
+#include "../rrr_strerror.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
 #include "../message_addr.h"
@@ -40,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../common.h"
 #include "../ip_buffer_entry.h"
 #include "../gnu.h"
+#include "../macro_utils.h"
 
 #define ALLOCATE_TMP_NAME(target, name1, name2)															\
 	if (rrr_asprintf(&target, "%s-%s", name1, name2) <= 0) {											\
@@ -629,7 +631,7 @@ int rrr_cmodule_worker_fork_start (
 	// It's safe to use the char * from cmodule_data. It will never
 	// get freed by the fork, instances framework does that when the thread is exiting.
 	if (cmodule->config_data.log_prefix != NULL && *(cmodule->config_data.log_prefix) != '\0') {
-		rrr_global_config_set_log_prefix(cmodule->config_data.log_prefix);
+		rrr_config_set_log_prefix(cmodule->config_data.log_prefix);
 	}
 
 	ret = init_wrapper_callback (

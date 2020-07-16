@@ -22,14 +22,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "mqtt_assemble.h"
 #include "mqtt_parse.h"
 #include "mqtt_packet.h"
 #include "mqtt_common.h"
 #include "mqtt_topic.h"
 #include "mqtt_subscription.h"
-#include "../log.h"
+
 #include "../vl_time.h"
+#include "../macro_utils.h"
 
 static const struct rrr_mqtt_p_protocol_version protocol_versions[] = {
 		{RRR_MQTT_VERSION_3_1, "MQISDP"},

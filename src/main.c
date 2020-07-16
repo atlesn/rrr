@@ -21,9 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 
-#include "global.h"
-
 #include "main.h"
+#include "lib/log.h"
 #include "lib/common.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/instances.h"
@@ -238,13 +237,35 @@ int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config) {
 		rfc5424_loglevel_output = 1;
 	}
 
-	rrr_init_global_config (
+	rrr_config_init (
 			debuglevel,
 			debuglevel_on_exit,
 			no_watchdog_timers,
 			no_thread_restart,
 			rfc5424_loglevel_output
 	);
+
+	return 0;
+}
+
+int rrr_print_help_and_version (
+		struct cmd_data *cmd,
+		int argc_minimum
+) {
+	int help_or_version_printed = 0;
+	if (cmd_exists(cmd, "version", 0)) {
+		RRR_MSG_0(PACKAGE_NAME " version " RRR_CONFIG_VERSION " build timestamp %li\n", RRR_BUILD_TIMESTAMP);
+		help_or_version_printed = 1;
+	}
+
+	if ((cmd->argc < argc_minimum || strcmp(cmd->command, "help") == 0) || cmd_exists(cmd, "help", 0)) {
+		cmd_print_usage(cmd);
+		help_or_version_printed = 1;
+	}
+
+	if (help_or_version_printed) {
+		return 1;
+	}
 
 	return 0;
 }

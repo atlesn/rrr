@@ -28,18 +28,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <errno.h>
 
-#include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/rrr_config.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
+#include "lib/log.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/http/http_client.h"
 #include "lib/net_transport/net_transport_config.h"
 #include "lib/vl_time.h"
 #include "lib/rrr_strerror.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_client");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	's',	"server",				"{-s|--server[=]HTTP SERVER}"},
@@ -272,7 +273,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 		rrr_http_client_data_cleanup(&data);
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();

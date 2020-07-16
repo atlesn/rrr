@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <dlfcn.h>
 #include <sys/stat.h>
 
+#include "../lib/rrr_strerror.h"
 #include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
@@ -39,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
+#include "../lib/macro_utils.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"

@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 #include "settings.h"
 #include "log.h"
+#include "macro_utils.h"
 
 struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;

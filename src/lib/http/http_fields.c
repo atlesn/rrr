@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../linked_list.h"
+#include "../macro_utils.h"
 
 void rrr_http_field_destroy(struct rrr_http_field *field) {
 	RRR_FREE_IF_NOT_NULL(field->name);

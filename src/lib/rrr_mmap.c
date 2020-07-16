@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "posix.h"
 #include "log.h"

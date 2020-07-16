@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_POLL_HELPER_H
 #define RRR_POLL_HELPER_H
 
-#include "../global.h"
 #include "instance_collection.h"
 #include "modules.h"
 #include "linked_list.h"

@@ -1,6 +1,6 @@
 /*
 
-Read Route Record
+Command Line Parser
 
 Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
@@ -19,16 +19,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TIME_H
-#define RRR_TIME_H
+#ifndef CMDLINE_DEFINES_H
+#define CMDLINE_DEFINES_H
 
-#include <inttypes.h>
+typedef unsigned long int cmd_arg_count;
+typedef unsigned long int cmd_arg_size;
+typedef unsigned long int cmd_conf;
 
-struct timeval;
-struct timespec;
+#define CMD_CONFIG_DEFAULTS			0
+#define CMD_CONFIG_COMMAND			(1<<0)
 
-uint64_t rrr_time_get_64(void);
-void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
-void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
+#define CMD_ARG_FLAG_NO_ARGUMENT	(0)
+#define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
+#define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
+#define CMD_ARG_FLAG_NO_FLAG		(1<<2)
+#define CMD_ARG_FLAG_NO_FLAG_MULTI	(1<<4)
+#define CMD_ARG_FLAG_ALLOW_EMPTY	(1<<5)
 
-#endif /* RRR_TIME_H */
+#endif /* CMDLINE_DEFINES_H */

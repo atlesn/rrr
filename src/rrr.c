@@ -30,7 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 
 #include "main.h"
-#include "global.h"
+#include "lib/rrr_config.h"
+#include "lib/log.h"
 #include "lib/common.h"
 #include "lib/instances.h"
 #include "lib/instance_config.h"
@@ -49,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_readdir.h"
 #include "lib/rrr_umask.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 
 #define RRR_CONFIG_FILE_SUFFIX	".conf"
 #define RRR_GLOBAL_UMASK		S_IROTH | S_IWOTH | S_IXOTH
@@ -198,7 +199,7 @@ static int main_loop (
 	struct instance_metadata_collection *instances = NULL;
 	struct rrr_thread_collection *collection = NULL;
 
-	rrr_global_config_set_log_prefix(config_file);
+	rrr_config_set_log_prefix(config_file);
 
 	if ((config = rrr_config_parse_file(config_file)) == NULL) {
 		RRR_MSG_0("Configuration file parsing failed for %s\n", config_file);
@@ -244,7 +245,7 @@ static int main_loop (
 
 	rrr_socket_close_all_except(stats_data.engine.socket);
 
-	rrr_set_debuglevel_orig();
+	rrr_config_set_debuglevel_orig();
 	if ((ret = main_start_threads (
 			&collection,
 			instances,
@@ -279,7 +280,7 @@ static int main_loop (
 		if (rrr_instance_check_threads_stopped(instances) == 1) {
 			RRR_DBG_1 ("One or more threads have finished for configuration %s\n", config_file);
 
-			rrr_set_debuglevel_on_exit();
+			rrr_config_set_debuglevel_on_exit();
 			main_threads_stop(collection, instances);
 			rrr_thread_destroy_collection (collection, 0);
 
@@ -289,7 +290,7 @@ static int main_loop (
 			// to find the handle as it will be removed from the costumer handle list.
 			rrr_message_broker_unregister_all_hard(&message_broker);
 
-			if (main_running && rrr_global_config.no_thread_restart == 0) {
+			if (main_running && rrr_config_global.no_thread_restart == 0) {
 				rrr_posix_usleep(1000000); // 1s
 				goto threads_restart;
 			}
@@ -315,8 +316,8 @@ static int main_loop (
 		if (stats_data.handle != 0) {
 			rrr_stats_engine_handle_unregister(&stats_data.engine, stats_data.handle);
 		}
-		rrr_set_debuglevel_on_exit();
-		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_global_config.debuglevel);
+		rrr_config_set_debuglevel_on_exit();
+		RRR_DBG_1("Debuglevel on exit is: %i\n", rrr_config_global.debuglevel);
 		main_threads_stop(collection, instances);
 		rrr_thread_destroy_collection (collection, 0);
 		int count;

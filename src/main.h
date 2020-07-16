@@ -22,8 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MAIN_H
 #define RRR_MAIN_H
 
-#include "lib/cmdlineparser/cmdline.h"
+#include "lib/cmdlineparser/cmdline_defines.h"
 
+struct cmd_data;
 struct rrr_thread_collection;
 struct instance_metadata_collection;
 struct rrr_config;
@@ -43,5 +44,9 @@ int main_start_threads (
 
 void main_threads_stop (struct rrr_thread_collection *collection, struct instance_metadata_collection *instances);
 int main_parse_cmd_arguments(struct cmd_data *cmd, cmd_conf config);
+int rrr_print_help_and_version (
+		struct cmd_data *cmd,
+		int argc_minimum
+);
 
 #endif /* RRR_MAIN_H */

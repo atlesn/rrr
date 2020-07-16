@@ -25,9 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <termios.h>
 
-#include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/rrr_config.h"
+#include "lib/cmdlineparser/cmdline.h"
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
@@ -36,8 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/gnu.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
+#include "lib/macro_utils.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_auth");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_auth");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"file",					"{PASSWORD_FILE}"},
@@ -189,7 +191,7 @@ int main (int argc, const char *argv[]) {
 	goto out;
 
 	out:
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 		RRR_FREE_IF_NOT_NULL(input_password);
 		__rrr_passwd_destroy_data(&data);
 		cmd_destroy(&cmd);

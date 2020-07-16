@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../linked_list.h"
 #include "../read.h"
 #include "../vl_time.h"
+#include "../macro_utils.h"
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client

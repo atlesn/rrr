@@ -43,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read_constants.h"
 #include "../ip.h"
 #include "../ip_accept_data.h"
+#include "../macro_utils.h"
 
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;

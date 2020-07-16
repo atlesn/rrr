@@ -47,6 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/log.h"
 #include "../lib/net_transport/net_transport_config.h"
+#include "../lib/macro_utils.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883

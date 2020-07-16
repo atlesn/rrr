@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_buffer_entry.h"
 #include "messages.h"
 #include "linked_list.h"
+#include "macro_utils.h"
 
 //#define RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 

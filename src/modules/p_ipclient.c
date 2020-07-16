@@ -46,6 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/linked_list.h"
 #include "../lib/message_broker.h"
 #include "../lib/log.h"
+#include "../lib/macro_utils.h"
 
 // Should not be smaller than module max
 #define RRR_IPCLIENT_MAX_SENDERS RRR_MODULE_MAX_SENDERS

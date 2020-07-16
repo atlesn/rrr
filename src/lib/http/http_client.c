@@ -34,7 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 #include "../gnu.h"
-#include "../../global.h"
+#include "../macro_utils.h"
 
 int rrr_http_client_data_init (
 		struct rrr_http_client_data *data,

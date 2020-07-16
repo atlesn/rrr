@@ -25,13 +25,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "log.h"
-#include "../macro_utils.h"
 #include "type.h"
 #include "fixed_point.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_msg.h"
 #include "messages.h"
 #include "rrr_endian.h"
+#include "macro_utils.h"
 
 static int __rrr_type_convert_integer_10(char **end, long long int *result, const char *value) {
 	if (*value == '\0') {

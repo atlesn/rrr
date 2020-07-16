@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "posix.h"
 #include "vl_time.h"
 #include "linked_list.h"
-#include "../global.h"
 
 // #define RRR_THREADS_MAX 32
 
@@ -252,25 +251,9 @@ static inline uint64_t rrr_get_watchdog_time(struct rrr_thread *thread) {
 	return ret;
 }
 
-static inline void rrr_thread_set_signal(struct rrr_thread *thread, int signal) {
-	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
-	rrr_thread_lock(thread);
-	thread->signal |= signal;
-	rrr_thread_unlock(thread);
-}
-
-static inline int rrr_thread_get_state(struct rrr_thread *thread) {
-	int state;
-	rrr_thread_lock(thread);
-	state = thread->state;
-	rrr_thread_unlock(thread);;
-	return state;
-}
-
-static inline int rrr_thread_check_state(struct rrr_thread *thread, int state) {
-	return (rrr_thread_get_state(thread) == state);
-}
-
+void rrr_thread_set_signal(struct rrr_thread *thread, int signal);
+int rrr_thread_get_state(struct rrr_thread *thread);
+int rrr_thread_check_state(struct rrr_thread *thread, int state);
 void rrr_thread_set_state(struct rrr_thread *thread, int state);
 
 /*static inline void rrr_thread_set_stopping(void *arg) {

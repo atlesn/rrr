@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "../global.h"
+#include "rrr_config.h"
 
 /*
  * About debug levels, ORed together:
@@ -77,93 +77,93 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // Non-critical errors always to be logged
 #define RRR_MSG_0(...) \
-	do {rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_global_config.log_prefix, __VA_ARGS__);}while(0)
+	do {rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
 #define RRR_MSG_1(...) \
-	do { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+	do { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #define RRR_MSG_2(...) \
-	do { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+	do { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #define RRR_MSG_3(...) \
-	do { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+	do { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #define RRR_MSG_4(...) \
-	do { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+	do { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 // Critical errors, use only if program, fork or thread exits due to an error
 // This should not be used by the library, only by modules and executables
 #define RRR_MSG_ERR(...) \
-	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_global_config.log_prefix, __VA_ARGS__);}while(0)
+	do {rrr_log_fprintf (stderr, __RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__);}while(0)
 
 // Debug without holding the lock
 #define RRR_DBG_SIGNAL(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf_nolock (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 // Zero may be passed to X functions
 #define RRR_MSG_X(debuglevel_num, ...)													\
 	do {																				\
-		rrr_log_printf (debuglevel_num, rrr_global_config.log_prefix, __VA_ARGS__);		\
+		rrr_log_printf (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);		\
 	} while (0)
 
 #define RRR_DBG_X(debuglevel_num, ...)																										\
-	do { if ((rrr_global_config.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
-		rrr_log_printf (debuglevel_num, rrr_global_config.log_prefix, __VA_ARGS__);															\
+	do { if ((rrr_config_global.debuglevel & RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) == RRR_DEBUGLEVEL_NUM_TO_FLAG(debuglevel_num)) {	\
+		rrr_log_printf (debuglevel_num, rrr_config_global.log_prefix, __VA_ARGS__);															\
 	}} while(0)
 
 #define RRR_DBG_1(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_1, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_2(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_2) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_2) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_2, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_3(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_3) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_3) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_3, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_4(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_4) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_4) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_4, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_5(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_5) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_5, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_5) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_5, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_6(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_6) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_6, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_6) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_6, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_7(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_7) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_7, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_7) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_7, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG_8(...) \
-	do { if ((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_8) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_8, rrr_global_config.log_prefix, __VA_ARGS__); }} while(0)
+	do { if ((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0) { rrr_log_printf (__RRR_LOG_PREFIX_8, rrr_config_global.log_prefix, __VA_ARGS__); }} while(0)
 
 #define RRR_DBG(...) \
-	do { rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_global_config.log_prefix, __VA_ARGS__); } while(0)
+	do { rrr_log_printf (__RRR_LOG_PREFIX_0, rrr_config_global.log_prefix, __VA_ARGS__); } while(0)
 
 #define RRR_DEBUGLEVEL_1 \
-	((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_1) != 0)
+	((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_1) != 0)
 
 #define RRR_DEBUGLEVEL_2 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_2) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_2) != 0)
 
 #define RRR_DEBUGLEVEL_3 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_3) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_3) != 0)
 
 #define RRR_DEBUGLEVEL_4 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_4) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_4) != 0)
 
 #define RRR_DEBUGLEVEL_5 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_5) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_5) != 0)
 
 #define RRR_DEBUGLEVEL_6 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_6) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_6) != 0)
 
 #define RRR_DEBUGLEVEL_7 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_7) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_7) != 0)
 
 #define RRR_DEBUGLEVEL_8 \
-		((rrr_global_config.debuglevel & __RRR_DEBUGLEVEL_8) != 0)
+		((rrr_config_global.debuglevel & __RRR_DEBUGLEVEL_8) != 0)
 
 #define RRR_DEBUGLEVEL \
-		(rrr_global_config.debuglevel)
+		(rrr_config_global.debuglevel)
 
 #define RRR_RFC5424_LOGLEVEL_EMERGENCY	0
 #define RRR_RFC5424_LOGLEVEL_ALERT		1

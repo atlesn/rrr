@@ -29,11 +29,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "type_array.h"
 #include "../test.h"
-#include "../../global.h"
 #include "../../lib/array.h"
 #ifdef RRR_WITH_MYSQL
 #include "../../lib/rrr_mysql.h"
 #endif
+
 #include "../../lib/socket/rrr_socket.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_endian.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
+#include "../../lib/log.h"
 
 struct rrr_test_result {
 	int result;

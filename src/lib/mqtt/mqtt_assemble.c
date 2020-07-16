@@ -21,11 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
+#include "../log.h"
+
 #include "mqtt_assemble.h"
 #include "mqtt_packet.h"
 #include "mqtt_payload_buf.h"
 #include "mqtt_subscription.h"
-#include "../log.h"
+
 #include "../rrr_endian.h"
 
 #define BUF_INIT() 																	\
