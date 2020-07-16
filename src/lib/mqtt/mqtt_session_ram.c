@@ -905,8 +905,6 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	rrr_fifo_buffer_destroy(&data->publish_forward_queue.buffer);
 	rrr_fifo_buffer_destroy(&data->publish_local_queue.buffer);
 
-	// TODO : implement destroy
-	// fifo_buffer_destroy(&data->retain_queue);
 	RRR_LL_DESTROY (
 			data,
 			struct rrr_mqtt_session_ram,
@@ -2716,14 +2714,12 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 
 	goto out;
 
-/*	out_destroy_local_delivery_queue:
-		fifo_buffer_invalidate(&ram_data->local_delivery_queue.buffer);*/
+//	out_destroy_local_delivery_queue:
+//		rrr_fifo_buffer_destroy(&ram_data->local_delivery_queue.buffer);
 	out_destroy_publish_queue:
-		rrr_fifo_buffer_clear(&ram_data->publish_forward_queue.buffer);
+		rrr_fifo_buffer_destroy(&ram_data->publish_forward_queue.buffer);
 	out_destroy_retain_queue:
-		rrr_fifo_buffer_clear(&ram_data->retain_queue.buffer);
-		// TODO : Implement destroy
-		//fifo_buffer_destroy(&ram_data->retain_queue);
+		rrr_fifo_buffer_destroy(&ram_data->retain_queue.buffer);
 	out_destroy_mutex:
 		pthread_mutex_destroy(&ram_data->lock);
 	out_destroy_collection:
