@@ -933,6 +933,7 @@ int rrr_perl5_hv_to_message (
 			new_data_len +
 			new_topic_len;
 
+    // Sets default address length to 0
     rrr_message_addr_init(target_addr);
 
 	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
@@ -965,11 +966,9 @@ int rrr_perl5_hv_to_message (
 	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
 
 	uint64_t addr_len_tmp = SvUV(ip_addr_len);
-	RRR_MSG_ADDR_SET_ADDR_LEN(target_addr, addr_len_tmp);
-
 	if (addr_len_tmp > 0) {
 		if (addr_len_tmp > sizeof(target_addr->addr)) {
-			RRR_MSG_0("Address length field from message hash was too big (%" PRIu64 " > %lu)\n",
+			RRR_MSG_0("Address length field from message was too big (%" PRIu64 " > %lu)\n",
 					addr_len_tmp, sizeof(target_addr->addr));
 			ret = 1;
 			goto out;
@@ -977,8 +976,27 @@ int rrr_perl5_hv_to_message (
 
 		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
 		SvUTF8_off(ip_addr);
-		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp);
+
+		uint64_t addr_len_tmp_actual = 0;
+		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp_actual);
+
+		if (addr_len_tmp > addr_len_tmp_actual) {
+			RRR_MSG_0("Address length field from message counts more bytes than the size of the address field (%" PRIu64 " > %" PRIu64 ")\n",
+					addr_len_tmp, addr_len_tmp_actual);
+			ret = 1;
+			goto out;
+		}
+
+		// Use specified length from length field, not actual length
 		memcpy(&target_addr->addr, data_str, addr_len_tmp);
+		RRR_MSG_ADDR_SET_ADDR_LEN(target_addr, addr_len_tmp);
+
+		if (RRR_DEBUGLEVEL_3) {
+			char buf[256];
+			rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) target_addr->addr, addr_len_tmp);
+			const struct sockaddr_in *sockaddr_in = (const struct sockaddr_in *) target_addr->addr;
+			RRR_MSG_3("IP address of message from perl script: %s, family: %i\n", buf, sockaddr_in->sin_family);
+		}
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {

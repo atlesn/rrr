@@ -61,13 +61,13 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 		goto out;
 	}
 
-//	printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", data->latest_message_addr.addr_len);
+	//printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message));
 
 	rrr_ip_buffer_entry_set_unlocked (
 			entry,
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
-			(struct sockaddr *) &callback_data->addr_message,
+			(struct sockaddr *) &callback_data->addr_message.addr,
 			RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message),
 			callback_data->addr_message.protocol
 	);
