@@ -1,8 +1,11 @@
-rrr (1.5posten3) debian-testing; urgency=medium
+rrr (1.5-1) buster; urgency=medium
 
-  * Non-maintainer upload.
+  * Bugfixes in HTTP header parsing
+  * HTTP server can now re-use connections for new requests
+  * Bugfixes regarding IP address handling, multiple modules
+  * Misc. cleanups
 
- -- LBSdrift <lbsdrift@posten.local>  Fri, 17 Jul 2020 00:42:48 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 17 Jul 2020 17:34:57 +0200
 
 rrr (1.5) buster; urgency=medium
 
