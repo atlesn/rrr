@@ -101,6 +101,11 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	(void)(data_ptr);
 
+	// These are always 0, we read using the recv() function. recvfrom() whould also
+	// not return anything.
+	(void)(sockaddr);
+	(void)(socklen);
+
 	int ret = 0;
 
 	if (RRR_DEBUGLEVEL_2) {
@@ -115,7 +120,14 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	worker_data->receive_complete = 1;
 
 	if (worker_data->final_callback != NULL) {
-		ret = worker_data->final_callback(part, data_ptr, sockaddr, socklen, worker_data->final_callback_arg);
+		ret = worker_data->final_callback (
+				part,
+				data_ptr,
+				// Address was cached when accepting
+				&worker_data->sockaddr,
+				worker_data->socklen,
+				worker_data->final_callback_arg
+		);
 	}
 
 	switch (ret) {
@@ -224,6 +236,8 @@ void *rrr_http_server_worker_thread_entry (
 	worker_data.read_max_size = worker_data_preliminary->read_max_size;
 	worker_data.transport = worker_data_preliminary->transport;
 	worker_data.transport_handle = worker_data_preliminary->transport_handle;
+	worker_data.sockaddr = worker_data_preliminary->sockaddr;
+	worker_data.socklen = worker_data_preliminary->socklen;
 	worker_data.final_callback = worker_data_preliminary->final_callback;
 	worker_data.final_callback_arg = worker_data_preliminary->final_callback_arg;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);

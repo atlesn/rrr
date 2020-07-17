@@ -24,6 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 #include "http_session.h"
 
@@ -41,6 +43,9 @@ struct rrr_http_server_worker_preliminary_data {
 	// DO NOT put allocated data in this struct, like char *, such data
 	// would not have proper memory fencing.
 
+	struct sockaddr_storage sockaddr;
+	socklen_t socklen;
+
 	int error;
 
 	struct rrr_net_transport *transport;
@@ -52,6 +57,9 @@ struct rrr_http_server_worker_preliminary_data {
 struct rrr_http_server_worker_data {
 	struct rrr_net_transport *transport;
 	int transport_handle;
+
+	struct sockaddr_storage sockaddr;
+	socklen_t socklen;
 
 	ssize_t read_max_size;
 
