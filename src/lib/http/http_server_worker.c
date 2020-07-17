@@ -115,17 +115,25 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
 				worker_data->transport_handle, ip_buf, part->request_method_str, part->request_uri);
+
+		if (overshoot_bytes > 0) {
+			RRR_MSG_2("HTTP worker %i %s has %li bytes overshoot, expecting another request\n",
+					worker_data->transport_handle, ip_buf, overshoot_bytes);
+		}
 	}
 
-	worker_data->receive_complete = 1;
+	if (overshoot_bytes == 0) {
+		worker_data->receive_complete = 1;
+	}
 
 	if (worker_data->final_callback != NULL) {
 		ret = worker_data->final_callback (
 				part,
 				data_ptr,
 				// Address was cached when accepting
-				&worker_data->sockaddr,
+				(const struct sockaddr *) &worker_data->sockaddr,
 				worker_data->socklen,
+				overshoot_bytes,
 				worker_data->final_callback_arg
 		);
 	}

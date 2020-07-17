@@ -80,6 +80,29 @@ static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 		return ret;
 }
 
+static int __rrr_http_session_prepare_parts (struct rrr_http_session *session) {
+	int ret = 0;
+
+	if (session->response_part != NULL) {
+		rrr_http_part_destroy(session->response_part);
+	}
+	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
+		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
+		goto out;
+	}
+
+	if (session->request_part != NULL) {
+		rrr_http_part_destroy(session->request_part);
+	}
+	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
+		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_session_transport_ctx_server_new (
 		struct rrr_net_transport_handle *handle
 ) {
@@ -95,6 +118,12 @@ int rrr_http_session_transport_ctx_server_new (
 
 	// DO NOT STORE HANDLE POINTER
 	session->is_client = 0;
+
+	if (__rrr_http_session_prepare_parts(session) != 0) {
+		RRR_MSG_0("Could not prepare parts in rrr_http_session_transport_ctx_server_new\n");
+		ret = 1;
+		goto out;
+	}
 
 	// Transport framework responsible for cleaning up
 	rrr_net_transport_ctx_handle_application_data_bind (
@@ -133,29 +162,6 @@ int rrr_http_session_transport_ctx_set_endpoint (
 	}
 
 	return 0;
-}
-
-static int __rrr_http_session_prepare_parts (struct rrr_http_session *session) {
-	int ret = 0;
-
-	if (session->response_part != NULL) {
-		rrr_http_part_destroy(session->response_part);
-	}
-	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
-		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
-		goto out;
-	}
-
-	if (session->request_part != NULL) {
-		rrr_http_part_destroy(session->request_part);
-	}
-	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
-		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
-		goto out;
-	}
-
-	out:
-	return ret;
 }
 
 int rrr_http_session_transport_ctx_client_new (
@@ -639,7 +645,7 @@ int rrr_http_session_transport_ctx_request_send (
 struct rrr_http_session_receive_data {
 	struct rrr_http_session *session;
 	ssize_t parse_complete_pos;
-	ssize_t received_bytes;
+	ssize_t received_bytes; // Used only for stall timeout
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
 	void *callback_arg;
 };
@@ -665,6 +671,7 @@ static int __rrr_http_session_response_receive_callback (
 			read_session->rx_buf_ptr,
 			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
+			read_session->rx_overshoot_size,
 			receive_data->callback_arg
 	);
 }
@@ -714,8 +721,16 @@ static int __rrr_http_session_request_receive_callback (
 			data_to_use,
 			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
+			read_session->rx_overshoot_size,
 			receive_data->callback_arg
 	);
+
+	if (ret == RRR_HTTP_OK) {
+		// Prepare for new parts on same connection
+		if ((ret = __rrr_http_session_prepare_parts(receive_data->session)) != 0) {
+			RRR_MSG_0("Failed to reset parts in __rrr_http_session_request_receive_callback\n");
+		}
+	}
 
 	out:
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
@@ -731,6 +746,12 @@ static int __rrr_http_session_receive_get_target_size (
 	int ret = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH;
 
 	const char *end = read_session->rx_buf_ptr + read_session->rx_buf_wpos;
+
+	if (receive_data->parse_complete_pos > read_session->rx_buf_wpos) {
+		RRR_MSG_0("Warning: Client sent some extra data after completed HTTP parse\n");
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
 
 	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
@@ -768,8 +789,6 @@ static int __rrr_http_session_receive_get_target_size (
 	// Used only for stall timeout
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
-//	if (receive_data->session->is_client == 1 && receive_data->session->method == 0)
-
 	if (ret == RRR_HTTP_PARSE_OK) {
 		read_session->target_size = target_size;
 	}
@@ -783,6 +802,7 @@ static int __rrr_http_session_receive_get_target_size (
 		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
 	}
 
+	out:
 	return ret;
 }
 
@@ -806,9 +826,12 @@ int rrr_http_session_transport_ctx_receive (
 			callback_arg
 	};
 
-	if ((ret = __rrr_http_session_prepare_parts(callback_data.session)) != 0) {
-		goto out;
-	}
+	// Parts are prepared when a new client is created and /after/
+	// final receive callback. The latter is to prepare for any new
+	// parts on the same connection.
+	//	if ((ret = __rrr_http_session_prepare_parts(callback_data.session)) != 0) {
+	//		goto out;
+	//	}
 
 	uint64_t time_start;
 	uint64_t time_last_change;

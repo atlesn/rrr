@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	const char *data_ptr,						\
 	const struct sockaddr *sockaddr,			\
 	socklen_t socklen,							\
+	ssize_t overshoot_bytes,					\
 	void *arg
 
 struct rrr_http_session {

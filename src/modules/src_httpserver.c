@@ -395,6 +395,9 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
+	// TODO : There are occasional (?) reports from valgrind that http_server is
+	//        not being freed upon program exit.
+
 	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
 
 	if (httpserver_start_listening(data, http_server) != 0) {

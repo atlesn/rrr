@@ -154,6 +154,61 @@ static int __rrr_http_header_parse_first_string_value (RRR_HTTP_HEADER_FIELD_PAR
 	return ret;
 }
 
+static void __rrr_http_header_parse_unquote_fields (
+		int *found,
+		struct rrr_http_field *field,
+		const char *parent_field_name,
+		const char *names_match[],
+		size_t names_match_count
+) {
+	*found = 0;
+
+	for (size_t i = 0; i < names_match_count; i++) {
+		if (strcmp(names_match[i], field->name) == 0) {
+			*found = 1;
+			break;
+		}
+	}
+
+	if (*found == 0) {
+		return;
+	}
+
+	ssize_t output_size = 0;
+	if (rrr_http_util_unquote_string(&output_size, field->value, field->value_size) != 0) {
+		RRR_DBG_1("Warning: Syntax error in '%s' subvalue field of '%s' in HTTP header\n",
+				field->name, parent_field_name);
+		return;
+	}
+	field->value_size = output_size;
+
+	if (rrr_http_util_decode_urlencoded_string(&output_size, field->value, field->value_size) != 0) {
+		RRR_DBG_1("Warning: Error while decoding url encoding of '%s' subvalue field of '%s' in HTTP header\n",
+				field->name, parent_field_name);
+		return;
+	}
+	field->value_size = output_size;
+}
+
+static int __rrr_http_header_parse_content_type_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	if ((ret = __rrr_http_header_parse_first_string_value(field)) != 0) {
+		goto out;
+	}
+	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+		int found = 0;
+		const char *unquote_field_names[] = {"charset", "boundary"};
+		__rrr_http_header_parse_unquote_fields(&found, node, field->name, unquote_field_names, 2);
+		if (found == 0) {
+			RRR_DBG_1("Warning: Unknown field '%s' in content-type header\n", node->name);
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
 	int ret = 0;
 
@@ -178,21 +233,10 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (rrr_posix_strcasecmp(node->name, "name") || rrr_posix_strcasecmp(node->name, "filename")) {
-			ssize_t output_size = 0;
-			if (rrr_http_util_unquote_string(&output_size, node->value, node->value_size) != 0) {
-				RRR_DBG_1("Warning: Syntax error in 'name' or 'filename' field of content-disposition header\n");
-				RRR_LL_ITERATE_NEXT();
-			}
-			node->value_size = output_size;
-
-			if (rrr_http_util_decode_urlencoded_string(&output_size, node->value, node->value_size) != 0) {
-				RRR_DBG_1("Warning: Error while decoding url encoding of 'name' or 'filename' field of content-disposition header\n");
-				RRR_LL_ITERATE_NEXT();
-			}
-			node->value_size = output_size;
-		}
-		else {
+		int found = 0;
+		const char *unquote_field_names[] = {"name", "filename"};
+		__rrr_http_header_parse_unquote_fields(&found, node, field->name, unquote_field_names, 2);
+		if (found == 0) {
 			RRR_DBG_1("Warning: Unknown field '%s' in content-disposition header\n", node->name);
 		}
 	RRR_LL_ITERATE_END();
@@ -209,7 +253,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"connection",			0,										__rrr_http_header_parse_single_string_value},
 		{"content-disposition",	0,										__rrr_http_header_parse_content_disposition_value},
 		{"content-length",		RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_unsigned_value},
-		{"content-type",		0,										__rrr_http_header_parse_first_string_value},
+		{"content-type",		0,										__rrr_http_header_parse_content_type_value},
 		{"date",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
 		{"link",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"location",			RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
@@ -1405,6 +1449,8 @@ static int __rrr_http_part_find_boundary (
 ) {
 	int ret = 1;
 
+//	printf("Looking for boundary '%s' length %li\n", boundary, boundary_length);
+
 	const char *boundary_pos = NULL;
 
 	while (start + 1 + boundary_length < end) {
@@ -1468,6 +1514,7 @@ static int __rrr_http_part_process_multipart_part (
 
 	if (start + 2 >= end) {
 		RRR_MSG_0("Not enough data after boundary while parsing HTTP multipart request\n");
+//		printf("start: %s end: %s\n", start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -1490,6 +1537,11 @@ static int __rrr_http_part_process_multipart_part (
 	if (is_boundary_end) {
 		*end_found = 1;
 		*parsed_bytes = start - start_orig;
+
+		if (end - start > 0) {
+			RRR_DBG_1("Warning: %li bytes found after HTTP multipart end\n", end - start);
+		}
+
 		goto out;
 	}
 

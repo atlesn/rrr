@@ -389,6 +389,8 @@ int rrr_http_util_unquote_string (
 		start++;
 	}
 
+	// Don't add \0, will write outside allocated memory
+
 	*output_size = wpos;
 
 	return 0;
@@ -435,7 +437,7 @@ char *rrr_http_util_quote_header_value (
 			// OK
 		}
 		else {
-			RRR_MSG_0("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
+			RRR_MSG_0("Invalid octet %02x in rrr_http_util_quote_header_value\n", c);
 			err = 1;
 			goto out;
 		}
