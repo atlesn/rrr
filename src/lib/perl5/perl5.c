@@ -41,6 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_time.h"
 #include "../array.h"
 #include "../ip.h"
+#include "../ip_util.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
 	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"
@@ -1239,8 +1240,13 @@ int rrr_perl5_message_to_hv (
 	uint64_t addr_len_tmp;
 	if (message_addr != NULL && (addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr)) > 0) {
 		// Perl needs size of sockaddr struct which is smaller than our internal size
-		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(struct sockaddr));
+		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) addr_len_tmp);
 		sv_setuv(ip_addr_len, addr_len_tmp);
+
+//		char buf[256];
+//		rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
+//		printf("perl5 message to hv: %s family %i socklen %lu\n",
+//				buf, ((struct sockaddr *) message_addr->addr)->sa_family, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
 	}
 	else {
 		sv_setpv(ip_addr, "");

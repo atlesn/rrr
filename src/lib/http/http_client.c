@@ -114,6 +114,7 @@ static int __rrr_http_client_receive_http_part_callback (
 
 	(void)(sockaddr);
 	(void)(socklen);
+	(void)(overshoot_bytes);
 
 	int ret = RRR_HTTP_OK;
 

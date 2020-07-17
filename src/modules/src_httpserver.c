@@ -39,6 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
+#include "../lib/ip_defines.h"
+//#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS			443
@@ -316,6 +318,7 @@ static int httpserver_receive_callback (
 	struct httpserver_receive_callback_data *receive_callback_data = arg;
 
 	(void)(data_ptr);
+	(void)(overshoot_bytes);
 
 	int ret = 0;
 
@@ -343,12 +346,16 @@ static int httpserver_receive_callback (
 			&array_tmp
 	};
 
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) sockaddr, socklen);
+//	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
+
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
 			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
 			sockaddr,
 			socklen,
-			0,
+			RRR_IP_TCP,
 			httpserver_write_message_callback,
 			&write_callback_data
 	)) != 0) {

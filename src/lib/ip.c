@@ -45,6 +45,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_accept_data.h"
+#include "ip_util.h"
 #include "log.h"
 #include "messages.h"
 #include "array.h"
@@ -133,45 +134,6 @@ void rrr_ip_graylist_clear_void (
 		void *target
 ) {
 	return rrr_ip_graylist_clear(target);
-}
-
-void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
-	const char *result = NULL;
-
-	*dest = '\0';
-
-	const void *addr_final = NULL;
-	in_port_t port_final = 0;
-
-	if (addr->sa_family == AF_INET) {
-		const struct sockaddr_in *in_addr = (const struct sockaddr_in *) addr;
-		addr_final = &in_addr->sin_addr;
-		port_final = in_addr->sin_port;
-	}
-	else if (addr->sa_family == AF_INET6) {
-		const struct sockaddr_in6 *in6_addr = (const struct sockaddr_in6 *) addr;
-		addr_final = &in6_addr->sin6_addr;
-		port_final = in6_addr->sin6_port;
-	}
-	else {
-		snprintf(dest, dest_size, "[Unknown address family %i]", addr->sa_family);
-		goto out;
-	}
-
-	char buf[256];
-	*buf = '\0';
-	result = inet_ntop(addr->sa_family, addr_final, buf, 256);
-	buf[256 - 1] = '\0';
-
-	if (result == NULL) {
-		snprintf(dest, dest_size, "[Unknown address of length %i]", addr_len);
-		goto out;
-	}
-
-	snprintf(dest, dest_size, "[%s:%u]", buf, ntohs(port_final));
-
-	out:
-	dest[dest_size - 1] = '\0';
 }
 
 struct rrr_ip_receive_callback_data {
@@ -736,6 +698,10 @@ int rrr_ip_accept (
 			goto out;
 		}
 	}
+
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &sockaddr_tmp, socklen_tmp);
+//	printf("ip accept: %s family %i\n", buf, sockaddr_tmp.ss_family);
 
 	int fd = ret;
 	ret = 0;

@@ -40,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../log.h"
 #include "../macro_utils.h"
+//#include "../ip_util.h"
 
 struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -115,6 +116,11 @@ static int __rrr_cmodule_helper_send_message_to_fork (
 	int ret = 0;
 	int pid_was_found = 0;
 
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) msg_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+//	printf("cmodule message to fork: %s family %i socklen %lu\n",
+//			buf, ((struct sockaddr *) msg_addr->addr)->sa_family, RRR_MSG_ADDR_GET_ADDR_LEN(msg_addr));
+
 	RRR_LL_ITERATE_BEGIN(cmodule, struct rrr_cmodule_worker);
 		if (node->pid == worker_handle_pid) {
 			pid_was_found = 1;
@@ -175,6 +181,7 @@ static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 	if (entry->addr_len > 0) {
 		memcpy(&addr_msg.addr, &entry->addr, sizeof(addr_msg.addr));
 		RRR_MSG_ADDR_SET_ADDR_LEN(&addr_msg, entry->addr_len);
+		addr_msg.protocol = entry->protocol;
 	}
 
 	if ((ret = __rrr_cmodule_helper_send_message_to_fork (

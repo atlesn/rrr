@@ -25,18 +25,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <stdint.h>
 
+#include "ip_defines.h"
+
 #include "socket/rrr_socket.h"
 #include "linked_list.h"
-
-#define RRR_IP_RECEIVE_OK 0
-#define RRR_IP_RECEIVE_ERR 1
-#define RRR_IP_RECEIVE_STOP 2
-
-#define RRR_IP_RECEIVE_MAX_STEP_SIZE 8096
-
-#define RRR_IP_AUTO	0
-#define RRR_IP_UDP	1
-#define RRR_IP_TCP	2
 
 struct rrr_message;
 struct rrr_array;
@@ -73,9 +65,6 @@ void rrr_ip_graylist_clear (
 );
 void rrr_ip_graylist_clear_void (
 		void *target
-);
-void rrr_ip_to_str (
-		char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len
 );
 int rrr_ip_receive_array (
 		struct rrr_ip_buffer_entry *target_entry,

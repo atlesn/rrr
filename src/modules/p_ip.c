@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_time.h"
 #include "../lib/messages.h"
 #include "../lib/ip.h"
+#include "../lib/ip_util.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/ip_accept_data.h"
 #include "../lib/array.h"
@@ -726,12 +727,18 @@ static int ip_send_message_raw (
 		struct rrr_ip_accept_data_collection *tcp_connect_data,
 		struct rrr_ip_graylist *graylist,
 		int protocol,
-		struct sockaddr *addr,
-		socklen_t addr_len,
+		const struct sockaddr *addr_orig,
+		const socklen_t addr_len_orig,
 		const void *send_data,
 		ssize_t send_size
 ) {
 	struct rrr_instance_thread_data *thread_data = ip_data->thread_data;
+
+	struct sockaddr_storage addr;
+	socklen_t addr_len = sizeof(addr);
+
+	// If no translation is needed, the original address is copied
+	rrr_ip_ipv4_mapped_ipv6_to_ipv4_if_needed(&addr, &addr_len, addr_orig, addr_len_orig);
 	
 	int ret = 0;
 	int put_back = 0;
@@ -742,7 +749,6 @@ static int ip_send_message_raw (
 	// Have this const to avoid mixing it up with the other one in this function
 	const struct rrr_ip_accept_data *accept_data_to_use = NULL;
 
-	
 	//////////////////////////////////////////////////////
 	// FORCED TARGET OR NO ADDRESS IN ENTRY, TCP OR UDP
 	//////////////////////////////////////////////////////
@@ -805,20 +811,20 @@ static int ip_send_message_raw (
 	if (protocol == RRR_IP_TCP) {
 		accept_data_to_use = rrr_ip_accept_data_collection_find (
 				tcp_connect_data,
-				(struct sockaddr *) addr,
+				(const struct sockaddr *) &addr,
 				addr_len
 		);
 
 		if (accept_data_to_use == NULL) {
 			if (rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 					&accept_data_to_free,
-					(struct sockaddr *) addr,
+					(struct sockaddr *) &addr,
 					addr_len,
 					graylist
 			) != 0) {
 				if (ret == RRR_SOCKET_HARD_ERROR) {
 					char ip_str[256];
-					rrr_ip_to_str(ip_str, 256, addr, addr_len);
+					rrr_ip_to_str(ip_str, 256, (const struct sockaddr *) &addr, addr_len);
 					RRR_MSG_0("Could not connect to remote '%s' in ip instance %s\n",
 							ip_str,
 							INSTANCE_D_NAME(thread_data)
@@ -847,7 +853,7 @@ static int ip_send_message_raw (
 	ret = rrr_ip_send (
 		&err,
 		ip_data->ip_udp.fd,
-		(struct sockaddr *) addr,
+		(const struct sockaddr *) &addr,
 		addr_len,
 		(void *) send_data, // Cast away const OK
 		send_size
@@ -855,7 +861,7 @@ static int ip_send_message_raw (
 
 	if (ret != 0) {
 		RRR_MSG_0("Warning: Sending of a message failed in ip instance %s family was %u fd was %i: %s\n",
-				INSTANCE_D_NAME(thread_data), addr->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
+				INSTANCE_D_NAME(thread_data), ((const struct sockaddr *) &addr)->sa_family, ip_data->ip_udp.fd, rrr_strerror(err));
 		// Ignore errors
 		ret	= 0;
 	}

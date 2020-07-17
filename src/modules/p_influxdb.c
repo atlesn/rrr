@@ -117,6 +117,7 @@ static int influxdb_receive_http_response (
 	(void)(data_ptr);
 	(void)(sockaddr);
 	(void)(socklen);
+	(void)(overshoot_bytes);
 
 	int ret = 0;
 

@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../posix.h"
 #include "../array.h"
-#include "../ip.h"
+#include "../ip_util.h"
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
@@ -111,7 +111,7 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 	if (RRR_DEBUGLEVEL_2) {
 		char ip_buf[256];
 
-		rrr_ip_to_str(ip_buf, 256, sockaddr, socklen);
+		rrr_ip_to_str(ip_buf, 256, (struct sockaddr *) &worker_data->sockaddr, worker_data->socklen);
 
 		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
 				worker_data->transport_handle, ip_buf, part->request_method_str, part->request_uri);
@@ -249,6 +249,10 @@ void *rrr_http_server_worker_thread_entry (
 	worker_data.final_callback = worker_data_preliminary->final_callback;
 	worker_data.final_callback_arg = worker_data_preliminary->final_callback_arg;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
+
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &worker_data.sockaddr, worker_data.socklen);
+//	printf("http worker start: %s family %i socklen %i\n", buf, worker_data.sockaddr.ss_family, worker_data.socklen);
 
 	// This might happen upon server shutdown
 	if (worker_data.transport_handle == 0) {

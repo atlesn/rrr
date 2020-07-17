@@ -2,7 +2,7 @@
 
 package main;
 
-use Socket qw(:DEFAULT :crlf);
+use Socket qw(:DEFAULT :crlf inet_ntop);
 use rrr::rrr_helper;
 use rrr::rrr_helper::rrr_message;
 use rrr::rrr_helper::rrr_settings;
@@ -75,13 +75,17 @@ sub process {
 #		return 1;
 	}
 
+	my ($port, $ip_address) = unpack_sockaddr_in6 $message->{'ip_addr'};
+	my $ip_str = inet_ntop AF_INET6, $ip_address; 
+	print "Source: $ip_str:$port type " . $message->{'ip_so_type'} . "\n";
+
 	push_blob($message, "reply", "A\r");
+
+	$message->send();
 
 #	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("127.0.0.1"));
 #	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
 #	$message->{'ip_so_type'} = "tcp";
-
-#	$message->send();
 
 	$message->{'ip_addr'} = sockaddr_in (7777, inet_aton("127.0.0.1"));
 	$message->{'ip_addr_len'} = bytes::length($message->{'ip_addr'});
