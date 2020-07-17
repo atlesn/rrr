@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../posix.h"
 #include "../array.h"
+#include "../ip.h"
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
@@ -102,8 +103,14 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	int ret = 0;
 
-	RRR_DBG_2("HTTP worker %i: %s %s HTTP/1.1\n",
-			worker_data->transport_handle, part->request_method_str, part->request_uri);
+	if (RRR_DEBUGLEVEL_2) {
+		char ip_buf[256];
+
+		rrr_ip_to_str(ip_buf, 256, sockaddr, socklen);
+
+		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
+				worker_data->transport_handle, ip_buf, part->request_method_str, part->request_uri);
+	}
 
 	worker_data->receive_complete = 1;
 
