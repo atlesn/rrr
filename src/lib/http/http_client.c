@@ -115,17 +115,18 @@ static int __rrr_http_client_receive_http_part_callback (
 	(void)(sockaddr);
 	(void)(socklen);
 	(void)(overshoot_bytes);
+	(void)(request_part);
 
 	int ret = RRR_HTTP_OK;
 
-	callback_data->response_code = part->response_code;
+	callback_data->response_code = response_part->response_code;
 
 	// Moved-codes. Maybe this parsing is too persmissive.
-	if (part->response_code >= 300 && part->response_code <= 399) {
-		const struct rrr_http_header_field *location = rrr_http_part_get_header_field(part, "location");
+	if (response_part->response_code >= 300 && response_part->response_code <= 399) {
+		const struct rrr_http_header_field *location = rrr_http_part_get_header_field(response_part, "location");
 		if (location == NULL) {
 			RRR_MSG_0("Could not find Location-field in HTTP response %i %s\n",
-					part->response_code, part->response_str);
+					response_part->response_code, response_part->response_str);
 			ret = RRR_HTTP_SOFT_ERROR;
 		}
 		RRR_DBG_2("HTTP Redirect to %s\n", location->value);
@@ -141,15 +142,15 @@ static int __rrr_http_client_receive_http_part_callback (
 
 		goto out;
 	}
-	else if (part->response_code < 200 || part->response_code > 299) {
+	else if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("Error while fetching HTTP: %i %s\n",
-				part->response_code, part->response_str);
+				response_part->response_code, response_part->response_str);
 		ret = RRR_HTTP_SOFT_ERROR;
 		goto out;
 	}
 
 	if ((ret = rrr_http_part_chunks_iterate (
-			part,
+			response_part,
 			data_ptr,
 			__rrr_http_client_receive_chunk_callback,
 			callback_data

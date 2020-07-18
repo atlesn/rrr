@@ -178,7 +178,7 @@ struct httpserver_worker_process_field_callback {
 };
 
 static int httpserver_worker_process_field_callback (
-		struct rrr_http_field *field,
+		const struct rrr_http_field *field,
 		void *arg
 ) {
 	struct httpserver_worker_process_field_callback *callback_data = arg;
@@ -311,16 +311,32 @@ struct httpserver_receive_callback_data {
 	struct httpserver_data *parent_data;
 };
 
-// NOTE : Worker thread CTX in httpserver_receive_callback
-static int httpserver_receive_callback (
-		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+static int httpserver_receive_callback_options (
+		const struct rrr_http_part *part,
+		const char *data_ptr,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen,
+		struct httpserver_receive_callback_data *callback_data
 ) {
-	struct httpserver_receive_callback_data *receive_callback_data = arg;
+	(void)(part);
+	(void)(data_ptr);
+	(void)(sockaddr);
+	(void)(socklen);
+	(void)(callback_data);
+
+	return RRR_HTTP_OK;
+}
+
+static int httpserver_receive_callback_get_post (
+		const struct rrr_http_part *part,
+		const char *data_ptr,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen,
+		struct httpserver_receive_callback_data *receive_callback_data
+) {
+	int ret = RRR_HTTP_OK;
 
 	(void)(data_ptr);
-	(void)(overshoot_bytes);
-
-	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
 
@@ -329,7 +345,7 @@ static int httpserver_receive_callback (
 			receive_callback_data->parent_data
 	};
 
-	if ((ret = rrr_http_part_fields_iterate (
+	if ((ret = rrr_http_part_fields_iterate_const (
 			part,
 			httpserver_worker_process_field_callback,
 			&field_callback_data
@@ -367,6 +383,34 @@ static int httpserver_receive_callback (
 	out:
 	rrr_array_clear(&array_tmp);
 	return ret;
+}
+
+// NOTE : Worker thread CTX in httpserver_receive_callback
+static int httpserver_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+) {
+	struct httpserver_receive_callback_data *receive_callback_data = arg;
+
+	(void)(overshoot_bytes);
+	(void)(response_part);
+
+	if (request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+		return httpserver_receive_callback_options (
+				request_part,
+				data_ptr,
+				sockaddr,
+				socklen,
+				receive_callback_data
+		);
+	}
+
+	return httpserver_receive_callback_get_post (
+			request_part,
+			data_ptr,
+			sockaddr,
+			socklen,
+			receive_callback_data
+	);
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {

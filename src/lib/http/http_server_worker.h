@@ -67,8 +67,6 @@ struct rrr_http_server_worker_data {
 	void *final_callback_arg;
 
 	int receive_complete;
-
-	unsigned int response_code;
 };
 
 int rrr_http_server_worker_preliminary_data_new (

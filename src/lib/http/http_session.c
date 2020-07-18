@@ -80,27 +80,27 @@ static int __rrr_http_session_allocate (struct rrr_http_session **target) {
 		return ret;
 }
 
-static int __rrr_http_session_prepare_parts (struct rrr_http_session *session) {
+static int __rrr_http_session_prepare_part (struct rrr_http_part **part) {
 	int ret = 0;
 
-	if (session->response_part != NULL) {
-		rrr_http_part_destroy(session->response_part);
+	if (*part != NULL) {
+		rrr_http_part_destroy(*part);
+		*part = NULL;
 	}
-	if ((ret = rrr_http_part_new(&session->response_part)) != 0) {
-		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
-		goto out;
-	}
-
-	if (session->request_part != NULL) {
-		rrr_http_part_destroy(session->request_part);
-	}
-	if ((ret = rrr_http_part_new(&session->request_part)) != 0) {
-		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_parts\n");
+	if ((ret = rrr_http_part_new(part)) != 0) {
+		RRR_MSG_0("Could not create HTTP part in __rrr_http_session_prepare_part\n");
 		goto out;
 	}
 
 	out:
 	return ret;
+}
+
+static void __rrr_http_session_destroy_part (struct rrr_http_part **part) {
+	if (*part != NULL) {
+		rrr_http_part_destroy(*part);
+		*part = NULL;
+	}
 }
 
 int rrr_http_session_transport_ctx_server_new (
@@ -118,12 +118,6 @@ int rrr_http_session_transport_ctx_server_new (
 
 	// DO NOT STORE HANDLE POINTER
 	session->is_client = 0;
-
-	if (__rrr_http_session_prepare_parts(session) != 0) {
-		RRR_MSG_0("Could not prepare parts in rrr_http_session_transport_ctx_server_new\n");
-		ret = 1;
-		goto out;
-	}
 
 	// Transport framework responsible for cleaning up
 	rrr_net_transport_ctx_handle_application_data_bind (
@@ -198,8 +192,8 @@ int rrr_http_session_transport_ctx_client_new (
 		}
 	}
 
-	if (__rrr_http_session_prepare_parts(session) != 0) {
-		RRR_MSG_0("Could not prepare parts in rrr_http_session_transport_ctx_client_new\n");
+	if (__rrr_http_session_prepare_part(&session->request_part) != 0) {
+		RRR_MSG_0("Could not prepare request part in rrr_http_session_transport_ctx_client_new\n");
 		ret = 1;
 		goto out;
 	}
@@ -643,7 +637,7 @@ int rrr_http_session_transport_ctx_request_send (
 }
 
 struct rrr_http_session_receive_data {
-	struct rrr_http_session *session;
+	struct rrr_net_transport_handle *handle;
 	ssize_t parse_complete_pos;
 	ssize_t received_bytes; // Used only for stall timeout
 	int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS);
@@ -655,25 +649,148 @@ static int __rrr_http_session_response_receive_callback (
 		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
-	struct rrr_http_part *part = receive_data->session->response_part;
+	struct rrr_http_session *session = receive_data->handle->application_private_ptr;
 
 	(void)(read_session);
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_part_dump_header(part);
+		rrr_http_part_dump_header(session->response_part);
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
-			part->data_length,  part->headroom_length, part->header_length);
+			session->response_part->data_length,
+			session->response_part->headroom_length,
+			session->response_part->header_length
+	);
 
-	return receive_data->callback (
-			part,
+	int ret = receive_data->callback (
+			session->request_part,
+			session->response_part,
 			read_session->rx_buf_ptr,
 			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->callback_arg
 	);
+
+	// ALWAYS destroy parts
+	__rrr_http_session_destroy_part(&session->response_part);
+	__rrr_http_session_destroy_part(&session->request_part);
+
+	return ret;
+}
+
+struct rrr_http_session_send_header_field_callback_data {
+	struct rrr_net_transport_handle *handle;
+};
+
+static int __rrr_http_session_send_header_field_callback (struct rrr_http_header_field *field, void *arg) {
+	struct rrr_http_session_send_header_field_callback_data *callback_data = arg;
+
+	int ret = 0;
+
+	char *send_data = NULL;
+	size_t send_data_length = 0;
+
+	if (field->name == NULL || field->value == NULL) {
+		RRR_BUG("BUG: Name or value was NULL in __rrr_http_session_send_header_field_callback\n");
+	}
+	if (RRR_LL_COUNT(&field->fields) > 0) {
+		RRR_BUG("BUG: Subvalues were present in __rrr_http_session_send_header_field_callback, this is not supported\n");
+	}
+
+	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", field->name, field->value)) <= 0) {
+		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_session_send_header_field_callback\n");
+		ret = 1;
+		goto out;
+	}
+
+	// Hack to create Camel-Case header names (before : only)
+	int next_to_upper = 1;
+	for (size_t i = 0; i < send_data_length; i++) {
+		if (send_data[i] == ':' || send_data[i] == '\0') {
+			break;
+		}
+
+		if (next_to_upper) {
+			if (send_data[i] >= 'a' && send_data[i] <= 'z') {
+				send_data[i] -= ('a' - 'A');
+			}
+		}
+
+		next_to_upper = (send_data[i] == '-' ? 1 : 0);
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, send_data, send_data_length)) != 0) {
+		RRR_MSG_0("Error: Send failed in __rrr_http_session_send_header_field_callback\n");
+		goto out;
+	}
+
+	out:
+	RRR_FREE_IF_NOT_NULL(send_data);
+	return ret;
+}
+
+static int __rrr_http_session_transport_ctx_send_response (
+		struct rrr_net_transport_handle *handle
+) {
+	struct rrr_http_session *session = handle->application_private_ptr;
+	struct rrr_http_part *response_part = session->response_part;
+
+	int ret = 0;
+
+	if (response_part == NULL) {
+		RRR_BUG("BUG: Response part was NULL in rrr_http_session_send_response\n");
+	}
+	if (response_part->response_code == 0) {
+		RRR_BUG("BUG: Response code was not set in rrr_http_session_send_response\n");
+	}
+
+	const char *response_str = NULL;
+
+	switch (response_part->response_code) {
+		case RRR_HTTP_RESPONSE_CODE_OK:
+			response_str = "HTTP/1.1 200 OK\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT:
+			response_str = "HTTP/1.1 204 No Content\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST:
+			response_str = "HTTP/1.1 400 Bad Request\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND:
+			response_str = "HTTP/1.1 404 Not Found\r\n";
+			break;
+		case RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR:
+			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
+			break;
+		default:
+			RRR_BUG("BUG: Response code %i not implemented in rrr_http_session_send_response\n",
+					response_part->response_code);
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str))) != 0) {
+		goto out_err;
+	}
+
+	struct rrr_http_session_send_header_field_callback_data callback_data = {
+			handle
+	};
+
+	if ((ret = rrr_http_part_header_fields_iterate(response_part, __rrr_http_session_send_header_field_callback, &callback_data)) != 0) {
+		goto out_err;
+	}
+
+	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "\r\n", 2)) != 0 ) {
+		goto out_err;
+	}
+
+	goto out;
+	out_err:
+		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_session_transport_ctx_send_response\n",
+				handle->handle);
+	out:
+		return ret;
 }
 
 static int __rrr_http_session_request_receive_callback (
@@ -681,9 +798,7 @@ static int __rrr_http_session_request_receive_callback (
 		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
-	struct rrr_http_part *part = receive_data->session->request_part;
-
-	(void)(read_session);
+	struct rrr_http_session *session = receive_data->handle->application_private_ptr;
 
 	int ret = 0;
 
@@ -692,47 +807,58 @@ static int __rrr_http_session_request_receive_callback (
 //	const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_part_dump_header(part);
+		rrr_http_part_dump_header(session->request_part);
 	}
 
 	RRR_DBG_3("HTTP reading complete, data length is %li response length is %li header length is %li\n",
-			part->data_length,  part->headroom_length, part->header_length);
+			session->request_part->data_length,
+			session->request_part->headroom_length,
+			session->request_part->header_length
+	);
 
-	if ((ret = rrr_http_part_merge_chunks(&merged_chunks, part, read_session->rx_buf_ptr)) != 0) {
+	if ((ret = rrr_http_part_merge_chunks(&merged_chunks, session->request_part, read_session->rx_buf_ptr)) != 0) {
 		goto out;
 	}
 
 	const char *data_to_use = (merged_chunks != NULL ? merged_chunks : read_session->rx_buf_ptr);
 
-	if ((ret = rrr_http_part_process_multipart(part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_process_multipart(session->request_part, data_to_use)) != 0) {
 		goto out;
 	}
 
-	if ((ret = rrr_http_part_extract_post_and_query_fields(part, data_to_use)) != 0) {
+	if ((ret = rrr_http_part_extract_post_and_query_fields(session->request_part, data_to_use)) != 0) {
 		goto out;
 	}
 
 	if (RRR_DEBUGLEVEL_3) {
-		rrr_http_field_collection_dump (&part->fields);
+		rrr_http_field_collection_dump (&session->request_part->fields);
 	}
 
-	ret = receive_data->callback (
-			part,
+	if ((ret = __rrr_http_session_prepare_part(&session->response_part)) != 0) {
+		RRR_MSG_0("Failed to prepare response part in __rrr_http_session_request_receive_callback\n");
+		goto out;
+	}
+
+	if ((ret = receive_data->callback (
+			session->request_part,
+			session->response_part,
 			data_to_use,
 			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			read_session->rx_overshoot_size,
 			receive_data->callback_arg
-	);
+	)) != RRR_HTTP_OK) {
+		goto out;
+	}
 
-	if (ret == RRR_HTTP_OK) {
-		// Prepare for new parts on same connection
-		if ((ret = __rrr_http_session_prepare_parts(receive_data->session)) != 0) {
-			RRR_MSG_0("Failed to reset parts in __rrr_http_session_request_receive_callback\n");
-		}
+	if ((ret = __rrr_http_session_transport_ctx_send_response(receive_data->handle)) != RRR_HTTP_OK) {
+		goto out;
 	}
 
 	out:
+	// ALWAYS destroy parts
+	__rrr_http_session_destroy_part(&session->request_part);
+	__rrr_http_session_destroy_part(&session->response_part);
 	RRR_FREE_IF_NOT_NULL(merged_chunks);
 	return ret;
 }
@@ -742,6 +868,7 @@ static int __rrr_http_session_receive_get_target_size (
 		void *arg
 ) {
 	struct rrr_http_session_receive_data *receive_data = arg;
+	struct rrr_http_session *session = receive_data->handle->application_private_ptr;
 
 	int ret = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_TARGET_LENGTH;
 
@@ -756,32 +883,39 @@ static int __rrr_http_session_receive_get_target_size (
 	ssize_t target_size;
 	ssize_t parsed_bytes = 0;
 
+	struct rrr_http_part **part_to_use = NULL;
+	enum rrr_http_parse_type parse_type = 0;
+
+	if (session->is_client == 1) {
+		part_to_use = &session->response_part;
+		parse_type = RRR_HTTP_PARSE_RESPONSE;
+	}
+	else {
+		part_to_use = &session->request_part;
+		parse_type = RRR_HTTP_PARSE_REQUEST;
+	}
+
+	if (*part_to_use == NULL) {
+		if (rrr_http_part_new(part_to_use) != 0) {
+			RRR_MSG_0("Could not create new part in __rrr_http_session_receive_get_target_size\n");
+			ret = RRR_NET_TRANSPORT_READ_HARD_ERROR;
+			goto out;
+		}
+	}
+
 	// There might be more than one chunk in each read cycle, we have to
-	// go through all of them in a loop here. The parses will always return
+	// go through all of them in a loop here. The parser will always return
 	// after a chunk is found.
 	do {
-		if (receive_data->session->is_client == 1) {
-			ret = rrr_http_part_parse (
-					receive_data->session->response_part,
-					&target_size,
-					&parsed_bytes,
-					read_session->rx_buf_ptr,
-					receive_data->parse_complete_pos,
-					end,
-					RRR_HTTP_PARSE_RESPONSE
-			);
-		}
-		else {
-			ret = rrr_http_part_parse (
-					receive_data->session->request_part,
-					&target_size,
-					&parsed_bytes,
-					read_session->rx_buf_ptr,
-					receive_data->parse_complete_pos,
-					end,
-					RRR_HTTP_PARSE_REQUEST
-			);
-		}
+		ret = rrr_http_part_parse (
+				*part_to_use,
+				&target_size,
+				&parsed_bytes,
+				read_session->rx_buf_ptr,
+				receive_data->parse_complete_pos,
+				end,
+				parse_type
+		);
 
 		receive_data->parse_complete_pos += parsed_bytes;
 	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
@@ -793,7 +927,7 @@ static int __rrr_http_session_receive_get_target_size (
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
-		if (receive_data->session->response_part->data_length == -1) {
+		if ((*part_to_use)->data_length == -1) {
 			read_session->read_complete_method = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE;
 			ret = RRR_NET_TRANSPORT_READ_OK;
 		}
@@ -819,7 +953,7 @@ int rrr_http_session_transport_ctx_receive (
 	int ret = 0;
 
 	struct rrr_http_session_receive_data callback_data = {
-			session,
+			handle,
 			0,
 			0,
 			callback,
@@ -896,151 +1030,4 @@ int rrr_http_session_transport_ctx_receive (
 
 	out:
 	return ret;
-}
-
-int rrr_http_session_transport_ctx_check_data_received (
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-	return (session->request_part->headroom_length > 0);
-}
-
-int rrr_http_session_transport_ctx_check_response_part_initialized (
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-	return session->response_part != NULL;
-}
-
-int rrr_http_session_transport_ctx_set_response_code (
-		struct rrr_net_transport_handle *handle,
-		unsigned int code
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-
-	session->response_part->response_code = code;
-
-	return 0;
-}
-
-int rrr_http_session_transport_ctx_push_response_header (
-		struct rrr_net_transport_handle *handle,
-		const char *name,
-		const char *value
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-	return rrr_http_part_header_field_push(session->response_part, name, value);
-}
-
-struct rrr_http_session_send_header_field_callback_data {
-	struct rrr_net_transport_handle *handle;
-};
-
-static int __rrr_http_session_send_header_field_callback (struct rrr_http_header_field *field, void *arg) {
-	struct rrr_http_session_send_header_field_callback_data *callback_data = arg;
-
-	int ret = 0;
-
-	char *send_data = NULL;
-	size_t send_data_length = 0;
-
-	if (field->name == NULL || field->value == NULL) {
-		RRR_BUG("BUG: Name or value was NULL in __rrr_http_session_send_header_field_callback\n");
-	}
-	if (RRR_LL_COUNT(&field->fields) > 0) {
-		RRR_BUG("BUG: Subvalues were present in __rrr_http_session_send_header_field_callback, this is not supported\n");
-	}
-
-	if ((send_data_length = rrr_asprintf(&send_data, "%s: %s\r\n", field->name, field->value)) <= 0) {
-		RRR_MSG_0("Could not allocate memory for header line in __rrr_http_session_send_header_field_callback\n");
-		ret = 1;
-		goto out;
-	}
-
-	// Hack to create Camel-Case header names (before : only)
-	int next_to_upper = 1;
-	for (size_t i = 0; i < send_data_length; i++) {
-		if (send_data[i] == ':' || send_data[i] == '\0') {
-			break;
-		}
-
-		if (next_to_upper) {
-			if (send_data[i] >= 'a' && send_data[i] <= 'z') {
-				send_data[i] -= ('a' - 'A');
-			}
-		}
-
-		next_to_upper = (send_data[i] == '-' ? 1 : 0);
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(callback_data->handle, send_data, send_data_length)) != 0) {
-		RRR_MSG_0("Error: Send failed in __rrr_http_session_send_header_field_callback\n");
-		goto out;
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(send_data);
-	return ret;
-}
-
-int rrr_http_session_transport_ctx_send_response (
-		struct rrr_net_transport_handle *handle
-) {
-	struct rrr_http_session *session = handle->application_private_ptr;
-	struct rrr_http_part *response_part = session->response_part;
-
-	int ret = 0;
-
-	if (response_part == NULL) {
-		RRR_BUG("BUG: Response part was NULL in rrr_http_session_send_response\n");
-	}
-	if (response_part->response_code == 0) {
-		RRR_BUG("BUG: Response code was not set in rrr_http_session_send_response\n");
-	}
-
-	const char *response_str = NULL;
-
-	switch (response_part->response_code) {
-		case RRR_HTTP_RESPONSE_CODE_OK:
-			response_str = "HTTP/1.1 200 OK\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT:
-			response_str = "HTTP/1.1 204 No Content\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST:
-			response_str = "HTTP/1.1 400 Bad Request\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_ERROR_NOT_FOUND:
-			response_str = "HTTP/1.1 404 Not Found\r\n";
-			break;
-		case RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR:
-			response_str = "HTTP/1.1 500 Internal Server Error\r\n";
-			break;
-		default:
-			RRR_BUG("BUG: Response code %i not implemented in rrr_http_session_send_response\n",
-					response_part->response_code);
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, response_str, strlen(response_str))) != 0) {
-		goto out_err;
-	}
-
-	struct rrr_http_session_send_header_field_callback_data callback_data = {
-			handle
-	};
-
-	if ((ret = rrr_http_part_header_fields_iterate(response_part, __rrr_http_session_send_header_field_callback, &callback_data)) != 0) {
-		goto out_err;
-	}
-
-	if ((ret = rrr_net_transport_ctx_send_blocking(handle, "\r\n", 2)) != 0 ) {
-		goto out_err;
-	}
-
-	goto out;
-	out_err:
-		RRR_MSG_0("Error while sending headers for HTTP client %i in rrr_http_session_transport_ctx_send_response\n",
-				handle->handle);
-	out:
-		return ret;
 }
