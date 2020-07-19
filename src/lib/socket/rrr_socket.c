@@ -722,7 +722,7 @@ int rrr_socket_send_check (
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_MSG_0("Connection refused or closed in send check (POLLHUP)\n");
+			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -731,7 +731,7 @@ int rrr_socket_send_check (
 			goto out;
 		}
 		else if (errno == ECONNREFUSED) {
-			RRR_MSG_0("Connection refused while connecting (ECONNREFUSED)\n");
+			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}

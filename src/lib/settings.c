@@ -647,7 +647,7 @@ int rrr_settings_dump (struct rrr_instance_settings *settings) {
 			goto next;
 		}
 
-		RRR_DBG("%s=%s\n", name, value);
+		RRR_MSG_1("%s=%s\n", name, value);
 
 		next:
 		RRR_FREE_IF_NOT_NULL(value);

@@ -292,13 +292,13 @@ int rrr_mqtt_client_connect (
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
 	) != 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
 
 	if (*transport_handle == 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}

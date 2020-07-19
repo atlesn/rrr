@@ -211,7 +211,7 @@ static int mqttbroker_parse_config (struct mqtt_broker_data *data, struct rrr_in
 
 	// We require certificate for listening
 	if (data->net_transport_config.tls_certificate_file == NULL && data->do_transport_tls != 0) {
-		RRR_MSG_0("TLS certificate not specified in mqtt_broker_certificate_file but mqtt_transport_type was 'both' or 'tls' for mqtt broker instance %s\n",
+		RRR_MSG_0("TLS certificate not specified in mqtt_broker_tls_certificate_file but mqtt_transport_type was 'both' or 'tls' for mqtt broker instance %s\n",
 				config->name);
 		ret = 1;
 		goto out;
