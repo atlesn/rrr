@@ -1,3 +1,9 @@
+rrr (1.5posten6) debian-testing; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Sun, 19 Jul 2020 17:26:05 +0200
+
 rrr (1.5-3) buster; urgency=medium
 
   * New option in MQTT client to discard waiting messages upon
