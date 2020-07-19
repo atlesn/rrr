@@ -44,27 +44,25 @@ struct rrr_poll_collection {
 	RRR_LL_HEAD(struct rrr_poll_collection_entry);
 };
 
-void rrr_poll_collection_clear(struct rrr_poll_collection *collection);
-void rrr_poll_collection_clear_void(void *data);
-void rrr_poll_collection_init(struct rrr_poll_collection *collection);
-
-int rrr_poll_collection_new(struct rrr_poll_collection **target);
-void rrr_poll_collection_destroy(struct rrr_poll_collection *collection);
-void rrr_poll_collection_destroy_void(void *data);
-
-void rrr_poll_collection_remove (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find);
-
-int rrr_poll_collection_has (struct rrr_poll_collection *collection, struct rrr_instance_thread_data *find);
-
+void rrr_poll_collection_clear (
+		struct rrr_poll_collection *collection
+);
+void rrr_poll_collection_clear_void (
+		void *data
+);
+int rrr_poll_collection_new (
+		struct rrr_poll_collection **target
+);
+void rrr_poll_collection_destroy (
+		struct rrr_poll_collection *collection
+);
+void rrr_poll_collection_destroy_void (
+		void *data
+);
 int rrr_poll_collection_add (
 		unsigned int *flags_result,
 		struct rrr_poll_collection *collection,
 		struct rrr_instance_metadata *instance
-);
-int rrr_poll_collection_add_from_senders (
-		struct rrr_poll_collection *poll_collection,
-		struct rrr_instance_metadata **faulty_instance,
-		struct rrr_instance_collection *senders
 );
 int rrr_poll_do_poll_discard (
 		int *discarded_count,
