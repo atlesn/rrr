@@ -1,3 +1,9 @@
+rrr (1.4-2) buster; urgency=medium
+
+  * Fix username for RRR daemon
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 17:34:55 +0200
+
 rrr (1.4-1) buster; urgency=medium
 
   * Fix bug in MQTT client causing 100% CPU usage
