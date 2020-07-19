@@ -7,7 +7,7 @@
 export RRR_SYSTEMD_NO_INSTALL=1
 
 # This will create User=rrr and Group=rrr in rrr.service as opposed to the default username 'daemon'
-export RRR_SYSTEMD_USERNAME=rrr
+export RRR_DAEMON_USERNAME=rrr
 
 # see FEATURE AREAS in dpkg-buildflags(1)
 #export DEB_BUILD_MAINT_OPTIONS = hardening=+all
