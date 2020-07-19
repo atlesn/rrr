@@ -61,32 +61,28 @@ int rrr_poll_collection_add (
 		struct rrr_poll_collection *collection,
 		struct rrr_instance_metadata *instance
 );
-
 int rrr_poll_collection_add_from_senders (
 		struct rrr_poll_collection *poll_collection,
 		struct rrr_instance_metadata **faulty_instance,
 		struct rrr_instance_collection *senders
 );
-
+int rrr_poll_do_poll_discard (
+		int *discarded_count,
+		struct rrr_instance_thread_data *thread_data,
+		struct rrr_poll_collection *collection
+);
 int rrr_poll_do_poll_delete (
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_poll_collection *collection,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		unsigned int wait_milliseconds
 );
-
 int rrr_poll_collection_count (
 		struct rrr_poll_collection *collection
 );
-
 void rrr_poll_add_from_thread_senders (
 		struct rrr_poll_collection *collection,
 		struct rrr_instance_thread_data *thread_data
-);
-
-void rrr_poll_remove_senders_also_in (
-		struct rrr_poll_collection *target,
-		const struct rrr_poll_collection *source
 );
 
 #endif /* RRR_POLL_HELPER_H */

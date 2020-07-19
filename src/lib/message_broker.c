@@ -815,6 +815,49 @@ static int __rrr_message_broker_split_buffers_fill (struct rrr_message_broker_co
 					(ret = __rrr_message_broker_split_buffers_fill(costumer)			\
 			) != 0) { goto out; }} while(0)
 
+struct rrr_message_broker_poll_discard_callback_data {
+	int count;
+};
+
+static int __rrr_message_broker_poll_discard_callback (
+		void *arg,
+		char *data,
+		unsigned long int size
+) {
+	struct rrr_message_broker_poll_discard_callback_data *callback_data = arg;
+
+	(void)(data);
+	(void)(size);
+
+	callback_data->count++;
+
+	return 0;
+}
+
+int rrr_message_broker_poll_discard (
+		int *discarded_count,
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
+) {
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	*discarded_count = 0;
+
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_discard");
+
+	RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
+
+	struct rrr_message_broker_poll_discard_callback_data callback_data = { 0 };
+
+	rrr_fifo_buffer_clear_with_callback(source_buffer, __rrr_message_broker_poll_discard_callback, &callback_data);
+
+	*discarded_count = callback_data.count;
+
+	out:
+	RRR_MESSAGE_BROKER_COSTUMER_HANDLE_UNLOCK();
+	return ret;
+}
+
 int rrr_message_broker_poll_delete (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
@@ -824,7 +867,7 @@ int rrr_message_broker_poll_delete (
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete ");
+	RRR_MESSAGE_BROKER_VERIFY_AND_INCREF_COSTUMER_HANDLE("rrr_message_broker_poll_delete");
 
 	RRR_MESSAGE_BROKER_POLL_SPLIT_BUFFER_HANDLING();
 

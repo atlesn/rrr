@@ -210,6 +210,45 @@ int poll_do_poll (
 	return ret;
 }
 */
+
+int rrr_poll_do_poll_discard (
+		int *discarded_count,
+		struct rrr_instance_thread_data *thread_data,
+		struct rrr_poll_collection *collection
+) {
+	int ret = 0;
+
+	*discarded_count = 0;
+
+	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
+		int ret_tmp;
+
+		struct rrr_poll_collection_entry *entry = node;
+
+		int discarded_count_tmp = 0;
+
+		ret_tmp = rrr_message_broker_poll_discard (
+				&discarded_count_tmp,
+				INSTANCE_D_BROKER_ARGS(entry->thread_data)
+		);
+
+		(*discarded_count) += discarded_count_tmp;
+
+		if (	(ret_tmp & RRR_FIFO_CALLBACK_ERR) ==  RRR_FIFO_CALLBACK_ERR ||
+				(ret_tmp & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR
+		) {
+			ret = 1;
+			RRR_LL_ITERATE_BREAK();
+		}
+		else if (ret_tmp != 0) {
+			RRR_BUG("BUG: Unknown return value %i when polling from module %s\n",
+					ret_tmp, INSTANCE_D_MODULE_NAME(entry->thread_data));
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
 int rrr_poll_do_poll_delete (
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_poll_collection *collection,
@@ -257,6 +296,7 @@ void rrr_poll_add_from_thread_senders (
 	rrr_poll_collection_add_from_senders(collection, &faulty_sender, thread_data->init_data.senders);
 }
 
+/* Disabled, not currently used
 void rrr_poll_remove_senders_also_in (
 		struct rrr_poll_collection *target,
 		const struct rrr_poll_collection *source
@@ -270,3 +310,4 @@ void rrr_poll_remove_senders_also_in (
 		RRR_LL_ITERATE_END_CHECK_DESTROY(target, __poll_collection_entry_destroy(node));
 	RRR_LL_ITERATE_END();
 }
+*/
