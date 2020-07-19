@@ -1,3 +1,11 @@
+rrr (1.5-3) buster; urgency=medium
+
+  * New option in MQTT client to discard waiting messages upon
+    connect retry
+  * Misc. cleanup and fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 15:44:20 +0200
+
 rrr (1.5-2) buster; urgency=medium
 
   * Fixes in HTTP server and support OPTIONS request
