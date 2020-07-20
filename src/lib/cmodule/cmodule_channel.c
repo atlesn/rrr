@@ -111,7 +111,7 @@ int rrr_cmodule_channel_send_message (
 		message_addr = NULL;
 
 		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in __rrr_cmodule_send_message\n");
+			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message pid %i\n", getpid());
 			ret = 0;
 			goto out;
 		}

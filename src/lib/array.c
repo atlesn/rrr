@@ -552,7 +552,7 @@ int rrr_array_push_value_str_with_tag (
 		const char *tag,
 		const char *value
 ) {
-	size_t value_size = strlen(value) + 1;
+	size_t value_size = strlen(value);
 
 	return rrr_array_push_value_str_with_tag_with_size(
 			collection,
