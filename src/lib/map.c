@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "map.h"
 #include "linked_list.h"
+#include "macro_utils.h"
 
 void rrr_map_item_destroy (struct rrr_map_item *item) {
 	RRR_FREE_IF_NOT_NULL(item->tag);

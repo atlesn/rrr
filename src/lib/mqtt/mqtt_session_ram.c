@@ -24,15 +24,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "mqtt_session_ram.h"
 #include "mqtt_session.h"
 #include "mqtt_packet.h"
 #include "mqtt_subscription.h"
 #include "mqtt_common.h"
 #include "mqtt_id_pool.h"
-#include "../log.h"
-#include "../vl_time.h"
+
+#include "../rrr_time.h"
 #include "../linked_list.h"
+#include "../macro_utils.h"
 
 #define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
 
@@ -898,12 +901,10 @@ static void __rrr_mqtt_session_collection_ram_destroy (struct rrr_mqtt_session_c
 	struct rrr_mqtt_session_collection_ram_data *data = (struct rrr_mqtt_session_collection_ram_data *) sessions;
 
 	SESSION_COLLECTION_RAM_LOCK(data);
-	rrr_fifo_buffer_clear(&data->retain_queue.buffer);
-	rrr_fifo_buffer_clear(&data->publish_forward_queue.buffer);
-	rrr_fifo_buffer_clear(&data->publish_local_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->retain_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->publish_forward_queue.buffer);
+	rrr_fifo_buffer_destroy(&data->publish_local_queue.buffer);
 
-	// TODO : implement destroy
-	// fifo_buffer_destroy(&data->retain_queue);
 	RRR_LL_DESTROY (
 			data,
 			struct rrr_mqtt_session_ram,
@@ -2713,14 +2714,12 @@ int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **se
 
 	goto out;
 
-/*	out_destroy_local_delivery_queue:
-		fifo_buffer_invalidate(&ram_data->local_delivery_queue.buffer);*/
+//	out_destroy_local_delivery_queue:
+//		rrr_fifo_buffer_destroy(&ram_data->local_delivery_queue.buffer);
 	out_destroy_publish_queue:
-		rrr_fifo_buffer_clear(&ram_data->publish_forward_queue.buffer);
+		rrr_fifo_buffer_destroy(&ram_data->publish_forward_queue.buffer);
 	out_destroy_retain_queue:
-		rrr_fifo_buffer_clear(&ram_data->retain_queue.buffer);
-		// TODO : Implement destroy
-		//fifo_buffer_destroy(&ram_data->retain_queue);
+		rrr_fifo_buffer_destroy(&ram_data->retain_queue.buffer);
 	out_destroy_mutex:
 		pthread_mutex_destroy(&ram_data->lock);
 	out_destroy_collection:

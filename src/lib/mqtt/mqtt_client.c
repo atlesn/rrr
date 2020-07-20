@@ -21,6 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "../log.h"
 
 #include "mqtt_client.h"
 #include "mqtt_common.h"
@@ -29,8 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_subscription.h"
 #include "mqtt_packet.h"
 #include "mqtt_acl.h"
+
+#include "../rrr_time.h"
 #include "../posix.h"
-#include "../log.h"
+#include "../macro_utils.h"
 
 #define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
@@ -287,13 +292,13 @@ int rrr_mqtt_client_connect (
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
 	) != 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
 
 	if (*transport_handle == 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}

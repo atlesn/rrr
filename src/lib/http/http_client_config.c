@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../instance_config.h"
 #include "../map.h"
 #include "../log.h"
-#include "../global.h"
+#include "../macro_utils.h"
 
 void rrr_http_client_config_cleanup (
 		struct rrr_http_client_config *data

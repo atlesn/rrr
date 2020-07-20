@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "rrr_strerror.h"
 #include "linked_list.h"
+#include "macro_utils.h"
 
 static const char *general_error_message = "Unknown error";
 

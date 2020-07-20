@@ -37,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_instance_dynamic_data;
 struct rrr_instance_thread_data;
-struct rrr_fifo_callback_args;
 struct rrr_thread_start_data;
 struct rrr_instance_config;
 struct rrr_message;

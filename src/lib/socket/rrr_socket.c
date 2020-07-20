@@ -43,11 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../linked_list.h"
 #include "../rrr_endian.h"
 #include "../log.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../crc32.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"
+#include "../macro_utils.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that
@@ -721,7 +722,7 @@ int rrr_socket_send_check (
 
 	if ((poll(&pollfd, 1, timeout) == -1) || ((pollfd.revents & (POLLERR|POLLHUP)) != 0)) {
 		if ((pollfd.revents & (POLLHUP)) != 0) {
-			RRR_MSG_0("Connection refused or closed in send check (POLLHUP)\n");
+			RRR_DBG_1("Connection refused or closed in send check (POLLHUP)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}
@@ -730,7 +731,7 @@ int rrr_socket_send_check (
 			goto out;
 		}
 		else if (errno == ECONNREFUSED) {
-			RRR_MSG_0("Connection refused while connecting (ECONNREFUSED)\n");
+			RRR_DBG_1("Connection refused while connecting (ECONNREFUSED)\n");
 			ret = RRR_SOCKET_HARD_ERROR;
 			goto out;
 		}

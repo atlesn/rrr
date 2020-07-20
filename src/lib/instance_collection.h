@@ -24,11 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 
-struct instance_metadata; /* From instances.h */
+struct rrr_instance_metadata; /* From instances.h */
 
 struct rrr_instance_collection_entry {
 	RRR_LL_NODE(struct rrr_instance_collection_entry);
-	struct instance_metadata *instance;
+	struct rrr_instance_metadata *instance;
 };
 
 struct rrr_instance_collection {
@@ -36,13 +36,13 @@ struct rrr_instance_collection {
 };
 
 int rrr_instance_collection_check_empty (struct rrr_instance_collection *collection);
-int rrr_instance_collection_check_exists (struct rrr_instance_collection *collection, struct instance_metadata *sender);
-int rrr_instance_collection_append (struct rrr_instance_collection *collection, struct instance_metadata *sender);
+int rrr_instance_collection_check_exists (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender);
+int rrr_instance_collection_append (struct rrr_instance_collection *collection, struct rrr_instance_metadata *sender);
 void rrr_instance_collection_clear (struct rrr_instance_collection *collection);
 int rrr_instance_collection_count (struct rrr_instance_collection *collection);
 int rrr_instance_collection_iterate (
 		struct rrr_instance_collection *collection,
-		int (*callback)(struct instance_metadata *instance, void *arg),
+		int (*callback)(struct rrr_instance_metadata *instance, void *arg),
 		void *arg
 );
 

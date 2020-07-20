@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "linked_list.h"
-#include "../macro_utils.h"
+#include "macro_utils.h"
 
 static const union type_system_endian {
 	uint16_t two;

@@ -103,7 +103,7 @@ static uint32_t crc_32_tab[] = { /* CRC polynomial 0xedb88320 */
 #define UPDC32(octet, crc) (crc_32_tab[((crc) ^ (octet)) & 0xff] ^ ((crc) >> 8))
 
 // Returns checksum
-uint32_t crc32buf (const char *buf, int len) {
+uint32_t rrr_crc32buf (const char *buf, int len) {
       uint32_t crc32 = 0xFFFFFFFF;
 
       for (int i = 0; i < len; i++) {
@@ -115,8 +115,8 @@ uint32_t crc32buf (const char *buf, int len) {
 }
 
 // Returns 0 if checksum is valid
-int crc32cmp (const char *buf, int len, uint32_t crc32) {
+int rrr_crc32cmp (const char *buf, int len, uint32_t crc32) {
 //	printf ("CRC32CMP length %i\n", len);
-	uint32_t test = crc32buf(buf, len);
+	uint32_t test = rrr_crc32buf(buf, len);
 	return test - crc32;
 }

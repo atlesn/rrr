@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../posix.h"
 #include "../log.h"
 #include "../gnu.h"
+#include "../macro_utils.h"
 
 static int __rrr_http_util_is_alphanumeric (unsigned char c) {
 	if (	(c >= 'a' && c <= 'z') ||
@@ -388,6 +389,8 @@ int rrr_http_util_unquote_string (
 		start++;
 	}
 
+	// Don't add \0, will write outside allocated memory
+
 	*output_size = wpos;
 
 	return 0;
@@ -434,7 +437,7 @@ char *rrr_http_util_quote_header_value (
 			// OK
 		}
 		else {
-			RRR_MSG_0("Invalid octet %02x in rrr_http_util_quote_ascii\n", c);
+			RRR_MSG_0("Invalid octet %02x in rrr_http_util_quote_header_value\n", c);
 			err = 1;
 			goto out;
 		}

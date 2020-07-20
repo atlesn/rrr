@@ -1,0 +1,44 @@
+HOW TO MAKE A CUSTOM RRR CMODULE
+================================
+
+1.  Make sure you are in the directory /src/cmodules/
+
+2.  Make a simple name for your module, we will use my_module for
+    the module name in this tutorial.
+
+3.  Copy the file dummy.c to my_module.c, this will become your
+    template. Do not modify any code in the file untill you have
+    verified that it will compile without errors as it is.
+
+4.  /READ THE COPYRIGHT HEADER/ in my_module.c and remove it.
+
+5.  Apply an appropriate copyright header in my_module.c according
+    to instructions in the old header.
+
+6.  If your module consists of more than one source file, create a
+    subdirectory my_module/. Then create a file called my_module.sources
+    and add the source file names separated by a space like
+
+my_module/file_a.c my_module/file_b.c
+
+    The main module file must not be added to my_modules.sources.
+
+7.  If your module requries extra flags for the compiler, put these in the
+    the file my_module.cflags like
+
+-DMY_MODULE_EXTRA_DEFINE -I/usr/my_extra_include_directory
+
+8.  If your module requries extra flags for the linker, put these in the
+    the file my_module.ldflags like
+
+-Lmy_extra_library
+
+9.  After completing the above steps, run ./generate_am.sh . This will update
+    the Makefile.am file. After this, run autoreconf -i and ./configure again
+    in the top level source directory.
+
+10. When the module compiles sucessfully when running make, start modifying
+    it according to your needs.
+
+11. Refer to rrr.conf() on how to use the cmodule.
+

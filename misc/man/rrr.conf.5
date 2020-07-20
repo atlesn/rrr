@@ -1063,6 +1063,15 @@ How many times we attempt connecting to the broker before giving up.
 What we do when this number is reached depends on the setting
 .B mqtt_connect_error_action.
 One connection attempt lasts approximately 100ms. Must be 1 or more, defaults to 20.
+.It mqtt_discard_on_connect_retry={yes|no}
+With this option set to 'yes' while
+.B mqtt_connect_error_action
+is 'retry' and a connect retry is performed, queued messages will be read from all senders and discarded. This might be needed
+to avoid non-processed messages filling up memory in situations where the broker is not available for a longer period. If however
+.B  mqtt_connect_error_action
+is 'restart', all messages will be cleared anyway when all instances restart after mqttclient fails to connect.
+.B mqtt_discard_on_connect_retry
+may not be set to 'yes' in this situation. Defaults to 'no'.  
 .It mqtt_username=USERNAME
 .It mqtt_password=PASSWORD
 Optional username and password to send in CONNECT packets. If a password is set, a username

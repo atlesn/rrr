@@ -30,10 +30,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_part.h"
 
 #define RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS	\
-	struct rrr_http_part *part,					\
+	const struct rrr_http_part *request_part,	\
+	struct rrr_http_part *response_part,		\
 	const char *data_ptr,						\
 	const struct sockaddr *sockaddr,			\
 	socklen_t socklen,							\
+	ssize_t overshoot_bytes,					\
 	void *arg
 
 struct rrr_http_session {
@@ -88,24 +90,6 @@ int rrr_http_session_transport_ctx_receive (
 		ssize_t read_max_size,
 		int (*callback)(RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS),
 		void *callback_arg
-);
-int rrr_http_session_transport_ctx_check_data_received (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_http_session_transport_ctx_check_response_part_initialized (
-		struct rrr_net_transport_handle *handle
-);
-int rrr_http_session_transport_ctx_set_response_code (
-		struct rrr_net_transport_handle *handle,
-		unsigned int code
-);
-int rrr_http_session_transport_ctx_push_response_header (
-		struct rrr_net_transport_handle *handle,
-		const char *name,
-		const char *value
-);
-int rrr_http_session_transport_ctx_send_response (
-		struct rrr_net_transport_handle *handle
 );
 
 #endif /* RRR_HTTP_SESSION_H */

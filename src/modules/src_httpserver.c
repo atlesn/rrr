@@ -39,6 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
+#include "../lib/ip_defines.h"
+//#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80
 #define RRR_HTTPSERVER_DEFAULT_PORT_TLS			443
@@ -176,7 +178,7 @@ struct httpserver_worker_process_field_callback {
 };
 
 static int httpserver_worker_process_field_callback (
-		struct rrr_http_field *field,
+		const struct rrr_http_field *field,
 		void *arg
 ) {
 	struct httpserver_worker_process_field_callback *callback_data = arg;
@@ -309,15 +311,32 @@ struct httpserver_receive_callback_data {
 	struct httpserver_data *parent_data;
 };
 
-// NOTE : Worker thread CTX in httpserver_receive_callback
-static int httpserver_receive_callback (
-		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+static int httpserver_receive_callback_options (
+		const struct rrr_http_part *part,
+		const char *data_ptr,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen,
+		struct httpserver_receive_callback_data *callback_data
 ) {
-	struct httpserver_receive_callback_data *receive_callback_data = arg;
+	(void)(part);
+	(void)(data_ptr);
+	(void)(sockaddr);
+	(void)(socklen);
+	(void)(callback_data);
+
+	return RRR_HTTP_OK;
+}
+
+static int httpserver_receive_callback_get_post (
+		const struct rrr_http_part *part,
+		const char *data_ptr,
+		const struct sockaddr *sockaddr,
+		socklen_t socklen,
+		struct httpserver_receive_callback_data *receive_callback_data
+) {
+	int ret = RRR_HTTP_OK;
 
 	(void)(data_ptr);
-
-	int ret = 0;
 
 	struct rrr_array array_tmp = {0};
 
@@ -326,7 +345,7 @@ static int httpserver_receive_callback (
 			receive_callback_data->parent_data
 	};
 
-	if ((ret = rrr_http_part_fields_iterate (
+	if ((ret = rrr_http_part_fields_iterate_const (
 			part,
 			httpserver_worker_process_field_callback,
 			&field_callback_data
@@ -343,12 +362,16 @@ static int httpserver_receive_callback (
 			&array_tmp
 	};
 
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) sockaddr, socklen);
+//	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
+
 	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
 			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
 			sockaddr,
 			socklen,
-			0,
+			RRR_IP_TCP,
 			httpserver_write_message_callback,
 			&write_callback_data
 	)) != 0) {
@@ -360,6 +383,34 @@ static int httpserver_receive_callback (
 	out:
 	rrr_array_clear(&array_tmp);
 	return ret;
+}
+
+// NOTE : Worker thread CTX in httpserver_receive_callback
+static int httpserver_receive_callback (
+		RRR_HTTP_SESSION_RECEIVE_CALLBACK_ARGS
+) {
+	struct httpserver_receive_callback_data *receive_callback_data = arg;
+
+	(void)(overshoot_bytes);
+	(void)(response_part);
+
+	if (request_part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+		return httpserver_receive_callback_options (
+				request_part,
+				data_ptr,
+				sockaddr,
+				socklen,
+				receive_callback_data
+		);
+	}
+
+	return httpserver_receive_callback_get_post (
+			request_part,
+			data_ptr,
+			sockaddr,
+			socklen,
+			receive_callback_data
+	);
 }
 
 static void *thread_entry_httpserver (struct rrr_thread *thread) {
@@ -394,6 +445,9 @@ static void *thread_entry_httpserver (struct rrr_thread *thread) {
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
 	}
+
+	// TODO : There are occasional (?) reports from valgrind that http_server is
+	//        not being freed upon program exit.
 
 	pthread_cleanup_push(rrr_http_server_destroy_void, http_server);
 

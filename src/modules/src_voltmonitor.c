@@ -46,7 +46,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #endif
 
 #include "../lib/instance_config.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"

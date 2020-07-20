@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../posix.h"
 #include "../array.h"
+#include "../ip_util.h"
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,
@@ -86,11 +87,63 @@ void rrr_http_server_worker_preliminary_data_destroy_void (
 	rrr_http_server_worker_preliminary_data_destroy(arg);
 }
 
-static void __rrr_net_http_server_worker_close_transport (
+static void __rrr_http_server_worker_close_transport (
 		void *arg
 ) {
 	struct rrr_http_server_worker_data *worker_data = arg;
 	rrr_net_transport_handle_close_tag_list_push(worker_data->transport, worker_data->transport_handle);
+}
+
+static int __rrr_http_server_worker_push_response_headers (
+		struct rrr_http_part *response_part
+) {
+	int ret = RRR_HTTP_OK;
+
+	ret |= rrr_http_part_header_field_push(response_part, "connection", "close");
+	ret |= rrr_http_part_header_field_push(response_part, "access-control-request-methods", "OPTIONS, GET, POST");
+
+	return ret;
+}
+
+static int __rrr_http_server_worker_initialize_response (
+		struct rrr_http_server_worker_data *worker_data,
+		struct rrr_http_part *response_part
+) {
+	// We allow send_response to be called as long as transpoort handle is OK,
+	// but the response part must have been initialized for us to be able to
+	// send a response. If it is NULL, we cannot send a response.
+//	if (!rrr_http_session_transport_ctx_check_response_part_initialized(handle)) {
+//		RRR_DBG_3("HTTP worker %i: No HTTP parts initialized, not sending response\n", worker_data->transport_handle);
+//		return 0;
+//	}
+/*
+	if (rrr_http_session_transport_ctx_reset_response_part(handle) != RRR_HTTP_OK) {
+		RRR_MSG_0("Could not initialize response part in __rrr_http_server_worker_net_transport_ctx_initialize_response\n");
+		return RRR_HTTP_HARD_ERROR;
+	}
+
+	// If client has not sent any data, don't send a response
+	if (!rrr_http_session_transport_ctx_check_data_received(handle)) {
+		RRR_DBG_3("HTTP worker %i: No HTTP request from client, not sending response\n", worker_data->transport_handle);
+		return RRR_HTTP_OK;
+	}
+*/
+
+	if (__rrr_http_server_worker_push_response_headers(response_part) != 0) {
+		RRR_MSG_0("HTTP worker %i: Could not push default response headers in __rrr_http_server_worker_net_transport_ctx_send_response\n",
+				worker_data->transport_handle);
+		return RRR_HTTP_HARD_ERROR;
+	}
+
+	/*
+	 * For now, no content is sent back to client
+		if (rrr_http_session_transport_ctx_push_response_header(handle, "Content-Type", "application/json; charset=utf-8") != 0) {
+			RRR_MSG_0("Could not push header field to response part in __rrr_net_http_server_worker_net_transport_ctx_send_response\n");
+			return 1;
+		}
+	*/
+
+	return RRR_HTTP_OK;
 }
 
 static int __rrr_http_server_worker_http_session_receive_callback (
@@ -100,32 +153,68 @@ static int __rrr_http_server_worker_http_session_receive_callback (
 
 	(void)(data_ptr);
 
+	// These are always 0, we read using the recv() function. recvfrom() would
+	// not return anything as well. The remote address is instead cached right
+	// after we accept the connection.
+	(void)(sockaddr);
+	(void)(socklen);
+
 	int ret = 0;
 
-	RRR_DBG_2("HTTP worker %i: %s %s HTTP/1.1\n",
-			worker_data->transport_handle, part->request_method_str, part->request_uri);
+	if (RRR_DEBUGLEVEL_2) {
+		char ip_buf[256];
 
-	worker_data->receive_complete = 1;
+		rrr_ip_to_str(ip_buf, 256, (const struct sockaddr *) &worker_data->sockaddr, worker_data->socklen);
 
-	if (worker_data->final_callback != NULL) {
-		ret = worker_data->final_callback(part, data_ptr, sockaddr, socklen, worker_data->final_callback_arg);
+		RRR_MSG_2("HTTP worker %i %s %s %s HTTP/1.1\n",
+				worker_data->transport_handle, ip_buf, request_part->request_method_str, request_part->request_uri);
+
+		if (overshoot_bytes > 0) {
+			RRR_MSG_2("HTTP worker %i %s has %li bytes overshoot, expecting another request\n",
+					worker_data->transport_handle, ip_buf, overshoot_bytes);
+		}
 	}
 
-	switch (ret) {
-		case RRR_HTTP_OK:
-			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
-			break;
-		case RRR_HTTP_SOFT_ERROR:
-			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
-			break;
-		default:
-			worker_data->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
-			break;
-	};
+	if (overshoot_bytes == 0) {
+		worker_data->receive_complete = 1;
+	}
+
+	if ((ret = __rrr_http_server_worker_initialize_response(worker_data, response_part)) != RRR_HTTP_OK) {
+		goto out;
+	}
+
+	if (worker_data->final_callback != NULL) {
+		ret = worker_data->final_callback (
+				request_part,
+				response_part,
+				data_ptr,
+				// Address was cached when accepting
+				(const struct sockaddr *) &worker_data->sockaddr,
+				worker_data->socklen,
+				overshoot_bytes,
+				worker_data->final_callback_arg
+		);
+	}
+
+	if (response_part->response_code == 0) {
+		switch (ret) {
+			case RRR_HTTP_OK:
+				response_part->response_code = RRR_HTTP_RESPONSE_CODE_OK_NO_CONTENT;
+				break;
+			case RRR_HTTP_SOFT_ERROR:
+				response_part->response_code = RRR_HTTP_RESPONSE_CODE_ERROR_BAD_REQUEST;
+				break;
+			default:
+				response_part->response_code = RRR_HTTP_RESPONSE_CODE_INTERNAL_SERVER_ERROR;
+				break;
+		};
+	}
+
+	out:
 	return ret;
 }
 
-static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
+static int __rrr_http_server_worker_net_transport_ctx_do_reading (
 		struct rrr_net_transport_handle *handle,
 		void *arg
 ) {
@@ -152,51 +241,6 @@ static int __rrr_net_http_server_worker_net_transport_ctx_do_reading (
 	return ret;
 }
 
-static int __rrr_net_http_server_worker_net_transport_ctx_send_response (
-		struct rrr_net_transport_handle *handle,
-		void *arg
-) {
-	struct rrr_http_server_worker_data *worker_data = arg;
-
-	// We allow send_response to be called as long as transpoort handle is OK,
-	// but the response part must have been initialized for us to be able to
-	// send a response. If it is NULL, we cannot send a response.
-	if (!rrr_http_session_transport_ctx_check_response_part_initialized(handle)) {
-		RRR_DBG_3("HTTP worker %i: No HTTP parts initialized, not sending response\n", worker_data->transport_handle);
-		return 0;
-	}
-
-	// If client has not sent any data, don't send a response
-	if (!rrr_http_session_transport_ctx_check_data_received(handle)) {
-		RRR_DBG_3("HTTP worker %i: No HTTP request from client, not sending response\n", worker_data->transport_handle);
-		return 0;
-	}
-
-	if (worker_data->response_code == 0) {
-		RRR_MSG_0("HTTP worker %i: No response code was set in __rrr_net_http_server_worker_net_transport_ctx_send_response, sending 500 to client.\n",
-				worker_data->transport_handle);
-		worker_data->response_code = 500;
-	}
-
-	if (rrr_http_session_transport_ctx_set_response_code(handle, worker_data->response_code) != 0) {
-		RRR_MSG_0("HTTP worker %i: Could not set response code in __rrr_net_http_server_worker_net_transport_ctx_send_response\n",
-				worker_data->transport_handle);
-		return 1;
-	}
-
-/*
- * For now, no content is sent back to client
-	if (rrr_http_session_transport_ctx_push_response_header(handle, "Content-Type", "application/json; charset=utf-8") != 0) {
-		RRR_MSG_0("Could not push header field to response part in __rrr_net_http_server_worker_net_transport_ctx_send_response\n");
-		return 1;
-	}
-*/
-	RRR_DBG_2("HTTP worker %i: Sending response %lu\n",
-			worker_data->transport_handle, worker_data->response_code);
-
-	return rrr_http_session_transport_ctx_send_response(handle);
-}
-
 void *rrr_http_server_worker_thread_entry (
 		struct rrr_thread *thread
 ) {
@@ -217,9 +261,15 @@ void *rrr_http_server_worker_thread_entry (
 	worker_data.read_max_size = worker_data_preliminary->read_max_size;
 	worker_data.transport = worker_data_preliminary->transport;
 	worker_data.transport_handle = worker_data_preliminary->transport_handle;
+	worker_data.sockaddr = worker_data_preliminary->sockaddr;
+	worker_data.socklen = worker_data_preliminary->socklen;
 	worker_data.final_callback = worker_data_preliminary->final_callback;
 	worker_data.final_callback_arg = worker_data_preliminary->final_callback_arg;
 	pthread_mutex_unlock(&worker_data_preliminary->lock);
+
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &worker_data.sockaddr, worker_data.socklen);
+//	printf("http worker start: %s family %i socklen %i\n", buf, worker_data.sockaddr.ss_family, worker_data.socklen);
 
 	// This might happen upon server shutdown
 	if (worker_data.transport_handle == 0) {
@@ -234,7 +284,7 @@ void *rrr_http_server_worker_thread_entry (
 	// function in net transport will fail if the handle has been freed, this means
 	// that the HTTP session has also been freed.
 
-	pthread_cleanup_push(__rrr_net_http_server_worker_close_transport, &worker_data);
+	pthread_cleanup_push(__rrr_http_server_worker_close_transport, &worker_data);
 
 	RRR_DBG_8("HTTP worker thread %p started worker %i\n", thread, worker_data.transport_handle);
 
@@ -245,7 +295,7 @@ void *rrr_http_server_worker_thread_entry (
 		if ((ret_tmp = rrr_net_transport_handle_with_transport_ctx_do (
 				worker_data.transport,
 				worker_data.transport_handle,
-				__rrr_net_http_server_worker_net_transport_ctx_do_reading,
+				__rrr_http_server_worker_net_transport_ctx_do_reading,
 				&worker_data
 		)) != 0) {
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
@@ -264,16 +314,6 @@ void *rrr_http_server_worker_thread_entry (
 		}
 
 		rrr_posix_usleep(1000);
-	}
-
-	// Always try to send response (if response part is initialized)
-	if (rrr_net_transport_handle_with_transport_ctx_do (
-			worker_data.transport,
-			worker_data.transport_handle,
-			__rrr_net_http_server_worker_net_transport_ctx_send_response,
-			&worker_data
-	) != 0) {
-		RRR_MSG_0("Warning: Failed while sending response to HTTP client in thread %p\n", thread);
 	}
 
 	RRR_DBG_8("HTTP worker thread %p exiting worker %i\n", thread, worker_data.transport_handle);

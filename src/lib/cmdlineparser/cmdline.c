@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "cmdline.h"
-#include "../../global.h"
+#include "../../lib/macro_utils.h"
 #include "../../lib/log.h"
 
 //#define CMD_DBG_CMDLINE

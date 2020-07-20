@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
+#include "../lib/macro_utils.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -193,7 +194,7 @@ static int perl5_start(struct perl5_child_data *data) {
 	if (ret != 0) {
 		RRR_MSG_0("Could not parse perl5 file in perl5_start of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
-		goto out;
+		goto out_cleanup_ctx;
 	}
 
 	ret |= rrr_perl5_ctx_run(data->ctx);
@@ -201,12 +202,15 @@ static int perl5_start(struct perl5_child_data *data) {
 	if (ret != 0) {
 		RRR_MSG_0("Could not run perl5 file in perl5_start of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
-		goto out;
+		goto out_cleanup_ctx;
 	}
 
+	goto out;
+	out_cleanup_ctx:
+		rrr_perl5_destroy_ctx(data->ctx);
+		data->ctx = NULL;
 	out:
-	// Everything is cleaned up my perl5_stop, also in case of errors
-	return ret;
+		return ret;
 }
 
 static void data_cleanup(void *arg) {
@@ -256,6 +260,7 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 		RRR_MSG_0("Could not compile and start perl5 in child fork of instance %s\n",
 				INSTANCE_D_NAME(child_data.parent_data->thread_data));
 		ret = 1;
+		// When there are errors, perl5_start will cleanup perl5 ctx
 		goto out_sys_term;
 	}
 
@@ -271,7 +276,8 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 	}
 
 //	out_destroy_ctx:
-		rrr_perl5_destroy_ctx(child_data.ctx);
+	rrr_perl5_destroy_ctx(child_data.ctx);
+
 	out_sys_term:
 		rrr_perl5_sys_term();
 	out_final:

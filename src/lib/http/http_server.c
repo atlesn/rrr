@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../threads.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
+//#include "../ip_util.h"
 
 static void __rrr_http_server_ghost_handler (struct rrr_thread *thread) {
 	thread->free_private_data_by_ghost = 1;
@@ -174,9 +175,6 @@ static void __rrr_http_server_accept_create_http_session_callback (
 ) {
 	struct rrr_http_server_worker_preliminary_data *worker_data = arg;
 
-	(void)(sockaddr);
-	(void)(socklen);
-
 	worker_data->error = 0;
 
 	if (rrr_http_session_transport_ctx_server_new (
@@ -186,10 +184,24 @@ static void __rrr_http_server_accept_create_http_session_callback (
 		worker_data->error = 1;
 	}
 	else {
+/*		char buf[256];
+		rrr_ip_to_str(buf, sizeof(buf), sockaddr, socklen);
+		printf("accepted from %s family %i\n", buf, sockaddr->sa_family);*/
+
 		pthread_mutex_lock(&worker_data->lock);
+
 		// DO NOT STORE HANDLE POINTER
+		
 		worker_data->transport = handle->transport;
 		worker_data->transport_handle = handle->handle;
+
+		if (socklen > sizeof(worker_data->sockaddr)) {
+			RRR_BUG("BUG: Socklen too long in __rrr_http_Server_accept_create_http_session_callback\n");
+		}
+
+		memcpy(&worker_data->sockaddr, sockaddr, socklen);
+		worker_data->socklen = socklen;
+
 		pthread_mutex_unlock(&worker_data->lock);
 	}
 }

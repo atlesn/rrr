@@ -117,14 +117,16 @@ static int influxdb_receive_http_response (
 	(void)(data_ptr);
 	(void)(sockaddr);
 	(void)(socklen);
+	(void)(overshoot_bytes);
+	(void)(request_part);
 
 	int ret = 0;
 
 	// TODO : Read error message from JSON
 
-	if (part->response_code < 200 || part->response_code > 299) {
+	if (response_part->response_code < 200 || response_part->response_code > 299) {
 		RRR_MSG_0("HTTP error from influxdb in instance %s: %i %s\n",
-				INSTANCE_D_NAME(data->data->thread_data), part->response_code, part->response_str);
+				INSTANCE_D_NAME(data->data->thread_data), response_part->response_code, response_part->response_str);
 		ret = 1;
 		goto out;
 	}

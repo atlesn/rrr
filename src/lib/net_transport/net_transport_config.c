@@ -24,11 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "net_transport_config.h"
 
-#include "../../global.h"
 #include "../log.h"
 #include "../gnu.h"
 #include "../instance_config.h"
-#include "../global.h"
+#include "../macro_utils.h"
 
 void rrr_net_transport_config_cleanup (
 		struct rrr_net_transport_config *data
@@ -69,8 +68,8 @@ int rrr_net_transport_config_parse (
 	if (	(data->tls_certificate_file != NULL && data->tls_key_file == NULL) ||
 			(data->tls_certificate_file == NULL && data->tls_key_file != NULL)
 	) {
-		RRR_MSG_0("Only one of mqtt_certificate_file and mqtt_key_file was specified, either both or none are required in instance %s",
-				config->name);
+		RRR_MSG_0("Only one of %s_tls_certificate_file and %s_tls_key_file was specified, either both or none are required in instance %s",
+				prefix, prefix, config->name);
 		ret = 1;
 		goto out;
 	}
@@ -86,8 +85,8 @@ int rrr_net_transport_config_parse (
 			data->transport_type = RRR_NET_TRANSPORT_BOTH;
 		}
 		else {
-			RRR_MSG_0("Unknown value '%s' for mqtt_transport_type in instance %s\n",
-					data->transport_type_str, config->name);
+			RRR_MSG_0("Unknown value '%s' for %s_tls_transport_type in instance %s\n",
+					prefix, data->transport_type_str, config->name);
 			ret = 1;
 			goto out;
 		}
@@ -97,9 +96,9 @@ int rrr_net_transport_config_parse (
 	}
 
 	// Note : It's allowed not to specify a certificate
-	if (data->tls_certificate_file != NULL && data->transport_type == RRR_NET_TRANSPORT_TLS) {
-		RRR_MSG_0("TLS certificate specified in mqtt_certificate_file but mqtt_transport_type was not 'tls' for mqttclient instance %s\n",
-				config->name);
+	if (data->tls_certificate_file != NULL && data->transport_type != RRR_NET_TRANSPORT_TLS && data->transport_type != RRR_NET_TRANSPORT_BOTH) {
+		RRR_MSG_0("TLS certificate specified in %s_tls_certificate_file but %s_transport_type was not 'tls' for instance %s\n",
+				prefix, prefix, config->name);
 		ret = 1;
 		goto out;
 	}

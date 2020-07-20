@@ -24,22 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
+#include "cmdline_defines.h"
+
 #include "../../../config.h"
 #include "../linked_list.h"
-
-typedef unsigned long int cmd_arg_count;
-typedef unsigned long int cmd_arg_size;
-typedef unsigned long int cmd_conf;
-
-#define CMD_CONFIG_DEFAULTS			0
-#define CMD_CONFIG_COMMAND			(1<<0)
-
-#define CMD_ARG_FLAG_NO_ARGUMENT	(0)
-#define CMD_ARG_FLAG_HAS_ARGUMENT	(1<<0)
-#define CMD_ARG_FLAG_SPLIT_COMMA	(1<<1)
-#define CMD_ARG_FLAG_NO_FLAG		(1<<2)
-#define CMD_ARG_FLAG_NO_FLAG_MULTI	(1<<4)
-#define CMD_ARG_FLAG_ALLOW_EMPTY	(1<<5)
 
 struct cmd_arg_value {
 	RRR_LL_NODE(struct cmd_arg_value);

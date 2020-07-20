@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 #include "settings.h"
 #include "log.h"
+#include "macro_utils.h"
 
 struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
 	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
@@ -646,7 +647,7 @@ int rrr_settings_dump (struct rrr_instance_settings *settings) {
 			goto next;
 		}
 
-		RRR_DBG("%s=%s\n", name, value);
+		RRR_MSG_1("%s=%s\n", name, value);
 
 		next:
 		RRR_FREE_IF_NOT_NULL(value);
@@ -711,7 +712,6 @@ int __rrr_settings_update_used_callback (struct rrr_setting *settings, void *cal
 	return 0;
 }
 
-// TODO : Support updating the actual value
 void rrr_settings_update_used (
 		struct rrr_instance_settings *settings,
 		const char *name,

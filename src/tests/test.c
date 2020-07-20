@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test.h"
 #include "../main.h"
-#include "../global.h"
 #include "../../build_timestamp.h"
+#include "../lib/rrr_strerror.h"
 #include "../lib/posix.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
@@ -38,11 +38,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
 #include "../lib/log.h"
+#include "../lib/rrr_config.h"
 
 #include "test_usleep.h"
 #include "test_fixp.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("test");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
 const char *library_paths[] = {
 		RRR_MODULE_PATH,
@@ -54,8 +55,8 @@ const char *library_paths[] = {
 // threads to allow for debugging
 //#define RRR_TEST_DELAYED_EXIT 1
 
-int main_get_test_result(struct instance_metadata_collection *instances) {
-	struct instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
+int main_get_test_result(struct rrr_instance_metadata_collection *instances) {
+	struct rrr_instance_metadata *instance = rrr_instance_find(instances, "instance_test_module");
 
 	if (instance == NULL) {
 		RRR_MSG_0("Could not find instance for configuration test 'instance_configuration_tester'");
@@ -169,7 +170,7 @@ int main (int argc, const char **argv) {
 	}
 
 	TEST_BEGIN("PARSE CMD") {
-		if (main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
+		if (rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS) != 0) {
 			ret = 1;
 		}
 	} TEST_RESULT(ret == 0);
@@ -178,7 +179,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -214,7 +215,7 @@ int main (int argc, const char **argv) {
 		goto out_cleanup_cmd;
 	}
 
-	struct instance_metadata_collection *instances;
+	struct rrr_instance_metadata_collection *instances;
 	TEST_BEGIN("init instances") {
 		if (rrr_instance_metadata_collection_new (&instances) != 0) {
 			ret = 1;
@@ -237,7 +238,7 @@ int main (int argc, const char **argv) {
 
 	struct rrr_thread_collection *collection = NULL;
 	TEST_BEGIN("start threads") {
-		if (main_start_threads (
+		if (rrr_main_start_threads (
 				&collection,
 				instances,
 				config,
@@ -267,7 +268,7 @@ int main (int argc, const char **argv) {
 	sigaction (SIGUSR1, &action, NULL);
 
 	TEST_BEGIN(config_file) {
-		while (main_running && (rrr_global_config.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
+		while (main_running && (rrr_config_global.no_thread_restart || rrr_instance_check_threads_stopped(instances) == 0)) {
 			rrr_posix_usleep(100000);
 			rrr_fork_handle_sigchld_and_notify_if_needed (fork_handler, 0);
 		}
@@ -278,7 +279,7 @@ int main (int argc, const char **argv) {
 		rrr_posix_usleep (3600000000); // 3600 seconds
 #endif
 
-		main_threads_stop(collection, instances);
+		rrr_main_threads_stop(collection, instances);
 	} TEST_RESULT(ret == 0);
 
 	rrr_thread_destroy_collection(collection, 0);

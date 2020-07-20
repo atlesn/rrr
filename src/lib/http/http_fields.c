@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../linked_list.h"
+#include "../macro_utils.h"
 
 void rrr_http_field_destroy(struct rrr_http_field *field) {
 	RRR_FREE_IF_NOT_NULL(field->name);
@@ -122,14 +123,14 @@ int rrr_http_field_set_value (
 	return ret;
 }
 
-int rrr_http_field_collection_iterate (
-		struct rrr_http_field_collection *fields,
-		int (*callback)(struct rrr_http_field *field, void *callback_arg),
+int rrr_http_field_collection_iterate_const (
+		const struct rrr_http_field_collection *fields,
+		int (*callback)(const struct rrr_http_field *field, void *callback_arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
-	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
+	RRR_LL_ITERATE_BEGIN(fields, const struct rrr_http_field);
 		if ((ret = callback(node, callback_arg)) != 0) {
 			RRR_LL_ITERATE_BREAK();
 		}

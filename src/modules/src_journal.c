@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/instance_config.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -191,8 +191,8 @@ static void journal_log_hook (
 
 	data->count_total++;
 
-	if (	rrr_global_config.debuglevel != 0 &&
-			rrr_global_config.debuglevel != RRR_DEBUGLEVEL_1 &&
+	if (	rrr_config_global.debuglevel != 0 &&
+			rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1 &&
 			loglevel_translated > RRR_RFC5424_LOGLEVEL_ERROR
 	) {
 		// These messages must be suppressed to avoid generating new messages when processing log
@@ -363,7 +363,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data);
 
-	if (rrr_global_config.debuglevel != 0 && rrr_global_config.debuglevel != RRR_DEBUGLEVEL_1) {
+	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
 				INSTANCE_D_NAME(thread_data));
 	}

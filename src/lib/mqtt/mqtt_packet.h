@@ -23,7 +23,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_PACKET_H
 
 #include <inttypes.h>
-#include <stdio.h>
 
 #include "mqtt_property.h"
 #include "../buffer.h"

@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-uint32_t crc32buf (const char *buf, int len);
-int crc32cmp (const char *buf, int len, uint32_t crc32);
+uint32_t rrr_crc32buf (const char *buf, int len);
+int rrr_crc32cmp (const char *buf, int len, uint32_t crc32);
 
 #endif /* RRR_CRC32_H */

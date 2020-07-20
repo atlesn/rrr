@@ -33,9 +33,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "threads.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "rrr_strerror.h"
 #include "log.h"
+#include "macro_utils.h"
 
 // Very harsh option to make watchdogs stop checking alive timers of threads
 //#define VL_THREAD_INCAPACITATE_WATCHDOGS
@@ -179,6 +180,25 @@ int rrr_thread_run_ghost_cleanup(int *count) {
 	return ret;
 }
 
+void rrr_thread_set_signal(struct rrr_thread *thread, int signal) {
+	RRR_DBG_4 ("Thread %s set signal %d\n", thread->name, signal);
+	rrr_thread_lock(thread);
+	thread->signal |= signal;
+	rrr_thread_unlock(thread);
+}
+
+int rrr_thread_get_state(struct rrr_thread *thread) {
+	int state;
+	rrr_thread_lock(thread);
+	state = thread->state;
+	rrr_thread_unlock(thread);;
+	return state;
+}
+
+int rrr_thread_check_state(struct rrr_thread *thread, int state) {
+	return (rrr_thread_get_state(thread) == state);
+}
+
 void rrr_thread_set_state (struct rrr_thread *thread, int state) {
 	rrr_thread_lock(thread);
 
@@ -319,7 +339,6 @@ void rrr_thread_destroy_collection (
 		}
 		else {
 			rrr_thread_unlock(node);
-			// TODO : Add pthread_mutex_destroy(threads[i]->....) and test
 			RRR_LL_ITERATE_SET_DESTROY();
 		}
 	RRR_LL_ITERATE_END_CHECK_DESTROY(collection, __rrr_thread_destroy(node, do_destroy_private_data));
@@ -559,7 +578,7 @@ static void *__rrr_thread_watchdog_entry (void *arg) {
 			RRR_DBG_8 ("Thread %s/%p state was no longer RUNNING\n", thread->name, thread);
 			break;
 		}
-		else if (!rrr_global_config.no_watchdog_timers &&
+		else if (!rrr_config_global.no_watchdog_timers &&
 				(prevtime + (long long unsigned int) RRR_THREAD_WATCHDOG_FREEZE_LIMIT * 1000 * VL_THREAD_FREEZE_LIMIT_FACTOR < nowtime)
 		) {
 			if (rrr_time_get_64() - prev_loop_time > 100000) { // 100 ms

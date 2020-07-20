@@ -284,7 +284,7 @@ static unsigned short __rrr_log_translate_loglevel_rfc5424_stderr (unsigned shor
 }
 
 #define RRR_LOG_TRANSLATE_LOGLEVEL(translate) \
-	(rrr_global_config.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
+	(rrr_config_global.rfc5424_loglevel_output ? translate(loglevel) : loglevel)
 
 void rrr_log_printf_nolock (unsigned short loglevel, const char *prefix, const char *__restrict __format, ...) {
 	va_list args;

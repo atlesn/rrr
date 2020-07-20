@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "messages.h"
 #include "type.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "map.h"
 #include "gnu.h"
 

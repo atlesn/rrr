@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_headers.h"
 
 #include "../log.h"
-#include "../../global.h"
+#include "../macro_utils.h"
 
 static inline void RRR_Py_XDECREF (PyObject *obj) {
 	if ((obj) != NULL && (obj)->ob_refcnt == 0) {

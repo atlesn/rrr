@@ -23,8 +23,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <string.h>
 
-#include "mqtt_payload_buf.h"
 #include "../log.h"
+
+#include "mqtt_payload_buf.h"
+#include "../macro_utils.h"
 
 int rrr_mqtt_payload_buf_init (struct rrr_mqtt_payload_buf_session *session) {
 	memset(session, '\0', sizeof(*session));

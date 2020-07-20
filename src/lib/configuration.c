@@ -267,10 +267,10 @@ int __rrr_config_parse_instance (struct rrr_config *config, struct rrr_parse_pos
 		*did_parse = 0;
 	}
 
-	if (RRR_DEBUGLEVEL_1) {
-		RRR_DBG("\nDumping settings for instance %s:\n", instance_config->name);
+/*	if (RRR_DEBUGLEVEL_1) {
+		RRR_MSG_1("\nDumping settings for instance %s:\n", instance_config->name);
 		rrr_settings_dump(instance_config->settings);
-	}
+	}*/
 
 	if (ret == 0) {
 		*did_parse = 1;
@@ -450,24 +450,22 @@ struct rrr_config *rrr_config_parse_file (const char *filename) {
 }
 
 int rrr_config_dump (struct rrr_config *config) {
-	printf ("Dumping configuration:\n");
-
 	int ret = 0;
 	for (int i = 0; i < config->module_count; i++) {
 		struct rrr_instance_config *instance_config = config->configs[i];
 
-		printf ("Configuration for instance %s:\n", instance_config->name);
+		RRR_MSG_1("== CONFIGURATION FOR %s BEGIN =============\n", instance_config->name);
 
 		if (rrr_instance_config_dump(instance_config) != 0) {
 			ret = 1;
 		}
+
+		RRR_MSG_1("== CONFIGURATION FOR %s END ===============\n", instance_config->name);
 	}
 
 	if (ret != 0) {
 		printf ("Warning: Some error(s) occurred while dumping the configuration, some settings could possibly not be converted to strings\n");
 	}
-
-	printf ("-- End of configuration\n");
 
 	return ret;
 }

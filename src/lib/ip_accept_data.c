@@ -71,7 +71,7 @@ void rrr_ip_accept_data_collection_close_and_remove_by_fd (
 
 struct rrr_ip_accept_data *rrr_ip_accept_data_collection_find (
 		struct rrr_ip_accept_data_collection *collection,
-		struct sockaddr *sockaddr,
+		const struct sockaddr *sockaddr,
 		socklen_t socklen
 ) {
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_ip_accept_data);

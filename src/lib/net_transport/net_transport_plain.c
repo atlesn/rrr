@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../read.h"
 #include "../ip.h"
 #include "../ip_accept_data.h"
+#include "../macro_utils.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {
 	if (rrr_socket_close(handle->submodule_private_fd) != 0) {
@@ -67,7 +68,7 @@ static int __rrr_net_transport_plain_connect (
 	}
 
 	if (rrr_ip_network_connect_tcp_ipv4_or_ipv6(&accept_data, port, host, NULL) != 0) {
-		RRR_MSG_0("Could not connect to server '%s' port '%u'\n", host, port);
+		RRR_DBG_1("Could not connect to server '%s' port '%u'\n", host, port);
 		ret = 1;
 		goto out;
 	}
@@ -143,7 +144,7 @@ static int __rrr_net_transport_plain_read_message (
 				read_step_max_size,
 				read_max_size,
 				read_flags,
-				RRR_SOCKET_READ_METHOD_RECVFROM | RRR_SOCKET_READ_USE_TIMEOUT,
+				RRR_SOCKET_READ_METHOD_RECV | RRR_SOCKET_READ_USE_TIMEOUT,
 				__rrr_net_transport_plain_read_get_target_size_callback,
 				&callback_data,
 				__rrr_net_transport_plain_read_complete_callback,

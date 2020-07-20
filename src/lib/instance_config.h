@@ -22,7 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_INSTANCE_CONFIG_H
 #define RRR_INSTANCE_CONFIG_H
 
-#include "../global.h"
 #include "settings.h"
 
 #define RRR_INSTANCE_CONFIG_PREFIX_BEGIN(prefix)															\

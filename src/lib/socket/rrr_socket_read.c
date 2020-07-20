@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
@@ -38,7 +39,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../linked_list.h"
 #include "../rrr_strerror.h"
 #include "../read.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 
 struct rrr_socket_read_message_default_callback_data {
 	struct rrr_read_session_collection *read_sessions;

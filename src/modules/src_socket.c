@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 
 #include "../lib/settings.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/messages.h"
 #include "../lib/socket/rrr_socket.h"

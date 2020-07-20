@@ -31,13 +31,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include <openssl/rand.h>
 #endif
 
-#include "../global.h"
 #include "parse.h"
 #include "log.h"
 #include "passwd.h"
 #include "base64.h"
 #include "socket/rrr_socket.h"
 #include "rrr_strerror.h"
+#include "macro_utils.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512
 #define RRR_PASSWD_HASH_KEY_LENGTH (RRR_PASSWD_HASH_MAX_LENGTH/2)

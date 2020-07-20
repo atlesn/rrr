@@ -19,6 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,24 +30,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <pthread.h>
 
-#include "global.h"
-#include "main.h"
-#include "lib/common.h"
 #include "../build_timestamp.h"
-#include "lib/threads.h"
+#include "main.h"
+#include "lib/cmdlineparser/cmdline.h"
+#include "lib/common.h"
 #include "lib/http/http_server.h"
 #include "lib/net_transport/net_transport_config.h"
-#include "lib/version.h"
-#include "lib/cmdlineparser/cmdline.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/socket/rrr_socket_read.h"
-#include "lib/vl_time.h"
-#include "lib/ip.h"
+#include "lib/threads.h"
+#include "lib/version.h"
+#include "lib/rrr_config.h"
+#include "lib/log.h"
+#include "lib/rrr_time.h"
 #include "lib/rrr_strerror.h"
-#include "lib/gnu.h"
-#include "lib/random.h"
+#include "lib/macro_utils.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_http_server");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_HAS_ARGUMENT,	'p',	"port",					"[-p|--port[=]HTTP PORT]"},
@@ -234,12 +233,12 @@ int main (int argc, const char *argv[]) {
 
 	signal_handler = rrr_signal_handler_push(rrr_http_server_signal_handler, NULL);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -336,7 +335,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out:
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 
 		if (http_server != NULL) {
 			rrr_http_server_destroy(http_server);

@@ -26,9 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/cmdlineparser/cmdline.h"
+#include "lib/rrr_config.h"
 #include "lib/rrr_strerror.h"
 #include "lib/version.h"
 #include "lib/socket/rrr_socket.h"
@@ -37,8 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/gnu.h"
 #include "lib/parse.h"
 #include "lib/passwd.h"
+#include "lib/macro_utils.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_passwd");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_passwd");
 
 static const struct cmd_arg_rule cmd_rules[] = {
 		{CMD_ARG_FLAG_NO_FLAG,		'\0',	"file",					"{PASSWORD_FILE}"},
@@ -452,12 +454,12 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_passwd_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
 	}
 
 	// Don't require arguments here, separate check in parse_config
-	if (rrr_print_help_and_version(&cmd, 0) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 0) != 0) {
 		goto out;
 	}
 
@@ -588,7 +590,7 @@ int main (int argc, const char *argv[]) {
 		if (fd_out > 0) {
 			rrr_socket_close(fd_out);
 		}
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 		__rrr_passwd_destroy_data(&data);
 		cmd_destroy(&cmd);
 		rrr_socket_close_all();
