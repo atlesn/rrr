@@ -42,6 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "test_usleep.h"
 #include "test_fixp.h"
+#include "test_inet.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -115,6 +116,12 @@ int rrr_test_library_functions (void) {
 
 	TEST_BEGIN("fixed point type") {
 		ret_tmp = rrr_test_fixp();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
+	TEST_BEGIN("inet functions") {
+		ret_tmp = rrr_test_inet();
 	} TEST_RESULT(ret_tmp == 0);
 
 	ret |= ret_tmp;
