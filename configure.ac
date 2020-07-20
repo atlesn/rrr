@@ -15,6 +15,8 @@ AC_CONFIG_MACRO_DIRS([m4])
 
 AC_CONFIG_SUBDIRS([src/blockdevlogger])
 
+INET_CHECKS()
+
 dnl OpenBSD check for egcc
 AC_CHECK_PROG([EGCC], egcc, egcc)
 AC_MSG_CHECKING([for OpenBSD EGCC])
