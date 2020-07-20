@@ -10,7 +10,7 @@ piping or files. It is also possible to run self made scripts inside of RRR to m
 they pass through.
 
 - Acquire messages using piping, UNIX sockets, UDP/TCP-packets
-- Transfer messages using MQTT, UDP or TCP
+- Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
 - Saving messages using InfluxDB and MySQL
 
