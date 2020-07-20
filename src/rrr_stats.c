@@ -38,13 +38,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <limits.h>
 
-#include "global.h"
 #include "main.h"
-#include "lib/posix.h"
-#include "lib/vl_time.h"
+#include "lib/rrr_config.h"
 #include "lib/version.h"
-#include "lib/cmdlineparser/cmdline.h"
 #include "../build_timestamp.h"
+#include "lib/log.h"
+#include "lib/rrr_strerror.h"
+#include "lib/posix.h"
+#include "lib/rrr_time.h"
+#include "lib/cmdlineparser/cmdline.h"
 #include "lib/linked_list.h"
 #include "lib/map.h"
 #include "lib/socket/rrr_socket.h"
@@ -55,7 +57,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/rrr_readdir.h"
 #include "lib/stats/stats_message.h"
 #include "lib/stats/stats_tree.h"
-#include "lib/rrr_strerror.h"
+#include "lib/macro_utils.h"
 
 #ifdef _GNU_SOURCE
 #	error "Cannot use _GNU_SOURCE, would cause use of incorrect basename() function"
@@ -72,7 +74,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_STATS_KEEPALIVE_INTERVAL_MS			(RRR_SOCKET_CLIENT_TIMEOUT_S / 2) * 1000
 #define RRR_STATS_MESSAGE_LIFETIME_MS			1500
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_stats");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_stats");
 
 static volatile int rrr_stats_abort = 0;
 
@@ -207,6 +209,7 @@ static int __rrr_stats_read_message (
 			fd,
 			sizeof(struct rrr_socket_msg),
 			1024,
+			0,
 			0,
 			RRR_SOCKET_READ_METHOD_RECV,
 			rrr_read_common_get_session_target_length_from_message_and_checksum,
@@ -707,12 +710,12 @@ int main (int argc, const char *argv[]) {
 		goto out;
 	}
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_data;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 1) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 1) != 0) {
 		goto out_cleanup_cmd;
 	}
 
@@ -772,7 +775,7 @@ int main (int argc, const char *argv[]) {
 	}
 
 	out_cleanup_cmd:
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 		rrr_socket_close_all();
 		cmd_destroy(&cmd);
 	out_cleanup_data:

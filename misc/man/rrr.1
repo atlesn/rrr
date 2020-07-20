@@ -69,7 +69,7 @@ is used.
 The debuglevel is calculated by adding any of the following numbers together:
 .Bl -tag -width -indent
 .It 1
-Info about loading and closing of modules and threads (low rate)
+Info about loading and closing of modules (low rate)
 .It 2
 Runtime information in modules, they tell what they do at (high rate)
 .It 4
@@ -82,6 +82,8 @@ Alive-messages from some threads to see if they freeze (very high rate)
 Debug hex prints (large outputs)
 .It 64
 Debug socket closing and opening (high rate at initialization)
+.It 128
+Debug startup and closing of threads (high rate if modules start and stop threads frequently, otherwise low rate)
 .El
 .IP -W|--no_watchdog_timers
 Do not monitor threads for becoming unresponsive. If not set and a thread is found to be hung, all threads are terminated and

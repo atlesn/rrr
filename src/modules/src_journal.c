@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 
 #include "../lib/instance_config.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -120,8 +120,8 @@ static void journal_data_cleanup(void *arg) {
 static int journal_parse_config (struct journal_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("journal_hostname", hostname);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("journal_generate_test_messages", do_generate_test_messages, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("journal_hostname", hostname);
 
 	if (data->hostname == NULL || *(data->hostname) == '\0') {
 		char hostname[RRR_JOURNAL_HOSTNAME_MAX_LEN+1];
@@ -191,8 +191,8 @@ static void journal_log_hook (
 
 	data->count_total++;
 
-	if (	rrr_global_config.debuglevel != 0 &&
-			rrr_global_config.debuglevel != RRR_DEBUGLEVEL_1 &&
+	if (	rrr_config_global.debuglevel != 0 &&
+			rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1 &&
 			loglevel_translated > RRR_RFC5424_LOGLEVEL_ERROR
 	) {
 		// These messages must be suppressed to avoid generating new messages when processing log
@@ -216,7 +216,7 @@ static void journal_log_hook (
 	}
 
 	int ret = 0;
-	ret |= rrr_array_push_value_64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
+	ret |= rrr_array_push_value_u64_with_tag(&entry->array, "log_level_translated", loglevel_translated);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_prefix", prefix);
 	ret |= rrr_array_push_value_str_with_tag(&entry->array, "log_message", message);
 
@@ -341,14 +341,13 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	pthread_cleanup_push(journal_delivery_lock_cleanup, data);
 
 	if (journal_data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in journal instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("journal thread data is %p\n", thread_data);
 
 	pthread_cleanup_push(journal_data_cleanup, data);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
 	pthread_cleanup_push(journal_unregister_handle, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -362,11 +361,9 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES;
-
 	rrr_log_hook_register(&data->log_hook_handle, journal_log_hook, data);
 
-	if (rrr_global_config.debuglevel != 0 && rrr_global_config.debuglevel != RRR_DEBUGLEVEL_1) {
+	if (rrr_config_global.debuglevel != 0 && rrr_config_global.debuglevel != RRR_DEBUGLEVEL_1) {
 		RRR_DBG_1("Note: journal instance %s will suppress some messages due to debuglevel other than 1 being active\n",
 				INSTANCE_D_NAME(thread_data));
 	}
@@ -413,9 +410,9 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 
 		if (time_now - time_start > 1000000) {
 			time_start = time_now;
-			rrr_stats_instance_update_rate (stats, 0, "processed", data->count_processed - prev_processed);
-			rrr_stats_instance_update_rate (stats, 1, "suppressed", data->count_suppressed - prev_suppressed);
-			rrr_stats_instance_update_rate (stats, 2, "total", data->count_total - prev_total);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "processed", data->count_processed - prev_processed);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "suppressed", data->count_suppressed - prev_suppressed);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 2, "total", data->count_total - prev_total);
 
 			prev_processed = data->count_processed;
 			prev_suppressed = data->count_suppressed;
@@ -428,7 +425,6 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 	out_cleanup:
 	RRR_DBG_1 ("Thread journal instance %s exiting\n", INSTANCE_D_MODULE_NAME(thread_data));
 	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 

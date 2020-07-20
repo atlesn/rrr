@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/un.h>
 
 #include "../lib/settings.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/messages.h"
 #include "../lib/socket/rrr_socket.h"
@@ -152,7 +152,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 		return 1;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("socket_unlink_if_exists", do_unlink_if_exists, 0);
 
 	out:
 	return ret;
@@ -337,7 +337,7 @@ static void *thread_entry_socket (struct rrr_thread *thread) {
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in socket instance %s\n",
+		RRR_MSG_0("Could not initialize data in socket instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}

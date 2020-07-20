@@ -28,11 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_buffer_entry.h"
 #include "udpstream_asd.h"
 #include "buffer.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "read.h"
 #include "socket/rrr_socket_constants.h"
 #include "socket/rrr_socket_msg_checksum.h"
 #include "messages.h"
+#include "macro_utils.h"
 
 static struct rrr_udpstream_asd_control_msg __rrr_udpstream_asd_control_msg_split (uint64_t application_data) {
 	struct rrr_udpstream_asd_control_msg result;

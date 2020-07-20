@@ -44,7 +44,7 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	ssize_t data_size = message->msg_size - sizeof(*message);
 
 	if (data_size > 0) {
-		message->data_crc32 = crc32buf(data_begin, data_size);
+		message->data_crc32 = rrr_crc32buf(data_begin, data_size);
 	}
 
 //	printf ("Put crc32 %lu data size %li\n", message->data_crc32, message->network_size - sizeof(*message));
@@ -57,5 +57,5 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 	char *head_begin = ((char *) message) + sizeof(message->header_crc32);
 	ssize_t head_size = sizeof(*message) - sizeof(message->header_crc32);
 
-	message->header_crc32 = rrr_htobe32(crc32buf(head_begin, head_size));
+	message->header_crc32 = rrr_htobe32(rrr_crc32buf(head_begin, head_size));
 }

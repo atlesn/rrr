@@ -30,8 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_message.h"
 
 #include "../log.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../linked_list.h"
+#include "../macro_utils.h"
 
 static int __rrr_stats_instance_rate_counter_new (
 		struct rrr_stats_instance_rate_counter **target,

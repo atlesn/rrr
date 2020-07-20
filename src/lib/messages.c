@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket_msg.h"
 #include "messages.h"
 #include "log.h"
+#include "macro_utils.h"
 
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,

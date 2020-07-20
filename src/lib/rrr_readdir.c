@@ -32,13 +32,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include <sys/stat.h>
 #undef __XSI_VISIBLE
 
+// Allow realpath with glibc
+#undef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 500
+#	include <stdlib.h>
+#undef _XOPEN_SOURCE
+
 #include <errno.h>
 #include <dirent.h>
 #include <pthread.h>
 #include <fcntl.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "log.h"
 #include "rrr_readdir.h"

@@ -21,6 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "../log.h"
 
 #include "mqtt_client.h"
 #include "mqtt_common.h"
@@ -29,8 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_subscription.h"
 #include "mqtt_packet.h"
 #include "mqtt_acl.h"
+
+#include "../rrr_time.h"
 #include "../posix.h"
-#include "../log.h"
+#include "../macro_utils.h"
 
 #define RRR_MQTT_CLIENT_RETRY_INTERVAL				5
 #define RRR_MQTT_CLIENT_CLOSE_WAIT_TIME				3
@@ -287,13 +292,13 @@ int rrr_mqtt_client_connect (
 			server,
 			rrr_mqtt_conn_accept_and_connect_callback
 	) != 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
 
 	if (*transport_handle == 0) {
-		RRR_MSG_0("Could not connect to mqtt server '%s'\n", server);
+		RRR_DBG_1("Could not connect to mqtt server '%s'\n", server);
 		ret = 1;
 		goto out_nolock;
 	}
@@ -486,25 +491,13 @@ int rrr_mqtt_client_connect (
 		return ret;
 }
 
-int rrr_mqtt_client_start_plain (
-		struct rrr_mqtt_client_data *data
-) {
-	return rrr_mqtt_transport_start_plain(data->mqtt_data.transport);
-}
-
-int rrr_mqtt_client_start_tls (
+int rrr_mqtt_client_start (
 		struct rrr_mqtt_client_data *data,
-		const char *certificate_file,
-		const char *key_file,
-		const char *ca_file,
-		const char *ca_path
+		const struct rrr_net_transport_config *net_transport_config
 ) {
-	return rrr_mqtt_transport_start_tls (
+	return rrr_mqtt_transport_start (
 			data->mqtt_data.transport,
-			certificate_file,
-			key_file,
-			ca_file,
-			ca_path
+			net_transport_config
 	);
 }
 

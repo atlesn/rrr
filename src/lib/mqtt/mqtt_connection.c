@@ -25,19 +25,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
+
+#include "../log.h"
 
 #include "mqtt_common.h"
 #include "mqtt_connection.h"
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
 #include "mqtt_assemble.h"
+
 #include "../ip.h"
 #include "../ip_accept_data.h"
 #include "../buffer.h"
-#include "../vl_time.h"
-#include "../log.h"
-#include "../net_transport.h"
+#include "../rrr_time.h"
+#include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"
+#include "../macro_utils.h"
 
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_OK;
@@ -664,6 +668,7 @@ int rrr_mqtt_conn_iterator_ctx_read (
 				2, // Read two times this round
 				2, // Read only two bytes the first time
 				read_step_max_size,
+				0, // No max read size
 				RRR_READ_F_NO_SLEEPING,
 				__rrr_mqtt_conn_read_get_target_size,
 				&callback_data,

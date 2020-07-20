@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 
 #include "linked_list.h"
-#include "../macro_utils.h"
+#include "macro_utils.h"
 
 static const union type_system_endian {
 	uint16_t two;
@@ -182,12 +182,19 @@ struct rrr_type_value;
 struct rrr_type_definition {
 	rrr_type type;
 	rrr_type_length max_length;
+
+	// These are for importing or exporting to and from raw data
+	// and rrr_array struct
 	int (*get_import_length)(RRR_TYPE_GET_IMPORT_LENGTH_ARGS);
 	int (*import)(RRR_TYPE_IMPORT_ARGS);
 	void (*get_export_length)(RRR_TYPE_GET_EXPORT_LENGTH_ARGS);
 	int (*export)(RRR_TYPE_EXPORT_ARGS);
+
+	// These are for converting between work-copy rrr_array struct
+	// and RRR array message, with endian conversions
 	int (*unpack)(RRR_TYPE_UNPACK_ARGS);
 	int (*pack)(RRR_TYPE_PACK_ARGS);
+
 	int (*to_str)(RRR_TYPE_TO_STR_ARGS);
 	const char *identifier;
 };
@@ -250,6 +257,24 @@ int rrr_type_value_new (
 		rrr_type_length import_length,
 		rrr_type_array_size element_count,
 		rrr_type_length stored_length
+);
+ssize_t rrr_type_value_get_export_length (
+		const struct rrr_type_value *value
+);
+int rrr_type_value_allocate_and_export (
+		char **target,
+		ssize_t *written_bytes,
+		const struct rrr_type_value *node
+);
+int rrr_type_value_allocate_and_import_raw (
+		struct rrr_type_value **result_value,
+		const struct rrr_type_definition *definition,
+		const char *data_start,
+		const char *data_end,
+		rrr_type_length tag_length,
+		const char *tag,
+		rrr_type_length import_length,
+		rrr_type_array_size element_count
 );
 
 #endif /* RRR_TYPE_HEADER */

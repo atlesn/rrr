@@ -54,6 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
+#include "../lib/macro_utils.h"
 
 #include <EXTERN.h>
 #include <perl.h>
@@ -193,7 +194,7 @@ static int perl5_start(struct perl5_child_data *data) {
 	if (ret != 0) {
 		RRR_MSG_0("Could not parse perl5 file in perl5_start of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
-		goto out;
+		goto out_cleanup_ctx;
 	}
 
 	ret |= rrr_perl5_ctx_run(data->ctx);
@@ -201,12 +202,15 @@ static int perl5_start(struct perl5_child_data *data) {
 	if (ret != 0) {
 		RRR_MSG_0("Could not run perl5 file in perl5_start of instance %s\n",
 				INSTANCE_D_NAME(data->parent_data->thread_data));
-		goto out;
+		goto out_cleanup_ctx;
 	}
 
+	goto out;
+	out_cleanup_ctx:
+		rrr_perl5_destroy_ctx(data->ctx);
+		data->ctx = NULL;
 	out:
-	// Everything is cleaned up my perl5_stop, also in case of errors
-	return ret;
+		return ret;
 }
 
 static void data_cleanup(void *arg) {
@@ -228,7 +232,7 @@ static int parse_config(struct perl5_data *data, struct rrr_instance_config *con
 	}
 
 	// For test suite, but build directories into @INC
-	RRR_SETTINGS_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("perl5_do_include_build_directories", do_include_build_directories, 0);
 
 	out:
 	return ret;
@@ -256,6 +260,7 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 		RRR_MSG_0("Could not compile and start perl5 in child fork of instance %s\n",
 				INSTANCE_D_NAME(child_data.parent_data->thread_data));
 		ret = 1;
+		// When there are errors, perl5_start will cleanup perl5 ctx
 		goto out_sys_term;
 	}
 
@@ -271,7 +276,8 @@ static int perl5_init_wrapper_callback (RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) 
 	}
 
 //	out_destroy_ctx:
-		rrr_perl5_destroy_ctx(child_data.ctx);
+	rrr_perl5_destroy_ctx(child_data.ctx);
+
 	out_sys_term:
 		rrr_perl5_sys_term();
 	out_final:
@@ -368,16 +374,12 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 static void *thread_entry_perl5(struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct perl5_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll_ip;
 
 	if (perl5_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
-	rrr_poll_collection_init(&poll_ip);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -391,7 +393,7 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	pid_t fork_pid = 0;
 
@@ -415,8 +417,8 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			stats,
-			&poll_ip,
+			INSTANCE_D_STATS(thread_data),
+			thread_data->poll,
 			fork_pid
 	);
 
@@ -424,8 +426,6 @@ static void *thread_entry_perl5(struct rrr_thread *thread) {
 	RRR_DBG_1 ("perl5 instance %s thread %p exiting\n", INSTANCE_D_NAME(thread_data), thread_data->thread);
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

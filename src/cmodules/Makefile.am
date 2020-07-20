@@ -6,7 +6,8 @@ cmodule_cflags=@AM_CFLAGS@ -I../lib
 all-local:
 	./verify_targets.sh
 
-dummy_la_CFLAGS = ${cmodule_cflags}
-dummy_la_LDFLAGS = ${cmodule_ldflags}
-dummy_la_SOURCES = dummy.c
+dummy_la_CFLAGS = ${cmodule_cflags} 
+dummy_la_LDFLAGS = ${cmodule_ldflags} 
+dummy_la_SOURCES = dummy.c dummy/extra.c
+
 lib_LTLIBRARIES = dummy.la

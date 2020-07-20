@@ -19,30 +19,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_GLOBAL_H
-#define RRR_GLOBAL_H
+#ifndef RRR_CONFIG_H
+#define RRR_CONFIG_H
 
 #include <pthread.h>
 
-/* Compile time checks */
-#define RRR_ASSERT_DEBUG
-#ifdef RRR_ASSERT_DEBUG
-#define RRR_ASSERT(predicate,name) \
-	do{char _assertion_failed_##name##_[2*!!(predicate)-1];_assertion_failed_##name##_[0]='\0';(void)(_assertion_failed_##name##_);}while(0);
-#else
-#define RRR_ASSERT(predicate,name)
-#endif
-
-#define RRR_FREE_IF_NOT_NULL(arg) do{if(arg != NULL){free(arg);arg=NULL;}}while(0)
-
-
-#define RRR_GLOBAL_SET_LOG_PREFIX(str) \
+#define RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX(str) \
 	const char *rrr_default_log_prefix = str
 
-// Must be initialized in main c-file using the macro
+// Prefix must be initialized in main c-file using the macro
 extern const char *rrr_default_log_prefix;
 
-struct cmd_data;
+extern struct rrr_global_config rrr_config_global;
+
+//extern pthread_mutex_t rrr_config_global_mutex;
 
 /* Runtime globals */
 struct rrr_global_config {
@@ -55,24 +45,17 @@ struct rrr_global_config {
 	const char *log_prefix;
 };
 
-extern struct rrr_global_config rrr_global_config;
-extern pthread_mutex_t global_config_mutex;
-
-void rrr_set_debuglevel_orig(void);
-void rrr_set_debuglevel_on_exit(void);
-void rrr_init_global_config (
+void rrr_config_set_debuglevel_orig(void);
+void rrr_config_set_debuglevel_on_exit(void);
+void rrr_config_init (
 		unsigned int debuglevel,
 		unsigned int debuglevel_on_exit,
 		unsigned int no_watcdog_timers,
 		unsigned int no_thread_restart,
 		unsigned int rfc5424_loglevel_output
 );
-void rrr_global_config_set_log_prefix (
+void rrr_config_set_log_prefix (
 		const char *log_prefix
 );
-int rrr_print_help_and_version (
-		struct cmd_data *cmd,
-		int argc_minimum
-);
 
-#endif
+#endif /* RRR_CONFIG_H */

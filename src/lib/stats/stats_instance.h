@@ -28,34 +28,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../linked_list.h"
 
-// Should be done together with other pthread_cleanup_push at top of thread entry function
-#define RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH						\
-	struct rrr_stats_instance *stats = NULL;									\
-	if (rrr_stats_instance_new (												\
-		&stats,																	\
-		INSTANCE_D_STATS(thread_data),											\
-		INSTANCE_D_NAME(thread_data)											\
-	) != 0) {																	\
-		RRR_MSG_0("Could not initialize stats engine for instance %s\n",		\
-				INSTANCE_D_NAME(thread_data)									\
-		);																		\
-		pthread_exit(0);														\
-	}																			\
-	pthread_cleanup_push(rrr_stats_instance_destroy_void, stats)
-
-// Should be done before running main loop in thread entry function
-#define RRR_STATS_INSTANCE_POST_DEFAULT_STICKIES								\
-	do {if (rrr_stats_instance_post_default_stickies(stats) != 0) {				\
-		RRR_MSG_0("Error while posting default sticky statistics instance %s\n",\
-				INSTANCE_D_NAME(thread_data)									\
-		);																		\
-		pthread_exit(0);														\
-	}} while(0)
-
-// Should be done at bottom of thread entry function together with other pthread_cleanup_pop
-#define RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP						\
-	pthread_cleanup_pop(1); stats = NULL
-
 #define RRR_STATS_INSTANCE_PATH_PREFIX "instances"
 
 #define RRR_INSTANCE_POST_ARGUMENTS									\

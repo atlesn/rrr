@@ -23,16 +23,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
-#include "log.h"
 #include "http_part.h"
 #include "http_fields.h"
 #include "http_util.h"
-#include "threads.h"
+
+#include "../log.h"
+#include "../threads.h"
+#include "../macro_utils.h"
 
 #define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
 		const char *data_start =								\
 				data_ptr +										\
-				part->request_or_response_length +				\
+				part->headroom_length +							\
 				part->header_length								\
 		;														\
 		const char *data_end =									\
@@ -152,6 +154,61 @@ static int __rrr_http_header_parse_first_string_value (RRR_HTTP_HEADER_FIELD_PAR
 	return ret;
 }
 
+static void __rrr_http_header_parse_unquote_fields (
+		int *found,
+		struct rrr_http_field *field,
+		const char *parent_field_name,
+		const char *names_match[],
+		size_t names_match_count
+) {
+	*found = 0;
+
+	for (size_t i = 0; i < names_match_count; i++) {
+		if (strcmp(names_match[i], field->name) == 0) {
+			*found = 1;
+			break;
+		}
+	}
+
+	if (*found == 0) {
+		return;
+	}
+
+	ssize_t output_size = 0;
+	if (rrr_http_util_unquote_string(&output_size, field->value, field->value_size) != 0) {
+		RRR_DBG_1("Warning: Syntax error in '%s' subvalue field of '%s' in HTTP header\n",
+				field->name, parent_field_name);
+		return;
+	}
+	field->value_size = output_size;
+
+	if (rrr_http_util_decode_urlencoded_string(&output_size, field->value, field->value_size) != 0) {
+		RRR_DBG_1("Warning: Error while decoding url encoding of '%s' subvalue field of '%s' in HTTP header\n",
+				field->name, parent_field_name);
+		return;
+	}
+	field->value_size = output_size;
+}
+
+static int __rrr_http_header_parse_content_type_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
+	int ret = 0;
+
+	if ((ret = __rrr_http_header_parse_first_string_value(field)) != 0) {
+		goto out;
+	}
+	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
+		int found = 0;
+		const char *unquote_field_names[] = {"charset", "boundary"};
+		__rrr_http_header_parse_unquote_fields(&found, node, field->name, unquote_field_names, 2);
+		if (found == 0) {
+			RRR_DBG_1("Warning: Unknown field '%s' in content-type header\n", node->name);
+		}
+	RRR_LL_ITERATE_END();
+
+	out:
+	return ret;
+}
+
 static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FIELD_PARSER_DEFINITION) {
 	int ret = 0;
 
@@ -171,22 +228,15 @@ static int __rrr_http_header_parse_content_disposition_value (RRR_HTTP_HEADER_FI
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (node->value == NULL || *(node->value) == '\0') {
+		if (node->value == NULL || node->value_size == 0) {
 			RRR_DBG_1("Warning: Empty field '%s' in content-disposition\n", node->name);
 			RRR_LL_ITERATE_NEXT();
 		}
 
-		if (rrr_posix_strcasecmp(node->name, "name") || rrr_posix_strcasecmp(node->name, "filename")) {
-			if (rrr_http_util_unquote_string(node->value) != 0) {
-				RRR_DBG_1("Warning: Syntax error in 'name' or 'filename' field of content-disposition header\n");
-				RRR_LL_ITERATE_NEXT();
-			}
-			if (rrr_http_util_decode_urlencoded_string(node->value) != 0) {
-				RRR_DBG_1("Warning: Error while decoding url encoding of 'name' or 'filename' field of content-disposition header\n");
-				RRR_LL_ITERATE_NEXT();
-			}
-		}
-		else {
+		int found = 0;
+		const char *unquote_field_names[] = {"name", "filename"};
+		__rrr_http_header_parse_unquote_fields(&found, node, field->name, unquote_field_names, 2);
+		if (found == 0) {
 			RRR_DBG_1("Warning: Unknown field '%s' in content-disposition header\n", node->name);
 		}
 	RRR_LL_ITERATE_END();
@@ -203,7 +253,7 @@ static const struct rrr_http_header_field_definition definitions[] = {
 		{"connection",			0,										__rrr_http_header_parse_single_string_value},
 		{"content-disposition",	0,										__rrr_http_header_parse_content_disposition_value},
 		{"content-length",		RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_unsigned_value},
-		{"content-type",		0,										__rrr_http_header_parse_first_string_value},
+		{"content-type",		0,										__rrr_http_header_parse_content_type_value},
 		{"date",				RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
 		{"link",				RRR_HTTP_HEADER_FIELD_ALLOW_MULTIPLE,	NULL},
 		{"location",			RRR_HTTP_HEADER_FIELD_NO_PAIRS,			__rrr_http_header_parse_single_string_value},
@@ -483,7 +533,7 @@ static int __rrr_http_parse_request (
 
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
 		RRR_MSG_0("Whitespace missing after request method in HTTP request\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -500,7 +550,7 @@ static int __rrr_http_parse_request (
 
 	if ((space = rrr_http_util_find_whsp(start, end)) == NULL) {
 		RRR_MSG_0("Whitespace missing after request uri in HTTP request\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -508,7 +558,7 @@ static int __rrr_http_parse_request (
 	RRR_FREE_IF_NOT_NULL(result->request_uri);
 	if (__rrr_http_parse_allocate_string (&result->request_uri, start, space) != 0) {
 		RRR_MSG_0("Could not allocate string for uri in __rrr_http_parse_request \n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_HARD_ERR;
 		goto out;
 	}
@@ -613,7 +663,7 @@ static int __rrr_http_parse_header_field_subvalue (
 	ssize_t name_length = name_end - start;
 	if (name_length <= 0) {
 		RRR_MSG_0("No name found while parsing subvalues of HTTP header field\n");
-		rrr_http_util_print_where_message(start);
+		rrr_http_util_print_where_message(start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -691,6 +741,7 @@ static int __rrr_http_parse_header_field (
 	const char *crlf = NULL;
 	int bad_client_missing_space_after_comma = 0;
 
+	// >>>> Duplicate field goto target
 	do_duplicate_field:
 
 	bad_client_missing_space_after_comma = 0;
@@ -705,7 +756,7 @@ static int __rrr_http_parse_header_field (
 		const char *colon = rrr_http_util_strchr(start, crlf, ':');
 		if (colon == NULL) {
 			RRR_MSG_0("Colon not found in HTTP header field in __rrr_http_parse_header_field\n");
-			rrr_http_util_print_where_message(start);
+			rrr_http_util_print_where_message(start, end);
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
 		}
@@ -764,7 +815,7 @@ static int __rrr_http_parse_header_field (
 		if (bad_client_missing_space_after_comma) {
 			if (RRR_DEBUGLEVEL_1) {
 				RRR_MSG_0("Warning: No whitespace after comma while parsing HTTP header field subvalues\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 			}
 		}
 		else {
@@ -814,7 +865,7 @@ static int __rrr_http_parse_header_field (
 			if (*next == ',') {
 				if (RRR_DEBUGLEVEL_1) {
 					RRR_MSG_0("Warning: Comma found after semicolon in HTTP header, bad implementation\n");
-					rrr_http_util_print_where_message(start);
+					rrr_http_util_print_where_message(start, end);
 				}
 				start++;
 			}
@@ -886,16 +937,16 @@ static int __rrr_http_part_parse_chunk_header (
 	*result_chunk = NULL;
 
 	// TODO : Implement chunk header fields
+/*
+	char buf_dbg[32];
+	memcpy(buf_dbg, buf + start_pos - 16, 16);
+	buf_dbg[16] = '\0';
 
-	/*char buf[32];
-	memcpy(buf, start - 16, 16);
-	buf[16] = '\0';
-
-	printf ("Looking for chunk header between %s\n", buf);
-	memcpy(buf, start, 16);
-	buf[16] = '\0';
-	printf ("and %s\n", buf);*/
-
+	printf ("Looking for chunk header between %s\n", buf_dbg);
+	memcpy(buf_dbg, buf + start_pos, 16);
+	buf_dbg[16] = '\0';
+	printf ("and %s\n", buf_dbg);
+*/
 	const char *start = buf + start_pos;
 	const char *pos = start;
 
@@ -1084,7 +1135,60 @@ static int __rrr_http_part_parse_chunk (
 	return ret;
 }
 
-int rrr_http_part_iterate_chunks (
+int rrr_http_part_header_field_push (
+		struct rrr_http_part *part,
+		const char *name,
+		const char *value
+) {
+	int ret = 0;
+
+	struct rrr_http_header_field *field = NULL;
+
+	if ((ret = __rrr_http_header_field_new(&field, name, strlen(name))) != 0) {
+		RRR_MSG_0("Could not create header field in rrr_http_part_push_header_field\n");
+		goto out;
+	}
+
+	if ((field->value = strdup(value)) == NULL) {
+		RRR_MSG_0("Could not allocate memory for value in rrr_http_part_push_header_field\n");
+		goto out_destroy;
+	}
+
+	RRR_LL_APPEND(&part->headers, field);
+	field = NULL;
+
+	goto out;
+	out_destroy:
+		__rrr_http_header_field_destroy(field);
+	out:
+	return ret;
+}
+
+int rrr_http_part_fields_iterate_const (
+		const struct rrr_http_part *part,
+		int (*callback)(const struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
+) {
+	return rrr_http_field_collection_iterate_const(&part->fields, callback, callback_arg);
+}
+
+int rrr_http_part_header_fields_iterate (
+		struct rrr_http_part *part,
+		int (*callback)(struct rrr_http_header_field *field, void *arg),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
+		if ((ret = callback(node, callback_arg)) != 0) {
+			RRR_LL_ITERATE_BREAK();
+		}
+	RRR_LL_ITERATE_END();
+
+	return ret;
+}
+
+int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
 		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
@@ -1126,7 +1230,7 @@ int rrr_http_part_iterate_chunks (
 }
 
 int rrr_http_part_parse (
-		struct rrr_http_part *result,
+		struct rrr_http_part *part,
 		ssize_t *target_size,
 		ssize_t *parsed_bytes,
 		const char *data_ptr,
@@ -1135,6 +1239,8 @@ int rrr_http_part_parse (
 		enum rrr_http_parse_type parse_type
 ) {
 	int ret = RRR_HTTP_PARSE_INCOMPLETE;
+
+//	printf ("Parse part at: %s\n", data_ptr + start_pos);
 
 //	static int run_count = 0;
 //	printf ("Run count: %i pos %i\n", ++run_count, start_pos);
@@ -1145,14 +1251,14 @@ int rrr_http_part_parse (
 	ssize_t parsed_bytes_tmp = 0;
 	ssize_t parsed_bytes_total = 0;
 
-	if (result->is_chunked == 1) {
+	if (part->is_chunked == 1) {
 		goto parse_chunked;
 	}
 
-	if (result->parsed_protocol_version == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
+	if (part->parsed_protocol_version == 0 && parse_type != RRR_HTTP_PARSE_MULTIPART) {
 		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
 			ret = __rrr_http_parse_request (
-					result,
+					part,
 					&parsed_bytes_tmp,
 					data_ptr,
 					start_pos + parsed_bytes_total,
@@ -1161,7 +1267,7 @@ int rrr_http_part_parse (
 		}
 		else if (parse_type == RRR_HTTP_PARSE_RESPONSE) {
 			ret = __rrr_http_parse_response_code (
-					result,
+					part,
 					&parsed_bytes_tmp,
 					data_ptr,
 					start_pos + parsed_bytes_total,
@@ -1175,21 +1281,21 @@ int rrr_http_part_parse (
 		parsed_bytes_total += parsed_bytes_tmp;
 
 		if (ret != RRR_HTTP_PARSE_OK) {
-			if (result->parsed_protocol_version != 0) {
+			if (part->parsed_protocol_version != 0) {
 				RRR_BUG("BUG: Protocol version was set prior to complete response/request parsing in rrr_http_part_parse\n");
 			}
 			goto out;
 		}
-		else if (result->parsed_protocol_version == 0) {
+		else if (part->parsed_protocol_version == 0) {
 			RRR_BUG("BUG: Protocol version not set after complete response/request parsing in rrr_http_part_parse\n");
 		}
 
-		result->request_or_response_length = parsed_bytes_tmp;
+		part->headroom_length = parsed_bytes_tmp;
 	}
 
-	if (result->header_complete == 0) {
+	if (part->header_complete == 0) {
 		ret = __rrr_http_part_parse_header_fields (
-				&result->headers,
+				&part->headers,
 				&parsed_bytes_tmp,
 				data_ptr,
 				start_pos + parsed_bytes_total,
@@ -1198,51 +1304,53 @@ int rrr_http_part_parse (
 
 		parsed_bytes_total += parsed_bytes_tmp;
 
+		// Make sure the maths are done correctly. Header may be partially parsed in a previous round,
+		// we need to figure out the header length using the current parsing position
+//		result->header_length = start_pos + parsed_bytes_total - part->headroom_length;
+		part->header_length += parsed_bytes_tmp;
+
+//		printf("header length %p: %li + %li = %li\n",
+//				result, parsed_bytes_total - parsed_bytes_tmp, parsed_bytes_tmp, part->header_length);
+
 		if (ret != RRR_HTTP_PARSE_OK) {
 			goto out;
 		}
 
-		// Make sure the maths are done correctly. Header may be partially parsed in a previous round,
-		// we need to figure out the header length using the current parsing position
-		result->header_length = start_pos + parsed_bytes_total - result->request_or_response_length;
-		result->header_complete = 1;
+		part->header_complete = 1;
 
-		const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(result, "content-type");
-		const struct rrr_http_header_field *content_length = rrr_http_part_get_header_field(result, "content-length");
-		const struct rrr_http_header_field *transfer_encoding = rrr_http_part_get_header_field(result, "transfer-encoding");
+		const struct rrr_http_header_field *content_type = rrr_http_part_get_header_field(part, "content-type");
+		const struct rrr_http_header_field *content_length = rrr_http_part_get_header_field(part, "content-length");
+		const struct rrr_http_header_field *transfer_encoding = rrr_http_part_get_header_field(part, "transfer-encoding");
 
 		if (parse_type == RRR_HTTP_PARSE_REQUEST) {
 			RRR_DBG_3("HTTP request header parse complete\n");
 
-			if (result->request_method_str == NULL) {
+			if (part->request_method_str == NULL) {
 				RRR_BUG("Request method not set in rrr_http_part_parse after header completed\n");
 			}
 
-			if (result->request_method != 0) {
+			if (part->request_method != 0) {
 				RRR_BUG("Numeric request method was non zero in rrr_http_part_parse\n");
 			}
 
-			if (rrr_posix_strcasecmp(result->request_method_str, "GET") == 0) {
-				if (content_length != NULL && content_length->value_unsigned != 0) {
-					RRR_MSG_0("Content-length was non-zero for GET request\n");
-					ret = RRR_HTTP_PARSE_SOFT_ERR;
-					goto out;
-				}
-
-				result->request_method = RRR_HTTP_METHOD_GET;
+			if (rrr_posix_strcasecmp(part->request_method_str, "GET") == 0) {
+				part->request_method = RRR_HTTP_METHOD_GET;
 			}
-			else if (rrr_posix_strcasecmp(result->request_method_str, "POST") == 0) {
+			else if (rrr_posix_strcasecmp(part->request_method_str, "OPTIONS") == 0) {
+				part->request_method = RRR_HTTP_METHOD_OPTIONS;
+			}
+			else if (rrr_posix_strcasecmp(part->request_method_str, "POST") == 0) {
 				if (content_type == NULL || rrr_posix_strcasecmp(content_type->name, "application/octet-stream")) {
-					result->request_method = RRR_HTTP_METHOD_POST_APPLICATON_OCTET_STREAM;
+					part->request_method = RRR_HTTP_METHOD_POST_APPLICATION_OCTET_STREAM;
 				}
 				else if (rrr_posix_strcasecmp(content_type->name, "multipart/form-data")) {
-					result->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
+					part->request_method = RRR_HTTP_METHOD_POST_MULTIPART_FORM_DATA;
 				}
 				else if (rrr_posix_strcasecmp(content_type->name, "application/x-www-form-urlencoded")) {
-					result->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
+					part->request_method = RRR_HTTP_METHOD_POST_URLENCODED;
 				}
 				else if (rrr_posix_strcasecmp(content_type->name, "text/plain")) {
-					result->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
+					part->request_method = RRR_HTTP_METHOD_POST_TEXT_PLAIN;
 				}
 				else {
 					RRR_MSG_0("Unknown content-type '%s' in HTTP request\n", content_type->value);
@@ -1251,42 +1359,67 @@ int rrr_http_part_parse (
 				}
 			}
 			else {
-				RRR_MSG_0("Unknown request method '%s' in HTTP request\n", result->request_method_str);
+				RRR_MSG_0("Unknown request method '%s' in HTTP request\n", part->request_method_str);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
+
+			if (part->request_method == RRR_HTTP_METHOD_GET || part->request_method == RRR_HTTP_METHOD_OPTIONS) {
+				if (content_length != NULL && content_length->value_unsigned != 0) {
+					RRR_MSG_0("Content-Length was non-zero for GET or OPTIONS request, this is an error.\n");
+					ret = RRR_HTTP_PARSE_SOFT_ERR;
+					goto out;
+				}
+
+				if (transfer_encoding != NULL) {
+					RRR_MSG_0("Transfer-Encoding header was set for GET or OPTIONS request, this is an error.\n");
+					ret = RRR_HTTP_PARSE_SOFT_ERR;
+					goto out;
+				}
+
+				if (content_type != NULL) {
+					RRR_MSG_0("Content-Type was set for GET or OPTIONS request, this is an error.\n");
+					ret = RRR_HTTP_PARSE_SOFT_ERR;
+					goto out;
+				}
+			}
 		}
 		else {
-			RRR_DBG_3("HTTP header parse complete, response was %i\n", result->response_code);
+			RRR_DBG_3("HTTP header parse complete, response was %i\n", part->response_code);
 		}
 
 		if (content_length != NULL) {
-			result->data_length = content_length->value_unsigned;
-			*target_size = result->request_or_response_length + result->header_length + content_length->value_unsigned;
+			part->data_length = content_length->value_unsigned;
+			*target_size = part->headroom_length + part->header_length + content_length->value_unsigned;
 
 			RRR_DBG_3("HTTP content length found: %llu (plus response %li and header %li) target size is %li\n",
-					content_length->value_unsigned, result->request_or_response_length, result->header_length, *target_size);
+					content_length->value_unsigned, part->headroom_length, part->header_length, *target_size);
 
 			ret = RRR_HTTP_PARSE_OK;
 
 			goto out;
 		}
 		else if (transfer_encoding != NULL && rrr_posix_strcasecmp(transfer_encoding->value, "chunked") == 0) {
+			if (parse_type == RRR_HTTP_PARSE_MULTIPART) {
+				RRR_MSG_0("Chunked transfer encoding found in HTTP multipart body, this is not allowed\n");
+				ret = RRR_HTTP_SOFT_ERROR;
+				goto out;
+			}
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
-			result->is_chunked = 1;
+			part->is_chunked = 1;
 			RRR_DBG_3("HTTP chunked transfer encoding specified\n");
 			goto parse_chunked;
 		}
 		else {
-			if (parse_type == RRR_HTTP_PARSE_REQUEST || result->response_code == 204) {
+			if (parse_type == RRR_HTTP_PARSE_REQUEST || part->response_code == 204) {
 				// No content
-				result->data_length = 0;
-				*target_size = 0;
+				part->data_length = 0;
+				*target_size = parsed_bytes_total;
 				ret = RRR_HTTP_PARSE_OK;
 			}
 			else {
 				// Unknown size, parse until connection closes
-				result->data_length = -1;
+				part->data_length = -1;
 				*target_size = 0;
 				ret = RRR_HTTP_PARSE_INCOMPLETE;
 			}
@@ -1298,7 +1431,7 @@ int rrr_http_part_parse (
 	parse_chunked:
 
 	ret = __rrr_http_part_parse_chunk (
-			&result->chunks,
+			&part->chunks,
 			&parsed_bytes_tmp,
 			data_ptr,
 			start_pos + parsed_bytes_total,
@@ -1308,15 +1441,15 @@ int rrr_http_part_parse (
 	parsed_bytes_total += parsed_bytes_tmp;
 
 	if (ret == RRR_HTTP_PARSE_OK) {
-		if (RRR_LL_LAST(&result->chunks)->length != 0) {
+		if (RRR_LL_LAST(&part->chunks)->length != 0) {
 			RRR_BUG("BUG: __rrr_http_part_parse_chunk return OK but last chunk length was not 0 in rrr_http_part_parse\n");
 		}
 
 		// Part length is position of last chunk plus CRLF minus header and response code
-		result->data_length = RRR_LL_LAST(&result->chunks)->start + 2 - result->header_length - result->request_or_response_length;
+		part->data_length = RRR_LL_LAST(&part->chunks)->start + 2 - part->header_length - part->headroom_length;
 
 		// Target size is total length from start of session to last chunk plus CRLF
-		*target_size = RRR_LL_LAST(&result->chunks)->start + 2;
+		*target_size = RRR_LL_LAST(&part->chunks)->start + 2;
 	}
 
 	out:
@@ -1332,6 +1465,8 @@ static int __rrr_http_part_find_boundary (
 		ssize_t boundary_length
 ) {
 	int ret = 1;
+
+//	printf("Looking for boundary '%s' length %li\n", boundary, boundary_length);
 
 	const char *boundary_pos = NULL;
 
@@ -1363,7 +1498,7 @@ static int __rrr_http_part_process_multipart_part (
 		const char *boundary,
 		ssize_t boundary_length
 ) {
-	int ret = 0;
+	int ret = RRR_HTTP_PARSE_OK;
 
 	*parsed_bytes = 0;
 	*end_found = 0;
@@ -1392,8 +1527,11 @@ static int __rrr_http_part_process_multipart_part (
 
 	start = boundary_pos + boundary_length;
 
+//	printf("Process multipart start offset after boundary: %li\n", start_orig - data_ptr);
+
 	if (start + 2 >= end) {
 		RRR_MSG_0("Not enough data after boundary while parsing HTTP multipart request\n");
+//		printf("start: %s end: %s\n", start, end);
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -1416,6 +1554,11 @@ static int __rrr_http_part_process_multipart_part (
 	if (is_boundary_end) {
 		*end_found = 1;
 		*parsed_bytes = start - start_orig;
+
+		if (end - start > 0) {
+			RRR_DBG_1("Warning: %li bytes found after HTTP multipart end\n", end - start);
+		}
+
 		goto out;
 	}
 
@@ -1457,9 +1600,11 @@ static int __rrr_http_part_process_multipart_part (
 			RRR_MSG_0("Failed to parse part from HTTP multipart request\n");
 			goto out;
 		}
+		// Incomplete return is normal, the parser does not know about boundaries
+		ret = RRR_HTTP_PARSE_OK;
 	}
 
-	if (new_part->request_or_response_length != 0) {
+	if (new_part->headroom_length != 0) {
 		RRR_BUG("BUG: Request or response not 0 in __rrr_http_part_process_multipart_part\n");
 	}
 
@@ -1471,7 +1616,13 @@ static int __rrr_http_part_process_multipart_part (
 		RRR_DBG("Warning: Invalid length specification in HTTP multipart request part header\n");
 	}
 
+	new_part->headroom_length = start - data_ptr;
 	new_part->data_length = (boundary_pos - start) - new_part->header_length;
+
+	if (new_part->data_length < 0) {
+		RRR_BUG("BUG: Part length was < 0 in __rrr_http_part_process_multipart_part ((%p - %p) - %li = %li)\n",
+				boundary_pos, start, new_part->header_length, new_part->data_length);
+	}
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_dump_header(new_part);
@@ -1515,21 +1666,26 @@ int rrr_http_part_process_multipart (
 		goto out;
 	}
 
-	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
 
 	const char *boundary_str = boundary->value;
 
-	ssize_t boundary_length = strlen(boundary_str);
+	ssize_t boundary_length = boundary->value_size;
 	if (boundary_length == 0) {
 		RRR_MSG_0("Boundary too short while parsing HTTP multipart body\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
 
-	int max = 1000;
+	int max_parts = 1000;
 	int end_found = 0;
 
-	while (data_start <= data_end && --max > 0) {
+	if (part->is_chunked || RRR_LL_COUNT(&part->chunks) > 0) {
+		RRR_BUG("BUG: Attempted to process chunked part as multipart\n");
+	}
+
+	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
+
+	while (data_start <= data_end && --max_parts > 0) {
 		ssize_t parsed_bytes_tmp = 0;
 
 		if ((ret = __rrr_http_part_process_multipart_part (
@@ -1542,6 +1698,16 @@ int rrr_http_part_process_multipart (
 				boundary_str,
 				boundary_length
 		)) != 0) {
+			// It's possible that return is INCOMPLETE, SOFT and HARD
+			// INCOMPLETE is also invalid since we only process multipart after all
+			// data has been read from remote.
+			if (ret == RRR_HTTP_PARSE_HARD_ERR) {
+				RRR_MSG_0("Hard error while parsing rrr_http_part_process_multipart\n");
+			}
+			else {
+				RRR_MSG_0("HTTP Multipart parsing failed, possible invalid data from client. Return was %i.\n", ret);
+			}
+			ret = RRR_HTTP_PARSE_SOFT_ERR; // Only return soft error
 			goto out;
 		}
 
@@ -1552,8 +1718,8 @@ int rrr_http_part_process_multipart (
 		}
 	}
 
-	if (--max <= 0 && end_found != 0) {
-		RRR_MSG_0("Too many parts (> 1000) in HTTP multipart body\n");
+	if (--max_parts <= 0 && end_found != 0) {
+		RRR_MSG_0("Too many parts or chunks in HTTP multipart body\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
 	}
@@ -1613,7 +1779,7 @@ static int __rrr_http_part_parse_query_string (
 
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in HTTP query string\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
@@ -1632,7 +1798,7 @@ static int __rrr_http_part_parse_query_string (
 		else if (c == '=') {
 			if (c == '=' && value_target != NULL) {
 				RRR_MSG_0("Unexpected = in query string\n");
-				rrr_http_util_print_where_message(start);
+				rrr_http_util_print_where_message(start, end);
 				ret = RRR_HTTP_PARSE_SOFT_ERR;
 				goto out;
 			}
@@ -1712,6 +1878,35 @@ static int __rrr_http_part_parse_query_string (
 	return ret;
 }
 
+static int __rrr_http_part_extract_query_fields_from_uri (
+		struct rrr_http_part *target
+) {
+	int ret = 0;
+
+	const char *query_end = target->request_uri + strlen(target->request_uri);
+	const char *query_start = strchr(target->request_uri, '?');
+
+	if (query_start == NULL) {
+		ret = 0;
+		goto out;
+	}
+
+	// Skip ?
+	query_start++;
+
+	if (strlen(query_start) == 0) {
+		goto out;
+	}
+
+	if ((ret = __rrr_http_part_parse_query_string (&target->fields, query_start, query_end)) != 0) {
+		RRR_MSG_0("Error while parsing query string in __rrr_http_part_extract_query_fields_from_uri\n");
+		goto out;
+	}
+
+	out:
+	return ret;
+}
+
 int rrr_http_part_extract_post_and_query_fields (
 		struct rrr_http_part *target,
 		const char *data_ptr
@@ -1733,12 +1928,12 @@ int rrr_http_part_extract_post_and_query_fields (
 			RRR_HTTP_PART_DECLARE_DATA_START_AND_END(node, data_ptr);
 
 			const struct rrr_http_field *field_name = __rrr_http_part_get_header_field_subvalue(node, "content-disposition", "name");
-			if (field_name == NULL || field_name->value == NULL || *(field_name)->value == '\0') {
+			if (field_name == NULL || field_name->value == NULL || field_name->value_size == 0) {
 				RRR_DBG_1("Warning: Unknown field or invalid content-disposition of multipart part\n");
 				RRR_LL_ITERATE_NEXT();
 			}
 
-			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value, strlen(field_name->value))) != 0) {
+			if ((ret = rrr_http_field_new_no_value(&field_tmp, field_name->value, field_name->value_size)) != 0) {
 				RRR_MSG_0("Could not create new field in rrr_http_part_extract_post_and_query_fields\n");
 				goto out;
 			}
@@ -1748,9 +1943,25 @@ int rrr_http_part_extract_post_and_query_fields (
 				goto out;
 			}
 
+			const struct rrr_http_header_field *field_content_type = rrr_http_part_get_header_field(node, "content-type");
+
+			if (field_content_type != NULL && field_content_type->value != NULL) {
+				if ((ret = rrr_http_field_set_content_type(
+						field_tmp,
+						field_content_type->value
+				)) != 0) {
+					RRR_MSG_0("Could not set content type of field in rrr_http_part_extract_post_and_query_fields\n");
+					goto out;
+				}
+			}
+
 			RRR_LL_APPEND(&target->fields, field_tmp);
 			field_tmp = NULL;
 		RRR_LL_ITERATE_END();
+	}
+
+	if ((ret =  __rrr_http_part_extract_query_fields_from_uri(target)) != 0) {
+		goto out;
 	}
 
 	out:
@@ -1760,12 +1971,63 @@ int rrr_http_part_extract_post_and_query_fields (
 	return ret;
 }
 
+int rrr_http_part_merge_chunks (
+		char **result_data,
+		struct rrr_http_part *part,
+		const char *data_ptr
+) {
+	int ret = RRR_HTTP_OK;
+
+	if (part->is_chunked == 0) {
+		goto out;
+	}
+
+	*result_data = NULL;
+
+	char *data_new = NULL;
+	const size_t top_length = part->headroom_length + part->header_length;
+	size_t new_buf_size = 0;
+
+	new_buf_size += top_length;
+
+	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
+		new_buf_size += node->length;
+	RRR_LL_ITERATE_END();
+
+	if ((data_new = malloc(new_buf_size)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_http_part_merge_chunks\n");
+		ret = RRR_HTTP_HARD_ERROR;
+		goto out;
+	}
+
+	size_t wpos = 0;
+
+	memcpy(data_new, data_ptr, top_length);
+	wpos += top_length;
+
+	RRR_LL_ITERATE_BEGIN(&part->chunks, struct rrr_http_chunk);
+		memcpy(data_new + wpos, data_ptr + node->start, node->length);
+		wpos += node->length;
+		RRR_LL_ITERATE_SET_DESTROY();
+	RRR_LL_ITERATE_END_CHECK_DESTROY(&part->chunks, 0; free(node));
+
+	part->is_chunked = 0;
+	part->data_length = wpos;
+
+	*result_data = data_new;
+	data_new = NULL;
+
+	out:
+	RRR_FREE_IF_NOT_NULL(data_new);
+	return ret;
+}
+
 static void __rrr_http_part_dump_header_field (struct rrr_http_header_field *field) {
 	printf ("%s: unsigned %llu - signed %lli - raw '%s'\n",
 			field->name, field->value_unsigned, field->value_signed, field->value);
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		printf("\t%s: '%s'\n", node->name, (node->is_binary ? "BINARY" : node->value));
+		printf("\t%s: %li bytes\n", node->name, node->value_size);
 	RRR_LL_ITERATE_END();
 }
 

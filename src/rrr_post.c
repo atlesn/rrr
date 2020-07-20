@@ -30,9 +30,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <lib/read.h>
 #include <signal.h>
 
-#include "global.h"
 #include "main.h"
 #include "../build_timestamp.h"
+#include "lib/rrr_config.h"
+#include "lib/log.h"
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array.h"
@@ -42,11 +43,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket_common.h"
 #include "lib/rrr_strerror.h"
 #include "lib/read.h"
-#include "lib/vl_time.h"
+#include "lib/rrr_time.h"
 #include "lib/messages.h"
 #include "lib/gnu.h"
 
-RRR_GLOBAL_SET_LOG_PREFIX("rrr_post");
+RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_post");
 
 #define RRR_POST_DEFAULT_ARRAY_DEFINITION	"msg"
 #define RRR_POST_DEFAULT_MAX_MESSAGE_SIZE	4096
@@ -527,11 +528,11 @@ int main (int argc, const char *argv[]) {
 	cmd_init(&cmd, cmd_rules, argc, argv);
 	__rrr_post_data_init(&data);
 
-	if ((ret = main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
+	if ((ret = rrr_main_parse_cmd_arguments(&cmd, CMD_CONFIG_DEFAULTS)) != 0) {
 		goto out;
 	}
 
-	if (rrr_print_help_and_version(&cmd, 2) != 0) {
+	if (rrr_main_print_help_and_version(&cmd, 2) != 0) {
 		goto out;
 	}
 
@@ -579,7 +580,7 @@ int main (int argc, const char *argv[]) {
 			__rrr_post_print_statistics(&data);
 		}
 
-		rrr_set_debuglevel_on_exit();
+		rrr_config_set_debuglevel_on_exit();
 		__rrr_post_close(&data);
 		__rrr_post_destroy_data(&data);
 		cmd_destroy(&cmd);

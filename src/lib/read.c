@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "read.h"
 #include "read_constants.h"
 #include "linked_list.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "messages.h"
 #include "message_addr.h"
 #include "message_log.h"
@@ -47,8 +47,12 @@ struct rrr_read_session *rrr_read_session_new (
 	}
 	memset(read_session, '\0', sizeof(*read_session));
 
+	if (src_addr_len > sizeof(read_session->src_addr)) {
+		RRR_BUG("BUG: Address too long (%lu>%lu) in rrr_read_session_new\n", src_addr_len, sizeof(read_session->src_addr));
+	}
+
 	read_session->last_read_time = rrr_time_get_64();
-	read_session->src_addr = *src_addr;
+	memcpy(&read_session->src_addr, src_addr, src_addr_len);
 	read_session->src_addr_len = src_addr_len;
 
 	return read_session;
@@ -146,6 +150,7 @@ int rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max_size,
 		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,
@@ -293,6 +298,14 @@ int rrr_read_message_using_callbacks (
 		memcpy (read_session->rx_buf_ptr + read_session->rx_buf_wpos, buf, bytes);
 		read_session->rx_buf_wpos += bytes;
 		read_session->last_read_time = rrr_time_get_64();
+	}
+
+	/* Check for max bytes read */
+	if (read_max_size > 0 && read_session->rx_buf_wpos > read_max_size) {
+		RRR_MSG_0("Too many bytes read in rrr_read_message_using_callbacks (%li>%li)\n",
+				read_session->rx_buf_wpos, read_max_size);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
 	}
 
 	if (function_get_target_size == NULL) {

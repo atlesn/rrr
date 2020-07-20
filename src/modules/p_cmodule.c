@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <dlfcn.h>
 #include <sys/stat.h>
 
+#include "../lib/rrr_strerror.h"
 #include "../lib/ip.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
@@ -39,6 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
+#include "../lib/macro_utils.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"
@@ -82,7 +84,7 @@ static int cmodule_data_init(struct cmodule_data *data, struct rrr_instance_thre
 static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_name", cmodule_name);
 
 	if (data->cmodule_name == NULL || *(data->cmodule_name) == '\0') {
 		RRR_MSG_0("cmodule_name configuration parameter missing for cmodule instance %s\n", config->name);
@@ -90,7 +92,7 @@ static int cmodule_parse_config (struct cmodule_data *data, struct rrr_instance_
 		goto out;
 	}
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_cleanup_function", cleanup_function);
 
 	out:
 	return ret;
@@ -320,7 +322,6 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 static void *thread_entry_cmodule (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct cmodule_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	if (cmodule_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -329,9 +330,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("cmodule thread thread_data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(cmodule_data_cleanup, data);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -345,7 +343,7 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_poll_add_from_thread_senders (&poll, thread_data);
+	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
 
 	pid_t fork_pid;
 
@@ -370,8 +368,8 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			stats,
-			&poll,
+			INSTANCE_D_STATS(thread_data),
+			thread_data->poll,
 			fork_pid
 	);
 
@@ -380,8 +378,6 @@ static void *thread_entry_cmodule (struct rrr_thread *thread) {
 			INSTANCE_D_NAME(thread_data), thread_data, INSTANCE_D_CMODULE(thread_data)->fork_handler);
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 
