@@ -215,6 +215,14 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 
 	int input_count = 0;
 
+	// We have to check this here because we don't know wether the
+	// fork has exited, in which case we will retry messages for a
+	// long time and hang
+	if (rrr_thread_check_encourage_stop(thread_data->thread)) {
+		ret = RRR_FIFO_SEARCH_STOP;
+		goto out;
+	}
+
 	ret = __rrr_cmodule_helper_send_entry_to_fork_nolock (
 			&input_count,
 			thread_data,

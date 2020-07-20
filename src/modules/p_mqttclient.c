@@ -678,6 +678,10 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 
+	if (MSG_TOPIC_LENGTH(reading) > 0 && *((const char *) MSG_TOPIC_PTR(reading)) == '\0') {
+		RRR_BUG("BUG: Topic first character value was '0' in mqttclient_poll_callback\n");
+	}
+
 	if (private_data->do_prepend_publish_topic) {
 		if (MSG_TOPIC_LENGTH(reading) == 0) {
 			RRR_MSG_0("Warning: Received message to MQTT client instance %s did not have topic set, and only a prepend topic is set in configuration. Dropping message.\n",
