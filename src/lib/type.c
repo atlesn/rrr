@@ -496,7 +496,7 @@ static int __rrr_type_msg_unpack (RRR_TYPE_UNPACK_ARGS) {
 	// It is not possible to specify a multi-value msg definition, but we
 	// support it here for now anyway
 
-	ssize_t pos = 0;
+	rrr_type_length pos = 0;
 	int count = 0;
 	while (pos < node->total_stored_length) {
 		struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) (node->data + pos);

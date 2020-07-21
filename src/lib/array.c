@@ -950,7 +950,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	head->elements = rrr_htobe32(node->element_count);
 	head->total_length = rrr_htobe32(written_bytes);
 
-	if (written_bytes < node->total_stored_length) {
+	if (written_bytes < (ssize_t) node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_pack_callback, too few bytes written\n");
 	}
 
@@ -979,7 +979,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	RRR_DBG_3("array export type %s size %li total size %li\n",
 			node->definition->identifier, written_bytes, data->written_bytes_total);
 
-	if (written_bytes < node->total_stored_length) {
+	if (written_bytes < (ssize_t) node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_export_callback, too few bytes written\n");
 	}
 
@@ -1120,7 +1120,7 @@ int rrr_array_new_message_from_collection (
 		goto out;
 	}
 
-	if (written_bytes_total != total_data_length) {
+	if (written_bytes_total != (ssize_t) total_data_length) {
 		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
 				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
