@@ -116,7 +116,7 @@ static int httpclient_session_add_field (
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
 
 	if (RRR_TYPE_IS_MSG(value->definition->type)) {
-		ssize_t buf_size = 0;
+		rrr_type_length buf_size = 0;
 
 		if (rrr_type_value_allocate_and_export(&buf_tmp, &buf_size, value) != 0) {
 			RRR_MSG_0("Error while exporting RRR message in httpclient_add_multipart_array_value\n");

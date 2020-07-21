@@ -31,7 +31,7 @@ struct rrr_http_field {
 	char *name;
 	char *value;
 	char *content_type;
-	ssize_t value_size;
+	rrr_type_length value_size;
 };
 
 struct rrr_http_field_collection {

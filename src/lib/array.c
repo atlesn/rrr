@@ -53,11 +53,11 @@ static int __rrr_array_parse_identifier_and_size (
 		unsigned int *length_return,
 		unsigned int *item_count_return,
 		rrr_type_flags *flags_return,
-		ssize_t *bytes_parsed_return,
+		rrr_type_length *bytes_parsed_return,
 		const char *start,
 		const char *end
 ) {
-	ssize_t parsed_bytes = 0;
+	rrr_type_length parsed_bytes = 0;
 	rrr_type_flags flags = 0;
 	const struct rrr_type_definition *type = NULL;
 	unsigned long long int length = 0;
@@ -198,7 +198,7 @@ int rrr_array_parse_single_definition (
 ) {
 	int ret = 0;
 
-	ssize_t parsed_bytes = 0;
+	rrr_type_length parsed_bytes = 0;
 	const struct rrr_type_definition *type = NULL;
 	unsigned int length = 0;
 	unsigned int item_count = 0;
@@ -363,7 +363,7 @@ int rrr_array_parse_data_from_definition (
 			RRR_BUG("BUG: No convert function found for type %d\n", node->definition->type);
 		}
 
-		ssize_t parsed_bytes = 0;
+		rrr_type_length parsed_bytes = 0;
 
 		if (node->data != NULL) {
 			RRR_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
@@ -462,7 +462,7 @@ static int __rrr_array_push_value_64_with_tag (
 
 	RRR_LL_APPEND(collection, new_value);
 
-	ssize_t parsed_bytes = 0;
+	rrr_type_length parsed_bytes = 0;
 	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
 		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag\n");
 		return 1;
@@ -669,7 +669,7 @@ int rrr_array_get_packed_length_from_buffer (
 			return RRR_TYPE_PARSE_INCOMPLETE;
 		}
 
-		ssize_t result = 0;
+		rrr_type_length result = 0;
 		if ((ret = node->definition->get_import_length (
 				&result,
 				node,
@@ -935,7 +935,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	}
 
 	uint8_t new_type = 0;
-	ssize_t written_bytes = 0;
+	rrr_type_length written_bytes = 0;
 	if (node->definition->pack(data->write_pos, &written_bytes, &new_type, node) != 0) {
 		RRR_MSG_0("Error while packing data of type %u in __rrr_array_collection_pack_callback\n", node->definition->type);
 		ret = RRR_ARRAY_PARSE_SOFT_ERR;
@@ -950,7 +950,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	head->elements = rrr_htobe32(node->element_count);
 	head->total_length = rrr_htobe32(written_bytes);
 
-	if (written_bytes < (ssize_t) node->total_stored_length) {
+	if (written_bytes < node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_pack_callback, too few bytes written\n");
 	}
 
@@ -967,7 +967,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 		RRR_BUG("No export function defined for type %u in __rrr_array_collection_export_callback\n", node->definition->type);
 	}
 
-	ssize_t written_bytes = 0;
+	rrr_type_length written_bytes = 0;
 	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
 		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_collection_export_callback\n", node->definition->type);
 		ret = RRR_ARRAY_PARSE_SOFT_ERR;
@@ -979,7 +979,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 	RRR_DBG_3("array export type %s size %li total size %li\n",
 			node->definition->identifier, written_bytes, data->written_bytes_total);
 
-	if (written_bytes < (ssize_t) node->total_stored_length) {
+	if (written_bytes < node->total_stored_length) {
 		RRR_BUG("Size mismatch in __rrr_array_collection_export_callback, too few bytes written\n");
 	}
 

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "linked_list.h"
 #include "macro_utils.h"
+#include "rrr_types.h"
 
 static const union type_system_endian {
 	uint16_t two;
@@ -98,13 +99,13 @@ static const union type_system_endian {
 #define RRR_TYPE_ALLOWS_SIGN(type)	((type) == RRR_TYPE_LE || (type) == RRR_TYPE_BE || (type) == RRR_TYPE_H)
 #define RRR_TYPE_OK(type)			((type) >= RRR_TYPE_MIN && (type) <= RRR_TYPE_MAX)
 
-#define RRR_TYPE_FLAG_SIGNED 1<<0
+#define RRR_TYPE_FLAG_SIGNED ((uint8_t) (1<<0))
 
 #define RRR_TYPE_FLAG_IS_SIGNED(flags)		(((flags) & RRR_TYPE_FLAG_SIGNED) == 1)
 #define RRR_TYPE_FLAG_IS_UNSIGNED(flags)	(((flags) & RRR_TYPE_FLAG_SIGNED) == 0)
 
 #define RRR_TYPE_FLAG_SET_SIGNED(flags)		(flags) |= (RRR_TYPE_FLAG_SIGNED)
-#define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= ~(RRR_TYPE_FLAG_SIGNED)
+#define RRR_TYPE_FLAG_SET_UNSIGNED(flags)	(flags) &= (uint8_t) ~(RRR_TYPE_FLAG_SIGNED)
 
 #define RRR_TYPE_CHAR_IS_STX(c) \
 	(c >= 1 && c <= 2)     // SOH, STX
@@ -132,24 +133,24 @@ static const union type_system_endian {
 	)
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
-		ssize_t *import_length,				\
+		rrr_type_length *import_length,		\
 		const struct rrr_type_value *node,	\
 		const char *buf,					\
-		ssize_t buf_size
+		rrr_type_length buf_size
 
 #define RRR_TYPE_IMPORT_ARGS				\
 		struct rrr_type_value *node,		\
-		ssize_t *parsed_bytes,				\
+		rrr_type_length *parsed_bytes,		\
 		const char *start,					\
 		const char *end
 
 #define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
-		ssize_t *bytes,						\
+		rrr_type_length *bytes,				\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_EXPORT_ARGS				\
 		char *target,						\
-		ssize_t *written_bytes,				\
+		rrr_type_length *written_bytes,		\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_UNPACK_ARGS				\
@@ -157,25 +158,13 @@ static const union type_system_endian {
 
 #define RRR_TYPE_PACK_ARGS					\
 		char *target,						\
-		ssize_t *written_bytes,				\
+		rrr_type_length *written_bytes,		\
 		uint8_t *new_type_id,				\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_TO_STR_ARGS				\
 		char **target,						\
 		const struct rrr_type_value *node
-
-typedef uint8_t rrr_type;
-typedef uint8_t rrr_type_flags;
-typedef uint32_t rrr_type_length;
-typedef uint32_t rrr_def_count;
-typedef uint32_t rrr_type_array_size;
-typedef uint32_t rrr_size;
-typedef uint64_t rrr_type_le;
-typedef uint64_t rrr_type_be;
-typedef uint64_t rrr_type_h;
-typedef uint64_t rrr_type_istr;
-typedef uint64_t rrr_type_ustr;
 
 struct rrr_type_value;
 
@@ -229,11 +218,11 @@ RRR_TYPE_DEFINE_EXTERN(nsep);
 RRR_TYPE_DEFINE_EXTERN(stx);
 RRR_TYPE_DEFINE_EXTERN(null);
 
-int rrr_type_import_ustr_raw (uint64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
-int rrr_type_import_istr_raw (int64_t *target, ssize_t *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_ustr_raw (uint64_t *target, rrr_type_length *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_istr_raw (int64_t *target, rrr_type_length *parsed_bytes, const char *start, const char *end);
 
 const struct rrr_type_definition *rrr_type_parse_from_string (
-		ssize_t *parsed_bytes,
+		rrr_type_length *parsed_bytes,
 		const char *start,
 		const char *end
 );
@@ -246,7 +235,7 @@ void rrr_type_value_destroy (
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,
-		ssize_t tag_length
+		rrr_type_length tag_length
 );
 int rrr_type_value_new (
 		struct rrr_type_value **result,
@@ -258,12 +247,12 @@ int rrr_type_value_new (
 		rrr_type_array_size element_count,
 		rrr_type_length stored_length
 );
-ssize_t rrr_type_value_get_export_length (
+rrr_type_length rrr_type_value_get_export_length (
 		const struct rrr_type_value *value
 );
 int rrr_type_value_allocate_and_export (
 		char **target,
-		ssize_t *written_bytes,
+		rrr_type_length *written_bytes,
 		const struct rrr_type_value *node
 );
 int rrr_type_value_allocate_and_import_raw (
