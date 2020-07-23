@@ -570,12 +570,12 @@ int rrr_read_common_get_session_target_length_from_array (
 	}
 
 	char *pos = read_session->rx_buf_ptr;
-	ssize_t wpos = read_session->rx_buf_wpos;
+	rrr_slength wpos = read_session->rx_buf_wpos;
 
 //	printf ("Array wpos: %li\n", wpos);
 
 	if (data->message_max_size != 0 && wpos > data->message_max_size) {
-		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%u>%li)\n",
+		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
 				wpos, data->message_max_size);
 		return RRR_READ_SOFT_ERROR;
 	}

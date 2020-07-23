@@ -660,7 +660,7 @@ static int __rrr_mqtt_parse_properties (
 	start = end;
 	const char *properties_body_start = start;
 
-	while (end - properties_body_start < property_length) {
+	while (end - properties_body_start < (void *) property_length) {
 		uint8_t type;
 		PARSE_U8_RAW(start,end,type);
 

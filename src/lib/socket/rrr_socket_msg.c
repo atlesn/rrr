@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../crc32.h"
 #include "../rrr_endian.h"
+#include "../rrr_types.h"
 
 void rrr_socket_msg_populate_head (
 		struct rrr_socket_msg *message,
@@ -117,7 +118,7 @@ int rrr_socket_msg_head_to_host_and_verify (
 int rrr_socket_msg_get_target_size_and_check_checksum (
 		ssize_t *target_size,
 		const struct rrr_socket_msg *socket_msg,
-		ssize_t buf_size
+		rrr_slength buf_size
 ) {
 	if (buf_size < (ssize_t) sizeof(struct rrr_socket_msg)) {
 		return RRR_SOCKET_READ_INCOMPLETE;
@@ -145,7 +146,7 @@ int rrr_socket_msg_check_data_checksum_and_length (
 	if (data_size < (ssize_t) sizeof(*message)) {
 		RRR_BUG("rrr_socket_msg_checksum_check called with too short message\n");
 	}
-	if (message->msg_size != data_size) {
+	if ((int64_t) message->msg_size != data_size) {
 		RRR_MSG_0("Message size mismatch in rrr_socket_msg_checksum_check\n");
 		return 1;
 	}

@@ -469,14 +469,14 @@ static int __rrr_type_msg_to_host_single (
 		if (rrr_socket_msg_get_target_size_and_check_checksum (
 				&target_size_tmp,
 				socket_msg,
-				max_size
+				(rrr_slength) max_size
 		) != 0) {
 			RRR_MSG_0("Invalid header for message in __rrr_type_convert_msg_to_host_single\n");
 			ret = 1;
 			goto out;
 		}
 
-		if (target_size_tmp < 0 || target_size_tmp > RRR_LENGTH_MAX) {
+		if (target_size_tmp < 0 || (rrr_slength) target_size_tmp > (rrr_slength) RRR_LENGTH_MAX) {
 			RRR_BUG("BUG: Target size out of range in __rrr_type_msg_to_host_single\n");
 		}
 

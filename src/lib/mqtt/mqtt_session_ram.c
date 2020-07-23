@@ -597,7 +597,7 @@ static int __rrr_mqtt_session_ram_receive_forwarded_publish_match_callback (
 	struct rrr_mqtt_session_ram *session = callback_data->session;
 
 	if (session->session_properties.numbers.receive_maximum != 0 &&
-		publish->received_size > session->session_properties.numbers.receive_maximum) {
+		publish->received_size > (int64_t) session->session_properties.numbers.receive_maximum) {
 		RRR_DBG_1("Not forwarding matching PUBLISH to client, packet size exceeds receive maximum %li>%u\n",
 				publish->received_size, session->session_properties.numbers.receive_maximum);
 		return RRR_MQTT_SESSION_OK;

@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"
+#include "../rrr_types.h"
 
 void rrr_socket_msg_populate_head (
 		struct rrr_socket_msg *message,
@@ -48,7 +49,7 @@ int rrr_socket_msg_head_to_host_and_verify (
 int rrr_socket_msg_get_target_size_and_check_checksum (
 		ssize_t *target_size,
 		const struct rrr_socket_msg *socket_msg,
-		ssize_t buf_size
+		rrr_slength buf_size
 );
 int rrr_socket_msg_check_data_checksum_and_length (
 		struct rrr_socket_msg *message,

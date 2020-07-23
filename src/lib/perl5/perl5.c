@@ -978,12 +978,12 @@ int rrr_perl5_hv_to_message (
 		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
 		SvUTF8_off(ip_addr);
 
-		uint64_t addr_len_tmp_actual = 0;
+		STRLEN addr_len_tmp_actual = 0;
 		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp_actual);
 
 		if (addr_len_tmp > addr_len_tmp_actual) {
 			RRR_MSG_0("Address length field from message counts more bytes than the size of the address field (%" PRIu64 " > %" PRIu64 ")\n",
-					addr_len_tmp, addr_len_tmp_actual);
+					addr_len_tmp, (uint64_t) addr_len_tmp_actual);
 			ret = 1;
 			goto out;
 		}
