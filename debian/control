@@ -22,4 +22,5 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libmysqlclient | libmariadbclient-dev-compat | libmysqlclient20 | libmysqlclient21, libssl1.1, libusb | libusb-1.0-0, python3 (>= 3.6), systemd
 Replaces: rrr-perlonly
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+Conflicts: rrr-mysql
 

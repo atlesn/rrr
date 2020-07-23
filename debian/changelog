@@ -1,4 +1,4 @@
-rrr (1.5-5) buster; urgency=medium
+rrr (1.5-5buster2) buster; urgency=medium
 
   * Internal changes on length/size fields
   * Fixes for compile warnings on 32bit
