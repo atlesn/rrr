@@ -1,8 +1,10 @@
 rrr (1.5-5) buster; urgency=medium
 
   * Internal changes on length/size fields
+  * Fixes for compile warnings on 32bit
+  * Fixes for compile errrors on BSD with sockaddr_in6
 
- -- atle <atle@atle>  Thu, 23 Jul 2020 08:28:45 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 23 Jul 2020 08:28:45 +0200
 
 rrr (1.5-4) buster; urgency=medium
 
