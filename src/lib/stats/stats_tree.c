@@ -22,10 +22,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "stats_tree.h"
 #include "stats_message.h"
 
-#include "../log.h"
 #include "../rrr_time.h"
 #include "../macro_utils.h"
 

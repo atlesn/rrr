@@ -74,6 +74,7 @@ typedef int64_t rrr_slength;
 
 #define PRIrrrl PRIu32
 #define PRIrrrbl PRIu64
+#define PRIrrrsl PRIi64
 
 #define RRR_LENGTH_MAX 0xffffffff // 8 f's
 

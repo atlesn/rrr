@@ -33,6 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include "../lib/log.h"
+
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -45,7 +47,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/gnu.h"
 #include "../lib/linked_list.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 #include "../lib/macro_utils.h"
 
 // Should not be smaller than module max

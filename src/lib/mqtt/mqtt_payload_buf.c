@@ -50,7 +50,7 @@ void rrr_mqtt_payload_buf_dump (struct rrr_mqtt_payload_buf_session *session) {
 	const char *pos = session->buf;
 	const char *end = session->wpos_max;
 
-	printf ("Dumping payload buffer wpos_max %li: ", session->wpos_max - session->buf);
+	printf ("Dumping payload buffer wpos_max %p: ", (void*) (session->wpos_max - session->buf));
 	while (pos < end) {
 		uint8_t c = *pos;
 		printf("0x");

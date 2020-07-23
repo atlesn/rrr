@@ -20,12 +20,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <string.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 
 #include "log.h"
 #include "fixed_point.h"
+#include "rrr_types.h"
 
 static const double decimal_fractions_base2[24] = {
 		1.0/2.0,
@@ -260,7 +262,7 @@ static int __rrr_fixp_str_preliminary_parse (
 	return 0;
 }
 
-int rrr_fixp_str_get_length (ssize_t *result, const char *str, ssize_t str_length) {
+int rrr_fixp_str_get_length (rrr_length *result, const char *str, rrr_biglength str_length) {
 	*result = 0;
 
 	const char *endptr = NULL;
@@ -273,7 +275,13 @@ int rrr_fixp_str_get_length (ssize_t *result, const char *str, ssize_t str_lengt
 		return ret;
 	}
 
-	*result = endptr - str;
+	rrr_biglength result_tmp = (size_t) endptr - (size_t) str;
+
+	if (result_tmp > RRR_LENGTH_MAX) {
+		RRR_MSG_0("");
+	}
+
+	*result = result_tmp;
 
 	return ret;
 }

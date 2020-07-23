@@ -1095,7 +1095,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
 					data->stream->stream_id, node->frame_id, node->application_data);
 
-			if (write_pos - *joined_data != data->accumulated_data_size) {
+			if ((size_t) write_pos - (size_t) *joined_data != data->accumulated_data_size) {
 				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
 			}
 
@@ -1114,7 +1114,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 					goto loop_bottom_clenaup;
 				}
 
-				if (target_size != data->accumulated_data_size) {
+				if (target_size != (int64_t) data->accumulated_data_size) {
 					RRR_MSG_0("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
 							data->stream->stream_id);
 					goto loop_bottom_clenaup;

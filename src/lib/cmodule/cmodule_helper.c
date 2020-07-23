@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <stdlib.h>
 
+#include "../log.h"
+
 #include "cmodule_helper.h"
 #include "cmodule_main.h"
 #include "cmodule_channel.h"
@@ -38,7 +40,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
-#include "../log.h"
 #include "../macro_utils.h"
 //#include "../ip_util.h"
 

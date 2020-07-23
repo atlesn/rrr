@@ -24,10 +24,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stddef.h>
 
+#include "../log.h"
+
 #include "stats_message.h"
 
 #include "../rrr_endian.h"
-#include "../log.h"
 #include "../read.h"
 #include "../read_constants.h"
 

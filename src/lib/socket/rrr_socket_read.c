@@ -30,12 +30,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <errno.h>
 
+#include "../log.h"
+
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
 
 #include "../posix.h"
-#include "../log.h"
 #include "../linked_list.h"
 #include "../rrr_strerror.h"
 #include "../read.h"

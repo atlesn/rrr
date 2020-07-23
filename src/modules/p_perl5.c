@@ -30,6 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <fcntl.h>
 
+#include "../lib/log.h"
+
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/linked_list.h"
@@ -49,7 +51,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 #include "../lib/gnu.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"

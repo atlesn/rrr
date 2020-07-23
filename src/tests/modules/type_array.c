@@ -201,8 +201,8 @@ int test_type_array_write_to_socket (struct test_data *data, struct rrr_instance
 		goto out;
 	}
 	else if (ret >= 0 && ret != sizeof(*data) - 1) {
-		TEST_MSG("Only %i of %lu bytes written in test_type_array_write_to_socket\n",
-				ret, sizeof(*data) - 1);
+		TEST_MSG("Only %i of %llu bytes written in test_type_array_write_to_socket\n",
+				ret, (long long unsigned) sizeof(*data) - 1);
 		ret = 1;
 		goto out;
 	}

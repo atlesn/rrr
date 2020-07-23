@@ -896,20 +896,32 @@ static int mqttclient_try_get_rrr_message_from_publish (
 		goto out_nolock;
 	}
 
-	ssize_t message_actual_length = publish->payload->length;
-	ssize_t message_stated_length = 0;
 	struct rrr_message *message = (struct rrr_message *) publish->payload->payload_start;
+	rrr_length message_actual_length = 0;
+
+	{
+		rrr_slength message_actual_length_signed = publish->payload->length;
+		if (message_actual_length_signed < 0) {
+			RRR_BUG("BUG: message_actual_length was < 0 in mqttclient_try_get_rrr_message_from_publish\n");
+		}
+		if (message_actual_length_signed > RRR_LENGTH_MAX) {
+			RRR_MSG_0("Received RRR message in publish was too long in mqttclient instance %s: %" PRIrrrsl " > %lu\n",
+					INSTANCE_D_NAME(data->thread_data), message_actual_length_signed, RRR_LENGTH_MAX);
+		}
+		message_actual_length = (rrr_length) message_actual_length_signed;
+	}
+
+	if (message_actual_length < sizeof(struct rrr_socket_msg)) {
+		RRR_DBG_1("RRR Message of unknown length %" PRIrrrl " in mqtt client instance %s\n",
+				message_actual_length, INSTANCE_D_NAME(data->thread_data));
+		goto out;
+	}
 
 	*result = NULL;
 
 	RRR_MQTT_P_LOCK(publish->payload);
 
-	if (message_actual_length < (ssize_t) sizeof(struct rrr_socket_msg)) {
-		RRR_DBG_1("RRR Message of unknown length %li in mqtt client instance %s\n",
-				message_actual_length, INSTANCE_D_NAME(data->thread_data));
-		goto out;
-	}
-
+	rrr_length message_stated_length = 0;
 	if (rrr_socket_msg_get_target_size_and_check_checksum (
 			&message_stated_length,
 			(struct rrr_socket_msg *) message,

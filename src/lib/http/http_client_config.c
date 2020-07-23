@@ -23,11 +23,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <strings.h>
 
+#include "../log.h"
+
 #include "http_client_config.h"
 
 #include "../instance_config.h"
 #include "../map.h"
-#include "../log.h"
 #include "../macro_utils.h"
 
 void rrr_http_client_config_cleanup (
