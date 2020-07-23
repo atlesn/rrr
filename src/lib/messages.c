@@ -25,12 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <inttypes.h>
 
+#include "log.h"
+
 #include "utf8.h"
 #include "rrr_endian.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_msg.h"
 #include "messages.h"
-#include "log.h"
+#include "macro_utils.h"
 
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,
@@ -225,16 +227,16 @@ static int __message_validate (const struct rrr_message *message){
 	return ret;
 }
 
-int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size) {
-	if (expected_size < ((ssize_t) sizeof(*message)) - 1) {
+int rrr_message_to_host_and_verify (struct rrr_message *message, rrr_biglength expected_size) {
+	if (expected_size < sizeof(*message) - 1) {
 		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
 		return 1;
 	}
 	message->timestamp = rrr_be64toh(message->timestamp);
 	message->topic_length = rrr_be16toh(message->topic_length);
 
-	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
-		RRR_DBG_1("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
+	if (MSG_TOTAL_SIZE(message) != expected_size) {
+		RRR_DBG_1("Size mismatch of message in message_to_host_and_verify actual size was %" PRIrrrbl " stated size was %u\n",
 				expected_size, MSG_TOTAL_SIZE(message));
 		return 1;
 	}

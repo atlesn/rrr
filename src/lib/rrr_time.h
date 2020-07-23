@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2019 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,13 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_MACRO_UTILS_H
-#define RRR_MACRO_UTILS_H
+#ifndef RRR_TIME_H
+#define RRR_TIME_H
 
-#define RRR_UNUSED(x) \
-	((void)(x))
+#include <inttypes.h>
 
-#define RRR_PASTE(x, y) x ## y
-#define RRR_QUOTE(value) #value
+struct timeval;
+struct timespec;
 
-#endif /* RRR_MACRO_UTILS_H */
+uint64_t rrr_time_get_64(void);
+void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add);
+void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add);
+
+#endif /* RRR_TIME_H */

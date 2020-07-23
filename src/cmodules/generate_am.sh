@@ -11,18 +11,35 @@ fi
 
 cat $INFILE > $OUTFILE
 
+append_file_contents() {
+	FILE=$1
+	OUTFILE=$2
+	if [ -f "$FILE" ]; then
+		echo "- Found extra arguments in file $FILE"
+		echo -n " " >> $OUTFILE
+		cat "$FILE" >> $OUTFILE
+	fi
+	echo >> $OUTFILE
+}
+
 for file in $CFILES; do
 	echo "Adding $file..."
+
 	echo >> $OUTFILE
-	echo "${file}_la_CFLAGS = \${cmodule_cflags}" >> $OUTFILE
-	echo "${file}_la_LDFLAGS = \${cmodule_ldflags}" >> $OUTFILE
-	echo "${file}_la_SOURCES = ${file}.c" >> $OUTFILE
+	echo -n "${file}_la_CFLAGS = \${cmodule_cflags}" >> $OUTFILE
+	append_file_contents "$file.cflags" $OUTFILE
+
+	echo -n "${file}_la_LDFLAGS = \${cmodule_ldflags}" >> $OUTFILE
+	append_file_contents "$file.ldflags" $OUTFILE
+
+	echo -n "${file}_la_SOURCES = ${file}.c" >> $OUTFILE
+	append_file_contents "$file.sources" $OUTFILE
 done
 
-echo -n "lib_LTLIBRARIES = " >> $OUTFILE
+echo -n "lib_LTLIBRARIES =" >> $OUTFILE
 
 for file in $CFILES; do
-	echo -n "${file}.la" >> $OUTFILE
+	echo -n " ${file}.la" >> $OUTFILE
 done
 
 echo >> $OUTFILE

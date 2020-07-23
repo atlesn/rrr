@@ -1,10 +1,62 @@
-## CUSTOM MODULES
+# CUSTOM RRR MODULES
 
 Writing modules requires knowledge about the C programming language. In attempt to avoid confusion, RRR distinguishes between
 a `module` and an `instance`. A `module` is a plugin which has capabilities to do different jobs, and it is loaded when needed.
 A module may have many `instances` of itself running at the same time with different configurations. Each instance has it's own thread.
 
-### Getting started
+This document describes two different types of modules
+
+* User `C-modules` which are easy to implement, this should cover most needs
+* *Native* RRR-modules which allow for heavy customization
+
+## Getting started with C-modules
+
+A C-module script or program basically has three functions defined, `config`, `source` and `processor`.
+
+* `config` is called once to pass configuration parameters
+* `source` is called repeatedly to spawn new messages
+* `process` is called every time a message comes in from another module
+
+If you wish to write a simple `C-module`, please check out the man page for `rrr.conf` which describes this in more detail. It's
+basically so simple that it's no point coverering any technical details here.
+
+### Confusion
+
+To create confusion, there are two things called cmodule:
+
+* The RRR-module `cmodule` which allows developers to write simple `C-modules`. It basically only one has file
+  `src/modules/p_cmodule.c`. Custom C-modules are run from this module and are expected to be found in `src/cmodules/`.
+* The internal `cmodule` framework in the RRR library which takes care of messages, loops, forks etc., this is divided into
+  multiple files in `src/lib/cmodule/`
+
+### How C-modules work
+
+The basic thought is relatively simple, but the implementation is complex. Here are some keywords:
+
+* For each C-module (or Perl-script etc.) a process is forked to run the script
+* The fork, or `worker`, takes care of when the different three functions are called, and sends messages which has been
+  spawned or processed to the parent, which then let's other modules pick them up
+* The `parent`, which is a thread in the main RRR-process reads messages from other modules and sends messages to be
+  processed to the worker
+* The worker may choose not to send processed messages back, or to duplicate messages
+* The communication between the parent thread and the worker  is performed on an "RRR Memory Map Channel". This method should
+  both be fast when needed and not CPU-intensive when there's nothing to do. Fast means tens of thousands of messages
+  (small ones that is) per second on an average home computer.
+* When a C-module depends on external libraries, like Perl and Python, it is not allowed to call *any* of these library
+  functions in the parent thread, all of this must be done in the worker after forking. These external libraries create
+  all sorts of problems due to them using global variables and state. The only way to clean up properly
+  after them is to stop the whole process, this is the main reason why the worker fork isis needed.
+
+### Implementation of scripting language module
+
+If you wish to implement another scripting language, consider having this written as a native RRR-module instead, this will give
+better structure to the program. Check out the modules `perl5`, `python3` and `cmodule` and copy one of them. `cmodule` is
+the simplest one, it has the least code and has no external dependencies.
+
+The details around how this works is not documented, try to open the RRR source in an IDE like Eclipse and follow the function
+calls to see what's going on. There's however very few function calls requried to be done from the native module itself.
+
+## Getting started with native modules
 
 To write a custom module, start by copying one existing module in the `src/modules/` directory. Update `Makefile.am` in the
 same directory using the same naming convention as the other modules.
@@ -61,7 +113,7 @@ The functions are called from different contexts and at different points in time
 - `test_config`, `inject`: Used by test suite only
 - `cancel_function`: Called by the watchdog thread of the instance if it hangs. If left unspecified, only `pthread_cancel` is called. 
 
-### Writing to output buffer
+## Writing to output buffer
 
 All instances have an output buffer which other modules read from, also those which does not produce output in which this is simply not used.
 The buffer provides locking and memory fences for data messages which are to move between threads. This is handled by the `message broker`.
@@ -124,7 +176,7 @@ the output queue:
 	// Allocate new memory and copy to it
 	rrr_message_broker_clone_and_write_entry(...);
 
-### Reading/polling from other modules
+## Reading/polling from other modules
 
 The action of retrieving messages from the output buffers of other instances is called polling. This is done somewhat manually in every module inside
 the main thread function. Here, an example of the minimum structure needed to perform polls in a module. The dots are where other code goes.
@@ -169,7 +221,7 @@ the entry inside our instance.
 The IP buffer entry struct may be used directly in linked lists. An entry only exists in one instance at a time, this is enforced by
 only 
 
-### Thread state convention
+## Thread state convention
 
 Read Route Record creates one thread for every instance when it starts. All threads, when started, must first initialize their data
 which other modules might use, and then wait for a START signal which RRR sends when all threads are initialized and
@@ -200,7 +252,7 @@ A thread has to update a timer constantly using `update_watchdog_time()`, or els
 
 If one or more threads exit, all threads are stopped and restarted automatically.
 
-### Thread data
+## Thread data
 
 When a thread/instance starts with the specified entry function, it receives a `rrr_thread_start_data` struct. It contains a pointer to the
 command line argument struct from the main program (`cmd_data` struct), data from the configuration file (`rrr_instance_settings`) and a `private_arg` pointer which should be casted in the 

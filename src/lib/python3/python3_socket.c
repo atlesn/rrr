@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "../vl_time.h"
+#include "../rrr_time.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-// Keep these above unistd.h
 #include "python3_common.h"
 #include "python3_module.h"
 #include "python3_module_common.h"
@@ -44,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_addr.h"
 #include "../settings.h"
 #include "../read.h"
-#include "../cmodule_ext.h"
+#include "../cmodule/cmodule_ext.h"
 
 struct rrr_python3_socket_data {
 	PyObject_HEAD

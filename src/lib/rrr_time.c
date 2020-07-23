@@ -19,14 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_TIME_H
-#define RRR_TIME_H
-
 #include <stdio.h>
-#include <stdint.h>
+#include <inttypes.h>
 #include <string.h>
 #include <errno.h>
 #include <stdlib.h>
+
+#include "rrr_time.h"
 
 #include "log.h"
 #include "rrr_strerror.h"
@@ -41,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/time.h>
 
-static inline uint64_t rrr_time_get_64(void) {
+uint64_t rrr_time_get_64(void) {
 	struct timeval tv;
 
 	if (gettimeofday(&tv, NULL) != 0) {
@@ -55,7 +54,7 @@ static inline uint64_t rrr_time_get_64(void) {
 	return (tv_sec * tv_factor) + (tv_usec);
 }
 
-static inline void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add) {
+void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint64_t usec_add) {
 	if (gettimeofday(__tv, NULL) != 0) {
 		RRR_BUG("Error while getting time in rrr_time_gettimeofday, cannot recover from this: %s\n", rrr_strerror(errno));
 	}
@@ -68,14 +67,9 @@ static inline void rrr_time_gettimeofday (struct timeval *__restrict __tv, uint6
 	}
 }
 
-static inline void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add) {
+void rrr_time_gettimeofday_timespec (struct timespec *tspec, uint64_t usec_add) {
 	struct timeval tval;
 	rrr_time_gettimeofday(&tval, usec_add);
 	tspec->tv_sec = tval.tv_sec;
 	tspec->tv_nsec = tval.tv_usec * 1000;
 }
-
-#undef __XSI_VISIBLE
-#undef _XOPEN_SOURCE
-
-#endif /* RRR_TIME_H */

@@ -21,6 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
+
+#include "../log.h"
 
 #include "mqtt_packet.h"
 #include "mqtt_parse.h"
@@ -28,10 +31,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_subscription.h"
 #include "mqtt_topic.h"
 #include "mqtt_common.h"
+
 #include "../rrr_endian.h"
-#include "../log.h"
 #include "../utf8.h"
-#include "../../macro_utils.h"
+#include "../macro_utils.h"
 
 struct parse_state {
 	int ret;
@@ -656,8 +659,9 @@ static int __rrr_mqtt_parse_properties (
 
 	start = end;
 	const char *properties_body_start = start;
+	const char *properties_body_end = properties_body_start + property_length;
 
-	while (end - properties_body_start < property_length) {
+	while (end < properties_body_end) {
 		uint8_t type;
 		PARSE_U8_RAW(start,end,type);
 

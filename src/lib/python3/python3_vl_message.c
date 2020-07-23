@@ -24,12 +24,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_array.h"
 #include "python3_module_common.h"
 #include "python3_vl_message.h"
+
+#include "../log.h"
 #include "../socket/rrr_socket_msg.h"
 #include "../messages.h"
 #include "../array.h"
 #include "../fixed_point.h"
 #include "../message_addr.h"
-#include "../log.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;
@@ -463,7 +464,7 @@ PyTypeObject rrr_python3_rrr_message_type = {
 	uint8_t type_flags,						\
 	ssize_t item_size,						\
 	const char *tag,						\
-	rrr_type_length tag_length,				\
+	rrr_length tag_length,					\
 	ssize_t elements
 
 #define CONVERT_DEF							\
@@ -1207,7 +1208,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		goto out_err;
 	}
 
-	if (rrr_array_message_to_collection(&array_tmp, msg) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, msg) != 0) {
 		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
 		goto out_err;
 	}
@@ -1241,7 +1242,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
 			goto out_err;
 		}
-		for (rrr_type_array_size i = 0; i < node->element_count; i++) {
+		for (rrr_length i = 0; i < node->element_count; i++) {
 			const char *data_pos = node->data + element_size * i;
 
 			if (RRR_TYPE_IS_64(node->definition->type)) {

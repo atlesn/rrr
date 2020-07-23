@@ -30,12 +30,14 @@ fail () {
 }
 
 do_rrr_post() {
+	sleep 1
 	echo \$ $RRR_POST $RRR_POST_ARGS \< $TEST_DATA_FILE
 	sleep 0.3
 	$RRR_POST $RRR_POST_ARGS < $TEST_DATA_FILE
 }
 
 do_send_ip() {
+	sleep 1
 	echo \$ $SEND_IP $SEND_IP_PORT \< $TEST_DATA_FILE
 	sleep 0.3
 	$SEND_IP $SEND_IP_PORT < $TEST_DATA_FILE
@@ -94,13 +96,11 @@ do_test_simple test_journal.conf
 do_test_ip test_ip.conf
 
 do_test_socket test_socket.conf
+do_test_socket test_http.conf
 do_test_socket test_ipclient.conf
 do_test_socket test_mqtt.conf
 
-echo "With mysql: $RRR_WITH_MYSQL"
-if test "x$RRR_WITH_MYSQL" != 'xno'; then
-	do_test_socket test_mysql.conf
-fi
+do_test_socket test_cmodule.conf
 
 echo "With perl5: $RRR_WITH_PERL5"
 if test "x$RRR_WITH_PERL5" != 'xno'; then
@@ -110,6 +110,11 @@ fi
 echo "With python3: $RRR_WITH_PYTHON3"
 if test "x$RRR_WITH_PYTHON3" != 'xno'; then
 	do_test_socket test_python3.conf
+fi
+
+echo "With mysql: $RRR_WITH_MYSQL"
+if test "x$RRR_WITH_MYSQL" != 'xno'; then
+	do_test_socket test_mysql.conf
 fi
 
 echo "Tests complete\n"

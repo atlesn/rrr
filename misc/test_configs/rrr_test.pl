@@ -49,7 +49,11 @@ sub process {
 
 	print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
-	sleep 1;
+	my $message = get_from_tag_or_default($message, "log_message", "no message");
+	chomp $message;
+
+	print "log prefix: '" . get_from_tag_or_default($message, "log_prefix", "no prefix") . "'\n";
+	print "log message: '$message'\n";
 
 	my @numbers = (0, 1, 2, 3, 4444444444444444444444444444, -5);
 
@@ -62,7 +66,7 @@ sub process {
 	$message->{'ip_so_type'} = "tcp";
 
 	# This can be used to duplicate a message if called multiple times
-	$message->send();
+	# $message->send();
 
 	# Return 1 for success and 0 for error
 	return 1;

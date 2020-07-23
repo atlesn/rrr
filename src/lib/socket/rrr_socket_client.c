@@ -33,7 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 #include "../linked_list.h"
 #include "../read.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
+#include "../macro_utils.h"
 
 static int __rrr_socket_client_destroy (
 		struct rrr_socket_client *client
@@ -234,6 +235,7 @@ int rrr_socket_client_collection_read (
 				node->connected_fd,
 				read_step_initial,
 				read_step_max_size,
+				0, // No max size
 				read_flags,
 				read_flags_socket,
 				get_target_size,

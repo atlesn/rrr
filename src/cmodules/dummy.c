@@ -21,8 +21,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "cmodule.h"
 #include "log.h"
+#include "cmodule.h"
 #include "posix.h"
 
 struct dummy_data {
@@ -40,7 +40,7 @@ int config(RRR_CONFIG_ARGS) {
 
 	RRR_MSG_1("cmodule in config()\n");
 
-	RRR_SETTINGS_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_custom_setting", custom_setting);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("cmodule_custom_setting", custom_setting);
 
 	if (data->custom_setting == NULL || *(data->custom_setting) == '\0') {
 		RRR_MSG_0("Could not find setting 'cmodule_custom_setting' in configuration\n");

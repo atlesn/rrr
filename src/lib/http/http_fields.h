@@ -25,12 +25,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "../linked_list.h"
+#include "../rrr_types.h"
 
 struct rrr_http_field {
 	RRR_LL_NODE(struct rrr_http_field);
 	char *name;
 	char *value;
-	int is_binary;
+	char *content_type;
+	rrr_length value_size;
 };
 
 struct rrr_http_field_collection {
@@ -43,12 +45,21 @@ void rrr_http_field_destroy (
 int rrr_http_field_new_no_value (
 		struct rrr_http_field **target,
 		const char *name,
-		ssize_t name_length
+		rrr_length name_length
+);
+int rrr_http_field_set_content_type (
+		struct rrr_http_field *target,
+		const char *content_type
 );
 int rrr_http_field_set_value (
 		struct rrr_http_field *target,
 		const char *value,
-		ssize_t value_length
+		rrr_length value_size
+);
+int rrr_http_field_collection_iterate_const (
+		const struct rrr_http_field_collection *fields,
+		int (*callback)(const struct rrr_http_field *field, void *callback_arg),
+		void *callback_arg
 );
 void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
@@ -56,18 +67,14 @@ void rrr_http_field_collection_dump (
 void rrr_http_field_collection_clear (
 		struct rrr_http_field_collection *fields
 );
-int rrr_http_field_collection_add_field (
+int rrr_http_field_collection_add (
 		struct rrr_http_field_collection *fields,
 		const char *name,
-		const char *value
+		const char *value,
+		rrr_length value_size,
+		const char *content_type
 );
-int rrr_http_field_collection_add_field_binary (
-		struct rrr_http_field_collection *fields,
-		const char *name,
-		void *value,
-		ssize_t size
-);
-int rrr_http_field_collection_get_total_length (
+rrr_length rrr_http_field_collection_get_total_length (
 		struct rrr_http_field_collection *fields
 );
 const struct rrr_http_field *rrr_http_field_collection_get_field (
@@ -75,9 +82,11 @@ const struct rrr_http_field *rrr_http_field_collection_get_field (
 		const char *name
 );
 char *rrr_http_field_collection_to_urlencoded_form_data (
+		rrr_length *output_size,
 		struct rrr_http_field_collection *fields
 );
 char *rrr_http_field_collection_to_raw_form_data (
+		rrr_length *output_size,
 		struct rrr_http_field_collection *fields
 );
 

@@ -19,6 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+#include "../log.h"
+
 #include "cmodule_defines.h"
 #include "cmodule_ext.h"
 #include "cmodule_channel.h"

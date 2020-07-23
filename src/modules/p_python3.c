@@ -42,8 +42,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_addr.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/log.h"
-#include "../lib/cmodule_helper.h"
-#include "../lib/cmodule_main.h"
+#include "../lib/cmodule/cmodule_helper.h"
+#include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 
@@ -297,17 +297,13 @@ int python3_init_wrapper_callback(RRR_CMODULE_INIT_WRAPPER_CALLBACK_ARGS) {
 static void *thread_entry_python3 (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct python3_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll;
 
 	RRR_DBG_1 ("python3 thread data is %p, size of private data: %lu\n", thread_data, sizeof(*data));
 
-	rrr_poll_collection_init(&poll);
-	RRR_STATS_INSTANCE_INIT_WITH_PTHREAD_CLEANUP_PUSH;
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll);
 	pthread_cleanup_push(data_cleanup, data);
 
 	if (data_init(data, thread_data) != 0) {
-		RRR_MSG_0("Could not initalize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
+		RRR_MSG_0("Could not initialize data in python3 instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
@@ -324,7 +320,7 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 		goto out_message;
 	}
 
-	rrr_poll_add_from_thread_senders(&poll, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
 	pid_t fork_pid = 0;
 
@@ -348,8 +344,8 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 
 	rrr_cmodule_helper_loop (
 			thread_data,
-			stats,
-			&poll,
+			INSTANCE_D_STATS(thread_data),
+			thread_data->poll,
 			fork_pid
 	);
 
@@ -357,8 +353,6 @@ static void *thread_entry_python3 (struct rrr_thread *thread) {
 	RRR_DBG_1 ("python3 instance %s exiting\n", INSTANCE_D_NAME(thread_data));
 
 	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
-	RRR_STATS_INSTANCE_CLEANUP_WITH_PTHREAD_CLEANUP_POP;
 	pthread_exit(0);
 }
 

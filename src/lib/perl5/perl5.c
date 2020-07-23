@@ -27,10 +27,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <perl.h>
 
 #include "../posix.h"
+#include "../log.h"
 #include "perl5.h"
 #include "perl5_types.h"
 
-#include "../log.h"
 #include "../../build_directory.h"
 #include "../common.h"
 #include "../messages.h"
@@ -38,9 +38,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../settings.h"
 #include "../socket/rrr_socket_msg.h"
 #include "../rrr_strerror.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../array.h"
 #include "../ip.h"
+#include "../ip_util.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \
 	RRR_BUILD_DIR "/src/perl5/xsub/lib/rrr/"
@@ -933,6 +934,7 @@ int rrr_perl5_hv_to_message (
 			new_data_len +
 			new_topic_len;
 
+    // Sets default address length to 0
     rrr_message_addr_init(target_addr);
 
 	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
@@ -965,11 +967,9 @@ int rrr_perl5_hv_to_message (
 	DEFINE_AND_FETCH_FROM_HV(ip_addr_len, hv);
 
 	uint64_t addr_len_tmp = SvUV(ip_addr_len);
-	RRR_MSG_ADDR_SET_ADDR_LEN(target_addr, addr_len_tmp);
-
 	if (addr_len_tmp > 0) {
 		if (addr_len_tmp > sizeof(target_addr->addr)) {
-			RRR_MSG_0("Address length field from message hash was too big (%" PRIu64 " > %lu)\n",
+			RRR_MSG_0("Address length field from message was too big (%" PRIu64 " > %lu)\n",
 					addr_len_tmp, sizeof(target_addr->addr));
 			ret = 1;
 			goto out;
@@ -977,8 +977,27 @@ int rrr_perl5_hv_to_message (
 
 		DEFINE_AND_FETCH_FROM_HV(ip_addr, hv);
 		SvUTF8_off(ip_addr);
-		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp);
+
+		STRLEN addr_len_tmp_actual = 0;
+		char *data_str = SvPVbyte_force(ip_addr, addr_len_tmp_actual);
+
+		if (addr_len_tmp > addr_len_tmp_actual) {
+			RRR_MSG_0("Address length field from message counts more bytes than the size of the address field (%" PRIu64 " > %" PRIu64 ")\n",
+					addr_len_tmp, (uint64_t) addr_len_tmp_actual);
+			ret = 1;
+			goto out;
+		}
+
+		// Use specified length from length field, not actual length
 		memcpy(&target_addr->addr, data_str, addr_len_tmp);
+		RRR_MSG_ADDR_SET_ADDR_LEN(target_addr, addr_len_tmp);
+
+		if (RRR_DEBUGLEVEL_3) {
+			char buf[256];
+			rrr_ip_to_str(buf, sizeof(buf), (const struct sockaddr *) target_addr->addr, addr_len_tmp);
+			const struct sockaddr_in *sockaddr_in = (const struct sockaddr_in *) target_addr->addr;
+			RRR_MSG_3("IP address of message from perl script: %s, family: %i\n", buf, sockaddr_in->sin_family);
+		}
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
@@ -1111,7 +1130,7 @@ static int __rrr_perl5_message_hv_arrays_populate (
 	AV *array_tags = (AV*) SvRV(array_tags_ref);
 	AV *array_types = (AV*) SvRV(array_types_ref);
 
-	if (rrr_array_message_to_collection(&array_tmp, message) != 0) {
+	if (rrr_array_message_append_to_collection(&array_tmp, message) != 0) {
 		RRR_MSG_0("Could not convert message to array collection in __rrr_perl5_message_array_populate\n");
 		ret = 1;
 		goto out;
@@ -1221,8 +1240,13 @@ int rrr_perl5_message_to_hv (
 	uint64_t addr_len_tmp;
 	if (message_addr != NULL && (addr_len_tmp = RRR_MSG_ADDR_GET_ADDR_LEN(message_addr)) > 0) {
 		// Perl needs size of sockaddr struct which is smaller than our internal size
-		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) sizeof(struct sockaddr));
+		sv_setpvn(ip_addr, (char *) &message_addr->addr, (STRLEN) addr_len_tmp);
 		sv_setuv(ip_addr_len, addr_len_tmp);
+
+//		char buf[256];
+//		rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) message_addr->addr, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
+//		printf("perl5 message to hv: %s family %i socklen %lu\n",
+//				buf, ((struct sockaddr *) message_addr->addr)->sa_family, RRR_MSG_ADDR_GET_ADDR_LEN(message_addr));
 	}
 	else {
 		sv_setpv(ip_addr, "");

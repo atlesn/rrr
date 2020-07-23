@@ -1,3 +1,56 @@
+rrr (1.5-5) buster; urgency=medium
+
+  * Internal changes on length/size fields
+
+ -- atle <atle@atle>  Thu, 23 Jul 2020 08:28:45 +0200
+
+rrr (1.5-4) buster; urgency=medium
+
+  * Misc. smaller fixes 
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 20 Jul 2020 19:36:07 +0200
+
+rrr (1.5-3) buster; urgency=medium
+
+  * New option in MQTT client to discard waiting messages upon
+    connect retry
+  * Misc. cleanup and fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 15:44:20 +0200
+
+rrr (1.5-2) buster; urgency=medium
+
+  * Fixes in HTTP server and support OPTIONS request
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 01:52:51 +0200
+
+rrr (1.5-1) buster; urgency=medium
+
+  * Bugfixes in HTTP header parsing
+  * HTTP server can now re-use connections for new requests
+  * Bugfixes regarding IP address handling, multiple modules
+  * Misc. cleanups
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 17 Jul 2020 17:34:57 +0200
+
+rrr (1.5) buster; urgency=medium
+
+  * New HTTP modules for client and server
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 15 Jul 2020 00:59:10 +0200
+
+rrr (1.4-2) buster; urgency=medium
+
+  * Fix username for RRR daemon
+
+ -- Atle Solbakken <atle@goliathdns.no>  Sun, 19 Jul 2020 17:34:55 +0200
+
+rrr (1.4-1) buster; urgency=medium
+
+  * Fix bug in MQTT client causing 100% CPU usage
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 16 Jul 2020 13:04:09 +0200
+
 rrr (1.4) buster; urgency=medium
 
   * New cmodule framework for easy creation of custom C-modules

@@ -27,18 +27,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <netdb.h>
 
+#include "../log.h"
+
 #include "stats_engine.h"
 #include "stats_message.h"
 
-#include "../log.h"
 #include "../gnu.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_msg.h"
 #include "../socket/rrr_socket_client.h"
 #include "../read.h"
 #include "../linked_list.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 #include "../random.h"
+#include "../macro_utils.h"
 
 #define RRR_STATS_ENGINE_SEND_INTERVAL_MS 50
 #define RRR_STATS_ENGINE_LOG_JOURNAL_MAX_ENTRIES 25

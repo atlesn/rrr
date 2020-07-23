@@ -42,9 +42,9 @@ struct rrr_message;
 struct rrr_array_value_packed {
 	rrr_type type;
 	rrr_type_flags flags;
-	rrr_type_length tag_length;
-	rrr_type_length total_length;
-	rrr_type_length elements;
+	rrr_length tag_length;
+	rrr_length total_length;
+	rrr_length elements;
 	char data[1];
 } __attribute((packed));
 
@@ -79,16 +79,33 @@ int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *data,
-		const rrr_type_length length
+		const rrr_length length
 );
 int rrr_array_definition_collection_clone (
 		struct rrr_array *target,
 		const struct rrr_array *source
 );
-int rrr_array_push_value_64_with_tag (
+int rrr_array_push_value_u64_with_tag (
 		struct rrr_array *collection,
 		const char *tag,
 		uint64_t value
+);
+int rrr_array_push_value_i64_with_tag (
+		struct rrr_array *collection,
+		const char *tag,
+		int64_t value
+);
+int rrr_array_push_value_str_with_tag_with_size (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value,
+		size_t value_size
+);
+int rrr_array_push_value_blob_with_tag_with_size (
+		struct rrr_array *collection,
+		const char *tag,
+		const char *value,
+		size_t value_size
 );
 int rrr_array_push_value_str_with_tag (
 		struct rrr_array *collection,
@@ -110,6 +127,10 @@ struct rrr_type_value *rrr_array_value_get_by_index (
 );
 struct rrr_type_value *rrr_array_value_get_by_tag (
 		struct rrr_array *definition,
+		const char *tag
+);
+const struct rrr_type_value *rrr_array_value_get_by_tag_const (
+		const struct rrr_array *definition,
 		const char *tag
 );
 int rrr_array_get_packed_length_from_buffer (
@@ -167,7 +188,7 @@ int rrr_array_new_message_from_collection (
 		const char *topic,
 		ssize_t topic_length
 );
-int rrr_array_message_to_collection (
+int rrr_array_message_append_to_collection (
 		struct rrr_array *target,
 		const struct rrr_message *message_orig
 );

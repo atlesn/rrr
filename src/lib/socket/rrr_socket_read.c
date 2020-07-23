@@ -28,17 +28,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <errno.h>
+
+#include "../log.h"
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
 
 #include "../posix.h"
-#include "../log.h"
 #include "../linked_list.h"
 #include "../rrr_strerror.h"
 #include "../read.h"
-#include "../vl_time.h"
+#include "../rrr_time.h"
 
 struct rrr_socket_read_message_default_callback_data {
 	struct rrr_read_session_collection *read_sessions;
@@ -234,6 +236,7 @@ int rrr_socket_read_message_default (
 		int fd,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max,
 		int read_flags,
 		int socket_read_flags,
 		int (*get_target_size)(struct rrr_read_session *read_session, void *arg),
@@ -251,10 +254,12 @@ int rrr_socket_read_message_default (
 	callback_data.complete_callback_arg = complete_callback_arg;
 	callback_data.socket_read_flags = socket_read_flags;
 
+	// NOTE : Double check order of integer arguments, don't mix them up
 	return rrr_read_message_using_callbacks (
 			bytes_read,
 			read_step_initial,
 			read_step_max_size,
+			read_max,
 			read_flags,
 			__rrr_socket_read_message_default_get_target_size,
 			__rrr_socket_read_message_default_complete_callback,

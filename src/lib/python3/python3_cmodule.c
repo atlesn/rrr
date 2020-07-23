@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "vl_time.h"
+#include "rrr_time.h"
 
 #include <string.h>
 #include <fcntl.h>
@@ -54,7 +54,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../posix.h"
 #include "../gnu.h"
 #include "../log.h"
-#include "../global.h"
+#include "../macro_utils.h"
 
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static PyThreadState *main_python_tstate = NULL;

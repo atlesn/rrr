@@ -32,9 +32,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_read.h"
 #include "linked_list.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "crc32.h"
 #include "random.h"
+#include "macro_utils.h"
 
 static int __rrr_udpstream_frame_destroy(struct rrr_udpstream_frame *frame) {
 	RRR_FREE_IF_NOT_NULL(frame->data);
@@ -251,14 +252,14 @@ static int __rrr_udpstream_checksum_and_send_packed_frame (
 
 	// A packed frame created locally has the payload stored separately
 	if (data_size > 0) {
-		frame->data_crc32 = rrr_htobe32(crc32buf((char *) data, data_size));
+		frame->data_crc32 = rrr_htobe32(rrr_crc32buf((char *) data, data_size));
 		frame->data_size = rrr_htobe16(data_size);
 	}
 
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
-	frame->header_crc32 = rrr_htobe32(crc32buf(crc32_start_pos, crc32_size));
+	frame->header_crc32 = rrr_htobe32(rrr_crc32buf(crc32_start_pos, crc32_size));
 
 	RRR_DBG_3("UDP-stream TX packed crc32: %" PRIu32 " size: %u flags_type: %u connect_handle/frame_id/window_size: %u stream: %u\n",
 			frame->header_crc32, rrr_be16toh(frame->data_size), frame->flags_and_type, rrr_be32toh(frame->connect_handle), rrr_be16toh(frame->stream_id));
@@ -509,7 +510,7 @@ static int __rrr_udpstream_frame_packed_validate (
 	char *crc32_start_pos = ((char *) frame) + sizeof(frame->header_crc32);
 	ssize_t crc32_size = sizeof(*frame) - sizeof(frame->header_crc32) - 1;
 
-	if (crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
+	if (rrr_crc32cmp(crc32_start_pos, crc32_size, header_crc32) != 0) {
 		RRR_MSG_0("Header CRC32 mismatch in __rrr_udpstream_frame_pack_validate\n");
 		if (RRR_DEBUGLEVEL_2) {
 			__rrr_udpstream_frame_packed_dump(frame);
@@ -1023,7 +1024,7 @@ static int __rrr_udpstream_read_callback (
 
 	ssize_t data_size = RRR_UDPSTREAM_FRAME_PACKED_DATA_SIZE(frame);
 	if (data_size > 0) {
-		if (crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
+		if (rrr_crc32cmp (frame->data, data_size, RRR_UDPSTREAM_FRAME_PACKED_DATA_CRC32(frame)) != 0) {
 			RRR_MSG_0("CRC32 mismatch for data in __rrr_udpstream_read_callback\n");
 			ret = RRR_SOCKET_SOFT_ERROR;
 			goto out;
@@ -1033,7 +1034,7 @@ static int __rrr_udpstream_read_callback (
 	if ((ret = __rrr_udpstream_handle_received_frame (
 			data,
 			frame,
-			&read_session->src_addr,
+			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			callback_data->control_frame_listener,
 			callback_data->control_frame_listener_arg
@@ -1094,7 +1095,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
 					data->stream->stream_id, node->frame_id, node->application_data);
 
-			if (write_pos - *joined_data != data->accumulated_data_size) {
+			if ((size_t) write_pos - (size_t) *joined_data != data->accumulated_data_size) {
 				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
 			}
 
@@ -1113,7 +1114,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 					goto loop_bottom_clenaup;
 				}
 
-				if (target_size != data->accumulated_data_size) {
+				if (target_size != (int64_t) data->accumulated_data_size) {
 					RRR_MSG_0("Stream error or size mismatch of received packed in UDP-stream %u, data will be lost\n",
 							data->stream->stream_id);
 					goto loop_bottom_clenaup;
@@ -1504,6 +1505,7 @@ int rrr_udpstream_do_read_tasks (
 				data->ip.fd,
 				1024,
 				1024,
+				0, // No maximum size
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
 				__rrr_udpstream_read_get_target_size,

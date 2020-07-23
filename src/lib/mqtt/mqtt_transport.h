@@ -27,8 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 
 #include "mqtt_common.h"
-#include "../net_transport.h"
+#include "../net_transport/net_transport.h"
 
+struct rrr_net_transport_config;
 struct rrr_mqtt_p;
 
 struct rrr_mqtt_transport {
@@ -57,15 +58,9 @@ static inline struct rrr_net_transport *rrr_mqtt_transport_get_latest (
 ) {
 	return RRR_LL_LAST(&transport->transports);
 }
-int rrr_mqtt_transport_start_tls (
+int rrr_mqtt_transport_start (
 		struct rrr_mqtt_transport *transport,
-		const char *tls_certificate_file,
-		const char *tls_key_file,
-		const char *tls_ca_file,
-		const char *tls_ca_path
-);
-int rrr_mqtt_transport_start_plain (
-		struct rrr_mqtt_transport *transport
+		const struct rrr_net_transport_config *net_transport_config
 );
 int rrr_mqtt_transport_accept (
 		int *new_transport_handle,

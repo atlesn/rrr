@@ -53,7 +53,7 @@ struct rrr_read_session {
 	int socket_options;
 
 	// Used to distinguish clients from each other
-	struct sockaddr src_addr;
+	struct sockaddr_storage src_addr;
 	socklen_t src_addr_len;
 
 	/* Read untill target size is reached (default) or set to read until
@@ -103,6 +103,7 @@ int rrr_read_message_using_callbacks (
 		uint64_t *bytes_read,
 		ssize_t read_step_initial,
 		ssize_t read_step_max_size,
+		ssize_t read_max_size,
 		int read_flags,
 		int									 (*function_get_target_size) (
 													struct rrr_read_session *read_session,

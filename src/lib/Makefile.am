@@ -3,7 +3,7 @@ mysql = mysql.c
 endif
 
 if RRR_WITH_OPENSSL
-encryption = rrr_openssl.c net_transport_tls.c
+encryption = rrr_openssl.c
 endif
 
 if RRR_WITH_PYTHON3
@@ -31,22 +31,37 @@ stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/
 socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
 			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
 
-http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c
+http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
+		http/http_common.c http/http_query_builder.c http/http_client_config.c \
+		http/http_server.c http/http_server_worker.c
+
+cmodule =	cmodule/cmodule_main.c cmodule/cmodule_helper.c cmodule/cmodule_channel.c \
+			cmodule/cmodule_ext.c cmodule/cmodule_defer_queue.c
+
+net_transport = net_transport/net_transport.c net_transport/net_transport_plain.c net_transport/net_transport_config.c
+
+if RRR_WITH_OPENSSL
+net_transport_tls = net_transport/net_transport_tls.c
+endif
 
 lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c \
-					ip.c ip_accept_data.c ip_buffer_entry.c \
-					array.c type.c version.c configuration.c parse.c settings.c instance_config.c common.c \
+librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c rrr_config.c \
+					ip.c ip_accept_data.c ip_buffer_entry.c ip_util.c rrr_time.c \
+					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c \
-					cmodule_main.c cmodule_helper.c cmodule_channel.c cmodule_ext.c cmodule_defer_queue.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
-					net_transport.c net_transport_plain.c \
 					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http}
+					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
+					${net_transport} ${net_transport_tls}
+
+libadd_rrr_conversion_warning = librrr_conversion_warning.la
+librrr_conversion_warning_la_SOURCES = type.c
+librrr_conversion_warning_la_CFLAGS = -Wconversion ${AM_CFLAGS}
+librrr_conversion_warning_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_rrr_readdir = librrr_readdir.la
 librrr_readdir_la_SOURCES = rrr_readdir.c
@@ -73,13 +88,14 @@ librrr_umask_la_SOURCES = rrr_umask.c
 librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
 librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 
-libadd_all =	${libadd_perl5}			\
-				${libadd_python3}		\
-				${libadd_rrr_readdir}	\
-				${libadd_rrr_strerror}	\
-				${libadd_rrr_fork}		\
-				${libadd_rrr_log}		\
-				${libadd_rrr_umask}
+libadd_all =	${libadd_perl5}					\
+				${libadd_python3}				\
+				${libadd_rrr_readdir}			\
+				${libadd_rrr_strerror}			\
+				${libadd_rrr_fork}				\
+				${libadd_rrr_log}				\
+				${libadd_rrr_umask}				\
+				${libadd_rrr_conversion_warning}
 
 noinst_LTLIBRARIES = ${libadd_all}
 librrr_la_LIBADD =  ${libadd_all}

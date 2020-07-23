@@ -25,8 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <inttypes.h>
 
-#include "mqtt_id_pool.h"
 #include "../log.h"
+
+#include "mqtt_id_pool.h"
+
+#include "../macro_utils.h"
 
 int rrr_mqtt_id_pool_init (struct rrr_mqtt_id_pool *pool) {
 	memset (pool, '\0', sizeof(*pool));

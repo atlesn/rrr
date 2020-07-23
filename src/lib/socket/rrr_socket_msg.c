@@ -21,12 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
+#include "../log.h"
+
 #include "rrr_socket.h"
 #include "rrr_socket_msg.h"
 
-#include "../log.h"
 #include "../crc32.h"
 #include "../rrr_endian.h"
+#include "../rrr_types.h"
 
 void rrr_socket_msg_populate_head (
 		struct rrr_socket_msg *message,
@@ -62,11 +64,11 @@ void rrr_socket_msg_populate_control_msg (
 
 static int __rrr_socket_msg_head_validate (
 		struct rrr_socket_msg *message,
-		ssize_t expected_size
+		rrr_length expected_size
 ) {
 	int ret = 0;
 
-	if ((ssize_t) message->msg_size != expected_size) {
+	if (message->msg_size != expected_size) {
 		RRR_MSG_0("Message network size mismatch in __rrr_socket_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
 				expected_size, message->msg_size);
 		ret = 1;
@@ -98,7 +100,7 @@ static int __rrr_socket_msg_head_validate (
 
 int rrr_socket_msg_head_to_host_and_verify (
 		struct rrr_socket_msg *message,
-		ssize_t expected_size
+		rrr_length expected_size
 ) {
 	message->header_crc32 = 0;
 	message->data_crc32 = rrr_be32toh(message->data_crc32);
@@ -115,18 +117,18 @@ int rrr_socket_msg_head_to_host_and_verify (
 }
 
 int rrr_socket_msg_get_target_size_and_check_checksum (
-		ssize_t *target_size,
-		struct rrr_socket_msg *socket_msg,
-		ssize_t buf_size
+		rrr_length *target_size,
+		const struct rrr_socket_msg *socket_msg,
+		rrr_length buf_size
 ) {
-	if (buf_size < (ssize_t) sizeof(struct rrr_socket_msg)) {
+	if (buf_size < sizeof(struct rrr_socket_msg)) {
 		return RRR_SOCKET_READ_INCOMPLETE;
 	}
 
 	*target_size = 0;
 
-	if (crc32cmp (
-			((char*) socket_msg) + sizeof(socket_msg->header_crc32),
+	if (rrr_crc32cmp (
+			((const char*) socket_msg) + sizeof(socket_msg->header_crc32),
 			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
 			rrr_be32toh(socket_msg->header_crc32)
 	) != 0) {
@@ -140,12 +142,12 @@ int rrr_socket_msg_get_target_size_and_check_checksum (
 
 int rrr_socket_msg_check_data_checksum_and_length (
 		struct rrr_socket_msg *message,
-		ssize_t data_size
+		rrr_length data_size
 ) {
-	if (data_size < (ssize_t) sizeof(*message)) {
+	if (data_size < sizeof(*message)) {
 		RRR_BUG("rrr_socket_msg_checksum_check called with too short message\n");
 	}
-	if (message->msg_size != data_size) {
+	if ((int64_t) message->msg_size != data_size) {
 		RRR_MSG_0("Message size mismatch in rrr_socket_msg_checksum_check\n");
 		return 1;
 	}
@@ -160,5 +162,5 @@ int rrr_socket_msg_check_data_checksum_and_length (
 	rrr_u32 checksum = message->data_crc32;
 
 	char *data_begin = ((char *) message) + sizeof(*message);
-	return crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
+	return rrr_crc32cmp(data_begin, data_size - sizeof(*message), checksum) != 0;
 }

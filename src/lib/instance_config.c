@@ -29,6 +29,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "linked_list.h"
 #include "map.h"
 #include "array.h"
+#include "gnu.h"
+
+int rrr_instance_config_string_set (
+		char **target,
+		const char *prefix,
+		const char *name,
+		const char *suffix
+) {
+	RRR_FREE_IF_NOT_NULL(*target);
+	if (rrr_asprintf(target, "%s%s%s", prefix, name, (suffix != NULL ? suffix : "")) < 0) {
+		RRR_MSG_0("Could not allocate memory in rrr_instance_config_string_set\n");
+		return 1;
+	}
+	return 0;
+}
 
 void rrr_instance_config_destroy(struct rrr_instance_config *config) {
 	rrr_settings_destroy(config->settings);
@@ -211,4 +226,40 @@ int rrr_instance_config_parse_comma_separated_to_map (
 			__parse_associative_list_to_map_callback,
 			&callback_data
 	);
+}
+
+int rrr_instance_config_parse_optional_utf8 (
+		char **target,
+		struct rrr_instance_config *config,
+		const char *string,
+		const char *def
+) {
+	int ret = 0;
+
+	if ((ret = rrr_settings_get_string_noconvert_silent(target, config->settings, string)) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			if (def != NULL && (*target = strdup(def)) == NULL) {
+				RRR_MSG_0("Could not allocate memory for default value of setting %s in instance %s\n",
+					string, config->name);
+				ret = 1;
+				goto out;
+			}
+		}
+		else {
+			RRR_MSG_0("Error while parsing setting %s in instance %s\n", string, config->name);
+			ret = 1;
+			goto out;
+		}
+		ret = 0;
+	}
+	else {
+		if (rrr_utf8_validate(*target, strlen(*target)) != 0) {
+			RRR_MSG_0("Setting %s in instance %s was not valid UTF-8\n", string, config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
 }

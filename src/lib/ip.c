@@ -45,11 +45,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_accept_data.h"
+#include "ip_util.h"
 #include "log.h"
 #include "messages.h"
 #include "array.h"
 #include "socket/rrr_socket.h"
-#include "vl_time.h"
+#include "rrr_time.h"
 #include "crc32.h"
 #include "socket/rrr_socket_common.h"
 #include "socket/rrr_socket_msg.h"
@@ -63,7 +64,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_IP_TCP_GRAYLIST_TIME_MS				2000
 #define RRR_IP_TCP_NONBLOCK_CONNECT_TIMEOUT_MS	250
 
-int rrr_ip_graylist_exists (
+static int __rrr_ip_graylist_exists (
 		struct rrr_ip_graylist *list, const struct sockaddr *addr, socklen_t len
 ) {
 	uint64_t time_now = rrr_time_get_64();
@@ -80,14 +81,14 @@ int rrr_ip_graylist_exists (
 	return 0;
 }
 
-int rrr_ip_graylist_push (
+static int __rrr_ip_graylist_push (
 		struct rrr_ip_graylist *target, const struct sockaddr *addr, socklen_t len, int timeout_ms
 ) {
 	int ret = 0;
 
 	struct rrr_ip_graylist_entry *new_entry = NULL;
 
-	if (rrr_ip_graylist_exists(target, addr, len)) {
+	if (__rrr_ip_graylist_exists(target, addr, len)) {
 		goto out;
 	}
 
@@ -100,7 +101,7 @@ int rrr_ip_graylist_push (
 	);
 
 	if ((new_entry = malloc(sizeof(*new_entry))) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_ip_graylist_push\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_ip_graylist_push\n");
 		ret = 1;
 		goto out;
 	}
@@ -108,7 +109,7 @@ int rrr_ip_graylist_push (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in rrr_ip_graylist_push\n");
+		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push\n");
 	}
 
 	memcpy (&new_entry->addr, addr, len);
@@ -129,115 +130,23 @@ void rrr_ip_graylist_clear (
 	RRR_LL_DESTROY(target, struct rrr_ip_graylist_entry, free(node));
 }
 
-void rrr_ip_to_str (char *dest, size_t dest_size, const struct sockaddr *addr, socklen_t addr_len) {
-	const char *result = NULL;
-
-	*dest = '\0';
-
-	const void *addr_final = NULL;
-	in_port_t port_final = 0;
-
-	if (addr->sa_family == AF_INET) {
-		const struct sockaddr_in *in_addr = (const struct sockaddr_in *) addr;
-		addr_final = &in_addr->sin_addr;
-		port_final = in_addr->sin_port;
-	}
-	else if (addr->sa_family == AF_INET6) {
-		const struct sockaddr_in6 *in6_addr = (const struct sockaddr_in6 *) addr;
-		addr_final = &in6_addr->sin6_addr;
-		port_final = in6_addr->sin6_port;
-	}
-	else {
-		snprintf(dest, dest_size, "[Unknown address family %i]", addr->sa_family);
-		goto out;
-	}
-
-	char buf[256];
-	*buf = '\0';
-	result = inet_ntop(addr->sa_family, addr_final, buf, 256);
-	buf[256 - 1] = '\0';
-
-	if (result == NULL) {
-		snprintf(dest, dest_size, "[Unknown address of length %i]", addr_len);
-		goto out;
-	}
-
-	snprintf(dest, dest_size, "[%s:%u]", buf, ntohs(port_final));
-
-	out:
-	dest[dest_size - 1] = '\0';
+void rrr_ip_graylist_clear_void (
+		void *target
+) {
+	return rrr_ip_graylist_clear(target);
 }
 
-// TODO : Remove stats, not currently being used
-
-int rrr_ip_stats_init (struct ip_stats *stats, unsigned int period, const char *type, const char *name) {
-	stats->period = period;
-	stats->name = name;
-	stats->type = type;
-	return (pthread_mutex_init(&stats->lock, NULL) != 0);
-}
-
-int rrr_ip_stats_init_twoway (struct ip_stats_twoway *stats, unsigned int period, const char *name) {
-	memset(stats, '\0', sizeof(*stats));
-	int ret = 0;
-	ret |= rrr_ip_stats_init(&stats->send, period, "send", name);
-	ret |= rrr_ip_stats_init(&stats->receive, period, "receive", name);
-	return ret;
-}
-
-int rrr_ip_stats_update(struct ip_stats *stats, unsigned long int packets, unsigned long int bytes) {
-	int ret = RRR_IP_STATS_UPDATE_OK;
-
-	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return RRR_IP_STATS_UPDATE_ERR;
-	}
-
-	stats->packets += packets;
-	stats->bytes += bytes;
-
-	if (stats->time_from == 0) {
-		stats->time_from = rrr_time_get_64();
-	}
-	else if (stats->time_from + stats->period * 1000000 < rrr_time_get_64()) {
-		ret = RRR_IP_STATS_UPDATE_READY;
-	}
-
-	pthread_mutex_unlock(&stats->lock);
-	return ret;
-}
-
-int rrr_stats_print_reset(struct ip_stats *stats, int do_reset) {
-	int ret = RRR_IP_STATS_UPDATE_OK;
-
-	if (pthread_mutex_lock(&stats->lock) != 0) {
-		return RRR_IP_STATS_UPDATE_ERR;
-	}
-
-	RRR_DBG_2("IP stats for %s %s: %lu packets/s %lu bytes/s, period is %u\n",
-			stats->name, stats->type, stats->packets/stats->period, stats->bytes/stats->period, stats->period);
-
-	if (do_reset) {
-		stats->time_from = 0;
-		stats->packets = 0;
-		stats->bytes = 0;
-	}
-
-	pthread_mutex_unlock(&stats->lock);
-	return ret;
-}
-
-struct ip_receive_callback_data {
+struct rrr_ip_receive_callback_data {
 	struct rrr_ip_buffer_entry *target_entry;
 	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
 	void *callback_arg;
-	struct ip_stats *stats;
 };
 
-static int __ip_receive_callback (
+static int __rrr_ip_receive_callback (
 		struct rrr_read_session *read_session,
 		void *arg
 ) {
-	struct ip_receive_callback_data *callback_data = arg;
+	struct rrr_ip_receive_callback_data *callback_data = arg;
 
 	int ret = 0;
 
@@ -268,7 +177,7 @@ static int __ip_receive_callback (
 			callback_data->target_entry,
 			read_session->rx_buf_ptr,
 			read_session->target_size,
-			&read_session->src_addr,
+			(const struct sockaddr *) &read_session->src_addr,
 			read_session->src_addr_len,
 			protocol
 	);
@@ -291,20 +200,6 @@ static int __ip_receive_callback (
 		RRR_BUG("Unknown return value %i from callback in __ip_receive_callback\n", ret);
 	}
 
-	if (callback_data->stats != NULL) {
-		ret = rrr_ip_stats_update(callback_data->stats, 1, RRR_IP_RECEIVE_MAX_STEP_SIZE);
-		if (ret == RRR_IP_STATS_UPDATE_ERR) {
-			RRR_MSG_0("ip: Error returned from stats update function\n");
-			return 1;
-		}
-		if (ret == RRR_IP_STATS_UPDATE_READY) {
-			if (rrr_stats_print_reset(callback_data->stats, 1) != RRR_IP_STATS_UPDATE_OK) {
-				RRR_MSG_0("ip: Error returned from stats print function\n");
-				return 1;
-			}
-		}
-	}
-
 	out:
 	return ret;
 }
@@ -318,14 +213,12 @@ int rrr_ip_receive_array (
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
 		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
+		void *arg
 ) {
-	struct ip_receive_callback_data callback_data = {
+	struct rrr_ip_receive_callback_data callback_data = {
 		target_entry,
 		callback,
-		arg,
-		stats
+		arg
 	};
 
 	return rrr_socket_common_receive_array (
@@ -336,103 +229,10 @@ int rrr_ip_receive_array (
 			definition,
 			do_sync_byte_by_byte,
 			message_max_size,
-			__ip_receive_callback,
+			__rrr_ip_receive_callback,
 			&callback_data
 	);
 }
-
-/* XXX : Disabled, not currently used
-int rrr_ip_receive_socket_msg (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-) {
-
-	struct ip_receive_callback_data callback_data = {
-		callback, arg, stats
-	};
-
-	return rrr_socket_common_receive_socket_msg (
-			read_session_collection,
-			fd,
-			(no_sleeping != 0 ? RRR_READ_F_NO_SLEEPING : 0),
-			RRR_SOCKET_READ_METHOD_RECVFROM,
-			__ip_receive_callback,
-			&callback_data
-	);
-
-}
-
-*/
-
-/* Not currently used
- * TODO : Convert to use read_common message endian flip and verification
- *
-struct ip_receive_messages_callback_data {
-	int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg);
-	void *arg;
-};
-
-static int __rrr_ip_receive_rrr_message_callback (
-		struct rrr_ip_buffer_entry *entry,
-		void *arg
-) {
-	int ret = 0;
-	struct ip_receive_messages_callback_data *data = arg;
-	struct rrr_message *message = entry->message;
-	const ssize_t count = entry->data_length;
-	if (count < 10) {
-		RRR_MSG_0("Received short message/packet from network\n");
-		goto out_free;
-	}
-	// Header CRC32 is checked when reading the data from remote and getting size
-	if (rrr_socket_msg_head_to_host_and_verify(
-			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
-		RRR_MSG_0("Message was invalid in __ip_receive_messages_callback \n");
-		goto out_free;
-	}
-	if (rrr_socket_msg_check_data_checksum_and_length(
-			(struct rrr_socket_msg*) entry->message, entry->data_length) != 0) {
-		RRR_MSG_0("IP: Message checksum was invalid\n");
-		goto out_free;
-	}
-	if (rrr_message_to_host_and_verify(entry->message, entry->data_length) != 0) {
-		RRR_MSG_0(
-				"Message verification failed in __ip_receive_messages_callback (size: %u<>%u)\n",
-				MSG_TOTAL_SIZE(message), message->msg_size);
-		ret = 1;
-		goto out_free;
-	}
-	return data->callback(entry, data->arg);
-	out_free: rrr_ip_buffer_entry_destroy(entry);
-	return ret;
-}
-int rrr_ip_receive_rrr_message (
-		struct rrr_read_session_collection *read_session_collection,
-		int fd,
-		int no_sleeping,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
-		void *arg,
-		struct ip_stats *stats
-) {
-	struct ip_receive_messages_callback_data data;
-
-	data.callback = callback;
-	data.arg = arg;
-
-	return rrr_ip_receive_socket_msg (
-		read_session_collection,
-		fd,
-		no_sleeping,
-		__rrr_ip_receive_rrr_message_callback,
-		&data,
-		stats
-	);
-}
-*/
 
 int rrr_ip_send (
 		int *err,
@@ -494,72 +294,9 @@ int rrr_ip_send (
 	return ret;
 }
 
-/*
- * Currently not used
-int rrr_ip_send_message (
-	const struct rrr_message *input_message,
-	struct rrr_ip_send_packet_info *info,
-	struct ip_stats *stats
+void rrr_ip_network_cleanup (
+		void *arg
 ) {
-	int ret = 0;
-
-	ssize_t final_size = MSG_TOTAL_SIZE(input_message);
-	ssize_t buf_size = MSG_TOTAL_SIZE(input_message);
-
-	struct rrr_message *final_message = malloc(buf_size);
-	if (final_message == NULL) {
-		RRR_MSG_0("Could not allocate memory in ip_send_message\n");
-		ret = 1;
-		goto out;
-	}
-
-	memcpy(final_message, input_message, final_size);
-
-	final_message->msg_size = final_size;
-
-	rrr_message_prepare_for_network(final_message);
-
-	RRR_DBG_3 ("ip sends packet timestamp from %" PRIu64 "\n", input_message->timestamp);
-
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) final_message,
-			RRR_SOCKET_MSG_TYPE_MESSAGE,
-			final_size,
-			0
-	);
-
-	rrr_socket_msg_checksum_and_to_network_endian (
-			(struct rrr_socket_msg *) final_message
-	);
-
-	int err;
-	if ((ret = rrr_ip_send(&err, info->fd, info->res->ai_addr, info->res->ai_addrlen, final_message, final_size)) != 0) {
-		RRR_MSG_0("Data could not be sent in ip_send_message\n");
-		goto out;
-	}
-
-	if (stats != NULL) {
-		int res = rrr_ip_stats_update(stats, 1, final_size);
-		if (res == RRR_IP_STATS_UPDATE_ERR) {
-			RRR_MSG_0("ip: Error returned from stats update function\n");
-			ret = 1;
-			goto out;
-		}
-		if (res == RRR_IP_STATS_UPDATE_READY) {
-			if (rrr_stats_print_reset(stats, 1) != RRR_IP_STATS_UPDATE_OK) {
-				RRR_MSG_0("ip: Error returned from stats print function\n");
-				ret = 1;
-				goto out;
-			}
-		}
-	}
-
-	out:
-	RRR_FREE_IF_NOT_NULL(final_message);
-	return ret;
-}
-*/
-void rrr_ip_network_cleanup (void *arg) {
 	struct rrr_ip_data *data = arg;
 	if (data->fd != 0) {
 		rrr_socket_close(data->fd);
@@ -567,7 +304,9 @@ void rrr_ip_network_cleanup (void *arg) {
 	}
 }
 
-int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
+int rrr_ip_network_start_udp_ipv4_nobind (
+		struct rrr_ip_data *data
+) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
@@ -585,7 +324,9 @@ int rrr_ip_network_start_udp_ipv4_nobind (struct rrr_ip_data *data) {
 	return 0;
 }
 
-int rrr_ip_network_start_udp_ipv4 (struct rrr_ip_data *data) {
+int rrr_ip_network_start_udp_ipv4 (
+		struct rrr_ip_data *data
+) {
 	int fd = rrr_socket (
 			AF_INET,
 			SOCK_DGRAM|SOCK_NONBLOCK,
@@ -688,7 +429,7 @@ static int __rrr_ip_network_connect_tcp_check_graylist (
 		goto out;
 	}
 
-	if (rrr_ip_graylist_exists(graylist, addr, addr_len)) {
+	if (__rrr_ip_graylist_exists(graylist, addr, addr_len)) {
 		ret = RRR_SOCKET_SOFT_ERROR;
 		return ret;
 	}
@@ -760,7 +501,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6_raw (
 
 	out_free_accept:
 	 	if (graylist != NULL) {
-	 		 rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
+	 		 __rrr_ip_graylist_push(graylist, (struct sockaddr *) addr, addr_len, RRR_IP_TCP_GRAYLIST_TIME_MS);
 	 	}
 		free(accept_result);
 	out_close_socket:
@@ -832,7 +573,7 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
     	// This means connection refused or some other error, skip to next address suggestion
 
 		if (graylist != NULL) {
-			rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
+			__rrr_ip_graylist_push(graylist, (struct sockaddr *) rp->ai_addr, rp->ai_addrlen, RRR_IP_TCP_GRAYLIST_TIME_MS);
 		}
 
 		graylist_next:
@@ -875,7 +616,10 @@ int rrr_ip_network_connect_tcp_ipv4_or_ipv6 (
 		return 1;
 }
 
-int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_connections) {
+int rrr_ip_network_start_tcp_ipv4_and_ipv6 (
+		struct rrr_ip_data *data,
+		int max_connections
+) {
 	int fd = rrr_socket (
 			AF_INET6,
 			SOCK_NONBLOCK|SOCK_STREAM,
@@ -915,7 +659,9 @@ int rrr_ip_network_start_tcp_ipv4_and_ipv6 (struct rrr_ip_data *data, int max_co
 	return 1;
 }
 
-int rrr_ip_close (struct rrr_ip_data *data) {
+int rrr_ip_close (
+		struct rrr_ip_data *data
+) {
 	if (data->fd == 0) {
 		RRR_BUG("Received zero-value FD in ip_close\n");
 	}
@@ -926,7 +672,12 @@ int rrr_ip_close (struct rrr_ip_data *data) {
 	return ret;
 }
 
-int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *listen_data, const char *creator, int tcp_nodelay) {
+int rrr_ip_accept (
+		struct rrr_ip_accept_data **accept_data,
+		struct rrr_ip_data *listen_data,
+		const char *creator,
+		int tcp_nodelay
+) {
 	int ret = 0;
 
 	struct sockaddr_storage sockaddr_tmp = {0};
@@ -947,6 +698,10 @@ int rrr_ip_accept (struct rrr_ip_accept_data **accept_data, struct rrr_ip_data *
 			goto out;
 		}
 	}
+
+//	char buf[256];
+//	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) &sockaddr_tmp, socklen_tmp);
+//	printf("ip accept: %s family %i\n", buf, sockaddr_tmp.ss_family);
 
 	int fd = ret;
 	ret = 0;

@@ -24,6 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
+#include "rrr_types.h"
 #include "socket/rrr_socket_msg_head.h"
 #include "messages_head.h"
 
@@ -54,7 +55,7 @@ int rrr_message_to_string (
 	char **final_target,
 	struct rrr_message *message
 );
-int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size);
+int rrr_message_to_host_and_verify (struct rrr_message *message, rrr_biglength expected_size);
 void rrr_message_prepare_for_network (struct rrr_message *message);
 struct rrr_message *rrr_message_duplicate_no_data_with_size (
 		const struct rrr_message *message,

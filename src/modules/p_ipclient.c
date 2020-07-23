@@ -33,19 +33,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/socket.h>
 #include <netinet/in.h>
 
+#include "../lib/log.h"
+
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/vl_time.h"
+#include "../lib/rrr_time.h"
 #include "../lib/poll_helper.h"
 #include "../lib/udpstream_asd.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/gnu.h"
 #include "../lib/linked_list.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
+#include "../lib/macro_utils.h"
 
 // Should not be smaller than module max
 #define RRR_IPCLIENT_MAX_SENDERS RRR_MODULE_MAX_SENDERS
@@ -199,6 +201,7 @@ int parse_config (struct ipclient_data *data, struct rrr_instance_config *config
 }
 
 static int poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
 	struct ipclient_data *private_data = thread_data->private_data;
 
 	struct rrr_message *message = entry->message;
@@ -450,7 +453,6 @@ static int ipclient_udpstream_allocator (
 static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct ipclient_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_poll_collection poll_ip;
 
 	if (data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize data in ipclient instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -459,8 +461,6 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("ipclient thread data is %p\n", thread_data);
 
-	rrr_poll_collection_init(&poll_ip);
-	pthread_cleanup_push(rrr_poll_collection_clear_void, &poll_ip);
 	pthread_cleanup_push(data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
@@ -475,9 +475,9 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
 
-	rrr_poll_add_from_thread_senders(&poll_ip, thread_data);
+	rrr_poll_add_from_thread_senders(thread_data->poll, thread_data);
 
-	int no_polling = rrr_poll_collection_count(&poll_ip) > 0 ? 0 : 1;
+	int no_polling = rrr_poll_collection_count(thread_data->poll) > 0 ? 0 : 1;
 
 	RRR_DBG_1 ("ipclient instance %s started thread %p\n", INSTANCE_D_NAME(thread_data), thread_data);
 
@@ -506,7 +506,7 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 
 		uint64_t poll_timeout = time_now + 100 * 1000; // 100ms
 		do {
-			if (rrr_poll_do_poll_delete (thread_data, &poll_ip, poll_callback, 25) != 0) {
+			if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback, 25) != 0) {
 				RRR_MSG_ERR("Error while polling in ipclient instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				break;
@@ -617,7 +617,6 @@ static void *thread_entry_ipclient (struct rrr_thread *thread) {
 	RRR_DBG_1 ("Thread ipclient %p exiting\n", thread_data->thread);
 
 //	pthread_cleanup_pop(1);
-	pthread_cleanup_pop(1);
 	pthread_cleanup_pop(1);
 
 	pthread_exit(0);

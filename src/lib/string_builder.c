@@ -25,6 +25,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "string_builder.h"
+#include "macro_utils.h"
+
+void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
+	ssize_t length = strlen(str);
+	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
+	string_builder->wpos += length;
+	if (string_builder->wpos + 1 > string_builder->size) {
+		RRR_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
+	}
+}
+
+void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, size_t buf_size) {
+	memcpy(string_builder->buf + string_builder->wpos, buf, buf_size);
+}
 
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder) {
 	char *ret = string_builder->buf;
@@ -36,6 +50,28 @@ void rrr_string_builder_clear (struct rrr_string_builder *string_builder) {
 	RRR_FREE_IF_NOT_NULL(string_builder->buf);
 	string_builder->size = 0;
 	string_builder->wpos = 0;
+}
+
+int rrr_string_builder_new (struct rrr_string_builder **result) {
+	*result = NULL;
+
+	struct rrr_string_builder *string_builder = malloc(sizeof(*string_builder));
+
+	if (string_builder == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_string_builder_new\n");
+		return 1;
+	}
+
+	memset(string_builder, '\0', sizeof(*string_builder));
+
+	*result = string_builder;
+
+	return 0;
+}
+
+void rrr_string_builder_destroy (struct rrr_string_builder *string_builder) {
+	rrr_string_builder_clear (string_builder);
+	free(string_builder);
 }
 
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes) {

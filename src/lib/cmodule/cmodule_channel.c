@@ -22,16 +22,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
 #include "cmodule_main.h"
 #include "cmodule_defer_queue.h"
 
-#include "log.h"
-#include "messages.h"
-#include "message_addr.h"
-#include "linked_list.h"
-#include "mmap_channel.h"
+#include "../messages.h"
+#include "../message_addr.h"
+#include "../linked_list.h"
+#include "../mmap_channel.h"
+#include "../macro_utils.h"
 
 struct rrr_cmodule_mmap_channel_callback_data {
 	const struct rrr_message_addr *addr_msg;
@@ -110,7 +112,7 @@ int rrr_cmodule_channel_send_message (
 		message_addr = NULL;
 
 		if (retry_max_ <= 0) {
-			RRR_DBG_2("Note: Retries exceeded in __rrr_cmodule_send_message\n");
+			RRR_DBG_2("Note: Retries exceeded in rrr_cmodule_channel_send_message pid %i\n", getpid());
 			ret = 0;
 			goto out;
 		}

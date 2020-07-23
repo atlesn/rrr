@@ -47,17 +47,12 @@ struct rrr_string_builder {
 #define RRR_STRING_BUILDER_UNCHECKED_APPEND(string_builder,str)				\
 	rrr_string_builder_unchecked_append(string_builder,str)
 
-static inline void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str) {
-	ssize_t length = strlen(str);
-	memcpy(string_builder->buf + string_builder->wpos, str, length + 1);
-	string_builder->wpos += length;
-	if (string_builder->wpos + 1 > string_builder->size) {
-		RRR_BUG("wpos exceeded maximum in rrr_string_builder_unchecked_append\n");
-	}
-}
-
+void rrr_string_builder_unchecked_append (struct rrr_string_builder *string_builder, const char *str);
+void rrr_string_builder_unchecked_append_raw (struct rrr_string_builder *string_builder, const char *buf, size_t buf_size);
 char *rrr_string_builder_buffer_takeover (struct rrr_string_builder *string_builder);
 void rrr_string_builder_clear (struct rrr_string_builder *string_builder);
+int rrr_string_builder_new (struct rrr_string_builder **result);
+void rrr_string_builder_destroy (struct rrr_string_builder *string_builder);
 int rrr_string_builder_reserve (struct rrr_string_builder *string_builder, ssize_t bytes);
 int rrr_string_builder_append (struct rrr_string_builder *string_builder, const char *str);
 
