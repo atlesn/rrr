@@ -109,7 +109,8 @@ static int __rrr_ip_graylist_push (
 	memset(new_entry, '\0', sizeof(*new_entry));
 
 	if (len > sizeof(new_entry->addr)) {
-		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push\n");
+		RRR_BUG("BUG: address length too long in __rrr_ip_graylist_push %lu > %lu\n",
+			len, sizeof(new_entry->addr));
 	}
 
 	memcpy (&new_entry->addr, addr, len);
