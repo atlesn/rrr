@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
@@ -36,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/ip_defines.h"

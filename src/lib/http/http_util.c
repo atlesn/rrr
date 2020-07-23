@@ -25,10 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <ctype.h>
 #include <stdarg.h>
 
+#include "../log.h"
+
 #include "http_util.h"
 
 #include "../posix.h"
-#include "../log.h"
 #include "../gnu.h"
 #include "../macro_utils.h"
 
@@ -183,17 +184,21 @@ void rrr_http_util_print_where_message (
 		const char *start,
 		const char *end
 ) {
-	const ssize_t max = 20;
+	const rrr_length max = 20;
+
+	if (end < start) {
+		RRR_BUG("BUG: end was smaller than start in rrr_http_util_print_where_message\n");
+	}
 
 	char buf[max+1];
 
-	ssize_t bytes_to_copy = max;
+	rrr_length bytes_to_copy = max;
 	if (start + bytes_to_copy >= end) {
 		bytes_to_copy = end - start;
 	}
 
-	if (bytes_to_copy < 0 || bytes_to_copy > max) {
-		RRR_BUG("BUG: Overflow or underflow in rrr_http_util_print_where_message, bytes to copy was %li\n", bytes_to_copy);
+	if (bytes_to_copy > max) {
+		RRR_BUG("BUG: Overflow in rrr_http_util_print_where_message, bytes to copy was %li\n", bytes_to_copy);
 	}
 
 	strncpy(buf, start, bytes_to_copy);
@@ -201,7 +206,7 @@ void rrr_http_util_print_where_message (
 
 	// Stop message at newline
 
-	for (ssize_t i = 0; i < bytes_to_copy; i++) {
+	for (rrr_length i = 0; i < bytes_to_copy; i++) {
 		if (buf[i] == '\0') {
 			break;
 		}
@@ -216,9 +221,9 @@ void rrr_http_util_print_where_message (
 }
 
 int rrr_http_util_decode_urlencoded_string (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		char *target,
-		ssize_t input_size
+		rrr_length input_size
 ) {
 	int ret = 0;
 
@@ -227,7 +232,7 @@ int rrr_http_util_decode_urlencoded_string (
 	const char *start = target;
 	const char *end = start + input_size;
 
-	ssize_t wpos = 0;
+	rrr_length wpos = 0;
 
 	while (start < end) {
 		unsigned char c = *start;
@@ -240,8 +245,8 @@ int rrr_http_util_decode_urlencoded_string (
 			}
 
 			unsigned long long int result = 0;
-			ssize_t result_len = 0;
 
+			rrr_length result_len = 0;
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in urlencoded string\n");
 				rrr_http_util_print_where_message(start, end);
@@ -270,11 +275,12 @@ int rrr_http_util_decode_urlencoded_string (
 
 // We allow non-ASCII here
 char *rrr_http_util_encode_uri (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		const char *input,
-		ssize_t input_size
+		rrr_length input_size
 ) {
-	ssize_t result_max_length = input_size * 3;
+	rrr_biglength result_max_length = input_size * 3;
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_max_length,"rrr_http_util_encode_uri");
 
 	*output_size = 0;
 
@@ -291,7 +297,7 @@ char *rrr_http_util_encode_uri (
 	char *wpos = result;
 	char *wpos_max = result + result_max_length;
 
-	for (int i = 0; i < input_size; i++) {
+	for (rrr_length i = 0; i < input_size; i++) {
 		unsigned char c = *((unsigned char *) input + i);
 
 		if (__rrr_http_util_is_alphanumeric(c) || __rrr_http_util_is_uri_unreserved_rfc2396(c)) {
@@ -340,16 +346,16 @@ const char *rrr_http_util_find_quoted_string_end (
 }
 
 int rrr_http_util_unquote_string (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		char *target,
-		ssize_t length
+		rrr_length target_length
 ) {
 	char *start = target;
-	char *end = target + length;
+	char *end = target + target_length;
 
 	*output_size = 0;
 
-	ssize_t wpos = 0;
+	rrr_length wpos = 0;
 
 	while (start < end) {
 		if (*start == '"' || *start == '(') {
@@ -402,7 +408,8 @@ char *rrr_http_util_quote_header_value (
 		char delimeter_start,
 		char delimeter_end
 ) {
-	ssize_t length = strlen(input);
+	rrr_biglength length = strlen(input);
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(length, "rrr_http_util_quote_header_value A");
 
 	if (length == 0) {
 		return NULL;
@@ -410,20 +417,22 @@ char *rrr_http_util_quote_header_value (
 
 	int err = 0;
 
-	ssize_t result_length = length * 2 + 2 + 1;
-	char *result = malloc(result_length);
+	rrr_biglength result_size = length * 2 + 2 + 1;
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(length, "rrr_http_util_quote_header_value B");
+
+	char *result = malloc(result_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_http_util_quote_header_value\n");
 		err = 1;
 		goto out;
 	}
-	memset (result, '\0', result_length);
+	memset (result, '\0', result_size);
 
 	char *wpos = result;
-	char *wpos_max = result + result_length;
+	char *wpos_max = result + result_size;
 
 	int needs_quote = 0;
-	for (int i = 0; i < length; i++) {
+	for (rrr_length i = 0; i < length; i++) {
 		unsigned char c = *((unsigned char *) input + i);
 
 		if (__rrr_http_util_is_alphanumeric(c) || __rrr_http_util_is_header_nonspecial_rfc7230(c)) {
@@ -450,7 +459,7 @@ char *rrr_http_util_quote_header_value (
 		*wpos = delimeter_start;
 		wpos++;
 
-		for (int i = 0; i < length; i++) {
+		for (rrr_length i = 0; i < length; i++) {
 			char c = *(input + i);
 
 			if (c == delimeter_start || c == delimeter_end || c == '\r' || c == '\\') {
@@ -507,7 +516,7 @@ const char *rrr_http_util_find_whsp (
 
 int rrr_http_util_strtoull (
 		unsigned long long int *result,
-		ssize_t *result_len,
+		rrr_length *result_len,
 		const char *start,
 		const char *end,
 		int base
@@ -563,29 +572,37 @@ int rrr_http_util_strtoull (
 		RRR_BUG("Endpointer was NULL in __rrr_http_part_strtoull\n");
 	}
 
+	rrr_biglength result_tmp = endptr - buf;
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(result_tmp, "__rrr_http_part_strtoull");
+
 	*result = number;
-	*result_len = endptr - buf;
+	*result_len = result_tmp;
 
 	return 0;
 }
 
 int rrr_http_util_strcasestr (
 		const char **result_start,
-		ssize_t *result_len,
+		rrr_length *result_len,
 		const char *start,
 		const char *end,
 		const char *needle
 ) {
-	ssize_t needle_len = strlen(needle);
+	rrr_biglength needle_len = strlen(needle);
+	RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(needle_len, "rrr_http_util_strcasestr");
+
 	const char *needle_end = needle + needle_len;
+	if (needle_end < needle) {
+		RRR_BUG("BUG: Pointer overflow in rrr_http_util_strcasestr\n");
+	}
 
 	*result_start = NULL;
 	*result_len = 0;
 
 	const char *result = NULL;
-	ssize_t len = 0;
+	rrr_length len = 0;
 
-	if (end - start < needle_len) {
+	if (end - start < (rrr_slength) needle_len) {
 		return 1;
 	}
 
@@ -640,8 +657,11 @@ const char *rrr_http_util_strchr (
 	return NULL;
 }
 
-ssize_t rrr_http_util_count_whsp (const char *start, const char *end) {
-	ssize_t ret = 0;
+rrr_length rrr_http_util_count_whsp (
+		const char *start,
+		const char *end
+) {
+	rrr_length ret = 0;
 
 	for (const char *pos = start; pos < end; pos++) {
 		if (*pos != ' ' && *pos != '\t') {
@@ -653,28 +673,37 @@ ssize_t rrr_http_util_count_whsp (const char *start, const char *end) {
 	return ret;
 }
 
-void rrr_http_util_strtolower (char *str) {
-	ssize_t len = strlen(str);
-	for (int i = 0; i < len; i++) {
+void rrr_http_util_strtolower (
+		char *str
+) {
+	size_t len = strlen(str);
+	for (size_t i = 0; i < len; i++) {
 		str[i] = tolower(str[i]);
 	}
 }
 
-void rrr_http_util_strtoupper (char *str) {
-	ssize_t len = strlen(str);
-	for (int i = 0; i < len; i++) {
+void rrr_http_util_strtoupper (
+		char *str
+) {
+	size_t len = strlen(str);
+	for (size_t i = 0; i < len; i++) {
 		str[i] = toupper(str[i]);
 	}
 }
 
-void rrr_http_util_uri_destroy (struct rrr_http_uri *uri) {
+void rrr_http_util_uri_destroy (
+		struct rrr_http_uri *uri
+) {
 	RRR_FREE_IF_NOT_NULL(uri->endpoint);
 	RRR_FREE_IF_NOT_NULL(uri->host);
 	RRR_FREE_IF_NOT_NULL(uri->protocol);
 	free(uri);
 }
 
-int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) {
+int rrr_http_util_uri_parse (
+		struct rrr_http_uri **uri_result,
+		const char *uri
+) {
 	int ret = 0;
 	struct rrr_http_uri *uri_new = NULL;
 
@@ -698,7 +727,7 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 	const char *end = uri + len;
 
 	const char *new_pos;
-	ssize_t result_len;
+	rrr_length result_len;
 
 	// Parse protocol if present
 	if (rrr_http_util_strcasestr(&new_pos, &result_len, pos, end, "//") && new_pos == pos) {
@@ -850,18 +879,23 @@ int rrr_http_util_uri_parse (struct rrr_http_uri **uri_result, const char *uri) 
 		return ret;
 }
 
-void rrr_http_util_nprintf (size_t length, const char *format, ...) {
+void rrr_http_util_nprintf (
+		rrr_length length,
+		const char *format,
+		...
+) {
 	va_list args;
 	va_start (args, format);
 
 	char *tmp = NULL;
-	int res = 0;
+	int res_i = 0;
 
-	if ((res = rrr_vasprintf(&tmp, format, args)) <= 0) {
+	if ((res_i = rrr_vasprintf(&tmp, format, args)) <= 0) {
 		RRR_MSG_0("Warning: Could not allocate memory in rrr_http_util_nprintf\n");
 	}
 	else {
-		if (res > (int) length) {
+		rrr_slength res = res_i;
+		if (res > (rrr_slength) length) {
 			tmp[length] = '\0';
 		}
 		printf("%s", tmp);

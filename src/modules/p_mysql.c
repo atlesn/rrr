@@ -30,9 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
-#include <src/lib/array.h>
-#include <src/lib/rrr_mysql.h>
 
+#include "../lib/log.h"
 #include "../lib/poll_helper.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
@@ -44,9 +43,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/settings.h"
 #include "../lib/linked_list.h"
 #include "../lib/map.h"
+#include "../lib/array.h"
+#include "../lib/rrr_mysql.h"
 #include "../lib/string_builder.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506

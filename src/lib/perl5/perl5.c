@@ -27,10 +27,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <perl.h>
 
 #include "../posix.h"
+#include "../log.h"
 #include "perl5.h"
 #include "perl5_types.h"
 
-#include "../log.h"
 #include "../../build_directory.h"
 #include "../common.h"
 #include "../messages.h"

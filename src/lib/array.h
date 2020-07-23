@@ -42,9 +42,9 @@ struct rrr_message;
 struct rrr_array_value_packed {
 	rrr_type type;
 	rrr_type_flags flags;
-	rrr_type_length tag_length;
-	rrr_type_length total_length;
-	rrr_type_length elements;
+	rrr_length tag_length;
+	rrr_length total_length;
+	rrr_length elements;
 	char data[1];
 } __attribute((packed));
 
@@ -79,7 +79,7 @@ int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes,
 		const char *data,
-		const rrr_type_length length
+		const rrr_length length
 );
 int rrr_array_definition_collection_clone (
 		struct rrr_array *target,

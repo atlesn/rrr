@@ -23,11 +23,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 #include <inttypes.h>
-#include <src/lib/array.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/settings.h"
 #include "../lib/rrr_time.h"
@@ -48,7 +48,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/message_broker.h"
 #include "../lib/rrr_endian.h"
-#include "../lib/log.h"
 
 #define IP_DEFAULT_PORT				2222
 #define IP_DEFAULT_PROTOCOL			RRR_IP_UDP

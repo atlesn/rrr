@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <limits.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -37,7 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 
 struct averager_data {
 	struct rrr_instance_thread_data *thread_data;

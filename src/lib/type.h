@@ -133,24 +133,24 @@ static const union type_system_endian {
 	)
 
 #define RRR_TYPE_GET_IMPORT_LENGTH_ARGS		\
-		rrr_type_length *import_length,		\
+		rrr_length *import_length,		\
 		const struct rrr_type_value *node,	\
 		const char *buf,					\
-		rrr_type_length buf_size
+		rrr_length buf_size
 
 #define RRR_TYPE_IMPORT_ARGS				\
 		struct rrr_type_value *node,		\
-		rrr_type_length *parsed_bytes,		\
+		rrr_length *parsed_bytes,		\
 		const char *start,					\
 		const char *end
 
 #define RRR_TYPE_GET_EXPORT_LENGTH_ARGS		\
-		rrr_type_length *bytes,				\
+		rrr_length *bytes,				\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_EXPORT_ARGS				\
 		char *target,						\
-		rrr_type_length *written_bytes,		\
+		rrr_length *written_bytes,		\
 		const struct rrr_type_value *node
 
 #define RRR_TYPE_UNPACK_ARGS				\
@@ -158,7 +158,7 @@ static const union type_system_endian {
 
 #define RRR_TYPE_PACK_ARGS					\
 		char *target,						\
-		rrr_type_length *written_bytes,		\
+		rrr_length *written_bytes,		\
 		uint8_t *new_type_id,				\
 		const struct rrr_type_value *node
 
@@ -170,7 +170,7 @@ struct rrr_type_value;
 
 struct rrr_type_definition {
 	rrr_type type;
-	rrr_type_length max_length;
+	rrr_length max_length;
 
 	// These are for importing or exporting to and from raw data
 	// and rrr_array struct
@@ -192,11 +192,11 @@ struct rrr_type_value {
 	RRR_LL_NODE(struct rrr_type_value);
 	const struct rrr_type_definition *definition;
 	rrr_type_flags flags;
-	rrr_type_length tag_length;
-	rrr_type_length import_length;
-	rrr_type_length import_elements;
-	rrr_type_length total_stored_length;
-	rrr_type_array_size element_count; // 1 = no array, 0 = auto
+	rrr_length tag_length;
+	rrr_length import_length;
+	rrr_length import_elements;
+	rrr_length total_stored_length;
+	rrr_length element_count; // 1 = no array, 0 = auto
 	char *tag;
 	char *data;
 };
@@ -218,11 +218,11 @@ RRR_TYPE_DEFINE_EXTERN(nsep);
 RRR_TYPE_DEFINE_EXTERN(stx);
 RRR_TYPE_DEFINE_EXTERN(null);
 
-int rrr_type_import_ustr_raw (uint64_t *target, rrr_type_length *parsed_bytes, const char *start, const char *end);
-int rrr_type_import_istr_raw (int64_t *target, rrr_type_length *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_ustr_raw (uint64_t *target, rrr_length *parsed_bytes, const char *start, const char *end);
+int rrr_type_import_istr_raw (int64_t *target, rrr_length *parsed_bytes, const char *start, const char *end);
 
 const struct rrr_type_definition *rrr_type_parse_from_string (
-		rrr_type_length *parsed_bytes,
+		rrr_length *parsed_bytes,
 		const char *start,
 		const char *end
 );
@@ -235,24 +235,24 @@ void rrr_type_value_destroy (
 int rrr_type_value_set_tag (
 		struct rrr_type_value *value,
 		const char *tag,
-		rrr_type_length tag_length
+		rrr_length tag_length
 );
 int rrr_type_value_new (
 		struct rrr_type_value **result,
 		const struct rrr_type_definition *type,
 		rrr_type_flags flags,
-		rrr_type_length tag_length,
+		rrr_length tag_length,
 		const char *tag,
-		rrr_type_length import_length,
-		rrr_type_array_size element_count,
-		rrr_type_length stored_length
+		rrr_length import_length,
+		rrr_length element_count,
+		rrr_length stored_length
 );
-rrr_type_length rrr_type_value_get_export_length (
+rrr_length rrr_type_value_get_export_length (
 		const struct rrr_type_value *value
 );
 int rrr_type_value_allocate_and_export (
 		char **target,
-		rrr_type_length *written_bytes,
+		rrr_length *written_bytes,
 		const struct rrr_type_value *node
 );
 int rrr_type_value_allocate_and_import_raw (
@@ -260,10 +260,10 @@ int rrr_type_value_allocate_and_import_raw (
 		const struct rrr_type_definition *definition,
 		const char *data_start,
 		const char *data_end,
-		rrr_type_length tag_length,
+		rrr_length tag_length,
 		const char *tag,
-		rrr_type_length import_length,
-		rrr_type_array_size element_count
+		rrr_length import_length,
+		rrr_length element_count
 );
 
 #endif /* RRR_TYPE_HEADER */

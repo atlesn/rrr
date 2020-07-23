@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
 #include "../lib/http/http_client.h"
 #include "../lib/http/http_client_config.h"
 #include "../lib/http/http_query_builder.h"
@@ -38,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 #include "../lib/array.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
@@ -116,7 +116,7 @@ static int httpclient_session_add_field (
 			(tag_to_use != NULL ? tag_to_use : "(no tag)"), value->definition->identifier);
 
 	if (RRR_TYPE_IS_MSG(value->definition->type)) {
-		rrr_type_length buf_size = 0;
+		rrr_length buf_size = 0;
 
 		if (rrr_type_value_allocate_and_export(&buf_tmp, &buf_size, value) != 0) {
 			RRR_MSG_0("Error while exporting RRR message in httpclient_add_multipart_array_value\n");

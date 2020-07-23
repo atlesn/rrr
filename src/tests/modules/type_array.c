@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <mysql/mysql.h>
 #endif
 
+#include "../../lib/log.h"
+
 #include "type_array.h"
 #include "../test.h"
 #include "../../lib/array.h"
@@ -44,7 +46,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/rrr_endian.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
-#include "../../lib/log.h"
 
 struct rrr_test_result {
 	int result;
@@ -395,7 +396,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		goto out;
 	}
 
-	rrr_type_length final_length = 0;
+	rrr_length final_length = 0;
 	RRR_LL_ITERATE_BEGIN(&collection,struct rrr_type_value);
 		final_length += node->total_stored_length;
 	RRR_LL_ITERATE_END();
@@ -470,7 +471,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		const struct rrr_type_value *value_blob = types[10];
 		if (RRR_TYPE_IS_BLOB(value_blob->definition->type)) {
 			if (value_blob->element_count == 1) {
-				rrr_type_length length_new = value_blob->total_stored_length / 2;
+				rrr_length length_new = value_blob->total_stored_length / 2;
 
 				if (length_new * 2 != value_blob->total_stored_length) {
 					TEST_MSG("Could not split blob field, stored length was not divisible by 2\n");
@@ -555,8 +556,8 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	TEST_MSG("Result for LE fields: %" PRIu64 ", %" PRIu64 ", %" PRIi64 ", %" PRIu64 "\n",
 			final_data_raw->le4, final_data_raw->le3, final_data_raw->le2, final_data_raw->le1);
 
-	rrr_size blob_a_length = types[10]->total_stored_length / types[10]->element_count;
-	rrr_size blob_b_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_length blob_a_length = types[10]->total_stored_length / types[10]->element_count;
+	rrr_length blob_b_length = types[10]->total_stored_length / types[10]->element_count;
 
 	if (types[10]->element_count != 2) {
 		RRR_MSG_0("Error while extracting blobs in test_type_array_callback, array size was not 2\n");

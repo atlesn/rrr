@@ -23,6 +23,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
+#include "../log.h"
+
 #include "http_server_worker.h"
 #include "http_common.h"
 #include "http_session.h"
@@ -30,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../net_transport/net_transport.h"
 #include "../threads.h"
-#include "../log.h"
 #include "../posix.h"
 #include "../array.h"
 #include "../ip_util.h"
