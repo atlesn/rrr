@@ -118,15 +118,15 @@ static int dummy_write_message_callback (struct rrr_ip_buffer_entry *entry, void
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
 			time,
-			data->topic_len + 1,
+			data->topic_len,
 			payload_size
 	) != 0) {
 		ret = 1;
 		goto out;
 	}
 
-	if (data->topic != NULL) {
-		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len + 1);
+	if (data->topic != NULL && *(data->topic) != '\0') {
+		memcpy(MSG_TOPIC_PTR(reading), data->topic, data->topic_len);
 	}
 
 	entry->message = reading;
