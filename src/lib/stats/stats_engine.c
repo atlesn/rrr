@@ -27,10 +27,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <netdb.h>
 
+#include "../log.h"
+
 #include "stats_engine.h"
 #include "stats_message.h"
 
-#include "../log.h"
 #include "../gnu.h"
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_msg.h"

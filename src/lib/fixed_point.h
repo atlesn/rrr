@@ -30,14 +30,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_FIXED_POINT_PARSE_SOFT_ERR		2
 #define RRR_FIXED_POINT_PARSE_INCOMPLETE	3
 
-#include <inttypes.h>
+#include <stdint.h>
+
+#include "rrr_types.h"
 
 typedef int64_t rrr_fixp;
 
 int rrr_fixp_ldouble_to_fixp (rrr_fixp *target, long double source);
 int rrr_fixp_to_ldouble (long double *target, rrr_fixp source);
 int rrr_fixp_to_str (char *target, ssize_t target_size, rrr_fixp source);
-int rrr_fixp_str_get_length (ssize_t *result, const char *str, ssize_t str_length);
+int rrr_fixp_str_get_length (rrr_length *result, const char *str, rrr_biglength str_length);
 int rrr_fixp_str_to_fixp (rrr_fixp *target, const char *str, ssize_t str_length, const char **endptr);
 
 #endif /* RRR_FIXED_POINT_H */

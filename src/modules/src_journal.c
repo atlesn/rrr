@@ -25,6 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdlib.h>
+
+#include "../lib/log.h"
 
 #include "../lib/instance_config.h"
 #include "../lib/rrr_time.h"
@@ -36,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
-#include "../lib/log.h"
 #include "../lib/array.h"
 #include "../lib/linked_list.h"
 #include "../lib/gnu.h"

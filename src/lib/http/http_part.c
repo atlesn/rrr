@@ -985,7 +985,7 @@ static int __rrr_http_part_parse_chunk_header (
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			goto out;
 		}
-		else if (ret != 0 || crlf - pos != (void *) parsed_bytes_tmp) {
+		else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
 			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;

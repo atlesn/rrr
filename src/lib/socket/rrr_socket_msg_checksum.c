@@ -20,6 +20,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <stdio.h>
+#include <stdlib.h>
+
+#include "../log.h"
 
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"

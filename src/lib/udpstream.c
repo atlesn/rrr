@@ -1095,7 +1095,7 @@ static int __rrr_udpstream_process_receive_buffer_callback (
 			RRR_DBG_3("UDP-stream DELIVER %u-%u %" PRIu64 "\n",
 					data->stream->stream_id, node->frame_id, node->application_data);
 
-			if (write_pos - *joined_data != (void*) data->accumulated_data_size) {
+			if ((size_t) write_pos - (size_t) *joined_data != data->accumulated_data_size) {
 				RRR_BUG("Joined data size mismatch in __rrr_udpstream_process_receive_buffer\n");
 			}
 

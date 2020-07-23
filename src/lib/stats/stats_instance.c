@@ -25,11 +25,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "../log.h"
+
 #include "stats_engine.h"
 #include "stats_instance.h"
 #include "stats_message.h"
 
-#include "../log.h"
 #include "../rrr_time.h"
 #include "../linked_list.h"
 #include "../macro_utils.h"

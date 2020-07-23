@@ -1,8 +1,11 @@
 #include <stdint.h>
 //#include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 
+#include "log.h"
 #include "crc32.h"
+#include "rrr_types.h"
 
 /* Copyright (C) 1986 Gary S. Brown.  You may use this program, or
    code or tables extracted from it, as desired without restriction.
@@ -103,10 +106,10 @@ static uint32_t crc_32_tab[] = { /* CRC polynomial 0xedb88320 */
 #define UPDC32(octet, crc) (crc_32_tab[((crc) ^ (octet)) & 0xff] ^ ((crc) >> 8))
 
 // Returns checksum
-uint32_t rrr_crc32buf (const char *buf, int len) {
+uint32_t rrr_crc32buf (const char *buf, rrr_biglength len) {
       uint32_t crc32 = 0xFFFFFFFF;
 
-      for (int i = 0; i < len; i++) {
+      for (rrr_biglength i = 0; i < len; i++) {
     	  crc32 = UPDC32(*(buf + i), crc32);
 //    	  printf ("CRC: %" PRIu32 "\n", crc32);
       }
@@ -115,7 +118,7 @@ uint32_t rrr_crc32buf (const char *buf, int len) {
 }
 
 // Returns 0 if checksum is valid
-int rrr_crc32cmp (const char *buf, int len, uint32_t crc32) {
+uint32_t rrr_crc32cmp (const char *buf, rrr_biglength len, uint32_t crc32) {
 //	printf ("CRC32CMP length %i\n", len);
 	uint32_t test = rrr_crc32buf(buf, len);
 	return test - crc32;
