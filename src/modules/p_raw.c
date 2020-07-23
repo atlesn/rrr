@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2019 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -27,122 +26,190 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/ip.h"
+#include "../lib/ip_buffer_entry.h"
+#include "../lib/poll_helper.h"
+#include "../lib/instances.h"
+#include "../lib/instance_config.h"
 #include "../lib/buffer.h"
-#include "../modules.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../global.h"
+#include "../lib/stats/stats_instance.h"
+#include "../lib/array.h"
+#include "../lib/log.h"
 
-// Should not be smaller than module max
-#define VL_RAW_MAX_SENDERS VL_MODULE_MAX_SENDERS
+struct raw_data {
+	int message_count;
+	int print_data;
+};
 
-int poll_callback(struct fifo_callback_args *poll_data, char *data, unsigned long int size) {
-	struct module_thread_data *thread_data = poll_data->source;
-	struct vl_message *reading = (struct vl_message *) data;
-	VL_DEBUG_MSG_2 ("Raw: Result from buffer: %s measurement %" PRIu64 " size %lu\n", reading->data, reading->data_numeric, size);
-	free(data);
-	return 0;
-}
+int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+	struct rrr_instance_thread_data *thread_data = arg;
+	struct raw_data *raw_data = thread_data->private_data;
+	struct rrr_array array_tmp = {0};
 
-static void *thread_entry_raw(struct vl_thread_start_data *start_data) {
-	struct module_thread_data *thread_data = start_data->private_arg;
-	thread_data->thread = start_data->thread;
-	unsigned long int senders_count = thread_data->senders_count;
+	int ret = 0;
 
-	VL_DEBUG_MSG_1 ("Raw thread data is %p\n", thread_data);
+	struct rrr_message *reading = entry->message;
 
-	pthread_cleanup_push(thread_set_stopping, start_data->thread);
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
+			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
-	thread_set_state(start_data->thread, VL_THREAD_STATE_INITIALIZED);
-	thread_signal_wait(thread_data->thread, VL_THREAD_SIGNAL_START);
-	thread_set_state(start_data->thread, VL_THREAD_STATE_RUNNING);
+	if (raw_data->print_data != 0) {
+		ssize_t print_length = MSG_DATA_LENGTH(reading);
+		if (print_length > 100) {
+			print_length = 100;
+		}
+		char buf[print_length + 1];
+		memcpy(buf, MSG_DATA_PTR(reading), print_length);
+		buf[print_length] = '\0';
 
-	if (senders_count > VL_RAW_MAX_SENDERS) {
-		VL_MSG_ERR ("Too many senders for raw module, max is %i\n", VL_RAW_MAX_SENDERS);
-		goto out_message;
-	}
+		// Use high debuglevel to force suppression of messages in journal module
 
-	int (*poll[VL_RAW_MAX_SENDERS])(
-			struct module_thread_data *data,
-			int (*callback)(
-					struct fifo_callback_args *poll_data,
-					char *data,
-					unsigned long int size
-			),
-			struct fifo_callback_args *caller_data
-	);
+		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
+				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
 
-
-	for (int i = 0; i < senders_count; i++) {
-		VL_DEBUG_MSG_1 ("Raw: found sender %p\n", thread_data->senders[i]);
-		poll[i] = thread_data->senders[i]->module->operations.poll_delete;
-
-		if (poll[i] == NULL) {
-			poll[i] = thread_data->senders[i]->module->operations.poll_delete_ip;
-			if (poll[i] == NULL) {
-				VL_MSG_ERR ("Raw cannot use sender %s, lacking poll_delete or poll_delete_ip function.\n", thread_data->senders[i]->thread->name);
-				goto out_message;
+		if (MSG_IS_ARRAY(reading)) {
+			if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
+				RRR_MSG_0("Could not get array from message in raw_poll_callback of raw instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out;
+			}
+			if (rrr_array_dump(&array_tmp) != 0) {
+				RRR_MSG_0("Error while dumping array in raw_poll_callback of raw instance %s\n",
+						INSTANCE_D_NAME(thread_data));
+				ret = 1;
+				goto out;
 			}
 		}
 	}
 
-	VL_DEBUG_MSG_1 ("Raw started thread %p\n", thread_data);
-	if (senders_count == 0) {
-		VL_MSG_ERR ("Error: Sender was not set for raw processor module\n");
-		goto out_message;
-	}
-
-	while (thread_check_encourage_stop(thread_data->thread) != 1) {
-		update_watchdog_time(thread_data->thread);
-
-		int err = 0;
-
-		for (int i = 0; i < senders_count; i++) {
-			struct fifo_callback_args poll_data = {thread_data, NULL};
-			int res = poll[i](thread_data->senders[i], poll_callback, &poll_data);
-			if (!(res >= 0)) {
-				VL_MSG_ERR ("Raw module received error from poll function\n");
-				err = 1;
-				break;
-			}
-		}
-
-		if (err != 0) {
-			break;
-		}
-		usleep (100000); // 100 ms
-	}
-
-	out_message:
-	VL_DEBUG_MSG_1 ("Thread raw %p exiting\n", thread_data->thread);
+	raw_data->message_count++;
 
 	out:
-	pthread_cleanup_pop(1);
+	rrr_array_clear(&array_tmp);
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
+void data_init(struct raw_data *data) {
+	memset (data, '\0', sizeof(*data));
+}
+
+int parse_config (struct raw_data *data, struct rrr_instance_config *config) {
+	int ret = 0;
+	int yesno = 0;
+
+	if ((ret = rrr_instance_config_check_yesno (&yesno, config, "raw_print_data")) != 0) {
+		if (ret == RRR_SETTING_NOT_FOUND) {
+			yesno = 0; // Default to no
+			ret = 0;
+		}
+		else {
+			RRR_MSG_0("Error while parsing raw_print_data setting of instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+	}
+
+	data->print_data = yesno;
+
+	/* On error, memory is freed by data_cleanup */
+
+	out:
+	return ret;
+}
+
+static void *thread_entry_raw (struct rrr_thread *thread) {
+	struct rrr_instance_thread_data *thread_data = thread->private_data;
+	struct raw_data *raw_data = thread_data->private_data = thread_data->private_memory;
+
+	data_init(raw_data);
+
+	RRR_DBG_1 ("Raw thread data is %p\n", thread_data);
+
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
+	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
+	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
+
+	if (parse_config(raw_data, thread_data->init_data.instance_config) != 0) {
+		RRR_MSG_0("Error while parsing configuration for raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+	}
+
+	rrr_instance_config_check_all_settings_used(thread_data->init_data.instance_config);
+
+	rrr_poll_add_from_thread_senders (thread_data->poll, thread_data);
+
+	RRR_DBG_1 ("Raw started thread %p\n", thread_data);
+
+	uint64_t total_counter = 0;
+	uint64_t timer_start = rrr_time_get_64();
+	int ticks = 0;
+	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
+		rrr_thread_update_watchdog_time(thread_data->thread);
+
+		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, raw_poll_callback, 50) != 0) {
+			RRR_MSG_ERR("Error while polling in raw instance %s\n",
+				INSTANCE_D_NAME(thread_data));
+			break;
+		}
+
+		uint64_t timer_now = rrr_time_get_64();
+		if (timer_now - timer_start > 1000000) {
+			timer_start = timer_now;
+
+			total_counter += raw_data->message_count;
+
+			RRR_DBG_1("Raw instance %s messages per second %i total %" PRIu64 "\n",
+					INSTANCE_D_NAME(thread_data), raw_data->message_count, total_counter);
+
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 0, "received", raw_data->message_count);
+			rrr_stats_instance_update_rate (INSTANCE_D_STATS(thread_data), 1, "ticks", ticks);
+
+			raw_data->message_count = 0;
+			ticks = 0;
+		}
+
+		ticks++;
+	}
+
+	RRR_DBG_1 ("Thread raw %p instance %s exiting 1 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+
+	RRR_DBG_1 ("Thread raw %p instance %s exiting 2 state is %i\n", thread_data->thread, INSTANCE_D_NAME(thread_data), thread_data->thread->state);
+
 	pthread_exit(0);
 }
 
-static struct module_operations module_operations = {
+static int test_config (struct rrr_instance_config *config) {
+	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
+	return 0;
+}
+
+static struct rrr_module_operations module_operations = {
+		NULL,
 		thread_entry_raw,
 		NULL,
-		NULL,
+		test_config,
 		NULL,
 		NULL
 };
 
 static const char *module_name = "raw";
 
-__attribute__((constructor)) void load() {
+__attribute__((constructor)) void load(void) {
 }
 
-void init(struct module_dynamic_data *data) {
+void init(struct rrr_instance_dynamic_data *data) {
 	data->private_data = NULL;
-	data->name = module_name;
-	data->type = VL_MODULE_TYPE_PROCESSOR;
+	data->module_name = module_name;
+	data->type = RRR_MODULE_TYPE_PROCESSOR;
 	data->operations = module_operations;
 	data->dl_ptr = NULL;
 }
 
-void unload(struct module_dynamic_data *data) {
-	VL_DEBUG_MSG_1 ("Destroy raw module\n");
+void unload(void) {
+	RRR_DBG_1 ("Destroy raw module\n");
 }
 

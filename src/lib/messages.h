@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,99 +19,60 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef VL_MESSAGES_H
-#define VL_MESSAGES_H
+#ifndef RRR_MESSAGES_H
+#define RRR_MESSAGES_H
 
-#define MSG_TYPE_MSG 1
-#define MSG_TYPE_ACK 2
-#define MSG_TYPE_TAG 3
+#include <stdio.h>
 
-#define MSG_CLASS_POINT 1
-#define MSG_CLASS_AVG 2
-#define MSG_CLASS_MAX 3
-#define MSG_CLASS_MIN 4
-#define MSG_CLASS_INFO 10
+#include "socket/rrr_socket_msg_head.h"
+#include "messages_head.h"
 
-#define MSG_TYPE_MSG_STRING "MSG"
-#define MSG_TYPE_ACK_STRING "ACK"
-#define MSG_TYPE_TAG_STRING "TAG"
-
-#define MSG_CLASS_POINT_STRING "POINT"
-#define MSG_CLASS_AVG_STRING "AVG"
-#define MSG_CLASS_MAX_STRING "MAX"
-#define MSG_CLASS_MIN_STRING "MIN"
-#define MSG_CLASS_INFO_STRING "INFO"
-
-#define MSG_DATA_MAX_LENGTH 256
-
-#define MSG_STRING_MAX_LENGTH (6 + 10*2 + 32*5 + MSG_DATA_MAX_LENGTH + 1)
-
-#define MSG_TMP_SIZE 64
-
-#define MSG_IS_MSG(message)			(message->type == MSG_TYPE_MSG)
-#define MSG_IS_ACK(message)			(message->type == MSG_TYPE_ACK)
-
-#define MSG_IS_POINT(message)		(message->class == MSG_CLASS_POINT)
-#define MSG_IS_INFO(message)		(message->class == MSG_CLASS_INFO)
-
-#define MSG_IS_MSG_POINT(message)	(MSG_IS_MSG(message) && MSG_IS_POINT(message))
-#define MSG_IS_MSG_INFO(message)	(MSG_IS_MSG(message) && MSG_IS_INFO(message))
-
-#include <stdint.h>
-
-struct vl_message {
-	uint32_t type;
-	uint32_t class;
-	uint64_t timestamp_from;
-	uint64_t timestamp_to;
-	uint64_t data_numeric;
-
-	// Used by ipclient and ipserver for network transfer
-	uint32_t crc32;
-
-	uint32_t length;
-	char data[MSG_DATA_MAX_LENGTH+2];
-};
-
-struct vl_message *message_new_reading (
-	uint64_t reading_millis,
-	uint64_t time
+struct rrr_message *rrr_message_new_array (
+	rrr_u64 time,
+	rrr_u16 topic_length,
+	rrr_u32 data_length
 );
-struct vl_message *message_new_info (
-	uint64_t time,
-	const char *msg_terminated
+int rrr_message_new_empty (
+		struct rrr_message **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 );
-int init_message (
-	unsigned long int type,
-	unsigned long int class,
-	uint64_t timestamp_from,
-	uint64_t timestamp_to,
-	uint64_t data_numeric,
-	const char *data,
-	unsigned long int data_size,
-	struct vl_message *result
+int rrr_message_new_with_data (
+		struct rrr_message **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		const char *topic,
+		rrr_u16 topic_length,
+		const char *data,
+		rrr_u32 data_length
 );
-int parse_message (
-	const char *msg,
-	unsigned long int size,
-	struct vl_message *result
+int rrr_message_to_string (
+	char **final_target,
+	struct rrr_message *message
 );
-int message_to_string (
-	struct vl_message *message,
-	char *target,
-	unsigned long int target_size
+int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size);
+void rrr_message_prepare_for_network (struct rrr_message *message);
+struct rrr_message *rrr_message_duplicate_no_data_with_size (
+		const struct rrr_message *message,
+		ssize_t topic_length,
+		ssize_t data_length
 );
-void message_checksum (
-	struct vl_message *message
+struct rrr_message *rrr_message_duplicate (
+		const struct rrr_message *message
 );
-int message_checksum_check (
-	struct vl_message *message
+struct rrr_message *rrr_message_duplicate_no_data (
+		struct rrr_message *message
 );
-int message_prepare_for_network (
-	struct vl_message *message, char *buf, unsigned long buf_size
+int rrr_message_set_topic (
+		struct rrr_message **message,
+		const char *topic,
+		ssize_t topic_len
 );
-struct vl_message *message_duplicate (
-	struct vl_message *message
-);
+int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b);
+int rrr_message_timestamp_compare_void (void *message_a, void *message_b);
 
-#endif
+#endif /* RRR_MESSAGES_H */

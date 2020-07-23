@@ -1,8 +1,8 @@
 /*
 
-Voltage Logger
+Read Route Record
 
-Copyright (C) 2018 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,372 +24,320 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
-#include <endian.h>
 
+#include "utf8.h"
+#include "rrr_endian.h"
+#include "socket/rrr_socket.h"
+#include "socket/rrr_socket_msg.h"
 #include "messages.h"
-#include "crc32.h"
-#include "../global.h"
+#include "log.h"
+#include "macro_utils.h"
 
-// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-
-struct vl_message *message_new_reading (
-		uint64_t reading_millis,
-		uint64_t time
+struct rrr_message *rrr_message_new_array (
+	rrr_u64 time,
+	rrr_u16 topic_length,
+	rrr_u32 data_length
 ) {
-	struct vl_message *res = malloc(sizeof(*res));
+	struct rrr_message *res;
 
-	char buf[64];
-	sprintf (buf, "%" PRIu64, reading_millis);
-
-	if (init_message (
+	if (rrr_message_new_empty (
+			(struct rrr_message **) &res,
 			MSG_TYPE_MSG,
-			MSG_CLASS_POINT,
+			MSG_CLASS_ARRAY,
 			time,
-			time,
-			reading_millis,
-			buf,
-			strlen(buf),
-			res
+			topic_length,
+			data_length
 	) != 0) {
-		free(res);
-		VL_MSG_ERR ("Bug: Could not initialize message\n");
-		exit (EXIT_FAILURE);
+		return NULL;
 	}
 
 	return res;
 }
 
-struct vl_message *message_new_info (
-		uint64_t time,
-		const char *msg_terminated
+int rrr_message_new_empty (
+		struct rrr_message **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		rrr_u16 topic_length,
+		rrr_u32 data_length
 ) {
-	struct vl_message *res = malloc(sizeof(*res));
+	ssize_t total_size = sizeof(struct rrr_message) - 1 + topic_length + data_length;
+	// -1 because the char which points to the data holds 1 byte
+	struct rrr_message *result = malloc(total_size);
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
+		return 1;
+	}
 
-	if (init_message (
-			MSG_TYPE_MSG,
-			MSG_CLASS_INFO,
-			time,
-			time,
-			0,
-			msg_terminated,
-			strlen(msg_terminated),
-			res
+	memset(result, '\0', total_size);
+
+	rrr_socket_msg_populate_head (
+			(struct rrr_socket_msg *) result,
+			RRR_SOCKET_MSG_TYPE_MESSAGE,
+			total_size,
+			0
+	);
+
+	MSG_SET_TYPE(result, type);
+	MSG_SET_CLASS(result, class);
+
+	result->timestamp = timestamp;
+	result->topic_length = topic_length;
+
+	*final_result = result;
+
+	return 0;
+}
+
+int rrr_message_new_with_data (
+		struct rrr_message **final_result,
+		rrr_u8 type,
+		rrr_u8 class,
+		rrr_u64 timestamp,
+		const char *topic,
+		rrr_u16 topic_length,
+		const char *data,
+		rrr_u32 data_length
+) {
+	if (rrr_message_new_empty (
+			final_result,
+			type,
+			class,
+			timestamp,
+			topic_length,
+			data_length
 	) != 0) {
-		free(res);
-		VL_MSG_ERR ("Bug: Could not initialize info message\n");
-		exit (EXIT_FAILURE);
-	}
-
-	return res;
-}
-
-int find_string(const char *str, unsigned long int size, const char *search, const char **result) {
-	unsigned long int search_length = strlen(search);
-
-	if (search_length > size) {
-		VL_MSG_ERR ("Message was to short\n");
-		return 1;
-	}
-	if (strncmp(str, search, search_length) != 0) {
 		return 1;
 	}
 
-	*result = str + strlen(search) + 1;
+	memcpy (MSG_TOPIC_PTR(*final_result), topic, topic_length);
+	memcpy (MSG_DATA_PTR(*final_result), data, data_length);
 
 	return 0;
 }
 
-int find_number(const char *str, unsigned long int size, const char **end, uint64_t *result) {
-	*end = memchr(str, ':', size);
-	if (*end == NULL) {
-		VL_MSG_ERR ("Missing delimeter in message while searching for number\n");
-		return 1;
-	}
-
-	if (*end == str) {
-		VL_MSG_ERR ("Missing number argument in message\n");
-		return 1;
-	}
-
-	char tmp[MSG_TMP_SIZE];
-	if (*end - str + 1 > MSG_TMP_SIZE) {
-		VL_MSG_ERR ("Too long argument while searching for number in message\n");
-		return 1;
-	}
-
-	strncpy(tmp, str, *end-str);
-	tmp[*end-str] = '\0';
-
-	char *endptr;
-	*result = strtoull(tmp, &endptr, 10);
-	if (*endptr != '\0') {
-		VL_MSG_ERR ("Invalid characters in number argument of message\n");
-		return 1;
-	}
-
-	*end = *end + 1;
-	return 0;
-}
-
-int init_message (
-	unsigned long int type,
-	unsigned long int class,
-	uint64_t timestamp_from,
-	uint64_t timestamp_to,
-	uint64_t data_numeric,
-	const char *data,
-	unsigned long int data_size,
-	struct vl_message *result
+int rrr_message_to_string (
+	char **final_target,
+	struct rrr_message *message
 ) {
-	memset(result, '\0', sizeof(*result));
+	int ret = 0;
 
-	result->type = type;
-	result->class = class;
-	result->timestamp_from = timestamp_from;
-	result->timestamp_to = timestamp_to;
-	result->data_numeric = data_numeric;
-
-	// Always have a \0 at the end
-	if (data_size + 1 > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message length was too long\n");
-		return 1;
-	}
-
-	result->length = data_size;
-	memcpy (result->data, data, data_size);
-	result->data[data_size+1] = '\0';
-
-	return 0;
-}
-
-int parse_message(const char *msg, unsigned long int size, struct vl_message *result) {
-	memset (result, '\0', sizeof(*result));
-	const char *pos = msg;
-	const char *end = msg + size;
-
-	// {MSG|MSG_ACK|MSG_TAG}:{AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string(pos, end - pos, MSG_TYPE_MSG_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_MSG;
-	}
-	else if (find_string(pos, end - pos, MSG_TYPE_ACK_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_ACK;
-	}
-	else if (find_string(pos, end - pos, MSG_TYPE_TAG_STRING, &pos) == 0) {
-		result->type = MSG_TYPE_TAG;
-	}
-	else {
-		VL_MSG_ERR ("Unknown message type\n");
-		return 1;
-	}
-
-	// {AVG|MAX|MIN|POINT|INFO}:{CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_string (pos, end - pos, MSG_CLASS_AVG_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_AVG;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_MAX_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_MAX;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_MIN_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_MIN;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_POINT_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_POINT;
-	}
-	else if (find_string (pos, end - pos, MSG_CLASS_INFO_STRING, &pos) == 0) {
-		result->class = MSG_CLASS_INFO;
-	}
-	else {
-		VL_MSG_ERR ("Unknown message class\n");
-		return 1;
-	}
-	// {CRC32}:{LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	uint64_t tmp;
-	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
-		return 1;
-	}
-	result->crc32 = tmp;
-
-	// {LENGTH}:{TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_number(pos, end-pos, &pos, &tmp) != 0) {
-		return 1;
-	}
-	result->length = tmp;
-
-	// {TIMESTAMP_FROM}:{TIMESTAMP_TO}:{DATA}
-	if (find_number(pos, end-pos, &pos, &result->timestamp_from) != 0) {
-		return 1;
-	}
-
-	// {TIMESTAMP_TO}:{DATA}
-	if (find_number(pos, end-pos, &pos, &result->timestamp_to) != 0) {
-		return 1;
-	}
-
-	// {DATA}
-	unsigned long int data_length = size - (pos - msg);
-	if (result->length > MSG_DATA_MAX_LENGTH) {
-		VL_MSG_ERR ("Message data size was too long\n");
-		return 1;
-	}
-	/* Ignore this, just accept what's there if it's enough
-	if (result->length != data_length) {
-		VL_MSG_ERR ("Message reported data length did not match actual length\n");
-		return 1;
-	}
-	*/
-
-	memcpy(result->data, pos, result->length);
-
-	return 0;
-}
-
-int message_to_string (
-	struct vl_message *message,
-	char *target,
-	unsigned long int target_size
-) {
-	if (target_size < MSG_STRING_MAX_LENGTH) {
-		VL_MSG_ERR ("Message target size was too small when converting to string\n");
-		return 1;
+	char *target = malloc(128);
+	if (target == NULL) {
+		RRR_MSG_0("Could not allocate memory in message_to_string\n");
+		ret = 1;
+		goto out;
 	}
 
 	const char *type;
-	switch (message->type) {
+	switch (MSG_TYPE(message)) {
 	case MSG_TYPE_MSG:
 		type = MSG_TYPE_MSG_STRING;
-		break;
-	case MSG_TYPE_ACK:
-		type = MSG_TYPE_ACK_STRING;
 		break;
 	case MSG_TYPE_TAG:
 		type = MSG_TYPE_TAG_STRING;
 		break;
 	default:
-		VL_MSG_ERR ("Unknown type %" PRIu32 " in message while converting to string\n", message->type);
-		return 1;
+		RRR_MSG_0 ("Unknown type %" PRIu32 " in message while converting to string\n", MSG_TYPE(message));
+		ret = 1;
+		goto out;
 	}
 
 	const char *class;
-	switch (message->class) {
-	case MSG_CLASS_POINT:
-		class = MSG_CLASS_POINT_STRING;
+	switch (MSG_CLASS(message)) {
+	case MSG_CLASS_DATA:
+		class = MSG_CLASS_DATA_STRING;
 		break;
-	case MSG_CLASS_AVG:
-		class = MSG_CLASS_AVG_STRING;
-		break;
-	case MSG_CLASS_MAX:
-		class = MSG_CLASS_MAX_STRING;
-		break;
-	case MSG_CLASS_MIN:
-		class = MSG_CLASS_MIN_STRING;
-		break;
-	case MSG_CLASS_INFO:
-		class = MSG_CLASS_INFO_STRING;
+	case MSG_CLASS_ARRAY:
+		class = MSG_CLASS_ARRAY_STRING;
 		break;
 	default:
-		VL_MSG_ERR ("Unknown class %" PRIu32 " in message while converting to string\n", message->class);
-		return 1;
+		RRR_MSG_0 ("Unknown class %" PRIu32 " in message while converting to string\n", MSG_CLASS(message));
+		ret = 1;
+		goto out;
 	}
 
-	sprintf(target, "%s:%s:%" PRIu32 ":%" PRIu32 ":%" PRIu64 ":%" PRIu64 ":",
-			type, class,
-			message->crc32,
-			message->length,
-			message->timestamp_from,
-			message->timestamp_to
+	sprintf(target, "%s:%s:%" PRIu64,
+			type,
+			class,
+			message->timestamp
 	);
 
-	int length = strlen(target);
-	memcpy(target + length, message->data, message->length);
-	target[length + message->length + 1] = '\0';
+	*final_target = target;
+	target = NULL;
 
-	return 0;
+	out:
+	RRR_FREE_IF_NOT_NULL(target);
+	return ret;
 }
 
-void message_checksum (
-	struct vl_message *message
-) {
-	message->type = htole32(message->type);
-	message->class = htole32(message->class);
-	message->timestamp_from = htole64(message->timestamp_from);
-	message->timestamp_to = htole64(message->timestamp_to);
-	message->data_numeric = htole64(message->data_numeric);
-	message->length = htole32(message->length);
+void flip_endianess_64(rrr_u64 *value) {
+	rrr_u64 result = 0;
 
-	message->crc32 = 0;
+	result |= (*value & 0x00000000000000ff) << 56;
+	result |= (*value & 0x000000000000ff00) << 40;
+	result |= (*value & 0x0000000000ff0000) << 24;
+	result |= (*value & 0x00000000ff000000) << 8;
+	result |= (*value & 0x000000ff00000000) >> 8;
+	result |= (*value & 0x0000ff0000000000) >> 24;
+	result |= (*value & 0x00ff000000000000) >> 40;
+	result |= (*value & 0xff00000000000000) >> 56;
 
-	uint32_t result = crc32buf((char *) message, sizeof(*message));
-
-	message->type = le32toh(message->type);
-	message->class = le32toh(message->class);
-	message->timestamp_from = le64toh(message->timestamp_from);
-	message->timestamp_to = le64toh(message->timestamp_to);
-	message->data_numeric = le64toh(message->data_numeric);
-	message->length = le32toh(message->length);
-
-	message->crc32 = result;
+	*value = result;
 }
 
-int message_checksum_check (
-	struct vl_message *message
-) {
-	// HEX dumper
-	for (int i = 0; i < sizeof(*message); i++) {
-		unsigned char *buf = (unsigned char *) message;
-		VL_DEBUG_MSG_3("%x-", *(buf+i));
+void flip_endianess_32(rrr_u32 *value) {
+	rrr_u32 result = 0;
+
+	result |= (*value & 0x000000ff) << 24;
+	result |= (*value & 0x0000ff00) << 8;
+	result |= (*value & 0x00ff0000) >> 8;
+	result |= (*value & 0xff000000) >> 24;
+
+	*value = result;
+}
+
+static int __message_validate (const struct rrr_message *message){
+	int ret = 0;
+
+	if (message->msg_size < sizeof(*message) - 1 ||
+			MSG_TOTAL_SIZE(message) != message->msg_size
+	) {
+		RRR_DBG_1("Received a message in message_validate with invalid header size fields (%" PRIu32 " and %" PRIu32 ")\n",
+				message->msg_size, MSG_TOTAL_SIZE(message));
+		ret = 1;
+		goto out;
 	}
-	VL_DEBUG_MSG_3("\n");
-
-	message->type = htole32(message->type);
-	message->class = htole32(message->class);
-	message->timestamp_from = htole64(message->timestamp_from);
-	message->timestamp_to = htole64(message->timestamp_to);
-	message->data_numeric = htole64(message->data_numeric);
-	message->length = htole32(message->length);
-
-	uint32_t checksum = message->crc32;
-	message->crc32 = 0;
-
-	int res = crc32cmp((char *) message, sizeof(*message), checksum);
-
-	message->type = le32toh(message->type);
-	message->class = le32toh(message->class);
-	message->timestamp_from = le64toh(message->timestamp_from);
-	message->timestamp_to = le64toh(message->timestamp_to);
-	message->data_numeric = le64toh(message->data_numeric);
-	message->length = le32toh(message->length);
-
-	message->crc32 = checksum;
-	return (res == 0 ? 0 : 1);
-}
-
-int message_prepare_for_network (
-	struct vl_message *message, char *buf, unsigned long buf_size
-) {
-
-	message->crc32 = 0;
-	message->data_numeric = 0;
-
-	if (VL_DEBUGLEVEL_3) {
-		for (int i = 0; i < sizeof(*message); i++) {
-			unsigned char *buf = (unsigned char *) message;
-			VL_DEBUG_MSG("%x-", *(buf + i));
-		}
-		VL_DEBUG_MSG("\n");
+	if (!MSG_CLASS_OK(message)) {
+		RRR_DBG_1("Invalid class %u in message to message_validate\n", MSG_CLASS(message));
+		ret = 1;
+	}
+	if (!MSG_TYPE_OK(message)) {
+		RRR_DBG_1("Invalid type %u in message to message_validate\n", MSG_TYPE(message));
+		ret = 1;
+	}
+	if (rrr_utf8_validate(MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message)) != 0) {
+		RRR_DBG_1("Invalid topic for message in message_validate, not valid UTF-8\n");
+		ret = 1;
 	}
 
-	message_checksum(message);
+	out:
+	return ret;
+}
 
-	if (message_to_string (message, buf+1, buf_size) != 0) {
-		VL_MSG_ERR ("ipclient: Error while converting message to string\n");
+int rrr_message_to_host_and_verify (struct rrr_message *message, ssize_t expected_size) {
+	if (expected_size < ((ssize_t) sizeof(*message)) - 1) {
+		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
+		return 1;
+	}
+	message->timestamp = rrr_be64toh(message->timestamp);
+	message->topic_length = rrr_be16toh(message->topic_length);
+
+	if (MSG_TOTAL_SIZE(message) != (unsigned int) expected_size) {
+		RRR_DBG_1("Size mismatch of message in message_to_host_and_verify actual size was %li stated size was %u\n",
+				expected_size, MSG_TOTAL_SIZE(message));
 		return 1;
 	}
 
+	return __message_validate(message);
+}
+
+void rrr_message_prepare_for_network (struct rrr_message *message) {
+	MSG_TO_BE(message);
+
+	if (RRR_DEBUGLEVEL_6) {
+		RRR_DBG("Message prepared for network: ");
+		for (unsigned int i = 0; i < sizeof(*message); i++) {
+			unsigned char *buf = (unsigned char *) message;
+			RRR_DBG("%x-", *(buf + i));
+		}
+		RRR_DBG("\n");
+	}
+/*
+	if (message_to_string (message, buf+1, buf_size) != 0) {
+		VL_MSG_0 ("ipclient: Error while converting message to string\n");
+		return 1;
+	}
+*/
+}
+
+struct rrr_message *rrr_message_duplicate_no_data_with_size (
+		const struct rrr_message *message,
+		ssize_t topic_length,
+		ssize_t data_length
+) {
+	ssize_t new_total_size = (sizeof (struct rrr_message) - 1 + topic_length + data_length);
+
+	struct rrr_message *ret = malloc(new_total_size);
+	if (ret == NULL) {
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
+		return NULL;
+	}
+
+	memset(ret, '\0', new_total_size);
+	memcpy(ret, message, sizeof(*ret) - 2);
+
+	ret->topic_length = topic_length;
+	ret->msg_size = new_total_size;
+
+	return ret;
+}
+
+struct rrr_message *rrr_message_duplicate (
+		const struct rrr_message *message
+) {
+	struct rrr_message *ret = malloc(MSG_TOTAL_SIZE(message));
+	if (ret == NULL) {
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
+		return NULL;
+	}
+	memcpy(ret, message, MSG_TOTAL_SIZE(message));
+	return ret;
+}
+
+struct rrr_message *rrr_message_duplicate_no_data (
+		struct rrr_message *message
+) {
+	ssize_t new_size = sizeof(struct rrr_message) - 1 + MSG_TOPIC_LENGTH(message);
+	struct rrr_message *ret = malloc(new_size);
+	if (ret == NULL) {
+		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
+		return NULL;
+	}
+	memcpy(ret, message, new_size);
+	ret->msg_size = new_size;
+	return ret;
+}
+
+int rrr_message_set_topic (
+		struct rrr_message **message,
+		const char *topic,
+		ssize_t topic_len
+) {
+	struct rrr_message *ret = rrr_message_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
+	if (ret == NULL) {
+		RRR_MSG_0("Could not allocate memory in message_set_topic\n");
+		return 1;
+	}
+
+	memcpy(MSG_TOPIC_PTR(ret), topic, topic_len);
+	memcpy(MSG_DATA_PTR(ret), MSG_DATA_PTR(*message), MSG_DATA_LENGTH(*message));
+
+	free(*message);
+	*message = ret;
+
 	return 0;
 }
 
-struct vl_message *message_duplicate(struct vl_message *message) {
-	struct vl_message *ret = malloc(sizeof(*ret));
-	memcpy(ret, message, sizeof(*ret));
-	return ret;
+int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
+	// Assume network order if crc32 is set
+	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
+	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
+
+	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
+}
+
+int rrr_message_timestamp_compare_void (void *message_a, void *message_b) {
+	return rrr_message_timestamp_compare(message_a, message_b);
 }

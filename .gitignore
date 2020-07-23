@@ -1,21 +1,41 @@
-src/modules/.libs
-src/.libs
-src/lib/.libs
-src/modules/common/.dirstamp
+/src/tests/main
+/src/tests/isolated_python
+/src/modules/.libs
+/src/.libs
+/src/lib/.libs
+/src/modules/common/.dirstamp
+/src/rrr
+/src/rrr_post
+/src/rrr_http_client
+/src/rrr_http_server
+/src/rrr_stats
+/src/rrr_passwd
+/src/rrr_auth
+/build_timestamp.h
+/build_directory.h
+input_data
 
 # debian
-debian/autoconf.after
-debian/autoconf.before
-debian/autoreconf.after
-debian/autoreconf.before
-debian/voltage-logger.*
-debian/voltage-logger/*
-debian/debhelper-build-stamp
-debian/files
-debian/.debhelper/
-debian/tmp/
+/debian/rrr/
+/debian/rrr.debhelper.log
+/debian/rrr.substvars
+/debian/autoconf.after
+/debian/autoconf.before
+/debian/autoreconf.after
+/debian/autoreconf.before
+/debian/voltage-logger.*
+/debian/voltage-logger/*
+/debian/debhelper-build-stamp
+/debian/files
+/debian/.debhelper/
+/debian/*.debhelper
+/debian/tmp/
 # http://www.gnu.org/software/automake
 
+/conftest
+/conftest.err
+/conftest.c
+INSTALL
 Makefile.in
 /ar-lib
 /mdate-sh
@@ -28,13 +48,43 @@ Makefile
 *.so
 *.la
 *.lai
+*.trs
 .deps/
 .libs/
 src/vlogger
 *.lai
+.dirstamp
+variables.sh
+
+# code coverage
+*.gcov
+*.gcda
+*.gcno
+/lcov
+/main_coverage.info
+
+# perl
+blib
+Makefile.PL
+MYMETA.json
+MYMETA.yml
+pm_to_blib
+src/lib/perl5_xsi.c
+*.xsc
+
+# python
+/src/python/__pycache__/
+/src/tests/__pycache__/
+/src/__pycache__/
+/__pycache__/
+/misc/test_configs/__pycache__/
 
 # eclipse
 /Debug
+/.autotools
+/.settings/
+/.externalToolBuilders/
+/.cproject
 
 # http://www.gnu.org/software/autoconf
 
@@ -57,7 +107,6 @@ src/vlogger
 /config.h
 /config.status
 /libtool
-/m4
 
 # https://www.gnu.org/software/libtool/
 
@@ -66,3 +115,7 @@ src/vlogger
 # http://www.gnu.org/software/texinfo
 
 /texinfo.tex
+
+# FreeBSD
+*~
+.test_composite.sh

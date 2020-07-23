@@ -1,0 +1,11 @@
+use ExtUtils::MakeMaker;
+
+WriteMakefile (
+ 	NAME		=> 'rrr::rrr_helper',
+	VERSION_FROM	=> 'lib/rrr/rrr_helper.pm',
+	INSTALLDIRS	=> 'vendor',
+	VENDORPREFIX	=> '@prefix@/lib/rrr/perl5/',
+	XSMULTI		=> 1
+);
+
+system ("echo \"\n\ncheck :\n\ttrue\n\" >> Makefile");

@@ -1,0 +1,11 @@
+[Unit]
+Description=Read Route Record 1.5-3
+
+[Service]
+ExecStart=/usr/bin/rrr -s -l /etc/rrr.conf.d/
+KillSignal=SIGTERM
+User=rrr
+Group=rrr
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,7 @@
-[submodule "src/cmdlineparser"]
-	path = src/cmdlineparser
+[submodule "src/blockdevlogger"]
+	path = src/blockdevlogger
+	url = git@github.com:atlesn/blockdevlogger.git
+
+[submodule "src/lib/cmdlineparser"]
+	path = src/lib/cmdlineparser
 	url = git@github.com:atlesn/cmdlineparser.git

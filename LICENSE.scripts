@@ -1,0 +1,14 @@
+Copyright 2020 Atle Solbakken <atle@goliathdns.no>
+
+1. NON-COMPILED SCRIPTS RUN BY RRR
+
+A script is code which is run (to the user apparently) directly without
+the need of a compile stage. Some RRR modules may run such scripts and
+provide RRR-functionallity in the environment of the scripts.
+
+Scripts may be used with RRR without any restrictions or
+requirements imposed by any licenses RRR uses. The authors of scripts may
+freely apply any license to their code.
+
+Scripts distributed along with RRR are licensed the same way as RRR
+itself.
