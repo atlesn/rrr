@@ -517,7 +517,7 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	*result = 0;
 
-	ssize_t target_size = 0;
+	rrr_length target_size = 0;
 	int ret = rrr_socket_msg_get_target_size_and_check_checksum(
 			&target_size,
 			(struct rrr_socket_msg *) data,
@@ -530,6 +530,15 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		}
 		goto out;
 	}
+
+#if RRR_LENGTH_MAX > SSIZE_MAX
+	if (target_size > SSIZE_MAX) {
+		RRR_MSG_0("Target size exceeded in rrr_read_common_get_session_target_length_from_message_and_checksum_raw: %" PRIrrrl ">%ld",
+				target_size, SSIZE_MAX);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+#endif
 
 	*result = target_size;
 

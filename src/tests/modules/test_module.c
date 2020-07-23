@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "../../lib/log.h"
+
 #include "type_array.h"
 #include "../test.h"
 #include "../../lib/instances.h"
@@ -29,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/messages.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/macro_utils.h"
-#include "../../lib/log.h"
 
 /* This is picked up by main after the tests are complete and all threads have stopped */
 static int test_module_result = 1;

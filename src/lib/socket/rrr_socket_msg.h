@@ -22,8 +22,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_SOCKET_MSG_H
 #define RRR_SOCKET_MSG_H
 
-#include <stdio.h>
-
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"
 #include "../rrr_types.h"
@@ -44,16 +42,16 @@ void rrr_socket_msg_checksum_and_to_network_endian (
 );
 int rrr_socket_msg_head_to_host_and_verify (
 		struct rrr_socket_msg *message,
-		ssize_t expected_size
+		rrr_length expected_size
 );
 int rrr_socket_msg_get_target_size_and_check_checksum (
-		ssize_t *target_size,
+		rrr_length *target_size,
 		const struct rrr_socket_msg *socket_msg,
-		rrr_slength buf_size
+		rrr_length buf_size
 );
 int rrr_socket_msg_check_data_checksum_and_length (
 		struct rrr_socket_msg *message,
-		ssize_t data_size
+		rrr_length data_size
 );
 
 #endif /* RRR_SOCKET_MSG_H */

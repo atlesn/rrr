@@ -26,6 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
+
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
@@ -34,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 
 struct buffer_data {
 	struct rrr_instance_thread_data *thread_data;

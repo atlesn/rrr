@@ -27,6 +27,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <stdlib.h>
+
+#include "../lib/log.h"
 
 #include "../lib/rrr_strerror.h"
 #include "../lib/ip.h"
@@ -36,7 +39,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"

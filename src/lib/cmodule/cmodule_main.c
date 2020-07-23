@@ -25,6 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <signal.h>
 #include <errno.h>
 
+#include "../log.h"
+
 #include "cmodule_defer_queue.h"
 #include "cmodule_main.h"
 
@@ -34,7 +36,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_addr.h"
 #include "../message_log.h"
 #include "../messages.h"
-#include "../log.h"
 #include "../rrr_time.h"
 #include "../posix.h"
 #include "../fork.h"

@@ -465,7 +465,7 @@ static int __rrr_type_msg_to_host_single (
 	rrr_length target_size = 0;
 
 	{
-		ssize_t target_size_tmp = 0;
+		rrr_length target_size_tmp = 0;
 		if (rrr_socket_msg_get_target_size_and_check_checksum (
 				&target_size_tmp,
 				socket_msg,
@@ -476,11 +476,7 @@ static int __rrr_type_msg_to_host_single (
 			goto out;
 		}
 
-		if (target_size_tmp < 0 || (rrr_slength) target_size_tmp > (rrr_slength) RRR_LENGTH_MAX) {
-			RRR_BUG("BUG: Target size out of range in __rrr_type_msg_to_host_single\n");
-		}
-
-		target_size = (rrr_length) target_size_tmp;
+		target_size = target_size_tmp;
 	}
 
 	if (max_size < target_size) {
@@ -550,51 +546,47 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 		RRR_BUG("BUG: end was less than start in __rrr_type_import_msg\n");
 	}
 
-	rrr_length max_size_total = (rrr_length) (end - start);
-	rrr_length target_size_total = 0;
+	rrr_slength size_total = end - start;
+	rrr_slength remaining_size = size_total;
+
+	RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(target_size_total);
+
 	struct rrr_socket_msg *socket_msg = (struct rrr_socket_msg *) start;
 
 	rrr_length count = 0;
-	rrr_length max_size = max_size_total;
-	while (max_size > 0) {
-		if (max_size < (sizeof (struct rrr_message) - 1)) {
+	while (remaining_size > 0) {
+		if ((size_t) remaining_size < (sizeof (struct rrr_message) - 1)) {
 			ret = RRR_TYPE_PARSE_INCOMPLETE;
 			goto out;
 		}
 
 		rrr_length target_size = 0;
 		{
-			ssize_t target_size_tmp = 0;
 			if (rrr_socket_msg_get_target_size_and_check_checksum (
-					&target_size_tmp,
+					&target_size,
 					socket_msg,
-					max_size
+					(rrr_length) remaining_size
 			) != 0) {
 				RRR_MSG_0("Invalid header for message in __rrr_type_import_msg\n");
 				ret = RRR_TYPE_PARSE_SOFT_ERR;
 				goto out;
 			}
-
-			if (target_size_tmp < 0 || target_size_tmp > RRR_LENGTH_MAX) {
-				RRR_BUG("BUG: Target size out of range in __rrr_type_import_msg\n");
-			}
-
-			target_size = (rrr_length) target_size_tmp;
 		}
 
-		if (max_size < target_size) {
+		RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(target_size_total,target_size);
+
+		if (target_size_total > size_total) {
 			ret = RRR_TYPE_PARSE_INCOMPLETE;
 			goto out;
 		}
 
-		target_size_total += target_size;
-		max_size -= target_size;
+		remaining_size -= target_size;
+
 		count++;
 	}
 
-	if (target_size_total < max_size) {
-		ret = RRR_TYPE_PARSE_INCOMPLETE;
-		goto out;
+	if (remaining_size < 0) {
+		RRR_BUG("BUG: remaining_size was < 0 in __rrr_type_import_msg\n");
 	}
 
 	if (count != node->element_count && node->element_count != 0) {
@@ -604,15 +596,15 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 		goto out;
 	}
 
-	node->data = malloc(target_size_total);
+	node->data = malloc((rrr_length) target_size_total);
 	if (node->data == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_type_import_msg\n");
 		ret = RRR_TYPE_PARSE_HARD_ERR;
 		goto out;
 	}
 
-	node->total_stored_length = target_size_total;
-	memcpy(node->data, start, target_size_total);
+	node->total_stored_length = (rrr_length) target_size_total;
+	memcpy(node->data, start, (rrr_length) target_size_total);
 
 	if (__rrr_type_msg_unpack(node) != 0) {
 		RRR_MSG_0("Could not convert message in __rrr_type_import_msg\n");
@@ -620,7 +612,7 @@ static int __rrr_type_import_msg (RRR_TYPE_IMPORT_ARGS) {
 		goto out;
 	}
 
-	*parsed_bytes = target_size_total;
+	*parsed_bytes = (rrr_length) target_size_total;
 
 	out:
 	return ret;
@@ -888,7 +880,7 @@ static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 	}
 
 	{
-		ssize_t import_length_tmp = 0;
+		rrr_length import_length_tmp = 0;
 
 		int ret = rrr_socket_msg_get_target_size_and_check_checksum (
 				&import_length_tmp,
@@ -905,11 +897,7 @@ static int __get_import_length_msg (RRR_TYPE_GET_IMPORT_LENGTH_ARGS) {
 			return (ret == RRR_SOCKET_SOFT_ERROR ? RRR_TYPE_PARSE_SOFT_ERR : RRR_TYPE_PARSE_HARD_ERR);
 		}
 
-		if (import_length_tmp < 0 || import_length_tmp > RRR_LENGTH_MAX) {
-			RRR_BUG("BUG: Target size out of range in __get_import_length_msg\n");
-		}
-
-		*import_length = (rrr_length) import_length_tmp;
+		*import_length = import_length_tmp;
 	}
 
 	return RRR_TYPE_PARSE_OK;

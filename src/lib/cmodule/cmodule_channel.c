@@ -22,12 +22,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "cmodule_channel.h"
 #include "cmodule_defines.h"
 #include "cmodule_main.h"
 #include "cmodule_defer_queue.h"
 
-#include "../log.h"
 #include "../messages.h"
 #include "../message_addr.h"
 #include "../linked_list.h"
