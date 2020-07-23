@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_query_builder.h"
 #include "../lib/array.h"
@@ -42,7 +43,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../lib/log.h"
 #include "../lib/read_constants.h"
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"

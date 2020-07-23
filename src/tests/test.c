@@ -27,6 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "../main.h"
 #include "../../build_timestamp.h"
+#include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/posix.h"
 #include "../lib/common.h"
@@ -37,7 +38,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
-#include "../lib/log.h"
 #include "../lib/rrr_config.h"
 
 #include "test_usleep.h"

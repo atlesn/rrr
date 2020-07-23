@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "http_client.h"
 #include "http_common.h"
 #include "http_part.h"
@@ -30,7 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_client_config.h"
 
 #include "../posix.h"
-#include "../log.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"
 #include "../gnu.h"

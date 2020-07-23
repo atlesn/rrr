@@ -53,11 +53,11 @@ static int __rrr_array_parse_identifier_and_size (
 		unsigned int *length_return,
 		unsigned int *item_count_return,
 		rrr_type_flags *flags_return,
-		ssize_t *bytes_parsed_return,
+		rrr_length *bytes_parsed_return,
 		const char *start,
 		const char *end
 ) {
-	ssize_t parsed_bytes = 0;
+	rrr_length parsed_bytes = 0;
 	rrr_type_flags flags = 0;
 	const struct rrr_type_definition *type = NULL;
 	unsigned long long int length = 0;
@@ -198,7 +198,7 @@ int rrr_array_parse_single_definition (
 ) {
 	int ret = 0;
 
-	ssize_t parsed_bytes = 0;
+	rrr_length parsed_bytes = 0;
 	const struct rrr_type_definition *type = NULL;
 	unsigned int length = 0;
 	unsigned int item_count = 0;
@@ -331,7 +331,7 @@ int rrr_array_parse_data_from_definition (
 		struct rrr_array *target,
 		ssize_t *parsed_bytes_final,
 		const char *data,
-		const rrr_type_length length
+		const rrr_length length
 ) {
 	int ret = RRR_TYPE_PARSE_OK;
 
@@ -363,7 +363,7 @@ int rrr_array_parse_data_from_definition (
 			RRR_BUG("BUG: No convert function found for type %d\n", node->definition->type);
 		}
 
-		ssize_t parsed_bytes = 0;
+		rrr_length parsed_bytes = 0;
 
 		if (node->data != NULL) {
 			RRR_BUG("node->data was not NULL in rrr_array_parse_data_from_definition\n");
@@ -462,7 +462,7 @@ static int __rrr_array_push_value_64_with_tag (
 
 	RRR_LL_APPEND(collection, new_value);
 
-	ssize_t parsed_bytes = 0;
+	rrr_length parsed_bytes = 0;
 	if (new_value->definition->import(new_value, &parsed_bytes, (const char *) &value, ((const char *) &value + sizeof(value))) != 0) {
 		RRR_MSG_0("Error while importing in rrr_array_push_value_64_with_tag\n");
 		return 1;
@@ -669,7 +669,7 @@ int rrr_array_get_packed_length_from_buffer (
 			return RRR_TYPE_PARSE_INCOMPLETE;
 		}
 
-		ssize_t result = 0;
+		rrr_length result = 0;
 		if ((ret = node->definition->get_import_length (
 				&result,
 				node,
@@ -935,7 +935,7 @@ static int __rrr_array_collection_pack_callback (const struct rrr_type_value *no
 	}
 
 	uint8_t new_type = 0;
-	ssize_t written_bytes = 0;
+	rrr_length written_bytes = 0;
 	if (node->definition->pack(data->write_pos, &written_bytes, &new_type, node) != 0) {
 		RRR_MSG_0("Error while packing data of type %u in __rrr_array_collection_pack_callback\n", node->definition->type);
 		ret = RRR_ARRAY_PARSE_SOFT_ERR;
@@ -967,7 +967,7 @@ static int __rrr_array_collection_export_callback (const struct rrr_type_value *
 		RRR_BUG("No export function defined for type %u in __rrr_array_collection_export_callback\n", node->definition->type);
 	}
 
-	ssize_t written_bytes = 0;
+	rrr_length written_bytes = 0;
 	if (node->definition->export(data->write_pos, &written_bytes, node) != 0) {
 		RRR_MSG_0("Error while exporting data of type %u in __rrr_array_collection_export_callback\n", node->definition->type);
 		ret = RRR_ARRAY_PARSE_SOFT_ERR;
@@ -1036,7 +1036,7 @@ int rrr_array_selected_tags_export (
 	int ret = 0;
 
 	// We over-allocate here if not all tags are used
-	rrr_type_length total_data_length = __rrr_array_get_exported_length(definition);
+	rrr_length total_data_length = __rrr_array_get_exported_length(definition);
 
 	*target = NULL;
 	*target_size = 0;
@@ -1072,7 +1072,7 @@ int rrr_array_selected_tags_export (
 ssize_t rrr_array_new_message_estimate_size (
 		const struct rrr_array *definition
 ) {
-	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
 	return total_data_length + sizeof(struct rrr_message) - 1;
 }
@@ -1088,7 +1088,7 @@ int rrr_array_new_message_from_collection (
 
 	*final_message = NULL;
 
-	rrr_type_length total_data_length = __rrr_array_get_packed_length(definition);
+	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
 	struct rrr_message *message = rrr_message_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
@@ -1120,7 +1120,7 @@ int rrr_array_new_message_from_collection (
 		goto out;
 	}
 
-	if (written_bytes_total != total_data_length) {
+	if (written_bytes_total != (ssize_t) total_data_length) {
 		RRR_BUG("Length mismatch after assembling message in rrr_array_new_message %li<>%lu\n",
 				written_bytes_total, MSG_DATA_LENGTH(message));
 	}
@@ -1192,9 +1192,9 @@ int rrr_array_message_append_to_collection (
 
 		rrr_type type = data_packed->type;
 		rrr_type_flags flags = data_packed->flags;
-		rrr_type_length tag_length = rrr_be32toh(data_packed->tag_length);
-		rrr_type_length total_length = rrr_be32toh(data_packed->total_length);
-		rrr_type_length elements = rrr_be32toh(data_packed->elements);
+		rrr_length tag_length = rrr_be32toh(data_packed->tag_length);
+		rrr_length total_length = rrr_be32toh(data_packed->total_length);
+		rrr_length elements = rrr_be32toh(data_packed->elements);
 
 		if (pos + tag_length + total_length > end) {
 			RRR_MSG_0("Length of type %u index %i in array message exceeds total length (%u > %li)\n",

@@ -45,6 +45,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include <usb.h>
 #endif
 
+#include "../lib/log.h"
 #include "../lib/instance_config.h"
 #include "../lib/rrr_time.h"
 #include "../lib/threads.h"
@@ -55,7 +56,6 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/array.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 
 struct voltmonitor_data {
 	struct rrr_instance_thread_data *thread_data;

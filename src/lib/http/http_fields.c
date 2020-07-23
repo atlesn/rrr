@@ -21,11 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
+
+// Needed by http_fields
+#include "../log.h"
 
 #include "http_fields.h"
 #include "http_util.h"
 
-#include "../log.h"
 #include "../linked_list.h"
 #include "../macro_utils.h"
 
@@ -39,7 +42,7 @@ void rrr_http_field_destroy(struct rrr_http_field *field) {
 int rrr_http_field_new_no_value (
 		struct rrr_http_field **target,
 		const char *name,
-		ssize_t name_length
+		rrr_length  name_length
 ) {
 	int ret = 0;
 
@@ -95,7 +98,7 @@ int rrr_http_field_set_content_type (
 int rrr_http_field_set_value (
 		struct rrr_http_field *target,
 		const char *value,
-		ssize_t value_size
+		rrr_length value_size
 ) {
 	int ret = 0;
 
@@ -143,7 +146,7 @@ void rrr_http_field_collection_dump (
 		struct rrr_http_field_collection *fields
 ) {
 	char *urlencoded_tmp = NULL;
-	ssize_t urlencoded_size = 0;
+	rrr_length urlencoded_size = 0;
 
 	RRR_MSG_3 ("== DUMP FIELD COLLECTION ====================================\n");
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
@@ -176,7 +179,7 @@ static int __rrr_http_field_collection_add_field_raw (
 		struct rrr_http_field_collection *fields,
 		const char *name,
 		const void *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type
 ) {
 	int ret = 0;
@@ -233,7 +236,7 @@ int rrr_http_field_collection_add (
 		struct rrr_http_field_collection *fields,
 		const char *name,
 		const char *value,
-		ssize_t value_size,
+		rrr_length value_size,
 		const char *content_type
 ) {
 	return __rrr_http_field_collection_add_field_raw (
@@ -245,14 +248,14 @@ int rrr_http_field_collection_add (
 	);
 }
 
-ssize_t rrr_http_field_collection_get_total_length (
+rrr_length rrr_http_field_collection_get_total_length (
 		struct rrr_http_field_collection *fields
 ) {
-	ssize_t ret = 0;
+	RRR_TYPES_CHECKED_LENGTH_COUNTER_INIT(ret);
 
 	RRR_LL_ITERATE_BEGIN(fields, struct rrr_http_field);
-		ret += (node->name != NULL ? strlen(node->name) : 0);
-		ret += node->value_size;
+		RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(ret, (node->name != NULL ? strlen(node->name) : 0));
+		RRR_TYPES_CHECKED_LENGTH_COUNTER_ADD(ret, node->value_size);
 	RRR_LL_ITERATE_END();
 
 	return ret;
@@ -272,7 +275,7 @@ const struct rrr_http_field *rrr_http_field_collection_get_field (
 
 
 static char *__rrr_http_field_collection_to_form_data (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		struct rrr_http_field_collection *fields,
 		int no_urlencoding
 ) {
@@ -283,11 +286,16 @@ static char *__rrr_http_field_collection_to_form_data (
 
 	*output_size = 0;
 
-	ssize_t result_max_length =
+	rrr_biglength result_max_length =
 			rrr_http_field_collection_get_total_length(fields) * 3 +
 			RRR_LL_COUNT(fields) * 2 +
 			1
 	;
+
+	if (result_max_length > RRR_LENGTH_MAX) {
+		RRR_MSG_0("Worst case length of %" PRIu64 " exceeds safe value of %" PRIrrrl,
+				result_max_length, RRR_LENGTH_MAX);
+	}
 
 	if ((result = malloc(result_max_length)) == NULL) {
 		RRR_MSG_0("Could not allocate memory in __rrr_http_fields_to_form_data\n");
@@ -308,7 +316,7 @@ static char *__rrr_http_field_collection_to_form_data (
 		RRR_FREE_IF_NOT_NULL(name);
 		if (node->name != NULL) {
 			if (no_urlencoding == 0) {
-				ssize_t output_size = 0;
+				rrr_length output_size = 0;
 				name = rrr_http_util_encode_uri(&output_size, node->name, strlen(node->name));
 
 				if (name == NULL) {
@@ -330,7 +338,7 @@ static char *__rrr_http_field_collection_to_form_data (
 		if (node->value != NULL && node->value_size > 0) {
 			if (no_urlencoding == 0) {
 				RRR_FREE_IF_NOT_NULL(value);
-				ssize_t output_size = 0;
+				rrr_length output_size = 0;
 				value = rrr_http_util_encode_uri(&output_size, node->value, node->value_size);
 
 				if (value == NULL) {
@@ -372,14 +380,14 @@ static char *__rrr_http_field_collection_to_form_data (
 }
 
 char *rrr_http_field_collection_to_urlencoded_form_data (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		struct rrr_http_field_collection *fields
 ) {
 	return __rrr_http_field_collection_to_form_data(output_size, fields, 0);
 }
 
 char *rrr_http_field_collection_to_raw_form_data (
-		ssize_t *output_size,
+		rrr_length *output_size,
 		struct rrr_http_field_collection *fields
 ) {
 	return __rrr_http_field_collection_to_form_data(output_size, fields, 1);

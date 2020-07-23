@@ -21,8 +21,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "cmodule.h"
 #include "log.h"
+#include "cmodule.h"
 #include "posix.h"
 
 struct dummy_data {

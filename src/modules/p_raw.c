@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/poll_helper.h"
@@ -36,7 +37,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
-#include "../lib/log.h"
 
 struct raw_data {
 	int message_count;

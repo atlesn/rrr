@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_array.h"
 #include "python3_module_common.h"
 #include "../linked_list.h"
-#include "../type.h"
 #include "../log.h"
+#include "../type.h"
 
 struct rrr_python3_array_value_data;
 struct rrr_python3_array_data;
