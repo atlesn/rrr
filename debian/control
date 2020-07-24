@@ -6,7 +6,8 @@ Build-Depends: debhelper (>=11~),
                dh-autoreconf,
                dh-python,
                dh-systemd (>= 1.5),
-               libmysqlclient-dev | libmariadbclient-dev-compat,
+               libmysqlclient-dev,
+	       libmysqlclient20,
                libperl-dev (>= 5.26),
                libssl-dev,
                libsystemd-dev,
@@ -55,11 +56,11 @@ Depends: rrr (= ${binary:Version}),
          ${shlibs:Depends}
 Description: Read Route Record module for Python 3.
 
-Package: rrr-mod-mariadb
+Package: rrr-mod-mysql
 Architecture: any
 Multi-Arch: foreign
-Depends: libmysqlclient | libmysqlclient20 | libmysqlclient21,
+Depends: libmysqlclient20,
          rrr (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
-Description: Read Route Record module for writing to MariaDB SQL Database.
+Description: Read Route Record module for writing to MySQL Database.
