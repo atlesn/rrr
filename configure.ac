@@ -1,7 +1,7 @@
-AC_INIT([Read Route Record], 1.5-5)
-AC_DEFINE([RRR_CONFIG_VERSION], "1.5-5", [Full version])
-AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 5, [Major version])
-AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 5, [Minor version])
+AC_INIT([Read Route Record], 1.6-0)
+AC_DEFINE([RRR_CONFIG_VERSION], "1.6-0", [Full version])
+AC_DEFINE([RRR_CONFIG_VERSION_MAJOR], 6, [Major version])
+AC_DEFINE([RRR_CONFIG_VERSION_MINOR], 0, [Minor version])
 AC_DEFINE([RRR_CONFIG_VERSION_REVISION], 1, [Revision number])
 AC_DEFINE([RRR_TYPE_MAX_BLOB_LENGTH], 1024, [Maximum size of blob type int type arrays])
 #AC_DEFINE([RRR_MYSQL_BIND_MAX], 16, [Maximum number of bind columns for MySQL])
@@ -79,7 +79,7 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
 AC_SUBST(AM_CFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
