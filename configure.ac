@@ -325,7 +325,7 @@ AS_IF([test "x$enable_mysql" = xno], [
 ], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_MYSQL], [1], [Compile with MySQL module])
-	AX_LIB_MYSQL([5.0.0])
+	AX_LIB_MYSQL([8.0.0])
 	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
 	AC_MSG_CHECKING([integer sizes for MySQL])
 	AC_RUN_IFELSE([
