@@ -1,5 +1,11 @@
+includedir=${prefix}/include/rrr
+
+nobase_include_HEADERS = *.h */*.h
+
 if RRR_WITH_MYSQL
-mysql = mysql.c
+lib_mysql = librrrmysql.la
+librrrmysql_la_SOURCES = mysql.c
+librrrmysql_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} 
 endif
 
 if RRR_WITH_OPENSSL
@@ -7,7 +13,7 @@ encryption = rrr_openssl.c
 endif
 
 if RRR_WITH_PYTHON3
-libadd_python3 = librrrpython3.la
+lib_python3 = librrrpython3.la
 librrrpython3_la_SOURCES = python3/python3_cmodule.c python3/python3_module.c python3/python3_common.c python3/python3_vl_message.c \
 							python3/python3_socket.c python3/python3_array.c python3/python3_config.c
 librrrpython3_la_CFLAGS = ${PYTHON3_CFLAGS} -DRRR_PYTHON3_SITE_PACKAGES_DIR=\"${pythondir}\" -DRRR_PYTHON3_PKGDIR=\"${pkgpythondir}\"
@@ -44,9 +50,8 @@ if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
 endif
 
-lib_LTLIBRARIES = librrr.la
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
-librrr_la_LDFLAGS = -lpthread -ldl -lm ${MYSQL_LDFLAGS} ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
+librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c rrr_config.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c ip_util.c rrr_time.c \
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
@@ -55,8 +60,10 @@ librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.
 					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \
 					fixed_point.c slow_noop.c rrr_endian.c posix.c passwd.c \
-					${mysql} ${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
+					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
 					${net_transport} ${net_transport_tls}
+
+lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 
 libadd_rrr_conversion_warning = librrr_conversion_warning.la
 librrr_conversion_warning_la_SOURCES = type.c
@@ -89,7 +96,6 @@ librrr_umask_la_CFLAGS = -DRRR_INTERCEPT_ALLOW_UMASK ${AM_CFLAGS}
 librrr_umask_la_LDFLAGS = -lpthread -ldl -lm
 
 libadd_all =	${libadd_perl5}					\
-				${libadd_python3}				\
 				${libadd_rrr_readdir}			\
 				${libadd_rrr_strerror}			\
 				${libadd_rrr_fork}				\
