@@ -50,7 +50,37 @@ forking the GitHub repository.
 
 ### DOWNLOAD
 
+#### Compile from source
+
 	$ git clone https://github.com/atlesn/rrr.git
+
+See *COMPILE* section below.
+
+#### Pre-compiled package Debian Buster amd64/i386 using APT
+
+	$ sudo apt install curl
+	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/goliathdns-buster.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo apt update
+	$ sudo apt install rrr
+	
+If your Debian system does not have *sudo* installed, remove *sudo* from all commands and run them as root.
+	
+#### Pre-compiled package for Ubuntu Focal amd64 using APT
+
+	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/goliathdns-focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo apt update
+	$ sudo apt install rrr
+
+#### Compile on ArchLinux using PKGBUILD file
+
+	$ mkdir rrr
+	$ cd rrr
+	$ curl -s -o PKGBUILD https://raw.githubusercontent.com/atlesn/rrr/archlinux/misc/archlinux/PKGBUILD
+	$ makepkg -cf
+	$ sudo pacman -S perl
+	$ sudo pacman -U rrr-*.zst
 
 ### COMPILE
 
@@ -69,12 +99,6 @@ on detailed information about this and on which packages you need to build `.deb
 
 	$ dpkg-buildpackage
 	$ sudo dpkg -i ../rrr*.deb
-
-On ArchLinux, do the following:
-
-* Download the file `PKGBUILD` from `misc/archlinux/` in the repository.
-* Put the file into some directory and run `makepkg`
-* Install the generated package using `pacman`
 
 ### RUN
 

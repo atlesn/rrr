@@ -27,6 +27,7 @@ Depends: librrr1 (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
+Conflicts: rrr-mysql
 
 Package: librrr1
 Section: libs
