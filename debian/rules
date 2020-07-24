@@ -1,7 +1,9 @@
 #!/usr/bin/make -f
-# See debhelper(7) (uncomment to enable)
-# output every command that modifies files on the build system.
-# export DH_VERBOSE = 1
+# You must remove unused comment lines for the released package.
+#export DH_VERBOSE = 1
+#export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+#export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
+#export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
 # This will disable installation of rrr.service systemd file and let dh_systemd/dh_installinit do that instead
 export RRR_SYSTEMD_NO_INSTALL=1
@@ -9,25 +11,14 @@ export RRR_SYSTEMD_NO_INSTALL=1
 # This will create User=rrr and Group=rrr in rrr.service as opposed to the default username 'daemon'
 export RRR_DAEMON_USERNAME=rrr
 
-# see FEATURE AREAS in dpkg-buildflags(1)
-#export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-
-# see ENVIRONMENT in dpkg-buildflags(1)
-# package maintainers to append CFLAGS
-#export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
-# package maintainers to append LDFLAGS
-#export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
-
-
 %:
 	dh $@ --with autoreconf,systemd
 
-# In the perlonly package, the name of the service file must be overriden as it does not match the package name
-override_dh_installinit:
-	dh_installinit --name=rrr
+#override_dh_install:
+#	dh_install -X.la
+#	dh_missing --list-missing
 
-# dh_make generated override targets
-# This is example for Cmake (See https://bugs.debian.org/641051 )
-#override_dh_auto_configure:
-#	dh_auto_configure -- #	-DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)
-
+#override_dh_strip:
+#	dh_strip -Xlibrrr1 --dbg-package=librrr1-dbg
+#	dh_strip -Xrrr --dbg-package=rrr-dbg
+#	dh_strip -Xrrr-mod-mariadb --dbg-package=rrr-mod-mariadb-dbg
