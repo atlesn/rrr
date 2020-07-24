@@ -46,15 +46,6 @@ Depends: librrr1 (= ${binary:Version}),
          ${misc:Depends}
 Description: Read Route Record obtains messages from a sensor and log them to files or send over the network for storage.
 
-Package: rrr-mod-perl5
-Architecture: any
-Multi-Arch: foreign
-Depends: rrr (= ${binary:Version}),
-         ${misc:Depends},
-         ${shlibs:Depends},
-         ${perl:Depends}
-Description: Read Route Record module for Perl 5.
-
 Package: rrr-mod-python3
 Architecture: any
 Multi-Arch: foreign

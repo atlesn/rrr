@@ -14,6 +14,9 @@ export RRR_DAEMON_USERNAME=rrr
 %:
 	dh $@ --with autoreconf,systemd
 
+override_dh_missing:
+	dh_missing --list-missing
+
 #override_dh_install:
 #	dh_install -X.la
 #	dh_missing --list-missing
