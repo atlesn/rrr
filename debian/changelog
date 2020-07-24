@@ -1,4 +1,4 @@
-rrr (1.6-0deb1mysql57) buster; urgency=medium
+rrr (1.6-0deb2mysql57) buster; urgency=medium
 
   * Create split Debian packages
 
