@@ -58,14 +58,22 @@ See *COMPILE* section below.
 
 #### Pre-compiled package Debian Buster amd64/i386 using APT
 
-	$ sudo apt install curl
-	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
-	$ sudo sh -c "curl -s https://apt.goliathdns.no/goliathdns-buster.list > /etc/apt/sources.list.d/goliathdns.list"
-	$ sudo apt update
-	$ sudo apt install rrr
+	$ su -
+	# apt install curl gnupg
+	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
+
+There are three different mirrors which have the RRR MySQL module linked to MariaDB (default on Debian),
+MySQL-5.7 or MySQL-8.0, choose one of the following. If you do not plan to install the MySQL-module, pick the first one.
+
+	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# curl -s https://apt.goliathdns.no/debian-mysql80/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# curl -s https://apt.goliathdns.no/debian-mysq57/buster.list > /etc/apt/sources.list.d/goliathdns.list
+
+Then:
 	
-If your Debian system does not have *sudo* installed, remove *sudo* from all commands and run them as root.
-	
+	# apt update
+	# apt install rrr 
+
 #### Pre-compiled package for Ubuntu Focal amd64 using APT
 
 	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
@@ -81,6 +89,16 @@ If your Debian system does not have *sudo* installed, remove *sudo* from all com
 	$ makepkg -cf
 	$ sudo pacman -S perl
 	$ sudo pacman -U rrr-*.zst
+	
+#### Packages available on the APT mirrors
+
+- rrr
+- rrr-mod-python3
+- rrr-mod-mysql / rrr-mod-mariadb
+- librrr1
+- librrr-dev
+- rrr-mod-python3-dbgsym
+- librrr1-dbgsym
 
 ### COMPILE
 
