@@ -79,7 +79,7 @@ AS_IF([test "x$enable_codecov" = xyes], [
 ])
 AC_SUBST([CFLAGS_CODECOV])
 
-AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration"
+AM_CFLAGS="$AM_CFLAGS $CFLAGS_CODECOV -std=c11 -include $srcdir/config.h -include $srcdir/build_timestamp.h -include $srcdir/src/lib/intercept.h -Wunreachable-code -Wstrict-prototypes -Wall -Wextra -Wno-clobbered -Werror=implicit-function-declaration -D_XOPEN_SOURCE=700"
 AC_SUBST(AM_CFLAGS)
 
 SHELL_VARS_INIT([variables.sh])
@@ -326,7 +326,7 @@ AS_IF([test "x$enable_mysql" = xno], [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE([RRR_WITH_MYSQL], [1], [Compile with MySQL module])
 	AX_LIB_MYSQL([5.0.0])
-	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
+#	AC_CHECK_HEADERS([mysql/mysql.h], [], [AC_MSG_ERROR([Headers missing])])
 	AC_MSG_CHECKING([integer sizes for MySQL])
 	AC_RUN_IFELSE([
 		AC_LANG_SOURCE([[
@@ -432,8 +432,6 @@ AS_IF([test "x$enable_runit" = xyes], [
 ],[
 	AC_MSG_RESULT([no])
 ])
-
-
 
 AM_COND_IF([RRR_WITH_PERL5], [AC_CONFIG_FILES([src/perl5/xsub/Makefile.PL])])
 AM_COND_IF([RRR_WITH_PYTHON3], [AC_CONFIG_FILES([src/python/Makefile])])
