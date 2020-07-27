@@ -59,11 +59,13 @@ forking the GitHub repository.
 	$ git clone https://github.com/atlesn/rrr.git
 	$ cd rrr
 
-Some systems have costumized branches, choose one of the following i appropriate:
+Some systems have costumized branches, choose one of the following if appropriate:
 
 	$ git checkout archlinux
 	$ git checkout freebsd
 	$ git checkout ubuntu
+
+The master branch of RRR contains a native Debian package.
 
 See *COMPILE* section below.
 
