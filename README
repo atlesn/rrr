@@ -61,23 +61,14 @@ See *COMPILE* section below.
 	$ su -
 	# apt install curl gnupg
 	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
-
-There are three different mirrors which have the RRR MySQL module linked to MariaDB (default on Debian),
-MySQL-5.7 or MySQL-8.0, choose one of the following. If you do not plan to install the MySQL-module, pick the first one.
-
 	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
-	# curl -s https://apt.goliathdns.no/debian-mysql80/buster.list > /etc/apt/sources.list.d/goliathdns.list
-	# curl -s https://apt.goliathdns.no/debian-mysq57/buster.list > /etc/apt/sources.list.d/goliathdns.list
-
-Then:
-	
 	# apt update
-	# apt install rrr 
+	# apt install rrr
 
 #### Pre-compiled package for Ubuntu Focal amd64 using APT
 
 	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
-	$ sudo sh -c "curl -s https://apt.goliathdns.no/goliathdns-focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
 	$ sudo apt update
 	$ sudo apt install rrr
 
@@ -99,6 +90,9 @@ Then:
 - librrr-dev
 - rrr-mod-python3-dbgsym
 - librrr1-dbgsym
+
+Note that on Ubuntu, RRR supports MySQL and on Debian RRR supports MariaDB. If you need to use for instance
+MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`.
 
 ### COMPILE
 
