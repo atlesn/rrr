@@ -58,7 +58,7 @@ Description: Read Route Record module for Python 3.
 Package: rrr-mod-mysql
 Architecture: any
 Multi-Arch: foreign
-Depends: libmysqlclient | libmysqlclient20 | libmysqlclient21,
+Depends: libmariadb-dev-compat,
          rrr (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
