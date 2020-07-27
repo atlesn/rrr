@@ -33,6 +33,10 @@ RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux pac
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
 are not supported.
 
+Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
+Linux should however work if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD does not work
+due to lacking support for process shared locks.
+
 ## LICENSES
 
 RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
@@ -53,6 +57,13 @@ forking the GitHub repository.
 #### Compile from source
 
 	$ git clone https://github.com/atlesn/rrr.git
+	$ cd rrr
+
+Some systems have costumized branches, choose one of the following i appropriate:
+
+	$ git checkout archlinux
+	$ git checkout freebsd
+	$ git checkout ubuntu
 
 See *COMPILE* section below.
 
