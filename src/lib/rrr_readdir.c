@@ -26,12 +26,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * we will not be able to use readdir()
  */
 
-// Allow realpath with glibc
-#define _XOPEN_SOURCE 600
-
-// Allow S_IFDIR etc. on BSD
-#define __XSI_VISIBLE 1
-
 #include <errno.h>
 #include <dirent.h>
 #include <pthread.h>
