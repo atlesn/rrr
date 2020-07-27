@@ -51,7 +51,7 @@ struct rrr_ip_data {
 
 struct rrr_ip_graylist_entry {
 	RRR_LL_NODE(struct rrr_ip_graylist_entry);
-	struct sockaddr addr;
+	struct sockaddr_storage addr;
 	socklen_t addr_len;
 	uint64_t expire_time;
 };

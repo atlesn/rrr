@@ -358,7 +358,7 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 
 	// Must be more than 256 to hold OpenSSL error strings
 	char *final = malloc(RRR_PASSWD_HASH_MAX_LENGTH + 1);
-	if (tmp == NULL) {
+	if (final == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_passwd_encrypt\n");
 		ret = 1;
 		goto out;

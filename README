@@ -50,7 +50,49 @@ forking the GitHub repository.
 
 ### DOWNLOAD
 
+#### Compile from source
+
 	$ git clone https://github.com/atlesn/rrr.git
+
+See *COMPILE* section below.
+
+#### Pre-compiled package Debian Buster amd64/i386 using APT
+
+	$ su -
+	# apt install curl gnupg
+	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
+	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# apt update
+	# apt install rrr
+
+#### Pre-compiled package for Ubuntu Focal amd64 using APT
+
+	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo apt update
+	$ sudo apt install rrr
+
+#### Compile on ArchLinux using PKGBUILD file
+
+	$ mkdir rrr
+	$ cd rrr
+	$ curl -s -o PKGBUILD https://raw.githubusercontent.com/atlesn/rrr/archlinux/misc/archlinux/PKGBUILD
+	$ makepkg -cf
+	$ sudo pacman -S perl
+	$ sudo pacman -U rrr-*.zst
+	
+#### Packages available on the APT mirrors
+
+- rrr
+- rrr-mod-python3
+- rrr-mod-mysql / rrr-mod-mariadb
+- librrr1
+- librrr-dev
+- rrr-mod-python3-dbgsym
+- librrr1-dbgsym
+
+Note that on Ubuntu, RRR supports MySQL and on Debian RRR supports MariaDB. If you need to use for instance
+MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`.
 
 ### COMPILE
 
@@ -70,13 +112,7 @@ on detailed information about this and on which packages you need to build `.deb
 	$ dpkg-buildpackage
 	$ sudo dpkg -i ../rrr*.deb
 
-On ArchLinux, do the following:
-
-* Download the file `PKGBUILD` from `misc/archlinux/` in the repository.
-* Put the file into some directory and run `makepkg`
-* Install the generated package using `pacman`
-
-### RUN
+### RUN MANUALLY
 
 To start the program with modules, a config file must first be made. Write this into a file
 called `rrr.conf`.
@@ -106,6 +142,26 @@ Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and
 	$ man ./src/misc/man/rrr_post.1
 	$ ./src/rrr my_rrr_test_configuration.conf
 
+### RUN WITH RUNIT/SYSTEMD
+
+If you installed one of the provided packages, RRR will have configured `systemd` or `runit` and is probably already running using a dummy configuration.
+
+Configuration files are placed in `/etc/rrr.conf.d/`. RRR will start one process fork for every configuration file in this folder (which ends with `.conf`).
+Place files in this folder and restart RRR with `sudo systemctl restart rrr` or `sv restart rrr`. Logs are delivered to syslog like other daemons.
+
+For testing purposes, RRR can be started to start all configuration files in a directory by using `rrr /etc/rrr.conf.d/`.
+
+When compiling from source, there are configuration flags available to enable and disable `systemd` and `runit`.
+
+### VIEW LIVE LOGS FROM DAEMONIZED PROCESS
+
+By default, the RRR daemon is started with the `-s` flags, enabling the statistics engine. Each running fork will create a socket in `/tmp/` to which
+the binary `rrr_stats` can connect. If there is only one fork, `rrr_stats` will find it and connect to the correct socket without any additional arguments.
+
+To view log output instead of statistics, run `rrr_stats -j`.
+
+Note that if you produce a lot of debug output, having `rrr_stats` running can cause crashes. By default, RRR only prints out errors and warnings.
+
 ## MODULES
 
 Here's a short list of modules to start with, more are listed in the `rrr.conf` man page.
@@ -114,7 +170,86 @@ Here's a short list of modules to start with, more are listed in the `rrr.conf` 
 This module handles inbound and outbound IP traffic. It can parse incoming data and organize it into RRR arrays,
 and also send data to external hosts based on address information it the messages it receives from other modules.
 
-The IP module is the binding link between RRR and external devices using IP networking.
+The IP module is the binding link between RRR and external devices using IP networking. The module will handle
+both TCP and UDP simultaneously. If using TCP, one connection is by default created for every outbound message. This
+is to avoid problems with TCP connections staying open for longer periods.
+
+The IP module does not use packet boundaries to separate data records. When using UDP, it is therefore important
+to make sure that data is not split into many packets which might cause parts of a message to disappear without this
+being detected.
+
+A simple setup using the IP module can be to process barcodes from a scanner and send ACK back. The IP information
+in a message (where it came from) is always preserved in RRR. This makes it possible to simply return a message to
+the IP module if we wish to send a reply.
+
+1. Scanner sends a barcode to RRR using UDP (for instance STX 'BLABLA128' ETX)
+2. IP module receives and parses the UDP packet
+3. A Perl or Python script does some processing of the barcode
+4. The contents of the reply ACK message is added to the message (for instance STX 'A' ETX)
+5. The IP Module sends the packet back to the scanner.
+
+In this configuration, the an instance of the IP module both gives data to the Perl instance, and also reads data from it. The data
+which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`. If the syntax
+in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to worry about what
+they actually are when processing the message.
+
+When the Perl module generates the reply, it creates an additional array value called `reply`. The IP module is then configured
+to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together.
+
+	[instance_ip]
+	module=ip
+	senders=instance_perl5
+	ip_input_types=stx1#start,nsep#barcode,sep1#end
+	ip_udp_port=3333
+	ip_array_send_tags=start,reply,end
+	
+	[instance_perl5]
+	module=perl5
+	senders=instance_ip
+	perl5_file=/home/rrr/devicemaster.pl
+	perl5_process_sub=process
+	
+The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
+
+	#!/usr/bin/perl -w
+
+	package main;
+
+	use rrr::rrr_helper;
+	use rrr::rrr_helper::rrr_message;
+
+	sub process {
+        	my $message = shift;
+		
+		# Do message processing
+		my $processing_succeeded = 1;
+		
+		# Send reply if everything is OK
+		if ($processing_succeeded) {
+			# Push ACK reply value to the message and send it
+			push_blob($message, "reply", "A");
+
+			# IP information is already in the message, as well as
+			# start and end separators. This call will cause the IP
+			# module to receive the message.
+			$message->send();
+		}
+		
+		return 1;
+	}
+	
+	sub push_blob {
+        	my $message = shift;
+        	my $tag = shift;
+        	my $value = shift;
+
+        	push @{$message->{'array_values'}}, "$value";
+        	push @{$message->{'array_tags'}}, $tag;
+        	push @{$message->{'array_types'}}, "blob";
+	}
+
+
+There are some more advanced example configuration files in `/misc/test_configs`, including how to read the barcode.
 
 ### mqttbroker (run an MQTT broker)
 Starts an MQTT broker which any MQTT client can use to exchange messages.
