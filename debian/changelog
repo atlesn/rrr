@@ -1,3 +1,9 @@
+rrr (1.6-0deb3) buster; urgency=medium
+
+  * Create split Debian packages
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 24 Jul 2020 04:09:30 +0200
+
 rrr (1.5-5buster2) buster; urgency=medium
 
   * Internal changes on length/size fields

@@ -469,7 +469,7 @@ static int __rrr_type_msg_to_host_single (
 		if (rrr_socket_msg_get_target_size_and_check_checksum (
 				&target_size_tmp,
 				socket_msg,
-				(rrr_slength) max_size
+				max_size
 		) != 0) {
 			RRR_MSG_0("Invalid header for message in __rrr_type_convert_msg_to_host_single\n");
 			ret = 1;
