@@ -3,7 +3,7 @@ rrr (1.6-1) buster; urgency=medium
   * Add missing install file
   * Minor fixes
 
- -- Atle Solbakkem <atle@goliathdns.no>  Mon, 27 Jul 2020 22:22:00 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 27 Jul 2020 22:22:00 +0200
 
 rrr (1.6-0deb3) buster; urgency=medium
 
