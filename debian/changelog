@@ -1,3 +1,9 @@
+rrr (1.6-0deb3posten1) buster; urgency=medium
+
+  * Non-maintainer upload.
+
+ -- LBSdrift <lbsdrift@posten.local>  Mon, 27 Jul 2020 17:22:42 +0200
+
 rrr (1.6-0deb3) buster; urgency=medium
 
   * Create split Debian packages
