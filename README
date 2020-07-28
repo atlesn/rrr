@@ -39,7 +39,7 @@ the source, for instance when the data source is a device on a computer.
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
-may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
+may be compiled and run on FreeBSD or other Linuxes including Raspbian and SUSE. Other systems might work but
 are not supported.
 
 Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
@@ -127,8 +127,18 @@ on the Ubuntu branch (`git checkout ubuntu`).
 
 ### COMPILE
 
-Compiling the source requires some basic knowledge on how to build a program using Autotools. Please
-look online if you have not done this before.
+Compiling the source requires some basic knowledge on how to build a program using Autotools. Usually,
+some extra packages must be installed prior to compilation.
+
+On SUSE, the following packages should be installed to build RRR:
+
+	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool
+
+On Debian, Ubuntu and derived systems, the following should be installed:
+	
+	$ sudo apt install libperl-dev git libmariadb-dev-compat python3-dev libssl-dev autoconf automake gcc libtool
+
+On other systems, packages with similar names also exist.
 
 See `./configure --help` for flags to use for disabling modules with dependencies (perl, mysql etc.).
 
@@ -136,6 +146,10 @@ See `./configure --help` for flags to use for disabling modules with dependencie
 	$ ./configure
 	$ make
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
+
+You may turn off Python3 and MySQL support when configuring, look at `./configure --help`. This will remove the
+need of development packages being installed for these. Perl bindings can also be disabled, but usually it needs to be 
+installed to run the tools which build RRR. OpenSSL bindings may be disabled.
 
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
 on detailed information about this and on which packages you need to build `.deb` packages.
