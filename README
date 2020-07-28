@@ -9,10 +9,15 @@ RRR can read data of different types from external programs or sensors using UDP
 piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
 they pass through.
 
+As part of an application, RRR will handle tasks like networking, deamonizing, logging and buffering,
+allowing developers to focus on more specialized tasks.
+
+Among other things, RRR can be used to:
+
 - Acquire messages using piping, UNIX sockets, UDP/TCP-packets
 - Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
-- Saving messages using InfluxDB and MySQL
+- Save messages using InfluxDB and MySQL
 
 Application examples may include:
 
@@ -20,13 +25,18 @@ Application examples may include:
 - Sensors (temperature, pressure, voltage etc.)
 - PLCs
 - Message forwarding, media or protocol conversion etc.
+- Host monitoring, logging
 
-Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
-particular device with RRR.
+RRR is used by starting one ore more modules with different capabilities which reads messages from each other. Some modules
+also use networking to communicate with different types of devices or with RRR program on other hosts. Once a message
+enters RRR, it is stored in an internal format, an `RRR-message`, which is supported by all the different modules. It is
+also possible to generate these messages in externally based on the header files.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
+
+## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
@@ -36,15 +46,23 @@ Among distributions known *not* to work out of the box, are Void Linux, OpenBSD 
 Linux should however work if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD does not work
 due to lacking support for process shared locks.
 
+Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
+particular device with RRR or if it doesn't run on a particular distribution.
+
 ## LICENSES
 
-RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
+RRR is released under the GPLv3 with *exceptions for self written modules*. Please checkout
 the `LICENSE.*`-files regarding this.
 
 ## DEVELOPMENT
 
 It is possible to write custom modules in Perl, Python and C. All three have similar easy to use
 interfaces to RRR. The man page for rrr.conf has more information on this, also check out `README.dev`.
+
+The RRR library provides many protocol implementations and networking tools. While it is possible to link
+other programs to the RRR-library, there is currently a some initialization of different data structures
+for logging etc. which needs to be done when doing this. If you wish to do this anyway, please open an
+issue on the GitHub page for discussing this.
 
 If you are a developer and would like to see more functionallity or have some ideas, please consider
 forking the GitHub repository.
@@ -66,7 +84,7 @@ Some systems have costumized branches, choose one of the following if appropriat
 
 The master branch of RRR contains a native Debian package.
 
-See *COMPILE* section below.
+See *COMPILE* section below for further information.
 
 #### Pre-compiled package Debian Buster amd64/i386 using APT
 
@@ -104,7 +122,8 @@ See *COMPILE* section below.
 - librrr1-dbgsym
 
 Note that on Ubuntu, RRR supports MySQL and on Debian RRR supports MariaDB. If you need to use for instance
-MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`.
+MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
+on the Ubuntu branch (`git checkout ubuntu`).
 
 ### COMPILE
 
@@ -136,6 +155,7 @@ called `rrr.conf`.
 	[my_target]
 	module=raw
 	senders=my_source
+	raw_print_data=yes
 
 Then, run this:
 
@@ -272,7 +292,8 @@ The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
 There are some more advanced example configuration files in `/misc/test_configs`, including how to read the barcode.
 
 ### mqttbroker (run an MQTT broker)
-Starts an MQTT broker which any MQTT client can use to exchange messages.
+Starts an MQTT broker which any MQTT client can use to exchange messages. The broker supports TLS, ACL and authentication, have
+a look at `man rrr.conf`.
 
 ### mqttclient (run an MQTT client)
 Starts an MQTT client which can connect to any MQTT server. Messages can be read from other modules and published
@@ -504,6 +525,22 @@ Read output from any module and delete it. Can also print out some information f
 ### dummy (generate dummy measurements)
 Create dummy messages with current timestamp as value at some interval. 
 
+## RRR-MESSAGES
+
+An RRR-message contains some metadata and a class specifier which tells us what kind of
+information and/or value it stores.
+* Metadata for a message:
+  * `Timestamp`
+    Usually specified when a message was created.
+  * `Topic`
+     A topic to be used by MQTT modules
+  * `Class` and `Data` 
+    Raw data of a message or Array data
+  * `Source-address`
+    IP-address of a sender for messages which originated remotely.
+
+On the network, all multibyte fiels are in Big Endian format.
+
 ## ARRAY DEFINITION
 Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
 
@@ -563,20 +600,6 @@ included  in  the  result, a sep should follow afterwards to take care of it.
 * The `nsep` type is not a complete negation of the `sep` type, the latter matches many more characters. The reason behind this is that messages with arbitary text and an end delimeter
 then can be matched using the simple definition `nsep,sep1`. The `nsep` will match letters, punctuations, spaces etc., and the `sep1` will match for instance
 a newline or ETX byte.
-
-## MESSAGES
-
-A message contains some metadata and a class specifier which tells us what kind of
-information and/or value it stores.
-* Metadata for a message:
-  * `Timestamp`
-    Usually specified when a message was created.
-  * `Topic`
-     A topic to be used by MQTT modules
-  * `Data` 
-    Raw data of a message or Array data
-  * `Source-address`
-    IP-address of a sender for messages which originated remotely.
 
 ## CONTACT
 
