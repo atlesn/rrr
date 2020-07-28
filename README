@@ -37,6 +37,12 @@ To send data to RRR, the data should be in some form of predictable binary or te
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
 
+Messsage processing in RRR is designed to work with as little state as possible. By default, messages are passed through
+without the need any complex data structures in memory or persistently open TCP connections.
+This design enhances stability, but also requires that larger applications using RRR have the same mentality. For network connections
+which require some state, like MQTT, RRR will transparently make sure that a connection is available at all times, relieving
+application designers from the burden of implementing this.
+
 ## SUPPORTED SYSTEMS
 
 RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
