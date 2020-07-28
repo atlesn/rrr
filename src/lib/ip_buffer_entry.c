@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "linked_list.h"
 #include "macro_utils.h"
+#include "message_broker_route.h"
 
 //#define RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 
@@ -88,6 +89,7 @@ void rrr_ip_buffer_entry_decref_while_locked_and_unlock (
 		rrr_ip_buffer_entry_unlock(entry);
 		__rrr_ip_buffer_entry_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
+		rrr_message_broker_route_clear(&entry->route);
 		free(entry);
 	}
 	else {

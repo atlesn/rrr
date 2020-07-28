@@ -55,7 +55,7 @@ librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl
 librrr_la_SOURCES = buffer.c threads.c messages.c crc32.c cmdlineparser/cmdline.c rrr_config.c \
 					ip.c ip_accept_data.c ip_buffer_entry.c ip_util.c rrr_time.c \
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
-					message_broker.c \
+					message_broker.c message_broker_route.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
 					utf8.c gnu.c base64.c map.c string_builder.c random.c \

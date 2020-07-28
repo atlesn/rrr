@@ -28,6 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "socket/rrr_socket.h"
 #include "linked_list.h"
+#include "message_broker_route.h"
+
+// TODO : Reduce size of this struct
 
 struct rrr_ip_buffer_entry {
 	RRR_LL_NODE(struct rrr_ip_buffer_entry);
@@ -39,6 +42,7 @@ struct rrr_ip_buffer_entry {
 	int protocol;
 	uint64_t send_time;
 	void *message;
+	struct rrr_message_broker_route route;
 };
 
 struct rrr_ip_buffer_entry_collection {
