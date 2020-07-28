@@ -22,14 +22,13 @@ Application examples may include:
 - Message forwarding, media or protocol conversion etc.
 
 Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
-particular device with RRR. Please not that RRR is a general purpose program and does not support
-any particular hardware unless configured to do so.
+particular device with RRR.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
 
-RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
+RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
 may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
 are not supported.
 
@@ -492,6 +491,13 @@ Below follows an example perl script.
 		return 1;
 	}
 
+### cmodule (generate and/or modify messages by a custom C module)
+A C-module has `config`, `source` and `process` functions just like Perl and Python scripts, and the excact same internal
+RRR framework handles this semantics.
+
+Custom C-modules is usually compiled inside the RRR source tree. Read `/src/cmodules/README` for information on how to do this, usually
+only a single C-file is needed to create a module.
+
 ### raw (drain output from other modules)
 Read output from any module and delete it. Can also print out some information for each message it receives.
 
@@ -565,14 +571,12 @@ information and/or value it stores.
 * Metadata for a message:
   * `Timestamp`
     Usually specified when a message was created.
-  * `Class`
-    The message class which describes what kind of information it stores:
-    * `DATA`: Message with arbitary data
-    * `ARRAY`: An array of data, for instance created by udpreader or socket
   * `Topic`
-  	A topic to be used by MQTT modules
-  * `Data`
-    Data of the message (for ARRAY)
+     A topic to be used by MQTT modules
+  * `Data` 
+    Raw data of a message or Array data
+  * `Source-address`
+    IP-address of a sender for messages which originated remotely.
 
 ## CONTACT
 
