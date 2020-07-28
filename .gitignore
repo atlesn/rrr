@@ -36,7 +36,6 @@ input_data
 /debian/rrr-mod-mariadb/
 /debian/rrr-mod-perl5/
 /debian/rrr-mod-python3/
-/debian/rrr.install
 
 # http://www.gnu.org/software/automake
 
