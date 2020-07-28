@@ -23,9 +23,10 @@ Application examples may include:
 
 - Barcode scanners
 - Sensors (temperature, pressure, voltage etc.)
-- PLCs
+- Communication with PLCs
 - Message forwarding, media or protocol conversion etc.
 - Host monitoring, logging
+- Print spooling
 
 RRR is used by starting one ore more modules with different capabilities which reads messages from each other. Some modules
 also use networking to communicate with different types of devices or with RRR program on other hosts. Once a message
