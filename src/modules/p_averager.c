@@ -37,6 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_buffer_entry_util.h"
+#include "../lib/ip_buffer_entry_collection.h"
+#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/message_broker.h"
 
 struct averager_data {
@@ -81,7 +84,7 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 		if (averager_data->preserve_point_measurements == 1) {
 			dup_entry = NULL;
 
-			if (rrr_ip_buffer_entry_clone_no_locking(&dup_entry, entry) != 0) {
+			if (rrr_ip_buffer_entry_util_clone_no_locking(&dup_entry, entry) != 0) {
 				RRR_MSG_0("Could not duplicate message in poll_callback of averager instance %s\n",
 						INSTANCE_D_NAME(thread_data));
 				ret = 1;

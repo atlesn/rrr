@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "posix.h"
 #include "log.h"
 #include "ip_buffer_entry.h"
-#include "messages.h"
+#include "ip_buffer_entry_struct.h"
 #include "linked_list.h"
 #include "macro_utils.h"
 #include "mqtt/mqtt_topic.h"
@@ -37,7 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // and must be held when accessing the locks
 pthread_mutex_t rrr_ip_buffer_master_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int __rrr_ip_buffer_entry_lock_init (struct rrr_ip_buffer_entry *entry) {
+static int __rrr_ip_buffer_entry_lock_init (
+		struct rrr_ip_buffer_entry *entry
+) {
 	int ret = 0;
 	pthread_mutex_lock(&rrr_ip_buffer_master_lock);
 	ret = pthread_mutex_init(&entry->lock, NULL);
@@ -45,13 +47,17 @@ static int __rrr_ip_buffer_entry_lock_init (struct rrr_ip_buffer_entry *entry) {
 	return ret;
 }
 
-static void __rrr_ip_buffer_entry_lock_destroy (struct rrr_ip_buffer_entry *entry) {
+static void __rrr_ip_buffer_entry_util_lock_destroy (
+		struct rrr_ip_buffer_entry *entry
+) {
 	pthread_mutex_lock(&rrr_ip_buffer_master_lock);
 	pthread_mutex_destroy(&entry->lock);
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 }
 
-void rrr_ip_buffer_entry_lock (struct rrr_ip_buffer_entry *entry) {
+void rrr_ip_buffer_entry_lock (
+		struct rrr_ip_buffer_entry *entry
+) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_ip_buffer_entry_lock_\n");
 	}
@@ -65,7 +71,9 @@ void rrr_ip_buffer_entry_lock (struct rrr_ip_buffer_entry *entry) {
 	pthread_mutex_unlock(&rrr_ip_buffer_master_lock);
 }
 
-void rrr_ip_buffer_entry_unlock (struct rrr_ip_buffer_entry *entry) {
+void rrr_ip_buffer_entry_unlock (
+		struct rrr_ip_buffer_entry *entry
+) {
 	if (entry->usercount <= 0) {
 		RRR_BUG("Bug: Entry was destroyed in rrr_ip_buffer_entry_unlock_\n");
 	}
@@ -87,7 +95,7 @@ void rrr_ip_buffer_entry_decref_while_locked_and_unlock (
 		RRR_FREE_IF_NOT_NULL(entry->message);
 		entry->usercount = 1; // Avoid bug trap
 		rrr_ip_buffer_entry_unlock(entry);
-		__rrr_ip_buffer_entry_lock_destroy(entry);
+		__rrr_ip_buffer_entry_util_lock_destroy(entry);
 		entry->usercount = -1; // Lets us know that destroy has been called
 		free(entry);
 	}
@@ -128,41 +136,6 @@ void rrr_ip_buffer_entry_decref_void (
 	printf ("ip buffer entry decref %p void\n", entry);
 #endif
 	rrr_ip_buffer_entry_decref(entry);
-}
-
-void rrr_ip_buffer_entry_collection_clear (
-		struct rrr_ip_buffer_entry_collection *collection
-) {
-	RRR_LL_DESTROY(collection, struct rrr_ip_buffer_entry, rrr_ip_buffer_entry_decref(node));
-}
-
-void rrr_ip_buffer_entry_collection_clear_void (
-		void *arg
-) {
-	rrr_ip_buffer_entry_collection_clear(arg);
-}
-
-void rrr_ip_buffer_entry_collection_sort (
-		struct rrr_ip_buffer_entry_collection *target,
-		int (*compare)(void *message_a, void *message_b)
-) {
-	struct rrr_ip_buffer_entry_collection tmp = {0};
-
-	// TODO : This is probably a bad sorting algorithm
-
-	while (RRR_LL_COUNT(target) != 0) {
-		struct rrr_ip_buffer_entry *smallest = RRR_LL_FIRST(target);
-		RRR_LL_ITERATE_BEGIN(target, struct rrr_ip_buffer_entry);
-			if (compare(node->message, smallest->message) < 0) {
-				smallest = node;
-			}
-		RRR_LL_ITERATE_END();
-
-		RRR_LL_REMOVE_NODE_NO_FREE(target, smallest);
-		RRR_LL_APPEND(&tmp, smallest);
-	}
-
-	*target = tmp;
 }
 
 int rrr_ip_buffer_entry_new (
@@ -230,83 +203,6 @@ int rrr_ip_buffer_entry_new (
 		free(entry);
 	out:
 		return ret;
-}
-
-int rrr_ip_buffer_entry_new_with_empty_message (
-		struct rrr_ip_buffer_entry **result,
-		ssize_t message_data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int protocol
-) {
-	int ret = 0;
-
-	struct rrr_ip_buffer_entry *entry = NULL;
-	struct rrr_message *message = NULL;
-
-	// XXX : Callers treat this function as message_data_length is an absolute value
-
-	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
-
-	message = malloc(message_size);
-	if (message == NULL) {
-		RRR_MSG_0("Could not allocate message in ip_buffer_entry_new_with_message\n");
-		goto out;
-	}
-
-	if (rrr_ip_buffer_entry_new (
-			&entry,
-			message_size,
-			addr,
-			addr_len,
-			protocol,
-			message
-	) != 0) {
-		RRR_MSG_0("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
-		ret = 1;
-		goto out;
-	}
-
-	rrr_ip_buffer_entry_lock(entry);
-	memset(message, '\0', message_size);
-	rrr_ip_buffer_entry_unlock(entry);
-
-	message = NULL;
-
-	*result = entry;
-
-	out:
-	RRR_FREE_IF_NOT_NULL(message);
-	return ret;
-}
-
-int rrr_ip_buffer_entry_clone_no_locking (
-		struct rrr_ip_buffer_entry **result,
-		const struct rrr_ip_buffer_entry *source
-) {
-	// Note : Do calculation correctly, not incorrect
-	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_message) - 1);
-
-	if (message_data_length < 0) {
-		RRR_BUG("Message too small in rrr_ip_buffer_entry_clone_no_locking\n");
-	}
-
-	int ret = rrr_ip_buffer_entry_new_with_empty_message (
-			result,
-			message_data_length,
-			(struct sockaddr *) &source->addr,
-			source->addr_len,
-			source->protocol
-	);
-
-	if (ret == 0) {
-		rrr_ip_buffer_entry_lock(*result);
-		(*result)->send_time = source->send_time;
-		memcpy((*result)->message, source->message, source->data_length);
-		rrr_ip_buffer_entry_unlock(*result);
-	}
-
-	return ret;
 }
 
 void rrr_ip_buffer_entry_set_unlocked (

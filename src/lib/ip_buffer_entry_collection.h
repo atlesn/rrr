@@ -19,30 +19,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_IP_BUFFER_ENTRY_UTIL_H
-#define RRR_IP_BUFFER_ENTRY_UTIL_H
+#ifndef RRR_IP_BUFFER_ENTRY_COLLECTION_H
+#define RRR_IP_BUFFER_ENTRY_COLLECTION_H
 
-#include <stdio.h>
-#include <sys/socket.h>
+#include "linked_list.h"
 
 struct rrr_ip_buffer_entry;
-struct rrr_mqtt_topic_token;
 
-int rrr_ip_buffer_entry_util_message_topic_match (
-		int *does_match,
-		const struct rrr_ip_buffer_entry *entry,
-		const struct rrr_mqtt_topic_token *filter_first_token
+struct rrr_ip_buffer_entry_collection {
+	RRR_LL_HEAD(struct rrr_ip_buffer_entry);
+};
+
+void rrr_ip_buffer_entry_collection_clear (
+		struct rrr_ip_buffer_entry_collection *collection
 );
-int rrr_ip_buffer_entry_util_new_with_empty_message (
-		struct rrr_ip_buffer_entry **result,
-		ssize_t message_data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int protocol
+void rrr_ip_buffer_entry_collection_clear_void (
+		void *arg
 );
-int rrr_ip_buffer_entry_util_clone_no_locking (
-		struct rrr_ip_buffer_entry **result,
-		const struct rrr_ip_buffer_entry *source
+void rrr_ip_buffer_entry_collection_sort (
+		struct rrr_ip_buffer_entry_collection *target,
+		int (*compare)(void *message_a, void *message_b)
 );
 
-#endif /* RRR_IP_BUFFER_ENTRY_UTIL_H */
+#endif /* RRR_IP_BUFFER_ENTRY_COLLECTION_H */

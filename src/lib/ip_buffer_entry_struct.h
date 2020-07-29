@@ -19,30 +19,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_IP_BUFFER_ENTRY_UTIL_H
-#define RRR_IP_BUFFER_ENTRY_UTIL_H
+#ifndef RRR_IP_BUFFER_ENTRY_STRUCT_H
+#define RRR_IP_BUFFER_ENTRY_STRUCT_H
 
-#include <stdio.h>
 #include <sys/socket.h>
+#include <stdint.h>
+#include <pthread.h>
 
-struct rrr_ip_buffer_entry;
-struct rrr_mqtt_topic_token;
+#include "socket/rrr_socket.h"
+#include "linked_list.h"
 
-int rrr_ip_buffer_entry_util_message_topic_match (
-		int *does_match,
-		const struct rrr_ip_buffer_entry *entry,
-		const struct rrr_mqtt_topic_token *filter_first_token
-);
-int rrr_ip_buffer_entry_util_new_with_empty_message (
-		struct rrr_ip_buffer_entry **result,
-		ssize_t message_data_length,
-		const struct sockaddr *addr,
-		socklen_t addr_len,
-		int protocol
-);
-int rrr_ip_buffer_entry_util_clone_no_locking (
-		struct rrr_ip_buffer_entry **result,
-		const struct rrr_ip_buffer_entry *source
-);
+// TODO : Make this smaller
+// TODO : Change data_length to unsigned
 
-#endif /* RRR_IP_BUFFER_ENTRY_UTIL_H */
+struct rrr_ip_buffer_entry {
+	RRR_LL_NODE(struct rrr_ip_buffer_entry);
+	pthread_mutex_t lock;
+	int usercount;
+	ssize_t data_length;
+	struct sockaddr_storage addr;
+	socklen_t addr_len;
+	int protocol;
+	uint64_t send_time;
+	void *message;
+};
+
+#endif /* RRR_IP_BUFFER_ENTRY_STRUCT_H */

@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../buffer.h"
 #include "../modules.h"
 #include "../ip_buffer_entry.h"
+#include "../ip_buffer_entry_struct.h"
 #include "../message_addr.h"
 #include "../message_log.h"
 #include "../messages.h"

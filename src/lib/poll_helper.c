@@ -28,6 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "message_broker.h"
 #include "ip_buffer_entry_util.h"
+#include "ip_buffer_entry.h"
 
 static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);
@@ -205,7 +206,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_ip_buffer_entry_util_unlock(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 

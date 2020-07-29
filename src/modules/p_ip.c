@@ -36,6 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip.h"
 #include "../lib/ip_util.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/ip_accept_data.h"
 #include "../lib/array.h"
 #include "../lib/type.h"

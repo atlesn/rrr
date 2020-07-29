@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
