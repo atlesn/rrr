@@ -169,7 +169,7 @@ int read_rrr_message_callback (struct rrr_message **message, void *arg) {
 	struct socket_data *data = callback_data->data;
 
 	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
-		if (rrr_message_set_topic(message, data->default_topic, strlen(data->default_topic)) != 0) {
+		if (rrr_message_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
 			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;

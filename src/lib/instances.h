@@ -84,6 +84,7 @@ struct rrr_instance_thread_init_data {
 	struct rrr_message_broker *message_broker;
 	struct rrr_fork_handler *fork_handler;
 	const struct rrr_mqtt_topic_token *topic_first_token;
+	const char *topic_str;
 };
 
 struct rrr_instance_thread_data {
@@ -116,6 +117,7 @@ struct rrr_instance_thread_data {
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
 #define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
+#define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
 		thread_data->init_data.message_broker, thread_data->message_broker_handle
 

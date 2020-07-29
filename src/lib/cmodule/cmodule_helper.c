@@ -692,7 +692,8 @@ void rrr_cmodule_helper_loop (
 
 	if (rrr_poll_collection_count(poll) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
-			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n");
+			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
+				INSTANCE_D_NAME(thread_data));
 			return;
 		}
 		no_polling = 1;

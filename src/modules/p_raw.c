@@ -48,27 +48,26 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_instance_thread_data *thread_data = arg;
 	struct raw_data *raw_data = thread_data->private_data;
 	struct rrr_array array_tmp = {0};
+	char *topic_tmp = NULL;
 
 	int ret = 0;
 
 	struct rrr_message *reading = entry->message;
 
-	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp from %" PRIu64 "\n",
+	RRR_DBG_3 ("Raw %s: Result from buffer: length %u timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), MSG_TOTAL_SIZE(reading), reading->timestamp);
 
 	if (raw_data->print_data != 0) {
-		ssize_t print_length = MSG_DATA_LENGTH(reading);
-		if (print_length > 100) {
-			print_length = 100;
-		}
-		char buf[print_length + 1];
-		memcpy(buf, MSG_DATA_PTR(reading), print_length);
-		buf[print_length] = '\0';
-
 		// Use high debuglevel to force suppression of messages in journal module
 
-		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 ": %s\n",
-				INSTANCE_D_NAME(thread_data), reading->timestamp, buf);
+		if (rrr_message_topic_get(&topic_tmp, reading) != 0 ) {
+			RRR_MSG_0("Error while getting topic from message in raw_poll_callback\n");
+			ret = 1;
+			goto out;
+		}
+
+		RRR_DBG_2("Raw %s: Received data with timestamp %" PRIu64 " topic '%s'\n",
+				INSTANCE_D_NAME(thread_data), reading->timestamp, topic_tmp);
 
 		if (MSG_IS_ARRAY(reading)) {
 			if (rrr_array_message_append_to_collection(&array_tmp, reading) != 0) {
@@ -89,6 +88,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	raw_data->message_count++;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
 	rrr_ip_buffer_entry_unlock(entry);
 	return ret;

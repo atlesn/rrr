@@ -263,6 +263,19 @@ int rrr_mqtt_topic_tokens_clone (
 		return ret;
 }
 
+static const char *__rrr_mqtt_topic_strnchr (
+		const char *haystack,
+		const char chr,
+		const char *end
+) {
+	for (const char *pos = haystack; pos < end; pos++) {
+		if (*pos == chr) {
+			return pos;
+		}
+	}
+	return NULL;
+}
+
 int rrr_mqtt_topic_tokenize_with_end (
 		struct rrr_mqtt_topic_token **first_token,
 		const char *topic,
@@ -277,7 +290,7 @@ int rrr_mqtt_topic_tokenize_with_end (
 	int ret = 0;
 
 	if (pos < end) {
-		const char *token_end = strstr(pos, "/");
+		const char *token_end = __rrr_mqtt_topic_strnchr(pos, '/', end);
 		if (token_end == NULL) {
 			token_end = end;
 		}
@@ -297,7 +310,7 @@ int rrr_mqtt_topic_tokenize_with_end (
 		pos += len + 1;
 
 		if (pos < end) {
-			ret = rrr_mqtt_topic_tokenize(&token->next, pos);
+			ret = rrr_mqtt_topic_tokenize_with_end(&token->next, pos, end);
 			if (ret != 0) {
 				goto out_cleanup;
 			}

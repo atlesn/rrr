@@ -96,6 +96,7 @@ int rrr_main_start_threads (
 		init_data.message_broker = message_broker;
 		init_data.fork_handler = fork_handler;
 		init_data.topic_first_token = instance->topic_first_token;
+		init_data.topic_str = instance->topic_filter;
 
 		RRR_DBG_1("Initializing instance %p '%s'\n", instance, instance->config->name);
 

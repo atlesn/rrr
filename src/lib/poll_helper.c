@@ -197,12 +197,16 @@ static int __rrr_poll_delete_topic_filtering_callback (
 		goto out;
 	}
 
-	RRR_MSG_3("Result of topic match while polling in instance %s: %s\n",
+	RRR_DBG_3("Result of topic match while polling in instance %s: %s\n",
 			INSTANCE_D_NAME(callback_data->thread_data), (does_match ? "MATCH" : "MISMATCH/DROPPED"));
 
 	if (does_match) {
 		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
 		return callback_data->callback(entry, callback_data->thread_data);
+	}
+	else {
+		RRR_DBG_3("Topic filter for instance %s is: '%s'\n",
+				INSTANCE_D_NAME(callback_data->thread_data), INSTANCE_D_TOPIC_STR(callback_data->thread_data));
 	}
 
 	out:

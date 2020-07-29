@@ -116,6 +116,8 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 
 	int ret = 0;
 
+	char *topic_tmp = NULL;
+
 	*does_match = 0;
 
 	struct rrr_mqtt_topic_token *entry_first_token = NULL;
@@ -144,6 +146,14 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 	}
 
 	if ((ret = rrr_mqtt_topic_match_tokens_recursively(filter_first_token, entry_first_token)) != RRR_MQTT_TOKEN_MATCH) {
+		if (RRR_DEBUGLEVEL_3) {
+			if ((ret = rrr_message_topic_get(&topic_tmp, message)) != 0) {
+				RRR_MSG_0("Could not get topic of message in rrr_ip_buffer_entry_util_message_topic_match while printing debug message\n");
+				goto out;
+			}
+			RRR_MSG_3("Mismatched topic: '%s'\n", topic_tmp);
+		}
+
 		ret = 0;
 		goto out;
 	}
@@ -151,6 +161,7 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 	*does_match = 1;
 
 	out:
+	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_mqtt_topic_token_destroy(entry_first_token);
 	return ret;
 }

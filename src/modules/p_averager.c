@@ -99,7 +99,7 @@ int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 			if (averager_data->msg_topic != NULL) {
 				// This will re-allocate the message
-				if (rrr_message_set_topic(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
+				if (rrr_message_topic_set(&dup_message, averager_data->msg_topic, strlen(averager_data->msg_topic)) != 0) {
 					RRR_MSG_0("Warning: Error while setting topic to '%s' in poll_callback of averager\n", averager_data->msg_topic);
 				}
 			}

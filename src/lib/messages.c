@@ -33,6 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket_msg.h"
 #include "messages.h"
 #include "macro_utils.h"
+#include "rrr_types.h"
 
 struct rrr_message *rrr_message_new_array (
 	rrr_u64 time,
@@ -311,7 +312,7 @@ struct rrr_message *rrr_message_duplicate_no_data (
 	return ret;
 }
 
-int rrr_message_set_topic (
+int rrr_message_topic_set (
 		struct rrr_message **message,
 		const char *topic,
 		ssize_t topic_len
@@ -327,6 +328,24 @@ int rrr_message_set_topic (
 
 	free(*message);
 	*message = ret;
+
+	return 0;
+}
+
+int rrr_message_topic_get (
+		char **result,
+		const struct rrr_message *message
+) {
+	if ((*result = malloc(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
+		RRR_MSG_0("Could not allocate memory in rrr_message_topic_get\n");
+		return 1;
+	}
+
+	if (MSG_TOPIC_LENGTH(message) > 0) {
+		memcpy(*result, MSG_TOPIC_PTR(message), MSG_TOPIC_LENGTH(message));
+	}
+
+	*((*result) + MSG_TOPIC_LENGTH(message)) = '\0';
 
 	return 0;
 }
