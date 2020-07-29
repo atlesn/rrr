@@ -27,6 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instances.h"
 #include "buffer.h"
 #include "message_broker.h"
+#include "ip_buffer_entry_util.h"
+#include "ip_buffer_entry.h"
 
 static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);
@@ -174,6 +176,44 @@ int rrr_poll_do_poll_discard (
 	return ret;
 }
 
+struct rrr_poll_delete_topic_filtering_callback_data {
+	struct rrr_instance_thread_data *thread_data;
+	int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE);
+};
+
+static int __rrr_poll_delete_topic_filtering_callback (
+		RRR_MODULE_POLL_CALLBACK_SIGNATURE
+) {
+	struct rrr_poll_delete_topic_filtering_callback_data *callback_data = arg;
+
+	int ret = RRR_MESSAGE_BROKER_OK;
+
+	int does_match = 0;
+
+	if (rrr_ip_buffer_entry_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
+		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
+				INSTANCE_D_NAME(callback_data->thread_data));
+		ret = RRR_MESSAGE_BROKER_ERR;
+		goto out;
+	}
+
+	RRR_DBG_3("Result of topic match while polling in instance %s: %s\n",
+			INSTANCE_D_NAME(callback_data->thread_data), (does_match ? "MATCH" : "MISMATCH/DROPPED"));
+
+	if (does_match) {
+		// Callback unlocks, !! DO NOT continue to out, RETURN HERE !!
+		return callback_data->callback(entry, callback_data->thread_data);
+	}
+	else {
+		RRR_DBG_3("Topic filter for instance %s is: '%s'\n",
+				INSTANCE_D_NAME(callback_data->thread_data), INSTANCE_D_TOPIC_STR(callback_data->thread_data));
+	}
+
+	out:
+	rrr_ip_buffer_entry_unlock(entry);
+	return ret;
+}
+
 int rrr_poll_do_poll_delete (
 		struct rrr_instance_thread_data *thread_data,
 		struct rrr_poll_collection *collection,
@@ -182,6 +222,21 @@ int rrr_poll_do_poll_delete (
 ) {
 	int ret = 0;
 
+	// Small optimization, skip topic filtering callback when filtering is not active
+
+	int (*callback_to_use)(RRR_MODULE_POLL_CALLBACK_SIGNATURE) = callback;
+	void *callback_arg = thread_data;
+
+	struct rrr_poll_delete_topic_filtering_callback_data filter_callback_data;
+
+	if (thread_data->init_data.topic_first_token != NULL) {
+		filter_callback_data.callback = callback;
+		filter_callback_data.thread_data = thread_data;
+
+		callback_to_use = __rrr_poll_delete_topic_filtering_callback;
+		callback_arg = &filter_callback_data;
+	}
+
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_poll_collection_entry);
 		int ret_tmp;
 
@@ -189,8 +244,8 @@ int rrr_poll_do_poll_delete (
 
 		ret_tmp = rrr_message_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(entry->thread_data),
-				callback,
-				thread_data,
+				callback_to_use,
+				callback_arg,
 				wait_milliseconds
 		);
 

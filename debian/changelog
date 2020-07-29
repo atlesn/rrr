@@ -1,3 +1,18 @@
+rrr (1.7-1) buster; urgency=medium
+
+  * Add ability to filter messages from senders by MQTT topic
+    in all modules
+  * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Wed, 29 Jul 2020 23:27:07 +0200
+
+rrr (1.6-1) buster; urgency=medium
+
+  * Add missing install file
+  * Minor fixes
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 27 Jul 2020 22:22:00 +0200
+
 rrr (1.6-0deb3) buster; urgency=medium
 
   * Create split Debian packages

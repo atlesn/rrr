@@ -48,27 +48,42 @@ which are sources (see MODULES section). An instance section ends when a new beg
 or when we reach the end of the file.
 .PP
 .nf
-# Comment begins with #, the rest of the line is ignored
-[INSTANCE_1_NAME]             # User chosen name of the instance
-module={MODULE NAME}        # Which module to use for the instance
-senders=INSTANCE NAME,...   # Which other instances to read from (not for source modules)
-wait_for=WAIT FOR,...       # On program startup, wait for these instances to start before starting
-argument1=value1            # Module-specific arguments
+# Comment are like this, the rest of the line is ignored. The instance name
+# and module name are the ony parameters which are always required.
+
+[INSTANCE_1_NAME]    # User chosen name of the instance
+module={MODULE NAME} # Which module to use for the instance
+
+# Which other instances to read from (not for source only modules)
+senders=INSTANCE NAME,...
+
+# On program startup, wait for these instances to start before starting (optional)
+wait_for=WAIT FOR,...
+
+# Drop all messages from senders which do not match the set topic (optional)
+topic_filter=MQTT TOPIC FILTER
+
+# Module-specific arguments (module-dependant)
+argument1=value1
 
 [INSTANCE_2_NAME]
 module=...
 .PP
 If an instance is specified as sender in more than one other instance, these will compete
-about messages from it. Instances may not use themselves as senders.
+about messages from it. Use the
+.B duplicator
+module if a message is to be processed by multiple modules, for instance when different modules should process messages
+with different topics. Instances may also not use themselves as senders.
 .SH MESSAGES
 A message consists of at least a timestamp (in microseconds) and either arbitary data or
-and array of values.
-.SS DATA MESSAGES
-A data message is a message which arbitary data in it.
-.SS ARRAY MESSAGES
-Some modules support parsing data arrays from externally or from other modules. They might require a
-list of expected data types to be specified in their configuration. If the total size of the input
-does not match the received input, parsing of the message will fail.
+and array of values. Messages may in addition contain an MQTT topic which can be used internally by certain modules.
+.PP
+Messages can either contain arbitary data or a data array.
+.PP
+Modules which support parsing data arrays from externally or from other modules might require a list of expected data
+types to be specified in their configuration. If the total size of the input does not match the received input, parsing
+of the message will fail. Some modules also generate array messages internally, and they can be created within Perl and
+Python scripts. Fields from an HTTP request can be mapped into an array, and an array can be mapped into database columns.
 .PP
 The general syntax for an array parsing specification is a comma separated list of types with length and item count specifications. 
 .PP
@@ -79,8 +94,6 @@ Refer to the
 section of
 .Xr rrr_post(1)
 for the complete specification of all the types.
-.PP
-Arrays are also constructed from structured data sources, like an HTTP request. 
 .SS IP MESSAGES
 Some messages contain IP data, for instance messages created by a module which reads from the network. The address
 of the sender will be contained within the message. All modules may use IP-messages, but not all of them use the IP-data. 

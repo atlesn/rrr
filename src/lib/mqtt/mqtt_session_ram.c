@@ -271,6 +271,7 @@ static int __rrr_mqtt_session_ram_delivery_local (
 			RRR_MSG_0("Error while checking PUBLISH against subscriptions in __rrr_mqtt_session_ram_delivery_local\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		}
+		ret = RRR_MQTT_SESSION_OK;
 		goto out; // No match
 	}
 
@@ -1364,8 +1365,8 @@ static int __rrr_mqtt_session_ram_process_ack_callback (RRR_FIFO_READ_CALLBACK_A
 				publish->qos_packets.puback = NULL;
 			}
 			else if (publish->is_outbound == 0) {
-				if (ram_session->delivery_method(ram_session, publish) != RRR_MQTT_SESSION_OK) {
-					RRR_MSG_0("Error while delivering PUBLISH in __rrr_mqtt_session_ram_process_ack_callback A\n");
+				if ((ret = ram_session->delivery_method(ram_session, publish)) != RRR_MQTT_SESSION_OK) {
+					RRR_MSG_0("Error while delivering PUBLISH in __rrr_mqtt_session_ram_process_ack_callback A return was %i\n", ret);
 					ret = RRR_FIFO_GLOBAL_ERR;
 					goto out;
 				}

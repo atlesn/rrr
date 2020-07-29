@@ -31,6 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../buffer.h"
 #include "../modules.h"
 #include "../ip_buffer_entry.h"
+#include "../ip_buffer_entry_struct.h"
 #include "../message_addr.h"
 #include "../message_log.h"
 #include "../messages.h"
@@ -691,7 +692,8 @@ void rrr_cmodule_helper_loop (
 
 	if (rrr_poll_collection_count(poll) == 0) {
 		if (INSTANCE_D_CMODULE(thread_data)->config_data.do_processing != 0) {
-			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n");
+			RRR_MSG_0("Instance %s had no senders but a processor function is defined, this is an invalid configuration.\n",
+				INSTANCE_D_NAME(thread_data));
 			return;
 		}
 		no_polling = 1;
