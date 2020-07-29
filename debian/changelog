@@ -1,3 +1,10 @@
+rrr (1.7-2) buster; urgency=medium
+
+  * Change default prefix of journal message topic by removing
+    leading slash
+
+ -- Atle Solbakken <atle@goliathdns.no>  Thu, 30 Jul 2020 22:33:28 +0200
+
 rrr (1.7-1) buster; urgency=medium
 
   * Add ability to filter messages from senders by MQTT topic

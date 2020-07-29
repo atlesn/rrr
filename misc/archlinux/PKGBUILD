@@ -6,7 +6,7 @@
 # Maintainer: Your Name <youremail@domain.com>
 pkgname="rrr"
 pkgver=1.7
-pkgrel=1
+pkgrel=2
 pkgdesc="ReadRouteRecord"
 arch=('i686' 'arm64' 'x86_64')
 url="https://www.github.com/atlesn/rrr"
