@@ -29,6 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "linked_list.h"
 #include "macro_utils.h"
+#include "mqtt/mqtt_topic.h"
 
 //#define RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 
@@ -242,6 +243,8 @@ int rrr_ip_buffer_entry_new_with_empty_message (
 
 	struct rrr_ip_buffer_entry *entry = NULL;
 	struct rrr_message *message = NULL;
+
+	// XXX : Callers treat this function as message_data_length is an absolute value
 
 	ssize_t message_size = sizeof(*message) - 1 + message_data_length;
 

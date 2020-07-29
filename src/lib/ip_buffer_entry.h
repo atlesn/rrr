@@ -29,6 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "socket/rrr_socket.h"
 #include "linked_list.h"
 
+// TODO : Make this smaller
+// TODO : Change data_length to unsigned
+
 struct rrr_ip_buffer_entry {
 	RRR_LL_NODE(struct rrr_ip_buffer_entry);
 	pthread_mutex_t lock;

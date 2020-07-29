@@ -30,6 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instance_config.h"
 #include "message_broker.h"
 #include "poll_helper.h"
+#include "mqtt/mqtt_topic.h"
 #include "stats/stats_instance.h"
 
 struct rrr_instance_metadata *rrr_instance_find_by_thread (
@@ -106,6 +107,9 @@ static void __rrr_instance_metadata_destroy (
 	rrr_instance_collection_clear(&target->wait_for);
 
 	rrr_signal_handler_remove(target->signal_handler);
+
+	RRR_FREE_IF_NOT_NULL(target->topic_filter);
+	rrr_mqtt_topic_token_destroy(target->topic_first_token);
 
 	free(target->dynamic_data);
 	free(target);
@@ -264,7 +268,33 @@ static int __rrr_add_instance_callback(const char *value, void *_data) {
 	return ret;
 }
 
-int rrr_instance_add_wait_for_instances (
+static int __rrr_instance_parse_topic_filter (
+		struct rrr_instance_metadata *data
+) {
+	int ret = 0;
+
+	struct rrr_instance_config *config = data->config;
+
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_UTF8_DEFAULT_NULL("topic_filter", topic_filter);
+
+	if (data->topic_filter != NULL) {
+		if (rrr_mqtt_topic_filter_validate_name(data->topic_filter) != 0) {
+			RRR_MSG_0("Invalid topic_filter setting found for instance %s\n", config->name);
+			ret = 1;
+			goto out;
+		}
+		if (rrr_mqtt_topic_tokenize(&data->topic_first_token, data->topic_filter) != 0) {
+			RRR_MSG_0("Error while tokenizing topic filter in __rrr_instance_parse_topic_filter\n");
+			ret = 1;
+			goto out;
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static int __rrr_instance_add_wait_for_instances (
 		struct rrr_instance_metadata_collection *instances,
 		struct rrr_instance_metadata *instance
 ) {
@@ -294,7 +324,7 @@ int rrr_instance_add_wait_for_instances (
 	return ret;
 }
 
-int rrr_instance_add_senders (
+static int __rrr_instance_add_senders (
 		struct rrr_instance_metadata_collection *instances,
 		struct rrr_instance_metadata *instance
 ) {
@@ -662,15 +692,21 @@ int rrr_instance_process_from_config (
 
 	RRR_INSTANCE_LOOP(instance, instances)
 	{
-		ret = rrr_instance_add_senders(instances, instance);
+		ret = __rrr_instance_add_senders(instances, instance);
 		if (ret != 0) {
-			RRR_MSG_0("Adding senders failed for %s\n",
+			RRR_MSG_0("Adding senders failed for instance %s\n",
 					instance->dynamic_data->instance_name);
 			goto out;
 		}
-		ret = rrr_instance_add_wait_for_instances(instances, instance);
+		ret = __rrr_instance_add_wait_for_instances(instances, instance);
 		if (ret != 0) {
-			RRR_MSG_0("Adding wait for instances failed for %s\n",
+			RRR_MSG_0("Adding wait for instances failed for instance %s\n",
+					instance->dynamic_data->instance_name);
+			goto out;
+		}
+		ret = __rrr_instance_parse_topic_filter(instance);
+		if (ret != 0) {
+			RRR_MSG_0("Parsing topic filter failed for instance %s\n",
 					instance->dynamic_data->instance_name);
 			goto out;
 		}
