@@ -1,2 +1,2 @@
 usr/lib/rrr/mysql.*
-usr/lib/x86_64-linux-gnu/librrrmysql.*
+usr/lib/*/librrrmysql.*

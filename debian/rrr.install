@@ -1,6 +1,6 @@
 etc/*
 usr/bin/*
-usr/lib/x86_64-linux-gnu/perl5/*
+usr/lib/*/perl5/*
 usr/share/man/*
 usr/lib/rrr/cmodules/*
 usr/lib/rrr/averager.la
