@@ -63,7 +63,7 @@ struct averager_data {
 #define RRR_DEFAULT_AVERAGER_INTERVAL 10
 
 // Messages when polling from sender comes in here
-int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int averager_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_message *message = entry->message;
 
 	struct rrr_instance_thread_data *thread_data = arg;
@@ -402,7 +402,7 @@ int averager_calculate_average(struct averager_data *data) {
 	return ret;
 }
 
-void data_cleanup(void *arg) {
+void averager_data_cleanup(void *arg) {
 	// Make sure all readers have left and invalidate buffer
 	struct averager_data *data = (struct averager_data *) arg;
 	// Don't destroy mutex, threads might still try to use it
@@ -412,7 +412,7 @@ void data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->msg_topic);
 }
 
-int data_init(struct averager_data *data, struct rrr_instance_thread_data *thread_data) {
+int averager_data_init(struct averager_data *data, struct rrr_instance_thread_data *thread_data) {
 	memset(data, '\0', sizeof(*data));
 
 	data->thread_data = thread_data;
@@ -420,7 +420,7 @@ int data_init(struct averager_data *data, struct rrr_instance_thread_data *threa
 	return 0;
 }
 
-int parse_config (struct averager_data *data, struct rrr_instance_config *config) {
+int averager_parse_config (struct averager_data *data, struct rrr_instance_config *config) {
 	int ret = 0;
 
 	rrr_setting_uint timespan = 0;
@@ -492,7 +492,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 
 	int init_ret = 0;
-	if ((init_ret = data_init(data, thread_data)) != 0) {
+	if ((init_ret = averager_data_init(data, thread_data)) != 0) {
 		RRR_MSG_0("Could not initialize data in averager instance %s flags %i\n",
 				INSTANCE_D_NAME(thread_data), init_ret);
 		pthread_exit(0);
@@ -500,14 +500,14 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 	RRR_DBG_1 ("Averager thread data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(averager_data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_RUNNING);
 
-	if (parse_config(data, thread_data->init_data.instance_config) != 0) {
+	if (averager_parse_config(data, thread_data->init_data.instance_config) != 0) {
 		RRR_MSG_0("Could parse configuration in averager instance %s\n",
 				INSTANCE_D_NAME(thread_data));
 		goto out_message;
@@ -530,7 +530,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 
 		averager_maintain_buffer(data);
 
-		if (rrr_poll_do_poll_delete(thread_data, thread_data->poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete(thread_data, thread_data->poll, averager_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in averager instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -568,11 +568,11 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int averager_test_config (struct rrr_instance_config *config) {
 	struct averager_data data;
-	data_init(&data, NULL);
-	int ret = parse_config(&data, config);
-	data_cleanup(&data);
+	averager_data_init(&data, NULL);
+	int ret = averager_parse_config(&data, config);
+	averager_data_cleanup(&data);
 	return ret;
 }
 
@@ -580,7 +580,7 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_averager,
 		NULL,
-		test_config,
+		averager_test_config,
 		NULL,
 		NULL
 };

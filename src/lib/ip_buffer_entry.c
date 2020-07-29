@@ -284,9 +284,16 @@ int rrr_ip_buffer_entry_clone_no_locking (
 		struct rrr_ip_buffer_entry **result,
 		const struct rrr_ip_buffer_entry *source
 ) {
+	// Note : Do calculation correctly, not incorrect
+	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_message) - 1);
+
+	if (message_data_length < 0) {
+		RRR_BUG("Message too small in rrr_ip_buffer_entry_clone_no_locking\n");
+	}
+
 	int ret = rrr_ip_buffer_entry_new_with_empty_message (
 			result,
-			source->data_length,
+			message_data_length,
 			(struct sockaddr *) &source->addr,
 			source->addr_len,
 			source->protocol
