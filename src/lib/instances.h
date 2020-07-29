@@ -34,6 +34,7 @@ struct rrr_fork_handler;
 struct rrr_stats_engine;
 struct rrr_message_broker;
 typedef void rrr_message_broker_costumer_handle;
+struct rrr_mqtt_topic_token;
 
 struct rrr_instance_metadata {
 	struct rrr_instance_metadata *next;
@@ -44,6 +45,8 @@ struct rrr_instance_metadata {
 	struct rrr_instance_config *config;
 	struct rrr_signal_handler *signal_handler;
 	unsigned long int senders_count;
+	char *topic_filter;
+	struct rrr_mqtt_topic_token *topic_first_token;
 };
 
 #define INSTANCE_M_NAME(instance) instance->dynamic_data->instance_name
@@ -80,6 +83,8 @@ struct rrr_instance_thread_init_data {
 	struct rrr_stats_engine *stats;
 	struct rrr_message_broker *message_broker;
 	struct rrr_fork_handler *fork_handler;
+	const struct rrr_mqtt_topic_token *topic_first_token;
+	const char *topic_str;
 };
 
 struct rrr_instance_thread_data {
@@ -111,6 +116,8 @@ struct rrr_instance_thread_data {
 #define INSTANCE_D_CONFIG(thread_data) thread_data->init_data.instance_config
 #define INSTANCE_D_CMODULE(thread_data) thread_data->cmodule
 #define INSTANCE_D_SETTINGS(thread_data) thread_data->init_data.instance_config->settings
+#define INSTANCE_D_TOPIC(thread_data) thread_data->init_data.topic_first_token
+#define INSTANCE_D_TOPIC_STR(thread_data) thread_data->init_data.topic_str
 #define INSTANCE_D_BROKER_ARGS(thread_data) \
 		thread_data->init_data.message_broker, thread_data->message_broker_handle
 
@@ -139,14 +146,6 @@ void rrr_instance_metadata_collection_destroy (
 );
 int rrr_instance_metadata_collection_new (
 		struct rrr_instance_metadata_collection **target
-);
-int rrr_instance_add_senders (
-		struct rrr_instance_metadata_collection *instances,
-		struct rrr_instance_metadata *instance
-);
-int rrr_instance_add_wait_for_instances (
-		struct rrr_instance_metadata_collection *instances,
-		struct rrr_instance_metadata *instance
 );
 int rrr_instance_load_and_save (
 		struct rrr_instance_metadata_collection *instances,

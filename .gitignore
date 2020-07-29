@@ -32,6 +32,7 @@ input_data
 /debian/tmp/
 /debian/librrr-dev/
 /debian/librrr1/
+/debian/rrr-mod-mysql/
 /debian/rrr-mod-mariadb/
 /debian/rrr-mod-mysql/
 /debian/rrr-mod-perl5/

@@ -37,6 +37,10 @@ struct rrr_mqtt_topic_token {
 int rrr_mqtt_topic_filter_validate_name (
 		const char *topic_filter
 );
+int rrr_mqtt_topic_validate_name_with_end (
+		const char *topic_name,
+		const char *end
+);
 int rrr_mqtt_topic_validate_name (
 		const char *topic_name
 );
@@ -54,6 +58,11 @@ void rrr_mqtt_topic_token_destroy (
 int rrr_mqtt_topic_tokens_clone (
 		struct rrr_mqtt_topic_token **target,
 		const struct rrr_mqtt_topic_token *first_token
+);
+int rrr_mqtt_topic_tokenize_with_end (
+		struct rrr_mqtt_topic_token **first_token,
+		const char *topic,
+		const char *end
 );
 int rrr_mqtt_topic_tokenize (
 		struct rrr_mqtt_topic_token **first_token,

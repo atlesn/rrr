@@ -44,6 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "posix.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
+#include "ip_buffer_entry_struct.h"
 #include "ip_accept_data.h"
 #include "ip_util.h"
 #include "log.h"
