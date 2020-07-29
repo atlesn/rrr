@@ -44,5 +44,16 @@ int rrr_ip_buffer_entry_util_clone_no_locking (
 		struct rrr_ip_buffer_entry **result,
 		const struct rrr_ip_buffer_entry *source
 );
+int rrr_ip_buffer_entry_util_new_with_empty_message (
+		struct rrr_ip_buffer_entry **result,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int protocol
+);
+int rrr_ip_buffer_entry_util_clone_no_locking (
+		struct rrr_ip_buffer_entry **result,
+		const struct rrr_ip_buffer_entry *source
+);
 
 #endif /* RRR_IP_BUFFER_ENTRY_UTIL_H */
