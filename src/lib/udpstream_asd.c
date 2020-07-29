@@ -26,6 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
+#include "ip_buffer_entry_struct.h"
 #include "udpstream_asd.h"
 #include "buffer.h"
 #include "rrr_time.h"

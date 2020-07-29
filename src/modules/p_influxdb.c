@@ -43,6 +43,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/read_constants.h"
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"

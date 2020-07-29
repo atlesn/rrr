@@ -2,7 +2,7 @@
 
 Read Route Record
 
-Copyright (C) 2020 Atle Solbakken atle@goliathdns.no
+Copyright (C) 2018-2020 Atle Solbakken atle@goliathdns.no
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_IP_BUFFER_ENTRY_UTIL_H
 #define RRR_IP_BUFFER_ENTRY_UTIL_H
 
+#include <stdio.h>
+#include <sys/socket.h>
+
 struct rrr_ip_buffer_entry;
 struct rrr_mqtt_topic_token;
 
@@ -30,8 +33,19 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 		const struct rrr_ip_buffer_entry *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token
 );
-void rrr_ip_buffer_entry_util_unlock (
+void rrr_ip_buffer_entry_unlock (
 		struct rrr_ip_buffer_entry *entry
+);
+int rrr_ip_buffer_entry_util_new_with_empty_message (
+		struct rrr_ip_buffer_entry **result,
+		ssize_t message_data_length,
+		const struct sockaddr *addr,
+		socklen_t addr_len,
+		int protocol
+);
+int rrr_ip_buffer_entry_util_clone_no_locking (
+		struct rrr_ip_buffer_entry **result,
+		const struct rrr_ip_buffer_entry *source
 );
 
 #endif /* RRR_IP_BUFFER_ENTRY_UTIL_H */

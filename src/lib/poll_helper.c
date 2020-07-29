@@ -205,7 +205,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_ip_buffer_entry_util_unlock(entry);
+	rrr_ip_buffer_entry_unlock(entry);
 	return ret;
 }
 

@@ -30,6 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_broker.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
+#include "ip_buffer_entry_struct.h"
+#include "ip_buffer_entry_util.h"
+#include "ip_buffer_entry_collection.h"
 #include "macro_utils.h"
 
 static void __rrr_message_broker_split_buffer_node_destroy(struct rrr_message_broker_split_buffer_node *node) {
@@ -531,7 +534,7 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 
 	struct rrr_ip_buffer_entry *target = NULL;
 
-	if (rrr_ip_buffer_entry_clone_no_locking(&target, source) != 0) {
+	if (rrr_ip_buffer_entry_util_clone_no_locking(&target, source) != 0) {
 		RRR_MSG_0("Could not clone ip buffer entry in __rrr_message_broker_write_clone_and_write_entry_callback\n");
 		ret = 1;
 		goto out;

@@ -36,6 +36,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/ip_buffer_entry.h"
+#include "../lib/ip_buffer_entry_util.h"
+#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -388,7 +391,7 @@ static int ipclient_udpstream_allocator_intermediate (void *arg1, void *arg2) {
 	// Points to data inside entry, not to be freed except from when entry is destroyed
 	void *joined_data = NULL;
 
-	if (rrr_ip_buffer_entry_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
+	if (rrr_ip_buffer_entry_util_new_with_empty_message(&entry, callback_data->size, NULL, 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate entry in ipclient_udpstream_allocator_intermediate\n");
 		ret = 1;
 		goto out;
