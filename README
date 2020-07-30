@@ -132,6 +132,9 @@ Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If y
 MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
 on the Ubuntu branch (`git checkout ubuntu`).
 
+Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
+built from the `debian-testing` branch.
+
 ### COMPILE
 
 Compiling the source requires some basic knowledge on how to build a program using Autotools. Usually,
