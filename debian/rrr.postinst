@@ -1,2 +1,10 @@
 adduser --system --group rrr
+
+if systemctl is-active --quiet rrr; then
+	echo "Restarting RRR service..."
+	systemctl restart rrr
+else
+	echo "Not restarting RRR as it is currently not running"
+fi
+
 #DEBHELPER#
