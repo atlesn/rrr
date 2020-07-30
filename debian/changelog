@@ -1,8 +1,14 @@
-rrr (1.7-2ubuntu1) focal; urgency=medium
+rrr (1.7-3ubuntu1) focal; urgency=medium
 
   * Ubuntu release
 
- -- Atle Solbakken <atle@goliathdns.no>  Thu, 30 Jul 2020 23:15:36 +0200
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 31 Jul 2020 00:18:50 +0200
+
+rrr (1.7-3) buster; urgency=medium
+
+  * Restart RRR service in post-installation script
+
+ -- Atle Solbakken <atle@goliathdns.no>  Fri, 31 Jul 2020 00:05:51 +0200
 
 rrr (1.7-2) buster; urgency=medium
 
