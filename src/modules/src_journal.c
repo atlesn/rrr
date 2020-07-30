@@ -45,8 +45,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/gnu.h"
 #include "../lib/rrr_strerror.h"
 
-// No trailing /
-#define RRR_JOURNAL_TOPIC_PREFIX "/rrr/journal"
+// No trailing or leading /
+#define RRR_JOURNAL_TOPIC_PREFIX "rrr/journal"
 #define RRR_JOURNAL_HOSTNAME_MAX_LEN 256
 
 struct journal_queue_entry {
