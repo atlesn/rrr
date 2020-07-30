@@ -9,7 +9,7 @@ RRR can read data of different types from external programs or sensors using UDP
 piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
 they pass through.
 
-As part of an application, RRR will handle tasks like networking, deamonizing, logging and buffering,
+As part of an application, RRR will handle tasks like networking, daemonizing, logging and buffering,
 allowing developers to focus on more specialized tasks.
 
 Among other things, RRR can be used to:
@@ -28,17 +28,17 @@ Application examples may include:
 - Host monitoring, logging
 - Print spooling
 
-RRR is used by starting one ore more modules with different capabilities which reads messages from each other. Some modules
-also use networking to communicate with different types of devices or with RRR program on other hosts. Once a message
+RRR is used by starting one or more modules with different capabilities that read messages from each other. Some modules
+also use networking to communicate with different types of devices or with RRR programs on other hosts. Once a message
 enters RRR, it is stored in an internal format, an `RRR-message`, which is supported by all the different modules. It is
-also possible to generate these messages in externally based on the header files.
+also possible to generate these messages externally based on the header files.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
 
 Messsage processing in RRR is designed to work with as little state as possible. By default, messages are passed through
-without the need any complex data structures in memory or persistently open TCP connections.
+without the need for any complex data structures in memory or persistently open TCP connections.
 This design enhances stability, but also requires that larger applications using RRR have the same mentality. For network connections
 which require some state, like MQTT, RRR will transparently make sure that a connection is available at all times, relieving
 application designers from the burden of implementing this.
@@ -50,15 +50,15 @@ may be compiled and run on FreeBSD or other Linuxes including Raspbian and SUSE.
 are not supported.
 
 Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
-Linux should however work if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD does not work
-due to lacking support for process shared locks.
+Linux should work however if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD do not work
+due to lack of support for process shared locks.
 
 Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
 particular device with RRR or if it doesn't run on a particular distribution.
 
 ## LICENSES
 
-RRR is released under the GPLv3 with *exceptions for self written modules*. Please checkout
+RRR is released under the GPLv3 with *exceptions for self written modules*. Please check out
 the `LICENSE.*`-files regarding this.
 
 ## DEVELOPMENT
@@ -67,11 +67,11 @@ It is possible to write custom modules in Perl, Python and C. All three have sim
 interfaces to RRR. The man page for rrr.conf has more information on this, also check out `README.dev`.
 
 The RRR library provides many protocol implementations and networking tools. While it is possible to link
-other programs to the RRR-library, there is currently a some initialization of different data structures
-for logging etc. which needs to be done when doing this. If you wish to do this anyway, please open an
-issue on the GitHub page for discussing this.
+other programs to the RRR library, there is currently some initialization of different data structures
+for logging etc. which needs to be done. If you wish to do this, please open an issue on the GitHub page
+to discuss it there.
 
-If you are a developer and would like to see more functionallity or have some ideas, please consider
+If you are a developer and would like to see more functionality or have some ideas, please consider
 forking the GitHub repository.
 
 ## QUICK START
@@ -83,7 +83,7 @@ forking the GitHub repository.
 	$ git clone https://github.com/atlesn/rrr.git
 	$ cd rrr
 
-Some systems have costumized branches, choose one of the following if appropriate:
+Some systems have customized branches, choose one of the following if appropriate:
 
 	$ git checkout archlinux
 	$ git checkout freebsd
@@ -91,9 +91,9 @@ Some systems have costumized branches, choose one of the following if appropriat
 
 The master branch of RRR contains a native Debian package.
 
-See *COMPILE* section below for further information.
+See the *COMPILE* section below for further information.
 
-#### Pre-compiled package Debian Buster amd64/i386 using APT
+#### Pre-compiled package for Debian Buster amd64/i386 using APT
 
 	$ su -
 	# apt install curl gnupg
@@ -128,7 +128,7 @@ See *COMPILE* section below for further information.
 - rrr-mod-python3-dbgsym
 - librrr1-dbgsym
 
-Note that on Ubuntu, RRR supports MySQL and on Debian RRR supports MariaDB. If you need to use for instance
+Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If you need to use for instance
 MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
 on the Ubuntu branch (`git checkout ubuntu`).
 
@@ -155,7 +155,7 @@ See `./configure --help` for flags to use for disabling modules with dependencie
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
 
 You may turn off Python3 and MySQL support when configuring, look at `./configure --help`. This will remove the
-need of development packages being installed for these. Perl bindings can also be disabled, but usually it needs to be 
+need for development packages being installed for these. Perl bindings can also be disabled, but usually it needs to be 
 installed to run the tools which build RRR. OpenSSL bindings may be disabled.
 
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
@@ -178,7 +178,7 @@ called `rrr.conf`.
 	senders=my_source
 	raw_print_data=yes
 
-Then, run this:
+Then, run the following command:
 
 	$ rrr --debuglevel 2 rrr.conf
 
