@@ -23,13 +23,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/types.h>
 
-#include "posix.h"
 #include "log.h"
 #include "ip_buffer_entry.h"
 #include "ip_buffer_entry_struct.h"
-#include "linked_list.h"
-#include "macro_utils.h"
 #include "mqtt/mqtt_topic.h"
+#include "util/macro_utils.h"
+#include "util/posix.h"
+#include "util/linked_list.h"
 
 //#define RRR_IP_BUFFER_ENTRY_REFCOUNT_DEBUG
 

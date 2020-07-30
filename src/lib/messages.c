@@ -24,15 +24,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <util/utf8.h>
 
 #include "log.h"
 
-#include "utf8.h"
-#include "rrr_endian.h"
+#include "util/rrr_endian.h"
+#include "util/macro_utils.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_msg.h"
 #include "messages.h"
-#include "macro_utils.h"
 #include "rrr_types.h"
 
 struct rrr_message *rrr_message_new_array (

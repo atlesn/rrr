@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_payload_buf.h"
 #include "mqtt_subscription.h"
 
-#include "../rrr_endian.h"
+#include "../util/rrr_endian.h"
 
 #define BUF_INIT() 																	\
 		int ret = RRR_MQTT_ASSEMBLE_OK;												\

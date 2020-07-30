@@ -29,10 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-#include "../lib/rrr_endian.h"
 #include "../lib/messages_head.h"
 #include "../lib/socket/rrr_socket_msg_checksum.h"
 #include "../lib/socket/rrr_socket_msg_head.h"
+#include "../lib/util/rrr_endian.h"
 
 /* Remember to disable compiler alignment */
 struct test_data {

@@ -38,9 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../net_transport/net_transport.h"
 #include "../passwd.h"
-#include "../linked_list.h"
-#include "../gnu.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_BROKER_CLIENT_PREFIX "mqtt-client-"
 #define RRR_MQTT_BROKER_MAX_GENERATED_CLIENT_IDS 65535

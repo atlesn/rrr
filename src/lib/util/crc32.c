@@ -1,12 +1,3 @@
-#include <stdint.h>
-//#include <inttypes.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "log.h"
-#include "crc32.h"
-#include "rrr_types.h"
-
 /* Copyright (C) 1986 Gary S. Brown.  You may use this program, or
    code or tables extracted from it, as desired without restriction.
 
@@ -33,6 +24,15 @@
 /* sends each low-bit to hight-bit; and the result is transmission bit */
 /* by bit from highest- to lowest-order term without requiring any bit */
 /* shuffling on our part.  Reception works similarly.                  */
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "../log.h"
+
+#include "crc32.h"
+#include "../rrr_types.h"
 
 /* The feedback terms table consists of 256, 32-bit entries.  Notes:   */
 /*                                                                     */

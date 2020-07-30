@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_config.h"
 
 #include "../log.h"
-#include "../gnu.h"
 #include "../instance_config.h"
-#include "../macro_utils.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 void rrr_net_transport_config_cleanup (
 		struct rrr_net_transport_config *data

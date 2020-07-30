@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "socket/rrr_socket_msg.h"
-#include "utf8.h"
+#include "util/utf8.h"
 
 #define RRR_SETTINGS_TYPE_STRING 1
 #define RRR_SETTINGS_TYPE_UINT 2

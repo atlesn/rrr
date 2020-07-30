@@ -36,11 +36,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_read.h"
 #include "rrr_socket_msg.h"
 
-#include "../posix.h"
-#include "../linked_list.h"
 #include "../rrr_strerror.h"
 #include "../read.h"
-#include "../rrr_time.h"
+#include "../util/posix.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
 
 struct rrr_socket_read_message_default_callback_data {
 	struct rrr_read_session_collection *read_sessions;

@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_config.h"
 
 #include "../log.h"
-#include "../posix.h"
-#include "../rrr_time.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)

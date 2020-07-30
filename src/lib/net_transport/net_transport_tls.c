@@ -33,17 +33,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport.h"
 #include "net_transport_tls.h"
 
-#include "../posix.h"
 #include "../log.h"
 #include "../socket/rrr_socket.h"
 #include "../rrr_openssl.h"
 #include "../rrr_strerror.h"
-#include "../gnu.h"
 #include "../read.h"
 #include "../read_constants.h"
 #include "../ip.h"
 #include "../ip_accept_data.h"
-#include "../macro_utils.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
+#include "../util/posix.h"
 
 struct rrr_net_transport_tls_ssl_data {
 	SSL_CTX *ctx;

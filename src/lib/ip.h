@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_defines.h"
 
 #include "socket/rrr_socket.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 struct rrr_message;
 struct rrr_array;

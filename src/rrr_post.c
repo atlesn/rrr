@@ -37,15 +37,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/version.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/array.h"
-#include "lib/linked_list.h"
 #include "lib/socket/rrr_socket.h"
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/socket/rrr_socket_common.h"
 #include "lib/rrr_strerror.h"
 #include "lib/read.h"
-#include "lib/rrr_time.h"
 #include "lib/messages.h"
-#include "lib/gnu.h"
+#include "lib/util/rrr_time.h"
+#include "lib/util/gnu.h"
+#include "lib/util/linked_list.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_post");
 

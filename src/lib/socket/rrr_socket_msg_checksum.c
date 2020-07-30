@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket_msg_checksum.h"
 #include "rrr_socket_msg_head.h"
 
-#include "../rrr_endian.h"
-#include "../crc32.h"
+#include "../util/rrr_endian.h"
+#include "../util/crc32.h"
 
 void rrr_socket_msg_checksum_and_to_network_endian (
 		struct rrr_socket_msg *message

@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_headers.h"
 
 #include "../socket/rrr_socket_msg_head.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"

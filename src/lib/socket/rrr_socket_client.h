@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
 
-#include "../linked_list.h"
 #include "../read.h"
+#include "../util/linked_list.h"
 
 struct rrr_socket_client {
 	RRR_LL_NODE(struct rrr_socket_client);

@@ -47,8 +47,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/message_broker.h"
 #include "lib/map.h"
 #include "lib/fork.h"
-#include "lib/rrr_readdir.h"
 #include "lib/rrr_umask.h"
+#include "lib/util/rrr_readdir.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr");
 

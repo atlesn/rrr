@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "socket/rrr_socket.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 // TODO : Make this smaller
 // TODO : Change data_length to unsigned

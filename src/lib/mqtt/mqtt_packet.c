@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_topic.h"
 #include "mqtt_subscription.h"
 
-#include "../rrr_time.h"
-#include "../macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../util/macro_utils.h"
 
 static const struct rrr_mqtt_p_protocol_version protocol_versions[] = {
 		{RRR_MQTT_VERSION_3_1, "MQISDP"},

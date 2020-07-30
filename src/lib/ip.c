@@ -41,7 +41,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <read.h>
 #include <arpa/inet.h>
 
-#include "posix.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_buffer_entry_struct.h"
@@ -51,14 +50,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "messages.h"
 #include "array.h"
 #include "socket/rrr_socket.h"
-#include "rrr_time.h"
-#include "crc32.h"
 #include "socket/rrr_socket_common.h"
 #include "socket/rrr_socket_msg.h"
 #include "socket/rrr_socket_read.h"
 #include "rrr_strerror.h"
 #include "read_constants.h"
 #include "socket/rrr_socket_constants.h"
+#include "util/rrr_time.h"
+#include "util/posix.h"
+#include "util/crc32.h"
 
 // TODO : This graylist-stuff is not ip-specific
 

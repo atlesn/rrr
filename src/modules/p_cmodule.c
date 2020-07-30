@@ -42,7 +42,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/macro_utils.h"
 
 #define RRR_CMODULE_NATIVE_CTX
 #include "../cmodules/cmodule.h"

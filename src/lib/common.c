@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 
 #include "log.h"
-#include "linked_list.h"
 #include "common.h"
+#include "util/linked_list.h"
 
 struct rrr_exit_cleanup_method {
 	struct rrr_exit_cleanup_method *next;

@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip_buffer_entry.h"
 
 #include "log.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 void rrr_ip_buffer_entry_collection_clear (
 		struct rrr_ip_buffer_entry_collection *collection

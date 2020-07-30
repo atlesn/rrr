@@ -23,7 +23,7 @@
 
 #include "log.h"
 #include "cmodule.h"
-#include "posix.h"
+#include "util/posix.h"
 
 struct dummy_data {
 	char *custom_setting;

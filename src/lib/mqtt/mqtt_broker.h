@@ -29,7 +29,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "mqtt_common.h"
 #include "../ip.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 struct rrr_mqtt_acl;
 struct rrr_net_transport;

@@ -35,8 +35,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instance_config.h"
 #include "../lib/messages.h"
 #include "../lib/threads.h"
-#include "../lib/linked_list.h"
-#include "../lib/gnu.h"
 #include "../lib/map.h"
 #include "../lib/http/http_client_config.h"
 #include "../lib/net_transport/net_transport.h"
@@ -46,6 +44,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/read_constants.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/util/gnu.h"
 
 #define INFLUXDB_DEFAULT_SERVER "localhost"
 #define INFLUXDB_DEFAULT_PORT 8086

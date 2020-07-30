@@ -23,16 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <string.h>
 
-#include "posix.h"
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
-#include "linked_list.h"
-#include "rrr_time.h"
 #include "messages.h"
 #include "message_addr.h"
 #include "message_log.h"
 #include "array.h"
+#include "util/posix.h"
+#include "util/linked_list.h"
+#include "util/rrr_time.h"
 
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 

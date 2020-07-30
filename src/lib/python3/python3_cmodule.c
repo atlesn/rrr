@@ -20,7 +20,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 // Put first to avoid problems with other files including sys/time.h
-#include "rrr_time.h"
+#include "util/rrr_time.h"
 
 #include <string.h>
 #include <fcntl.h>
@@ -49,12 +49,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../fork.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
-#include "../linked_list.h"
 #include "../rrr_strerror.h"
-#include "../posix.h"
-#include "../gnu.h"
 #include "../log.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/posix.h"
+#include "../util/gnu.h"
+#include "../util/macro_utils.h"
 
 static pthread_mutex_t main_python_lock = PTHREAD_MUTEX_INITIALIZER;
 static PyThreadState *main_python_tstate = NULL;

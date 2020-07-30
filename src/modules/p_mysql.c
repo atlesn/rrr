@@ -43,12 +43,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/settings.h"
-#include "../lib/linked_list.h"
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/rrr_mysql.h"
 #include "../lib/string_builder.h"
 #include "../lib/message_broker.h"
+#include "../lib/util/linked_list.h"
 
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506

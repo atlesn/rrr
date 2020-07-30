@@ -26,14 +26,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "modules.h"
-#include "linked_list.h"
 #include "message_broker.h"
 #include "ip.h"
 #include "ip_buffer_entry.h"
 #include "ip_buffer_entry_struct.h"
 #include "ip_buffer_entry_util.h"
 #include "ip_buffer_entry_collection.h"
-#include "macro_utils.h"
+#include "util/linked_list.h"
+#include "util/macro_utils.h"
 
 static void __rrr_message_broker_split_buffer_node_destroy(struct rrr_message_broker_split_buffer_node *node) {
 	struct rrr_fifo_buffer_stats stats;

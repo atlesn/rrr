@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_acl.h"
 
 #include "../net_transport/net_transport.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_COMMON_SEND_PER_ROUND_MAX (100)
 #define RRR_MQTT_COMMON_READ_PER_ROUND_MAX (RRR_MQTT_COMMON_SEND_PER_ROUND_MAX + 20)

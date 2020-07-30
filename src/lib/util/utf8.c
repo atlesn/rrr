@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdint.h>
 
-#include "utf8.h"
+#include <util/utf8.h>
 
 static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const char **pos, const char *end) {
 	if (*pos >= end) {

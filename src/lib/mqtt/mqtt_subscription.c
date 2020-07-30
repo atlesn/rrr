@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_packet.h"
 #include "mqtt_topic.h"
 
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 // On new data fields, remember to also update rrr_mqtt_subscription_replace_and_destroy
 int rrr_mqtt_subscription_destroy (

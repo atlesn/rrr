@@ -27,15 +27,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "array.h"
-#include "rrr_endian.h"
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
 #include "messages.h"
 #include "type.h"
-#include "rrr_time.h"
 #include "map.h"
-#include "gnu.h"
+#include "util/rrr_time.h"
+#include "util/gnu.h"
+#include "util/rrr_endian.h"
 
 static int __rrr_array_convert_unsigned_integer_10(const char **end, unsigned long long int *result, const char *value) {
 	if (*value == '\0') {

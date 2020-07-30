@@ -44,11 +44,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
-#include "../lib/rrr_time.h"
 #include "../lib/ip.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/net_transport/net_transport_config.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/macro_utils.h"
 
 #define RRR_MQTT_DEFAULT_SERVER_PORT_PLAIN 1883
 #define RRR_MQTT_DEFAULT_SERVER_PORT_TLS 8883

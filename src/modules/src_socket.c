@@ -31,7 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/settings.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/messages.h"
 #include "../lib/socket/rrr_socket.h"
@@ -40,10 +39,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/utf8.h"
 #include "../lib/message_broker.h"
 #include "../lib/ip_buffer_entry.h"
 #include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/util/utf8.h"
+#include "../lib/util/rrr_time.h"
 
 struct socket_data {
 	struct rrr_instance_thread_data *thread_data;

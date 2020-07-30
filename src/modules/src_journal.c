@@ -30,7 +30,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -41,9 +40,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
 #include "../lib/array.h"
-#include "../lib/linked_list.h"
-#include "../lib/gnu.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/rrr_time.h"
 
 // No trailing or leading /
 #define RRR_JOURNAL_TOPIC_PREFIX "rrr/journal"

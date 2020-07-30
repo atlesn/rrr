@@ -44,9 +44,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/ip_buffer_entry.h"
 #include "../../lib/ip_buffer_entry_struct.h"
 #include "../../lib/messages.h"
-#include "../../lib/rrr_endian.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
+#include "../../lib/util/rrr_endian.h"
 
 struct rrr_test_result {
 	int result;

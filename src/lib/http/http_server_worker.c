@@ -32,9 +32,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../net_transport/net_transport.h"
 #include "../threads.h"
-#include "../posix.h"
 #include "../array.h"
 #include "../ip_util.h"
+#include "../util/posix.h"
 
 int rrr_http_server_worker_preliminary_data_new (
 		struct rrr_http_server_worker_preliminary_data **result,

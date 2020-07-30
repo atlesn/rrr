@@ -34,7 +34,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/ip.h"
 #include "../lib/ip_buffer_entry.h"
-#include "../lib/linked_list.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -51,11 +50,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/message_broker.h"
-#include "../lib/gnu.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/macro_utils.h"
+#include "../lib/util/linked_list.h"
 
 #include <EXTERN.h>
 #include <perl.h>

@@ -29,7 +29,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -39,7 +38,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
-#include "../lib/macro_utils.h"
+#include "../lib/util/rrr_time.h"
+#include "../lib/util/macro_utils.h"
 
 struct dummy_data {
 	int no_generation;

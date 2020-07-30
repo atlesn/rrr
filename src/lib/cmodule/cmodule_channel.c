@@ -31,9 +31,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../messages.h"
 #include "../message_addr.h"
-#include "../linked_list.h"
 #include "../mmap_channel.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 struct rrr_cmodule_mmap_channel_callback_data {
 	const struct rrr_message_addr *addr_msg;

@@ -27,7 +27,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "cmdlineparser/cmdline.h"
 #include "instance_config.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 #include "type.h"
 
 #define RRR_ARRAY_VERSION 7

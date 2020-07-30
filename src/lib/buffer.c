@@ -25,11 +25,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <errno.h>
 
-#include "posix.h"
 #include "buffer.h"
 #include "log.h"
-#include "slow_noop.h"
-#include "rrr_time.h"
+#include "util/posix.h"
+#include "util/slow_noop.h"
+#include "util/rrr_time.h"
 
 //#define RRR_FIFO_BUFFER_DEBUG 1
 

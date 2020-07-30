@@ -22,6 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <util/utf8.h>
 
 #include "../log.h"
 
@@ -32,9 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_topic.h"
 #include "mqtt_common.h"
 
-#include "../rrr_endian.h"
-#include "../utf8.h"
-#include "../macro_utils.h"
+#include "../util/rrr_endian.h"
+#include "../util/macro_utils.h"
 
 struct parse_state {
 	int ret;

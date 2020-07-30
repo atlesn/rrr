@@ -33,9 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_common.h"
 #include "mqtt_id_pool.h"
 
-#include "../rrr_time.h"
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS 250
 

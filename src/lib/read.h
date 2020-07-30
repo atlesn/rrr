@@ -26,7 +26,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <sys/socket.h>
 
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 //struct rrr_socket_client;
 

@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 
 #define RRR_MQTT_SUBSCRIPTION_OK				0
 #define RRR_MQTT_SUBSCRIPTION_MATCH				0

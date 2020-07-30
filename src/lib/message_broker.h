@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 #include <sys/socket.h>
 
-#include "linked_list.h"
 #include "buffer.h"
+#include "util/linked_list.h"
 
 #define RRR_MESSAGE_BROKER_OK		0
 #define RRR_MESSAGE_BROKER_POST		RRR_MESSAGE_BROKER_OK

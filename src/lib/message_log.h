@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_msg.h"
-#include "rrr_endian.h"
+#include "util/rrr_endian.h"
 
 #define RRR_MSG_LOG_PREFIX_SIZE(msg)										\
 	((msg)->prefix_size)

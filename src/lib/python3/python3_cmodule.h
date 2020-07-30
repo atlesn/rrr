@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "python3_headers.h"
-#include "../linked_list.h"
+#include "../util/linked_list.h"
 #include "../../../build_directory.h"
 
 struct rrr_setting_packed;
