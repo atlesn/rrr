@@ -40,12 +40,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_addr.h"
-#include "../lib/ip_buffer_entry.h"
 #include "../lib/log.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
+#include "../lib/ip/ip_buffer_entry.h"
 
 struct python3_data {
 	struct rrr_instance_thread_data *thread_data;

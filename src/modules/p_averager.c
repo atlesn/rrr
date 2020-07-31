@@ -36,10 +36,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/poll_helper.h"
 #include "../lib/array.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_util.h"
-#include "../lib/ip_buffer_entry_collection.h"
-#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/ip/ip_buffer_entry.h"
+#include "../lib/ip/ip_buffer_entry_util.h"
+#include "../lib/ip/ip_buffer_entry_collection.h"
+#include "../lib/ip/ip_buffer_entry_struct.h"
 #include "../lib/message_broker.h"
 
 struct averager_data {

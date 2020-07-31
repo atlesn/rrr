@@ -29,11 +29,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include "../lib/log.h"
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -53,6 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
+#include "../lib/ip/ip.h"
+#include "../lib/ip/ip_buffer_entry.h"
 #include "../lib/util/gnu.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"

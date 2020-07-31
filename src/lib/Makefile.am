@@ -48,6 +48,8 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 
 util = util/gnu.c util/base64.c util/crc32.c util/posix.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
 
+ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_buffer_entry.c ip/ip_buffer_entry_util.c ip/ip_buffer_entry_collection.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
 endif
@@ -55,8 +57,6 @@ endif
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
 librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_config.c \
-					ip.c ip_accept_data.c ip_util.c \
-					ip_buffer_entry.c ip_buffer_entry_util.c ip_buffer_entry_collection.c \
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
@@ -64,7 +64,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_co
 					string_builder.c random.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
-					${net_transport} ${net_transport_tls} ${util}
+					${net_transport} ${net_transport_tls} ${util} ${ip}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

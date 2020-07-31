@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_IP_BUFFER_ENTRY_COLLECTION_H
 #define RRR_IP_BUFFER_ENTRY_COLLECTION_H
 
-#include "util/linked_list.h"
+#include "../util/linked_list.h"
 
 struct rrr_ip_buffer_entry;
 

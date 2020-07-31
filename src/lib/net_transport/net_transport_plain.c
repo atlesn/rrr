@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket.h"
 #include "../socket/rrr_socket_read.h"
 #include "../read.h"
-#include "../ip.h"
-#include "../ip_accept_data.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
 #include "../util/macro_utils.h"
 
 static int __rrr_net_transport_plain_close (struct rrr_net_transport_handle *handle) {

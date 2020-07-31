@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instances.h"
 #include "buffer.h"
 #include "message_broker.h"
-#include "ip_buffer_entry_util.h"
-#include "ip_buffer_entry.h"
+#include "ip/ip_buffer_entry_util.h"
+#include "ip/ip_buffer_entry.h"
 
 static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);

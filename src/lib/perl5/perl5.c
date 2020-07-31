@@ -39,8 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../socket/rrr_socket_msg.h"
 #include "../rrr_strerror.h"
 #include "../array.h"
-#include "../ip.h"
-#include "../ip_util.h"
+#include "../ip/ip.h"
+#include "../ip/ip_util.h"
 #include "../util/rrr_time.h"
 
 #define RRR_PERL5_BUILD_LIB_PATH_1 \

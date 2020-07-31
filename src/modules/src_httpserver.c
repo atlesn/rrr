@@ -31,8 +31,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
 #include "../lib/messages.h"
@@ -40,7 +38,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
 #include "../lib/map.h"
-#include "../lib/ip_defines.h"
+#include "../lib/ip/ip_defines.h"
+#include "../lib/ip/ip_buffer_entry.h"
+#include "../lib/ip/ip_buffer_entry_struct.h"
 //#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80

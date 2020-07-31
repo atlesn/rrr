@@ -28,9 +28,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
+#include "../lib/ip/ip.h"
+#include "../lib/ip/ip_buffer_entry.h"
+#include "../lib/ip/ip_buffer_entry_struct.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"

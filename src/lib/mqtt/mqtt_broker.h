@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "mqtt_common.h"
-#include "../ip.h"
+#include "../ip/ip.h"
 #include "../util/linked_list.h"
 
 struct rrr_mqtt_acl;

@@ -35,8 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_parse.h"
 #include "mqtt_assemble.h"
 
-#include "../ip.h"
-#include "../ip_accept_data.h"
+#include "../ip/ip.h"
+#include "../ip/ip_accept_data.h"
 #include "../buffer.h"
 #include "../net_transport/net_transport.h"
 #include "../rrr_strerror.h"

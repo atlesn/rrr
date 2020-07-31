@@ -32,9 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/http/http_query_builder.h"
 #include "../lib/http/http_session.h"
 #include "../lib/net_transport/net_transport_config.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/ip_buffer_entry_struct.h"
-#include "../lib/ip_buffer_entry_collection.h"
 #include "../lib/poll_helper.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
@@ -42,6 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
+#include "../lib/ip/ip_buffer_entry.h"
+#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/ip/ip_buffer_entry_collection.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
