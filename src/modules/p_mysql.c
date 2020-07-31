@@ -46,9 +46,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/message_broker.h"
 #include "../lib/util/linked_list.h"
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
-#include "../lib/ip/ip_buffer_entry_collection.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_collection.h"
 
 #define RRR_MYSQL_DEFAULT_SERVER "localhost"
 #define RRR_MYSQL_DEFAULT_PORT 5506
@@ -61,7 +61,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Fix URI support
 
 struct mysql_data {
-	struct rrr_ip_buffer_entry_collection input_buffer;
+	struct rrr_message_holder_collection input_buffer;
 	MYSQL mysql;
 	MYSQL_BIND *bind;
 	unsigned long *bind_string_lengths;
@@ -133,7 +133,7 @@ void data_cleanup(void *arg) {
 	rrr_map_clear(&data->column_tags);
 	rrr_map_clear(&data->blob_write_columns);
 
-	rrr_ip_buffer_entry_collection_clear(&data->input_buffer);
+	rrr_message_holder_collection_clear(&data->input_buffer);
 
 	RRR_FREE_IF_NOT_NULL(data->mysql_server);
 	RRR_FREE_IF_NOT_NULL(data->mysql_user);
@@ -159,7 +159,7 @@ struct process_entries_data {
 
 struct column_configurator {
 	int (*create_sql)(char **target, int *column_count, struct mysql_data *data);
-	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_ip_buffer_entry *entry);
+	int (*bind_and_execute)(struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, const struct rrr_message_holder *entry);
 };
 
 /* Check order with function pointers */
@@ -328,7 +328,7 @@ int colplan_array_bind_execute (
 		struct mysql_data *mysql_data,
 		MYSQL_STMT *stmt,
 		int column_count_from_prepare,
-		const struct rrr_ip_buffer_entry *entry
+		const struct rrr_message_holder *entry
 ) {
 	int ret = 0;
 
@@ -725,15 +725,15 @@ int poll_callback_ip (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_DBG_3 ("mysql: Result from buffer (ip): timestamp %" PRIu64 "\n", message->timestamp);
 
-	rrr_ip_buffer_entry_incref_while_locked(entry);
+	rrr_message_holder_incref_while_locked(entry);
 	RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 
 	return 0;
 }
 
-int mysql_save(const struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
+int mysql_save(const struct rrr_message_holder *entry, MYSQL_STMT *stmt, int column_count, struct mysql_data *mysql_data) {
 	if (mysql_data->mysql_connected != 1) {
 		return 1;
 	}
@@ -760,7 +760,7 @@ int mysql_save(const struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int co
 	if (is_unknown) {
 		return 1;
 	}
-//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_ip_buffer_entry *entry
+//	struct mysql_data *mysql_data, MYSQL_STMT *stmt, int column_count, struct rrr_message_holder *entry
 	return column_configurators[colplan_index].bind_and_execute(mysql_data, stmt, column_count, entry);
 }
 
@@ -770,7 +770,7 @@ struct process_callback_data {
 	struct rrr_instance_thread_data *thread_data;
 };
 
-int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int column_count, struct rrr_instance_thread_data *thread_data) {
+int process_callback (struct rrr_message_holder *entry, MYSQL_STMT *stmt, int column_count, struct rrr_instance_thread_data *thread_data) {
 	struct mysql_data *mysql_data = thread_data->private_data;
 	struct rrr_message *message = entry->message;
 
@@ -789,7 +789,7 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 		else {
 			// Put back in buffer
 			RRR_DBG_3 ("mysql: Putting message with timestamp %" PRIu64 " back into the buffer\n", message->timestamp);
-			rrr_ip_buffer_entry_incref_while_locked(entry);
+			rrr_message_holder_incref_while_locked(entry);
 			RRR_LL_APPEND(&mysql_data->input_buffer, entry);
 		}
 	}
@@ -813,7 +813,7 @@ int process_callback (struct rrr_ip_buffer_entry *entry, MYSQL_STMT *stmt, int c
 		}
 	}
 
-	rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+	rrr_message_holder_decref_while_locked_and_unlock(entry);
 
 	return 0;
 }
@@ -822,7 +822,7 @@ void close_mysql_stmt(void *arg) {
 	mysql_stmt_close(arg);
 }
 
-int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struct rrr_instance_thread_data *thread_data) {
+int process_entries (struct rrr_message_holder_collection *source_buffer, struct rrr_instance_thread_data *thread_data) {
 	struct mysql_data *data = thread_data->private_data;
 
 	if (connect_to_mysql(data) != 0) {
@@ -861,9 +861,9 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 		}
 	}
 
-	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_ip_buffer_entry);
+	RRR_LL_ITERATE_BEGIN(source_buffer, struct rrr_message_holder);
 		RRR_LL_VERIFY_NODE(source_buffer);
-		rrr_ip_buffer_entry_lock(node);
+		rrr_message_holder_lock(node);
 		process_callback(node, stmt, column_count, thread_data);
 		RRR_LL_ITERATE_SET_DESTROY();
 	RRR_LL_ITERATE_END_CHECK_DESTROY_NO_FREE(source_buffer);
@@ -877,7 +877,7 @@ int process_entries (struct rrr_ip_buffer_entry_collection *source_buffer, struc
 static void *thread_entry_mysql (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct mysql_data *data = thread_data->private_data = thread_data->private_memory;
-	struct rrr_ip_buffer_entry_collection process_buffer_tmp = {0};
+	struct rrr_message_holder_collection process_buffer_tmp = {0};
 
 	if (data_init(data) != 0) {
 		RRR_MSG_0("Could not initialize data in mysql instance %s\n", INSTANCE_D_NAME(thread_data));
@@ -888,7 +888,7 @@ static void *thread_entry_mysql (struct rrr_thread *thread) {
 
 	pthread_cleanup_push(stop_mysql, data);
 	pthread_cleanup_push(data_cleanup, data);
-	pthread_cleanup_push(rrr_ip_buffer_entry_collection_clear_void, &process_buffer_tmp);
+	pthread_cleanup_push(rrr_message_holder_collection_clear_void, &process_buffer_tmp);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
 	rrr_thread_signal_wait(thread_data->thread, RRR_THREAD_SIGNAL_START);

@@ -39,8 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/map.h"
 #include "../lib/ip/ip_defines.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 //#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80
@@ -264,7 +264,7 @@ struct httpserver_write_message_callback_data {
 
 // NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
-		struct rrr_ip_buffer_entry *new_entry,
+		struct rrr_message_holder *new_entry,
 		void *arg
 ) {
 	struct httpserver_write_message_callback_data *callback_data = arg;
@@ -304,7 +304,7 @@ static int httpserver_write_message_callback (
 	new_message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(new_entry);
+	rrr_message_holder_unlock(new_entry);
 	return ret;
 }
 

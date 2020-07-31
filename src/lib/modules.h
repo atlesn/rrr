@@ -40,7 +40,7 @@ struct rrr_instance_thread_data;
 struct rrr_thread_start_data;
 struct rrr_instance_config;
 struct rrr_message;
-struct rrr_ip_buffer_entry;
+struct rrr_message_holder;
 struct rrr_thread;
 
 struct rrr_module_load_data {
@@ -50,7 +50,7 @@ struct rrr_module_load_data {
 };
 
 #define RRR_MODULE_POLL_CALLBACK_SIGNATURE		\
-	struct rrr_ip_buffer_entry *entry,			\
+	struct rrr_message_holder *entry,			\
 	void *arg
 /*
 #define RRR_MODULE_POLL_SIGNATURE \
@@ -64,7 +64,7 @@ struct rrr_module_load_data {
 
 #define RRR_MODULE_INJECT_SIGNATURE \
 		struct rrr_instance_thread_data *thread_data, \
-		struct rrr_ip_buffer_entry *message
+		struct rrr_message_holder *message
 
 // Try not to put functions with equal arguments next to each other
 struct rrr_module_operations {

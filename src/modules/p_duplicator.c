@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
@@ -75,7 +75,7 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry
 	);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

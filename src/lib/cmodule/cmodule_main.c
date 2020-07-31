@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages.h"
 #include "../fork.h"
 #include "../common.h"
-#include "../ip/ip_buffer_entry.h"
+#include "../message_holder/message_holder.h"
 #include "../util/gnu.h"
 #include "../util/macro_utils.h"
 #include "../util/rrr_time.h"

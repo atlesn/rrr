@@ -53,7 +53,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/cmodule/cmodule_ext.h"
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
+#include "../lib/message_holder/message_holder.h"
 #include "../lib/util/gnu.h"
 #include "../lib/util/macro_utils.h"
 #include "../lib/util/linked_list.h"

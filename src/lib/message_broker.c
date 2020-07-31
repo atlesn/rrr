@@ -28,10 +28,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "modules.h"
 #include "message_broker.h"
 #include "ip/ip.h"
-#include "ip/ip_buffer_entry.h"
-#include "ip/ip_buffer_entry_struct.h"
-#include "ip/ip_buffer_entry_util.h"
-#include "ip/ip_buffer_entry_collection.h"
+#include "message_holder/message_holder.h"
+#include "message_holder/message_holder_struct.h"
+#include "message_holder/message_holder_util.h"
+#include "message_holder/message_holder_collection.h"
 #include "util/linked_list.h"
 #include "util/macro_utils.h"
 
@@ -109,7 +109,7 @@ static int __rrr_message_broker_costumer_new (
 		goto out_free;
 	}
 
-	if (rrr_fifo_buffer_init_custom_free(&costumer->main_queue, rrr_ip_buffer_entry_decref_void) != 0) {
+	if (rrr_fifo_buffer_init_custom_free(&costumer->main_queue, rrr_message_holder_decref_void) != 0) {
 		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_costumer_new\n");
 		goto out_free_name;
 	}
@@ -295,7 +295,7 @@ static int __rrr_message_broker_split_output_buffer_new_and_add (
 
 	memset(node, '\0', sizeof(*node));
 
-	if (rrr_fifo_buffer_init_custom_free(&node->queue, rrr_ip_buffer_entry_decref_void) != 0) {
+	if (rrr_fifo_buffer_init_custom_free(&node->queue, rrr_message_holder_decref_void) != 0) {
 		RRR_MSG_0("Could not initialize buffer in __rrr_message_broker_split_output_buffer_new\n");
 		ret = 1;
 		goto out_free;
@@ -345,15 +345,15 @@ int rrr_message_broker_setup_split_output_buffer (
 #define  RRR_MESSAGE_BROKER_BUFFER_DEBUG
 
 int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBACK_ARGS) {
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
-	struct rrr_ip_buffer_entry *locked_entry = arg;
+	struct rrr_message_holder *entry = (struct rrr_message_holder *) data;
+	struct rrr_message_holder *locked_entry = arg;
 
 	(void)(size);
 
 	long int max_expected_usercount = (locked_entry != NULL ? 2 : 1);
 
 	if (entry != locked_entry) {
-		rrr_ip_buffer_entry_lock(entry);
+		rrr_message_holder_lock(entry);
 	}
 	if (entry->usercount > max_expected_usercount) {
 		RRR_BUG("Buffer entry %p had usercount %i > expected %li in __rrr_message_broker_buffer_consistency_check_callback\n",
@@ -364,14 +364,14 @@ int __rrr_message_broker_buffer_consistency_check_callback (RRR_FIFO_READ_CALLBA
 				entry);
 	}
 	if (entry != locked_entry) {
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_message_holder_unlock(entry);
 	}
 	return RRR_FIFO_OK;
 }
 
 void rrr_message_broker_buffer_consistency_check (
 		struct rrr_fifo_buffer *buffer,
-		struct rrr_ip_buffer_entry *locked_entry
+		struct rrr_message_holder *locked_entry
 ) {
 	// Make sure we don't deadlock, we might be inside both a write and delayed write at the same time
 	if (pthread_rwlock_trywrlock(&buffer->rwlock) == 0) {
@@ -385,20 +385,20 @@ struct rrr_message_broker_write_entry_intermediate_callback_data {
 	const struct sockaddr *addr;
 	socklen_t socklen;
 	int protocol;
-	int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg);
+	int (*callback)(struct rrr_message_holder *new_entry, void *arg);
 	void *callback_arg;
 };
 
-struct rrr_message_broker_ip_buffer_entry_double_pointer {
-	struct rrr_ip_buffer_entry **entry;
+struct rrr_message_broker_message_holder_double_pointer {
+	struct rrr_message_holder **entry;
 };
 
-static void __rrr_message_broker_free_ip_buffer_entry_double_pointer (void *arg) {
-	struct rrr_message_broker_ip_buffer_entry_double_pointer *ptr = arg;
+static void __rrr_message_broker_free_message_holder_double_pointer (void *arg) {
+	struct rrr_message_broker_message_holder_double_pointer *ptr = arg;
 	if (*(ptr->entry) == NULL) {
 		return;
 	}
-	rrr_ip_buffer_entry_decref(*(ptr->entry));
+	rrr_message_holder_decref(*(ptr->entry));
 }
 
 static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBACK_ARGS) {
@@ -406,12 +406,12 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 
 	int ret = RRR_FIFO_OK;
 
-	struct rrr_ip_buffer_entry *entry = NULL;
-	struct rrr_message_broker_ip_buffer_entry_double_pointer double_pointer = { &entry };
+	struct rrr_message_holder *entry = NULL;
+	struct rrr_message_broker_message_holder_double_pointer double_pointer = { &entry };
 
-	pthread_cleanup_push(__rrr_message_broker_free_ip_buffer_entry_double_pointer, &double_pointer);
+	pthread_cleanup_push(__rrr_message_broker_free_message_holder_double_pointer, &double_pointer);
 
-	if (rrr_ip_buffer_entry_new (
+	if (rrr_message_holder_new (
 			&entry,
 			0,
 			callback_data->addr,
@@ -425,7 +425,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	}
 
 	// Callback must ALWAYS unlock
-	rrr_ip_buffer_entry_lock(entry);
+	rrr_message_holder_lock(entry);
 
 	if ((ret = callback_data->callback(entry, callback_data->callback_arg)) != 0) {
 		int ret_tmp = 0;
@@ -475,7 +475,7 @@ static int __rrr_message_broker_write_entry_intermediate (RRR_FIFO_WRITE_CALLBAC
 	}
 
 	// Prevents cleanup_pop below to free the entry now that everything is in order
-	rrr_ip_buffer_entry_incref(entry);
+	rrr_message_holder_incref(entry);
 
 	*data = (char*) entry;
 	*size = sizeof(*entry);
@@ -493,7 +493,7 @@ int rrr_message_broker_write_entry (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
-		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
+		int (*callback)(struct rrr_message_holder *new_entry, void *arg),
 		void *callback_arg
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
@@ -528,13 +528,13 @@ int rrr_message_broker_write_entry (
 }
 
 static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
-	const struct rrr_ip_buffer_entry *source = arg;
+	const struct rrr_message_holder *source = arg;
 
 	int ret = 0;
 
-	struct rrr_ip_buffer_entry *target = NULL;
+	struct rrr_message_holder *target = NULL;
 
-	if (rrr_ip_buffer_entry_util_clone_no_locking(&target, source) != 0) {
+	if (rrr_message_holder_util_clone_no_locking(&target, source) != 0) {
 		RRR_MSG_0("Could not clone ip buffer entry in __rrr_message_broker_write_clone_and_write_entry_callback\n");
 		ret = 1;
 		goto out;
@@ -553,7 +553,7 @@ static int __rrr_message_broker_clone_and_write_entry_callback (RRR_FIFO_WRITE_C
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		const struct rrr_ip_buffer_entry *entry
+		const struct rrr_message_holder *entry
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -571,7 +571,7 @@ int rrr_message_broker_clone_and_write_entry (
 
 	out:
 	// Cast away const OK
-	rrr_ip_buffer_entry_unlock((struct rrr_ip_buffer_entry *) entry);
+	rrr_message_holder_unlock((struct rrr_message_holder *) entry);
 #ifdef RRR_MESSAGE_BROKER_BUFFER_DEBUG
 	rrr_message_broker_buffer_consistency_check(&costumer->main_queue, NULL);
 #endif
@@ -580,13 +580,13 @@ int rrr_message_broker_clone_and_write_entry (
 }
 
 static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_WRITE_CALLBACK_ARGS) {
-	struct rrr_ip_buffer_entry *entry = arg;
+	struct rrr_message_holder *entry = arg;
 
 	*data = (char *) entry;
 	*size = sizeof(*entry);
 	*order = 0;
 
-	rrr_ip_buffer_entry_incref_while_locked(entry);
+	rrr_message_holder_incref_while_locked(entry);
 
 	return 0;
 }
@@ -598,7 +598,7 @@ static int __rrr_message_broker_write_entry_unsafe_callback(RRR_FIFO_WRITE_CALLB
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -626,7 +626,7 @@ int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -651,9 +651,9 @@ int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 }
 
 int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_CALLBACK_ARGS) {
-	struct rrr_ip_buffer_entry_collection *collection = arg;
+	struct rrr_message_holder_collection *collection = arg;
 
-	struct rrr_ip_buffer_entry *entry = RRR_LL_SHIFT(collection);
+	struct rrr_message_holder *entry = RRR_LL_SHIFT(collection);
 
 	*data = (char*) entry;
 	*size = sizeof(*entry);
@@ -669,7 +669,7 @@ int __rrr_message_broker_write_entries_from_collection_callback (RRR_FIFO_WRITE_
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry_collection *collection
+		struct rrr_message_holder_collection *collection
 ) {
 	int ret = RRR_MESSAGE_BROKER_OK;
 
@@ -692,20 +692,20 @@ struct rrr_message_broker_read_entry_intermediate_callback_data {
 
 static int __rrr_message_broker_poll_delete_intermediate (RRR_FIFO_READ_CALLBACK_ARGS) {
 	struct rrr_message_broker_read_entry_intermediate_callback_data *callback_data = arg;
-	struct rrr_ip_buffer_entry *entry = (struct rrr_ip_buffer_entry *) data;
+	struct rrr_message_holder *entry = (struct rrr_message_holder *) data;
 
 	(void)(size);
 
 	int ret = 0;
 
-	rrr_ip_buffer_entry_lock(entry);
+	rrr_message_holder_lock(entry);
 	if (pthread_mutex_trylock(&entry->lock) == 0) {
 		RRR_BUG("Trylock was 0 in __rrr_message_broker_poll_delete_intermediate\n");
 	}
 	ret = callback_data->callback(entry, callback_data->callback_arg);
 
 	// Callback must unlock
-	rrr_ip_buffer_entry_decref(entry);
+	rrr_message_holder_decref(entry);
 
 	return ret;
 }

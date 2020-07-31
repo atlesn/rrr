@@ -34,8 +34,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/array.h"
 
@@ -90,7 +90,7 @@ int raw_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	out:
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	rrr_array_clear(&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

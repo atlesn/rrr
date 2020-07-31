@@ -34,7 +34,7 @@ struct rrr_message;
 struct rrr_array;
 struct rrr_read_session_collection;
 struct rrr_read_session;
-struct rrr_ip_buffer_entry;
+struct rrr_message_holder;
 struct rrr_ip_accept_data;
 
 struct rrr_ip_send_packet_info {
@@ -67,14 +67,14 @@ void rrr_ip_graylist_clear_void (
 		void *target
 );
 int rrr_ip_receive_array (
-		struct rrr_ip_buffer_entry *target_entry,
+		struct rrr_message_holder *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
-		int (*callback)(struct rrr_ip_buffer_entry *entry, void *arg),
+		int (*callback)(struct rrr_message_holder *entry, void *arg),
 		void *arg
 );
 int rrr_ip_send (

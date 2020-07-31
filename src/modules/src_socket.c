@@ -40,8 +40,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
 #include "../lib/message_broker.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/util/utf8.h"
 #include "../lib/util/rrr_time.h"
 
@@ -161,7 +161,7 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 struct read_data_receive_message_callback_data {
 	struct socket_data *data;
-	struct rrr_ip_buffer_entry *entry;
+	struct rrr_message_holder *entry;
 };
 
 int read_rrr_message_callback (struct rrr_message **message, void *arg) {
@@ -217,7 +217,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 	return ret;
 }
 
-int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+int read_data_receive_callback (struct rrr_message_holder *entry, void *arg) {
 	struct socket_data *data = arg;
 
 	int ret = 0;
@@ -283,7 +283,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

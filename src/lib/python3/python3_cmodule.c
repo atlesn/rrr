@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../mmap_channel.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
-#include "../ip/ip_buffer_entry.h"
+#include "../message_holder/message_holder.h"
 #include "../util/linked_list.h"
 #include "../util/posix.h"
 #include "../util/gnu.h"

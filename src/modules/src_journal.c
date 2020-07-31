@@ -39,8 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/array.h"
 #include "../lib/rrr_strerror.h"
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/util/linked_list.h"
 #include "../lib/util/gnu.h"
 #include "../lib/util/rrr_time.h"
@@ -244,7 +244,7 @@ static void journal_log_hook (
 		return;
 }
 
-static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int journal_write_message_callback (struct rrr_message_holder *entry, void *arg) {
 	struct journal_data *data = arg;
 
 	int ret = 0;
@@ -319,7 +319,7 @@ static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, vo
 	RRR_FREE_IF_NOT_NULL(topic_tmp_final);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	RRR_FREE_IF_NOT_NULL(reading);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

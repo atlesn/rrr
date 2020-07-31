@@ -22,16 +22,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "ip_buffer_entry_util.h"
-#include "ip_buffer_entry_struct.h"
+#include "message_holder_util.h"
+#include "message_holder_struct.h"
 
 #include "log.h"
 #include "mqtt/mqtt_topic.h"
-#include "ip_buffer_entry.h"
+#include "message_holder.h"
 #include "messages.h"
 
-int rrr_ip_buffer_entry_util_new_with_empty_message (
-		struct rrr_ip_buffer_entry **result,
+int rrr_message_holder_util_new_with_empty_message (
+		struct rrr_message_holder **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -39,7 +39,7 @@ int rrr_ip_buffer_entry_util_new_with_empty_message (
 ) {
 	int ret = 0;
 
-	struct rrr_ip_buffer_entry *entry = NULL;
+	struct rrr_message_holder *entry = NULL;
 	struct rrr_message *message = NULL;
 
 	// XXX : Callers treat this function as message_data_length is an absolute value
@@ -48,11 +48,11 @@ int rrr_ip_buffer_entry_util_new_with_empty_message (
 
 	message = malloc(message_size);
 	if (message == NULL) {
-		RRR_MSG_0("Could not allocate message in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate message in message_holder_new_with_message\n");
 		goto out;
 	}
 
-	if (rrr_ip_buffer_entry_new (
+	if (rrr_message_holder_new (
 			&entry,
 			message_size,
 			addr,
@@ -60,14 +60,14 @@ int rrr_ip_buffer_entry_util_new_with_empty_message (
 			protocol,
 			message
 	) != 0) {
-		RRR_MSG_0("Could not allocate ip buffer entry in ip_buffer_entry_new_with_message\n");
+		RRR_MSG_0("Could not allocate ip buffer entry in message_holder_new_with_message\n");
 		ret = 1;
 		goto out;
 	}
 
-	rrr_ip_buffer_entry_lock(entry);
+	rrr_message_holder_lock(entry);
 	memset(message, '\0', message_size);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 
 	message = NULL;
 
@@ -78,18 +78,18 @@ int rrr_ip_buffer_entry_util_new_with_empty_message (
 	return ret;
 }
 
-int rrr_ip_buffer_entry_util_clone_no_locking (
-		struct rrr_ip_buffer_entry **result,
-		const struct rrr_ip_buffer_entry *source
+int rrr_message_holder_util_clone_no_locking (
+		struct rrr_message_holder **result,
+		const struct rrr_message_holder *source
 ) {
 	// Note : Do calculation correctly, not incorrect
 	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_message) - 1);
 
 	if (message_data_length < 0) {
-		RRR_BUG("Message too small in rrr_ip_buffer_entry_clone_no_locking\n");
+		RRR_BUG("Message too small in rrr_message_holder_clone_no_locking\n");
 	}
 
-	int ret = rrr_ip_buffer_entry_util_new_with_empty_message (
+	int ret = rrr_message_holder_util_new_with_empty_message (
 			result,
 			message_data_length,
 			(struct sockaddr *) &source->addr,
@@ -98,18 +98,18 @@ int rrr_ip_buffer_entry_util_clone_no_locking (
 	);
 
 	if (ret == 0) {
-		rrr_ip_buffer_entry_lock(*result);
+		rrr_message_holder_lock(*result);
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
-		rrr_ip_buffer_entry_unlock(*result);
+		rrr_message_holder_unlock(*result);
 	}
 
 	return ret;
 }
 
-int rrr_ip_buffer_entry_util_message_topic_match (
+int rrr_message_holder_util_message_topic_match (
 		int *does_match,
-		const struct rrr_ip_buffer_entry *entry,
+		const struct rrr_message_holder *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token
 ) {
 	const struct rrr_message *message = entry->message;
@@ -140,7 +140,7 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
 	) != 0) {
-		RRR_MSG_0("Tokenizing of topic failed in rrr_ip_buffer_entry_message_topic_match\n");
+		RRR_MSG_0("Tokenizing of topic failed in rrr_message_holder_message_topic_match\n");
 		ret = 1;
 		goto out;
 	}
@@ -148,7 +148,7 @@ int rrr_ip_buffer_entry_util_message_topic_match (
 	if ((ret = rrr_mqtt_topic_match_tokens_recursively(filter_first_token, entry_first_token)) != RRR_MQTT_TOKEN_MATCH) {
 		if (RRR_DEBUGLEVEL_3) {
 			if ((ret = rrr_message_topic_get(&topic_tmp, message)) != 0) {
-				RRR_MSG_0("Could not get topic of message in rrr_ip_buffer_entry_util_message_topic_match while printing debug message\n");
+				RRR_MSG_0("Could not get topic of message in rrr_message_holder_util_message_topic_match while printing debug message\n");
 				goto out;
 			}
 			RRR_MSG_3("Mismatched topic: '%s'\n", topic_tmp);

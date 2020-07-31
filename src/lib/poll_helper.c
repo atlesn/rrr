@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "instances.h"
 #include "buffer.h"
 #include "message_broker.h"
-#include "ip/ip_buffer_entry_util.h"
-#include "ip/ip_buffer_entry.h"
+#include "message_holder/message_holder_util.h"
+#include "message_holder/message_holder.h"
 
 static int __poll_collection_entry_destroy(struct rrr_poll_collection_entry *entry) {
 	free(entry);
@@ -190,7 +190,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int does_match = 0;
 
-	if (rrr_ip_buffer_entry_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
+	if (rrr_message_holder_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = RRR_MESSAGE_BROKER_ERR;
@@ -210,7 +210,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

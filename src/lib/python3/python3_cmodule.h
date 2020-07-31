@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../../build_directory.h"
 
 struct rrr_setting_packed;
-struct rrr_ip_buffer_entry;
+struct rrr_message_holder;
 struct rrr_fork_handler;
 struct rrr_message;
 struct rrr_address_msg;

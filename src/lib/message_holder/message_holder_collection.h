@@ -19,26 +19,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_IP_BUFFER_ENTRY_COLLECTION_H
-#define RRR_IP_BUFFER_ENTRY_COLLECTION_H
+#ifndef RRR_MESSAGE_HOLDER_COLLECTION_H
+#define RRR_MESSAGE_HOLDER_COLLECTION_H
 
 #include "../util/linked_list.h"
 
-struct rrr_ip_buffer_entry;
+struct rrr_message_holder;
 
-struct rrr_ip_buffer_entry_collection {
-	RRR_LL_HEAD(struct rrr_ip_buffer_entry);
+struct rrr_message_holder_collection {
+	RRR_LL_HEAD(struct rrr_message_holder);
 };
 
-void rrr_ip_buffer_entry_collection_clear (
-		struct rrr_ip_buffer_entry_collection *collection
+void rrr_message_holder_collection_clear (
+		struct rrr_message_holder_collection *collection
 );
-void rrr_ip_buffer_entry_collection_clear_void (
+void rrr_message_holder_collection_clear_void (
 		void *arg
 );
-void rrr_ip_buffer_entry_collection_sort (
-		struct rrr_ip_buffer_entry_collection *target,
+void rrr_message_holder_collection_sort (
+		struct rrr_message_holder_collection *target,
 		int (*compare)(void *message_a, void *message_b)
 );
 
-#endif /* RRR_IP_BUFFER_ENTRY_COLLECTION_H */
+#endif /* RRR_MESSAGE_HOLDER_COLLECTION_H */

@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_IP_BUFFER_ENTRY_STRUCT_H
-#define RRR_IP_BUFFER_ENTRY_STRUCT_H
+#ifndef RRR_MESSAGE_HOLDER_STRUCT_H
+#define RRR_MESSAGE_HOLDER_STRUCT_H
 
 #include <sys/socket.h>
 #include <stdint.h>
@@ -32,8 +32,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // TODO : Make this smaller
 // TODO : Change data_length to unsigned
 
-struct rrr_ip_buffer_entry {
-	RRR_LL_NODE(struct rrr_ip_buffer_entry);
+struct rrr_message_holder {
+	RRR_LL_NODE(struct rrr_message_holder);
 	pthread_mutex_t lock;
 	int usercount;
 	ssize_t data_length;
@@ -44,4 +44,4 @@ struct rrr_ip_buffer_entry {
 	void *message;
 };
 
-#endif /* RRR_IP_BUFFER_ENTRY_STRUCT_H */
+#endif /* RRR_MESSAGE_HOLDER_STRUCT_H */

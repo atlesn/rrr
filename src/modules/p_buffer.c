@@ -35,8 +35,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 
 struct buffer_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -62,7 +62,7 @@ int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				INSTANCE_D_NAME(thread_data));
 	}
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

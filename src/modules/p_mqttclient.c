@@ -52,8 +52,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/map.h"
 #include "../lib/array.h"
 #include "../lib/ip/ip.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/util/rrr_time.h"
@@ -834,7 +834,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	out_free:
 	rrr_array_clear (&array_tmp);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	RRR_FREE_IF_NOT_NULL(payload);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 
@@ -1039,7 +1039,7 @@ struct receive_publish_create_entry_callback_data {
 	const struct rrr_message *message;
 };
 
-static int mqttclient_receive_publish_create_entry_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int mqttclient_receive_publish_create_entry_callback (struct rrr_message_holder *entry, void *arg) {
 	struct receive_publish_create_entry_callback_data *data = arg;
 
 	int ret = 0;
@@ -1057,7 +1057,7 @@ static int mqttclient_receive_publish_create_entry_callback (struct rrr_ip_buffe
 	entry->data_length = msg_size;
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

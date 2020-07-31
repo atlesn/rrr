@@ -41,8 +41,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/modules.h"
 #include "../../lib/buffer.h"
 #include "../../lib/ip/ip.h"
-#include "../../lib/ip/ip_buffer_entry.h"
-#include "../../lib/ip/ip_buffer_entry_struct.h"
+#include "../../lib/message_holder/message_holder.h"
+#include "../../lib/message_holder/message_holder_struct.h"
 #include "../../lib/messages.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
@@ -121,7 +121,7 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->message = message;
 	entry->message = NULL;
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 
 	return 0;
 }
@@ -287,7 +287,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -657,7 +657,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry->message = NULL;
 		}
 
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_message_holder_unlock(entry);
 
 		return ret;
 }
@@ -749,14 +749,14 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 
 	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
-	/* We actually receive an ip_buffer_entry but we don't need IP-stuff */
+	/* We actually receive an message_holder but we don't need IP-stuff */
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 
 	test_result->message = message;
 	test_result->result = 0;
 	entry->message = NULL;
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 
@@ -875,7 +875,7 @@ int test_type_array_mysql (
 
 	struct rrr_test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_ip_buffer_entry *entry = NULL;
+	struct rrr_message_holder *entry = NULL;
 
 	struct rrr_instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
 
@@ -942,7 +942,7 @@ int test_type_array_mysql (
 	out:
 	test_type_array_mysql_data_cleanup(&mysql_data);
 	if (entry != NULL) {
-		rrr_ip_buffer_entry_decref_while_locked_and_unlock(entry);
+		rrr_message_holder_decref_while_locked_and_unlock(entry);
 	}
 	RRR_FREE_IF_NOT_NULL(test_result.message);
 

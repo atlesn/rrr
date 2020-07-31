@@ -39,8 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../message_broker.h"
 #include "../poll_helper.h"
 #include "../threads.h"
-#include "../ip/ip_buffer_entry.h"
-#include "../ip/ip_buffer_entry_struct.h"
+#include "../message_holder/message_holder.h"
+#include "../message_holder/message_holder_struct.h"
 #include "../util/macro_utils.h"
 //#include "../ip_util.h"
 
@@ -51,7 +51,7 @@ struct rrr_cmodule_helper_read_callback_data {
 	struct rrr_message_addr addr_message;
 };
 
-static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int __rrr_cmodule_helper_read_final_callback (struct rrr_message_holder *entry, void *arg) {
 	struct rrr_cmodule_helper_read_callback_data *callback_data = arg;
 
 	int ret = 0;
@@ -66,7 +66,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 
 	//printf ("read_from_child_callback_msg addr len: %" PRIu64 "\n", RRR_MSG_ADDR_GET_ADDR_LEN(&callback_data->addr_message));
 
-	rrr_ip_buffer_entry_set_unlocked (
+	rrr_message_holder_set_unlocked (
 			entry,
 			message_new,
 			MSG_TOTAL_SIZE(message_new),
@@ -81,7 +81,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_ip_buffer_entry 
 	out:
 	RRR_FREE_IF_NOT_NULL(message_new);
 	memset(&callback_data->addr_message, '\0', sizeof(callback_data->addr_message));
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 
@@ -165,14 +165,14 @@ static int __rrr_cmodule_helper_send_entry_to_fork_nolock (
 		int *count,
 		struct rrr_instance_thread_data *thread_data,
 		pid_t fork_pid,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 ) {
 	struct rrr_message *message = (struct rrr_message *) entry->message;
 
 	struct rrr_message_addr addr_msg;
 	int ret = 0;
 
-	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_ip_buffer_entry_addr_differ);
+	RRR_ASSERT(sizeof(addr_msg.addr) == sizeof(entry->addr), message_addr_and_message_holder_addr_differ);
 
 	// cmodule send will always free or take care of message memory
 	entry->message = NULL;
@@ -244,7 +244,7 @@ static int __rrr_cmodule_helper_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATUR
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_message_holder_unlock(entry);
 	return ret;
 }
 

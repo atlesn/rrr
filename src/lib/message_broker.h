@@ -61,8 +61,8 @@ struct rrr_message_broker {
 	pthread_t creator;
 };
 
-struct rrr_ip_buffer_entry;
-struct rrr_ip_buffer_entry_collection;
+struct rrr_message_holder;
+struct rrr_message_holder_collection;
 
 // Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
@@ -97,28 +97,28 @@ int rrr_message_broker_write_entry (
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
-		int (*callback)(struct rrr_ip_buffer_entry *new_entry, void *arg),
+		int (*callback)(struct rrr_message_holder *new_entry, void *arg),
 		void *callback_arg
 );
 int rrr_message_broker_clone_and_write_entry (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		const struct rrr_ip_buffer_entry *entry
+		const struct rrr_message_holder *entry
 );
 int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 );
 int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 );
 int rrr_message_broker_write_entries_from_collection_unsafe (
 		struct rrr_message_broker *broker,
 		rrr_message_broker_costumer_handle *handle,
-		struct rrr_ip_buffer_entry_collection *collection
+		struct rrr_message_holder_collection *collection
 );
 int rrr_message_broker_poll_discard (
 		int *discarded_count,

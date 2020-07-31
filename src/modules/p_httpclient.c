@@ -39,9 +39,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/array.h"
-#include "../lib/ip/ip_buffer_entry.h"
-#include "../lib/ip/ip_buffer_entry_struct.h"
-#include "../lib/ip/ip_buffer_entry_collection.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/message_holder/message_holder_collection.h"
 
 #define RRR_HTTPCLIENT_DEFAULT_SERVER			"localhost"
 #define RRR_HTTPCLIENT_DEFAULT_PORT				0 // 0=automatic
@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct httpclient_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_http_client_data http_client_data;
-	struct rrr_ip_buffer_entry_collection defer_queue;
+	struct rrr_message_holder_collection defer_queue;
 
 	int do_no_data;
 	int do_rrr_msg_to_array;
@@ -364,7 +364,7 @@ static int httpclient_get_values_from_message (
 
 static int httpclient_send_request_locked (
 		struct httpclient_data *data,
-		struct rrr_ip_buffer_entry *entry
+		struct rrr_message_holder *entry
 ) {
 	struct rrr_message *message = entry->message;
 	struct rrr_array array_tmp = {0};
@@ -486,12 +486,12 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	goto out;
 	out_defer:
-		rrr_ip_buffer_entry_incref_while_locked(entry);
+		rrr_message_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&data->defer_queue, entry);
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_message_holder_unlock(entry);
 		return RRR_FIFO_SEARCH_STOP;
 	out:
-		rrr_ip_buffer_entry_unlock(entry);
+		rrr_message_holder_unlock(entry);
 		return ret;
 }
 
@@ -500,7 +500,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_http_client_data_cleanup(&data->http_client_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
-	rrr_ip_buffer_entry_collection_clear(&data->defer_queue);
+	rrr_message_holder_collection_clear(&data->defer_queue);
 }
 
 static int httpclient_data_init (
@@ -626,8 +626,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
-			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_ip_buffer_entry);
-				rrr_ip_buffer_entry_lock(node);
+			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_message_holder);
+				rrr_message_holder_lock(node);
 				if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
@@ -642,8 +642,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
-				rrr_ip_buffer_entry_unlock(node);
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_ip_buffer_entry_decref(node));
+				rrr_message_holder_unlock(node);
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_message_holder_decref(node));
 
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors

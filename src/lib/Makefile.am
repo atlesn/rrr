@@ -48,7 +48,9 @@ net_transport = net_transport/net_transport.c net_transport/net_transport_plain.
 
 util = util/gnu.c util/base64.c util/crc32.c util/posix.c util/rrr_time.c util/rrr_endian.c util/slow_noop.c util/utf8.c
 
-ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c ip/ip_buffer_entry.c ip/ip_buffer_entry_util.c ip/ip_buffer_entry_collection.c
+ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
+
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
@@ -64,7 +66,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_co
 					string_builder.c random.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
-					${net_transport} ${net_transport_tls} ${util} ${ip}
+					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 
