@@ -215,6 +215,38 @@ To view log output instead of statistics, run `rrr_stats -j`.
 
 Note that if you produce a lot of debug output, having `rrr_stats` running can cause crashes. By default, RRR only prints out errors and warnings.
 
+## SECURITY
+
+If you use RRR for networking tasks, please note that there are no authentication or any kind of security
+on most network functions. Although some modules have rate limiting causing them to drop incoming data if
+they are overloaded, this is merely to avoid filling up memory with buffered messages.
+
+If RRR is configured to read raw data from other hosts, this should happend on *closed networks* protected
+by a firewall. A firewall should run on a separate machine to prevent accidental openings, do not rely
+on software firewall rules on the machine running RRR.
+
+The MQTT modules support both TLS and authentication. It is recommended, if security is needed, to use a
+custom CA-certificate to validate certificates when receiving and making connections. The brokers
+and clients must then use certificates signed with this CA-certificate to identify themselves. It is not safe
+to rely on external CA-authorities, these are only safe when connecting to remote hosts using DNS. Anyone may
+obtain such certificates.
+
+In the configuration, specify a *ca_path* or *ca_file* to prevent the TLS library to look in standard system
+directories for public CA-certificates. Even better: If the public certificates are not used for anything else,
+delete them.
+
+Make sure that *plain* listening mode is disabled for modules if you wish to require TLS, and also double check
+afterwards that RRR does not listen to unsafe ports.
+
+Note that RRR does not check for revoked certificates. If some certificate has been leaked and is compromised,
+the CA-certificate used to signed this and all other certificates must be removed from all hosts and replaced. RRR
+does not validate hostnames in certificates.
+
+The HTTP modules can also use TLS in this setup for authentication, but there are no usernames or passwords. The
+*ipclient* module, providing assured delivery over UDP, has no TLS. This also goes for the raw networking *ip* module.  
+
+With the default RRR configuration file (dummy configuration), no networking is started. 
+
 ## MODULES
 
 Here's a short list of modules to start with, more are listed in the `rrr.conf` man page.
