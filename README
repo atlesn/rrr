@@ -221,7 +221,7 @@ Note that if you produce a lot of debug output, having `rrr_stats` running can c
 ## SECURITY
 
 If you use RRR for networking tasks, please note that there are no authentication or any kind of security
-on most network functions. Although some modules have rate limiting causing them to drop incoming data if
+on many network functions. Although some modules have rate limiting causing them to drop incoming data if
 they are overloaded, this is merely to avoid filling up memory with buffered messages.
 
 If RRR is configured to read raw data from other hosts, this should happend on *closed networks* protected
