@@ -64,10 +64,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <pthread.h>
 
-#include "read.h"
-#include "ip/ip.h"
-#include "util/rrr_endian.h"
-#include "util/linked_list.h"
+#include "../read.h"
+#include "../ip/ip.h"
+#include "../util/rrr_endian.h"
+#include "../util/linked_list.h"
 
 // Configuration
 #define RRR_UDPSTREAM_VERSION 2

@@ -40,7 +40,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/messages.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
-#include "../lib/udpstream_asd.h"
+#include "../lib/udpstream/udpstream_asd.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_holder/message_holder.h"

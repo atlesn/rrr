@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "udpstream.h"
-#include "buffer.h"
-#include "util/linked_list.h"
+#include "../buffer.h"
+#include "../util/linked_list.h"
 
 #define RRR_UDPSTREAM_ASD_CONNECT_TIMEOUT_MS 5000
 #define RRR_UDPSTREAM_ASD_BUFFER_MAX 500

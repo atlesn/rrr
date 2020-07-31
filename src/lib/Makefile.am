@@ -52,6 +52,8 @@ ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
 message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
 
+udpstream = udpstream.c udpstream_asd.c
+
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
 endif
@@ -62,10 +64,10 @@ librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_co
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c \
 					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
-					instances.c instance_collection.c poll_helper.c modules.c udpstream.c udpstream_asd.c \
+					instances.c instance_collection.c poll_helper.c modules.c \
 					string_builder.c random.c \
 					fixed_point.c passwd.c \
-					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} \
+					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
