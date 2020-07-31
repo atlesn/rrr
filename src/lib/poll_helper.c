@@ -154,7 +154,7 @@ int rrr_poll_do_poll_discard (
 
 		int discarded_count_tmp = 0;
 
-		ret_tmp = rrr_message_broker_poll_discard (
+		ret_tmp = rrr_msg_msg_broker_poll_discard (
 				&discarded_count_tmp,
 				INSTANCE_D_BROKER_ARGS(entry->thread_data)
 		);
@@ -190,7 +190,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 
 	int does_match = 0;
 
-	if (rrr_message_holder_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
+	if (rrr_msg_msg_holder_util_message_topic_match(&does_match, entry, INSTANCE_D_TOPIC(callback_data->thread_data)) != 0) {
 		RRR_MSG_0("Error while matching topic against topic filter while polling in instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = RRR_MESSAGE_BROKER_ERR;
@@ -210,7 +210,7 @@ static int __rrr_poll_delete_topic_filtering_callback (
 	}
 
 	out:
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -242,7 +242,7 @@ int rrr_poll_do_poll_delete (
 
 		struct rrr_poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_message_broker_poll_delete (
+		ret_tmp = rrr_msg_msg_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(entry->thread_data),
 				callback_to_use,
 				callback_arg,

@@ -244,14 +244,14 @@ static void journal_log_hook (
 		return;
 }
 
-static int journal_write_message_callback (struct rrr_message_holder *entry, void *arg) {
+static int journal_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct journal_data *data = arg;
 
 	int ret = 0;
 
 	char *topic_tmp = NULL;
 	char *topic_tmp_final = NULL;
-	struct rrr_message *reading = NULL;
+	struct rrr_msg_msg *reading = NULL;
 	struct journal_queue_entry *queue_entry = NULL;
 
 	pthread_mutex_lock (&data->delivery_lock);
@@ -319,7 +319,7 @@ static int journal_write_message_callback (struct rrr_message_holder *entry, voi
 	RRR_FREE_IF_NOT_NULL(topic_tmp_final);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	RRR_FREE_IF_NOT_NULL(reading);
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -397,7 +397,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 			}
 		}
 
-		if (rrr_message_broker_write_entry (
+		if (rrr_msg_msg_broker_write_entry (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				NULL,

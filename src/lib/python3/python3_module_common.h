@@ -24,12 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_headers.h"
 
-#include "../socket/rrr_socket_msg_head.h"
+#include "../socket/rrr_msg_head.h"
 #include "../util/macro_utils.h"
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"
 #define RRR_PYTHON3_SOCKET_TYPE_NAME "rrr_socket"
-#define RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME "rrr_message"
+#define RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME "rrr_msg_msg"
 #define RRR_PYTHON3_ARRAY_TYPE_NAME "rrr_array"
 #define RRR_PYTHON3_ARRAY_VALUE_TYPE_NAME "rrr_array_value"
 #define RRR_PYTHON3_CONFIG_TYPE_NAME "rrr_config"

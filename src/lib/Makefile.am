@@ -34,8 +34,8 @@ mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
-socket =	socket/rrr_socket.c socket/rrr_socket_msg.c socket/rrr_socket_read.c \
-			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_socket_msg_checksum.c
+socket =	socket/rrr_socket.c socket/rrr_msg.c socket/rrr_socket_read.c \
+			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_msg_checksum.c
 
 http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
@@ -50,9 +50,9 @@ util = util/gnu.c util/base64.c util/crc32.c util/posix.c util/rrr_time.c util/r
 
 ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
-message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
+udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
-udpstream = udpstream.c udpstream_asd.c
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
@@ -67,7 +67,7 @@ librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_co
 					instances.c instance_collection.c poll_helper.c modules.c \
 					string_builder.c random.c \
 					fixed_point.c passwd.c \
-					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
+					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
 					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}

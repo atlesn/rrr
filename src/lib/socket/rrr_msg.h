@@ -19,39 +19,39 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_SOCKET_MSG_H
-#define RRR_SOCKET_MSG_H
+#ifndef RRR_MSG_H
+#define RRR_MSG_H
 
-#include "rrr_socket_msg_checksum.h"
-#include "rrr_socket_msg_head.h"
+#include "rrr_msg_checksum.h"
+#include "rrr_msg_head.h"
 #include "../rrr_types.h"
 
-void rrr_socket_msg_populate_head (
-		struct rrr_socket_msg *message,
+void rrr_msg_populate_head (
+		struct rrr_msg *message,
 		rrr_u16 type,
 		rrr_u32 msg_size,
 		rrr_u64 value
 );
-void rrr_socket_msg_populate_control_msg (
-		struct rrr_socket_msg *message,
+void rrr_msg_populate_control_msg (
+		struct rrr_msg *message,
 		rrr_u16 flags,
 		rrr_u64 value
 );
-void rrr_socket_msg_checksum_and_to_network_endian (
-		struct rrr_socket_msg *message
+void rrr_msg_checksum_and_to_network_endian (
+		struct rrr_msg *message
 );
-int rrr_socket_msg_head_to_host_and_verify (
-		struct rrr_socket_msg *message,
+int rrr_msg_head_to_host_and_verify (
+		struct rrr_msg *message,
 		rrr_length expected_size
 );
-int rrr_socket_msg_get_target_size_and_check_checksum (
+int rrr_msg_get_target_size_and_check_checksum (
 		rrr_length *target_size,
-		const struct rrr_socket_msg *socket_msg,
+		const struct rrr_msg *msg,
 		rrr_length buf_size
 );
-int rrr_socket_msg_check_data_checksum_and_length (
-		struct rrr_socket_msg *message,
+int rrr_msg_check_data_checksum_and_length (
+		struct rrr_msg *message,
 		rrr_length data_size
 );
 
-#endif /* RRR_SOCKET_MSG_H */
+#endif /* RRR_MSG_H */

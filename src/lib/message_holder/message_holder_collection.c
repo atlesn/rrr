@@ -26,29 +26,29 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "util/linked_list.h"
 
-void rrr_message_holder_collection_clear (
-		struct rrr_message_holder_collection *collection
+void rrr_msg_msg_holder_collection_clear (
+		struct rrr_msg_msg_holder_collection *collection
 ) {
-	RRR_LL_DESTROY(collection, struct rrr_message_holder, rrr_message_holder_decref(node));
+	RRR_LL_DESTROY(collection, struct rrr_msg_msg_holder, rrr_msg_msg_holder_decref(node));
 }
 
-void rrr_message_holder_collection_clear_void (
+void rrr_msg_msg_holder_collection_clear_void (
 		void *arg
 ) {
-	rrr_message_holder_collection_clear(arg);
+	rrr_msg_msg_holder_collection_clear(arg);
 }
 
-void rrr_message_holder_collection_sort (
-		struct rrr_message_holder_collection *target,
+void rrr_msg_msg_holder_collection_sort (
+		struct rrr_msg_msg_holder_collection *target,
 		int (*compare)(void *message_a, void *message_b)
 ) {
-	struct rrr_message_holder_collection tmp = {0};
+	struct rrr_msg_msg_holder_collection tmp = {0};
 
 	// TODO : This is probably a bad sorting algorithm
 
 	while (RRR_LL_COUNT(target) != 0) {
-		struct rrr_message_holder *smallest = RRR_LL_FIRST(target);
-		RRR_LL_ITERATE_BEGIN(target, struct rrr_message_holder);
+		struct rrr_msg_msg_holder *smallest = RRR_LL_FIRST(target);
+		RRR_LL_ITERATE_BEGIN(target, struct rrr_msg_msg_holder);
 			if (compare(node->message, smallest->message) < 0) {
 				smallest = node;
 			}

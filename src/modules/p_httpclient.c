@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct httpclient_data {
 	struct rrr_instance_thread_data *thread_data;
 	struct rrr_http_client_data http_client_data;
-	struct rrr_message_holder_collection defer_queue;
+	struct rrr_msg_msg_holder_collection defer_queue;
 
 	int do_no_data;
 	int do_rrr_msg_to_array;
@@ -309,7 +309,7 @@ static int httpclient_reset_client_data (
 static int httpclient_get_values_from_message (
 		struct rrr_array *target_array,
 		struct httpclient_data *data,
-		const struct rrr_message *message
+		const struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
@@ -364,9 +364,9 @@ static int httpclient_get_values_from_message (
 
 static int httpclient_send_request_locked (
 		struct httpclient_data *data,
-		struct rrr_message_holder *entry
+		struct rrr_msg_msg_holder *entry
 ) {
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 	struct rrr_array array_tmp = {0};
 
 	array_tmp.version = RRR_ARRAY_VERSION;
@@ -461,7 +461,7 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	struct rrr_instance_thread_data *thread_data = arg;
 	struct httpclient_data *data = thread_data->private_data;
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3("httpclient instance %s received message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
@@ -486,12 +486,12 @@ static int httpclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	goto out;
 	out_defer:
-		rrr_message_holder_incref_while_locked(entry);
+		rrr_msg_msg_holder_incref_while_locked(entry);
 		RRR_LL_APPEND(&data->defer_queue, entry);
-		rrr_message_holder_unlock(entry);
+		rrr_msg_msg_holder_unlock(entry);
 		return RRR_FIFO_SEARCH_STOP;
 	out:
-		rrr_message_holder_unlock(entry);
+		rrr_msg_msg_holder_unlock(entry);
 		return ret;
 }
 
@@ -500,7 +500,7 @@ static void httpclient_data_cleanup(void *arg) {
 	rrr_http_client_data_cleanup(&data->http_client_data);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 	rrr_http_client_config_cleanup(&data->http_client_config);
-	rrr_message_holder_collection_clear(&data->defer_queue);
+	rrr_msg_msg_holder_collection_clear(&data->defer_queue);
 }
 
 static int httpclient_data_init (
@@ -626,8 +626,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 		if (RRR_LL_COUNT(&data->defer_queue) > 0) {
 			int ret_tmp = RRR_HTTP_OK;
 
-			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_message_holder);
-				rrr_message_holder_lock(node);
+			RRR_LL_ITERATE_BEGIN(&data->defer_queue, struct rrr_msg_msg_holder);
+				rrr_msg_msg_holder_lock(node);
 				if ((ret_tmp = httpclient_send_request_locked(data, node)) != RRR_HTTP_OK) {
 					if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 						// Let soft error propagate
@@ -642,8 +642,8 @@ static void *thread_entry_httpclient (struct rrr_thread *thread) {
 				else {
 					RRR_LL_ITERATE_SET_DESTROY();
 				}
-				rrr_message_holder_unlock(node);
-			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_message_holder_decref(node));
+				rrr_msg_msg_holder_unlock(node);
+			RRR_LL_ITERATE_END_CHECK_DESTROY(&data->defer_queue, 0; rrr_msg_msg_holder_decref(node));
 
 			if (ret_tmp == RRR_HTTP_SOFT_ERROR) {
 				rrr_posix_usleep(500000); // 500ms to avoid spamming server when there are errors

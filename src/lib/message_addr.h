@@ -23,14 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MESSAGE_ADDR_H
 
 #include "socket/rrr_socket.h"
-#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_msg.h"
 #include "util/rrr_endian.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
 
-struct rrr_message_addr {
-	RRR_SOCKET_MSG_HEAD;
+struct rrr_msg_addr {
+	RRR_MSG_HEAD;
 	uint8_t protocol;
 	char addr[128];
 } __attribute((__packed__));
@@ -45,18 +45,18 @@ struct rrr_message_addr {
 #define RRR_MSG_ADDR_SET_ADDR_LEN(msg, len) \
 	(msg)->msg_size = sizeof(*(msg)) - sizeof((msg)->addr) + (len)
 
-static inline void rrr_message_addr_prepare_for_network (struct rrr_message_addr *msg) {
+static inline void rrr_msg_addr_prepare_for_network (struct rrr_msg_addr *msg) {
 	// Nothing to flip
 	(void)(msg);
 }
 
-int rrr_message_addr_to_host (struct rrr_message_addr *msg);
-void rrr_message_addr_init_head (struct rrr_message_addr *target, uint64_t addr_len);
-void rrr_message_addr_init (struct rrr_message_addr *target);
-int rrr_message_addr_new (struct rrr_message_addr **target);
-int rrr_message_addr_clone (
-		struct rrr_message_addr **target,
-		const struct rrr_message_addr *source
+int rrr_msg_addr_to_host (struct rrr_msg_addr *msg);
+void rrr_msg_addr_init_head (struct rrr_msg_addr *target, uint64_t addr_len);
+void rrr_msg_addr_init (struct rrr_msg_addr *target);
+int rrr_msg_addr_new (struct rrr_msg_addr **target);
+int rrr_msg_addr_clone (
+		struct rrr_msg_addr **target,
+		const struct rrr_msg_addr *source
 );
 
 #endif /* RRR_MESSAGE_ADDR_H */

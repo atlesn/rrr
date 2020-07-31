@@ -24,20 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../util/linked_list.h"
 
-struct rrr_message_holder;
+struct rrr_msg_msg_holder;
 
-struct rrr_message_holder_collection {
-	RRR_LL_HEAD(struct rrr_message_holder);
+struct rrr_msg_msg_holder_collection {
+	RRR_LL_HEAD(struct rrr_msg_msg_holder);
 };
 
-void rrr_message_holder_collection_clear (
-		struct rrr_message_holder_collection *collection
+void rrr_msg_msg_holder_collection_clear (
+		struct rrr_msg_msg_holder_collection *collection
 );
-void rrr_message_holder_collection_clear_void (
+void rrr_msg_msg_holder_collection_clear_void (
 		void *arg
 );
-void rrr_message_holder_collection_sort (
-		struct rrr_message_holder_collection *target,
+void rrr_msg_msg_holder_collection_sort (
+		struct rrr_msg_msg_holder_collection *target,
 		int (*compare)(void *message_a, void *message_b)
 );
 

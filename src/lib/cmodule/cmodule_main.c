@@ -219,8 +219,8 @@ struct rrr_cmodule_process_callback_data {
 static int __rrr_cmodule_worker_loop_read_callback (const void *data, size_t data_size, void *arg) {
 	struct rrr_cmodule_process_callback_data *callback_data = arg;
 
-	const struct rrr_message *msg = data;
-	const struct rrr_message_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
+	const struct rrr_msg_msg *msg = data;
+	const struct rrr_msg_addr *msg_addr = data + MSG_TOTAL_SIZE(msg);
 
 	if (MSG_TOTAL_SIZE(msg) + sizeof(*msg_addr) != data_size) {
 		RRR_BUG("BUG: Size mismatch in __rrr_cmodule_worker_loop_read_callback %i+%lu != %lu\n",
@@ -255,9 +255,9 @@ static int __rrr_cmodule_worker_spawn_message (
 ) {
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			&message,
 			MSG_TYPE_MSG,
 			MSG_CLASS_DATA,
@@ -271,8 +271,8 @@ static int __rrr_cmodule_worker_spawn_message (
 		goto out;
 	}
 
-	struct rrr_message_addr message_addr;
-	rrr_message_addr_init(&message_addr);
+	struct rrr_msg_addr message_addr;
+	rrr_msg_addr_init(&message_addr);
 
 	if ((ret = process_callback(
 			worker,
@@ -438,8 +438,8 @@ int rrr_cmodule_worker_loop_start (
 		goto out;
 	}
 
-	struct rrr_socket_msg control_msg = {0};
-	rrr_socket_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
+	struct rrr_msg control_msg = {0};
+	rrr_msg_populate_control_msg(&control_msg, RRR_CMODULE_CONTROL_MSG_CONFIG_COMPLETE, 1);
 
 	if (rrr_mmap_channel_write(
 			worker->channel_to_parent,
@@ -514,9 +514,9 @@ static void __rrr_cmodule_worker_fork_log_hook (
 ) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
-	struct rrr_message_log *message_log = NULL;
+	struct rrr_msg_msg_log *message_log = NULL;
 
-	if (rrr_message_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
+	if (rrr_msg_msg_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
 		goto out;
 	}
 

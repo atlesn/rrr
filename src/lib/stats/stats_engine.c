@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_message.h"
 
 #include "../socket/rrr_socket.h"
-#include "../socket/rrr_socket_msg.h"
+#include "../socket/rrr_msg.h"
 #include "../socket/rrr_socket_client.h"
 #include "../read.h"
 #include "../random.h"
@@ -256,7 +256,7 @@ static int __rrr_stats_engine_read_callback (struct rrr_read_session *read_sessi
 }
 
 int __rrr_stats_engine_multicast_send_intermediate (
-		struct rrr_socket_msg *data,
+		struct rrr_msg *data,
 		size_t size,
 		void *callback_arg
 ) {
@@ -270,7 +270,7 @@ int __rrr_stats_engine_multicast_send_intermediate (
 }
 
 int __rrr_stats_engine_unicast_send_intermediate (
-		struct rrr_socket_msg *data,
+		struct rrr_msg *data,
 		size_t size,
 		void *callback_arg
 ) {
@@ -292,7 +292,7 @@ int __rrr_stats_engine_unicast_send_intermediate (
 static int __rrr_stats_engine_pack_message (
 		struct rrr_stats_message *message,
 		int (*callback)(
-				struct rrr_socket_msg *data,
+				struct rrr_msg *data,
 				size_t size,
 				void *callback_arg
 		),
@@ -307,15 +307,15 @@ static int __rrr_stats_engine_pack_message (
 			message
 	);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) &message_packed,
-			RRR_SOCKET_MSG_TYPE_TREE_DATA,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &message_packed,
+			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
 			message->timestamp
 	);
 
-	rrr_socket_msg_checksum_and_to_network_endian (
-			(struct rrr_socket_msg *) &message_packed
+	rrr_msg_checksum_and_to_network_endian (
+			(struct rrr_msg *) &message_packed
 	);
 
 	// This is very noisy, disable. Causes self-genration of messages
@@ -326,7 +326,7 @@ static int __rrr_stats_engine_pack_message (
 			message->path
 	);*/
 
-	return callback((struct rrr_socket_msg *) &message_packed, total_size, callback_arg);
+	return callback((struct rrr_msg *) &message_packed, total_size, callback_arg);
 }
 
 static int __rrr_stats_engine_send_messages_from_list (struct rrr_stats_engine *stats, struct rrr_stats_named_message_list *list) {
@@ -489,7 +489,7 @@ int rrr_stats_engine_tick (struct rrr_stats_engine *stats) {
 	// Read from clients
 	if ((ret = rrr_socket_client_collection_read (
 			&stats->client_collection,
-			sizeof(struct rrr_socket_msg),
+			sizeof(struct rrr_msg),
 			1024,
 			0,
 			RRR_SOCKET_READ_METHOD_RECVFROM,

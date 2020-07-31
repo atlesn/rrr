@@ -30,8 +30,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "message_holder.h"
 #include "messages.h"
 
-int rrr_message_holder_util_new_with_empty_message (
-		struct rrr_message_holder **result,
+int rrr_msg_msg_holder_util_new_with_empty_message (
+		struct rrr_msg_msg_holder **result,
 		ssize_t message_data_length,
 		const struct sockaddr *addr,
 		socklen_t addr_len,
@@ -39,8 +39,8 @@ int rrr_message_holder_util_new_with_empty_message (
 ) {
 	int ret = 0;
 
-	struct rrr_message_holder *entry = NULL;
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg_holder *entry = NULL;
+	struct rrr_msg_msg *message = NULL;
 
 	// XXX : Callers treat this function as message_data_length is an absolute value
 
@@ -52,7 +52,7 @@ int rrr_message_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	if (rrr_message_holder_new (
+	if (rrr_msg_msg_holder_new (
 			&entry,
 			message_size,
 			addr,
@@ -65,9 +65,9 @@ int rrr_message_holder_util_new_with_empty_message (
 		goto out;
 	}
 
-	rrr_message_holder_lock(entry);
+	rrr_msg_msg_holder_lock(entry);
 	memset(message, '\0', message_size);
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 
 	message = NULL;
 
@@ -78,18 +78,18 @@ int rrr_message_holder_util_new_with_empty_message (
 	return ret;
 }
 
-int rrr_message_holder_util_clone_no_locking (
-		struct rrr_message_holder **result,
-		const struct rrr_message_holder *source
+int rrr_msg_msg_holder_util_clone_no_locking (
+		struct rrr_msg_msg_holder **result,
+		const struct rrr_msg_msg_holder *source
 ) {
 	// Note : Do calculation correctly, not incorrect
-	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_message) - 1);
+	ssize_t message_data_length = source->data_length - (sizeof(struct rrr_msg_msg) - 1);
 
 	if (message_data_length < 0) {
-		RRR_BUG("Message too small in rrr_message_holder_clone_no_locking\n");
+		RRR_BUG("Message too small in rrr_msg_msg_holder_clone_no_locking\n");
 	}
 
-	int ret = rrr_message_holder_util_new_with_empty_message (
+	int ret = rrr_msg_msg_holder_util_new_with_empty_message (
 			result,
 			message_data_length,
 			(struct sockaddr *) &source->addr,
@@ -98,21 +98,21 @@ int rrr_message_holder_util_clone_no_locking (
 	);
 
 	if (ret == 0) {
-		rrr_message_holder_lock(*result);
+		rrr_msg_msg_holder_lock(*result);
 		(*result)->send_time = source->send_time;
 		memcpy((*result)->message, source->message, source->data_length);
-		rrr_message_holder_unlock(*result);
+		rrr_msg_msg_holder_unlock(*result);
 	}
 
 	return ret;
 }
 
-int rrr_message_holder_util_message_topic_match (
+int rrr_msg_msg_holder_util_message_topic_match (
 		int *does_match,
-		const struct rrr_message_holder *entry,
+		const struct rrr_msg_msg_holder *entry,
 		const struct rrr_mqtt_topic_token *filter_first_token
 ) {
-	const struct rrr_message *message = entry->message;
+	const struct rrr_msg_msg *message = entry->message;
 
 	int ret = 0;
 
@@ -140,15 +140,15 @@ int rrr_message_holder_util_message_topic_match (
 			MSG_TOPIC_PTR(message),
 			MSG_TOPIC_PTR(message) + MSG_TOPIC_LENGTH(message)
 	) != 0) {
-		RRR_MSG_0("Tokenizing of topic failed in rrr_message_holder_message_topic_match\n");
+		RRR_MSG_0("Tokenizing of topic failed in rrr_msg_msg_holder_message_topic_match\n");
 		ret = 1;
 		goto out;
 	}
 
 	if ((ret = rrr_mqtt_topic_match_tokens_recursively(filter_first_token, entry_first_token)) != RRR_MQTT_TOKEN_MATCH) {
 		if (RRR_DEBUGLEVEL_3) {
-			if ((ret = rrr_message_topic_get(&topic_tmp, message)) != 0) {
-				RRR_MSG_0("Could not get topic of message in rrr_message_holder_util_message_topic_match while printing debug message\n");
+			if ((ret = rrr_msg_msg_topic_get(&topic_tmp, message)) != 0) {
+				RRR_MSG_0("Could not get topic of message in rrr_msg_msg_holder_util_message_topic_match while printing debug message\n");
 				goto out;
 			}
 			RRR_MSG_3("Mismatched topic: '%s'\n", topic_tmp);

@@ -465,7 +465,7 @@ static void __rrr_instace_destroy_thread (struct rrr_instance_thread_data *data)
 	if (data->stats != NULL) {
 		rrr_stats_instance_destroy(data->stats);
 	}
-	rrr_message_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
+	rrr_msg_msg_broker_costumer_unregister(data->init_data.message_broker, data->message_broker_handle);
 	free(data);
 }
 
@@ -502,7 +502,7 @@ struct rrr_instance_thread_data *rrr_instance_new_thread (struct rrr_instance_th
 	memset(data, '\0', sizeof(*data));
 	data->init_data = *init_data;
 
-	if (rrr_message_broker_costumer_register (
+	if (rrr_msg_msg_broker_costumer_register (
 			&data->message_broker_handle,
 			init_data->message_broker,
 			init_data->module->instance_name
@@ -763,7 +763,7 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 ) {
 	int ret = 0;
 
-	if (rrr_message_broker_get_entry_count_and_ratelimit (
+	if (rrr_msg_msg_broker_get_entry_count_and_ratelimit (
 			delivery_entry_count,
 			delivery_ratelimit_active,
 			INSTANCE_D_BROKER(thread_data),
@@ -778,12 +778,12 @@ int rrr_instance_default_set_output_buffer_ratelimit_when_needed (
 	if (*delivery_entry_count > 10000 && *delivery_ratelimit_active == 0) {
 		RRR_DBG_1("Enabling ratelimit on buffer in %s instance %s due to slow reader\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
-		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+		rrr_msg_msg_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
 	else if (*delivery_entry_count < 10 && *delivery_ratelimit_active == 1) {
 		RRR_DBG_1("Disabling ratelimit on buffer in %s instance %s due to low buffer level\n",
 				INSTANCE_D_MODULE_NAME(thread_data), INSTANCE_D_NAME(thread_data));
-		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
+		rrr_msg_msg_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 0);
 	}
 
 	out:

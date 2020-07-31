@@ -62,20 +62,20 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	(void)(data);
 
-	const struct rrr_message *message = entry->message;
+	const struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3("duplicator instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(long long unsigned int) message->timestamp
 	);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	int ret = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
 	);
 
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -144,7 +144,7 @@ static int duplicator_preload (struct rrr_thread *thread) {
 		goto out;
 	}
 
-	if ((ret = rrr_message_broker_setup_split_output_buffer (
+	if ((ret = rrr_msg_msg_broker_setup_split_output_buffer (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			slots

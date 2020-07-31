@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 
-struct rrr_message;
+struct rrr_msg_msg;
 struct rrr_instance_metadata_collection;
 struct rrr_instance_thread_data;
 

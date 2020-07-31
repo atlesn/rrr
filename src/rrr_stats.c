@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/map.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/socket/rrr_socket_msg.h"
+#include "lib/socket/rrr_msg.h"
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/read.h"
 #include "lib/socket/rrr_socket_constants.h"
@@ -207,7 +207,7 @@ static int __rrr_stats_read_message (
 			&bytes_read,
 			read_sessions,
 			fd,
-			sizeof(struct rrr_socket_msg),
+			sizeof(struct rrr_msg),
 			1024,
 			0,
 			0,
@@ -510,15 +510,15 @@ static int __rrr_stats_send_message (int fd, const struct rrr_stats_message *mes
 			message
 	);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) &message_packed,
-			RRR_SOCKET_MSG_TYPE_TREE_DATA,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) &message_packed,
+			RRR_MSG_TYPE_TREE_DATA,
 			total_size,
 			message->timestamp
 	);
 
-	rrr_socket_msg_checksum_and_to_network_endian (
-			(struct rrr_socket_msg *) &message_packed
+	rrr_msg_checksum_and_to_network_endian (
+			(struct rrr_msg *) &message_packed
 	);
 
 	RRR_DBG_3("TX size %lu sticky %i path %s\n",

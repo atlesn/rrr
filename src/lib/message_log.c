@@ -24,37 +24,37 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "message_log.h"
-#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_msg.h"
 
-void rrr_message_log_prepare_for_network (struct rrr_message_log *msg) {
+void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_msg_log *msg) {
 	msg->prefix_size = rrr_htobe16(msg->prefix_size);
 }
 
-int rrr_message_log_to_host (struct rrr_message_log *msg) {
+int rrr_msg_msg_log_to_host (struct rrr_msg_msg_log *msg) {
 	msg->prefix_size = rrr_be16toh(msg->prefix_size);
 
 	if (!RRR_MSG_LOG_SIZE_OK(msg)) {
-		RRR_MSG_0("Invalid size of message in rrr_message_log_to_host\n");
+		RRR_MSG_0("Invalid size of message in rrr_msg_msg_log_to_host\n");
 		return 1;
 	}
 
 	if (msg->prefix_size > 0 && *(msg->prefix_and_message - 1 + msg->prefix_size - 1) != '\0') {
-		RRR_MSG_0("Prefix was not 0-terminated in rrr_message_log_to_host\n");
+		RRR_MSG_0("Prefix was not 0-terminated in rrr_msg_msg_log_to_host\n");
 		return 1;
 	}
 
 	if (*((char *) msg + msg->msg_size - 1) != '\0') {
-		RRR_MSG_0("Message was not 0-terminated in rrr_message_log_to_host\n");
+		RRR_MSG_0("Message was not 0-terminated in rrr_msg_msg_log_to_host\n");
 		return 1;
 	}
 
 	return 0;
 }
 
-void rrr_message_log_init_head (struct rrr_message_log *target, uint16_t prefix_size, uint32_t data_size) {
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) target,
-			RRR_SOCKET_MSG_TYPE_MESSAGE_LOG,
+void rrr_msg_msg_log_init_head (struct rrr_msg_msg_log *target, uint16_t prefix_size, uint32_t data_size) {
+	rrr_msg_populate_head (
+			(struct rrr_msg *) target,
+			RRR_MSG_TYPE_MESSAGE_LOG,
 			sizeof(*target) - 1 + prefix_size + data_size,
 			0
 	);
@@ -62,8 +62,8 @@ void rrr_message_log_init_head (struct rrr_message_log *target, uint16_t prefix_
 	target->prefix_size = prefix_size;
 }
 
-int rrr_message_log_new (
-		struct rrr_message_log **target,
+int rrr_msg_msg_log_new (
+		struct rrr_msg_msg_log **target,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *message
@@ -79,13 +79,13 @@ int rrr_message_log_new (
 
 	size_t total_data_size = prefix_size + message_size;
 
-	struct rrr_message_log *result = malloc(sizeof(*result) - 1 + total_data_size);
+	struct rrr_msg_msg_log *result = malloc(sizeof(*result) - 1 + total_data_size);
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memorty in rrr_message_log_new");
+		RRR_MSG_0("Could not allocate memorty in rrr_msg_msg_log_new");
 		return 1;
 	}
 
-	rrr_message_log_init_head(result, prefix_size, message_size);
+	rrr_msg_msg_log_init_head(result, prefix_size, message_size);
 /*
 	printf("init message ppos %p mpos %p\n", result->prefix_and_message, RRR_MSG_LOG_MSG_POS(result));
 

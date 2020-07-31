@@ -31,7 +31,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "read.h"
 #include "socket/rrr_socket_constants.h"
-#include "socket/rrr_socket_msg_checksum.h"
+#include "socket/rrr_msg_checksum.h"
 #include "messages.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
@@ -57,7 +57,7 @@ static int __rrr_udpstream_asd_queue_entry_destroy (
 		struct rrr_udpstream_asd_queue_entry *entry
 ) {
 	if (entry->message != NULL) {
-		rrr_message_holder_decref(entry->message);
+		rrr_msg_msg_holder_decref(entry->message);
 	}
 	free(entry);
 	return 0;
@@ -215,7 +215,7 @@ static void __rrr_udpstream_asd_queue_insert_ordered (
 // message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_new *queue,
-		struct rrr_message_holder *ip_entry,
+		struct rrr_msg_msg_holder *ip_entry,
 		uint32_t message_id
 ) {
 	int ret = 0;
@@ -232,7 +232,7 @@ static int __rrr_udpstream_asd_queue_incref_and_insert_entry (
 	}
 	memset(new_entry, '\0', sizeof(*new_entry));
 
-	rrr_message_holder_incref_while_locked(ip_entry);
+	rrr_msg_msg_holder_incref_while_locked(ip_entry);
 	new_entry->message_id = message_id;
 	new_entry->message = ip_entry;
 
@@ -269,7 +269,7 @@ static int __rrr_udpstream_asd_queue_new (struct rrr_udpstream_asd_queue_new **t
 // message pointer set to NULL if memory gets new owner
 static int __rrr_udpstream_asd_queue_collection_incref_and_insert_entry (
 		struct rrr_udpstream_asd_queue_collection *collection,
-		struct rrr_message_holder *entry,
+		struct rrr_msg_msg_holder *entry,
 		uint32_t connect_handle,
 		uint32_t message_id
 ) {
@@ -599,7 +599,7 @@ static int __rrr_udpstream_asd_control_frame_listener (
 // ip_message is set to NULL if memory is managed by new buffer
 int rrr_udpstream_asd_queue_and_incref_message (
 		struct rrr_udpstream_asd *session,
-		struct rrr_message_holder *ip_message
+		struct rrr_msg_msg_holder *ip_message
 ) {
 	int ret = RRR_UDPSTREAM_ASD_OK;
 	uint32_t id = 0;
@@ -613,7 +613,7 @@ int rrr_udpstream_asd_queue_and_incref_message (
 
 	RRR_DBG_3("ASD %u QUEUE\n", session->connect_handle);
 
-//	struct rrr_message *message = (*ip_message)->message;
+//	struct rrr_msg_msg *message = (*ip_message)->message;
 //	printf ("type and class: %u\n", message->type_and_class);
 
 	if (RRR_LL_COUNT(&session->send_queue) >= RRR_UDPSTREAM_ASD_BUFFER_MAX) {
@@ -653,13 +653,13 @@ int __rrr_udpstream_asd_send_message (
 ) {
 	int ret = 0;
 
-	struct rrr_message *message = node->message->message;
-	struct rrr_message *message_network = NULL;
-	message_network = rrr_message_duplicate(message);
+	struct rrr_msg_msg *message = node->message->message;
+	struct rrr_msg_msg *message_network = NULL;
+	message_network = rrr_msg_msg_duplicate(message);
 	ssize_t message_network_size = MSG_TOTAL_SIZE(message_network);
 
-	rrr_message_prepare_for_network((struct rrr_message *) message_network);
-	rrr_socket_msg_checksum_and_to_network_endian ((struct rrr_socket_msg *) message_network);
+	rrr_msg_msg_prepare_for_network((struct rrr_msg_msg *) message_network);
+	rrr_msg_checksum_and_to_network_endian ((struct rrr_msg *) message_network);
 
 	// Note: There is no locking on the connect handle. If it for some reason is invalid,
 	// udpstream will detect this.
@@ -852,9 +852,9 @@ int rrr_udpstream_asd_default_allocator (
 
 	int ret = 0;
 
-	struct rrr_message_holder *new_entry = NULL;
+	struct rrr_msg_msg_holder *new_entry = NULL;
 
-	if (rrr_message_holder_new (
+	if (rrr_msg_msg_holder_new (
 			&new_entry,
 			0,
 			NULL,
@@ -875,7 +875,7 @@ int rrr_udpstream_asd_default_allocator (
 		goto out_destroy;
 	}
 
-	rrr_message_holder_lock(new_entry);
+	rrr_msg_msg_holder_lock(new_entry);
 
 	new_entry->message = joined_data;
 	new_entry->data_length = size;
@@ -883,26 +883,26 @@ int rrr_udpstream_asd_default_allocator (
 	ret = callback(&joined_data, new_entry, udpstream_callback_arg);
 
 	if (joined_data != NULL) {
-		rrr_message_holder_destroy_while_locked(new_entry);
+		rrr_msg_msg_holder_destroy_while_locked(new_entry);
 	}
 	else {
-		rrr_message_holder_unlock(new_entry);
+		rrr_msg_msg_holder_unlock(new_entry);
 	}
 
 	goto out;
 	out_destroy:
-		rrr_message_holder_destroy(new_entry);
+		rrr_msg_msg_holder_destroy(new_entry);
 	out:
 		return ret;
 }
 */
 
-static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_message **message, void *arg) {
+static int __rrr_udpstream_asd_receive_messages_callback_final (struct rrr_msg_msg **message, void *arg) {
 	int ret = 0;
 
 	struct rrr_asd_receive_messages_callback_data *receive_data = arg;
 	struct rrr_udpstream_asd *session = receive_data->session;
-	struct rrr_message_holder *entry = receive_data->udpstream_receive_data->allocation_handle;
+	struct rrr_msg_msg_holder *entry = receive_data->udpstream_receive_data->allocation_handle;
 
 	// Any allocator must put an ip buffer entry in the allocation handle
 	// The entry must be locked already at this location, allocator is responsible for ensuring that
@@ -1033,7 +1033,7 @@ static int __rrr_udpstream_asd_do_receive_tasks (
 int __rrr_udpstream_asd_queue_deliver_messages (
 		int *delivered_count,
 		struct rrr_udpstream_asd_queue_new *queue,
-		int (*receive_callback)(struct rrr_message_holder *message, void *arg),
+		int (*receive_callback)(struct rrr_msg_msg_holder *message, void *arg),
 		void *receive_callback_arg
 ) {
 	*delivered_count = 0;
@@ -1046,21 +1046,21 @@ int __rrr_udpstream_asd_queue_deliver_messages (
 				RRR_BUG("RACK without DACK in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 			}
 
-			struct rrr_message_holder *message = node->message;
+			struct rrr_msg_msg_holder *message = node->message;
 			node->message = NULL;
 
 			RRR_DBG_3("ASD DELIVER %u timestamp %" PRIu64 ", grace started\n",
 					node->message_id, node->send_time);
 
 			// Callback must ALWAYS unlock
-			rrr_message_holder_lock(message);
+			rrr_msg_msg_holder_lock(message);
 			if ((ret = receive_callback(message, receive_callback_arg)) != 0) {
 				RRR_MSG_0("Error from callback in __rrr_udpstream_asd_deliver_messages_from_queue\n");
 				ret = 1;
 				goto out;
 			}
 
-			rrr_message_holder_decref(message);
+			rrr_msg_msg_holder_decref(message);
 			node->message = NULL;
 
 			delivered_count++;
@@ -1124,7 +1124,7 @@ int __rrr_udpstream_asd_queue_regulate_window_size (
 
 static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 		struct rrr_udpstream_asd *session,
-		int (*receive_callback)(struct rrr_message_holder *message, void *arg),
+		int (*receive_callback)(struct rrr_msg_msg_holder *message, void *arg),
 		void *receive_callback_arg,
 		struct rrr_udpstream_asd_queue_new *queue
 ) {
@@ -1171,7 +1171,7 @@ static int __rrr_udpstream_asd_deliver_and_maintain_queue (
 // Deliver ready messages to application through callback function
 int rrr_udpstream_asd_deliver_and_maintain_queues (
 		struct rrr_udpstream_asd *session,
-		int (*receive_callback)(struct rrr_message_holder *message, void *arg),
+		int (*receive_callback)(struct rrr_msg_msg_holder *message, void *arg),
 		void *receive_callback_arg
 ) {
 	int ret = 0;

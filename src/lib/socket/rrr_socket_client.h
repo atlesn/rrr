@@ -49,7 +49,7 @@ struct rrr_socket_client_collection {
 	char *creator;
 };
 
-struct rrr_socket_msg;
+struct rrr_msg;
 
 void rrr_socket_client_collection_clear (
 		struct rrr_socket_client_collection *collection

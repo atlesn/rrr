@@ -36,7 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../messages.h"
 #include "../message_addr.h"
 #include "../settings.h"
-#include "../socket/rrr_socket_msg.h"
+#include "../socket/rrr_msg.h"
 #include "../rrr_strerror.h"
 #include "../array.h"
 #include "../ip/ip.h"
@@ -224,7 +224,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx) {
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data),
+		int (*send_message) (struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 ) {
@@ -793,7 +793,7 @@ static int __rrr_perl5_hv_to_message_array_store_field (
 	name = *tmp; } while(0)
 
 static int __rrr_perl5_hv_to_message_extract_array (
-		struct rrr_message **target,
+		struct rrr_msg_msg **target,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
@@ -802,7 +802,7 @@ static int __rrr_perl5_hv_to_message_extract_array (
 
 	int ret = 0;
 
-	struct rrr_message *message_tmp = NULL;
+	struct rrr_msg_msg *message_tmp = NULL;
 	struct rrr_array array_tmp = {0};
 	HV *hv = source->hv;
 
@@ -896,8 +896,8 @@ static int __rrr_perl5_hv_to_message_extract_array (
 }
 
 int rrr_perl5_hv_to_message (
-		struct rrr_message **target_final,
-		struct rrr_message_addr *target_addr,
+		struct rrr_msg_msg **target_final,
+		struct rrr_msg_addr *target_addr,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 ) {
@@ -906,7 +906,7 @@ int rrr_perl5_hv_to_message (
 
 	int ret = 0;
 
-	struct rrr_message *target = *target_final;
+	struct rrr_msg_msg *target = *target_final;
 	HV *hv = source->hv;
 
 	DEFINE_AND_FETCH_FROM_HV(data, hv);
@@ -935,7 +935,7 @@ int rrr_perl5_hv_to_message (
 			new_topic_len;
 
     // Sets default address length to 0
-    rrr_message_addr_init(target_addr);
+    rrr_msg_addr_init(target_addr);
 
 	DEFINE_AND_FETCH_FROM_HV(ip_so_type, hv);
 
@@ -1001,7 +1001,7 @@ int rrr_perl5_hv_to_message (
 	}
 
 	if (MSG_TOTAL_SIZE(target) > old_total_len) {
-		struct rrr_message *new_message = realloc(target, MSG_TOTAL_SIZE(target));
+		struct rrr_msg_msg *new_message = realloc(target, MSG_TOTAL_SIZE(target));
 		if (new_message == NULL) {
 			RRR_MSG_0("Could not re-allocate memory in rrr_perl5_hv_to_message\n");
 			ret = 1;
@@ -1098,7 +1098,7 @@ static int __rrr_perl5_message_hv_arrays_populate_store_element_callback(RRR_PER
 static int __rrr_perl5_message_hv_arrays_populate (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message
+		const struct rrr_msg_msg *message
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
@@ -1189,15 +1189,15 @@ static int __rrr_perl5_message_hv_arrays_populate (
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
+		const struct rrr_msg_msg *message,
+		struct rrr_msg_addr *message_addr
 ) {
 	PerlInterpreter *my_perl = ctx->interpreter;
     PERL_SET_CONTEXT(my_perl);
 
 	int ret = 0;
 
-	if (!RRR_SOCKET_MSG_IS_RRR_MESSAGE(message)) {
+	if (!RRR_MSG_IS_RRR_MESSAGE(message)) {
 		RRR_BUG("Message to rrr_perl5_message_to_hv was not a VL message\n");
 	}
 
@@ -1277,8 +1277,8 @@ int rrr_perl5_message_to_hv (
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
+		const struct rrr_msg_msg *message,
+		struct rrr_msg_addr *message_addr
 ) {
     int ret = 0;
 
@@ -1317,9 +1317,9 @@ int rrr_perl5_message_send (HV *hv) {
 		goto out;
 	}
 
-	struct rrr_message_addr addr_msg;
-	struct rrr_message *message_new = NULL;
-	if (rrr_message_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
+	struct rrr_msg_addr addr_msg;
+	struct rrr_msg_msg *message_new = NULL;
+	if (rrr_msg_msg_new_empty(&message_new, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, 0) != 0) {
 		RRR_MSG_0("Could not allocate new message in rrr_perl5_message_send\n");
 		ret = FALSE;
 		goto out;

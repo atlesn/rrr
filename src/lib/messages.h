@@ -25,24 +25,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 
 #include "rrr_types.h"
-#include "socket/rrr_socket_msg_head.h"
+#include "socket/rrr_msg_head.h"
 #include "messages_head.h"
 
-struct rrr_message *rrr_message_new_array (
+struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
 	rrr_u32 data_length
 );
-int rrr_message_new_empty (
-		struct rrr_message **final_result,
+int rrr_msg_msg_new_empty (
+		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
 		rrr_u8 class,
 		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 );
-int rrr_message_new_with_data (
-		struct rrr_message **final_result,
+int rrr_msg_msg_new_with_data (
+		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
 		rrr_u8 class,
 		rrr_u64 timestamp,
@@ -51,33 +51,33 @@ int rrr_message_new_with_data (
 		const char *data,
 		rrr_u32 data_length
 );
-int rrr_message_to_string (
+int rrr_msg_msg_to_string (
 	char **final_target,
-	struct rrr_message *message
+	struct rrr_msg_msg *message
 );
-int rrr_message_to_host_and_verify (struct rrr_message *message, rrr_biglength expected_size);
-void rrr_message_prepare_for_network (struct rrr_message *message);
-struct rrr_message *rrr_message_duplicate_no_data_with_size (
-		const struct rrr_message *message,
+int rrr_msg_msg_to_host_and_verify (struct rrr_msg_msg *message, rrr_biglength expected_size);
+void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message);
+struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
+		const struct rrr_msg_msg *message,
 		ssize_t topic_length,
 		ssize_t data_length
 );
-struct rrr_message *rrr_message_duplicate (
-		const struct rrr_message *message
+struct rrr_msg_msg *rrr_msg_msg_duplicate (
+		const struct rrr_msg_msg *message
 );
-struct rrr_message *rrr_message_duplicate_no_data (
-		struct rrr_message *message
+struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
+		struct rrr_msg_msg *message
 );
-int rrr_message_topic_set (
-		struct rrr_message **message,
+int rrr_msg_msg_topic_set (
+		struct rrr_msg_msg **message,
 		const char *topic,
 		ssize_t topic_len
 );
-int rrr_message_topic_get (
+int rrr_msg_msg_topic_get (
 		char **result,
-		const struct rrr_message *message
+		const struct rrr_msg_msg *message
 );
-int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b);
-int rrr_message_timestamp_compare_void (void *message_a, void *message_b);
+int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b);
+int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b);
 
 #endif /* RRR_MESSAGES_H */

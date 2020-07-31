@@ -46,12 +46,12 @@ int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 //	printf ("buffer got entry %p\n", entry);
 
 	struct rrr_instance_thread_data *thread_data = arg;
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	int ret = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
@@ -62,7 +62,7 @@ int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				INSTANCE_D_NAME(thread_data));
 	}
 
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -70,7 +70,7 @@ static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
 	// This will also unlock
-	if (rrr_message_broker_clone_and_write_entry (
+	if (rrr_msg_msg_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			message

@@ -83,19 +83,19 @@ static int rrr_python3_socket_f_init (PyObject *self, PyObject *args, PyObject *
 static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	int ret = 0;
 
-	struct rrr_message_addr message_addr = {0};
-	const struct rrr_message *message_orig = NULL;
-	struct rrr_message *message = NULL;
+	struct rrr_msg_addr message_addr = {0};
+	const struct rrr_msg_msg *message_orig = NULL;
+	struct rrr_msg_msg *message = NULL;
 
-	if (!rrr_python3_rrr_message_check(arg)) {
+	if (!rrr_python3_rrr_msg_msg_check(arg)) {
 		RRR_MSG_0("Received unknown object type in python3 socket send\n");
 		ret = 1;
 		goto out;
 	}
 
-	message_orig = rrr_python3_rrr_message_get_message (&message_addr, arg);
+	message_orig = rrr_python3_rrr_msg_msg_get_message (&message_addr, arg);
 
-	message = rrr_message_duplicate(message_orig);
+	message = rrr_msg_msg_duplicate(message_orig);
 	if (message == NULL) {
 		RRR_MSG_0("Could not duplicate message in rrr_python3_socket_f_send\n");
 		ret = 1;
@@ -103,7 +103,7 @@ static PyObject *rrr_python3_socket_f_send (PyObject *self, PyObject *arg) {
 	}
 
 
-	rrr_message_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
+	rrr_msg_addr_init_head(&message_addr, RRR_MSG_ADDR_GET_ADDR_LEN(&message_addr));
 
 	// socket_send always handles memory of message
 	if ((ret = rrr_python3_socket_send(self, message, &message_addr)) != 0) {
@@ -124,7 +124,7 @@ static PyMethodDef socket_methods[] = {
 				.ml_name	= "send",
 				.ml_meth	= (PyCFunction) rrr_python3_socket_f_send,
 				.ml_flags	= METH_O,
-				.ml_doc		= "Send an rrr_message object on the socket"
+				.ml_doc		= "Send an rrr_msg_msg object on the socket"
 		},
 		{ NULL, NULL, 0, NULL }
 };
@@ -209,8 +209,8 @@ PyObject *rrr_python3_socket_new (struct rrr_cmodule_worker *worker) {
 
 int rrr_python3_socket_send (
 		PyObject *socket,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
 ) {
 	struct rrr_python3_socket_data *socket_data = (struct rrr_python3_socket_data *) socket;
 	int ret = 0;
@@ -219,7 +219,7 @@ int rrr_python3_socket_send (
 			getpid(), message->msg_size
 	);
 
-	if (message->msg_size < sizeof(struct rrr_socket_msg)) {
+	if (message->msg_size < sizeof(struct rrr_msg)) {
 		RRR_BUG("Received a socket message of wrong size in rrr_python3_socket_send (it says %u bytes)\n", message->msg_size);
 	}
 

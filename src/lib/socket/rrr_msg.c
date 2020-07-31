@@ -24,20 +24,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "rrr_socket.h"
-#include "rrr_socket_msg.h"
+#include "rrr_msg.h"
 
 #include "../rrr_types.h"
 #include "../util/crc32.h"
 #include "../util/rrr_endian.h"
 
-void rrr_socket_msg_populate_head (
-		struct rrr_socket_msg *message,
+void rrr_msg_populate_head (
+		struct rrr_msg *message,
 		rrr_u16 type,
 		rrr_u32 msg_size,
 		rrr_u64 value
 ) {
 	if (msg_size < sizeof(*message)) {
-		RRR_BUG("Size was too small in rrr_socket_msg_head_to_network\n");
+		RRR_BUG("Size was too small in rrr_msg_head_to_network\n");
 	}
 
 	message->msg_type = type;
@@ -45,51 +45,51 @@ void rrr_socket_msg_populate_head (
 	message->msg_value = value;
 }
 
-void rrr_socket_msg_populate_control_msg (
-		struct rrr_socket_msg *message,
+void rrr_msg_populate_control_msg (
+		struct rrr_msg *message,
 		rrr_u16 flags,
 		rrr_u64 value
 ) {
-	if ((flags & RRR_SOCKET_MSG_CTRL_F_RESERVED) != 0) {
-		RRR_BUG("Reserved flags were set in rrr_socket_msg_populate_control_msg\n");
+	if ((flags & RRR_MSG_CTRL_F_RESERVED) != 0) {
+		RRR_BUG("Reserved flags were set in rrr_msg_populate_control_msg\n");
 	}
 
-	rrr_socket_msg_populate_head (
+	rrr_msg_populate_head (
 			message,
-			RRR_SOCKET_MSG_TYPE_CTRL | flags,
+			RRR_MSG_TYPE_CTRL | flags,
 			sizeof(*message),
 			value
 	);
 }
 
-static int __rrr_socket_msg_head_validate (
-		struct rrr_socket_msg *message,
+static int __rrr_msg_head_validate (
+		struct rrr_msg *message,
 		rrr_length expected_size
 ) {
 	int ret = 0;
 
 	if (message->msg_size != expected_size) {
-		RRR_MSG_0("Message network size mismatch in __rrr_socket_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
+		RRR_MSG_0("Message network size mismatch in __rrr_msg_head_validate actual size is %li stated size is %" PRIu32 "\n",
 				expected_size, message->msg_size);
 		ret = 1;
 		goto out;
 	}
 
-	if (RRR_SOCKET_MSG_IS_CTRL(message)) {
+	if (RRR_MSG_IS_CTRL(message)) {
 		// Clear all known control flags
 		rrr_u16 type = message->msg_type;
-		type = type & ~(RRR_SOCKET_MSG_CTRL_F_ALL);
+		type = type & ~(RRR_MSG_CTRL_F_ALL);
 		if (type != 0) {
 			RRR_MSG_0("Unknown control flags in message: %u\n", type);
 			ret = 1;
 			goto out;
 		}
 	}
-	else if (RRR_SOCKET_MSG_IS_SETTING(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE(message) || RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(message)) {
+	else if (RRR_MSG_IS_SETTING(message) || RRR_MSG_IS_RRR_MESSAGE(message) || RRR_MSG_IS_RRR_MESSAGE_ADDR(message)) {
 		// OK
 	}
 	else {
-		RRR_MSG_0("Received message with invalid type %u in __rrr_socket_msg_head_validate\n", message->msg_type);
+		RRR_MSG_0("Received message with invalid type %u in __rrr_msg_head_validate\n", message->msg_type);
 		ret = 1;
 		goto out;
 	}
@@ -98,8 +98,8 @@ static int __rrr_socket_msg_head_validate (
 	return ret;
 }
 
-int rrr_socket_msg_head_to_host_and_verify (
-		struct rrr_socket_msg *message,
+int rrr_msg_head_to_host_and_verify (
+		struct rrr_msg *message,
 		rrr_length expected_size
 ) {
 	message->header_crc32 = 0;
@@ -108,47 +108,47 @@ int rrr_socket_msg_head_to_host_and_verify (
 	message->msg_size = rrr_be32toh(message->msg_size);
 	message->msg_value = rrr_be32toh(message->msg_value);
 
-	if (__rrr_socket_msg_head_validate (message, expected_size) != 0) {
-		RRR_MSG_0("Received socket message was invalid in rrr_socket_msg_head_to_host\n");
+	if (__rrr_msg_head_validate (message, expected_size) != 0) {
+		RRR_MSG_0("Received socket message was invalid in rrr_msg_head_to_host\n");
 		return 1;
 	}
 
 	return 0;
 }
 
-int rrr_socket_msg_get_target_size_and_check_checksum (
+int rrr_msg_get_target_size_and_check_checksum (
 		rrr_length *target_size,
-		const struct rrr_socket_msg *socket_msg,
+		const struct rrr_msg *msg,
 		rrr_length buf_size
 ) {
-	if (buf_size < sizeof(struct rrr_socket_msg)) {
+	if (buf_size < sizeof(struct rrr_msg)) {
 		return RRR_SOCKET_READ_INCOMPLETE;
 	}
 
 	*target_size = 0;
 
 	if (rrr_crc32cmp (
-			((const char*) socket_msg) + sizeof(socket_msg->header_crc32),
-			sizeof(*socket_msg) - sizeof(socket_msg->header_crc32),
-			rrr_be32toh(socket_msg->header_crc32)
+			((const char*) msg) + sizeof(msg->header_crc32),
+			sizeof(*msg) - sizeof(msg->header_crc32),
+			rrr_be32toh(msg->header_crc32)
 	) != 0) {
 		return RRR_SOCKET_SOFT_ERROR;
 	}
 
-	*target_size = rrr_be32toh(socket_msg->msg_size);
+	*target_size = rrr_be32toh(msg->msg_size);
 
 	return RRR_SOCKET_OK;
 }
 
-int rrr_socket_msg_check_data_checksum_and_length (
-		struct rrr_socket_msg *message,
+int rrr_msg_check_data_checksum_and_length (
+		struct rrr_msg *message,
 		rrr_length data_size
 ) {
 	if (data_size < sizeof(*message)) {
-		RRR_BUG("rrr_socket_msg_checksum_check called with too short message\n");
+		RRR_BUG("rrr_msg_checksum_check called with too short message\n");
 	}
 	if ((int64_t) message->msg_size != data_size) {
-		RRR_MSG_0("Message size mismatch in rrr_socket_msg_checksum_check\n");
+		RRR_MSG_0("Message size mismatch in rrr_msg_checksum_check\n");
 		return 1;
 	}
 	// HEX dumper

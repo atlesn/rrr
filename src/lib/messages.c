@@ -31,19 +31,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
 #include "socket/rrr_socket.h"
-#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_msg.h"
 #include "messages.h"
 #include "rrr_types.h"
 
-struct rrr_message *rrr_message_new_array (
+struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,
 	rrr_u16 topic_length,
 	rrr_u32 data_length
 ) {
-	struct rrr_message *res;
+	struct rrr_msg_msg *res;
 
-	if (rrr_message_new_empty (
-			(struct rrr_message **) &res,
+	if (rrr_msg_msg_new_empty (
+			(struct rrr_msg_msg **) &res,
 			MSG_TYPE_MSG,
 			MSG_CLASS_ARRAY,
 			time,
@@ -56,17 +56,17 @@ struct rrr_message *rrr_message_new_array (
 	return res;
 }
 
-int rrr_message_new_empty (
-		struct rrr_message **final_result,
+int rrr_msg_msg_new_empty (
+		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
 		rrr_u8 class,
 		rrr_u64 timestamp,
 		rrr_u16 topic_length,
 		rrr_u32 data_length
 ) {
-	ssize_t total_size = sizeof(struct rrr_message) - 1 + topic_length + data_length;
+	ssize_t total_size = sizeof(struct rrr_msg_msg) - 1 + topic_length + data_length;
 	// -1 because the char which points to the data holds 1 byte
-	struct rrr_message *result = malloc(total_size);
+	struct rrr_msg_msg *result = malloc(total_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memory in new_empty_message\n");
 		return 1;
@@ -74,9 +74,9 @@ int rrr_message_new_empty (
 
 	memset(result, '\0', total_size);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_MESSAGE,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) result,
+			RRR_MSG_TYPE_MESSAGE,
 			total_size,
 			0
 	);
@@ -92,8 +92,8 @@ int rrr_message_new_empty (
 	return 0;
 }
 
-int rrr_message_new_with_data (
-		struct rrr_message **final_result,
+int rrr_msg_msg_new_with_data (
+		struct rrr_msg_msg **final_result,
 		rrr_u8 type,
 		rrr_u8 class,
 		rrr_u64 timestamp,
@@ -102,7 +102,7 @@ int rrr_message_new_with_data (
 		const char *data,
 		rrr_u32 data_length
 ) {
-	if (rrr_message_new_empty (
+	if (rrr_msg_msg_new_empty (
 			final_result,
 			type,
 			class,
@@ -119,9 +119,9 @@ int rrr_message_new_with_data (
 	return 0;
 }
 
-int rrr_message_to_string (
+int rrr_msg_msg_to_string (
 	char **final_target,
-	struct rrr_message *message
+	struct rrr_msg_msg *message
 ) {
 	int ret = 0;
 
@@ -200,7 +200,7 @@ void flip_endianess_32(rrr_u32 *value) {
 	*value = result;
 }
 
-static int __message_validate (const struct rrr_message *message){
+static int __message_validate (const struct rrr_msg_msg *message){
 	int ret = 0;
 
 	if (message->msg_size < sizeof(*message) - 1 ||
@@ -228,7 +228,7 @@ static int __message_validate (const struct rrr_message *message){
 	return ret;
 }
 
-int rrr_message_to_host_and_verify (struct rrr_message *message, rrr_biglength expected_size) {
+int rrr_msg_msg_to_host_and_verify (struct rrr_msg_msg *message, rrr_biglength expected_size) {
 	if (expected_size < sizeof(*message) - 1) {
 		RRR_DBG_1("Message was too short in message_to_host_and_verify\n");
 		return 1;
@@ -245,7 +245,7 @@ int rrr_message_to_host_and_verify (struct rrr_message *message, rrr_biglength e
 	return __message_validate(message);
 }
 
-void rrr_message_prepare_for_network (struct rrr_message *message) {
+void rrr_msg_msg_prepare_for_network (struct rrr_msg_msg *message) {
 	MSG_TO_BE(message);
 
 	if (RRR_DEBUGLEVEL_6) {
@@ -264,14 +264,14 @@ void rrr_message_prepare_for_network (struct rrr_message *message) {
 */
 }
 
-struct rrr_message *rrr_message_duplicate_no_data_with_size (
-		const struct rrr_message *message,
+struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data_with_size (
+		const struct rrr_msg_msg *message,
 		ssize_t topic_length,
 		ssize_t data_length
 ) {
-	ssize_t new_total_size = (sizeof (struct rrr_message) - 1 + topic_length + data_length);
+	ssize_t new_total_size = (sizeof (struct rrr_msg_msg) - 1 + topic_length + data_length);
 
-	struct rrr_message *ret = malloc(new_total_size);
+	struct rrr_msg_msg *ret = malloc(new_total_size);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -286,10 +286,10 @@ struct rrr_message *rrr_message_duplicate_no_data_with_size (
 	return ret;
 }
 
-struct rrr_message *rrr_message_duplicate (
-		const struct rrr_message *message
+struct rrr_msg_msg *rrr_msg_msg_duplicate (
+		const struct rrr_msg_msg *message
 ) {
-	struct rrr_message *ret = malloc(MSG_TOTAL_SIZE(message));
+	struct rrr_msg_msg *ret = malloc(MSG_TOTAL_SIZE(message));
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -298,11 +298,11 @@ struct rrr_message *rrr_message_duplicate (
 	return ret;
 }
 
-struct rrr_message *rrr_message_duplicate_no_data (
-		struct rrr_message *message
+struct rrr_msg_msg *rrr_msg_msg_duplicate_no_data (
+		struct rrr_msg_msg *message
 ) {
-	ssize_t new_size = sizeof(struct rrr_message) - 1 + MSG_TOPIC_LENGTH(message);
-	struct rrr_message *ret = malloc(new_size);
+	ssize_t new_size = sizeof(struct rrr_msg_msg) - 1 + MSG_TOPIC_LENGTH(message);
+	struct rrr_msg_msg *ret = malloc(new_size);
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_duplicate\n");
 		return NULL;
@@ -312,12 +312,12 @@ struct rrr_message *rrr_message_duplicate_no_data (
 	return ret;
 }
 
-int rrr_message_topic_set (
-		struct rrr_message **message,
+int rrr_msg_msg_topic_set (
+		struct rrr_msg_msg **message,
 		const char *topic,
 		ssize_t topic_len
 ) {
-	struct rrr_message *ret = rrr_message_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
+	struct rrr_msg_msg *ret = rrr_msg_msg_duplicate_no_data_with_size(*message, topic_len, MSG_DATA_LENGTH(*message));
 	if (ret == NULL) {
 		RRR_MSG_0("Could not allocate memory in message_set_topic\n");
 		return 1;
@@ -332,12 +332,12 @@ int rrr_message_topic_set (
 	return 0;
 }
 
-int rrr_message_topic_get (
+int rrr_msg_msg_topic_get (
 		char **result,
-		const struct rrr_message *message
+		const struct rrr_msg_msg *message
 ) {
 	if ((*result = malloc(MSG_TOPIC_LENGTH(message) + 1)) == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_message_topic_get\n");
+		RRR_MSG_0("Could not allocate memory in rrr_msg_msg_topic_get\n");
 		return 1;
 	}
 
@@ -350,7 +350,7 @@ int rrr_message_topic_get (
 	return 0;
 }
 
-int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_message *message_b) {
+int rrr_msg_msg_timestamp_compare (struct rrr_msg_msg *message_a, struct rrr_msg_msg *message_b) {
 	// Assume network order if crc32 is set
 	uint64_t timestamp_a = (message_a->header_crc32 != 0 ? rrr_be64toh(message_a->timestamp) : message_a->timestamp);
 	uint64_t timestamp_b = (message_b->header_crc32 != 0 ? rrr_be64toh(message_b->timestamp) : message_b->timestamp);
@@ -358,6 +358,6 @@ int rrr_message_timestamp_compare (struct rrr_message *message_a, struct rrr_mes
 	return (timestamp_a > timestamp_b) - (timestamp_a < timestamp_b);
 }
 
-int rrr_message_timestamp_compare_void (void *message_a, void *message_b) {
-	return rrr_message_timestamp_compare(message_a, message_b);
+int rrr_msg_msg_timestamp_compare_void (void *message_a, void *message_b) {
+	return rrr_msg_msg_timestamp_compare(message_a, message_b);
 }

@@ -351,10 +351,10 @@ static void __rrr_post_close(struct rrr_post_data *data) {
 	}
 }
 
-static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_message *message) {
+static int __rrr_post_send_message(struct rrr_post_data *data, struct rrr_msg_msg *message) {
 	int ret = 0;
 
-	if ((ret = rrr_socket_common_prepare_and_send_socket_msg_blocking((struct rrr_socket_msg *) message, data->output_fd, NULL)) != 0) {
+	if ((ret = rrr_socket_common_prepare_and_send_msg_blocking((struct rrr_msg *) message, data->output_fd, NULL)) != 0) {
 		RRR_MSG_0("Error while sending message in __rrr_post_send_message\n");
 		goto out;
 	}
@@ -373,8 +373,8 @@ static int __rrr_post_send_reading(struct rrr_post_data *data, struct rrr_post_r
 		goto out;
 	}
 
-	struct rrr_message *message = NULL;
-	if (rrr_message_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
+	struct rrr_msg_msg *message = NULL;
+	if (rrr_msg_msg_new_empty(&message, MSG_TYPE_MSG, MSG_CLASS_DATA, rrr_time_get_64(), 0, strlen(text) + 1)) {
 		RRR_MSG_0("Could not allocate message in __rrr_post_send_reading\n");
 		ret = 1;
 		goto out;
@@ -403,7 +403,7 @@ static int __rrr_post_send_readings(struct rrr_post_data *data) {
 	return ret;
 }
 
-static int __rrr_post_read_message_callback (struct rrr_message *message, void *arg) {
+static int __rrr_post_read_message_callback (struct rrr_msg_msg *message, void *arg) {
 	struct rrr_post_data *data = arg;
 	int ret = 0;
 

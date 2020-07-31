@@ -35,7 +35,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_CONFIG_ARGS \
 	struct rrr_cmodule_ctx *ctx, struct rrr_instance_config *config
 #define RRR_SOURCE_ARGS \
-	struct rrr_cmodule_ctx *ctx, struct rrr_message *message, const struct rrr_message_addr *message_addr
+	struct rrr_cmodule_ctx *ctx, struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr
 #define RRR_PROCESS_ARGS \
 	RRR_SOURCE_ARGS
 #define RRR_CLEANUP_ARGS \
@@ -54,8 +54,8 @@ struct rrr_cmodule_ctx {
 
 static inline int rrr_send_and_free (
 		struct rrr_cmodule_ctx *ctx,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr
 ) {
 	return rrr_cmodule_ext_send_message_to_parent (
 			ctx->worker, message, message_addr
@@ -63,7 +63,7 @@ static inline int rrr_send_and_free (
 }
 
 static inline void rrr_free (
-		struct rrr_message *message
+		struct rrr_msg_msg *message
 ) {
 	free(message);
 }

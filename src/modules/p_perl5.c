@@ -44,7 +44,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/perl5/perl5.h"
 #include "../lib/cmdlineparser/cmdline.h"
 #include "../lib/rrr_strerror.h"
-#include "../lib/socket/rrr_socket_msg.h"
+#include "../lib/socket/rrr_msg.h"
 #include "../lib/common.h"
 #include "../lib/stats/stats_instance.h"
 #include "../lib/socket/rrr_socket.h"
@@ -65,7 +65,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define PERL5_CHILD_MAX_IN_FLIGHT 100
 #define PERL5_CHILD_MAX_IN_BUFFER (PERL5_CHILD_MAX_IN_FLIGHT * 10)
 #define PERL5_MMAP_SIZE (1024*1024*2)
-#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_SOCKET_MSG_CTRL_F_USR_A
+#define PERL5_CONTROL_MSG_CONFIG_COMPLETE RRR_MSG_CTRL_F_USR_A
 
 struct perl5_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -85,8 +85,8 @@ struct perl5_child_data {
 };
 
 static int xsub_send_message (
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		void *private_data
 ) {
 	struct perl5_child_data *child_data = private_data;
@@ -343,7 +343,7 @@ static int perl5_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 	struct rrr_cmodule_config_data *cmodule_config_data = &(INSTANCE_D_CMODULE(data->thread_data)->config_data);
 
 	struct rrr_perl5_message_hv *hv_message = NULL;
-	struct rrr_message_addr addr_msg_tmp = *message_addr;
+	struct rrr_msg_addr addr_msg_tmp = *message_addr;
 
 	// We prefer to send NULL for empty address messages when spawning.
 	if ((ret = rrr_perl5_message_to_new_hv(&hv_message, ctx, message, (is_spawn_ctx ? NULL : &addr_msg_tmp))) != 0) {

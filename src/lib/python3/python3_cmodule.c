@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../array.h"
 #include "../settings.h"
 #include "../socket/rrr_socket.h"
-#include "../socket/rrr_socket_msg.h"
+#include "../socket/rrr_msg.h"
 #include "../buffer.h"
 #include "../messages.h"
 #include "../message_addr.h"

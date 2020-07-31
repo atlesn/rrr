@@ -798,7 +798,7 @@ int rrr_array_parse_from_buffer_with_callback (
 }
 
 int rrr_array_new_message_from_buffer (
-		struct rrr_message **target,
+		struct rrr_msg_msg **target,
 		ssize_t *parsed_bytes,
 		const char *buf,
 		ssize_t buf_len,
@@ -806,7 +806,7 @@ int rrr_array_new_message_from_buffer (
 		ssize_t topic_length,
 		const struct rrr_array *definition
 ) {
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 	struct rrr_array definitions;
 	int ret = 0;
 
@@ -841,13 +841,13 @@ int rrr_array_new_message_from_buffer_with_callback (
 		const char *topic,
 		ssize_t topic_length,
 		const struct rrr_array *definition,
-		int (*callback)(struct rrr_message *message, void *arg),
+		int (*callback)(struct rrr_msg_msg *message, void *arg),
 		void *callback_arg
 ) {
 	int ret = 0;
 
 	ssize_t parsed_bytes = 0;
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 	if ((ret = rrr_array_new_message_from_buffer(
 			&message,
 			&parsed_bytes,
@@ -1074,11 +1074,11 @@ ssize_t rrr_array_new_message_estimate_size (
 ) {
 	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	return total_data_length + sizeof(struct rrr_message) - 1;
+	return total_data_length + sizeof(struct rrr_msg_msg) - 1;
 }
 
 int rrr_array_new_message_from_collection (
-		struct rrr_message **final_message,
+		struct rrr_msg_msg **final_message,
 		const struct rrr_array *definition,
 		uint64_t time,
 		const char *topic,
@@ -1090,7 +1090,7 @@ int rrr_array_new_message_from_collection (
 
 	rrr_length total_data_length = __rrr_array_get_packed_length(definition);
 
-	struct rrr_message *message = rrr_message_new_array(time, topic_length, total_data_length);
+	struct rrr_msg_msg *message = rrr_msg_msg_new_array(time, topic_length, total_data_length);
 	if (message == NULL) {
 		RRR_MSG_0("Could not create message for data collection\n");
 		ret = RRR_ARRAY_PARSE_HARD_ERR;
@@ -1138,7 +1138,7 @@ int rrr_array_new_message_from_collection (
 		RRR_DBG_NOPREFIX("\n");*/
 	}
 
-	*final_message = (struct rrr_message *) message;
+	*final_message = (struct rrr_msg_msg *) message;
 	message = NULL;
 
 	out:
@@ -1148,7 +1148,7 @@ int rrr_array_new_message_from_collection (
 
 int rrr_array_message_append_to_collection (
 		struct rrr_array *target,
-		const struct rrr_message *message_orig
+		const struct rrr_msg_msg *message_orig
 ) {
 	if (MSG_CLASS(message_orig) != MSG_CLASS_ARRAY) {
 		RRR_BUG("Message was not array in rrr_array_message_to_collection\n");

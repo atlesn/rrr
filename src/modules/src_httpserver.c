@@ -264,14 +264,14 @@ struct httpserver_write_message_callback_data {
 
 // NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
-		struct rrr_message_holder *new_entry,
+		struct rrr_msg_msg_holder *new_entry,
 		void *arg
 ) {
 	struct httpserver_write_message_callback_data *callback_data = arg;
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	struct rrr_message *new_message = NULL;
+	struct rrr_msg_msg *new_message = NULL;
 
 	if (RRR_LL_COUNT(callback_data->array) > 0) {
 		ret = rrr_array_new_message_from_collection (
@@ -283,7 +283,7 @@ static int httpserver_write_message_callback (
 		);
 	}
 	else {
-		ret = rrr_message_new_empty (
+		ret = rrr_msg_msg_new_empty (
 				&new_message,
 				MSG_TYPE_MSG,
 				MSG_CLASS_DATA,
@@ -304,7 +304,7 @@ static int httpserver_write_message_callback (
 	new_message = NULL;
 
 	out:
-	rrr_message_holder_unlock(new_entry);
+	rrr_msg_msg_holder_unlock(new_entry);
 	return ret;
 }
 
@@ -367,7 +367,7 @@ static int httpserver_receive_callback_get_post (
 //	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) sockaddr, socklen);
 //	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
 
-	if ((ret = rrr_message_broker_write_entry (
+	if ((ret = rrr_msg_msg_broker_write_entry (
 			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
 			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
 			sockaddr,

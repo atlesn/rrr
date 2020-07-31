@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGES_HEAD_H
 #define RRR_MESSAGES_HEAD_H
 
-#include "socket/rrr_socket_msg_head.h"
+#include "socket/rrr_msg_head.h"
 
 #define MSG_TYPE_MSG 1
 //#define MSG_TYPE_ACK 2
@@ -76,15 +76,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	rrr_u8 version;			\
 	rrr_u16 topic_length
 
-struct rrr_message {
-	RRR_SOCKET_MSG_HEAD;
+struct rrr_msg_msg {
+	RRR_MSG_HEAD;
 	RRR_MESSAGE_HEAD;
 	char data[1];
 } __attribute__((packed));
 
-static inline struct rrr_socket_msg *rrr_message_safe_cast (struct rrr_message *message) {
-	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) message;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_MESSAGE;
+static inline struct rrr_msg *rrr_msg_msg_safe_cast (struct rrr_msg_msg *message) {
+	struct rrr_msg *ret = (struct rrr_msg *) message;
+	ret->msg_type = RRR_MSG_TYPE_MESSAGE;
 	ret->msg_size = MSG_TOTAL_SIZE(message);
 	ret->msg_value = 0;
 	return ret;

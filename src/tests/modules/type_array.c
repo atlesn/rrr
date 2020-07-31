@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_test_result {
 	int result;
-	struct rrr_message *message;
+	struct rrr_msg_msg *message;
 };
 
 struct rrr_test_callback_data {
@@ -79,7 +79,7 @@ struct test_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct rrr_message msg;
+	struct rrr_msg_msg msg;
 } __attribute__((packed));
 
 struct test_final_data {
@@ -100,7 +100,7 @@ struct test_final_data {
 	char blob_a[8];
 	char blob_b[8];
 
-	struct rrr_message msg;
+	struct rrr_msg_msg msg;
 };
 
 int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
@@ -112,7 +112,7 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->message = NULL;
 	result->result = 1;
 
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	TEST_MSG("Received a message in test_anything_callback of class %" PRIu32 "\n", MSG_CLASS(message));
 
@@ -121,7 +121,7 @@ int test_anything_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->message = message;
 	entry->message = NULL;
 
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 
 	return 0;
 }
@@ -145,7 +145,7 @@ int test_do_poll_loop (
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
 				INSTANCE_D_NAME(output_thread_data), i);
 
-		ret = rrr_message_broker_poll_delete (
+		ret = rrr_msg_msg_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(output_thread_data),
 				callback,
 				callback_data,
@@ -225,7 +225,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	struct rrr_test_callback_data *callback_data = arg;
 	struct rrr_test_result *result = callback_data->test_result;
 
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	int ret = 0;
 
@@ -287,7 +287,7 @@ int test_averager_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	}
 
 	out:
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	rrr_array_clear(&array_tmp);
 	return ret;
 }
@@ -353,7 +353,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 	result->message = NULL;
 	result->result = 1;
 
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	char *str_to_h_tmp = NULL;
 
@@ -657,7 +657,7 @@ int test_type_array_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 			entry->message = NULL;
 		}
 
-		rrr_message_holder_unlock(entry);
+		rrr_msg_msg_holder_unlock(entry);
 
 		return ret;
 }
@@ -750,13 +750,13 @@ int test_type_array_mysql_and_network_callback (RRR_MODULE_POLL_CALLBACK_SIGNATU
 	RRR_DBG_4("Received message_1 in test_type_array_mysql_and_network_callback\n");
 
 	/* We actually receive an message_holder but we don't need IP-stuff */
-	struct rrr_message *message = (struct rrr_message *) entry->message;
+	struct rrr_msg_msg *message = (struct rrr_msg_msg *) entry->message;
 
 	test_result->message = message;
 	test_result->result = 0;
 	entry->message = NULL;
 
-	rrr_message_holder_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -783,7 +783,7 @@ int test_type_array_setup_mysql (struct test_type_array_mysql_data *mysql_data) 
 		"`int6` bigint(20) NOT NULL,"
 		"`int7` bigint(20) NOT NULL,"
 		"`int8` bigint(20) NOT NULL,"
-		"`rrr_message` blob NOT NULL,"
+		"`rrr_msg_msg` blob NOT NULL,"
 		"`blob_combined` blob NOT NULL,"
 		"`timestamp` bigint(20) NOT NULL"
 	") ENGINE=InnoDB DEFAULT CHARSET=latin1;";
@@ -875,7 +875,7 @@ int test_type_array_mysql (
 
 	struct rrr_test_result test_result = {1, NULL};
 	struct test_type_array_mysql_data mysql_data = {NULL, NULL, NULL, NULL, 0};
-	struct rrr_message_holder *entry = NULL;
+	struct rrr_msg_msg_holder *entry = NULL;
 
 	struct rrr_instance_metadata *tag_buffer = rrr_instance_find(instances, output_name);
 
@@ -932,7 +932,7 @@ int test_type_array_mysql (
 		goto out;
 	}
 
-	struct rrr_message *result_message = test_result.message;
+	struct rrr_msg_msg *result_message = test_result.message;
 	if (!MSG_IS_TAG(result_message)) {
 		RRR_MSG_0("Message from MySQL was not a TAG message\n");
 		ret = 1;
@@ -942,7 +942,7 @@ int test_type_array_mysql (
 	out:
 	test_type_array_mysql_data_cleanup(&mysql_data);
 	if (entry != NULL) {
-		rrr_message_holder_decref_while_locked_and_unlock(entry);
+		rrr_msg_msg_holder_decref_while_locked_and_unlock(entry);
 	}
 	RRR_FREE_IF_NOT_NULL(test_result.message);
 

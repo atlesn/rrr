@@ -24,9 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "message_addr.h"
-#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_msg.h"
 
-int rrr_message_addr_to_host (struct rrr_message_addr *msg) {
+int rrr_msg_addr_to_host (struct rrr_msg_addr *msg) {
 	if (!RRR_MSG_ADDR_SIZE_OK(msg)) {
 		return 1;
 	}
@@ -34,46 +34,46 @@ int rrr_message_addr_to_host (struct rrr_message_addr *msg) {
 	return 0;
 }
 
-void rrr_message_addr_init_head (struct rrr_message_addr *target, uint64_t addr_len) {
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) target,
-			RRR_SOCKET_MSG_TYPE_MESSAGE_ADDR,
+void rrr_msg_addr_init_head (struct rrr_msg_addr *target, uint64_t addr_len) {
+	rrr_msg_populate_head (
+			(struct rrr_msg *) target,
+			RRR_MSG_TYPE_MESSAGE_ADDR,
 			sizeof(*target),
 			0
 	);
 	RRR_MSG_ADDR_SET_ADDR_LEN(target, addr_len);
 }
 
-void rrr_message_addr_init (struct rrr_message_addr *target) {
+void rrr_msg_addr_init (struct rrr_msg_addr *target) {
 	memset(target, '\0', sizeof(*target));
-	rrr_message_addr_init_head(target, 0);
+	rrr_msg_addr_init_head(target, 0);
 }
 
-int rrr_message_addr_new (struct rrr_message_addr **target) {
+int rrr_msg_addr_new (struct rrr_msg_addr **target) {
 	*target = NULL;
 
-	struct rrr_message_addr *result = malloc(sizeof(*result));
+	struct rrr_msg_addr *result = malloc(sizeof(*result));
 	if (result == NULL) {
-		RRR_MSG_0("Could not allocate memorty in rrr_message_addr_new");
+		RRR_MSG_0("Could not allocate memorty in rrr_msg_addr_new");
 		return 1;
 	}
 
-	rrr_message_addr_init(result);
+	rrr_msg_addr_init(result);
 
 	*target = result;
 
 	return 0;
 }
 
-int rrr_message_addr_clone (
-		struct rrr_message_addr **target,
-		const struct rrr_message_addr *source
+int rrr_msg_addr_clone (
+		struct rrr_msg_addr **target,
+		const struct rrr_msg_addr *source
 ) {
 	int ret = 0;
 
-	struct rrr_message_addr *new_message = NULL;
+	struct rrr_msg_addr *new_message = NULL;
 
-	if ((ret = rrr_message_addr_new(&new_message)) != 0) {
+	if ((ret = rrr_msg_addr_new(&new_message)) != 0) {
 		goto out;
 	}
 

@@ -36,8 +36,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../util/macro_utils.h"
 
 struct rrr_cmodule_mmap_channel_callback_data {
-	const struct rrr_message_addr *addr_msg;
-	const struct rrr_message *msg;
+	const struct rrr_msg_addr *addr_msg;
+	const struct rrr_msg_msg *msg;
 };
 
 static int __rrr_cmodule_mmap_channel_write_callback (void *target, void *arg) {
@@ -57,8 +57,8 @@ int rrr_cmodule_channel_send_message (
 		int *retries,
 		struct rrr_mmap_channel *channel,
 		struct rrr_cmodule_deferred_message_collection *deferred_queue,
-		struct rrr_message *message,
-		const struct rrr_message_addr *message_addr,
+		struct rrr_msg_msg *message,
+		const struct rrr_msg_addr *message_addr,
 		unsigned int wait_time_us
 ) {
 	int ret = 0;
@@ -74,7 +74,7 @@ int rrr_cmodule_channel_send_message (
 	int retry_sleep_start_max_ = 40;
 
 	// Extracted from deferred queue, freed every time before it is used and at out
-	struct rrr_message_addr *message_addr_to_free = NULL;
+	struct rrr_msg_addr *message_addr_to_free = NULL;
 
 	{
 		int count_before_cleanup = RRR_LL_COUNT(deferred_queue);

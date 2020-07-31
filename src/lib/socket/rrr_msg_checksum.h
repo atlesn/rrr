@@ -19,13 +19,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#ifndef RRR_SOCKET_MSG_CHECKSUM_H
-#define RRR_SOCKET_MSG_CHECKSUM_H
+#ifndef RRR_MSG_CHECKSUM_H
+#define RRR_MSG_CHECKSUM_H
 
-struct rrr_socket_msg;
+struct rrr_msg;
 
-void rrr_socket_msg_checksum_and_to_network_endian (
-		struct rrr_socket_msg *message
+void rrr_msg_checksum_and_to_network_endian (
+		struct rrr_msg *message
 );
 
-#endif /* RRR_SOCKET_MSG_CHECKSUM_H */
+#endif /* RRR_MSG_CHECKSUM_H */

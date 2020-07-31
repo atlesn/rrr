@@ -52,7 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip/ip_util.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_common.h"
-#include "socket/rrr_socket_msg.h"
+#include "socket/rrr_msg.h"
 #include "socket/rrr_socket_read.h"
 #include "socket/rrr_socket_constants.h"
 #include "util/rrr_time.h"
@@ -138,8 +138,8 @@ void rrr_ip_graylist_clear_void (
 }
 
 struct rrr_ip_receive_callback_data {
-	struct rrr_message_holder *target_entry;
-	int (*callback)(struct rrr_message_holder *entry, void *arg);
+	struct rrr_msg_msg_holder *target_entry;
+	int (*callback)(struct rrr_msg_msg_holder *entry, void *arg);
 	void *callback_arg;
 };
 
@@ -174,7 +174,7 @@ static int __rrr_ip_receive_callback (
 		RRR_BUG("message pointer of entry was not empty in __ip_receive_callback\n");
 	}
 
-	rrr_message_holder_set_unlocked (
+	rrr_msg_msg_holder_set_unlocked (
 			callback_data->target_entry,
 			read_session->rx_buf_ptr,
 			read_session->target_size,
@@ -206,14 +206,14 @@ static int __rrr_ip_receive_callback (
 }
 
 int rrr_ip_receive_array (
-		struct rrr_message_holder *target_entry,
+		struct rrr_msg_msg_holder *target_entry,
 		struct rrr_read_session_collection *read_session_collection,
 		int fd,
 		int read_flags,
 		const struct rrr_array *definition,
 		int do_sync_byte_by_byte,
 		unsigned int message_max_size,
-		int (*callback)(struct rrr_message_holder *entry, void *arg),
+		int (*callback)(struct rrr_msg_msg_holder *entry, void *arg),
 		void *arg
 ) {
 	struct rrr_ip_receive_callback_data callback_data = {

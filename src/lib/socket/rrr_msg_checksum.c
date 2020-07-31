@@ -24,14 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 
-#include "rrr_socket_msg_checksum.h"
-#include "rrr_socket_msg_head.h"
+#include "rrr_msg_checksum.h"
+#include "rrr_msg_head.h"
 
 #include "../util/rrr_endian.h"
 #include "../util/crc32.h"
 
-void rrr_socket_msg_checksum_and_to_network_endian (
-		struct rrr_socket_msg *message
+void rrr_msg_checksum_and_to_network_endian (
+		struct rrr_msg *message
 ) {
 	// HEX dumper
 /*	for (unsigned int i = 0; i < message->msg_size; i++) {

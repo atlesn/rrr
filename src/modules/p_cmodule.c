@@ -288,7 +288,7 @@ static int cmodule_process_callback (RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	int ret = 0;
 
-	struct rrr_message *message_copy = rrr_message_duplicate(message);
+	struct rrr_msg_msg *message_copy = rrr_msg_msg_duplicate(message);
 	if (message_copy == NULL) {
 		RRR_MSG_0("Could not allocate message in cmodule_process_callback\n");
 		ret = 1;

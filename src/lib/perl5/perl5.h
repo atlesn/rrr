@@ -26,9 +26,9 @@ typedef struct av AV;
 typedef struct hv HV;
 typedef struct sv SV;
 typedef struct interpreter PerlInterpreter;
-struct rrr_socket_msg;
-struct rrr_message;
-struct rrr_message_addr;
+struct rrr_msg;
+struct rrr_msg_msg;
+struct rrr_msg_addr;
 struct rrr_instance_settings;
 struct rrr_setting;
 
@@ -37,7 +37,7 @@ struct rrr_perl5_ctx {
 	PerlInterpreter *interpreter;
 	void *private_data;
 
-	int (*send_message)(struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data);
+	int (*send_message)(struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data);
 	char *(*get_setting)(const char *key, void *private_data);
 	int (*set_setting)(const char *key, const char *value, void *private_data);
 };
@@ -63,7 +63,7 @@ void rrr_perl5_destroy_ctx (struct rrr_perl5_ctx *ctx);
 int rrr_perl5_new_ctx (
 		struct rrr_perl5_ctx **target,
 		void *private_data,
-		int (*send_message) (struct rrr_message *message, const struct rrr_message_addr *message_addr, void *private_data),
+		int (*send_message) (struct rrr_msg_msg *message, const struct rrr_msg_addr *message_addr, void *private_data),
 		char *(*get_setting) (const char *key, void *private_data),
 		int (*set_setting) (const char *key, const char *value, void *private_data)
 );
@@ -87,22 +87,22 @@ void rrr_perl5_destruct_message_hv (
 		struct rrr_perl5_message_hv *source
 );
 int rrr_perl5_hv_to_message (
-		struct rrr_message **target_final,
-		struct rrr_message_addr *target_addr,
+		struct rrr_msg_msg **target_final,
+		struct rrr_msg_addr *target_addr,
 		struct rrr_perl5_ctx *ctx,
 		struct rrr_perl5_message_hv *source
 );
 int rrr_perl5_message_to_hv (
 		struct rrr_perl5_message_hv *message_hv,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
+		const struct rrr_msg_msg *message,
+		struct rrr_msg_addr *message_addr
 );
 int rrr_perl5_message_to_new_hv (
 		struct rrr_perl5_message_hv **target,
 		struct rrr_perl5_ctx *ctx,
-		const struct rrr_message *message,
-		struct rrr_message_addr *message_addr
+		const struct rrr_msg_msg *message,
+		struct rrr_msg_addr *message_addr
 );
 
 /* Called from XSUB */
