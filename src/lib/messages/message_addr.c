@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "message_addr.h"
-#include "socket/rrr_msg.h"
+#include "rrr_msg.h"
 
 int rrr_msg_addr_to_host (struct rrr_msg_addr *msg) {
 	if (!RRR_MSG_ADDR_SIZE_OK(msg)) {

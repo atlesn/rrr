@@ -41,7 +41,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "read.h"
 #include "log.h"
-#include "messages.h"
+#include "messages/messages.h"
 #include "array.h"
 #include "rrr_strerror.h"
 #include "read_constants.h"
@@ -52,7 +52,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ip/ip_util.h"
 #include "socket/rrr_socket.h"
 #include "socket/rrr_socket_common.h"
-#include "socket/rrr_msg.h"
+#include "messages/rrr_msg.h"
 #include "socket/rrr_socket_read.h"
 #include "socket/rrr_socket_constants.h"
 #include "util/rrr_time.h"

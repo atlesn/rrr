@@ -26,11 +26,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_vl_message.h"
 
 #include "../log.h"
-#include "../socket/rrr_msg.h"
-#include "../messages.h"
+#include "../messages/rrr_msg.h"
+#include "../messages/messages.h"
 #include "../array.h"
 #include "../fixed_point.h"
-#include "../message_addr.h"
+#include "../messages/message_addr.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;

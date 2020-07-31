@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_defer_queue.h"
 
 #include "../log.h"
-#include "../message_addr.h"
+#include "../messages/message_addr.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"
 

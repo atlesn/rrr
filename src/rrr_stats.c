@@ -47,7 +47,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/map.h"
 #include "lib/socket/rrr_socket.h"
-#include "lib/socket/rrr_msg.h"
+#include "lib/messages/rrr_msg.h"
 #include "lib/socket/rrr_socket_read.h"
 #include "lib/read.h"
 #include "lib/socket/rrr_socket_constants.h"

@@ -39,8 +39,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 #include "../socket/rrr_socket.h"
-#include "../messages.h"
-#include "../message_addr.h"
+#include "../messages/messages.h"
+#include "../messages/message_addr.h"
 #include "../settings.h"
 #include "../read.h"
 #include "../cmodule/cmodule_ext.h"

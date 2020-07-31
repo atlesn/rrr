@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/poll_helper.h"
-#include "../lib/messages.h"
+#include "../lib/messages/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/instances.h"

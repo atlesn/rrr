@@ -49,7 +49,7 @@ Modified to fit 2-channel device with unitversion == 5 && subtype == 7.
 #include "../lib/instance_config.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
+#include "../lib/messages/messages.h"
 #include "../lib/array.h"
 #include "../lib/array.h"
 #include "../lib/message_broker.h"

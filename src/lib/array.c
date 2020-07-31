@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmdlineparser/cmdline.h"
 #include "settings.h"
 #include "instance_config.h"
-#include "messages.h"
+#include "messages/messages.h"
 #include "type.h"
 #include "map.h"
 #include "util/rrr_time.h"

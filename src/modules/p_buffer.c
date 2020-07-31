@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
+#include "../lib/messages/messages.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
 #include "../lib/message_holder/message_holder.h"

@@ -28,12 +28,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 
+#include "rrr_msg.h"
+#include "messages.h"
+#include "rrr_types.h"
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
 #include "socket/rrr_socket.h"
-#include "socket/rrr_msg.h"
-#include "messages.h"
-#include "rrr_types.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (
 	rrr_u64 time,

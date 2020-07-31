@@ -33,10 +33,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../../build_directory.h"
 #include "../common.h"
-#include "../messages.h"
-#include "../message_addr.h"
+#include "../messages/messages.h"
+#include "../messages/message_addr.h"
 #include "../settings.h"
-#include "../socket/rrr_msg.h"
+#include "../messages/rrr_msg.h"
 #include "../rrr_strerror.h"
 #include "../array.h"
 #include "../ip/ip.h"

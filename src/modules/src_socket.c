@@ -32,7 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/log.h"
 #include "../lib/settings.h"
 #include "../lib/threads.h"
-#include "../lib/messages.h"
+#include "../lib/messages/messages.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/socket/rrr_socket_client.h"
 #include "../lib/read.h"

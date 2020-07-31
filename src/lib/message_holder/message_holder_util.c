@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "mqtt/mqtt_topic.h"
 #include "message_holder.h"
-#include "messages.h"
+#include "messages/messages.h"
 
 int rrr_msg_msg_holder_util_new_with_empty_message (
 		struct rrr_msg_msg_holder **result,

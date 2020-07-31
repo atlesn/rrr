@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "stats_message.h"
 
 #include "../socket/rrr_socket.h"
-#include "../socket/rrr_msg.h"
+#include "../messages/rrr_msg.h"
 #include "../socket/rrr_socket_client.h"
 #include "../read.h"
 #include "../random.h"

@@ -23,6 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_SOCKET_COMMON_H
 
 struct rrr_array;
+struct rrr_msg;
 struct rrr_msg_msg;
 struct rrr_read_session;
 struct rrr_read_session_collection;

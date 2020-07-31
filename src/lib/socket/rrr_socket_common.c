@@ -24,12 +24,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../log.h"
 
 #include "rrr_socket.h"
-#include "rrr_msg.h"
 #include "rrr_socket_common.h"
 #include "rrr_socket_read.h"
 
-#include "../messages.h"
-#include "../message_addr.h"
+#include "../messages/rrr_msg.h"
+#include "../messages/messages.h"
+#include "../messages/message_addr.h"
 #include "../read.h"
 
 struct receive_callback_data {

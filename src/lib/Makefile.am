@@ -34,8 +34,8 @@ mqtt =	mqtt/mqtt_broker.c mqtt/mqtt_common.c mqtt/mqtt_connection.c mqtt/mqtt_pa
 
 stats = stats/stats_engine.c stats/stats_instance.c stats/stats_message.c stats/stats_tree.c
 
-socket =	socket/rrr_socket.c socket/rrr_msg.c socket/rrr_socket_read.c \
-			socket/rrr_socket_common.c socket/rrr_socket_client.c socket/rrr_msg_checksum.c
+socket =	socket/rrr_socket.c socket/rrr_socket_read.c \
+			socket/rrr_socket_common.c socket/rrr_socket_client.c 
 
 http =	http/http_session.c http/http_util.c http/http_fields.c http/http_part.c http/http_client.c \
 		http/http_common.c http/http_query_builder.c http/http_client_config.c \
@@ -52,7 +52,11 @@ ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
 udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
-message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
+			messages/rrr_msg_checksum.c
+
+
+messages = messages/message_addr.c messages/message_log.c messages/messages.c messages/rrr_msg.c 
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c
@@ -60,15 +64,16 @@ endif
 
 librrr_la_CFLAGS = ${AM_CFLAGS} ${OPENSSL_INCLUDES}
 librrr_la_LDFLAGS = -lpthread -ldl -lm ${OPENSSL_LDFLAGS} ${OPENSSL_LIBS} ${perl5_extra_ld}
-librrr_la_SOURCES = buffer.c threads.c messages.c cmdlineparser/cmdline.c rrr_config.c \
+librrr_la_SOURCES = buffer.c threads.c cmdlineparser/cmdline.c rrr_config.c \
 					array.c version.c configuration.c parse.c settings.c instance_config.c common.c \
 					message_broker.c map.c \
-					read.c message_addr.c message_log.c rrr_mmap.c mmap_channel.c \
+					read.c rrr_mmap.c mmap_channel.c \
 					instances.c instance_collection.c poll_helper.c modules.c \
 					string_builder.c random.c \
 					fixed_point.c passwd.c \
 					${encryption} ${mqtt} ${stats} ${socket} ${http} ${cmodule} ${udpstream} \
-					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder}
+					${net_transport} ${net_transport_tls} ${util} ${ip} ${message_holder} \
+					${messages}
 
 lib_LTLIBRARIES = librrr.la	${lib_python3} ${lib_mysql}
 

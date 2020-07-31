@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "../message_addr.h"
+#include "../messages/message_addr.h"
 #include "cmodule_defines.h"
 
 struct rrr_instance_thread_data;

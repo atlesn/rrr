@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "log.h"
 #include "message_log.h"
-#include "socket/rrr_msg.h"
+#include "rrr_msg.h"
 
 void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_msg_log *msg) {
 	msg->prefix_size = rrr_htobe16(msg->prefix_size);

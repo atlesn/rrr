@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "buffer.h"
 #include "read.h"
 #include "socket/rrr_socket_constants.h"
-#include "socket/rrr_msg_checksum.h"
-#include "messages.h"
+#include "messages/rrr_msg_checksum.h"
+#include "messages/messages.h"
 #include "util/macro_utils.h"
 #include "util/rrr_time.h"
 

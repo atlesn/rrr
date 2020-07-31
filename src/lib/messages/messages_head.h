@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGES_HEAD_H
 #define RRR_MESSAGES_HEAD_H
 
-#include "socket/rrr_msg_head.h"
+#include "rrr_msg_head.h"
 
 #define MSG_TYPE_MSG 1
 //#define MSG_TYPE_ACK 2
