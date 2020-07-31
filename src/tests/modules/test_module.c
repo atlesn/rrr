@@ -28,7 +28,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../test.h"
 #include "../../lib/instances.h"
 #include "../../lib/modules.h"
-#include "../../lib/messages/messages.h"
+#include "../../lib/messages/msg_msg.h"
 #include "../../lib/instance_config.h"
 #include "../../lib/util/macro_utils.h"
 

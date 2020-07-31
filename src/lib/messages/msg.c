@@ -24,8 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 
-#include "../socket/rrr_socket_constants.h"
-#include "rrr_msg.h"
+#include "msg.h"
 
 #include "../rrr_types.h"
 #include "../util/crc32.h"
@@ -123,7 +122,7 @@ int rrr_msg_get_target_size_and_check_checksum (
 		rrr_length buf_size
 ) {
 	if (buf_size < sizeof(struct rrr_msg)) {
-		return RRR_SOCKET_READ_INCOMPLETE;
+		return RRR_MSG_READ_INCOMPLETE;
 	}
 
 	*target_size = 0;
@@ -133,12 +132,12 @@ int rrr_msg_get_target_size_and_check_checksum (
 			sizeof(*msg) - sizeof(msg->header_crc32),
 			rrr_be32toh(msg->header_crc32)
 	) != 0) {
-		return RRR_SOCKET_SOFT_ERROR;
+		return RRR_MSG_READ_SOFT_ERROR;
 	}
 
 	*target_size = rrr_be32toh(msg->msg_size);
 
-	return RRR_SOCKET_OK;
+	return RRR_MSG_READ_OK;
 }
 
 int rrr_msg_check_data_checksum_and_length (

@@ -29,22 +29,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/log.h"
+#include "../lib/poll_helper.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
+#include "../lib/threads.h"
+#include "../lib/message_broker.h"
+#include "../lib/array.h"
 #include "../lib/python3/python3_common.h"
 #include "../lib/python3/python3_config.h"
 #include "../lib/python3/python3_vl_message.h"
 #include "../lib/python3/python3_cmodule.h"
-#include "../lib/poll_helper.h"
-#include "../lib/instance_config.h"
-#include "../lib/instances.h"
-#include "../lib/messages/messages.h"
-#include "../lib/threads.h"
-#include "../lib/message_broker.h"
-#include "../lib/messages/message_addr.h"
-#include "../lib/log.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/array.h"
 #include "../lib/message_holder/message_holder.h"
 
 struct python3_data {

@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_LOG_H
 #define RRR_MESSAGE_LOG_H
 
-#include "rrr_msg.h"
+#include "msg.h"
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_endian.h"
 
@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MSG_LOG_SIZE_OK(msg)											\
 	((msg)->prefix_size > (msg)->msg_size - sizeof(*(msg)) - 1 ? 0 : 1)
 
-struct rrr_msg_msg_log {
+struct rrr_msg_log {
 	RRR_MSG_HEAD;
 	uint8_t is_stdout;
 	uint8_t loglevel;
@@ -46,11 +46,11 @@ struct rrr_msg_msg_log {
 	char prefix_and_message[1];
 } __attribute((__packed__));
 
-void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_msg_log *msg);
-int rrr_msg_msg_log_to_host (struct rrr_msg_msg_log *msg);
-void rrr_msg_msg_log_init_head (struct rrr_msg_msg_log *target, uint16_t prefix_size, uint32_t data_size);
+void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_log *msg);
+int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg);
+void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size);
 int rrr_msg_msg_log_new (
-		struct rrr_msg_msg_log **target,
+		struct rrr_msg_log **target,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *message

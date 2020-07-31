@@ -30,9 +30,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../buffer.h"
 #include "../modules.h"
-#include "../messages/message_addr.h"
-#include "../messages/message_log.h"
-#include "../messages/messages.h"
+#include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
+#include "../messages/msg_msg.h"
 #include "../instances.h"
 #include "../instance_config.h"
 #include "../stats/stats_instance.h"
@@ -313,7 +313,7 @@ static int __rrr_cmodule_helper_read_from_fork_message_callback (
 }
 
 int __rrr_cmodule_helper_from_fork_log_callback (
-		const struct rrr_msg_msg_log *msg_log,
+		const struct rrr_msg_log *msg_log,
 		size_t data_size,
 		struct rrr_cmodule_read_from_fork_callback_data *callback_data
 ) {
@@ -389,7 +389,7 @@ static int __rrr_cmodule_helper_read_from_fork_callback (const void *data, size_
 		return __rrr_cmodule_helper_read_from_fork_message_callback(data, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
-		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_msg_msg_log *) msg, data_size, callback_data);
+		return __rrr_cmodule_helper_from_fork_log_callback((const struct rrr_msg_log *) msg, data_size, callback_data);
 	}
 	else if (RRR_MSG_IS_SETTING(msg)) {
 		return __rrr_cmodule_helper_read_from_fork_setting_callback((const struct rrr_setting_packed *) msg, data_size, callback_data);

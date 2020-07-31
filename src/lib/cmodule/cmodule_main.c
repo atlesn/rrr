@@ -33,9 +33,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../rrr_strerror.h"
 #include "../rrr_mmap.h"
 #include "../mmap_channel.h"
-#include "../messages/message_addr.h"
-#include "../messages/message_log.h"
-#include "../messages/messages.h"
+#include "../messages/msg_addr.h"
+#include "../messages/msg_log.h"
+#include "../messages/msg_msg.h"
 #include "../fork.h"
 #include "../common.h"
 #include "../message_holder/message_holder.h"
@@ -514,7 +514,7 @@ static void __rrr_cmodule_worker_fork_log_hook (
 ) {
 	struct rrr_cmodule_worker *worker = private_arg;
 
-	struct rrr_msg_msg_log *message_log = NULL;
+	struct rrr_msg_log *message_log = NULL;
 
 	if (rrr_msg_msg_log_new(&message_log, loglevel_translated, prefix, message) != 0) {
 		goto out;

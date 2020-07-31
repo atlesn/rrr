@@ -52,11 +52,10 @@ ip = ip/ip.c ip/ip_accept_data.c ip/ip_util.c
 
 udpstream = udpstream/udpstream.c udpstream/udpstream_asd.c
 
-message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c \
-			messages/rrr_msg_checksum.c
+message_holder = message_holder/message_holder.c message_holder/message_holder_util.c message_holder/message_holder_collection.c
 
 
-messages = messages/message_addr.c messages/message_log.c messages/messages.c messages/rrr_msg.c 
+messages = messages/msg_addr.c messages/msg_log.c messages/msg_msg.c messages/msg.c messages/msg_checksum.c
 
 if RRR_WITH_OPENSSL
 net_transport_tls = net_transport/net_transport_tls.c

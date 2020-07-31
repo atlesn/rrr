@@ -24,7 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "python3_headers.h"
 
-#include "../messages/rrr_msg_head.h"
+#include "../messages/msg_head.h"
 #include "../util/macro_utils.h"
 
 #define RRR_PYTHON3_MODULE_NAME	"rrr_helper"

@@ -37,9 +37,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages/messages.h"
 #include "../lib/threads.h"
 #include "../lib/poll_helper.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/udpstream/udpstream_asd.h"
 #include "../lib/socket/rrr_socket.h"
 #include "../lib/message_broker.h"

@@ -26,8 +26,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #	include <stdlib.h>
 #	include "array.h"
 #	include "type.h"
-#	include "messages/messages.h"
-#	include "messages/message_addr.h"
+#	include "messages/msg_msg.h"
+#	include "messages/msg_addr.h"
 #	include "instance_config.h"
 #	include "cmodule/cmodule_ext.h"
 #endif

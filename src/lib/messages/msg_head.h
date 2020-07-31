@@ -66,7 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // The header_crc32 is calculated AFTER conversion to network
 // byte order (big endian). The crc32 is then converted itself.
 
-#define RRR_MSG_HEAD		\
+#define RRR_MSG_HEAD			\
 	rrr_u32 header_crc32;		\
 	rrr_u32 msg_size;			\
 	rrr_u16 msg_type;			\

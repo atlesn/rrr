@@ -33,7 +33,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../lib/log.h"
 #include "../lib/poll_helper.h"
-#include "../lib/messages/messages.h"
 #include "../lib/threads.h"
 #include "../lib/buffer.h"
 #include "../lib/instances.h"
@@ -44,6 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/rrr_mysql.h"
 #include "../lib/string_builder.h"
 #include "../lib/message_broker.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/util/linked_list.h"
 #include "../lib/ip/ip.h"
 #include "../lib/message_holder/message_holder.h"

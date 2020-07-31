@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGES_HEAD_H
 #define RRR_MESSAGES_HEAD_H
 
-#include "rrr_msg_head.h"
+#include "msg_head.h"
 
 #define MSG_TYPE_MSG 1
 //#define MSG_TYPE_ACK 2
@@ -70,7 +70,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 	(message)->timestamp = rrr_htobe64((message)->timestamp);			\
 	(message)->topic_length = rrr_htobe16((message)->topic_length)
 
-#define RRR_MESSAGE_HEAD 	\
+#define RRR_MSG_MSG_HEAD 	\
 	rrr_u64 timestamp;		\
 	rrr_u8 type_and_class;	\
 	rrr_u8 version;			\
@@ -78,7 +78,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 struct rrr_msg_msg {
 	RRR_MSG_HEAD;
-	RRR_MESSAGE_HEAD;
+	RRR_MSG_MSG_HEAD;
 	char data[1];
 } __attribute__((packed));
 

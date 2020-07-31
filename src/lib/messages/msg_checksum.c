@@ -24,8 +24,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../log.h"
 
-#include "rrr_msg_checksum.h"
-#include "rrr_msg_head.h"
+#include "msg_checksum.h"
+#include "msg_head.h"
 
 #include "../util/rrr_endian.h"
 #include "../util/crc32.h"

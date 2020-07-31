@@ -22,9 +22,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MSG_H
 #define RRR_MSG_H
 
-#include "rrr_msg_checksum.h"
-#include "rrr_msg_head.h"
+#include "msg_checksum.h"
+#include "msg_head.h"
 #include "../rrr_types.h"
+#include "../read_constants.h"
+
+#define RRR_MSG_READ_OK				RRR_READ_OK
+#define RRR_MSG_READ_INCOMPLETE		RRR_READ_INCOMPLETE
+#define RRR_MSG_READ_SOFT_ERROR		RRR_READ_SOFT_ERROR
+#define RRR_MSG_READ_HARD_ERROR		RRR_READ_HARD_ERROR
 
 void rrr_msg_populate_head (
 		struct rrr_msg *message,

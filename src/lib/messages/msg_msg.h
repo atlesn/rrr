@@ -24,8 +24,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 
-#include "rrr_msg_head.h"
-#include "messages_head.h"
+#include "msg_msg_struct.h"
 #include "../rrr_types.h"
 
 struct rrr_msg_msg *rrr_msg_msg_new_array (

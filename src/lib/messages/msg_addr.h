@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #ifndef RRR_MESSAGE_ADDR_H
 #define RRR_MESSAGE_ADDR_H
 
-#include "rrr_msg.h"
+#include "msg.h"
 #include "../socket/rrr_socket.h"
 #include "../util/rrr_endian.h"
 

@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../../lib/ip/ip.h"
 #include "../../lib/message_holder/message_holder.h"
 #include "../../lib/message_holder/message_holder_struct.h"
-#include "../../lib/messages/messages.h"
+#include "../../lib/messages/msg_msg.h"
 #include "../../lib/rrr_strerror.h"
 #include "../../lib/message_broker.h"
 #include "../../lib/util/rrr_endian.h"

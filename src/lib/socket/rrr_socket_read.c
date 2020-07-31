@@ -34,10 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_socket.h"
 #include "rrr_socket_read.h"
-#include "../messages/rrr_msg.h"
 
 #include "../rrr_strerror.h"
 #include "../read.h"
+#include "../messages/msg.h"
 #include "../util/posix.h"
 #include "../util/linked_list.h"
 #include "../util/rrr_time.h"

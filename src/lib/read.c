@@ -26,9 +26,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
-#include "messages/messages.h"
-#include "messages/message_addr.h"
-#include "messages/message_log.h"
+#include "messages/msg_msg.h"
+#include "messages/msg_addr.h"
+#include "messages/msg_log.h"
 #include "array.h"
 #include "util/posix.h"
 #include "util/linked_list.h"
@@ -467,7 +467,7 @@ int rrr_read_common_receive_message_raw_callback (
 			goto out;
 		}
 
-		struct rrr_msg_msg_log *message = (struct rrr_msg_msg_log *) msg;
+		struct rrr_msg_log *message = (struct rrr_msg_log *) msg;
 		if (rrr_msg_msg_log_to_host(message) != 0) {
 			RRR_MSG_0("Invalid data in received log message in rrr_read_common_receive_message_raw_callback\n");
 			ret = RRR_READ_SOFT_ERROR;

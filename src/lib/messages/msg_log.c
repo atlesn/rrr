@@ -23,14 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 
 #include "log.h"
-#include "message_log.h"
-#include "rrr_msg.h"
+#include "msg_log.h"
+#include "msg.h"
 
-void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_msg_log *msg) {
+void rrr_msg_msg_log_prepare_for_network (struct rrr_msg_log *msg) {
 	msg->prefix_size = rrr_htobe16(msg->prefix_size);
 }
 
-int rrr_msg_msg_log_to_host (struct rrr_msg_msg_log *msg) {
+int rrr_msg_msg_log_to_host (struct rrr_msg_log *msg) {
 	msg->prefix_size = rrr_be16toh(msg->prefix_size);
 
 	if (!RRR_MSG_LOG_SIZE_OK(msg)) {
@@ -51,7 +51,7 @@ int rrr_msg_msg_log_to_host (struct rrr_msg_msg_log *msg) {
 	return 0;
 }
 
-void rrr_msg_msg_log_init_head (struct rrr_msg_msg_log *target, uint16_t prefix_size, uint32_t data_size) {
+void rrr_msg_msg_log_init_head (struct rrr_msg_log *target, uint16_t prefix_size, uint32_t data_size) {
 	rrr_msg_populate_head (
 			(struct rrr_msg *) target,
 			RRR_MSG_TYPE_MESSAGE_LOG,
@@ -63,7 +63,7 @@ void rrr_msg_msg_log_init_head (struct rrr_msg_msg_log *target, uint16_t prefix_
 }
 
 int rrr_msg_msg_log_new (
-		struct rrr_msg_msg_log **target,
+		struct rrr_msg_log **target,
 		uint8_t loglevel,
 		const char *prefix,
 		const char *message
@@ -79,7 +79,7 @@ int rrr_msg_msg_log_new (
 
 	size_t total_data_size = prefix_size + message_size;
 
-	struct rrr_msg_msg_log *result = malloc(sizeof(*result) - 1 + total_data_size);
+	struct rrr_msg_log *result = malloc(sizeof(*result) - 1 + total_data_size);
 	if (result == NULL) {
 		RRR_MSG_0("Could not allocate memorty in rrr_msg_msg_log_new");
 		return 1;

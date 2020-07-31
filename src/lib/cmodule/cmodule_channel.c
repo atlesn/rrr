@@ -29,8 +29,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "cmodule_main.h"
 #include "cmodule_defer_queue.h"
 
-#include "../messages/messages.h"
-#include "../messages/message_addr.h"
+#include "../messages/msg_msg.h"
+#include "../messages/msg_addr.h"
 #include "../mmap_channel.h"
 #include "../util/linked_list.h"
 #include "../util/macro_utils.h"

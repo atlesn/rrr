@@ -29,9 +29,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <errno.h>
 #include <unistd.h>
 
-#include "../lib/messages/messages_head.h"
-#include "../lib/messages/rrr_msg_checksum.h"
-#include "../lib/messages/rrr_msg_head.h"
+#include "../lib/messages/msg_msg_struct.h"
+#include "../lib/messages/msg_checksum.h"
+#include "../lib/messages/msg_head.h"
 #include "../lib/util/rrr_endian.h"
 
 /* Remember to disable compiler alignment */

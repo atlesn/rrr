@@ -28,8 +28,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "type.h"
 #include "fixed_point.h"
 #include "socket/rrr_socket.h"
-#include "messages/rrr_msg.h"
-#include "messages/messages.h"
+#include "messages/msg.h"
+#include "messages/msg_msg.h"
 #include "util/rrr_endian.h"
 #include "util/macro_utils.h"
 
