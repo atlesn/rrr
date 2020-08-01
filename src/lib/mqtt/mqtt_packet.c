@@ -74,7 +74,6 @@ static void __rrr_mqtt_p_payload_destroy (void *arg) {
 	free(payload);
 }
 
-
 int rrr_mqtt_p_payload_set_data (
 		struct rrr_mqtt_p_payload *target,
 		const char *data,
@@ -93,6 +92,8 @@ int rrr_mqtt_p_payload_set_data (
 	}
 
 	memcpy(target->packet_data, data, size);
+	target->length = size;
+	target->payload_start = target->packet_data;
 
 	out_unlock:
 	RRR_MQTT_P_UNLOCK(target);
@@ -467,6 +468,70 @@ static struct rrr_mqtt_p_publish *__rrr_mqtt_p_clone_publish_raw (
 			RRR_MQTT_P_UNLOCK(result);
 		}
 		return result;
+}
+
+int rrr_mqtt_p_new_publish (
+		struct rrr_mqtt_p_publish **result,
+		const char *topic,
+		const char *data,
+		uint16_t data_size,
+		const struct rrr_mqtt_p_protocol_version *protocol_version
+) {
+	int ret = 0;
+
+	*result = NULL;
+
+	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) rrr_mqtt_p_allocate(RRR_MQTT_P_TYPE_PUBLISH, protocol_version);
+	if (publish == NULL) {
+		ret = 1;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(publish);
+
+	if (topic == NULL || *topic == '\0') {
+		RRR_BUG("BUG: No topic set in rrr_mqtt_p_new_publish\n");
+	}
+
+	if (data_size > 0) {
+		if (rrr_mqtt_p_payload_new(&publish->payload) != 0) {
+			RRR_MSG_0("Could not create payload in rrr_mqtt_p_new_publish\n");
+			ret = 1;
+			goto out_free;
+		}
+		// Set function locks payload
+		ssize_t ssize_data_size = data_size;
+		if (rrr_mqtt_p_payload_set_data(publish->payload, data, ssize_data_size)) {
+			RRR_MSG_0("Could not set payload data in rrr_mqtt_p_new_publish\n");
+			ret = 1;
+			goto out_free;
+		}
+	}
+
+	if ((publish->topic = strdup(topic)) == NULL) {
+		RRR_MSG_0("Could not allocate topic in rrr_mqtt_p_new_publish\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	if (rrr_mqtt_topic_tokenize(&publish->token_tree_, publish->topic) != 0) {
+		RRR_MSG_0("Could not tokenize topic in rrr_mqtt_p_new_publish\n");
+		ret = 1;
+		goto out_free;
+	}
+
+	*result = publish;
+	// Do not set to NULL, must unlock below
+
+	goto out;
+	out_free:
+		RRR_MQTT_P_UNLOCK(publish);
+		RRR_MQTT_P_DECREF(publish);
+	out:
+		if (publish != NULL) {
+			RRR_MQTT_P_UNLOCK(publish);
+		}
+		return ret;
 }
 
 struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (

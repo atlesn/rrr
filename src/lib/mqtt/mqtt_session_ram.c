@@ -327,11 +327,13 @@ static int __rrr_mqtt_session_ram_retain_buffer_write_callback (
 		return ret;
 }
 
-// Used by broker
-static int __rrr_mqtt_session_ram_delivery_forward (
-		struct rrr_mqtt_session_ram *ram_session,
+static int __rrr_mqtt_session_collection_ram_delivery_forward (
+		struct rrr_mqtt_session_collection *sessions,
 		struct rrr_mqtt_p_publish *publish
 ) {
+	struct rrr_mqtt_session_collection_ram_data *ram_data =
+			(struct rrr_mqtt_session_collection_ram_data *) sessions;
+
 	int ret = RRR_MQTT_SESSION_OK;
 
 	struct rrr_mqtt_p_publish *new_publish = NULL;
@@ -340,14 +342,14 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		int is_zero_byte_payload = 0;
 
 		if (RRR_MQTT_P_TRYLOCK(publish) == 0) {
-			RRR_BUG("BUG: Publish was not locked in __rrr_mqtt_session_ram_delivery_forward\n");
+			RRR_BUG("BUG: Publish was not locked in __rrr_mqtt_session_collection_ram_delivery_forward\n");
 		}
 
 		if ((new_publish = rrr_mqtt_p_clone_publish (
 				publish,
 				1, 0, 0  // Preserve only type flags
 		)) == NULL) {
-			RRR_MSG_0("Could not duplicate publish in __rrr_mqtt_session_ram_delivery_forward\n");
+			RRR_MSG_0("Could not duplicate publish in __rrr_mqtt_session_collection_ram_delivery_forward\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out;
 		}
@@ -380,21 +382,21 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		// process the retained publish messages to avoid duplicate topics.
 		// Callback will incref if it adds new_publish to the buffer
 		if (rrr_fifo_buffer_search_and_replace (
-				&ram_session->ram_data->retain_queue.buffer,
+				&ram_data->retain_queue.buffer,
 				__rrr_mqtt_session_ram_retain_buffer_write_callback,
 				&callback_data,
 				0, // <-- No waiting for data
 				1  // <-- Call callback again for potential write operation after looping
 		) != 0) {
-			RRR_MSG_0("Could not write to retain queue in__rrr_mqtt_session_ram_delivery_forward\n");
+			RRR_MSG_0("Could not write to retain queue in __rrr_mqtt_session_collection_ram_delivery_forward\n");
 			ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 			goto out;
 		}
 	}
 
 	RRR_MQTT_P_INCREF(publish);
-	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->ram_data->publish_forward_queue.buffer, (struct rrr_mqtt_p *) publish, sizeof(*publish), 0 ,0) != 0) {
-		RRR_MSG_0("Could not write to publish forward queue in__rrr_mqtt_session_ram_delivery_forward\n");
+	if (__rrr_mqtt_session_ram_fifo_write(&ram_data->publish_forward_queue.buffer, (struct rrr_mqtt_p *) publish, sizeof(*publish), 0 ,0) != 0) {
+		RRR_MSG_0("Could not write to publish forward queue in __rrr_mqtt_session_collection_ram_delivery_forward\n");
 		RRR_MQTT_P_DECREF(publish);
 		ret = RRR_MQTT_SESSION_INTERNAL_ERROR;
 		goto out;
@@ -406,6 +408,17 @@ static int __rrr_mqtt_session_ram_delivery_forward (
 		RRR_MQTT_P_DECREF(new_publish);
 	}
 	return ret;
+}
+
+// Used by broker
+static int __rrr_mqtt_session_ram_delivery_forward (
+		struct rrr_mqtt_session_ram *ram_session,
+		struct rrr_mqtt_p_publish *publish
+) {
+	return __rrr_mqtt_session_collection_ram_delivery_forward (
+			(struct rrr_mqtt_session_collection *) ram_session->ram_data,
+			publish
+	);
 }
 
 // Used by client
@@ -3010,6 +3023,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_collection_ram_get_stats,
 		__rrr_mqtt_session_collection_ram_iterate_and_clear_local_delivery,
+		__rrr_mqtt_session_collection_ram_delivery_forward,
 		__rrr_mqtt_session_collection_ram_maintain,
 		__rrr_mqtt_session_collection_ram_destroy,
 		__rrr_mqtt_session_collection_ram_get_session,

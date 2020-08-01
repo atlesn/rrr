@@ -783,7 +783,13 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		PARSE_PROPERTIES_IF_V5(connect,will_properties);
 		PARSE_UTF8(connect,will_topic);
+		if (rrr_mqtt_topic_validate_name(connect->will_topic) != 0) {
+			RRR_MSG_0("Invalid will topic name '%s' in received CONNECT packet\n",
+					connect->will_topic);
+			return RRR_MQTT_SOFT_ERROR;
+		}
 		PARSE_BLOB(connect,will_message);
+		connect->will_message_size = parse_state->blob_length;
 	}
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect) != 0) {

@@ -346,8 +346,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	struct rrr_mqtt_session_properties session_properties = rrr_mqtt_common_default_session_properties;
 
-//	RRR_MQTT_P_LOCK(packet);
-
 	int client_id_was_assigned = 0;
 	int session_present = 0;
 
@@ -573,6 +571,16 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
+		if ((ret = rrr_mqtt_conn_set_will_data_from_connect (
+				connection,
+				connect
+		)) != 0) {
+			RRR_MSG_0("Could not set connection will message data in  __rrr_mqtt_broker_handle_connect\n");
+			goto out;
+		}
+	}
+
 	// Remove session from any old connections not yet destroyed
 	if (rrr_mqtt_common_clear_session_from_connections (
 			&data->mqtt_data,
@@ -648,7 +656,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	out:
 
 	rrr_mqtt_session_properties_clear(&session_properties);
-//	RRR_MQTT_P_UNLOCK(packet);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(connack);
 	return ret | ret_destroy;
 }
@@ -812,6 +819,27 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_broker_handle_auth}
 };
 
+static int __rrr_mqtt_broker_will_publish (
+		struct rrr_mqtt_broker_data *data,
+		struct rrr_mqtt_conn *connection
+) {
+	if (connection->will_publish == NULL) {
+		return 0;
+	}
+
+	int ret = 0;
+
+	RRR_MQTT_P_LOCK(connection->will_publish);
+
+	RRR_DBG_3("Will PUBLISH for client '%s' with topic '%s' retain '%u' in MQTT broker\n",
+			connection->client_id, connection->will_publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(connection->will_publish));
+
+	ret = MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(&data->mqtt_data, connection->will_publish);
+	RRR_MQTT_P_UNLOCK(connection->will_publish);
+
+	return ret;
+}
+
 static int __rrr_mqtt_broker_event_handler (
 		struct rrr_mqtt_conn *connection,
 		int event,
@@ -827,6 +855,9 @@ static int __rrr_mqtt_broker_event_handler (
 
 	switch (event) {
 		case RRR_MQTT_CONN_EVENT_DISCONNECT:
+			if (__rrr_mqtt_broker_will_publish(data, connection)) {
+				RRR_MSG_0("Warning: Failed to publish will message in __rrr_mqtt_broker_event_handler\n");
+			}
 			RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO (
 				data->client_count--;
 				data->stats.total_connections_closed++;

@@ -222,6 +222,8 @@ static void __rrr_mqtt_connection_destroy (struct rrr_mqtt_conn *connection) {
 	RRR_FREE_IF_NOT_NULL(connection->client_id);
 	RRR_FREE_IF_NOT_NULL(connection->username);
 
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(connection->will_publish);
+
 	free(connection);
 }
 
@@ -377,6 +379,46 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		}
 	}
 
+	return ret;
+}
+
+int rrr_mqtt_conn_set_will_data_from_connect (
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect
+) {
+	int ret = 0;
+
+	struct rrr_mqtt_p_publish *publish = NULL;
+
+	RRR_DBG_3("Set will message for client '%s' with topic '%s' retain '%u' qos '%u' in MQTT broker\n",
+			connection->client_id,
+			connect->will_topic,
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect),
+			RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect)
+	);
+
+	if (rrr_mqtt_p_new_publish (
+			&publish,
+			connect->will_topic,
+			connect->will_message,
+			connect->will_message_size,
+			connect->protocol_version
+	) != 0) {
+		RRR_MSG_0("Could not allocate publish in rrr_mqtt_conn_set_will_data_from_connect\n");
+		ret = 1;
+		goto out;
+	}
+
+	RRR_MQTT_P_LOCK(publish);
+		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect));
+		RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect));
+	RRR_MQTT_P_UNLOCK(publish);
+
+	connection->will_publish = publish;
+	publish = NULL;
+
+	out:
+	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish);
 	return ret;
 }
 

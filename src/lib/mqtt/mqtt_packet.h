@@ -352,6 +352,7 @@ struct rrr_mqtt_p_connect {
 
 	char *will_topic;
 	char *will_message;
+	uint16_t will_message_size;
 
 	char *username;
 	char *password;
@@ -584,7 +585,13 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (
 	const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(id);
 	return properties->allocate(rrr_mqtt_p_get_type_properties(id), protocol_version);
 }
-
+int rrr_mqtt_p_new_publish (
+		struct rrr_mqtt_p_publish **result,
+		const char *topic,
+		const char *data,
+		uint16_t data_size,
+		const struct rrr_mqtt_p_protocol_version *protocol_version
+);
 struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		const struct rrr_mqtt_p_publish *source,
 		int do_preserve_type_flags,

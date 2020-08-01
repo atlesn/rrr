@@ -202,6 +202,9 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_NOTIFY_DISCONNECT(mqtt,session,reason_v5) \
 		(mqtt)->sessions->methods->notify_disconnect((mqtt)->sessions, &(session), reason_v5)
 
+#define MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(mqtt,packet) \
+		(mqtt)->sessions->methods->delivery_forward((mqtt)->sessions, packet)
+
 #define MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD	\
 	const struct rrr_mqtt_property_collection *source;		\
 	uint8_t reason_v5

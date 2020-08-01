@@ -106,6 +106,8 @@ struct rrr_mqtt_conn {
 	uint64_t close_wait_time_usec;
 	uint64_t close_wait_start;
 
+	struct rrr_mqtt_p_publish *will_publish;
+
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
 	union {
@@ -175,6 +177,10 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		const struct rrr_mqtt_p_protocol_version *protocol_version,
 		struct rrr_mqtt_session *session,
 		const char *username
+);
+int rrr_mqtt_conn_set_will_data_from_connect (
+		struct rrr_mqtt_conn *connection,
+		const struct rrr_mqtt_p_connect *connect
 );
 struct rrr_mqtt_conn_iterator_ctx_housekeeping_callback_data {
 		int (*exceeded_keep_alive_callback)(struct rrr_mqtt_conn *connection, void *arg);

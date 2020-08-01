@@ -121,6 +121,13 @@ struct rrr_mqtt_session_collection_methods {
 			void *callback_arg
 	);
 
+	// Insert a packet into the forward queue. Done by broker when publishing
+	// will messages. Publish message must be locked when calling.
+	int (*delivery_forward) (
+			struct rrr_mqtt_session_collection *sessions,
+			struct rrr_mqtt_p_publish *publish
+	);
+
 	// Destroy old sessions, read from send queue
 	int (*maintain) (
 			struct rrr_mqtt_session_collection *
