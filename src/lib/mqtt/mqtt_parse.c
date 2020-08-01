@@ -984,10 +984,14 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 
-		parse_state->ret = rrr_mqtt_subscription_collection_append_unique (sub_usub->subscriptions, &subscription);
-		if (parse_state->ret != RRR_MQTT_SUBSCRIPTION_OK) {
+		int ret_tmp = rrr_mqtt_subscription_collection_append_unique (sub_usub->subscriptions, &subscription);
+		if (ret_tmp == RRR_MQTT_SUBSCRIPTION_REPLACED) {
+			RRR_DBG_3("Duplicate topic filter '%s' in received mqtt SUBSCRIBE\n", sub_usub->data_tmp);
+			// Do not destroy, buffer owns memory
+		}
+		else if (ret_tmp != RRR_MQTT_SUBSCRIPTION_OK) {
 			rrr_mqtt_subscription_destroy(subscription);
-			RRR_MSG_0("Error while adding subscription to collection in rrr_mqtt_parse_subscribe\n");
+			RRR_MSG_0("Error %i while adding subscription to collection in rrr_mqtt_parse_subscribe\n", ret_tmp);
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 

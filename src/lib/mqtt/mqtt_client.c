@@ -168,7 +168,13 @@ int rrr_mqtt_client_subscribe (
 
 	RRR_MQTT_P_LOCK(subscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(subscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			subscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
 		goto out_unlock;
 	}
@@ -229,7 +235,13 @@ int rrr_mqtt_client_unsubscribe (
 
 	RRR_MQTT_P_LOCK(unsubscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(unsubscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			unsubscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
 		goto out_unlock;
 	}

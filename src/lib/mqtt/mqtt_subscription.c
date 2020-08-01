@@ -68,6 +68,8 @@ int rrr_mqtt_subscription_new (
 		goto out;
 	}
 
+	memset(sub, '\0', sizeof(*sub));
+
 	if (topic_filter == NULL || *topic_filter == '\0') {
 		RRR_MSG_0("Zero-length or NULL topic filter while creating subscription, tagging subscription as invalid\n");
 		sub->qos_or_reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_FILTER_INVALID;
@@ -409,6 +411,7 @@ static int __rrr_mqtt_subscription_collection_push_unique_callback (
 	return ret;
 }
 
+// NOTE : Check for REPLACED return value when calling
 static int __rrr_mqtt_subscription_collection_add_unique (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription **subscription,
@@ -516,13 +519,6 @@ int rrr_mqtt_subscription_collection_remove_topic (
 	return 0;
 }
 
-int rrr_mqtt_subscription_collection_push_unique (
-		struct rrr_mqtt_subscription_collection *target,
-		struct rrr_mqtt_subscription **subscription
-) {
-	return __rrr_mqtt_subscription_collection_add_unique (target, subscription, 0);
-}
-
 int rrr_mqtt_subscription_collection_push_unique_str (
 		struct rrr_mqtt_subscription_collection *target,
 		const char *topic,
@@ -553,19 +549,26 @@ int rrr_mqtt_subscription_collection_push_unique_str (
 		}
 	}
 
-	if (__rrr_mqtt_subscription_collection_add_unique (target, &subscription, 0) != 0) {
-		RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
-		ret = 1;
-		goto out;
+	if ((ret = __rrr_mqtt_subscription_collection_add_unique (target, &subscription, 0)) != RRR_MQTT_SUBSCRIPTION_OK) {
+		if (ret == RRR_MQTT_SUBSCRIPTION_REPLACED) {
+			ret = RRR_MQTT_SUBSCRIPTION_OK;
+		}
+		else {
+			RRR_MSG_0("Could not add subscription to collection in rrr_mqtt_subscription_collection_push_unique_str\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	subscription = NULL;
 
 	out:
+	// Destroy function checks for NULL
 	rrr_mqtt_subscription_destroy(subscription);
 	return ret;
 }
 
+// NOTE : Check for REPLACED return value when calling
 int rrr_mqtt_subscription_collection_append_unique (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription **subscription
@@ -576,7 +579,9 @@ int rrr_mqtt_subscription_collection_append_unique (
 int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
 		struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
+		int include_invalid_entries,
+		int (*new_subscrition_callback)(const struct rrr_mqtt_subscription *subscription, void *arg),
+		void *new_subscrition_callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
@@ -584,7 +589,14 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 	//        which means the list cannot be used afterwards
 	RRR_LL_ITERATE_BEGIN(source, struct rrr_mqtt_subscription);
 		if (include_invalid_entries != 0 || node->qos_or_reason_v5 <= 2) {
-			ret = rrr_mqtt_subscription_collection_append_unique(target, &node) & ~RRR_MQTT_SUBSCRIPTION_REPLACED;
+			ret = rrr_mqtt_subscription_collection_append_unique(target, &node);
+
+			if ((ret & RRR_MQTT_SUBSCRIPTION_REPLACED) == 0) {
+				ret &= ~(RRR_MQTT_SUBSCRIPTION_REPLACED);
+				if (new_subscrition_callback != NULL) {
+					ret = new_subscrition_callback(node, new_subscrition_callback_arg);
+				}
+			}
 
 			if (ret != 0) {
 				RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
@@ -605,7 +617,9 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 		struct rrr_mqtt_subscription_collection *target,
 		const struct rrr_mqtt_subscription_collection *source,
-		int include_invalid_entries
+		int include_invalid_entries,
+		int (*new_subscrition_callback)(const struct rrr_mqtt_subscription *subscription, void *arg),
+		void *new_subscrition_callback_arg
 ) {
 	int ret = RRR_MQTT_SUBSCRIPTION_OK;
 
@@ -619,7 +633,9 @@ int rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 	if ((ret = rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 			target,
 			new_source,
-			include_invalid_entries
+			include_invalid_entries,
+			new_subscrition_callback,
+			new_subscrition_callback_arg
 	)) != RRR_MQTT_SUBSCRIPTION_OK) {
 		RRR_MSG_0("Could not append to collection in rrr_mqtt_subscription_collection_copy_from_collection_unique\n");
 		goto out;
