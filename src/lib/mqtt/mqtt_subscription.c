@@ -193,10 +193,15 @@ static int __rrr_mqtt_subscription_match_publish (
 	return ret;
 }
 
-int rrr_mqtt_subscription_collection_match_publish_callback (
+// Callback is called once per matching subscription
+int rrr_mqtt_subscription_collection_match_publish_with_callback (
 		const struct rrr_mqtt_subscription_collection *subscriptions,
 		const struct rrr_mqtt_p_publish *publish,
-		int (*match_callback)(const struct rrr_mqtt_p_publish *publish, const struct rrr_mqtt_subscription *subscription, void *arg),
+		int (*match_callback) (
+				const struct rrr_mqtt_p_publish *publish,
+				const struct rrr_mqtt_subscription *subscription,
+				void *callback_arg
+		),
 		void *callback_arg,
 		int *match_count_final
 ) {
@@ -241,11 +246,10 @@ int rrr_mqtt_subscription_collection_match_publish (
 	RRR_LL_ITERATE_BEGIN(subscriptions, const struct rrr_mqtt_subscription);
 		ret = __rrr_mqtt_subscription_match_publish(node, publish);
 		if (ret == RRR_MQTT_TOKEN_MATCH) {
-			ret = RRR_MQTT_TOKEN_MATCH;
 			RRR_LL_ITERATE_LAST();
 		}
 		else if (ret != RRR_MQTT_TOKEN_MISMATCH) {
-			RRR_MSG_0("Error in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
+			RRR_MSG_0("Error from matcher in rrr_mqtt_subscription_collection_match_publish, return was %i\n", ret);
 			ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 			RRR_LL_ITERATE_LAST();
 		}

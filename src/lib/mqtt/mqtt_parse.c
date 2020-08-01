@@ -832,9 +832,10 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 
 	publish->type_flags = session->type_flags;
 
+	// Note : The separate dup variable overrides the value in type_flags. When
+	//        the publish is assembled, the type_flag is modified to match the
+	//        stored dup variable.
 	publish->dup = RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(session);
-//	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
-//	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
 	RRR_DBG_3("PUBLISH flags (%u): DUP: %u, QOS: %u, RET: %u\n",
 			session->packet->type_flags,
