@@ -608,7 +608,7 @@ whether a definition is valid, just try to use it and RRR will give you an error
 Sequential fixed length values of the same type may be grouped together in a single item, and each item may be tagged to
 ease the extraction of data in later processing.
 
-The specification of an array definition is like this, and below follows more detailed explanations.
+Below is the specification of an array definition, followed by more detailed explanations.
 
 	type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 	
@@ -629,10 +629,10 @@ Length must be in the range 1-64.
 - `stx` - One or more STX or SOH characters. Length must be in the range 1-64.
 
 Types `be`, `le` and `h` may be followed by an `s` after the length specifier to indicate that the input number is signed. If instead
-`u` or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
+`u` or nothing is set here, the value is treated as unsigned. No other types may have the sign flag set.
 
 ### WEAK DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have length set. They
+The lengths of these types are identified automatically and must not be set. They
 cannot be at the end of a definition, nor follow after each other.
 
 - `ustr` - An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
@@ -642,9 +642,9 @@ and the integer part may be preceded with a sign (- or +). Stored with 64-bits w
 24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10.
 
 ### STRONG DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have a length set. They may be at the end of a defintion.
+The lengths of these types are identified automatically and must not be set. They may be at the end of a definition.
 
-- `msg` - A full RRR message complete with headers and checksums. A message has it's length inside the message header.
+- `msg` - A full RRR message complete with headers and checksums. A message has its length inside the message header.
 - `str` - An arbitrary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \.
 The surrounding quotes are not included in the final string.
 - `nsep` - Match any numbers of bytes until a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be
