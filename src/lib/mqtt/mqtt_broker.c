@@ -333,8 +333,6 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 	return ret;
 }
 
-// TODO : Try to split this up into multiple functions
-
 static int __rrr_mqtt_broker_handle_connect_will (
 		struct rrr_mqtt_data *mqtt_data,
 		struct rrr_mqtt_conn *connection,
@@ -342,7 +340,7 @@ static int __rrr_mqtt_broker_handle_connect_will (
 ) {
 	int ret = RRR_MQTT_OK;
 
-	if ((ret = mqtt_data->sessions->methods->unregister_postponed_will_publish (
+	if ((ret = mqtt_data->sessions->methods->unregister_will_publish (
 			mqtt_data->sessions,
 			session_handle
 	)) != RRR_MQTT_SESSION_OK) {
@@ -350,7 +348,7 @@ static int __rrr_mqtt_broker_handle_connect_will (
 	}
 
 	if (connection->will_publish != NULL) {
-		if ((ret = mqtt_data->sessions->methods->register_postponed_will_publish (
+		if ((ret = mqtt_data->sessions->methods->register_will_publish (
 				mqtt_data->sessions,
 				session_handle,
 				connection->will_publish
@@ -366,6 +364,8 @@ static int __rrr_mqtt_broker_handle_connect_will (
 	out:
 		return ret;
 }
+
+// TODO : Try to split this up into multiple functions
 
 static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
@@ -521,10 +521,11 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	RRR_MQTT_BROKER_WITH_SERIAL_LOCK_DO(data->client_count++);
 
-	RRR_DBG_1 ("CONNECT: Using client ID '%s'%s username '%s' client count is %i\n",
+	RRR_DBG_1 ("CONNECT: Using client ID '%s'%s username '%s' clean session %i client count is %i\n",
 			(connection->client_id != NULL ? connection->client_id : "(empty)"),
 			(client_id_was_assigned ? " (generated)"  : ""),
 			(connect->username != NULL ? connect->username : ""),
+			RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect),
 			client_count + 1
 	);
 
@@ -603,11 +604,6 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 		goto out;
 	}
 
-	if ((ret = __rrr_mqtt_broker_handle_connect_will(mqtt_data, connection, &session)) != 0) {
-		RRR_MSG_0("Error while handling will operations in __rrr_mqtt_broker_handle_connect, return was %i\n", ret);
-		goto out;
-	}
-
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		if ((ret = rrr_mqtt_conn_set_will_data_from_connect (
 				&reason_v5,
@@ -623,6 +619,11 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 				goto out_send_connack;
 			}
 		}
+	}
+
+	if ((ret = __rrr_mqtt_broker_handle_connect_will(mqtt_data, connection, &session)) != 0) {
+		RRR_MSG_0("Error while handling will operations in __rrr_mqtt_broker_handle_connect, return was %i\n", ret);
+		goto out;
 	}
 
 	// Remove session from any old connections not yet destroyed
@@ -852,10 +853,10 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 		// In version 3.1, the will PUBLISH is always cleared (reason_v5 will
 		// always be 0 as there is no reason field in V3.1 DISCONNECT)
 		if (packet->reason_v5 == RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL) {
-			RRR_DBG_3("Normal disconnect from client '%s' with reason DISCONNECT_WITH_WILL, not clearing will message\n");
+			RRR_DBG_3("Normal disconnect from client '%s' with reason DISCONNECT_WITH_WILL, not clearing will message\n", connection->client_id);
 		}
 		else {
-			RRR_DBG_3("Clearing will message for client '%s' upon receival of normal disconnect in MQTT broker\n");
+			RRR_DBG_3("Clearing will message for client '%s' upon receival of normal disconnect in MQTT broker\n", connection->client_id);
 			RRR_MQTT_P_DECREF(connection->will_publish);
 			connection->will_publish = NULL;
 		}

@@ -75,13 +75,12 @@ struct rrr_mqtt_session_ram {
 	// These fields must be protected by the session lock
 	pthread_mutex_t lock;
 	char *client_id_;
-	uint64_t last_seen;
 	struct rrr_mqtt_session_properties session_properties;
 	uint64_t retry_interval_usec;
 	uint64_t prev_maintain_time;
+	uint64_t expire_time;
 	uint32_t max_in_flight;
 	uint32_t complete_publish_grace_time;
-	int clean_session;
 	struct rrr_mqtt_subscription_collection *subscriptions;
 //	struct rrr_mqtt_session_ram_stats stats;
 	struct rrr_mqtt_p_publish *will_publish;
@@ -787,7 +786,7 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_find_sessi
 static void __rrr_mqtt_session_ram_heartbeat_unlocked (
 		struct rrr_mqtt_session_ram *ram_session
 ) {
-	ram_session->last_seen = rrr_time_get_64();
+	(void)(ram_session);
 }
 
 static int __rrr_mqtt_session_collection_ram_get_session (
@@ -1198,6 +1197,7 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 
 	int ret = RRR_MQTT_SESSION_OK;
 
+	uint64_t expire_time = 0;
 	uint64_t time_now = rrr_time_get_64();
 
 	// CHECK POSTPONED WILL PUBLISH MESSAGES
@@ -1232,16 +1232,9 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 	// CHECK FOR EXPIRED SESSIONS AND LOOP ACK NOTIFY QUEUES
 	SESSION_COLLECTION_RAM_LOCK(data);
 	RRR_LL_ITERATE_BEGIN(data, struct rrr_mqtt_session_ram);
-		uint64_t time_diff = 0;
-		uint32_t session_expiry = 0;
-
 		int do_iterate_publish_grace_queue = 0;
 
 		SESSION_RAM_LOCK(node);
-
-		time_diff = time_now - node->last_seen;
-		session_expiry = node->session_properties.numbers.session_expiry;
-		__rrr_mqtt_session_ram_heartbeat_unlocked(node);
 
 		uint64_t publish_grace_queue_iteration_interval_usec = RRR_MQTT_SESSION_RAM_MAINTAIN_INTERVAL_MS * 1000;
 		if (node->prev_publish_grace_queue_iteration + publish_grace_queue_iteration_interval_usec < time_now) {
@@ -1249,12 +1242,13 @@ static int __rrr_mqtt_session_collection_ram_maintain (
 			do_iterate_publish_grace_queue = 1;
 		}
 
+		// Expiration time set upon disconnect notification, and set to 0 again
+		// in session init function
+		expire_time = node->expire_time;
+
 		SESSION_RAM_UNLOCK(node);
 
-		if (session_expiry != 0 &&
-			session_expiry != 0xffffffff &&
-			time_diff > (uint64_t) session_expiry * 1000000
-		) {
+		if (expire_time != 0 && time_now >= expire_time) {
 			SESSION_RAM_LOCK(node);
 			RRR_DBG_1("Session expired for client '%s' in __rrr_mqtt_session_collection_ram_maintain\n",
 					(node->client_id_ != NULL ? node->client_id_ : "(no ID)"));
@@ -1448,8 +1442,7 @@ static int __rrr_mqtt_session_ram_init (
 
 	ram_session->retry_interval_usec = retry_interval_usec;
 	ram_session->max_in_flight = max_in_flight;
-	ram_session->last_seen = rrr_time_get_64();
-	ram_session->clean_session = clean_session;
+	ram_session->expire_time = 0;
 	ram_session->complete_publish_grace_time = complete_publish_grace_time;
 
 	if (clean_session == 1) {
@@ -1462,8 +1455,10 @@ static int __rrr_mqtt_session_ram_init (
 			: __rrr_mqtt_session_ram_delivery_forward
 	);
 
-	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 "\n",
-			ram_session->session_properties.numbers.session_expiry);
+	RRR_DBG_2("Initialize ram session, expiry interval is %" PRIu32 " have will publish %p\n",
+			ram_session->session_properties.numbers.session_expiry,
+			ram_session->will_publish
+	);
 
 	out_unlock:
 	SESSION_RAM_UNLOCK(ram_session);
@@ -1921,10 +1916,6 @@ static int __rrr_mqtt_session_ram_add_subscriptions (
 	int ret = RRR_MQTT_SESSION_OK;
 
 	SESSION_RAM_LOCK(ram_session);
-
-	if (RRR_DEBUGLEVEL_1) {
-		rrr_mqtt_subscription_collection_dump(ram_session->subscriptions);
-	}
 
 	ret = rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
 			ram_session->subscriptions,
@@ -2826,22 +2817,27 @@ static int __rrr_mqtt_session_ram_notify_disconnect (
 	SESSION_RAM_INCREF_OR_RETURN();
 	SESSION_RAM_LOCK(ram_session);
 
-	RRR_DBG_2("Session notify disconnect expiry interval: %" PRIu32 " clean session: %i reason: %u\n",
+	RRR_DBG_2("Session notify disconnect expiry interval: %" PRIu32 " reason: %u\n",
 			ram_session->session_properties.numbers.session_expiry,
-			ram_session->clean_session,
 			reason_v5
 	);
+
+	if (ram_session->session_properties.numbers.session_expiry == 0xffffffff) { // 8 f's
+		ram_session->expire_time = 0; // Never
+	}
+	else if (ram_session->session_properties.numbers.session_expiry == 0) {
+		ram_session->expire_time = rrr_time_get_64(); // Now
+	}
+	else {
+		ram_session->expire_time = rrr_time_get_64() + ((uint64_t) 1000 * (uint64_t) 1000 * (uint64_t) ram_session->session_properties.numbers.session_expiry);
+	}
 
 	if (reason_v5 == RRR_MQTT_P_5_REASON_SESSION_TAKEN_OVER) {
 		RRR_DBG_1("Session notify disconnect no deletion due to session take-over\n");
 		goto no_delete;
 	}
 
- 	if (ram_session->clean_session == 1) {
-		RRR_DBG_2("Destroying session which had clean session set upon disconnect\n");
-		ret = RRR_MQTT_SESSION_DELETED;
-	}
-	else if (ram_session->session_properties.numbers.session_expiry == 0) {
+	if (ram_session->session_properties.numbers.session_expiry == 0) {
 		RRR_DBG_2("Destroying session with zero session expiry upon disconnect\n");
 		ret = RRR_MQTT_SESSION_DELETED;
 	}
@@ -3135,7 +3131,7 @@ static int __rrr_mqtt_session_ram_receive_packet (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_register_postponed_will_publish (
+static int __rrr_mqtt_session_ram_register_will_publish (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find,
 		struct rrr_mqtt_p_publish *publish
@@ -3153,7 +3149,7 @@ static int __rrr_mqtt_session_ram_register_postponed_will_publish (
 	return ret;
 }
 
-static int __rrr_mqtt_session_ram_unregister_postponed_will_publish (
+static int __rrr_mqtt_session_ram_unregister_will_publish (
 		struct rrr_mqtt_session_collection *collection,
 		struct rrr_mqtt_session **session_to_find
 ) {
@@ -3191,8 +3187,8 @@ const struct rrr_mqtt_session_collection_methods methods = {
 		__rrr_mqtt_session_ram_notify_disconnect,
 		__rrr_mqtt_session_ram_send_packet,
 		__rrr_mqtt_session_ram_receive_packet,
-		__rrr_mqtt_session_ram_register_postponed_will_publish,
-		__rrr_mqtt_session_ram_unregister_postponed_will_publish
+		__rrr_mqtt_session_ram_register_will_publish,
+		__rrr_mqtt_session_ram_unregister_will_publish
 };
 
 int rrr_mqtt_session_collection_ram_new (struct rrr_mqtt_session_collection **sessions, void *arg) {
