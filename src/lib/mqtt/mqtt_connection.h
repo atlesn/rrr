@@ -43,19 +43,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //#define RRR_MQTT_CONN_STEP_LIMIT			(1<<4)
 //#define RRR_MQTT_CONN_ITERATE_STOP			(1<<5)
 
-#define RRR_MQTT_CONN_STATE_NEW							(0)
-#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED		(1<<0)
-#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)
-#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)
-#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)
+#define RRR_MQTT_CONN_STATE_NEW							(0)			//    0
+#define RRR_MQTT_CONN_STATE_SEND_CONNACK_ALLOWED		(1<<0)		//    1
+#define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)		//    2
+#define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)		//    4
+#define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)		//    8
 // It is not always possible to destroy a connection immediately when we
 // send a disconnect packet (or pretend to). This flags tells housekeeping
 // to destroy the connection, and also blocks further usage.
-#define RRR_MQTT_CONN_STATE_DISCONNECTED				(1<<4)
+#define RRR_MQTT_CONN_STATE_DISCONNECTED				(1<<4)		//   16
 // After disconnecting, we wait a bit before close()-ing to let the client close first. The
 // broker sets the timeout for this, the client sets it to 0.
-#define RRR_MQTT_CONN_STATE_DISCONNECT_WAIT				(1<<5)
-#define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)
+#define RRR_MQTT_CONN_STATE_DISCONNECT_WAIT				(1<<5)		//   32
+#define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)		//   64
 
 #define RRR_MQTT_CONN_EVENT_DISCONNECT		1
 #define RRR_MQTT_CONN_EVENT_PACKET_PARSED	2
@@ -102,7 +102,7 @@ struct rrr_mqtt_conn {
 	uint64_t last_write_time;
 
 	char *client_id;
-	struct rrr_mqtt_session *session_;
+	struct rrr_mqtt_session *session;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	uint16_t keep_alive;
 

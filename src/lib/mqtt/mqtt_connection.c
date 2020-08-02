@@ -46,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 static int __rrr_mqtt_connection_call_event_handler (struct rrr_mqtt_conn *connection, int event, int no_repeat, void *arg) {
 	int ret = RRR_MQTT_OK;
 
-	if (no_repeat == 0 || connection->last_event != event) {
+	if (connection->event_handler != NULL && (no_repeat == 0 || connection->last_event != event)) {
 		ret = connection->event_handler (
 				connection,
 				event,
@@ -300,6 +300,30 @@ static int __rrr_mqtt_conn_new (
 		return ret;
 }
 
+static int __rrr_mqtt_connection_disconnect_call_event_handler_if_needed (
+		struct rrr_mqtt_conn *connection
+) {
+	int ret = 0;
+
+	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
+	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_SOFT_ERROR)) != RRR_MQTT_OK) {
+		RRR_MSG_0("Error from event handler in __rrr_mqtt_connection_disconnect_call_event_handler_if_needed, return was %i. ", ret);
+		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
+			RRR_MSG_0("Error was critical.\n");
+			goto out;
+		}
+		RRR_MSG_0("Error was non-critical, proceeding with destroy.\n");
+		ret = RRR_MQTT_OK;
+	}
+
+	// Prevents further event handler calls
+	connection->event_handler = NULL;
+	connection->event_handler_static_arg = NULL;
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_connection_in_iterator_disconnect (
 		struct rrr_net_transport_handle *handle,
 		void *arg
@@ -311,6 +335,13 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 	if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED(connection)) {
 		RRR_BUG("Connection %p state was already DISCONNECTED in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy\n",
 				connection);
+	}
+
+	// The session system must be informed (through broker/client event handlers) before close_wait expires
+	// in case the client re-connects before close_wait has finished. This prevents the new connection
+	// from experiencing the session being destroyed shortly after connecting.
+	if ((ret = __rrr_mqtt_connection_disconnect_call_event_handler_if_needed(connection)) != 0) {
+		goto out;
 	}
 
 	// Upon some errors, connection state will not yet have transitioned into DISCONNECT WAIT.
@@ -328,11 +359,12 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed). Unbinding from any session now.\n",
+			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed).\n",
 					connection,
 					(connection->client_id != NULL ? connection->client_id : "(empty)"),
 					connection->disconnect_reason_v5_
 			);
+
 			if (!RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {
 				__rrr_mqtt_connection_close (connection);
 			}
@@ -347,17 +379,6 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		}
 		RRR_DBG_2("Destroying connection %p reason %u, timer done\n",
 				connection, connection->disconnect_reason_v5_);
-	}
-
-	// Clear DESTROY flag, it is normal for the event handler to return this upon disconnect notification
-	if ((ret = (CALL_EVENT_HANDLER_NO_REPEAT(RRR_MQTT_CONN_EVENT_DISCONNECT) & ~RRR_MQTT_SOFT_ERROR)) != RRR_MQTT_OK) {
-		RRR_MSG_0("Error from event handler in __rrr_mqtt_connection_collection_in_iterator_disconnect_and_destroy, return was %i. ", ret);
-		if ((ret & RRR_MQTT_INTERNAL_ERROR) != 0) {
-			RRR_MSG_0("Error was critical.\n");
-			goto out;
-		}
-		RRR_MSG_0("Error was non-critical, proceeding with destroy.\n");
-		ret = RRR_MQTT_OK;
 	}
 
 	out:
