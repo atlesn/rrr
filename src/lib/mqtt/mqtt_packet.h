@@ -106,9 +106,6 @@ struct rrr_mqtt_topic_token;
 		const struct rrr_mqtt_p_type_properties *type_properties, \
 		const struct rrr_mqtt_p_protocol_version *protocol_version
 
-#define RRR_MQTT_P_TYPE_CLONE_DEFINITION \
-		const struct rrr_mqtt_p *source
-
 #define RRR_MQTT_P_TYPE_FREE_DEFINITION \
 		struct rrr_mqtt_p *packet
 
@@ -132,7 +129,6 @@ struct rrr_mqtt_p_type_properties {
 	ssize_t packet_size;
 
 	struct rrr_mqtt_p *(*allocate)(RRR_MQTT_P_TYPE_ALLOCATE_DEFINITION);
-	struct rrr_mqtt_p *(*clone)(RRR_MQTT_P_TYPE_CLONE_DEFINITION);
 
 	// We do not use function argument macros for these two to avoid including the header files
 	int (*parse)(struct rrr_mqtt_parse_session *session);
@@ -332,6 +328,17 @@ static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
 	}
 }
 
+// The _dummy is just to keep the (pre)compiler from going crazy
+
+#define RRR_MQTT_P_LOCK_IN(p)													\
+	pthread_mutex_lock(&((p)->data_lock));int _dummy=0;do{_dummy=0
+
+#define RRR_MQTT_P_LOCK_BREAK()													\
+	goto p_unlock_out
+
+#define RRR_MQTT_P_LOCK_OUT(p)													\
+	p_unlock_out:(void)(_dummy);}while(0);pthread_mutex_unlock(&((p)->data_lock))
+
 //	printf ("packet %p lock\n", (p));
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
@@ -356,6 +363,7 @@ struct rrr_mqtt_p_connect {
 
 	char *will_topic;
 	char *will_message;
+	uint16_t will_message_size;
 
 	char *username;
 	char *password;
@@ -424,18 +432,17 @@ struct rrr_mqtt_p_publish {
 	char *topic;
 	struct rrr_mqtt_topic_token *token_tree_;
 
-	/* These three are also accessible through packet type flags but we cache them here */
-	//uint8_t dup; <-- defined in header
-	//uint8_t qos;
-	//uint8_t retain;
-
 	struct rrr_mqtt_property_collection properties;
 
 	uint8_t payload_format_indicator;
 	uint32_t message_expiry_interval;
 	uint16_t topic_alias;
-	struct rrr_mqtt_property_collection user_properties;
 	struct rrr_mqtt_property_collection subscription_ids;
+
+	// Note that this field will not be assembled. Put values
+	// in the general properties fields instead for them to be
+	// sent.
+	struct rrr_mqtt_property_collection user_properties;
 
 	struct rrr_mqtt_p_qos_packets qos_packets;
 
@@ -444,6 +451,8 @@ struct rrr_mqtt_p_publish {
 	const struct rrr_mqtt_property *correlation_data;
 	const struct rrr_mqtt_property *content_type;
 
+	// Used when message is in will wait queue
+	uint32_t will_delay_interval;
 };
 
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))
@@ -593,17 +602,19 @@ static inline struct rrr_mqtt_p *rrr_mqtt_p_allocate (
 	const struct rrr_mqtt_p_type_properties *properties = rrr_mqtt_p_get_type_properties(id);
 	return properties->allocate(rrr_mqtt_p_get_type_properties(id), protocol_version);
 }
-
-static inline struct rrr_mqtt_p *rrr_mqtt_p_clone (
-		const struct rrr_mqtt_p *source
-) {
-	const struct rrr_mqtt_p_type_properties *properties = source->type_properties;
-	if (properties->clone == NULL) {
-		RRR_BUG("No clone defined for packet type %s in rrr_mqtt_p_clone\n", RRR_MQTT_P_GET_TYPE_NAME(source));
-	}
-	return properties->clone(source);
-}
-
+int rrr_mqtt_p_new_publish (
+		struct rrr_mqtt_p_publish **result,
+		const char *topic,
+		const char *data,
+		uint16_t data_size,
+		const struct rrr_mqtt_p_protocol_version *protocol_version
+);
+struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
+		const struct rrr_mqtt_p_publish *source,
+		int do_preserve_type_flags,
+		int do_preserve_dup,
+		int do_preserve_reason
+);
 const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v5 (uint8_t reason_v5);
 const struct rrr_mqtt_p_reason *rrr_mqtt_p_reason_get_v31 (uint8_t reason_v31);
 uint8_t rrr_mqtt_p_translate_reason_from_v5 (uint8_t v5_reason);

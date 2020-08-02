@@ -79,7 +79,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_LL_REPLACE_NODE(target, source, type, replace_func)	\
 	do {																	\
-	if (source->ptr_next != NULL)											\
+	if ((source)->ptr_next != NULL)											\
 		RRR_BUG("source had non-NULL ptr_next-pointer in RRR_LINKED_LIST_REPLACE_NODE\n"); \
 	type *next_preserve = target->ptr_next;									\
 	type *prev_preserve = target->ptr_prev;									\

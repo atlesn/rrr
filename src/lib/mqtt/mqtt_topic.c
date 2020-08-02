@@ -103,6 +103,10 @@ int rrr_mqtt_topic_validate_name_with_end (
 		const char *topic_name,
 		const char *end
 ) {
+	if (topic_name == end) {
+		return 1;
+	}
+
 	struct topic_name_seq seq = { 0, 0, topic_name };
 
 	return rrr_utf8_validate_and_iterate (
@@ -116,7 +120,11 @@ int rrr_mqtt_topic_validate_name_with_end (
 int rrr_mqtt_topic_validate_name (
 		const char *topic_name
 ) {
-	return rrr_mqtt_topic_validate_name_with_end(
+	if (topic_name == NULL || *topic_name == '\0') {
+		return 1;
+	}
+
+	return rrr_mqtt_topic_validate_name_with_end (
 			topic_name,
 			topic_name + strlen(topic_name)
 	);

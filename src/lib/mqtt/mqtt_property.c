@@ -607,31 +607,59 @@ int rrr_mqtt_property_collection_calculate_size (
 	return ret;
 }
 
-void rrr_mqtt_property_collection_destroy (
+void rrr_mqtt_property_collection_clear (
 		struct rrr_mqtt_property_collection *collection
 ) {
 	RRR_LL_DESTROY(collection, struct rrr_mqtt_property, rrr_mqtt_property_destroy(node));
+}
+
+int rrr_mqtt_property_collection_add_selected_from_collection (
+		struct rrr_mqtt_property_collection *target,
+		const struct rrr_mqtt_property_collection *source,
+		uint8_t identifiers[],
+		size_t identifiers_length
+) {
+	int ret = 0;
+
+	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
+		int do_clone = 1;
+
+		if (identifiers_length > 0) {
+			do_clone = 0;
+			for (size_t i = 0; i < identifiers_length; i++) {
+				if (node->definition->identifier == identifiers[i]) {
+					do_clone = 1;
+					break;
+				}
+			}
+		}
+
+		if (do_clone) {
+			struct rrr_mqtt_property *new_node = NULL;
+			ret = __rrr_mqtt_property_clone(&new_node, node);
+			if (ret != 0) {
+				RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_clone\n");
+				goto out_destroy;
+			}
+			rrr_mqtt_property_collection_add(target, new_node);
+		}
+	RRR_LL_ITERATE_END();
+
+	goto out;
+	out_destroy:
+		rrr_mqtt_property_collection_clear(target);
+	out:
+		return ret;
 }
 
 int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property_collection *target,
 		const struct rrr_mqtt_property_collection *source
 ) {
-	int ret = 0;
-
-	RRR_LL_ITERATE_BEGIN(source, const struct rrr_mqtt_property);
-		struct rrr_mqtt_property *new_node = NULL;
-		ret = __rrr_mqtt_property_clone(&new_node, node);
-		if (ret != 0) {
-			RRR_MSG_0("Could not clone property in rrr_mqtt_property_collection_clone\n");
-			goto out_destroy;
-		}
-		rrr_mqtt_property_collection_add(target, new_node);
-	RRR_LL_ITERATE_END();
-
-	goto out;
-	out_destroy:
-		rrr_mqtt_property_collection_destroy(target);
-	out:
-		return ret;
+	return rrr_mqtt_property_collection_add_selected_from_collection(
+			target,
+			source,
+			NULL,
+			0
+	);
 }

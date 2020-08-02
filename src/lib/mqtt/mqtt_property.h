@@ -187,8 +187,14 @@ int rrr_mqtt_property_collection_calculate_size (
 		ssize_t *count,
 		const struct rrr_mqtt_property_collection *collection
 );
-void rrr_mqtt_property_collection_destroy (
+void rrr_mqtt_property_collection_clear (
 		struct rrr_mqtt_property_collection *collection
+);
+int rrr_mqtt_property_collection_add_selected_from_collection (
+		struct rrr_mqtt_property_collection *target,
+		const struct rrr_mqtt_property_collection *source,
+		uint8_t identifiers[],
+		size_t identifiers_length
 );
 int rrr_mqtt_property_collection_add_from_collection (
 		struct rrr_mqtt_property_collection *target,

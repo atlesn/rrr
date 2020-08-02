@@ -258,9 +258,8 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 			session->buf + session->buf_wpos,													\
 			&bytes_parsed																		\
 	)) != 0) {																					\
-		if (ret != RRR_MQTT_OK) {																\
-			RRR_MSG_0("Error while parsing VINT \n");											\
-			ret = RRR_MQTT_SOFT_ERROR;															\
+		if (ret != RRR_MQTT_OK && ret != RRR_MQTT_INCOMPLETE) {									\
+			RRR_MSG_0("Error while parsing VINT return was %i\n", ret);							\
 		}																						\
 		return ret;																				\
 	}																							\
@@ -646,7 +645,7 @@ static int __rrr_mqtt_parse_properties (
 	uint32_t property_length = 0;
 	ssize_t bytes_parsed = 0;
 
-	rrr_mqtt_property_collection_destroy(target);
+	rrr_mqtt_property_collection_clear(target);
 
 	const char *properties_length_start = start;
 
@@ -783,7 +782,13 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		PARSE_PROPERTIES_IF_V5(connect,will_properties);
 		PARSE_UTF8(connect,will_topic);
+		if (rrr_mqtt_topic_validate_name(connect->will_topic) != 0) {
+			RRR_MSG_0("Invalid will topic name '%s' in received CONNECT packet\n",
+					connect->will_topic);
+			return RRR_MQTT_SOFT_ERROR;
+		}
 		PARSE_BLOB(connect,will_message);
+		connect->will_message_size = parse_state->blob_length;
 	}
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect) != 0) {
@@ -832,9 +837,10 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 
 	publish->type_flags = session->type_flags;
 
+	// Note : The separate dup variable overrides the value in type_flags. When
+	//        the publish is assembled, the type_flag is modified to match the
+	//        stored dup variable.
 	publish->dup = RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(session);
-//	publish->qos = RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(session);
-//	publish->retain = RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(session);
 
 	RRR_DBG_3("PUBLISH flags (%u): DUP: %u, QOS: %u, RET: %u\n",
 			session->packet->type_flags,
@@ -978,16 +984,23 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 		}
 
 		struct rrr_mqtt_subscription *subscription = NULL;
+
 		parse_state->ret = rrr_mqtt_subscription_new (&subscription, sub_usub->data_tmp, retain, rap, nl, qos);
 		if (parse_state->ret != 0) {
 			RRR_MSG_0("Could not allocate subscription in rrr_mqtt_parse_subscribe\n");
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 
-		parse_state->ret = rrr_mqtt_subscription_collection_append_unique (sub_usub->subscriptions, &subscription);
-		if (parse_state->ret != RRR_MQTT_SUBSCRIPTION_OK) {
-			rrr_mqtt_subscription_destroy(subscription);
-			RRR_MSG_0("Error while adding subscription to collection in rrr_mqtt_parse_subscribe\n");
+		int ret_tmp = rrr_mqtt_subscription_collection_add_unique (sub_usub->subscriptions, &subscription, 1);
+
+		// Destroy function checks for NULL
+		rrr_mqtt_subscription_destroy(subscription);
+
+		if (ret_tmp == RRR_MQTT_SUBSCRIPTION_REPLACED) {
+			RRR_DBG_3("Duplicate topic filter '%s' in received mqtt SUBSCRIBE\n", sub_usub->data_tmp);
+		}
+		else if (ret_tmp != RRR_MQTT_SUBSCRIPTION_OK) {
+			RRR_MSG_0("Error %i while adding subscription to collection in rrr_mqtt_parse_subscribe\n", ret_tmp);
 			return RRR_MQTT_INTERNAL_ERROR;
 		}
 
@@ -1200,6 +1213,11 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 
 	PARSE_PREPARE(1);
 	disconnect->reason_v5 = *((uint8_t*) parse_state->start);
+
+	if (session->target_size - session->variable_header_pos == 1) {
+		// Allowed to skip disconnect property length if there are no properties
+		goto parse_done;
+	}
 
 	PARSE_PROPERTIES_IF_V5(disconnect,properties);
 

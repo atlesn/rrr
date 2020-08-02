@@ -168,7 +168,13 @@ int rrr_mqtt_client_subscribe (
 
 	RRR_MQTT_P_LOCK(subscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(subscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			subscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to SUBSCRIBE message in rrr_mqtt_client_send_subscriptions\n");
 		goto out_unlock;
 	}
@@ -229,7 +235,13 @@ int rrr_mqtt_client_unsubscribe (
 
 	RRR_MQTT_P_LOCK(unsubscribe);
 
-	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection(unsubscribe->subscriptions, subscriptions, 0) != 0) {
+	if (rrr_mqtt_subscription_collection_append_unique_copy_from_collection (
+			unsubscribe->subscriptions,
+			subscriptions,
+			0,
+			NULL,
+			NULL
+	) != 0) {
 		RRR_MSG_0("Could not add subscriptions to UNSUBSCRIBE message in rrr_mqtt_client_unsubscribe\n");
 		goto out_unlock;
 	}
@@ -391,7 +403,7 @@ int rrr_mqtt_client_connect (
 		RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 				&connect->properties,
 				connect,
-				rrr_mqtt_common_handler_connect_handle_properties_callback,
+				rrr_mqtt_common_parse_connect_properties_callback,
 				goto out
 		);
 	}
@@ -539,7 +551,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connack->properties,
 			connack,
-			rrr_mqtt_common_handler_connack_handle_properties_callback,
+			rrr_mqtt_common_parse_connack_properties_callback,
 			goto out
 	);
 
@@ -644,6 +656,16 @@ int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+static int __rrr_mqtt_client_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	(void)(mqtt_data);
+
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
+
+	return rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
+}
+
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{NULL},
@@ -659,7 +681,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_client_handle_suback_unsuback},
 	{NULL},
 	{__rrr_mqtt_client_handle_pingresp},
-	{rrr_mqtt_common_handle_disconnect},
+	{__rrr_mqtt_client_handle_disconnect},
 	{NULL}
 };
 

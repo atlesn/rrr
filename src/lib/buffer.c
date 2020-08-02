@@ -482,7 +482,7 @@ void rrr_fifo_buffer_clear_with_callback (
 	int freed_counter = 0;
 	while (entry != NULL) {
 		struct rrr_fifo_buffer_entry *next = entry->next;
-		RRR_DBG_3 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
+		RRR_DBG_4 ("Buffer %p free entry %p with data %p order %" PRIu64 "\n", buffer, entry, entry->data, entry->order);
 
 		__rrr_fifo_buffer_entry_lock(entry);
 		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
@@ -501,7 +501,7 @@ void rrr_fifo_buffer_clear_with_callback (
 
 	__rrr_fifo_buffer_stats_add_deleted(buffer, freed_counter);
 
-	RRR_DBG_3 ("Buffer %p freed %i entries\n", buffer, freed_counter);
+	RRR_DBG_4 ("Buffer %p freed %i entries\n", buffer, freed_counter);
 
 	buffer->gptr_first = NULL;
 	buffer->gptr_last = NULL;
@@ -576,8 +576,10 @@ int rrr_fifo_buffer_search (
 
 			cleared_entries++;
 
-			RRR_DBG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
+//			RRR_DBG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
 
+			// If we are not asked to free, zero out the pointer to stop it from being
+			// destroyed by entry destroy functions
 			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
 				entry->data = NULL;
 			}
@@ -613,6 +615,306 @@ int rrr_fifo_buffer_search (
 	pthread_cleanup_pop(1);
 
 	return err;
+}
+
+static int __rrr_fifo_buffer_write_callback_return_check (
+		int *do_ordered_write,
+		int *write_again,
+		int *do_drop,
+		int ret_to_check
+) {
+	int ret = 0;
+
+	*write_again = 0;
+	*do_ordered_write = 0;
+	*do_drop = 0;
+
+	if (ret_to_check != 0) {
+		if ((ret_to_check & RRR_FIFO_WRITE_ORDERED) == RRR_FIFO_WRITE_ORDERED) {
+			if ((ret_to_check & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
+				RRR_BUG("BUG: Callback return WRITE_ORDERED along with other illegal return values %i in __rrr_fifo_buffer_write_callback_return_check\n", ret_to_check);
+			}
+			*do_ordered_write = 1;
+		}
+
+		if ((ret_to_check & RRR_FIFO_WRITE_AGAIN) == RRR_FIFO_WRITE_AGAIN) {
+			if ((ret_to_check & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
+				RRR_BUG("BUG: Callback return WRITE_AGAIN along with other illegal return values %i in __rrr_fifo_buffer_write_callback_return_check\n", ret_to_check);
+			}
+			*write_again = 1;
+		}
+
+		if ((ret_to_check & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR) {
+			if ((ret_to_check & ~(RRR_FIFO_GLOBAL_ERR)) != 0) {
+				RRR_BUG("BUG: Callback returned GLOBAL_ERR along with return values %i in __rrr_fifo_buffer_write_callback_return_check\n", ret_to_check);
+			}
+			ret = 1;
+			goto out;
+		}
+
+		if ((ret_to_check & RRR_FIFO_WRITE_DROP) == RRR_FIFO_WRITE_DROP) {
+			if ((ret_to_check &= ~(RRR_FIFO_WRITE_DROP|RRR_FIFO_WRITE_AGAIN)) != 0) {
+				RRR_BUG("BUG: Callback returned WRITE_DROP along with return values %i in __rrr_fifo_buffer_write_callback_return_check\n", ret_to_check);
+			}
+			*do_drop = 1;
+			goto out;
+		}
+
+		ret_to_check &= ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP);
+
+		if (ret_to_check != 0) {
+			RRR_BUG("Unknown return values %i from callback in __rrr_fifo_buffer_write_callback_return_check\n", ret_to_check);
+		}
+	}
+
+	out:
+	return ret;
+}
+
+static void __rrr_fifo_buffer_write_update_pointers (
+		struct rrr_fifo_buffer *buffer,
+		struct rrr_fifo_buffer_entry *entry,
+		uint64_t order,
+		int do_ordered_write
+) {
+	struct rrr_fifo_buffer_entry *pos = buffer->gptr_first;
+
+	if (pos == NULL) {
+		buffer->gptr_first = entry;
+		buffer->gptr_last = entry;
+		entry->next = NULL;
+	}
+	else if (do_ordered_write) {
+		// Quick check to see if we're bigger than last element
+		if (buffer->gptr_last->order < order) {
+			// Insert at end
+			buffer->gptr_last->next = entry;
+			buffer->gptr_last = entry;
+			entry->next = NULL;
+		}
+		else {
+			struct rrr_fifo_buffer_entry *prev = NULL;
+			for (; pos != NULL && pos->order < order; pos = pos->next) {
+				prev = pos;
+			}
+
+			if (pos == NULL) {
+				// Insert at end (we check this at the beginning, but still...)
+				buffer->gptr_last->next = entry;
+				buffer->gptr_last = entry;
+				entry->next = NULL;
+			}
+			else if (prev != NULL) {
+				// Insert in the middle
+				prev->next = entry;
+				entry->next = pos;
+			}
+			else {
+				// Insert at front
+				entry->next = buffer->gptr_first;
+				buffer->gptr_first = entry;
+			}
+		}
+	}
+	else {
+		buffer->gptr_last->next = entry;
+		buffer->gptr_last = entry;
+		entry->next = NULL;
+	}
+}
+
+static int __rrr_fifo_buffer_search_and_replace_call_again (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		void *callback_arg
+) {
+	int ret = 0;
+
+	struct rrr_fifo_buffer_entry *entry = NULL;
+
+	int do_loop = 1;
+
+	while (ret == 0 && do_loop) {
+		if ((__rrr_fifo_buffer_entry_new_unlocked(&entry)) != 0) {
+			RRR_MSG_0("Could not allocate entry in __rrr_fifo_buffer_search_and_replace_call_again\n");
+			ret = 1;
+			goto out;
+		}
+
+		int do_drop = 0;
+
+		pthread_cleanup_push(__rrr_fifo_buffer_entry_destroy_simple_void, entry);
+
+		uint64_t order = 0;
+
+		__rrr_fifo_buffer_entry_lock(entry);
+		pthread_cleanup_push(__rrr_fifo_buffer_entry_unlock_void, entry);
+		ret = callback(&entry->data, &entry->size, &order, callback_arg);
+		pthread_cleanup_pop(1);
+
+		int do_ordered_write = 0;
+
+		if ((ret = __rrr_fifo_buffer_write_callback_return_check(&do_ordered_write, &do_loop, &do_drop, ret)) != 0) {
+			do_drop = 1;
+			goto loop_out;
+		}
+
+		if (!do_drop) {
+			if (entry->data == NULL) {
+				RRR_BUG("Data from callback was NULL in rrr_fifo_buffer_write, must return DROP\n");
+			}
+			__rrr_fifo_buffer_write_update_pointers(buffer, entry, order, 0);
+		}
+
+		loop_out:
+		pthread_cleanup_pop(do_drop);
+	}
+
+	out:
+	return ret;
+}
+
+/*
+ * Iterates the buffer and allows callback to modify data pointers of the
+ * buffer entries as well as deleting entries. After the iteration, the
+ * callback is called again (if requested) like with the standard write
+ * function. The write lock of the buffer is held the whole time.
+ *
+ * This behavior allows the application to, when inserting an entry, first
+ * to check if the new entry should replace and old one (like if it's ID
+ * already exists and IDs should be unique), and if the ID did not exist
+ * in the buffer, insert the entry at the end.
+ *
+ * If call again after looping is specified, this will be done also if STOP
+ * is returned during iteration. If the callback don't wish to write anything
+ * at the end, it should then return DROP|STOP.
+ */
+int rrr_fifo_buffer_search_and_replace (
+		struct rrr_fifo_buffer *buffer,
+		int (*callback)(RRR_FIFO_WRITE_CALLBACK_ARGS),
+		void *callback_arg,
+		unsigned int wait_milliseconds,
+		int call_again_after_looping
+) {
+	__rrr_fifo_attempt_write_queue_merge(buffer);
+	rrr_fifo_wait_for_data(buffer, wait_milliseconds);
+
+	int ret = 0;
+
+	rrr_fifo_write_lock(buffer);
+	pthread_cleanup_push(rrr_fifo_unlock_void, buffer);
+
+	__rrr_fifo_merge_write_queue_nolock(buffer);
+
+	int cleared_entries = 0;
+	int new_entries = 0;
+
+	struct rrr_fifo_buffer_entry *entry;
+	struct rrr_fifo_buffer_entry *next;
+	struct rrr_fifo_buffer_entry *prev = NULL;
+	for (entry = buffer->gptr_first; entry != NULL; entry = next) {
+		RRR_DBG_4("Buffer %p search_and_replace loop entry %p data %p next %p prev %p\n",
+				buffer, entry, entry->data, entry->next, prev);
+		next = entry->next;
+
+		int did_something = 0;
+		int actions = 0;
+
+		__rrr_fifo_buffer_entry_lock(entry);
+
+		char *data = entry->data;
+		unsigned long int size = entry->size;
+		uint64_t order = entry->order;
+
+		actions = callback(&data, &size, &order, callback_arg);
+
+		__rrr_fifo_buffer_entry_unlock(entry);
+
+		if (actions == RRR_FIFO_SEARCH_KEEP) { // Just a 0
+			goto keep;
+		}
+		if ((actions & RRR_FIFO_CALLBACK_ERR) != 0) {
+			ret = RRR_FIFO_CALLBACK_ERR;
+			break;
+		}
+		if ((actions & (RRR_FIFO_SEARCH_REPLACE|RRR_FIFO_SEARCH_GIVE)) != 0 ) {
+			// If we are not asked to free, zero out the pointer to stop it from being
+			// destroyed by entry destroy functions
+			if ((actions & RRR_FIFO_SEARCH_FREE) == 0) {
+				entry->data = NULL;
+			}
+
+			if ((actions & (RRR_FIFO_SEARCH_GIVE)) != 0 ) {
+				if ((actions & (RRR_FIFO_SEARCH_REPLACE)) != 0 ) {
+					RRR_BUG("BUG: Both GIVE and REPLACE returned to fifo_buffer_search_and_replace\n");
+				}
+
+				if (entry == buffer->gptr_first) {
+					buffer->gptr_first = entry->next;
+				}
+				if (entry == buffer->gptr_last) {
+					buffer->gptr_last = prev;
+				}
+				if (prev != NULL) {
+					prev->next = entry->next;
+				}
+
+				__rrr_fifo_buffer_entry_destroy_unlocked(buffer, entry);
+
+				cleared_entries++;
+			}
+			else {
+				if (entry->data == data) {
+					RRR_BUG("BUG: Callback of fifo_buffer_search_and_replace tells us to replace, but the data pointer did not change\n");
+				}
+
+				__rrr_fifo_buffer_entry_destroy_data_unlocked(buffer, entry);
+
+				entry->data = data;
+				entry->size = size;
+				entry->order = order;
+
+				cleared_entries++;
+				new_entries++;
+			}
+
+//			RRR_DBG_4("Buffer %p free entry %p after GIVE command\n", buffer, entry);
+
+			entry = prev;
+			did_something = 1;
+		}
+		if ((actions & RRR_FIFO_SEARCH_STOP) != 0) {
+			break;
+		}
+		else if (did_something == 0) {
+			RRR_BUG ("Bug: Unknown return value %i to fifo_buffer_search_and_replace\n", actions);
+		}
+
+		keep:
+		prev = entry;
+	}
+
+	if (ret == RRR_FIFO_OK && call_again_after_looping) {
+		ret = __rrr_fifo_buffer_search_and_replace_call_again(buffer, callback, callback_arg);
+	}
+
+	RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
+
+	__rrr_fifo_buffer_stats_add_written(buffer, new_entries);
+	__rrr_fifo_buffer_stats_add_deleted(buffer, cleared_entries);
+
+	pthread_mutex_lock(&buffer->ratelimit_mutex);
+	buffer->entry_count -= cleared_entries;
+	buffer->entry_count += new_entries;
+	pthread_mutex_unlock(&buffer->ratelimit_mutex);
+
+	if (buffer->gptr_first != NULL) {
+		__rrr_fifo_buffer_set_data_available(buffer);
+	}
+
+	pthread_cleanup_pop(1);
+
+	return ret;
 }
 
 /*
@@ -1175,43 +1477,15 @@ int rrr_fifo_buffer_write (
 		ret = callback(&entry->data, &entry->size, &order, callback_arg);
 		pthread_cleanup_pop(1);
 
-		write_again = 0;
 		int do_ordered_write = 0;
-		if (ret != 0) {
-			if ((ret & RRR_FIFO_WRITE_ORDERED) == RRR_FIFO_WRITE_ORDERED) {
-				if ((ret & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
-					RRR_BUG("BUG: Callback return WRITE_ORDERED along with other illegal return values %i in rrr_fifo_buffer_write\n", ret);
-				}
-				do_ordered_write = 1;
-			}
+		int do_drop = 0;
 
-			if ((ret & RRR_FIFO_WRITE_AGAIN) == RRR_FIFO_WRITE_AGAIN) {
-				if ((ret & ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP)) != 0) {
-					RRR_BUG("BUG: Callback return WRITE_AGAIN along with other illegal return values %i in rrr_fifo_buffer_write\n", ret);
-				}
-				write_again = 1;
-			}
+		if ((ret = __rrr_fifo_buffer_write_callback_return_check(&do_ordered_write, &write_again, &do_drop, ret)) != 0) {
+			goto loop_out_drop;
+		}
 
-			if ((ret & RRR_FIFO_GLOBAL_ERR) == RRR_FIFO_GLOBAL_ERR) {
-				if ((ret & ~(RRR_FIFO_GLOBAL_ERR)) != 0) {
-					RRR_BUG("BUG: Callback returned GLOBAL_ERR along with return values %i in rrr_fifo_buffer_write\n", ret);
-				}
-				goto loop_out_drop;
-			}
-
-			if ((ret & RRR_FIFO_WRITE_DROP) == RRR_FIFO_WRITE_DROP) {
-				if ((ret &= ~(RRR_FIFO_WRITE_DROP|RRR_FIFO_WRITE_AGAIN)) != 0) {
-					RRR_BUG("BUG: Callback returned WRITE_DROP along with return values %i in rrr_fifo_buffer_write\n", ret);
-				}
-				ret = 0;
-				goto loop_out_drop;
-			}
-
-			ret &= ~(RRR_FIFO_WRITE_AGAIN|RRR_FIFO_WRITE_ORDERED|RRR_FIFO_WRITE_DROP);
-
-			if (ret != 0) {
-				RRR_BUG("Unknown return values %i from callback in rrr_fifo_buffer_write\n", ret);
-			}
+		if (do_drop) {
+			goto loop_out_drop;
 		}
 
 		if (entry->data == NULL) {
@@ -1220,51 +1494,7 @@ int rrr_fifo_buffer_write (
 
 		RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
 
-		struct rrr_fifo_buffer_entry *pos = buffer->gptr_first;
-
-		if (pos == NULL) {
-			buffer->gptr_first = entry;
-			buffer->gptr_last = entry;
-			entry->next = NULL;
-		}
-		else if (do_ordered_write) {
-			// Quick check to see if we're bigger than last element
-			if (buffer->gptr_last->order < order) {
-				// Insert at end
-				buffer->gptr_last->next = entry;
-				buffer->gptr_last = entry;
-				entry->next = NULL;
-			}
-			else {
-				struct rrr_fifo_buffer_entry *prev = NULL;
-				for (; pos != NULL && pos->order < order; pos = pos->next) {
-					prev = pos;
-				}
-
-				if (pos == NULL) {
-					// Insert at end (we check this at the beginning, but still...)
-					buffer->gptr_last->next = entry;
-					buffer->gptr_last = entry;
-					entry->next = NULL;
-				}
-				else if (prev != NULL) {
-					// Insert in the middle
-					prev->next = entry;
-					entry->next = pos;
-				}
-				else {
-					// Insert at front
-					entry->next = buffer->gptr_first;
-					buffer->gptr_first = entry;
-				}
-			}
-		}
-		else {
-			buffer->gptr_last->next = entry;
-			buffer->gptr_last = entry;
-			entry->next = NULL;
-		}
-
+		__rrr_fifo_buffer_write_update_pointers (buffer, entry, order, do_ordered_write);
 		entry = NULL;
 
 		RRR_FIFO_BUFFER_CONSISTENCY_CHECK();
