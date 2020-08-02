@@ -328,7 +328,7 @@ static int __rrr_mqtt_connection_in_iterator_disconnect (
 		uint64_t time_now = rrr_time_get_64();
 		if (connection->close_wait_start == 0) {
 			connection->close_wait_start = time_now;
-			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if neeeded)\n",
+			RRR_DBG_1("Destroying connection %p client ID '%s' reason %u, starting timer (and closing connection if needed). Unbinding from any session now.\n",
 					connection,
 					(connection->client_id != NULL ? connection->client_id : "(empty)"),
 					connection->disconnect_reason_v5_
@@ -448,6 +448,8 @@ int rrr_mqtt_conn_set_will_data_from_connect (
 	RRR_MQTT_P_LOCK_IN(publish);
 		RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect));
 		RRR_MQTT_P_PUBLISH_SET_FLAG_RETAIN(publish, RRR_MQTT_P_CONNECT_GET_FLAG_WILL_RETAIN(connect));
+
+		publish->will_delay_interval = connection->will_properties.will_delay_interval;
 
 		if (rrr_mqtt_property_collection_add_selected_from_collection (
 				&publish->properties,

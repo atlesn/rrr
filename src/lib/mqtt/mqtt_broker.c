@@ -335,6 +335,38 @@ static int __rrr_mqtt_broker_generate_unique_client_id (
 
 // TODO : Try to split this up into multiple functions
 
+static int __rrr_mqtt_broker_handle_connect_will (
+		struct rrr_mqtt_data *mqtt_data,
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_session **session_handle
+) {
+	int ret = RRR_MQTT_OK;
+
+	if ((ret = mqtt_data->sessions->methods->unregister_postponed_will_publish (
+			mqtt_data->sessions,
+			session_handle
+	)) != RRR_MQTT_SESSION_OK) {
+		goto out_error;
+	}
+
+	if (connection->will_publish != NULL) {
+		if ((ret = mqtt_data->sessions->methods->register_postponed_will_publish (
+				mqtt_data->sessions,
+				session_handle,
+				connection->will_publish
+		)) != RRR_MQTT_SESSION_OK) {
+			goto out_error;
+		}
+	}
+
+	goto out;
+	out_error:
+		RRR_MSG_0("Hard error while registering/unregistering will publish for session in __rrr_mqtt_broker_handle_connect_will, return was %i\n", ret);
+		ret = RRR_MQTT_INTERNAL_ERROR;
+	out:
+		return ret;
+}
+
 static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 
@@ -568,6 +600,11 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 			connect->username
 	)) != 0) {
 		RRR_MSG_0("Could not set connection data in  __rrr_mqtt_broker_handle_connect\n");
+		goto out;
+	}
+
+	if ((ret = __rrr_mqtt_broker_handle_connect_will(mqtt_data, connection, &session)) != 0) {
+		RRR_MSG_0("Error while handling will operations in __rrr_mqtt_broker_handle_connect, return was %i\n", ret);
 		goto out;
 	}
 
@@ -867,8 +904,12 @@ static int __rrr_mqtt_broker_will_publish (
 
 	RRR_MQTT_P_LOCK(connection->will_publish);
 
-	RRR_DBG_3("Will PUBLISH for client '%s' with topic '%s' retain '%u' in MQTT broker\n",
-			connection->client_id, connection->will_publish->topic, RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(connection->will_publish));
+	RRR_DBG_3("Will PUBLISH for client '%s' with topic '%s' retain '%u' in MQTT broker will delay is '%u'\n",
+			connection->client_id,
+			connection->will_publish->topic,
+			RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(connection->will_publish),
+			connection->will_properties.will_delay_interval
+	);
 
 	ret = MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(&data->mqtt_data, connection->will_publish);
 	RRR_MQTT_P_UNLOCK(connection->will_publish);

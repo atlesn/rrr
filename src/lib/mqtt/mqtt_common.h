@@ -206,6 +206,9 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 #define MQTT_COMMON_CALL_SESSION_DELIVERY_FORWARD(mqtt,packet) \
 		(mqtt)->sessions->methods->delivery_forward((mqtt)->sessions, packet)
 
+#define MQTT_COMMON_CALL_SESSION_REMOVE_POSTPONED_WILL(mqtt,session_handle) \
+		(mqtt)->sessions->methods->remove_postponed_will((mqtt)->sessions, session_handle)
+
 #define MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD	\
 	const struct rrr_mqtt_property_collection *source;		\
 	uint8_t reason_v5
@@ -237,7 +240,7 @@ void rrr_mqtt_common_data_notify_pthread_cancel (struct rrr_mqtt_data *data);
 int rrr_mqtt_common_clear_session_from_connections (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_session *session_to_remove,
-		int disregard_transport_handle
+		int transport_handle_disregard
 );
 int rrr_mqtt_common_data_init (
 		struct rrr_mqtt_data *data,

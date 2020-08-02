@@ -596,14 +596,16 @@ int rrr_mqtt_subscription_collection_append_unique_take_from_collection (
 			ret = rrr_mqtt_subscription_collection_append_unique(target, &node);
 
 			if ((ret & RRR_MQTT_SUBSCRIPTION_REPLACED) == 0) {
-				ret &= ~(RRR_MQTT_SUBSCRIPTION_REPLACED);
 				if (new_subscrition_callback != NULL) {
 					ret = new_subscrition_callback(node, new_subscrition_callback_arg);
 				}
 			}
+			else {
+				ret &= ~(RRR_MQTT_SUBSCRIPTION_REPLACED);
+			}
 
 			if (ret != 0) {
-				RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_take_from_collection_unique\n");
+				RRR_MSG_0("Internal error in rrr_mqtt_subscription_collection_append_unique_take_from_collection return was %i\n", ret);
 				ret = RRR_MQTT_SUBSCRIPTION_INTERNAL_ERROR;
 				RRR_LL_ITERATE_BREAK();
 			}

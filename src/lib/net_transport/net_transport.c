@@ -694,6 +694,8 @@ int rrr_net_transport_iterate_with_callback (
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
 
+//		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
+
 		if (mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && mode != node->mode) {
 			goto unlock;
 		}
