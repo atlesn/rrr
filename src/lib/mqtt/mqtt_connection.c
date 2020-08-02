@@ -126,6 +126,7 @@ int rrr_mqtt_conn_update_state (
 			RRR_MSG_0("Received DISCONNECT while not allowed\n");
 			return RRR_MQTT_SOFT_ERROR;
 		}
+
 		RRR_MQTT_CONN_STATE_SET (connection, RRR_MQTT_CONN_STATE_DISCONNECT_WAIT);
 	}
 	else {

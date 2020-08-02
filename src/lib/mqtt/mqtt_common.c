@@ -1044,26 +1044,6 @@ int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	);
 }
 
-int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
-	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
-
-	int ret = 0;
-
-	(void)(mqtt_data);
-
-	if ((ret = rrr_mqtt_conn_update_state (
-			connection,
-			packet,
-			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
-	)) != RRR_MQTT_OK) {
-		RRR_MSG_0("Could not update connection state in rrr_mqtt_p_handler_disconnect\n");
-		goto out;
-	}
-
-	out:
-	return ret;
-}
-
 static int __rrr_mqtt_common_handle_packet_callback (
 		struct rrr_net_transport_handle *handle,
 		struct rrr_mqtt_p *packet,
@@ -1117,6 +1097,25 @@ static int __rrr_mqtt_common_handle_packet_callback (
 	out:
 		RRR_MQTT_P_UNLOCK(packet);
 		return ret;
+}
+
+int rrr_mqtt_common_update_conn_state_upon_disconnect (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_disconnect *disconnect
+) {
+	int ret = 0;
+
+	if ((ret = rrr_mqtt_conn_update_state (
+			connection,
+			(struct rrr_mqtt_p *) disconnect,
+			RRR_MQTT_CONN_UPDATE_STATE_DIRECTION_IN
+	)) != RRR_MQTT_OK) {
+		RRR_MSG_0("Could not update connection state in rrr_mqtt_common_update_conn_state_upon_disconnect\n");
+		goto out;
+	}
+
+	out:
+	return ret;
 }
 
 static int __rrr_mqtt_common_read_parse_handle (

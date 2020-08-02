@@ -656,6 +656,16 @@ int __rrr_mqtt_client_handle_pingresp (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+static int __rrr_mqtt_client_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	(void)(mqtt_data);
+
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
+
+	return rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
+}
+
 static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{NULL},
@@ -671,7 +681,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{__rrr_mqtt_client_handle_suback_unsuback},
 	{NULL},
 	{__rrr_mqtt_client_handle_pingresp},
-	{rrr_mqtt_common_handle_disconnect},
+	{__rrr_mqtt_client_handle_disconnect},
 	{NULL}
 };
 

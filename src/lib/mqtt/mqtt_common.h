@@ -140,6 +140,7 @@ struct rrr_net_transport_handle;
 struct rrr_mqtt_data;
 struct rrr_mqtt_conn;
 struct rrr_mqtt_p_publish;
+struct rrr_mqtt_p_disconnect;
 
 #define RRR_MQTT_TYPE_HANDLER_DEFINITION		\
 		struct rrr_mqtt_data *mqtt_data,		\
@@ -299,7 +300,11 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_puback_pubcomp (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrec (RRR_MQTT_TYPE_HANDLER_DEFINITION);
 int rrr_mqtt_common_handle_pubrel (RRR_MQTT_TYPE_HANDLER_DEFINITION);
-int rrr_mqtt_common_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION);
+
+int rrr_mqtt_common_update_conn_state_upon_disconnect (
+		struct rrr_mqtt_conn *connection,
+		struct rrr_mqtt_p_disconnect *disconnect
+);
 int rrr_mqtt_common_send_from_sessions_callback (
 		struct rrr_mqtt_p *packet,
 		void *arg

@@ -801,6 +801,35 @@ static int __rrr_mqtt_broker_handle_pingreq (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	return ret;
 }
 
+static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
+	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
+
+	(void)(mqtt_data);
+
+	int ret = 0;
+
+	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
+
+	// Clear any WILL message unless explicitly told by client to publish it.
+	if (connection->will_publish != NULL) {
+		// In version 3.1, the will PUBLISH is always cleared (reason_v5 will
+		// always be 0 as there is no reason field in V3.1 DISCONNECT)
+		if (packet->reason_v5 == RRR_MQTT_P_5_REASON_DISCONNECT_WITH_WILL) {
+			RRR_DBG_3("Normal disconnect from client '%s' with reason DISCONNECT_WITH_WILL, not clearing will message\n");
+		}
+		else {
+			RRR_DBG_3("Clearing will message for client '%s' upon receival of normal disconnect in MQTT broker\n");
+			RRR_MQTT_P_DECREF(connection->will_publish);
+			connection->will_publish = NULL;
+		}
+	}
+
+	ret = rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
+
+	out:
+	return ret;
+}
+
 static int __rrr_mqtt_broker_handle_auth (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK;
 	int ret = 0;
@@ -822,7 +851,7 @@ static const struct rrr_mqtt_type_handler_properties handler_properties[] = {
 	{NULL},
 	{__rrr_mqtt_broker_handle_pingreq},
 	{NULL},
-	{rrr_mqtt_common_handle_disconnect},
+	{__rrr_mqtt_broker_handle_disconnect},
 	{__rrr_mqtt_broker_handle_auth}
 };
 
