@@ -100,6 +100,10 @@ static int __rrr_mqtt_broker_clear_session_from_connections_callback (
 
 	int ret = RRR_MQTT_OK;
 
+	printf ("__rrr_mqtt_broker_clear_session_from_connections_callback handle %i disregard %i %p<>%p\n",
+			handle->handle, callback_data->disregard_transport_handle,
+			connection->session, callback_data->session_to_remove);
+
 	if (handle->handle == callback_data->disregard_transport_handle) {
 		goto out_nolock;
 	}
@@ -119,13 +123,13 @@ static int __rrr_mqtt_broker_clear_session_from_connections_callback (
 int rrr_mqtt_common_clear_session_from_connections (
 		struct rrr_mqtt_data *data,
 		const struct rrr_mqtt_session *session_to_remove,
-		int disregard_transport_handle
+		int transport_handle_disregard
 ) {
 	int ret = 0;
 
 	struct clear_sesion_from_connections_callback_data callback_data = {
 			session_to_remove,
-			disregard_transport_handle
+			transport_handle_disregard
 	};
 
 	ret = rrr_mqtt_transport_iterate (

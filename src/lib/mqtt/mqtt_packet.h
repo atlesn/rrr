@@ -451,6 +451,8 @@ struct rrr_mqtt_p_publish {
 	const struct rrr_mqtt_property *correlation_data;
 	const struct rrr_mqtt_property *content_type;
 
+	// Used when message is in will wait queue
+	uint32_t will_delay_interval;
 };
 
 #define RRR_MQTT_P_PUBLISH_GET_FLAG_RETAIN(p)	(((p)->type_flags & 1))

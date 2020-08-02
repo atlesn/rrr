@@ -102,7 +102,7 @@ struct rrr_mqtt_conn {
 	uint64_t last_write_time;
 
 	char *client_id;
-	struct rrr_mqtt_session *session;
+	struct rrr_mqtt_session *session_;
 	const struct rrr_mqtt_p_protocol_version *protocol_version;
 	uint16_t keep_alive;
 
