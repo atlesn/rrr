@@ -766,13 +766,14 @@ static int __rrr_mqtt_session_collection_ram_get_session (
 		}
 
 		__rrr_mqtt_session_collection_ram_stats_notify_create(data);
-
 	}
 
-	RRR_DBG_2("Got a session, session present was %i and no creation was %i\n",
-			*session_present, no_creation);
+	if (result != NULL) {
+		RRR_DBG_2("Got a session, session present was %i and no creation was %i\n",
+				*session_present, no_creation);
 
-	__rrr_mqtt_session_ram_heartbeat_unlocked(result);
+		__rrr_mqtt_session_ram_heartbeat_unlocked(result);
+	}
 
 	*target = (struct rrr_mqtt_session *) result;
 

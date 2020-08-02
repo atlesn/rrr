@@ -258,9 +258,8 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 			session->buf + session->buf_wpos,													\
 			&bytes_parsed																		\
 	)) != 0) {																					\
-		if (ret != RRR_MQTT_OK) {																\
-			RRR_MSG_0("Error while parsing VINT \n");											\
-			ret = RRR_MQTT_SOFT_ERROR;															\
+		if (ret != RRR_MQTT_OK && ret != RRR_MQTT_INCOMPLETE) {									\
+			RRR_MSG_0("Error while parsing VINT return was %i\n", ret);							\
 		}																						\
 		return ret;																				\
 	}																							\
@@ -646,7 +645,7 @@ static int __rrr_mqtt_parse_properties (
 	uint32_t property_length = 0;
 	ssize_t bytes_parsed = 0;
 
-	rrr_mqtt_property_collection_destroy(target);
+	rrr_mqtt_property_collection_clear(target);
 
 	const char *properties_length_start = start;
 
@@ -1211,6 +1210,11 @@ int rrr_mqtt_parse_disconnect (struct rrr_mqtt_parse_session *session) {
 
 	PARSE_PREPARE(1);
 	disconnect->reason_v5 = *((uint8_t*) parse_state->start);
+
+	if (session->target_size - session->variable_header_pos == 1) {
+		// Allowed to skip disconnect property length if there are no properties
+		goto parse_done;
+	}
 
 	PARSE_PROPERTIES_IF_V5(disconnect,properties);
 

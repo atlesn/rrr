@@ -526,7 +526,7 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connect->properties,
 			connect,
-			rrr_mqtt_common_handler_connect_handle_properties_callback,
+			rrr_mqtt_common_parse_connect_properties_callback,
 			goto out_send_connack
 	);
 
@@ -573,11 +573,18 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		if ((ret = rrr_mqtt_conn_set_will_data_from_connect (
+				&reason_v5,
 				connection,
 				connect
 		)) != 0) {
-			RRR_MSG_0("Could not set connection will message data in  __rrr_mqtt_broker_handle_connect\n");
-			goto out;
+			RRR_MSG_0("Could not set connection will message data in  __rrr_mqtt_broker_handle_connect, ret %i, reason %u\n",
+					ret, reason_v5);
+			if (ret == RRR_MQTT_SOFT_ERROR) {
+				if (reason_v5 == 0) {
+					reason_v5 = RRR_MQTT_P_5_REASON_UNSPECIFIED_ERROR;
+				}
+				goto out_send_connack;
+			}
 		}
 	}
 

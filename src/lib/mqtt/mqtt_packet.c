@@ -263,8 +263,8 @@ static struct rrr_mqtt_p *rrr_mqtt_p_allocate_sub_usub(RRR_MQTT_P_TYPE_ALLOCATE_
 static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_connect *connect = (struct rrr_mqtt_p_connect *) packet;
 
-	rrr_mqtt_property_collection_destroy(&connect->properties);
-	rrr_mqtt_property_collection_destroy(&connect->will_properties);
+	rrr_mqtt_property_collection_clear(&connect->properties);
+	rrr_mqtt_property_collection_clear(&connect->will_properties);
 
 	RRR_FREE_IF_NOT_NULL(connect->client_identifier);
 	RRR_FREE_IF_NOT_NULL(connect->username);
@@ -277,15 +277,15 @@ static void __rrr_mqtt_p_free_connect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_connack (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_connack *connack = (struct rrr_mqtt_p_connack *) packet;
-	rrr_mqtt_property_collection_destroy(&connack->properties);
+	rrr_mqtt_property_collection_clear(&connack->properties);
 	free(connack);
 }
 
 static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_publish *publish = (struct rrr_mqtt_p_publish *) packet;
-	rrr_mqtt_property_collection_destroy(&publish->properties);
-	rrr_mqtt_property_collection_destroy(&publish->user_properties);
-	rrr_mqtt_property_collection_destroy(&publish->subscription_ids);
+	rrr_mqtt_property_collection_clear(&publish->properties);
+	rrr_mqtt_property_collection_clear(&publish->user_properties);
+	rrr_mqtt_property_collection_clear(&publish->subscription_ids);
 	rrr_mqtt_topic_token_destroy(publish->token_tree_);
 	RRR_FREE_IF_NOT_NULL(publish->topic);
 	RRR_MQTT_P_DECREF_IF_NOT_NULL(publish->qos_packets.puback);
@@ -297,13 +297,13 @@ static void __rrr_mqtt_p_free_publish (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_def_puback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_def_puback *puback_default = (struct rrr_mqtt_p_def_puback *) packet;
-	rrr_mqtt_property_collection_destroy(&puback_default->properties);
+	rrr_mqtt_property_collection_clear(&puback_default->properties);
 	free(packet);
 }
 
 static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
-	rrr_mqtt_property_collection_destroy(&subscribe->properties);
+	rrr_mqtt_property_collection_clear(&subscribe->properties);
 	if (subscribe->subscriptions != NULL) {
 		rrr_mqtt_subscription_collection_destroy(subscribe->subscriptions);
 	}
@@ -314,7 +314,7 @@ static void __rrr_mqtt_p_free_subscribe (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_suback (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_suback *suback = (struct rrr_mqtt_p_suback *) packet;
-	rrr_mqtt_property_collection_destroy(&suback->properties);
+	rrr_mqtt_property_collection_clear(&suback->properties);
 	rrr_mqtt_subscription_collection_destroy(suback->subscriptions_);
 	free(packet);
 }
@@ -337,7 +337,7 @@ static void __rrr_mqtt_p_free_pingresp (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 
 static void __rrr_mqtt_p_free_disconnect (RRR_MQTT_P_TYPE_FREE_DEFINITION) {
 	struct rrr_mqtt_p_disconnect *disconnect = (struct rrr_mqtt_p_disconnect *) packet;
-	rrr_mqtt_property_collection_destroy(&disconnect->properties);
+	rrr_mqtt_property_collection_clear(&disconnect->properties);
 	free(disconnect);
 }
 
@@ -414,62 +414,6 @@ const struct rrr_mqtt_p_reason rrr_mqtt_p_reason_map[] = {
 		{ 0,	0,											0, 0, 0, 0, 0, 0, NULL}
 };
 
-static struct rrr_mqtt_p_publish *__rrr_mqtt_p_clone_publish_raw (
-		const struct rrr_mqtt_p_publish *publish
-) {
-	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_raw (
-			publish->type_properties,
-			publish->protocol_version
-	);
-	if (result == NULL) {
-		RRR_MSG_0("Could not allocate PUBLISH packet while cloning in __rrr_mqtt_p_clone_publish\n");
-		goto out_unlock_if_needed;
-	}
-
-	RRR_MQTT_P_LOCK(result);
-
-	int ret = rrr_mqtt_property_collection_add_from_collection(&result->properties, &publish->properties);
-	if (ret != 0) {
-		RRR_MSG_0("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
-		goto out_unlock_and_free;
-	}
-
-	if (publish->topic != NULL) {
-		result->topic = malloc(strlen(publish->topic) + 1);
-		if (result->topic == NULL) {
-			RRR_MSG_0("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
-			goto out_destroy_properties;
-		}
-		strcpy(result->topic, publish->topic);
-	}
-
-	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree_, publish->token_tree_);
-	if (ret != 0) {
-		RRR_MSG_0("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
-		goto out_free_topic;
-	}
-
-	if (publish->payload != NULL) {
-		RRR_MQTT_P_INCREF(publish->payload);
-		result->payload = (struct rrr_mqtt_p_payload *) publish->payload;
-	}
-
-	goto out_unlock_if_needed;
-	out_free_topic:
-		RRR_FREE_IF_NOT_NULL(result->topic);
-	out_destroy_properties:
-		rrr_mqtt_property_collection_destroy(&result->properties);
-	out_unlock_and_free:
-		RRR_MQTT_P_UNLOCK(result);
-		RRR_MQTT_P_DECREF(result);
-		result = NULL;
-	out_unlock_if_needed:
-		if (result != NULL) {
-			RRR_MQTT_P_UNLOCK(result);
-		}
-		return result;
-}
-
 int rrr_mqtt_p_new_publish (
 		struct rrr_mqtt_p_publish **result,
 		const char *topic,
@@ -534,6 +478,60 @@ int rrr_mqtt_p_new_publish (
 		return ret;
 }
 
+static struct rrr_mqtt_p_publish *__rrr_mqtt_p_clone_publish_raw (
+		const struct rrr_mqtt_p_publish *publish
+) {
+	struct rrr_mqtt_p_publish *result = (struct rrr_mqtt_p_publish *) __rrr_mqtt_p_allocate_raw (
+			publish->type_properties,
+			publish->protocol_version
+	);
+	if (result == NULL) {
+		RRR_MSG_0("Could not allocate PUBLISH packet while cloning in __rrr_mqtt_p_clone_publish\n");
+		goto out_unlock_if_needed;
+	}
+
+	RRR_MQTT_P_LOCK(result);
+
+	int ret = rrr_mqtt_property_collection_add_from_collection(&result->properties, &publish->properties);
+	if (ret != 0) {
+		RRR_MSG_0("Could not clone property collection in __rrr_mqtt_p_clone_publish\n");
+		goto out_unlock_and_free;
+	}
+
+	if (publish->topic != NULL) {
+		if ((result->topic = strdup(publish->topic)) == NULL) {
+			RRR_MSG_0("Could not allocate memory for topic in __rrr_mqtt_p_clone_publish\n");
+			goto out_destroy_properties;
+		}
+	}
+
+	ret = rrr_mqtt_topic_tokens_clone(&result->token_tree_, publish->token_tree_);
+	if (ret != 0) {
+		RRR_MSG_0("Could not clone topic tokens in __rrr_mqtt_p_clone_publish\n");
+		goto out_free_topic;
+	}
+
+	if (publish->payload != NULL) {
+		RRR_MQTT_P_INCREF(publish->payload);
+		result->payload = (struct rrr_mqtt_p_payload *) publish->payload;
+	}
+
+	goto out_unlock_if_needed;
+	out_free_topic:
+		RRR_FREE_IF_NOT_NULL(result->topic);
+	out_destroy_properties:
+		rrr_mqtt_property_collection_clear(&result->properties);
+	out_unlock_and_free:
+		RRR_MQTT_P_UNLOCK(result);
+		RRR_MQTT_P_DECREF(result);
+		result = NULL;
+	out_unlock_if_needed:
+		if (result != NULL) {
+			RRR_MQTT_P_UNLOCK(result);
+		}
+		return result;
+}
+
 struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 		const struct rrr_mqtt_p_publish *source,
 		int do_preserve_type_flags,
@@ -548,11 +546,23 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 
 	struct rrr_mqtt_p_publish *result = NULL;
 
+	// This does allocation of publish and deep-copies fields which require this
 	if ((result = __rrr_mqtt_p_clone_publish_raw(source)) == NULL) {
 		return NULL;
 	}
 
 	RRR_MQTT_P_LOCK(result);
+
+	result->response_topic = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_RESPONSE_TOPIC, 0);
+	result->correlation_data = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_CORRELATION_DATA, 0);
+	result->content_type = rrr_mqtt_property_collection_get_property(&result->properties, RRR_MQTT_PROPERTY_CONTENT_TYPE, 0);
+
+	result->is_outbound = source->is_outbound;
+
+	result->payload_format_indicator = source->payload_format_indicator;
+	result->message_expiry_interval = source->message_expiry_interval;
+	result->topic_alias = source->topic_alias;
+
 	if (do_preserve_type_flags) {
 		result->type_flags = source->type_flags;
 	}
@@ -562,6 +572,7 @@ struct rrr_mqtt_p_publish *rrr_mqtt_p_clone_publish (
 	if (do_preserve_reason) {
 		result->reason_v5 = source->reason_v5;
 	}
+
 	RRR_MQTT_P_UNLOCK(result);
 
 	return result;

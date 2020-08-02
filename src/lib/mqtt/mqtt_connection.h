@@ -75,6 +75,20 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 struct rrr_mqtt_session;
 struct rrr_net_transport_handle;
 
+// Most of these will properties are not used by the broker, we only need the struct to
+// parse the properties when we receive them. When creating the will publish
+// message, all properties are copied directly from the will properties field
+// in CONNECT. The broker only use the will_delay_interval value.
+struct rrr_mqtt_conn_will_properties {
+	uint32_t will_delay_interval;
+	uint8_t payload_format_indicator;
+	uint32_t message_expiry_interval;
+	const struct rrr_mqtt_property *content_type;
+	const struct rrr_mqtt_property *response_topic;
+	const struct rrr_mqtt_property *correlation_data;
+	struct rrr_mqtt_property_collection user_properties;
+};
+
 struct rrr_mqtt_conn {
 	int transport_handle;
 
@@ -107,6 +121,7 @@ struct rrr_mqtt_conn {
 	uint64_t close_wait_start;
 
 	struct rrr_mqtt_p_publish *will_publish;
+	struct rrr_mqtt_conn_will_properties will_properties;
 
 	char ip[INET6_ADDRSTRLEN];
 	int type; // 4 or 6
@@ -179,6 +194,7 @@ int rrr_mqtt_conn_set_data_from_connect_and_connack (
 		const char *username
 );
 int rrr_mqtt_conn_set_will_data_from_connect (
+		uint8_t *reason_v5,
 		struct rrr_mqtt_conn *connection,
 		const struct rrr_mqtt_p_connect *connect
 );

@@ -209,7 +209,7 @@ struct rrr_mqtt_send_from_sessions_callback_data {
 	const struct rrr_mqtt_property_collection *source;		\
 	uint8_t reason_v5
 
-struct rrr_mqtt_common_parse_properties_data {
+struct rrr_mqtt_common_handle_properties_data {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
 };
 
@@ -222,6 +222,11 @@ struct rrr_mqtt_common_parse_properties_data_connect {
 struct rrr_mqtt_common_parse_properties_data_publish {
 	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
 	struct rrr_mqtt_p_publish *publish;
+};
+
+struct rrr_mqtt_common_parse_will_properties_callback_data {
+	MQTT_COMMON_HANDLE_PROPERTIES_CALLBACK_DATA_HEAD;
+	struct rrr_mqtt_conn_will_properties *will_properties;
 };
 
 extern const struct rrr_mqtt_session_properties rrr_mqtt_common_default_session_properties;
@@ -244,46 +249,50 @@ int rrr_mqtt_common_data_init (
 		int (*acl_handler)(struct rrr_mqtt_conn *connection, struct rrr_mqtt_p *packet, void *arg),
 		void *acl_handler_arg
 );
-int rrr_mqtt_common_handler_connect_handle_properties_callback (
+int rrr_mqtt_common_parse_connect_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
-int rrr_mqtt_common_handler_connack_handle_properties_callback (
+int rrr_mqtt_common_parse_connack_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
-int rrr_mqtt_common_handler_publish_handle_properties_callback (
+int rrr_mqtt_common_parse_publish_properties_callback (
 		const struct rrr_mqtt_property *property,
 		void *arg
 );
-int rrr_mqtt_common_handle_properties (
+int rrr_mqtt_common_parse_will_properties_callback (
+		const struct rrr_mqtt_property *property,
+		void *arg
+);
+int rrr_mqtt_common_parse_properties (
+		uint8_t *reason_v5,
 		const struct rrr_mqtt_property_collection *source,
 		int (*callback)(const struct rrr_mqtt_property *property, void *arg),
-		struct rrr_mqtt_common_parse_properties_data *callback_data,
-		uint8_t *reason_v5
+		struct rrr_mqtt_common_handle_properties_data *callback_data
 );
 
-#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(target,packet,callback,action_on_error)					\
-	do {if ((ret = rrr_mqtt_common_handle_properties (												\
-			(target),																				\
-			callback,																				\
-			(struct rrr_mqtt_common_parse_properties_data*) &callback_data,							\
-			&reason_v5																				\
-	)) != 0) {																						\
+#define RRR_MQTT_COMMON_HANDLE_PROPERTIES(target,packet,callback,action_on_error)			\
+	do {if ((ret = rrr_mqtt_common_parse_properties (										\
+			&reason_v5,																		\
+			(target),																		\
+			callback,																		\
+			(struct rrr_mqtt_common_handle_properties_data*) &callback_data					\
+	)) != 0) {																				\
 		if ((ret & RRR_MQTT_SOFT_ERROR) != 0) {												\
-			RRR_MSG_0("Soft error while iterating %s properties\n",								\
-					RRR_MQTT_P_GET_TYPE_NAME(packet));												\
+			RRR_MSG_0("Soft error while iterating %s properties\n",							\
+					RRR_MQTT_P_GET_TYPE_NAME(packet));										\
 			ret = ret & ~(RRR_MQTT_SOFT_ERROR);												\
-		}																							\
-		if (ret != 0) {																				\
-			ret = RRR_MQTT_INTERNAL_ERROR;														\
-			RRR_MSG_0("Internal error while iterating %s properties, return was %i\n",				\
-					RRR_MQTT_P_GET_TYPE_NAME(packet), ret);											\
-			goto out;																				\
-		}																							\
-																									\
-		ret = RRR_MQTT_SOFT_ERROR;																\
-		action_on_error;																			\
+		}																					\
+		if (ret != 0) {																		\
+			ret = RRR_MQTT_INTERNAL_ERROR;													\
+			RRR_MSG_0("Internal error while iterating %s properties, return was %i\n",		\
+					RRR_MQTT_P_GET_TYPE_NAME(packet), ret);									\
+			goto out;																		\
+		}																					\
+																							\
+		ret = RRR_MQTT_SOFT_ERROR;															\
+		action_on_error;																	\
 	}} while(0)
 
 int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION);

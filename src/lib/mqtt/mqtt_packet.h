@@ -328,6 +328,17 @@ static inline void rrr_mqtt_p_bug_if_not_locked (const struct rrr_mqtt_p *arg) {
 	}
 }
 
+// The _dummy is just to keep the (pre)compiler from going crazy
+
+#define RRR_MQTT_P_LOCK_IN(p)													\
+	pthread_mutex_lock(&((p)->data_lock));int _dummy=0;do{_dummy=0
+
+#define RRR_MQTT_P_LOCK_BREAK()													\
+	goto p_unlock_out
+
+#define RRR_MQTT_P_LOCK_OUT(p)													\
+	p_unlock_out:(void)(_dummy);}while(0);pthread_mutex_unlock(&((p)->data_lock))
+
 //	printf ("packet %p lock\n", (p));
 #define RRR_MQTT_P_LOCK(p)		\
 	pthread_mutex_lock(&((p)->data_lock))
@@ -426,8 +437,12 @@ struct rrr_mqtt_p_publish {
 	uint8_t payload_format_indicator;
 	uint32_t message_expiry_interval;
 	uint16_t topic_alias;
-	struct rrr_mqtt_property_collection user_properties;
 	struct rrr_mqtt_property_collection subscription_ids;
+
+	// Note that this field will not be assembled. Put values
+	// in the general properties fields instead for them to be
+	// sent.
+	struct rrr_mqtt_property_collection user_properties;
 
 	struct rrr_mqtt_p_qos_packets qos_packets;
 

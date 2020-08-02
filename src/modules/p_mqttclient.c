@@ -154,7 +154,7 @@ static void mqttclient_data_cleanup(void *arg) {
 	RRR_FREE_IF_NOT_NULL(data->password);
 	rrr_map_clear(&data->publish_values_from_array_list);
 	rrr_mqtt_subscription_collection_destroy(data->requested_subscriptions);
-	rrr_mqtt_property_collection_destroy(&data->connect_properties);
+	rrr_mqtt_property_collection_clear(&data->connect_properties);
 	rrr_array_clear(&data->array_definition);
 	rrr_net_transport_config_cleanup(&data->net_transport_config);
 }

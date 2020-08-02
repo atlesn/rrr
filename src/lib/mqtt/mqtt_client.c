@@ -403,7 +403,7 @@ int rrr_mqtt_client_connect (
 		RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 				&connect->properties,
 				connect,
-				rrr_mqtt_common_handler_connect_handle_properties_callback,
+				rrr_mqtt_common_parse_connect_properties_callback,
 				goto out
 		);
 	}
@@ -551,7 +551,7 @@ static int __rrr_mqtt_client_handle_connack (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	RRR_MQTT_COMMON_HANDLE_PROPERTIES (
 			&connack->properties,
 			connack,
-			rrr_mqtt_common_handler_connack_handle_properties_callback,
+			rrr_mqtt_common_parse_connack_properties_callback,
 			goto out
 	);
 
