@@ -423,7 +423,7 @@ static int __rrr_cmodule_helper_read_from_forks (
 		}
 
 		if (node->pid == 0) {
-			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in rrr_cmodule_read_from_forks\n",
+			RRR_MSG_0("A worker fork '%s' had exited while attempting to read in __rrr_cmodule_helper_read_from_forks \n",
 					node->name);
 			ret = 1;
 			goto out;
@@ -719,6 +719,11 @@ void rrr_cmodule_helper_loop (
 	uint64_t next_stats_time = 0;
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1 && fork_pid != 0) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
+
+		if (rrr_thread_check_any_stopped(reader_thread_data.thread_collection)) {
+			RRR_MSG_0("Read thread stopped in cmodule instance %s\n", INSTANCE_D_NAME(thread_data));
+			break;
+		}
 
 		int from_senders_count_tmp = 0;
 
