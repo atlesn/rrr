@@ -303,7 +303,9 @@ int parse_config (struct ip_data *data, struct rrr_instance_config *config) {
 	}
 
 	// Just to make things look nice in error messages
-	rrr_utf8_strtoupper(data->timeout_action_str);
+	if (data->timeout_action_str != NULL) {
+		rrr_utf8_strtoupper(data->timeout_action_str);
+	}
 
 	if (data->message_send_timeout_s != 0 && data->timeout_action == IP_ACTION_RETRY) {
 		RRR_MSG_0("Parameter ip_send_timeout in instance %s was >0 while ip_timeout_action was 'retry'. This does not make sense and is a configuration error.\n",
