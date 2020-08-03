@@ -1,3 +1,14 @@
+rrr (1.8-0) buster; urgency=medium
+
+  Configration parameter 'ip_drop_on_error' is removed. To achieve this functionallity,
+  ip_timeout_action=drop must be set as well as a timeout with ip_send_timeout. It
+  is also possible to specify 'return' which causes timed out messages to be put
+  into output buffer for other modules to pick up. Configurations which does not
+  get the old parameter replaced will cause a start-up warning and messages will
+  never be dropped.
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 14:56:38 +0200
+
 rrr (1.7-2) buster; urgency=medium
 
   Leading slash for journal module default MQTT topic has been removed. Applications
