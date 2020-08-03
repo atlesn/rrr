@@ -32,5 +32,6 @@ int rrr_utf8_validate_and_iterate (
 		int (*callback)(uint32_t character, void *arg),
 		void *callback_arg
 );
+void rrr_utf8_strtoupper (char *buf);
 
 #endif /* RRR_UTF8_H */

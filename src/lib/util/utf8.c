@@ -19,9 +19,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
-#include <stdint.h>
+#include "utf8.h"
 
-#include <util/utf8.h>
+#include <stdint.h>
+#include <ctype.h>
+#include <string.h>
 
 static int __rrr_utf8_get_character_continue (uint32_t *result, uint8_t c, const char **pos, const char *end) {
 	if (*pos >= end) {
@@ -137,4 +139,11 @@ int rrr_utf8_validate_and_iterate (
 	} while (ret == 0);
 
 	return ret;
+}
+
+// TODO : Currently only converts ASCII
+void rrr_utf8_strtoupper (char *buf) {
+	for (size_t i = 0; i < strlen(buf); i++) {
+		buf[i] = toupper(buf[i]);
+	}
 }
