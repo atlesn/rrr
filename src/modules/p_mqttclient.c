@@ -120,7 +120,7 @@ struct mqtt_client_data {
 
 	int do_prepend_publish_topic;
 	int do_force_publish_topic;
-	int do_publish_rrr_msg_msg;
+	int do_publish_rrr_message;
 	int do_receive_rrr_message;
 	int do_debug_unsubscribe_cycle;
 	int do_recycle_assigned_client_identifier;
@@ -294,10 +294,10 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 	}
 
-	int publish_rrr_msg_msg_was_present = 0;
+	int publish_rrr_message_was_present = 0;
 
-	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("mqtt_publish_rrr_msg_msg", publish_rrr_msg_msg_was_present = 1);
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_msg_msg", do_publish_rrr_msg_msg, 0);
+	RRR_INSTANCE_CONFIG_IF_EXISTS_THEN("mqtt_publish_rrr_message", publish_rrr_message_was_present = 1);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_rrr_message", do_publish_rrr_message, 0);
 
 	if ((ret = rrr_instance_config_parse_array_definition_from_config_silent_fail (
 			&data->array_definition,
@@ -360,13 +360,13 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 			goto out;
 		}
 
-		if (publish_rrr_msg_msg_was_present != 0 && data->do_publish_rrr_msg_msg == 1) {
-			RRR_MSG_0("Cannot have mqtt_publish_values_from_array set while mqtt_publish_rrr_msg_msg is 'yes'\n");
+		if (publish_rrr_message_was_present != 0 && data->do_publish_rrr_message == 1) {
+			RRR_MSG_0("Cannot have mqtt_publish_values_from_array set while mqtt_publish_rrr_message is 'yes'\n");
 			ret = 1;
 			goto out;
 		}
 
-		data->do_publish_rrr_msg_msg = 0;
+		data->do_publish_rrr_message = 0;
 
 		if (*data->publish_values_from_array == '*') {
 			// OK, publish full raw array
@@ -731,7 +731,7 @@ static int mqttclient_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	RRR_MQTT_P_PUBLISH_SET_FLAG_QOS(publish, private_data->qos);
 
-	if (private_data->do_publish_rrr_msg_msg != 0) {
+	if (private_data->do_publish_rrr_message != 0) {
 		ssize_t msg_size = MSG_TOTAL_SIZE(reading);
 
 		reading->msg_size = msg_size;
