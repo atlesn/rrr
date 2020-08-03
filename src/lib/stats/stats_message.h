@@ -25,8 +25,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include <stdio.h>
 
-#include "../linked_list.h"
-#include "../socket/rrr_socket_msg.h"
+#include "../messages/msg.h"
+#include "../util/linked_list.h"
 
 #define RRR_STATS_MESSAGE_TYPE_KEEPALIVE	0
 #define RRR_STATS_MESSAGE_TYPE_TEXT			1
@@ -57,9 +57,9 @@ struct rrr_stats_message {
 	char data[RRR_STATS_MESSAGE_DATA_MAX_SIZE];
 };
 
-// msg_value of rrr_socket_msg-struct is used for timestamp
+// msg_value of rrr_msg-struct is used for timestamp
 struct rrr_stats_message_packed {
-	RRR_SOCKET_MSG_HEAD;
+	RRR_MSG_HEAD;
 	uint8_t type;
 	uint32_t flags;
 

@@ -1,6 +1,4 @@
 /*
-#include <read.h>
-#include <http_part.h>
 
 Read Route Record
 
@@ -24,22 +22,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
+
+#include "../log.h"
 
 #include "http_fields.h"
 #include "http_session.h"
 #include "http_util.h"
 #include "http_part.h"
 
-#include "../posix.h"
-#include "../log.h"
-#include "../gnu.h"
-#include "../base64.h"
-#include "../linked_list.h"
 #include "../net_transport/net_transport.h"
 #include "../random.h"
 #include "../read.h"
-#include "../rrr_time.h"
-#include "../macro_utils.h"
+#include "../util/posix.h"
+#include "../util/gnu.h"
+#include "../util/base64.h"
+#include "../util/linked_list.h"
+#include "../util/rrr_time.h"
+#include "../util/macro_utils.h"
 
 static void __rrr_http_session_destroy (struct rrr_http_session *session) {
 	RRR_FREE_IF_NOT_NULL(session->uri_str);
@@ -448,8 +448,7 @@ static int __rrr_http_session_post_x_www_form_body_send (
 	char *body_buf = NULL;
 	char *header_buf = NULL;
 
-	ssize_t body_size = 0;
-
+	rrr_length body_size = 0;
 	if (no_urlencoding == 0) {
 		body_buf = rrr_http_field_collection_to_urlencoded_form_data(&body_size, &session->request_part->fields);
 	}
@@ -466,7 +465,7 @@ static int __rrr_http_session_post_x_www_form_body_send (
 	if ((ret = rrr_asprintf (
 			&header_buf,
 			"Content-Type: application/x-www-form-urlencoded\r\n"
-			"Content-Length: %u\r\n\r\n",
+			"Content-Length: %" PRIrrrl "\r\n\r\n",
 			body_size
 	)) < 0) {
 		RRR_MSG_0("Could not create content type string in __rrr_http_session_send_get_body\n");
@@ -504,7 +503,7 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 	char *host_buf = NULL;
 	char *user_agent_buf = NULL;
 
-	ssize_t extra_uri_size = 0;
+	rrr_length extra_uri_size = 0;
 	char *extra_uri_tmp = NULL;
 	const char *extra_uri_separator = "";
 
@@ -537,7 +536,8 @@ static int __rrr_http_session_request_send (struct rrr_net_transport_handle *han
 			extra_uri_separator = "?";
 		}
 
-		size_t uri_orig_len = strlen(uri_to_use);
+		rrr_biglength uri_orig_len = strlen(uri_to_use);
+		RRR_TYPES_BUG_IF_LENGTH_EXCEEDED(uri_orig_len,"rrr_http_session_send_request");
 
 		if ((uri_tmp = malloc(uri_orig_len + extra_uri_size + 1 + 1)) == NULL) { // + separator + 0
 			RRR_MSG_0("Could not allocate memory for new URI in __rrr_http_session_request_send\n");
@@ -880,8 +880,8 @@ static int __rrr_http_session_receive_get_target_size (
 		goto out;
 	}
 
-	ssize_t target_size;
-	ssize_t parsed_bytes = 0;
+	size_t target_size;
+	size_t parsed_bytes = 0;
 
 	struct rrr_http_part **part_to_use = NULL;
 	enum rrr_http_parse_type parse_type = 0;
@@ -920,6 +920,13 @@ static int __rrr_http_session_receive_get_target_size (
 		receive_data->parse_complete_pos += parsed_bytes;
 	} while (parsed_bytes != 0 && ret == RRR_HTTP_PARSE_INCOMPLETE);
 
+	if (target_size > SSIZE_MAX) {
+		RRR_MSG_0("Target size %llu exceeds maximum value of %lld while parsing HTTP part\n",
+				target_size, SSIZE_MAX);
+		ret = RRR_NET_TRANSPORT_READ_SOFT_ERROR;
+		goto out;
+	}
+
 	// Used only for stall timeout
 	receive_data->received_bytes = read_session->rx_buf_wpos;
 
@@ -927,7 +934,7 @@ static int __rrr_http_session_receive_get_target_size (
 		read_session->target_size = target_size;
 	}
 	else if (ret == RRR_HTTP_PARSE_INCOMPLETE) {
-		if ((*part_to_use)->data_length == -1) {
+		if ((*part_to_use)->data_length_unknown) {
 			read_session->read_complete_method = RRR_NET_TRANSPORT_READ_COMPLETE_METHOD_CONN_CLOSE;
 			ret = RRR_NET_TRANSPORT_READ_OK;
 		}

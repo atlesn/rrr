@@ -60,8 +60,8 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 			err = 1;
 			goto out;
 		}
-		if (PyType_Ready(&rrr_python3_rrr_message_type) < 0) {
-			RRR_MSG_0("PyType_Ready for python3 rrr_message type failed:\n");
+		if (PyType_Ready(&rrr_python3_rrr_msg_msg_type) < 0) {
+			RRR_MSG_0("PyType_Ready for python3 rrr_msg_msg type failed:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;
@@ -101,9 +101,9 @@ PyMODINIT_FUNC __rrr_python3_module_create_or_get (void) {
 			err = 1;
 			goto out;
 		}
-		Py_INCREF((PyObject *) &rrr_python3_rrr_message_type);
-		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME, (PyObject *) &rrr_python3_rrr_message_type) != 0) {
-			RRR_MSG_0("Could not add python3 rrr_message type to module:\n");
+		Py_INCREF((PyObject *) &rrr_python3_rrr_msg_msg_type);
+		if (PyModule_AddObject(rrr_python3_module, RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME, (PyObject *) &rrr_python3_rrr_msg_msg_type) != 0) {
+			RRR_MSG_0("Could not add python3 rrr_msg_msg type to module:\n");
 			PyErr_Print();
 			err = 1;
 			goto out;

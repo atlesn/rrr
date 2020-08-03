@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "instance_collection.h"
 #include "modules.h"
-#include "linked_list.h"
+#include "util/linked_list.h"
 
 #define RRR_POLL_BREAK_ON_ERR	(1<<10)
 #define RRR_POLL_NO_SENDERS_OK	(1<<11)
@@ -33,7 +33,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_POLL_ERR 1
 #define RRR_POLL_NOT_FOUND 2
 
-typedef void rrr_message_broker_costumer_handle;
+typedef void rrr_msg_msg_broker_costumer_handle;
 
 struct rrr_poll_collection_entry {
 	RRR_LL_NODE(struct rrr_poll_collection_entry);

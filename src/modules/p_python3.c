@@ -29,23 +29,23 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <fcntl.h>
 #include <signal.h>
 
+#include "../lib/log.h"
+#include "../lib/poll_helper.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
+#include "../lib/threads.h"
+#include "../lib/message_broker.h"
+#include "../lib/array.h"
 #include "../lib/python3/python3_common.h"
 #include "../lib/python3/python3_config.h"
 #include "../lib/python3/python3_vl_message.h"
 #include "../lib/python3/python3_cmodule.h"
-#include "../lib/poll_helper.h"
-#include "../lib/instance_config.h"
-#include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/threads.h"
-#include "../lib/message_broker.h"
-#include "../lib/message_addr.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/log.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/messages/msg_addr.h"
 #include "../lib/cmodule/cmodule_helper.h"
 #include "../lib/cmodule/cmodule_main.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/array.h"
+#include "../lib/message_holder/message_holder.h"
 
 struct python3_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -142,7 +142,7 @@ int python3_process_callback(RRR_CMODULE_PROCESS_CALLBACK_ARGS) {
 
 	PyObject *arg_message = NULL;
 
-	arg_message = rrr_python3_rrr_message_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
+	arg_message = rrr_python3_rrr_msg_msg_new_from_message_and_address(message, (is_spawn_ctx ? NULL : message_addr));
 	if (arg_message == NULL) {
 		RRR_MSG_0("Could not create python3 message in python3_process_callback\n");
 		ret = 1;

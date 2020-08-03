@@ -25,14 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "../log.h"
+
 #include "stats_engine.h"
 #include "stats_instance.h"
 #include "stats_message.h"
 
-#include "../log.h"
-#include "../rrr_time.h"
-#include "../linked_list.h"
-#include "../macro_utils.h"
+#include "../util/rrr_time.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 static int __rrr_stats_instance_rate_counter_new (
 		struct rrr_stats_instance_rate_counter **target,

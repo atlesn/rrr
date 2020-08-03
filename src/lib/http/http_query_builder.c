@@ -31,8 +31,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../string_builder.h"
 #include "../array.h"
 #include "../fixed_point.h"
-#include "../base64.h"
-#include "../macro_utils.h"
+#include "../util/base64.h"
+#include "../util/macro_utils.h"
 
 int rrr_http_query_builder_init (
 		struct rrr_http_query_builder *query_builder

@@ -9,33 +9,56 @@ RRR can read data of different types from external programs or sensors using UDP
 piping or files. It is also possible to run self made scripts inside of RRR to modify messages as
 they pass through.
 
+As part of an application, RRR will handle tasks like networking, daemonizing, logging and buffering,
+allowing developers to focus on more specialized tasks.
+
+Among other things, RRR can be used to:
+
 - Acquire messages using piping, UNIX sockets, UDP/TCP-packets
-- Transfer messages using MQTT, UDP or TCP
+- Transfer messages using HTTP, MQTT, UDP or TCP
 - Modify messages using Perl or Python
-- Saving messages using InfluxDB and MySQL
+- Save messages using InfluxDB and MySQL
 
 Application examples may include:
 
 - Barcode scanners
 - Sensors (temperature, pressure, voltage etc.)
-- PLCs
+- Communication with PLCs
 - Message forwarding, media or protocol conversion etc.
+- Host monitoring, logging
+- Print spooling
 
-Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
-particular device with RRR. Please not that RRR is a general purpose program and does not support
-any particular hardware unless configured to do so.
+RRR is used by starting one or more modules with different capabilities that read messages from each other. Some modules
+also use networking to communicate with different types of devices or with RRR programs on other hosts. Once a message
+enters RRR, it is stored in an internal format, an `RRR-message`, which is supported by all the different modules. It is
+also possible to generate these messages externally based on the header files.
 
 To send data to RRR, the data should be in some form of predictable binary or textual format. Data may
 also be acquired directly by RRR if you write a custom Perl or Python script to acquire readings from
 the source, for instance when the data source is a device on a computer.
 
-RRR supports being run by SystemD and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
-may be compiled and run on FreeBSD or other Linuxes including Raspbian. Other systems might work but
+Message processing in RRR is designed to work with as little state as possible. By default, messages are passed through
+without the need for any complex data structures in memory or persistently open TCP connections.
+This design enhances stability, but also requires that larger applications using RRR have the same mentality. For network connections
+which require some state, like MQTT, RRR will transparently make sure that a connection is available at all times, relieving
+application designers from the burden of implementing this.
+
+## SUPPORTED SYSTEMS
+
+RRR supports being run by SystemD and runit and has native Debian/Ubuntu and ArchLinux packages. In addition, RRR
+may be compiled and run on FreeBSD or other Linuxes including Raspbian and SUSE. Other systems might work but
 are not supported.
+
+Among distributions known *not* to work out of the box, are Void Linux, OpenBSD and NetBSD. Void
+Linux should work however if you install OpenSSL instead of LibreSSL. OpenBSD and NetBSD do not work
+due to lack of support for process shared locks.
+
+Please create an issue on the GitHub page https://github.com/atlesn/rrr if you are unable to use a
+particular device with RRR or if it doesn't run on a particular distribution.
 
 ## LICENSES
 
-RRR is released under the GPLv3 with some exceptions for self written modules. Please checkout
+RRR is released under the GPLv3 with *exceptions for self written modules*. Please check out
 the `LICENSE.*`-files regarding this.
 
 ## DEVELOPMENT
@@ -43,19 +66,89 @@ the `LICENSE.*`-files regarding this.
 It is possible to write custom modules in Perl, Python and C. All three have similar easy to use
 interfaces to RRR. The man page for rrr.conf has more information on this, also check out `README.dev`.
 
-If you are a developer and would like to see more functionallity or have some ideas, please consider
+The RRR library provides many protocol implementations and networking tools. While it is possible to link
+other programs to the RRR library, there is currently some initialization of different data structures
+for logging etc. which needs to be done. If you wish to do this, please open an issue on the GitHub page
+to discuss it there.
+
+If you are a developer and would like to see more functionality or have some ideas, please consider
 forking the GitHub repository.
 
 ## QUICK START
 
 ### DOWNLOAD
 
+#### Compile from source
+
 	$ git clone https://github.com/atlesn/rrr.git
+	$ cd rrr
+
+Some systems have customized branches, choose one of the following if appropriate:
+
+	$ git checkout archlinux
+	$ git checkout freebsd
+	$ git checkout ubuntu
+
+The master branch of RRR contains a native Debian package.
+
+See the *COMPILE* section below for further information.
+
+#### Pre-compiled package for Debian Buster amd64/i386 using APT
+
+	$ su -
+	# apt install curl gnupg
+	# curl -s https://apt.goliathdns.no/atle.gpg.key | apt-key add -
+	# curl -s https://apt.goliathdns.no/debian/buster.list > /etc/apt/sources.list.d/goliathdns.list
+	# apt update
+	# apt install rrr
+
+#### Pre-compiled package for Ubuntu Focal amd64 using APT
+
+	$ curl -s https://apt.goliathdns.no/atle.gpg.key | sudo apt-key add -
+	$ sudo sh -c "curl -s https://apt.goliathdns.no/ubuntu/focal.list > /etc/apt/sources.list.d/goliathdns.list"
+	$ sudo apt update
+	$ sudo apt install rrr
+
+#### Compile on ArchLinux using PKGBUILD file
+
+	$ mkdir rrr
+	$ cd rrr
+	$ curl -s -o PKGBUILD https://raw.githubusercontent.com/atlesn/rrr/archlinux/misc/archlinux/PKGBUILD
+	$ makepkg -cf
+	$ sudo pacman -S perl
+	$ sudo pacman -U rrr-*.zst
+	
+#### Packages available on the APT mirrors
+
+- rrr
+- rrr-mod-python3
+- rrr-mod-mysql / rrr-mod-mariadb
+- librrr1
+- librrr-dev
+- rrr-mod-python3-dbgsym
+- librrr1-dbgsym
+
+Note that on Ubuntu RRR supports MySQL, and on Debian RRR supports MariaDB. If you need to use for instance
+MySQL on Debian and the standard package doesn't work, consider building from source with `dpkg-buildpackage`
+on the Ubuntu branch (`git checkout ubuntu`).
+
+Packages for Debian Bullseye (testing release) are also available on the APT mirror, replace `buster` with `bullseye` in the above guide. These are
+built from the `debian-testing` branch.
 
 ### COMPILE
 
-Compiling the source requires some basic knowledge on how to build a program using Autotools. Please
-look online if you have not done this before.
+Compiling the source requires some basic knowledge on how to build a program using Autotools. Usually,
+some extra packages must be installed prior to compilation.
+
+On SUSE, the following packages should be installed to build RRR:
+
+	$ sudo zypper install git perl libmariadb-devel python3-devel openssl-devel autoconf automake gcc libtool
+
+On Debian, Ubuntu and derived systems, the following should be installed:
+	
+	$ sudo apt install libperl-dev git libmariadb-dev-compat python3-dev libssl-dev autoconf automake gcc libtool
+
+On other systems, packages with similar names also exist.
 
 See `./configure --help` for flags to use for disabling modules with dependencies (perl, mysql etc.).
 
@@ -64,19 +157,17 @@ See `./configure --help` for flags to use for disabling modules with dependencie
 	$ make
 	$ sudo make install		-- Skip if you do not wish to install RRR on the filesystem
 
+You may turn off Python3 and MySQL support when configuring, look at `./configure --help`. This will remove the
+need for development packages being installed for these. Perl bindings can also be disabled, but usually it needs to be 
+installed to run the tools which build RRR. OpenSSL bindings may be disabled.
+
 It is also possible, if you are on Ubuntu, Debian or similar, to build a `.deb` package. Look online
 on detailed information about this and on which packages you need to build `.deb` packages.
 
 	$ dpkg-buildpackage
 	$ sudo dpkg -i ../rrr*.deb
 
-On ArchLinux, do the following:
-
-* Download the file `PKGBUILD` from `misc/archlinux/` in the repository.
-* Put the file into some directory and run `makepkg`
-* Install the generated package using `pacman`
-
-### RUN
+### RUN MANUALLY
 
 To start the program with modules, a config file must first be made. Write this into a file
 called `rrr.conf`.
@@ -88,8 +179,9 @@ called `rrr.conf`.
 	[my_target]
 	module=raw
 	senders=my_source
+	raw_print_data=yes
 
-Then, run this:
+Then, run the following command:
 
 	$ rrr --debuglevel 2 rrr.conf
 
@@ -106,23 +198,163 @@ Keep reading below for more examples, and refer to `man rrr`, `man rrr_post` and
 	$ man ./src/misc/man/rrr_post.1
 	$ ./src/rrr my_rrr_test_configuration.conf
 
+### RUN WITH RUNIT/SYSTEMD
+
+If you installed one of the provided packages, RRR will have configured `systemd` or `runit` and is probably already running using a dummy configuration.
+
+Configuration files are placed in `/etc/rrr.conf.d/`. RRR will start one process fork for every configuration file in this folder (which ends with `.conf`).
+Place files in this folder and restart RRR with `sudo systemctl restart rrr` or `sv restart rrr`. Logs are delivered to syslog like other daemons.
+
+For testing purposes, RRR can be started to start all configuration files in a directory by using `rrr /etc/rrr.conf.d/`.
+
+When compiling from source, there are configuration flags available to enable and disable `systemd` and `runit`.
+
+### VIEW LIVE LOGS FROM DAEMONIZED PROCESS
+
+By default, the RRR daemon is started with the `-s` flags, enabling the statistics engine. Each running fork will create a socket in `/tmp/` to which
+the binary `rrr_stats` can connect. If there is only one fork, `rrr_stats` will find it and connect to the correct socket without any additional arguments.
+
+To view log output instead of statistics, run `rrr_stats -j`.
+
+Note that if you produce a lot of debug output, having `rrr_stats` running can cause crashes. By default, RRR only prints out errors and warnings.
+
+## SECURITY
+
+If you use RRR for networking tasks, please note that there are no authentication or any kind of security
+on many network functions. Although some modules have rate limiting causing them to drop incoming data if
+they are overloaded, this is merely to avoid filling up memory with buffered messages.
+
+If RRR is configured to read raw data from other hosts, this should happend on *closed networks* protected
+by a firewall. A firewall should run on a separate machine to prevent accidental openings, do not rely
+on software firewall rules on the machine running RRR.
+
+The MQTT modules support both TLS and authentication. It is recommended, if security is needed, to use a
+custom CA-certificate to validate certificates when receiving and making connections. The brokers
+and clients must then use certificates signed with this CA-certificate to identify themselves. It is not safe
+to rely on external CA-authorities, these are only safe when connecting to remote hosts using DNS. Anyone may
+obtain such certificates.
+
+In the configuration, specify a *ca_path* or *ca_file* to prevent the TLS library to look in standard system
+directories for public CA-certificates. Even better: If the public certificates are not used for anything else,
+delete them.
+
+Make sure that *plain* listening mode is disabled for modules if you wish to require TLS, and also double check
+afterwards that RRR does not listen to unsafe ports.
+
+Note that RRR does not check for revoked certificates. If some certificate has been leaked and is compromised,
+the CA-certificate used to signed this and all other certificates must be removed from all hosts and replaced. RRR
+does not validate hostnames in certificates.
+
+The HTTP modules can also use TLS in this setup for authentication, but there are no usernames or passwords. The
+*ipclient* module, providing assured delivery over UDP, has no TLS. This also goes for the raw networking *ip* module.  
+
+With the default RRR configuration file (dummy configuration), no networking is started. 
+
 ## MODULES
 
 Here's a short list of modules to start with, more are listed in the `rrr.conf` man page.
 
 ### ip (read and send data records using UDP and TCP)
 This module handles inbound and outbound IP traffic. It can parse incoming data and organize it into RRR arrays,
-and also send data to external hosts based on address information it the messages it receives from other modules.
+and also send data to external hosts based on address information in the messages it receives from other modules.
 
-The IP module is the binding link between RRR and external devices using IP networking.
+The IP module is the binding link between RRR and external devices using IP networking. The module will handle
+both TCP and UDP simultaneously. If using TCP, one connection is by default created for every outbound message. This
+is to avoid problems with TCP connections staying open for longer periods.
+
+The IP module does not use packet boundaries to separate data records. When using UDP, it is therefore important
+to make sure that data is not split into many packets which might cause parts of a message to disappear without this
+being detected.
+
+Serial to ethernet converters often split up messages into many datagrams by default, make sure they are configured
+correctly and check that there is only one message per datagram with a network analyzer like `Wireshark`. If fragmentation
+is a problem or the messages are too big to fit in single datagrams, use TCP instead.
+
+#### Usage example with barcode reader and ACK messages
+A simple setup using the IP module can be to process barcodes from a scanner and send ACK back. The IP information
+in an RRR message (where it came from) is always preserved internally in RRR. This makes it possible to simply return a message to
+the IP module if we wish to send a reply.
+
+1. Scanner sends a barcode to RRR using UDP (for instance STX 'BLABLA128' ETX)
+2. IP module receives and parses the UDP packet
+3. A Perl or Python script does some processing of the barcode
+4. The contents of the reply ACK message is added to the message (for instance STX 'A' ETX)
+5. The IP Module sends the packet back to the scanner.
+
+In this configuration example, an instance of the IP module both gives data to the Perl module instance, and also reads data from it. The data
+which IP receives from network is put into an RRR Array Message with three fields: `start`, `message` and `end`. If the syntax
+in the received data is not correct, the data is ignored. By saving the start and end values, we don't have to worry about what
+they actually are when processing the message.
+
+When the Perl module generates the reply, it creates an additional array value called `reply`. The IP module is then configured
+to find three fields `start`, `reply` and `end` in messages from Perl and send them out concatenated together. While the RRR message
+still contains the original `barcode` field once it returns to the IP module, this field is ignored in this example. Messages from
+the barcode reader(s) are delivered to UDP port 3333.
+
+The following RRR config script `rrr-devicemaster.conf` will set everything up:
+
+	[instance_ip]
+	module=ip
+	senders=instance_perl5
+	ip_input_types=stx1#start,nsep#barcode,sep1#end
+	ip_udp_port=3333
+	ip_array_send_tags=start,reply,end
+	
+	[instance_perl5]
+	module=perl5
+	senders=instance_ip
+	perl5_file=/home/rrr/devicemaster.pl
+	perl5_process_sub=process
+	
+The following Perl script `/home/rrr/devicemaster.pl` will process the messages:
+
+	#!/usr/bin/perl -w
+
+	package main;
+
+	use rrr::rrr_helper;
+	use rrr::rrr_helper::rrr_message;
+
+	sub process {
+        	my $message = shift;
+		
+		# Do message processing
+		my $processing_succeeded = 1;
+		
+		# Send reply if everything is OK
+		if ($processing_succeeded) {
+			# Push ACK reply value to the message and send it
+			push_blob($message, "reply", "A");
+
+			# IP information is already in the message, as well as
+			# start and end separators. This call will cause the IP
+			# module to receive the message.
+			$message->send();
+		}
+		
+		return 1;
+	}
+	
+	sub push_blob {
+        	my $message = shift;
+        	my $tag = shift;
+        	my $value = shift;
+
+        	push @{$message->{'array_values'}}, "$value";
+        	push @{$message->{'array_tags'}}, $tag;
+        	push @{$message->{'array_types'}}, "blob";
+	}
+
+There are some more advanced example configuration files in `/misc/test_configs`, including how to read the barcode.
 
 ### mqttbroker (run an MQTT broker)
-Starts an MQTT broker which any MQTT client can use to exchange messages.
+Starts an MQTT broker which any MQTT client can use to exchange messages. The broker supports TLS, ACL and authentication, have
+a look at `man rrr.conf`.
 
 ### mqttclient (run an MQTT client)
 Starts an MQTT client which can connect to any MQTT server. Messages can be read from other modules and published
 to a MQTT broker, and it is possible to subscribe to topics to receive messages other modules can receive. Two RRR MQTT
-clients can exchange RRR messages through any MQTT broker, and an arbitary number of clients can run in each RRR program.
+clients can exchange RRR messages through any MQTT broker, and an arbitrary number of clients can run in each RRR program.
 
 Below follows an example configuration which uses RRR to receive data records from an external MQTT client and save it to
 an InfluxDB database:
@@ -153,7 +385,7 @@ an InfluxDB database:
 	influxdb_tags=hostname
 	influxdb_fields=uptime,loadavg->load
 
-Use your faviourite MQTT client to publish a message with a data record to the RRR broker
+Use your favorite MQTT client to publish a message with a data record to the RRR broker
 which the RRR MQTT client then receives and parses. Refer to the `ARRAY DEFINITION` section
 below on how to specifiy different data types.
 
@@ -168,7 +400,7 @@ The `ipclient` module keeps track of all messages and makes sure that they are d
 
 The module may function both as a server which accepts connections and a client (also simultaneously).
 
-An RRR native protocol is used to transfer messages which means that and RRR program only can communicate with other RRR
+An RRR native protocol is used to transfer messages which means that an RRR program only can communicate with other RRR
 programs using this module.
 
 ### mysql (store messages to database)
@@ -179,11 +411,11 @@ Reads messages from other modules and stores them in a an InfluxDB database.
 
 ### socket (read data records from a UNIX socket)
 The socket module listens on a socket and parses data records it receives before forwarding them
-as RRR messages to other modules. Expects to receive records with data types defined in an `array definition`. This
+as RRR messages to other modules. It expects to receive records with data types defined in an `array definition`. This
 is useful when it's practical to pass over data to RRR locally using scripts.
 
-A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in it's
-arguments, and an RRR array message for every record is created and sent in to RRR over the socket.
+A binary, `rrr_post`, is provided to communicate with the socket module. The type of input data is defined in its
+arguments, and an RRR array message for every record is created and sent into RRR over the socket.
 
 Below follows an example configuration where a data record is created locally and then sent to RRR using `rrr_post`
 to be saved in an InfluxDB database.
@@ -216,7 +448,7 @@ Use `rrr_post` to parse the input data record, which in this case is provided on
 The python3 module use a custom user-provided program to process and generate messages. Special RRR-
 objects which resemble RRR internals are provided.
 
-A custom python program might look like this, checkout `man rrr.conf` on how to make it run.
+A custom python program might look like this, check out `man rrr.conf` on how to make it run.
 
        from rrr_helper import *
        import time
@@ -272,12 +504,12 @@ A custom python program might look like this, checkout `man rrr.conf` on how to 
 The `rrr_helper` Python module is built into RRR and is only available when the script is called from this program.
 
 ### perl5 (generate and/or modify messages by a custom perl script)
-The perl5 module makes it possible to process and generate messages in a custom 
-written perl script. The first and only argument to the source- and generate-functions
+The perl5 module makes it possible to process and generate messages in a custom-written
+perl script. The first and only argument to the source- and generate-functions
 is always a message. Modifications to the message in the script will be done to the
 original message, hence there is no need to return the message.
 
-A message can however be duplicated one or more times by calling it's send()-method.
+A message can however be duplicated one or more times by calling its send()-method.
 
 Below follows an example perl script.
 
@@ -329,12 +561,19 @@ Below follows an example perl script.
 
 		print "process: new timestamp of message is: " . $message->{'timestamp'} . "\n";
 
-		# This can be used to duplicate a message, no need if we are not duplicating
+		# This can be used to duplicate a message. Not needed if we are not duplicating
 		# $message->send();
 
 		# Return 1 for success and 0 for error
 		return 1;
 	}
+
+### cmodule (generate and/or modify messages by a custom C module)
+A C-module has `config`, `source` and `process` functions just like Perl and Python scripts, and the excact same internal
+RRR framework handles these semantics.
+
+Custom C-modules are usually compiled inside the RRR source tree. Read `/src/cmodules/README` for information on how to do this, usually
+only a single C-file is needed to create a module.
 
 ### raw (drain output from other modules)
 Read output from any module and delete it. Can also print out some information for each message it receives.
@@ -342,24 +581,40 @@ Read output from any module and delete it. Can also print out some information f
 ### dummy (generate dummy measurements)
 Create dummy messages with current timestamp as value at some interval. 
 
+## RRR-MESSAGES
+
+An RRR-message contains some metadata and a class specifier which tells us what kind of
+information and/or value it stores.
+* Metadata for a message:
+  * `Timestamp`
+    Usually specified when a message was created.
+  * `Topic`
+     A topic to be used by MQTT modules
+  * `Class` and `Data` 
+    Raw data of a message or Array data
+  * `Source-address`
+    IP-address of a sender for messages which originated remotely.
+
+On the network, all multibyte fields are in Big Endian format.
+
 ## ARRAY DEFINITION
 Many modules use array definitions to describe the data records they receive, as seen in the configuration examples above.
 
 A definition is a comma separated list of different types. Some types need to have a specified length, and other types
-figure out the length automatically. RRR will always make sure that it is possible to determin the length
+figure out the length automatically. RRR will always make sure that it is possible to determine the length
 of each record, this is necessary to be able to separate the records from each other upon receival. If you are unsure about
 whether a definition is valid, just try to use it and RRR will give you an error message if it isn't.
 
-Sequential fixed length values of the same type may be grouped together in a single items, and each item may be tagged to
+Sequential fixed length values of the same type may be grouped together in a single item, and each item may be tagged to
 ease the extraction of data in later processing.
 
-The specification of an array definition is like this, and below follows more detailed explanations.
+Below is the specification of an array definition, followed by more detailed explanations.
 
 	type1[length1][s|u|][@count1][#tag1][,type2[length2][s|u|][@count2][#tag2]][,...]
 	
 - `type` - Identifier name of the type
 - `length` - Length in bytes of the type (if required)
-- `count` - Item count of the sepcific type, defaults to 1 if not specified
+- `count` - Item count of the specific type, defaults to 1 if not specified
 - `tag` - Optional custom identifier tag of the type
 
 ### FIXED LENGTH TYPES
@@ -367,47 +622,40 @@ These types require the `length` field to be specified.
 
 - `be` - Unsigned number in big endian binary format. Length must be in the range 1-8.
 - `le` - Unsigned number in little endian binary format. Length must be in the range 1-8.
-- `h` - Unsigned number in the endianess of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
-- `blob` - Arbitary binary data. Lengt must be in the range 1-1024.
-- `sep` - One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ LF CR TAB and SPACE. Length
-must be in the range 1-64.
+- `h` - Unsigned number in the endianness of the machine. Might be unsafe for network transfer. Length must be in the range 1-8.
+- `blob` - Arbitrary binary data. Length must be in the range 1-1024.
+- `sep` - One or more separator characters. Matches ! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~ NULL ETX EOH LF CR and TAB.
+Length must be in the range 1-64.
+- `stx` - One or more STX or SOH characters. Length must be in the range 1-64.
 
 Types `be`, `le` and `h` may be followed by an `s` after the length specifier to indicate that the input number is signed. If instead
-`u` or nothing is set here, the value is treated as unsigned. No other types may have sign flag set.
+`u` or nothing is set here, the value is treated as unsigned. No other types may have the sign flag set.
 
 ### WEAK DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have length set. They
+The lengths of these types are identified automatically and must not be set. They
 cannot be at the end of a definition, nor follow after each other.
 
 - `ustr` - An unsigned integer encoded with ASCII characters 0-9. Stored with 64-bits.
 - `istr` - A signed integer encoded with ASCII characters 0-9 optionally preceeded by - or +. Stored with 64-bits.
 - `fixp` - The RRR fixed decimal type encoded with ASCII characters 0-9 (and A-F). May include a single dot . to separate integer from fraction,
-and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits is the integer and
+and the integer part may be preceded with a sign (- or +). Stored with 64-bits where 1 bit is the sign, 39 bits are the integer and
 24 bits are the fraction. May be preceeded with 10# or 16# to indicate use of base 10 or base 16 conversion, default is base 10.
-- `nsep` - Will match number of any characters until a space character is found (LF, CR, TAB or SPACE).
 
 ### STRONG DYNAMIC LENGTH TYPES
-The length of these types are identified automatically and must not have a length set. They may be at the end of a defintion.
+The lengths of these types are identified automatically and must not be set. They may be at the end of a definition.
 
-- `msg` - A full RRR message complete with headers and checksums. A message has it's length inside the message header.
-- `str` - An arbitary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \. The
-surrounding quotes are not included in the final string.
+- `msg` - A full RRR message complete with headers and checksums. A message has its length inside the message header.
+- `str` - An arbitrary length string of characters beginning and ending with double quotes ". Double quotes inside the string must be escaped with \.
+The surrounding quotes are not included in the final string.
+- `nsep` - Match any numbers of bytes until a separator character NULL, SOH, STX, ETX, EOH, LF, CR or TAB is found. The separator itself will not be
+included in the result, a sep should follow afterwards to take care of it.
 
-## MESSAGES
+### NOTES
 
-A message contains some metadata and a class specifier which tells us what kind of
-information and/or value it stores.
-* Metadata for a message:
-  * `Timestamp`
-    Usually specified when a message was created.
-  * `Class`
-    The message class which describes what kind of information it stores:
-    * `DATA`: Message with arbitary data
-    * `ARRAY`: An array of data, for instance created by udpreader or socket
-  * `Topic`
-  	A topic to be used by MQTT modules
-  * `Data`
-    Data of the message (for ARRAY)
+* A space is not considered a separator, as spaces often exist inside different messages.
+* The `nsep` type is not a complete negation of the `sep` type, the latter matches many more characters. The reason behind this is that messages with
+arbitrary text and an end delimeter then can be matched using the simple definition `nsep,sep1`. The `nsep` will match letters, punctuations, spaces etc.,
+and the `sep1` will match for instance a newline or ETX byte.
 
 ## CONTACT
 

@@ -24,44 +24,45 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "python3_array.h"
 #include "python3_module_common.h"
 #include "python3_vl_message.h"
-#include "../socket/rrr_socket_msg.h"
-#include "../messages.h"
+
+#include "../log.h"
 #include "../array.h"
 #include "../fixed_point.h"
-#include "../message_addr.h"
-#include "../log.h"
+#include "../messages/msg.h"
+#include "../messages/msg_msg.h"
+#include "../messages/msg_addr.h"
 
 //static const unsigned long int max_8 = 0xff;
 //static const unsigned long int max_16 = 0xffff;
 //static const unsigned long int max_32 = 0xffffffff;
 //static const unsigned long int max_64 = 0xffffffffffffffff;
 
-struct rrr_python3_rrr_message_constants {
+struct rrr_python3_rrr_msg_msg_constants {
 		unsigned int TYPE_MSG;
 		unsigned int TYPE_TAG;
 		unsigned int CLASS_POINT;
 		unsigned int CLASS_ARRAY;
 };
 
-static const struct rrr_python3_rrr_message_constants message_constants = {
+static const struct rrr_python3_rrr_msg_msg_constants message_constants = {
 		MSG_TYPE_MSG,
 		MSG_TYPE_TAG,
 		MSG_CLASS_DATA,
 		MSG_CLASS_ARRAY
 };
 
-struct rrr_python3_rrr_message_data {
+struct rrr_python3_rrr_msg_msg_data {
 	PyObject_HEAD
-	struct rrr_message message_static;
-	struct rrr_message *message_dynamic;
+	struct rrr_msg_msg message_static;
+	struct rrr_msg_msg *message_dynamic;
 	PyObject *rrr_array;
-	struct rrr_python3_rrr_message_constants constants;
+	struct rrr_python3_rrr_msg_msg_constants constants;
 	struct sockaddr_storage ip_addr;
 	socklen_t ip_addr_len;
 };
 
-static int __rrr_python3_rrr_message_set_topic_and_data (
-		struct rrr_python3_rrr_message_data *data,
+static int __rrr_python3_rrr_msg_msg_set_topic_and_data (
+		struct rrr_python3_rrr_msg_msg_data *data,
 		const char *topic_str,
 		Py_ssize_t topic_length,
 		const char *data_str,
@@ -69,9 +70,9 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 ) {
 	int ret = 0;
 
-	struct rrr_message *new_message = rrr_message_duplicate_no_data_with_size(data->message_dynamic, topic_length, data_length);
+	struct rrr_msg_msg *new_message = rrr_msg_msg_duplicate_no_data_with_size(data->message_dynamic, topic_length, data_length);
 	if (new_message == NULL) {
-		RRR_MSG_0("Could not allocate memory in __rrr_python3_rrr_message_set_topic_and_data\n");
+		RRR_MSG_0("Could not allocate memory in __rrr_python3_rrr_msg_msg_set_topic_and_data\n");
 		ret = 1;
 		goto out;
 	}
@@ -88,11 +89,11 @@ static int __rrr_python3_rrr_message_set_topic_and_data (
 	return ret;
 }
 
-static PyObject *rrr_python3_rrr_message_f_set_data (PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_set_data (PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 
 	if (data->rrr_array != NULL) {
-		RRR_MSG_0("rrr_message.set_data() called while the message contained an array. discard_array() must be called first.\n");
+		RRR_MSG_0("rrr_msg_msg.set_data() called while the message contained an array. discard_array() must be called first.\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -106,11 +107,11 @@ static PyObject *rrr_python3_rrr_message_f_set_data (PyObject *self, PyObject *a
 		str = PyUnicode_AsUTF8AndSize(args, &len);
 	}
 	else {
-		RRR_MSG_0("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
+		RRR_MSG_0("Unknown data type to rrr_msg_msg.set_data(), must be Bytearray or Unicode\n");
 		Py_RETURN_FALSE;
 	}
 
-	if (__rrr_python3_rrr_message_set_topic_and_data (
+	if (__rrr_python3_rrr_msg_msg_set_topic_and_data (
 			data,
 			MSG_TOPIC_PTR(data->message_dynamic),
 			MSG_TOPIC_LENGTH(data->message_dynamic),
@@ -123,8 +124,8 @@ static PyObject *rrr_python3_rrr_message_f_set_data (PyObject *self, PyObject *a
 	Py_RETURN_TRUE;
 }
 
-static PyObject *rrr_python3_rrr_message_f_set_topic (PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_set_topic (PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 
 	const char *str;
 	Py_ssize_t len;
@@ -132,11 +133,11 @@ static PyObject *rrr_python3_rrr_message_f_set_topic (PyObject *self, PyObject *
 		str = PyUnicode_AsUTF8AndSize(args, &len);
 	}
 	else {
-		RRR_MSG_0("Unknown data type to rrr_message.set_data(), must be Bytearray or Unicode\n");
+		RRR_MSG_0("Unknown data type to rrr_msg_msg.set_data(), must be Bytearray or Unicode\n");
 		Py_RETURN_FALSE;
 	}
 
-	if (__rrr_python3_rrr_message_set_topic_and_data (
+	if (__rrr_python3_rrr_msg_msg_set_topic_and_data (
 			data,
 			str,
 			len,
@@ -150,12 +151,12 @@ static PyObject *rrr_python3_rrr_message_f_set_topic (PyObject *self, PyObject *
 }
 
 /* Disabled, this is currently not useful
-static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *arg) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_set_type (PyObject *self, PyObject *arg) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	int ret = 0;
 
 	if (!PyLong_Check(arg)) {
-		RRR_MSG_0("Argument to rrr_python3_rrr_message_f_set_type was not a number.\n");
+		RRR_MSG_0("Argument to rrr_python3_rrr_msg_msg_f_set_type was not a number.\n");
 		ret = 1;
 		goto out;
 	}
@@ -168,7 +169,7 @@ static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *a
 			ret = 0;
 			break;
 		default:
-			RRR_MSG_0("Unknown type %lu to rrr_python3_rrr_message_f_set_type\n");
+			RRR_MSG_0("Unknown type %lu to rrr_python3_rrr_msg_msg_f_set_type\n");
 			ret = 1;
 			goto out;
 	}
@@ -185,17 +186,17 @@ static PyObject *rrr_python3_rrr_message_f_set_type (PyObject *self, PyObject *a
 }
 */
 
-static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
+static PyObject *rrr_python3_rrr_msg_msg_f_new (PyTypeObject *type, PyObject *args, PyObject *kwds) {
 	PyObject *self = PyType_GenericNew(type, args, kwds);
 	if (self == NULL) {
 		return NULL;
 	}
 
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 
 	data->message_dynamic = malloc(sizeof(*(data->message_dynamic)) - 1);
 	if (data->message_dynamic == NULL) {
-		RRR_MSG_0("Could not allocate memory for message in rrr_python3_rrr_message_f_new\n");
+		RRR_MSG_0("Could not allocate memory for message in rrr_python3_rrr_msg_msg_f_new\n");
 		return NULL;
 	}
 
@@ -207,14 +208,14 @@ static PyObject *rrr_python3_rrr_message_f_new (PyTypeObject *type, PyObject *ar
 	return self;
 }
 
-static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static int rrr_python3_rrr_msg_msg_f_init(PyObject *self, PyObject *args, PyObject *kwds) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 
 	memset (&data->message_static, '\0', sizeof(data->message_static));
 	memset (data->message_dynamic, '\0', sizeof(*(data->message_dynamic)) - 1);
 
 	if (kwds != NULL && PyDict_Size(kwds) != 0) {
-		RRR_MSG_0("Keywords not supported in rrr_message init\n");
+		RRR_MSG_0("Keywords not supported in rrr_msg_msg init\n");
 		return 1;
 	}
 
@@ -229,7 +230,7 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 
 		PyObject *args_timestamp = PyTuple_GetItem(args, 0);
 		if (!PyLong_Check(args_timestamp)) {
-			RRR_MSG_0("Timestamp argument to rrr_message init was not a number.\n");
+			RRR_MSG_0("Timestamp argument to rrr_msg_msg init was not a number.\n");
 			return 1;
 		}
 
@@ -243,21 +244,21 @@ static int rrr_python3_rrr_message_f_init(PyObject *self, PyObject *args, PyObje
 	return 0;
 }
 
-static void rrr_python3_rrr_message_f_dealloc (PyObject *self) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static void rrr_python3_rrr_msg_msg_f_dealloc (PyObject *self) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	RRR_FREE_IF_NOT_NULL(data->message_dynamic);
 	Py_XDECREF(data->rrr_array);
 	PyObject_Del(self);
 }
 
-static PyObject *rrr_python3_rrr_message_f_get_data(PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_get_data(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	(void)(args);
 
 	PyObject *ret = PyByteArray_FromStringAndSize(MSG_DATA_PTR(data->message_dynamic), MSG_DATA_LENGTH(data->message_dynamic));
 
 	if (ret == NULL) {
-		RRR_MSG_0("Could not create bytearray object for topic in rrr_python3_rrr_message_f_get_data\n");
+		RRR_MSG_0("Could not create bytearray object for topic in rrr_python3_rrr_msg_msg_f_get_data\n");
 		PyErr_Print();
 		Py_RETURN_FALSE;
 	}
@@ -265,14 +266,14 @@ static PyObject *rrr_python3_rrr_message_f_get_data(PyObject *self, PyObject *ar
 	return ret;
 }
 
-static PyObject *rrr_python3_rrr_message_f_get_array(PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_get_array(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	(void)(args);
 
 	if (data->rrr_array == NULL) {
 		data->rrr_array = rrr_python3_array_new();
 		if (data->rrr_array == NULL) {
-			RRR_MSG_0("Could not create new array in rrr_message.get_array()");
+			RRR_MSG_0("Could not create new array in rrr_msg_msg.get_array()");
 			Py_RETURN_NONE;
 		}
 	}
@@ -281,8 +282,8 @@ static PyObject *rrr_python3_rrr_message_f_get_array(PyObject *self, PyObject *a
 	return data->rrr_array;
 }
 
-static PyObject *rrr_python3_rrr_message_f_has_array(PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_has_array(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	(void)(args);
 
 	if (data->rrr_array != NULL) {
@@ -292,8 +293,8 @@ static PyObject *rrr_python3_rrr_message_f_has_array(PyObject *self, PyObject *a
 	Py_RETURN_FALSE;
 }
 
-static PyObject *rrr_python3_rrr_message_f_discard_array(PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_discard_array(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	(void)(args);
 
 	Py_XDECREF(data->rrr_array);
@@ -302,11 +303,11 @@ static PyObject *rrr_python3_rrr_message_f_discard_array(PyObject *self, PyObjec
 	Py_RETURN_TRUE;
 }
 
-static PyObject *rrr_python3_rrr_message_f_set_array (PyObject *self, PyObject *arg) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_set_array (PyObject *self, PyObject *arg) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 
 	if (!rrr_python3_array_check(arg)) {
-		RRR_MSG_0("Argument to rrr_message.set_array() must be an rrr_array\n");
+		RRR_MSG_0("Argument to rrr_msg_msg.set_array() must be an rrr_array\n");
 		Py_RETURN_FALSE;
 	}
 
@@ -317,8 +318,8 @@ static PyObject *rrr_python3_rrr_message_f_set_array (PyObject *self, PyObject *
 	Py_RETURN_TRUE;
 }
 
-static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *args) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+static PyObject *rrr_python3_rrr_msg_msg_f_get_topic(PyObject *self, PyObject *args) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	(void)(args);
 
 	PyObject *ret = NULL;
@@ -329,7 +330,7 @@ static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *a
 		ret = PyUnicode_FromString("");
 	}
 	if (ret == NULL) {
-		RRR_MSG_0("Could not create unicode object for topic in rrr_python3_rrr_message_f_get_topic\n");
+		RRR_MSG_0("Could not create unicode object for topic in rrr_python3_rrr_msg_msg_f_get_topic\n");
 		PyErr_Print();
 		Py_RETURN_FALSE;
 	}
@@ -337,65 +338,65 @@ static PyObject *rrr_python3_rrr_message_f_get_topic(PyObject *self, PyObject *a
 	return ret;
 }
 
-static PyMethodDef rrr_message_methods[] = {
+static PyMethodDef rrr_msg_msg_methods[] = {
 		{
 				.ml_name	= "set_data",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_data,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_set_data,
 				.ml_flags	= METH_O,
 				.ml_doc		= "Set data parameter"
 		},
 		{
 				.ml_name	= "get_data",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_data,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_get_data,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get data parameter from message as byte array"
 		},
 		{
 				.ml_name	= "get_array",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_array,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_get_array,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get array object from message (or create one) for reading and writing values"
 		},
 		{
 				.ml_name	= "has_array",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_has_array,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_has_array,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Check if the message has an array"
 		},
 		{
 				.ml_name	= "discard_array",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_discard_array,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_discard_array,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Discard array of message (if any present)"
 		},
 		{
 				.ml_name	= "set_array",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_array,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_set_array,
 				.ml_flags	= METH_O,
 				.ml_doc		= "Set the array of a message, discarding any existing array."
 		},
 		{
 				.ml_name	= "set_topic",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_set_topic,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_set_topic,
 				.ml_flags	= METH_O,
 				.ml_doc		= "Set topic parameter"
 		},
 		{
 				.ml_name	= "get_topic",
-				.ml_meth	= (PyCFunction) rrr_python3_rrr_message_f_get_topic,
+				.ml_meth	= (PyCFunction) rrr_python3_rrr_msg_msg_f_get_topic,
 				.ml_flags	= METH_NOARGS,
 				.ml_doc		= "Get topic parameter from message as a string"
 		},
 		{ NULL, NULL, 0, NULL }
 };
 
-static struct rrr_python3_rrr_message_data dummy;
+static struct rrr_python3_rrr_msg_msg_data dummy;
 #define RRR_PY_RRR_MESSAGE_OFFSET(member) \
 	(((void*) &(dummy.message_static.member)) - ((void*) &(dummy)))
 #define RRR_PY_RRR_MESSAGE_CONSTANT_OFFSET(member) \
 	(((void*) &(dummy.constants.member)) - ((void*) &(dummy)))
 
-static PyMemberDef rrr_message_members[] = {
+static PyMemberDef rrr_msg_msg_members[] = {
 		{"type_and_class",	RRR_PY_16,	RRR_PY_RRR_MESSAGE_OFFSET(type_and_class),	0, "Type and class"},
 		{"timestamp",		RRR_PY_64,	RRR_PY_RRR_MESSAGE_OFFSET(timestamp),		0, "Timestamp"},
 
@@ -406,12 +407,12 @@ static PyMemberDef rrr_message_members[] = {
 		{ NULL, 0, 0, 0, NULL}
 };
 
-PyTypeObject rrr_python3_rrr_message_type = {
+PyTypeObject rrr_python3_rrr_msg_msg_type = {
 		.ob_base		= PyVarObject_HEAD_INIT(NULL, 0) // Comma is inside macro
 	    .tp_name		= RRR_PYTHON3_MODULE_NAME	"." RRR_PYTHON3_RRR_MESSAGE_TYPE_NAME,
-	    .tp_basicsize	= sizeof(struct rrr_python3_rrr_message_data),
+	    .tp_basicsize	= sizeof(struct rrr_python3_rrr_msg_msg_data),
 		.tp_itemsize	= 0,
-	    .tp_dealloc		= (destructor) rrr_python3_rrr_message_f_dealloc,
+	    .tp_dealloc		= (destructor) rrr_python3_rrr_msg_msg_f_dealloc,
 	    .tp_print		= NULL,
 	    .tp_getattr		= NULL,
 	    .tp_setattr		= NULL,
@@ -434,17 +435,17 @@ PyTypeObject rrr_python3_rrr_message_type = {
 	    .tp_weaklistoffset = 0,
 	    .tp_iter		= NULL,
 	    .tp_iternext	= NULL,
-	    .tp_methods		= rrr_message_methods,
-	    .tp_members		= rrr_message_members,
+	    .tp_methods		= rrr_msg_msg_methods,
+	    .tp_members		= rrr_msg_msg_members,
 	    .tp_getset		= NULL,
 	    .tp_base		= NULL,
 	    .tp_dict		= NULL,
 	    .tp_descr_get	= NULL,
 	    .tp_descr_set	= NULL,
 	    .tp_dictoffset	= 0,
-	    .tp_init		= rrr_python3_rrr_message_f_init,
+	    .tp_init		= rrr_python3_rrr_msg_msg_f_init,
 	    .tp_alloc		= PyType_GenericAlloc,
-	    .tp_new			= rrr_python3_rrr_message_f_new,
+	    .tp_new			= rrr_python3_rrr_msg_msg_f_new,
 	    .tp_free		= NULL,
 	    .tp_is_gc		= NULL,
 	    .tp_bases		= NULL,
@@ -463,7 +464,7 @@ PyTypeObject rrr_python3_rrr_message_type = {
 	uint8_t type_flags,						\
 	ssize_t item_size,						\
 	const char *tag,						\
-	rrr_type_length tag_length,				\
+	rrr_length tag_length,					\
 	ssize_t elements
 
 #define CONVERT_DEF							\
@@ -916,7 +917,7 @@ static int __preliminary_check_blob (PRELIMINARY_CHECK_DEF) {
 }
 
 
-static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback (
+static int __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback (
 		PyObject *tag,
 		PyObject *list,
 		uint8_t type_orig,
@@ -931,7 +932,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	int ret = 0;
 
 	if (list == NULL) {
-		RRR_BUG("List was NULL in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+		RRR_BUG("List was NULL in __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback\n");
 	}
 
 	Py_INCREF(list);
@@ -948,14 +949,14 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 		}
 
 		if ((tag_str = PyUnicode_AsUTF8AndSize(tag, &tag_length)) == NULL) {
-			RRR_MSG_0("Could not convert tag object to string in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+			RRR_MSG_0("Could not convert tag object to string in __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback\n");
 			ret = 1;
 			goto out;
 		}
 	}
 
 	if (!PyList_Check(list)) {
-		RRR_BUG("Value was not a list in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n");
+		RRR_BUG("Value was not a list in __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback\n");
 	}
 
 	ssize_t count = PyList_GET_SIZE(list);
@@ -1061,7 +1062,7 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 			tag_length,
 			count
 	)) != 0) {
-		RRR_MSG_0("Could not allocate memory for type %u in __rrr_python3_array_rrr_message_get_message_store_array_node_callback\n",
+		RRR_MSG_0("Could not allocate memory for type %u in __rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback\n",
 				target_type);
 		goto out;
 	}
@@ -1086,12 +1087,12 @@ static int __rrr_python3_array_rrr_message_get_message_store_array_node_callback
 	return ret;
 }
 
-struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr *message_addr, PyObject *self) {
-	struct rrr_python3_rrr_message_data *data = (struct rrr_python3_rrr_message_data *) self;
+struct rrr_msg_msg *rrr_python3_rrr_msg_msg_get_message (struct rrr_msg_addr *message_addr, PyObject *self) {
+	struct rrr_python3_rrr_msg_msg_data *data = (struct rrr_python3_rrr_msg_msg_data *) self;
 	struct rrr_array array_tmp = {0};
 
-	struct rrr_message *ret = data->message_dynamic;
-	struct rrr_message *new_msg = NULL;
+	struct rrr_msg_msg *ret = data->message_dynamic;
+	struct rrr_msg_msg *new_msg = NULL;
 
 	if (MSG_CLASS(ret) != MSG_CLASS(&data->message_static)) {
 		RRR_MSG_0("Warning: Attempt to set class of message in python3 will always be overwritten, only type may be changed. Original class: %i, new class %i\n",
@@ -1107,10 +1108,10 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 	if (data->rrr_array != NULL) {
 		if (rrr_python3_array_iterate (
 				data->rrr_array,
-				__rrr_python3_array_rrr_message_get_message_store_array_node_callback,
+				__rrr_python3_array_rrr_msg_msg_get_message_store_array_node_callback,
 				&array_tmp
 		) != 0) {
-			RRR_MSG_0("Error while iterating array in rrr_python3_rrr_message_get_message\n");
+			RRR_MSG_0("Error while iterating array in rrr_python3_rrr_msg_msg_get_message\n");
 			goto out_err;
 		}
 
@@ -1121,7 +1122,7 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 				MSG_TOPIC_PTR(ret),
 				MSG_TOPIC_LENGTH(ret)
 		) != 0) {
-			RRR_MSG_0("Could not create new array message in rrr_python3_rrr_message_get_message\n");
+			RRR_MSG_0("Could not create new array message in rrr_python3_rrr_msg_msg_get_message\n");
 			goto out_err;
 		}
 
@@ -1156,21 +1157,21 @@ struct rrr_message *rrr_python3_rrr_message_get_message (struct rrr_message_addr
 		return ret;
 }
 
-PyObject *rrr_python3_rrr_message_new_from_message_and_address (
-		const struct rrr_message *msg,
-		const struct rrr_message_addr *message_addr
+PyObject *rrr_python3_rrr_msg_msg_new_from_message_and_address (
+		const struct rrr_msg_msg *msg,
+		const struct rrr_msg_addr *message_addr
 ) {
-	struct rrr_python3_rrr_message_data *ret = NULL;
+	struct rrr_python3_rrr_msg_msg_data *ret = NULL;
 	struct rrr_array array_tmp = {0};
 	PyObject *node_list = NULL;
 	PyObject *node_element_value = NULL;
 	PyObject *node_tag = NULL;
 
 	if (msg->msg_size < MSG_MIN_SIZE(&ret->message_static)) {
-		RRR_BUG("Received object of wrong size in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_BUG("Received object of wrong size in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 	}
 
-	ret = (struct rrr_python3_rrr_message_data *) rrr_python3_rrr_message_f_new(&rrr_python3_rrr_message_type, NULL, NULL);
+	ret = (struct rrr_python3_rrr_msg_msg_data *) rrr_python3_rrr_msg_msg_f_new(&rrr_python3_rrr_msg_msg_type, NULL, NULL);
 	if (ret == NULL) {
 		goto out_err;
 	}
@@ -1188,7 +1189,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	ret->message_dynamic = malloc(MSG_TOTAL_SIZE(msg));
 	if (ret->message_dynamic == NULL) {
-		RRR_MSG_0("Could not allocate memory in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not allocate memory in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1203,12 +1204,12 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 
 	ret->rrr_array = rrr_python3_array_new();
 	if (ret->rrr_array == NULL) {
-		RRR_MSG_0("Could not create array in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not create array in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 		goto out_err;
 	}
 
 	if (rrr_array_message_append_to_collection(&array_tmp, msg) != 0) {
-		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_message_new_from_message_and_address\n");
+		RRR_MSG_0("Could not parse array from message in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 		goto out_err;
 	}
 
@@ -1219,14 +1220,14 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		else {
 			node_tag = PyUnicode_FromString(node->tag);
 			if (node_tag == NULL) {
-				RRR_MSG_0("Could not create node for tag in rrr_python3_rrr_message_new_from_message_and_address\n");
+				RRR_MSG_0("Could not create node for tag in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 				goto out_err;
 			}
 		}
 
 		node_list = PyList_New(node->element_count);
 		if (node_list == NULL) {
-			RRR_MSG_0("Could not create list for node in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Could not create list for node in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 			goto out_err;
 		}
 
@@ -1238,10 +1239,10 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		 */
 		ssize_t element_size = node->total_stored_length / node->element_count;
 		if (node->total_stored_length != element_size * node->element_count) {
-			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Size inconsistency in array node in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 			goto out_err;
 		}
-		for (rrr_type_array_size i = 0; i < node->element_count; i++) {
+		for (rrr_length i = 0; i < node->element_count; i++) {
 			const char *data_pos = node->data + element_size * i;
 
 			if (RRR_TYPE_IS_64(node->definition->type)) {
@@ -1262,13 +1263,13 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 				node_element_value = PyByteArray_FromStringAndSize(data_pos, element_size);
 			}
 			else {
-				RRR_MSG_0("Unsupported data type %u in array in rrr_python3_rrr_message_new_from_message_and_address\n",
+				RRR_MSG_0("Unsupported data type %u in array in rrr_python3_rrr_msg_msg_new_from_message_and_address\n",
 						node->definition->type);
 				goto out_err;
 			}
 
 			if (node_element_value == NULL) {
-				RRR_MSG_0("Could not create array node data in rrr_python3_rrr_message_new_from_message_and_address\n");
+				RRR_MSG_0("Could not create array node data in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 				goto out_err;
 			}
 
@@ -1277,7 +1278,7 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		}
 
 		if (rrr_python3_array_append_value_with_list(ret->rrr_array, node_tag, node_list, node->definition->type) != 0) {
-			RRR_MSG_0("Could not append node value to array in rrr_python3_rrr_message_new_from_message_and_address\n");
+			RRR_MSG_0("Could not append node value to array in rrr_python3_rrr_msg_msg_new_from_message_and_address\n");
 			goto out_err;
 		}
 
@@ -1303,8 +1304,8 @@ PyObject *rrr_python3_rrr_message_new_from_message_and_address (
 		return (PyObject *) ret;
 }
 
-PyObject *rrr_python3_rrr_message_new_from_message (
-		const struct rrr_message *msg
+PyObject *rrr_python3_rrr_msg_msg_new_from_message (
+		const struct rrr_msg_msg *msg
 ) {
-	return rrr_python3_rrr_message_new_from_message_and_address(msg, NULL);
+	return rrr_python3_rrr_msg_msg_new_from_message_and_address(msg, NULL);
 }

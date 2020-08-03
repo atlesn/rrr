@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "test.h"
 #include "../main.h"
 #include "../../build_timestamp.h"
+#include "../lib/log.h"
 #include "../lib/rrr_strerror.h"
-#include "../lib/posix.h"
 #include "../lib/common.h"
 #include "../lib/configuration.h"
 #include "../lib/version.h"
@@ -37,11 +37,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../lib/stats/stats_engine.h"
 #include "../lib/message_broker.h"
 #include "../lib/fork.h"
-#include "../lib/log.h"
 #include "../lib/rrr_config.h"
+#include "../lib/util/posix.h"
 
 #include "test_usleep.h"
 #include "test_fixp.h"
+#include "test_inet.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("test");
 
@@ -119,6 +120,12 @@ int rrr_test_library_functions (void) {
 
 	ret |= ret_tmp;
 
+	TEST_BEGIN("inet functions") {
+		ret_tmp = rrr_test_inet();
+	} TEST_RESULT(ret_tmp == 0);
+
+	ret |= ret_tmp;
+
 	return ret;
 }
 
@@ -138,7 +145,7 @@ int main (int argc, const char **argv) {
 
 	// TODO : Implement stats engine for test program
 	struct rrr_stats_engine stats_engine = {0};
-	struct rrr_message_broker message_broker = {0};
+	struct rrr_msg_msg_broker message_broker = {0};
 	struct rrr_config *config = NULL;
 	struct rrr_fork_handler *fork_handler = NULL;
 
@@ -150,7 +157,7 @@ int main (int argc, const char **argv) {
 
 	rrr_signal_default_signal_actions_register();
 
-	if (rrr_message_broker_init(&message_broker) != 0) {
+	if (rrr_msg_msg_broker_init(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_cleanup_signal;
 	}
@@ -299,7 +306,7 @@ int main (int argc, const char **argv) {
 		cmd_destroy(&cmd);
 
 	out_cleanup_message_broker:
-		rrr_message_broker_cleanup(&message_broker);
+		rrr_msg_msg_broker_cleanup(&message_broker);
 
 //	out_cleanup_fork_handler:
 		rrr_fork_send_sigusr1_and_wait(fork_handler);

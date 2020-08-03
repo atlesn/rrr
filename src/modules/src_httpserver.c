@@ -26,20 +26,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
+#include "../lib/log.h"
+#include "../lib/instance_config.h"
+#include "../lib/instances.h"
+#include "../lib/threads.h"
+#include "../lib/message_broker.h"
+#include "../lib/array.h"
+#include "../lib/map.h"
 #include "../lib/http/http_session.h"
 #include "../lib/http/http_server.h"
 #include "../lib/net_transport/net_transport_config.h"
 #include "../lib/stats/stats_instance.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/instance_config.h"
-#include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/threads.h"
-#include "../lib/message_broker.h"
-#include "../lib/log.h"
-#include "../lib/array.h"
-#include "../lib/map.h"
-#include "../lib/ip_defines.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip_defines.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 //#include "../ip_util.h"
 
 #define RRR_HTTPSERVER_DEFAULT_PORT_PLAIN		80
@@ -263,14 +264,14 @@ struct httpserver_write_message_callback_data {
 
 // NOTE : Worker thread CTX in httpserver_write_message_callback
 static int httpserver_write_message_callback (
-		struct rrr_ip_buffer_entry *new_entry,
+		struct rrr_msg_msg_holder *new_entry,
 		void *arg
 ) {
 	struct httpserver_write_message_callback_data *callback_data = arg;
 
 	int ret = RRR_MESSAGE_BROKER_OK;
 
-	struct rrr_message *new_message = NULL;
+	struct rrr_msg_msg *new_message = NULL;
 
 	if (RRR_LL_COUNT(callback_data->array) > 0) {
 		ret = rrr_array_new_message_from_collection (
@@ -282,7 +283,7 @@ static int httpserver_write_message_callback (
 		);
 	}
 	else {
-		ret = rrr_message_new_empty (
+		ret = rrr_msg_msg_new_empty (
 				&new_message,
 				MSG_TYPE_MSG,
 				MSG_CLASS_DATA,
@@ -303,7 +304,7 @@ static int httpserver_write_message_callback (
 	new_message = NULL;
 
 	out:
-	rrr_ip_buffer_entry_unlock(new_entry);
+	rrr_msg_msg_holder_unlock(new_entry);
 	return ret;
 }
 
@@ -366,7 +367,7 @@ static int httpserver_receive_callback_get_post (
 //	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) sockaddr, socklen);
 //	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
 
-	if ((ret = rrr_message_broker_write_entry (
+	if ((ret = rrr_msg_msg_broker_write_entry (
 			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
 			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
 			sockaddr,

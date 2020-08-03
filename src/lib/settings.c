@@ -23,15 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
-#include "rrr_endian.h"
+#include "log.h"
+
 #include "socket/rrr_socket.h"
 #include "settings.h"
-#include "log.h"
-#include "macro_utils.h"
+#include "util/rrr_endian.h"
+#include "util/macro_utils.h"
 
-struct rrr_socket_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
-	struct rrr_socket_msg *ret = (struct rrr_socket_msg *) setting;
-	ret->msg_type = RRR_SOCKET_MSG_TYPE_SETTING;
+struct rrr_msg *rrr_setting_safe_cast (struct rrr_setting_packed *setting) {
+	struct rrr_msg *ret = (struct rrr_msg *) setting;
+	ret->msg_type = RRR_MSG_TYPE_SETTING;
 	ret->msg_size = sizeof(*setting);
 	ret->msg_value = 0;
 	return ret;
@@ -760,9 +761,9 @@ int __rrr_setting_pack(struct rrr_setting_packed **target, struct rrr_setting *s
 	memcpy(result->name, source->name, sizeof(result->name));
 	memcpy(result->data, source->data, source->data_size);
 
-	rrr_socket_msg_populate_head (
-			(struct rrr_socket_msg *) result,
-			RRR_SOCKET_MSG_TYPE_SETTING,
+	rrr_msg_populate_head (
+			(struct rrr_msg *) result,
+			RRR_MSG_TYPE_SETTING,
 			sizeof(*result),
 			0
 	);

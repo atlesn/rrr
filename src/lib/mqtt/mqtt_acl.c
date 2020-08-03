@@ -30,11 +30,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "mqtt_acl.h"
 #include "mqtt_topic.h"
 
-#include "../linked_list.h"
 #include "../rrr_strerror.h"
 #include "../socket/rrr_socket.h"
 #include "../parse.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 #define RRR_MQTT_ACL_ACTION_TO_STR(action) \
 	(action == RRR_MQTT_ACL_ACTION_RO ? "READ" : (action == RRR_MQTT_ACL_ACTION_RW ? "WRITE" : "DENY"))

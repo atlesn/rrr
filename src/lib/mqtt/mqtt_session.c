@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 void rrr_mqtt_session_properties_clear (
 		struct rrr_mqtt_session_properties *target
 ) {
-	rrr_mqtt_property_collection_destroy(&target->user_properties);
+	rrr_mqtt_property_collection_clear(&target->user_properties);
 
 	// The destroy function checks for NULL
 	rrr_mqtt_property_destroy(target->assigned_client_identifier);

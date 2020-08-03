@@ -27,8 +27,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "http_fields.h"
 #include "http_common.h"
 
-#include "../linked_list.h"
 #include "../read_constants.h"
+#include "../util/linked_list.h"
 
 #define RRR_HTTP_PARSE_OK			RRR_READ_OK
 #define RRR_HTTP_PARSE_HARD_ERR 	RRR_READ_HARD_ERROR
@@ -52,7 +52,7 @@ enum rrr_http_parse_type {
 		int chunk_idx,								\
 		int chunk_total,							\
 		const char *data_start,						\
-		ssize_t data_size,							\
+		rrr_biglength data_size,					\
 		void *arg
 
 struct rrr_http_header_field_definition;
@@ -88,8 +88,8 @@ struct rrr_http_header_field_definition {
 
 struct rrr_http_chunk {
 	RRR_LL_NODE(struct rrr_http_chunk);
-	ssize_t start;
-	ssize_t length;
+	size_t start;
+	size_t length;
 };
 
 struct rrr_http_chunks {
@@ -118,9 +118,10 @@ struct rrr_http_part {
 
 //	const void *data_ptr;
 
-	ssize_t headroom_length;
-	ssize_t header_length;
-	ssize_t data_length;
+	size_t headroom_length;
+	size_t header_length;
+	size_t data_length;
+	int data_length_unknown;
 };
 
 void rrr_http_part_destroy (struct rrr_http_part *part);
@@ -161,10 +162,10 @@ int rrr_http_part_process_multipart (
 );
 int rrr_http_part_parse (
 		struct rrr_http_part *result,
-		ssize_t *target_size,
-		ssize_t *parsed_bytes,
+		size_t *target_size,
+		size_t *parsed_bytes,
 		const char *data_ptr,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 );
@@ -177,5 +178,8 @@ int rrr_http_part_merge_chunks (
 		struct rrr_http_part *part,
 		const char *data_ptr
 );
-void rrr_http_part_dump_header (struct rrr_http_part *part);
+void rrr_http_part_dump_header (
+		struct rrr_http_part *part
+);
+
 #endif /* RRR_HTTP_PART_H */

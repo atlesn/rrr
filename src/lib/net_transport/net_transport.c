@@ -33,8 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "net_transport_config.h"
 
 #include "../log.h"
-#include "../posix.h"
-#include "../rrr_time.h"
+#include "../util/posix.h"
+#include "../util/rrr_time.h"
 
 #define RRR_NET_TRANSPORT_HANDLE_COLLECTION_LOCK() 		\
 	pthread_mutex_lock(&collection->lock)
@@ -693,6 +693,8 @@ int rrr_net_transport_iterate_with_callback (
 
 	RRR_LL_ITERATE_BEGIN(collection, struct rrr_net_transport_handle);
 		RRR_NET_TRANSPORT_HANDLE_LOCK(node, "rrr_net_transport_iterate_with_callback");
+
+//		printf("mode %i vs %i handle %u\n", mode, node->mode, node->handle);
 
 		if (mode != RRR_NET_TRANSPORT_SOCKET_MODE_ANY && mode != node->mode) {
 			goto unlock;

@@ -25,31 +25,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <src/lib/array.h>
-#include <src/lib/read.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <stdlib.h>
 
+#include "../lib/log.h"
 #include "../lib/settings.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
-#include "../lib/messages.h"
-#include "../lib/socket/rrr_socket.h"
-#include "../lib/socket/rrr_socket_client.h"
 #include "../lib/read.h"
+#include "../lib/array.h"
 #include "../lib/instances.h"
 #include "../lib/instance_config.h"
-#include "../lib/utf8.h"
 #include "../lib/message_broker.h"
-#include "../lib/ip_buffer_entry.h"
-#include "../lib/log.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/socket/rrr_socket.h"
+#include "../lib/socket/rrr_socket_client.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/utf8.h"
+#include "../lib/util/rrr_time.h"
 
 struct socket_data {
 	struct rrr_instance_thread_data *thread_data;
 	char *socket_path;
 	char *default_topic;
 	ssize_t default_topic_length;
-	int receive_rrr_message;
+	int receive_rrr_msg_msg;
 	int do_sync_byte_by_byte;
 	int do_unlink_if_exists;
 	struct rrr_array definitions;
@@ -112,12 +113,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 	// Receive full rrr message
 	int yesno = 0;
-	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
+	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_msg_msg") == RRR_SETTING_PARSE_ERROR) {
+		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_msg_msg of instance '%s', please specify 'yes' or 'no'\n",
 				config->name);
 		return 1;
 	}
-	data->receive_rrr_message = (yesno == 0 || yesno == 1 ? yesno : 0);
+	data->receive_rrr_msg_msg = (yesno == 0 || yesno == 1 ? yesno : 0);
 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
@@ -141,13 +142,13 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	}
 	data->do_sync_byte_by_byte = yesno;
 
-	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
-		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
+	if (data->receive_rrr_msg_msg != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
+		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_msg_msg is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
-	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
+	else if (data->receive_rrr_msg_msg == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
+		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_msg_msg was not 'yes', can't receive anything.\n",
 				config->name);
 		return 1;
 	}
@@ -160,15 +161,15 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 struct read_data_receive_message_callback_data {
 	struct socket_data *data;
-	struct rrr_ip_buffer_entry *entry;
+	struct rrr_msg_msg_holder *entry;
 };
 
-int read_rrr_message_callback (struct rrr_message **message, void *arg) {
+int read_rrr_msg_msg_callback (struct rrr_msg_msg **message, void *arg) {
 	struct read_data_receive_message_callback_data *callback_data = arg;
 	struct socket_data *data = callback_data->data;
 
 	if (MSG_TOPIC_LENGTH(*message) == 0 && data->default_topic != NULL) {
-		if (rrr_message_set_topic(message, data->default_topic, strlen(data->default_topic)) != 0) {
+		if (rrr_msg_msg_topic_set(message, data->default_topic, strlen(data->default_topic)) != 0) {
 			RRR_MSG_0("Could not set topic of message in rread_data_receive_callback of instance %s\n",
 					INSTANCE_D_NAME(data->thread_data));
 			return 1;
@@ -190,7 +191,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 
 	int ret = 0;
 
-	struct rrr_message *message = NULL;
+	struct rrr_msg_msg *message = NULL;
 
 	ssize_t parsed_bytes;
 	if ((ret = rrr_array_new_message_from_buffer (
@@ -216,7 +217,7 @@ int read_raw_data_callback (struct rrr_read_session *read_session, void *arg) {
 	return ret;
 }
 
-int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct socket_data *data = arg;
 
 	int ret = 0;
@@ -226,16 +227,16 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 			entry
 	};
 
-	if (data->receive_rrr_message != 0) {
+	if (data->receive_rrr_msg_msg != 0) {
 		struct rrr_read_common_receive_message_callback_data read_callback_data = {
-				read_rrr_message_callback,
+				read_rrr_msg_msg_callback,
 				NULL,
 				NULL,
 				&socket_callback_data
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
-				sizeof(struct rrr_socket_msg),
+				sizeof(struct rrr_msg),
 				4096,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
@@ -255,7 +256,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		};
 		if ((ret = rrr_socket_client_collection_read (
 				&data->clients,
-				sizeof(struct rrr_socket_msg),
+				sizeof(struct rrr_msg),
 				4096,
 				RRR_READ_F_NO_SLEEPING,
 				RRR_SOCKET_READ_METHOD_RECVFROM,
@@ -268,7 +269,7 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 		}
 	}
 
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	if (message == NULL) {
 		ret = RRR_MESSAGE_BROKER_DROP;
@@ -282,12 +283,12 @@ int read_data_receive_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
 	}
 
 	out:
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
 int socket_read_data(struct socket_data *data) {
-	return rrr_message_broker_write_entry (
+	return rrr_msg_msg_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,

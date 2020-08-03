@@ -32,6 +32,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "../build_timestamp.h"
 #include "main.h"
+#include "lib/log.h"
 #include "lib/cmdlineparser/cmdline.h"
 #include "lib/common.h"
 #include "lib/http/http_server.h"
@@ -40,10 +41,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/threads.h"
 #include "lib/version.h"
 #include "lib/rrr_config.h"
-#include "lib/log.h"
-#include "lib/rrr_time.h"
 #include "lib/rrr_strerror.h"
-#include "lib/macro_utils.h"
+#include "lib/util/macro_utils.h"
+#include "lib/util/rrr_time.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_server");
 

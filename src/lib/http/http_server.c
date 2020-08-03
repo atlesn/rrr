@@ -22,13 +22,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <string.h>
 
+#include "../log.h"
+
 #include "http_common.h"
 #include "http_server.h"
 #include "http_session.h"
 #include "http_util.h"
 #include "http_server_worker.h"
 
-#include "../log.h"
 #include "../threads.h"
 #include "../net_transport/net_transport.h"
 #include "../net_transport/net_transport_config.h"

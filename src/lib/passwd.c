@@ -34,10 +34,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "parse.h"
 #include "log.h"
 #include "passwd.h"
-#include "base64.h"
 #include "socket/rrr_socket.h"
 #include "rrr_strerror.h"
-#include "macro_utils.h"
+#include "util/macro_utils.h"
+#include "util/base64.h"
 
 #define RRR_PASSWD_HASH_MAX_LENGTH 512
 #define RRR_PASSWD_HASH_KEY_LENGTH (RRR_PASSWD_HASH_MAX_LENGTH/2)
@@ -358,7 +358,7 @@ int rrr_passwd_encrypt (char **result, const char *password) {
 
 	// Must be more than 256 to hold OpenSSL error strings
 	char *final = malloc(RRR_PASSWD_HASH_MAX_LENGTH + 1);
-	if (tmp == NULL) {
+	if (final == NULL) {
 		RRR_MSG_0("Could not allocate memory in rrr_passwd_encrypt\n");
 		ret = 1;
 		goto out;

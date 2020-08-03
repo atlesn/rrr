@@ -25,25 +25,28 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdlib.h>
+
+#include "../lib/log.h"
 
 #include "../lib/instance_config.h"
-#include "../lib/rrr_time.h"
 #include "../lib/threads.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
 #include "../lib/message_broker.h"
-#include "../lib/stats/stats_instance.h"
 #include "../lib/random.h"
-#include "../lib/log.h"
 #include "../lib/array.h"
-#include "../lib/linked_list.h"
-#include "../lib/gnu.h"
 #include "../lib/rrr_strerror.h"
+#include "../lib/stats/stats_instance.h"
+#include "../lib/messages/msg_msg.h"
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
+#include "../lib/util/linked_list.h"
+#include "../lib/util/gnu.h"
+#include "../lib/util/rrr_time.h"
 
-// No trailing /
-#define RRR_JOURNAL_TOPIC_PREFIX "/rrr/journal"
+// No trailing or leading /
+#define RRR_JOURNAL_TOPIC_PREFIX "rrr/journal"
 #define RRR_JOURNAL_HOSTNAME_MAX_LEN 256
 
 struct journal_queue_entry {
@@ -241,14 +244,14 @@ static void journal_log_hook (
 		return;
 }
 
-static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, void *arg) {
+static int journal_write_message_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 	struct journal_data *data = arg;
 
 	int ret = 0;
 
 	char *topic_tmp = NULL;
 	char *topic_tmp_final = NULL;
-	struct rrr_message *reading = NULL;
+	struct rrr_msg_msg *reading = NULL;
 	struct journal_queue_entry *queue_entry = NULL;
 
 	pthread_mutex_lock (&data->delivery_lock);
@@ -316,7 +319,7 @@ static int journal_write_message_callback (struct rrr_ip_buffer_entry *entry, vo
 	RRR_FREE_IF_NOT_NULL(topic_tmp_final);
 	RRR_FREE_IF_NOT_NULL(topic_tmp);
 	RRR_FREE_IF_NOT_NULL(reading);
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -394,7 +397,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 			}
 		}
 
-		if (rrr_message_broker_write_entry (
+		if (rrr_msg_msg_broker_write_entry (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				NULL,

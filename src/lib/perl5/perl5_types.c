@@ -25,9 +25,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <inttypes.h>
 
 #include "../log.h"
-#include "../linked_list.h"
 #include "../type.h"
-#include "../macro_utils.h"
+#include "../util/linked_list.h"
+#include "../util/macro_utils.h"
 
 #include "perl5.h"
 #include "perl5_types.h"
@@ -591,7 +591,7 @@ static int __rrr_perl5_type_to_value_ustr_istr (RRR_PERL5_TYPE_TO_VALUE_ARGS) {
 			goto increment_and_next;
 		}
 
-		ssize_t parsed_bytes = 0;
+		rrr_length parsed_bytes = 0;
 		if (def_orig->type == RRR_TYPE_USTR) {
 			ret = rrr_type_import_ustr_raw(pos, &parsed_bytes, node->data, node->data + node->data_size);
 		}

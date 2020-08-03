@@ -37,8 +37,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "lib/socket/rrr_socket.h"
 #include "lib/http/http_client.h"
 #include "lib/net_transport/net_transport_config.h"
-#include "lib/rrr_time.h"
 #include "lib/rrr_strerror.h"
+#include "lib/util/rrr_time.h"
 
 RRR_CONFIG_DEFINE_DEFAULT_LOG_PREFIX("rrr_http_client");
 

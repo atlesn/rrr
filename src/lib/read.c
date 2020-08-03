@@ -23,16 +23,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <string.h>
 
-#include "posix.h"
 #include "log.h"
 #include "read.h"
 #include "read_constants.h"
-#include "linked_list.h"
-#include "rrr_time.h"
-#include "messages.h"
-#include "message_addr.h"
-#include "message_log.h"
+#include "messages/msg_msg.h"
+#include "messages/msg_addr.h"
+#include "messages/msg_log.h"
 #include "array.h"
+#include "util/posix.h"
+#include "util/linked_list.h"
+#include "util/rrr_time.h"
 
 #define RRR_READ_COLLECTION_CLIENT_TIMEOUT_S 30
 
@@ -410,49 +410,49 @@ int rrr_read_common_receive_message_raw_callback (
 		ssize_t data_size,
 		struct rrr_read_common_receive_message_callback_data *callback_data
 ) {
-	struct rrr_socket_msg *socket_msg = *data;
+	struct rrr_msg *msg = *data;
 
 	int ret = 0;
 
 	// Header CRC32 is checked when reading the data from remote and getting size
-	if (rrr_socket_msg_head_to_host_and_verify(socket_msg, data_size) != 0) {
+	if (rrr_msg_head_to_host_and_verify(msg, data_size) != 0) {
 		RRR_MSG_0("Message was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	if (rrr_socket_msg_check_data_checksum_and_length(socket_msg, data_size) != 0) {
+	if (rrr_msg_check_data_checksum_and_length(msg, data_size) != 0) {
 		RRR_MSG_0 ("Message checksum was invalid in rrr_socket_common_receive_message_raw_callback\n");
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
 
-	if (RRR_SOCKET_MSG_IS_RRR_MESSAGE(socket_msg)) {
+	if (RRR_MSG_IS_RRR_MESSAGE(msg)) {
 		if (callback_data->callback_msg == NULL) {
-			RRR_MSG_0("Received an rrr_message in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_msg in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
-		struct rrr_message *message = (struct rrr_message *) socket_msg;
-		if (rrr_message_to_host_and_verify(message, data_size) != 0) {
+		struct rrr_msg_msg *message = (struct rrr_msg_msg *) msg;
+		if (rrr_msg_msg_to_host_and_verify(message, data_size) != 0) {
 			RRR_MSG_0("Message verification failed in read_message_raw_callback (size: %u<>%u)\n",
 					MSG_TOTAL_SIZE(message), message->msg_size);
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
-		ret = callback_data->callback_msg((struct rrr_message **) data, callback_data->callback_arg);
+		ret = callback_data->callback_msg((struct rrr_msg_msg **) data, callback_data->callback_arg);
 	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_ADDR(socket_msg)) {
+	else if (RRR_MSG_IS_RRR_MESSAGE_ADDR(msg)) {
 		if (callback_data->callback_addr_msg == NULL) {
-			RRR_MSG_0("Received an rrr_message_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_addr in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
-		struct rrr_message_addr *message = (struct rrr_message_addr *) socket_msg;
-		if (rrr_message_addr_to_host(message) != 0) {
+		struct rrr_msg_addr *message = (struct rrr_msg_addr *) msg;
+		if (rrr_msg_addr_to_host(message) != 0) {
 			RRR_MSG_0("Invalid data in received address message in rrr_read_common_receive_message_raw_callback\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
@@ -460,15 +460,15 @@ int rrr_read_common_receive_message_raw_callback (
 
 		ret = callback_data->callback_addr_msg(message, callback_data->callback_arg);
 	}
-	else if (RRR_SOCKET_MSG_IS_RRR_MESSAGE_LOG(socket_msg)) {
+	else if (RRR_MSG_IS_RRR_MESSAGE_LOG(msg)) {
 		if (callback_data->callback_log_msg == NULL) {
-			RRR_MSG_0("Received an rrr_message_log in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
+			RRR_MSG_0("Received an rrr_msg_msg_log in rrr_read_common_receive_message_raw_callback but no callback is defined for this type\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
 		}
 
-		struct rrr_message_log *message = (struct rrr_message_log *) socket_msg;
-		if (rrr_message_log_to_host(message) != 0) {
+		struct rrr_msg_log *message = (struct rrr_msg_log *) msg;
+		if (rrr_msg_msg_log_to_host(message) != 0) {
 			RRR_MSG_0("Invalid data in received log message in rrr_read_common_receive_message_raw_callback\n");
 			ret = RRR_READ_SOFT_ERROR;
 			goto out;
@@ -478,7 +478,7 @@ int rrr_read_common_receive_message_raw_callback (
 	}
 	else {
 		RRR_MSG_0("Received a socket message of unknown type %u in rrr_read_common_receive_message_raw_callback\n",
-				socket_msg->msg_type);
+				msg->msg_type);
 		ret = RRR_READ_SOFT_ERROR;
 		goto out;
 	}
@@ -517,10 +517,10 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 
 	*result = 0;
 
-	ssize_t target_size = 0;
-	int ret = rrr_socket_msg_get_target_size_and_check_checksum(
+	rrr_length target_size = 0;
+	int ret = rrr_msg_get_target_size_and_check_checksum(
 			&target_size,
-			(struct rrr_socket_msg *) data,
+			(struct rrr_msg *) data,
 			data_size
 	);
 
@@ -530,6 +530,15 @@ int rrr_read_common_get_session_target_length_from_message_and_checksum_raw (
 		}
 		goto out;
 	}
+
+#if RRR_LENGTH_MAX > SSIZE_MAX
+	if (target_size > SSIZE_MAX) {
+		RRR_MSG_0("Target size exceeded in rrr_read_common_get_session_target_length_from_message_and_checksum_raw: %" PRIrrrl ">%ld",
+				target_size, SSIZE_MAX);
+		ret = RRR_READ_SOFT_ERROR;
+		goto out;
+	}
+#endif
 
 	*result = target_size;
 
@@ -570,12 +579,12 @@ int rrr_read_common_get_session_target_length_from_array (
 	}
 
 	char *pos = read_session->rx_buf_ptr;
-	ssize_t wpos = read_session->rx_buf_wpos;
+	rrr_slength wpos = read_session->rx_buf_wpos;
 
 //	printf ("Array wpos: %li\n", wpos);
 
 	if (data->message_max_size != 0 && wpos > data->message_max_size) {
-		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%u>%li)\n",
+		RRR_DBG_1("Received message exceeds maximum size, is a delimeter missing? (%" PRIrrrsl ">%li)\n",
 				wpos, data->message_max_size);
 		return RRR_READ_SOFT_ERROR;
 	}

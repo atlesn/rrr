@@ -39,16 +39,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "rrr_socket.h"
 
-#include "../posix.h"
-#include "../linked_list.h"
-#include "../rrr_endian.h"
 #include "../log.h"
-#include "../rrr_time.h"
-#include "../crc32.h"
 #include "../rrr_strerror.h"
 #include "../log.h"
 #include "../rrr_umask.h"
-#include "../macro_utils.h"
+#include "../util/crc32.h"
+#include "../util/rrr_time.h"
+#include "../util/rrr_endian.h"
+#include "../util/macro_utils.h"
+#include "../util/posix.h"
+#include "../util/linked_list.h"
 
 /*
  * The meaning with this global tracking of sockets is to make sure that

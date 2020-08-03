@@ -29,7 +29,7 @@ struct rrr_thread_collection;
 struct rrr_instance_metadata_collection;
 struct rrr_config;
 struct rrr_stats_engine;
-struct rrr_message_broker;
+struct rrr_msg_msg_broker;
 struct rrr_fork_handler;
 
 int rrr_main_start_threads (
@@ -38,7 +38,7 @@ int rrr_main_start_threads (
 		struct rrr_config *global_config,
 		struct cmd_data *cmd,
 		struct rrr_stats_engine *stats,
-		struct rrr_message_broker *message_broker,
+		struct rrr_msg_msg_broker *message_broker,
 		struct rrr_fork_handler *fork_handler
 );
 

@@ -21,13 +21,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <string.h>
 #include <stdlib.h>
+#include <util/utf8.h>
 
 #include "../log.h"
 
 #include "mqtt_topic.h"
 
-#include "../utf8.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 struct topic_name_seq {
 	uint32_t c1;
@@ -99,16 +99,34 @@ int rrr_mqtt_topic_filter_validate_name (
 	);
 }
 
-int rrr_mqtt_topic_validate_name (
-		const char *topic_name
+int rrr_mqtt_topic_validate_name_with_end (
+		const char *topic_name,
+		const char *end
 ) {
+	if (topic_name == end) {
+		return 1;
+	}
+
 	struct topic_name_seq seq = { 0, 0, topic_name };
 
 	return rrr_utf8_validate_and_iterate (
 			topic_name,
-			strlen(topic_name),
+			end - topic_name,
 			__rrr_mqtt_topic_name_char_is_ok,
 			&seq
+	);
+}
+
+int rrr_mqtt_topic_validate_name (
+		const char *topic_name
+) {
+	if (topic_name == NULL || *topic_name == '\0') {
+		return 1;
+	}
+
+	return rrr_mqtt_topic_validate_name_with_end (
+			topic_name,
+			topic_name + strlen(topic_name)
 	);
 }
 
@@ -177,7 +195,7 @@ int rrr_mqtt_topic_match_tokens_recursively_acl (
 	else if (*(token_master->data) == '+' || *(token_slave->data) == '+') {
 //		printf ("Preliminary match by slave or master +\n");
 		if (*(token_master->data) == '$') {
-			printf ("Mismatch by master $\n");
+//			printf ("Mismatch by master $\n");
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 		// + matches everything on this level, continue
@@ -253,12 +271,25 @@ int rrr_mqtt_topic_tokens_clone (
 		return ret;
 }
 
-int rrr_mqtt_topic_tokenize (
+static const char *__rrr_mqtt_topic_strnchr (
+		const char *haystack,
+		const char chr,
+		const char *end
+) {
+	for (const char *pos = haystack; pos < end; pos++) {
+		if (*pos == chr) {
+			return pos;
+		}
+	}
+	return NULL;
+}
+
+int rrr_mqtt_topic_tokenize_with_end (
 		struct rrr_mqtt_topic_token **first_token,
-		const char *topic
+		const char *topic,
+		const char *end
 ) {
 	const char *pos = topic;
-	const char *end = pos + strlen(pos);
 
 	*first_token = NULL;
 
@@ -267,7 +298,7 @@ int rrr_mqtt_topic_tokenize (
 	int ret = 0;
 
 	if (pos < end) {
-		const char *token_end = strstr(pos, "/");
+		const char *token_end = __rrr_mqtt_topic_strnchr(pos, '/', end);
 		if (token_end == NULL) {
 			token_end = end;
 		}
@@ -287,7 +318,7 @@ int rrr_mqtt_topic_tokenize (
 		pos += len + 1;
 
 		if (pos < end) {
-			ret = rrr_mqtt_topic_tokenize(&token->next, pos);
+			ret = rrr_mqtt_topic_tokenize_with_end(&token->next, pos, end);
 			if (ret != 0) {
 				goto out_cleanup;
 			}
@@ -305,4 +336,12 @@ int rrr_mqtt_topic_tokenize (
 		RRR_FREE_IF_NOT_NULL(token);
 	out:
 		return ret;
+}
+
+int rrr_mqtt_topic_tokenize (
+		struct rrr_mqtt_topic_token **first_token,
+		const char *topic
+) {
+	const char *end = topic + strlen(topic);
+	return rrr_mqtt_topic_tokenize_with_end(first_token, topic, end);
 }

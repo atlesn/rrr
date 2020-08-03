@@ -26,30 +26,32 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "../lib/ip_buffer_entry.h"
+#include "../lib/log.h"
+
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
 #include "../lib/threads.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 
 struct buffer_data {
 	struct rrr_instance_thread_data *thread_data;
 };
 
-int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
+int buffer_poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 //	printf ("buffer got entry %p\n", entry);
 
 	struct rrr_instance_thread_data *thread_data = arg;
-	struct rrr_message *message = entry->message;
+	struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3("buffer instance %s received message with timestamp %" PRIu64 "\n",
 			INSTANCE_D_NAME(thread_data), message->timestamp);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	int ret = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
@@ -60,15 +62,15 @@ int poll_callback(RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 				INSTANCE_D_NAME(thread_data));
 	}
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
-static int inject (RRR_MODULE_INJECT_SIGNATURE) {
+static int buffer_inject (RRR_MODULE_INJECT_SIGNATURE) {
 	RRR_DBG_2("buffer instance %s: writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
 	// This will also unlock
-	if (rrr_message_broker_clone_and_write_entry (
+	if (rrr_msg_msg_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			message
@@ -80,18 +82,18 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	return 0;
 }
 
-void data_cleanup(void *arg) {
+void buffer_data_cleanup(void *arg) {
 	struct buffer_data *data = arg;
 	(void)(data);
 }
 
-int data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
+int buffer_data_init(struct buffer_data *data, struct rrr_instance_thread_data *thread_data) {
 	int ret = 0;
 
 	data->thread_data = thread_data;
 
 	if (ret != 0) {
-		data_cleanup(data);
+		buffer_data_cleanup(data);
 	}
 	return ret;
 }
@@ -100,14 +102,14 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	struct rrr_instance_thread_data *thread_data = thread->private_data;
 	struct buffer_data *data = thread_data->private_data = thread_data->private_memory;
 
-	if (data_init(data, thread_data) != 0) {
+	if (buffer_data_init(data, thread_data) != 0) {
 		RRR_MSG_0("Could not initialize thread_data in buffer instance %s\n", INSTANCE_D_NAME(thread_data));
 		pthread_exit(0);
 	}
 
 	RRR_DBG_1 ("buffer thread thread_data is %p\n", thread_data);
 
-	pthread_cleanup_push(data_cleanup, data);
+	pthread_cleanup_push(buffer_data_cleanup, data);
 //	pthread_cleanup_push(rrr_thread_set_stopping, thread);
 
 	rrr_thread_set_state(thread, RRR_THREAD_STATE_INITIALIZED);
@@ -123,7 +125,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	while (rrr_thread_check_encourage_stop(thread_data->thread) != 1) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
-		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, poll_callback, 50) != 0) {
+		if (rrr_poll_do_poll_delete (thread_data, thread_data->poll, buffer_poll_callback, 50) != 0) {
 			RRR_MSG_ERR("Error while polling in buffer instance %s\n",
 					INSTANCE_D_NAME(thread_data));
 			break;
@@ -137,7 +139,7 @@ static void *thread_entry_buffer (struct rrr_thread *thread) {
 	pthread_exit(0);
 }
 
-static int test_config (struct rrr_instance_config *config) {
+static int buffer_test_config (struct rrr_instance_config *config) {
 	RRR_DBG_1("Dummy configuration test for instance %s\n", config->name);
 	return 0;
 }
@@ -146,8 +148,8 @@ static struct rrr_module_operations module_operations = {
 		NULL,
 		thread_entry_buffer,
 		NULL,
-		test_config,
-		inject,
+		buffer_test_config,
+		buffer_inject,
 		NULL
 };
 

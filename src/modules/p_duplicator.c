@@ -26,16 +26,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <inttypes.h>
 
-#include "../lib/ip.h"
-#include "../lib/ip_buffer_entry.h"
+#include "../lib/log.h"
+
+#include "../lib/ip/ip.h"
+#include "../lib/message_holder/message_holder.h"
+#include "../lib/message_holder/message_holder_struct.h"
 #include "../lib/poll_helper.h"
 #include "../lib/buffer.h"
 #include "../lib/instance_config.h"
 #include "../lib/instances.h"
-#include "../lib/messages.h"
+#include "../lib/messages/msg_msg.h"
 #include "../lib/threads.h"
 #include "../lib/message_broker.h"
-#include "../lib/log.h"
 
 struct duplicator_data {
 	struct rrr_instance_thread_data *thread_data;
@@ -60,20 +62,20 @@ static int duplicator_poll_callback (RRR_MODULE_POLL_CALLBACK_SIGNATURE) {
 
 	(void)(data);
 
-	const struct rrr_message *message = entry->message;
+	const struct rrr_msg_msg *message = entry->message;
 
 	RRR_DBG_3("duplicator instance %s received a message with timestamp %llu\n",
 			INSTANCE_D_NAME(data->thread_data),
 			(long long unsigned int) message->timestamp
 	);
 
-	int ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+	int ret = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			entry
 	);
 
-	rrr_ip_buffer_entry_unlock(entry);
+	rrr_msg_msg_holder_unlock(entry);
 	return ret;
 }
 
@@ -142,7 +144,7 @@ static int duplicator_preload (struct rrr_thread *thread) {
 		goto out;
 	}
 
-	if ((ret = rrr_message_broker_setup_split_output_buffer (
+	if ((ret = rrr_msg_msg_broker_setup_split_output_buffer (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			slots

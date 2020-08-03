@@ -23,13 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <pthread.h>
 
+#include "../log.h"
+
 #include "http_part.h"
 #include "http_fields.h"
 #include "http_util.h"
 
-#include "../log.h"
 #include "../threads.h"
-#include "../macro_utils.h"
+#include "../util/macro_utils.h"
 
 #define RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part,data_ptr)	\
 		const char *data_start =								\
@@ -85,7 +86,7 @@ static int __rrr_http_header_parse_unsigned_value (RRR_HTTP_HEADER_FIELD_PARSER_
 
 	struct rrr_http_field *subvalue = RRR_LL_FIRST(&field->fields);
 
-	ssize_t parsed_bytes = 0;
+	rrr_length parsed_bytes = 0;
 	if ((ret = rrr_http_util_strtoull (
 			&field->value_unsigned,
 			&parsed_bytes,
@@ -174,7 +175,7 @@ static void __rrr_http_header_parse_unquote_fields (
 		return;
 	}
 
-	ssize_t output_size = 0;
+	rrr_length output_size = 0;
 	if (rrr_http_util_unquote_string(&output_size, field->value, field->value_size) != 0) {
 		RRR_DBG_1("Warning: Syntax error in '%s' subvalue field of '%s' in HTTP header\n",
 				field->name, parent_field_name);
@@ -278,8 +279,8 @@ static const struct rrr_http_header_field_definition *__rrr_http_header_field_ge
 		}
 
 		const char *result = NULL;
-		ssize_t result_len = 0;
 
+		rrr_length result_len = 0;
 		if (rrr_http_util_strcasestr (
 				&result,
 				&result_len,
@@ -442,15 +443,14 @@ static int __rrr_http_parse_allocate_string (char **result, const char *start, c
 
 static int __rrr_http_parse_response_code (
 		struct rrr_http_part *result,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		const char *buf,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
 
 	const char *start = buf + start_pos;
-	ssize_t tmp_len = 0;
 
 	*parsed_bytes = 0;
 
@@ -466,6 +466,8 @@ static int __rrr_http_parse_response_code (
 	}
 
 	const char *start_orig = start;
+
+	rrr_length tmp_len = 0;
 	if ((ret = rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
 		RRR_MSG_0("Could not understand HTTP response header/version in __rrr_http_parse_response_code\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -511,15 +513,14 @@ static int __rrr_http_parse_response_code (
 
 static int __rrr_http_parse_request (
 		struct rrr_http_part *result,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		const char *buf,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
 
 	const char *start = buf + start_pos;
-	ssize_t tmp_len = 0;
 
 	*parsed_bytes = 0;
 
@@ -567,7 +568,9 @@ static int __rrr_http_parse_request (
 	start += rrr_http_util_count_whsp(start, end);
 
 	const char *start_orig = start;
-	if ((ret = rrr_http_util_strcasestr(&start, &tmp_len, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
+
+	rrr_length protocol_length = 0;
+	if ((ret = rrr_http_util_strcasestr(&start, &protocol_length, start, crlf, "HTTP/1.1")) != 0 || start != start_orig) {
 		RRR_MSG_0("Invalid or missing protocol version in HTTP request\n");
 		ret = RRR_HTTP_PARSE_SOFT_ERR;
 		goto out;
@@ -576,7 +579,7 @@ static int __rrr_http_parse_request (
 	// Must be set when everything is complete
 	result->parsed_protocol_version = RRR_HTTP_PART_PROTOCOL_VERSION_1_1;
 
-	start += tmp_len;
+	start += protocol_length;
 	// We are generous, allow spaces after protocol version
 	start += rrr_http_util_count_whsp(start, end);
 
@@ -907,8 +910,8 @@ static int __rrr_http_parse_header_field (
 }
 
 static struct rrr_http_chunk *__rrr_http_part_chunk_new (
-		ssize_t chunk_start,
-		ssize_t chunk_length
+		rrr_length chunk_start,
+		rrr_length chunk_length
 ) {
 	struct rrr_http_chunk *new_chunk = malloc(sizeof(*new_chunk));
 	if (new_chunk == NULL) {
@@ -926,9 +929,9 @@ static struct rrr_http_chunk *__rrr_http_part_chunk_new (
 
 static int __rrr_http_part_parse_chunk_header (
 		struct rrr_http_chunk **result_chunk,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		const char *buf,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_INCOMPLETE;
@@ -950,8 +953,6 @@ static int __rrr_http_part_parse_chunk_header (
 	const char *start = buf + start_pos;
 	const char *pos = start;
 
-	ssize_t parsed_bytes_tmp = 0;
-
 	if (pos >= end) {
 		return RRR_HTTP_PARSE_INCOMPLETE;
 	}
@@ -971,6 +972,8 @@ static int __rrr_http_part_parse_chunk_header (
 
 	if (crlf != NULL) {
 		unsigned long long chunk_length = 0;
+
+		rrr_length parsed_bytes_tmp = 0;
 		if ((ret = rrr_http_util_strtoull(&chunk_length, &parsed_bytes_tmp, pos, crlf, 16)) != 0) {
 			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
@@ -982,7 +985,7 @@ static int __rrr_http_part_parse_chunk_header (
 			ret = RRR_HTTP_PARSE_INCOMPLETE;
 			goto out;
 		}
-		else if (ret != 0 || crlf - pos != parsed_bytes_tmp) {
+		else if (ret != 0 || (size_t) crlf - (size_t) pos != parsed_bytes_tmp) {
 			RRR_MSG_0("Error while parsing chunk length, invalid value\n");
 			ret = RRR_HTTP_PARSE_SOFT_ERR;
 			goto out;
@@ -997,7 +1000,7 @@ static int __rrr_http_part_parse_chunk_header (
 		}
 
 		struct rrr_http_chunk *new_chunk = NULL;
-		ssize_t chunk_start = pos - buf;
+		rrr_length chunk_start = pos - buf;
 
 //		printf ("First character in chunk: %i\n", *(buf + chunk_start));
 
@@ -1016,9 +1019,9 @@ static int __rrr_http_part_parse_chunk_header (
 
 static int __rrr_http_part_parse_header_fields (
 		struct rrr_http_header_field_collection *target,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		const char *buf,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
@@ -1066,9 +1069,9 @@ static int __rrr_http_part_parse_header_fields (
 
 static int __rrr_http_part_parse_chunk (
 		struct rrr_http_chunks *chunks,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		const char *buf,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end
 ) {
 	int ret = 0;
@@ -1077,8 +1080,8 @@ static int __rrr_http_part_parse_chunk (
 
 	const struct rrr_http_chunk *last_chunk = RRR_LL_LAST(chunks);
 
-	ssize_t parsed_bytes_total = 0;
-	ssize_t parsed_bytes_previous_chunk = 0;
+	size_t parsed_bytes_total = 0;
+	size_t parsed_bytes_previous_chunk = 0;
 
 	if (last_chunk != NULL) {
 		if (buf + last_chunk->start + last_chunk->length > end) {
@@ -1191,7 +1194,7 @@ int rrr_http_part_header_fields_iterate (
 int rrr_http_part_chunks_iterate (
 		struct rrr_http_part *part,
 		const char *data_ptr,
-		int (*callback)(int chunk_idx, int chunk_total, const char *data_start, ssize_t data_size, void *arg),
+		int (*callback)(RRR_HTTP_PART_ITERATE_CALLBACK_ARGS),
 		void *callback_arg
 ) {
 	int ret = 0;
@@ -1231,10 +1234,10 @@ int rrr_http_part_chunks_iterate (
 
 int rrr_http_part_parse (
 		struct rrr_http_part *part,
-		ssize_t *target_size,
-		ssize_t *parsed_bytes,
+		size_t *target_size,
+		size_t *parsed_bytes,
 		const char *data_ptr,
-		ssize_t start_pos,
+		size_t start_pos,
 		const char *end,
 		enum rrr_http_parse_type parse_type
 ) {
@@ -1248,8 +1251,8 @@ int rrr_http_part_parse (
 	*target_size = 0;
 	*parsed_bytes = 0;
 
-	ssize_t parsed_bytes_tmp = 0;
-	ssize_t parsed_bytes_total = 0;
+	size_t parsed_bytes_tmp = 0;
+	size_t parsed_bytes_total = 0;
 
 	if (part->is_chunked == 1) {
 		goto parse_chunked;
@@ -1419,7 +1422,7 @@ int rrr_http_part_parse (
 			}
 			else {
 				// Unknown size, parse until connection closes
-				part->data_length = -1;
+				part->data_length_unknown = 1;
 				*target_size = 0;
 				ret = RRR_HTTP_PARSE_INCOMPLETE;
 			}
@@ -1462,7 +1465,7 @@ static int __rrr_http_part_find_boundary (
 		const char *start,
 		const char *end,
 		const char *boundary,
-		ssize_t boundary_length
+		size_t boundary_length
 ) {
 	int ret = 1;
 
@@ -1491,12 +1494,12 @@ static int __rrr_http_part_find_boundary (
 static int __rrr_http_part_process_multipart_part (
 		struct rrr_http_part *parent,
 		const char *data_ptr,
-		ssize_t *parsed_bytes,
+		size_t *parsed_bytes,
 		int *end_found,
 		const char *start_orig,
 		const char *end,
 		const char *boundary,
-		ssize_t boundary_length
+		size_t boundary_length
 ) {
 	int ret = RRR_HTTP_PARSE_OK;
 
@@ -1584,8 +1587,8 @@ static int __rrr_http_part_process_multipart_part (
 		goto out;
 	}
 
-	ssize_t target_size = 0;
-	ssize_t parsed_bytes_tmp = 0;
+	size_t target_size = 0;
+	size_t parsed_bytes_tmp = 0;
 
 	if ((ret = rrr_http_part_parse (
 			new_part,
@@ -1611,18 +1614,14 @@ static int __rrr_http_part_process_multipart_part (
 	if (new_part->header_complete != 1) {
 		RRR_DBG("Warning: Invalid header specification in HTTP multipart request part header\n");
 	}
-
+/* Commented out after data_length was changed to unsigned
 	if (new_part->data_length != -1) {
 		RRR_DBG("Warning: Invalid length specification in HTTP multipart request part header\n");
 	}
+*/
 
 	new_part->headroom_length = start - data_ptr;
 	new_part->data_length = (boundary_pos - start) - new_part->header_length;
-
-	if (new_part->data_length < 0) {
-		RRR_BUG("BUG: Part length was < 0 in __rrr_http_part_process_multipart_part ((%p - %p) - %li = %li)\n",
-				boundary_pos, start, new_part->header_length, new_part->data_length);
-	}
 
 	if (RRR_DEBUGLEVEL_3) {
 		rrr_http_part_dump_header(new_part);
@@ -1686,7 +1685,7 @@ int rrr_http_part_process_multipart (
 	RRR_HTTP_PART_DECLARE_DATA_START_AND_END(part, data_ptr);
 
 	while (data_start <= data_end && --max_parts > 0) {
-		ssize_t parsed_bytes_tmp = 0;
+		size_t parsed_bytes_tmp = 0;
 
 		if ((ret = __rrr_http_part_process_multipart_part (
 				part,
@@ -1775,8 +1774,8 @@ static int __rrr_http_part_parse_query_string (
 			}
 
 			unsigned long long int result = 0;
-			ssize_t result_len = 0;
 
+			rrr_length result_len = 0;
 			if (rrr_http_util_strtoull (&result, &result_len, start + 1, start + 3, 16) != 0) {
 				RRR_MSG_0("Invalid %%-sequence in HTTP query string\n");
 				rrr_http_util_print_where_message(start, end);
@@ -2022,16 +2021,20 @@ int rrr_http_part_merge_chunks (
 	return ret;
 }
 
-static void __rrr_http_part_dump_header_field (struct rrr_http_header_field *field) {
+static void __rrr_http_part_dump_header_field (
+		struct rrr_http_header_field *field
+) {
 	printf ("%s: unsigned %llu - signed %lli - raw '%s'\n",
 			field->name, field->value_unsigned, field->value_signed, field->value);
 
 	RRR_LL_ITERATE_BEGIN(&field->fields, struct rrr_http_field);
-		printf("\t%s: %li bytes\n", node->name, node->value_size);
+		printf("\t%s: %" PRIrrrl " bytes\n", node->name, node->value_size);
 	RRR_LL_ITERATE_END();
 }
 
-void rrr_http_part_dump_header (struct rrr_http_part *part) {
+void rrr_http_part_dump_header (
+		struct rrr_http_part *part
+) {
 	printf ("== DUMP HTTP PART HEADER ====================================\n");
 	RRR_LL_ITERATE_BEGIN(&part->headers, struct rrr_http_header_field);
 		__rrr_http_part_dump_header_field(node);
