@@ -741,10 +741,18 @@ int rrr_mqtt_common_handle_publish (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	// must be set to 1
 	int allow_missing_originating_packet = 0;
 
+	if (RRR_MQTT_P_PUBLISH_GET_FLAG_DUP(publish) != 0 && RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
+		RRR_MSG_0("Recevied PUBLISH with DUP 1 and QoS 0, this is a protocol error\n");
+		ret = RRR_MQTT_SOFT_ERROR;
+		goto out;
+	}
+
+	// Parser may set reason on the publish (in case of invalid data) which we check here
 	if (publish->reason_v5 != RRR_MQTT_P_5_REASON_OK) {
 		allow_missing_originating_packet = 1;
 
-		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish)) {
+		// If QoS is 0, we cannot send error reply and must close connection
+		if (RRR_MQTT_P_PUBLISH_GET_FLAG_QOS(publish) == 0) {
 			RRR_MSG_0("Closing connection due to malformed PUBLISH packet with QoS 0\n");
 			ret = RRR_MQTT_SOFT_ERROR;
 			goto out;

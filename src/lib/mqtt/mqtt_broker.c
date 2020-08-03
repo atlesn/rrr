@@ -436,6 +436,11 @@ static int __rrr_mqtt_broker_handle_connect (RRR_MQTT_TYPE_HANDLER_DEFINITION) {
 	}
 
 	if (connect->client_identifier == NULL || *(connect->client_identifier) == '\0') {
+		if (RRR_MQTT_P_CONNECT_GET_FLAG_CLEAN_START(connect) == 0) {
+			RRR_MSG_0("Received CONNECT with zero bytes client identifier and clean start set to 0\n");
+			reason_v5 = RRR_MQTT_P_5_REASON_CLIENT_ID_REJECTED;
+			goto out_send_connack;
+		}
 		// Note: Write ID to connectION, not the connect packet
 		RRR_FREE_IF_NOT_NULL(connection->client_id);
 		if ((ret = __rrr_mqtt_broker_generate_unique_client_id (&connection->client_id, connection, data)) != 0) {
@@ -862,9 +867,15 @@ static int __rrr_mqtt_broker_handle_disconnect (RRR_MQTT_TYPE_HANDLER_DEFINITION
 		}
 	}
 
+	RRR_DBG_1("DISCONNECT from client '%s' in MQTT broker reason %u\n",
+			(connection->client_id != NULL ? connection->client_id : ""), disconnect->reason);
+
+//	printf("state before: %u\n", connection->state_flags);
+
 	ret = rrr_mqtt_common_update_conn_state_upon_disconnect(connection, disconnect);
 
-	out:
+//	printf("state after: %u\n", connection->state_flags);
+
 	return ret;
 }
 

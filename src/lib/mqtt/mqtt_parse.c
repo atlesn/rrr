@@ -215,17 +215,19 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 		parse_state->end = parse_state->start + parse_state->bytes_parsed;						\
 	}} while (0)
 
-#define PARSE_UTF8(type,target)																	\
+#define PARSE_UTF8(type,target,min_length,field_name)											\
 	parse_state->start = parse_state->end;														\
 	RRR_FREE_IF_NOT_NULL(type->target);															\
 	if ((parse_state->ret = __rrr_mqtt_parse_utf8 (												\
 			&type->target,																		\
 			parse_state->start,																	\
 			session->buf + session->buf_wpos,													\
-			&(parse_state->bytes_parsed)														\
+			&(parse_state->bytes_parsed),														\
+			min_length																			\
 	)) != 0) {																					\
 		if (parse_state->ret != RRR_MQTT_INCOMPLETE) {											\
-			RRR_MSG_0("Error while parsing UTF8 of MQTT message of type %s\n",					\
+			RRR_MSG_0(	"Error while parsing UTF8 of MQTT message of type %s "					\
+						"in field '" RRR_QUOTE(field_name) "'\n",								\
 					RRR_MQTT_P_GET_TYPE_NAME(type));											\
 		}																						\
 		return parse_state->ret;																\
@@ -264,6 +266,9 @@ static int __rrr_mqtt_parse_save_and_check_reason (struct rrr_mqtt_p *packet, ui
 		return ret;																				\
 	}																							\
 	end = start + bytes_parsed
+
+#define PARSE_PREV_PARSED_BYTES() \
+	(parse_state->bytes_parsed)
 
 #define PARSE_CHECK_ZERO_PAYLOAD()																\
 	do {parse_state->payload_length = session->target_size - session->payload_pos;				\
@@ -441,12 +446,17 @@ static int __rrr_mqtt_parse_utf8_validate_callback (uint32_t character, void *ar
 }
 
 static int __rrr_mqtt_parse_utf8 (
-		char **target, const char *start, const char *final_end, ssize_t *bytes_parsed
+		char **target, const char *start, const char *final_end, ssize_t *bytes_parsed, uint16_t minimum_length
 ) {
 	uint16_t utf8_length = 0;
 	int ret = __rrr_mqtt_parse_blob(target, start, final_end, bytes_parsed, &utf8_length);
 	if (ret != RRR_MQTT_OK) {
 		return ret;
+	}
+
+	if (utf8_length < minimum_length) {
+		RRR_MSG_0("Too short UTF-8 string encountered (%u<%u)\n", utf8_length, minimum_length);
+		return RRR_MQTT_SOFT_ERROR;
 	}
 
 	struct parse_utf8_validate_callback_data callback_data = {0, 0};
@@ -585,7 +595,7 @@ static int __rrr_mqtt_parse_property_blob (RRR_PROPERTY_PARSER_DEFINITION) {
 static int __rrr_mqtt_parse_property_utf8 (RRR_PROPERTY_PARSER_DEFINITION) {
 	int ret = 0;
 
-	ret = __rrr_mqtt_parse_utf8 (&target->data, start, session->buf + session->buf_wpos, bytes_parsed_final);
+	ret = __rrr_mqtt_parse_utf8 (&target->data, start, session->buf + session->buf_wpos, bytes_parsed_final, 0);
 
 	target->length = target->length_orig = (*bytes_parsed_final) - sizeof(uint16_t);
 	target->internal_data_type = RRR_MQTT_PROPERTY_DATA_TYPE_INTERNAL_BLOB;
@@ -772,16 +782,22 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 		}
 	}
 
+	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL_QOS(connect) > 2) {
+		RRR_MSG_0("Received CONNECT with QoS >2\n");
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
 	PARSE_U16(connect,keep_alive);
 	PARSE_PROPERTIES_IF_V5(connect,properties);
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(connect);
 
-	PARSE_UTF8(connect,client_identifier);
+	// May be zero bytes
+	PARSE_UTF8(connect,client_identifier,0,client identifier);
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_WILL(connect) != 0) {
 		PARSE_PROPERTIES_IF_V5(connect,will_properties);
-		PARSE_UTF8(connect,will_topic);
+		PARSE_UTF8(connect,will_topic,1,will topic);
 		if (rrr_mqtt_topic_validate_name(connect->will_topic) != 0) {
 			RRR_MSG_0("Invalid will topic name '%s' in received CONNECT packet\n",
 					connect->will_topic);
@@ -792,11 +808,19 @@ int rrr_mqtt_parse_connect (struct rrr_mqtt_parse_session *session) {
 	}
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_USER_NAME(connect) != 0) {
-		PARSE_UTF8(connect,username);
+		if (PARSE_CHECK_TARGET_END()) {
+			RRR_MSG_0("Username field missing in CONNECT, packet was too short\n");
+			return RRR_MQTT_SOFT_ERROR;
+		}
+		PARSE_UTF8(connect,username,1,username);
 	}
 
 	if (RRR_MQTT_P_CONNECT_GET_FLAG_PASSWORD(connect) != 0) {
-		PARSE_UTF8(connect,password);
+		if (PARSE_CHECK_TARGET_END()) {
+			RRR_MSG_0("Password field missing in CONNECT, packet was too short\n");
+			return RRR_MQTT_SOFT_ERROR;
+		}
+		PARSE_UTF8(connect,password,1,password);
 	}
 
 	PARSE_END_PAYLOAD();
@@ -857,12 +881,12 @@ int rrr_mqtt_parse_publish (struct rrr_mqtt_parse_session *session) {
 	}
 
 	// PARSE TOPIC
-	PARSE_UTF8(publish,topic);
+	PARSE_UTF8(publish,topic,1,topic);
 
 	if (rrr_mqtt_topic_validate_name(publish->topic) != 0) {
 		RRR_MSG_0("Invalid topic name '%s' in received PUBLISH packet, it will be rejected\n",
 				publish->topic);
-		publish->reason_v5 = RRR_MQTT_P_5_REASON_TOPIC_NAME_INVALID;
+		return RRR_MQTT_SOFT_ERROR;
 	}
 
 	// If previous parse was incomplete, free the tree
@@ -930,6 +954,11 @@ int rrr_mqtt_parse_def_puback (struct rrr_mqtt_parse_session *session) {
 		PARSE_PROPERTIES_IF_V5(def_puback,properties);
 	}
 
+	if (!PARSE_CHECK_TARGET_END()) {
+		RRR_MSG_0("Received %s which was too long\n", session->type_properties->name);
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(def_puback);
 	PARSE_END_PAYLOAD();
 }
@@ -947,12 +976,22 @@ static int __rrr_mqtt_parse_subscribe_unsubscribe (
 
 	PARSE_END_HEADER_BEGIN_PAYLOAD_AT_CHECKPOINT(sub_usub);
 
+	if (PARSE_CHECK_TARGET_END()) {
+		RRR_MSG_0("Received SUBSCRIBE/UNSUBSCRIBE with zero payload\n");
+		return RRR_MQTT_SOFT_ERROR;
+	}
+
 	/* If we need several attempts to parse the SUBSCRIBE-packet, the subscriptions parsed in the
 	 * previous rounds are parsed again and overwritten. We do however skip to our payload position
 	 * checkpoint to avoid doing this with all of the subscriptions, only at most one should actually
 	 * be overwritten. */
 	while (!PARSE_CHECK_TARGET_END()) {
-		PARSE_UTF8(sub_usub,data_tmp);
+		PARSE_UTF8(sub_usub,data_tmp,1,topic);
+
+		if (PARSE_PREV_PARSED_BYTES() == 0) {
+			RRR_MSG_0("Received SUBSCRIBE/UNSUBSCRIBE with zero-length topic\n");
+			return RRR_MQTT_SOFT_ERROR;
+		}
 
 		uint8_t subscription_flags = 0;
 		uint8_t reserved = 0;

@@ -867,27 +867,39 @@ static struct rrr_mqtt_session_ram *__rrr_mqtt_session_collection_ram_session_fi
 
 static int __rrr_mqtt_session_ram_incref_and_add_to_to_remote_queue (
 		struct rrr_mqtt_session_ram *ram_session,
-		struct rrr_mqtt_p *packet
+		struct rrr_mqtt_p *packet,
+		int delayed_write
 ) {
+	int ret = 0;
+
 	RRR_MQTT_P_INCREF(packet);
-	if (__rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, packet, sizeof(struct rrr_mqtt_p), 0, 0) != 0) {
-		RRR_MQTT_P_DECREF(packet);
-		return 1;
+
+	if (delayed_write) {
+		ret = __rrr_mqtt_session_ram_fifo_write_delayed(&ram_session->to_remote_queue.buffer, packet, sizeof(struct rrr_mqtt_p), 0);
+	}
+	else {
+		ret = __rrr_mqtt_session_ram_fifo_write(&ram_session->to_remote_queue.buffer, packet, sizeof(struct rrr_mqtt_p), 0, 0);
 	}
 
-	return 0;
+	if (ret != 0) {
+		RRR_MQTT_P_DECREF(packet);
+		ret = 1;
+	}
+
+	return ret;
 }
 
 static int __rrr_mqtt_session_ram_lock_reset_id_incref_and_add_to_to_remote_queue (
 		struct rrr_mqtt_session_ram *ram_session,
-		struct rrr_mqtt_p *packet
+		struct rrr_mqtt_p *packet,
+		int delayed_write
 ) {
 	RRR_MQTT_P_LOCK(packet);
 	packet->packet_identifier = 0;
 	packet->dup = 0;
 	RRR_MQTT_P_UNLOCK(packet);
 
-	return __rrr_mqtt_session_ram_incref_and_add_to_to_remote_queue(ram_session, packet);
+	return __rrr_mqtt_session_ram_incref_and_add_to_to_remote_queue(ram_session, packet, delayed_write);
 }
 
 static int __rrr_mqtt_session_ram_release_packet_id (
@@ -1390,7 +1402,7 @@ static int __rrr_mqtt_session_ram_clean_unlocked (struct rrr_mqtt_session_ram *r
 
 	// Add PUBLISH-packets to preserve back to buffer. The list is finally cleared further down.
 	RRR_LL_ITERATE_BEGIN(&preserve_data, struct rrr_mqtt_p);
-		if (__rrr_mqtt_session_ram_lock_reset_id_incref_and_add_to_to_remote_queue (ram_session, node) != 0) {
+		if (__rrr_mqtt_session_ram_lock_reset_id_incref_and_add_to_to_remote_queue (ram_session, node, 0) != 0) {
 			RRR_MSG_0("Could not write to to_remote_queue in __rrr_mqtt_session_ram_clean_unlocked\n");
 			ret = RRR_MQTT_SESSION_ERROR;
 			goto out;
@@ -2944,7 +2956,7 @@ static int __rrr_mqtt_session_ram_send_packet (
 	out_write_to_buffer:
 	RRR_MQTT_P_UNLOCK(packet);
 
-	if (__rrr_mqtt_session_ram_incref_and_add_to_to_remote_queue(ram_session, packet) != 0) {
+	if (__rrr_mqtt_session_ram_incref_and_add_to_to_remote_queue(ram_session, packet, 0) != 0) {
 		RRR_MSG_0("Could not write to to_remote_queue in __rrr_mqtt_session_ram_send_packet\n");
 		ret = 1;
 	}
@@ -3017,7 +3029,8 @@ static int __rrr_mqtt_session_ram_queue_publish_from_retain_callback (
 
 	if (__rrr_mqtt_session_ram_lock_reset_id_incref_and_add_to_to_remote_queue (
 			callback_data->ram_session,
-			(struct rrr_mqtt_p *) new_publish
+			(struct rrr_mqtt_p *) new_publish,
+			1 // <!-- Put publishes in delayed write queue to allow PUBACK to arrive first
 	) != 0) {
 		RRR_MSG_0("Error while adding publish to queue in __rrr_mqtt_session_ram_queue_publish_from_retain_callback\n");
 		ret = 1;
@@ -3061,9 +3074,15 @@ static int __rrr_mqtt_session_ram_receive_packet (
 		//        a lot of subscriptions however, it's better to collect all subscriptions
 		//        first like we do now.
 
+		struct rrr_mqtt_p_subscribe *subscribe = (struct rrr_mqtt_p_subscribe *) packet;
+
+		if (RRR_LL_COUNT(subscribe->subscriptions) == 0) {
+			RRR_BUG("BUG: No subscriptions in SUBSCRIBE in __rrr_mqtt_session_ram_receive_packet, parser has to catch this\n");
+		}
+
 		if ((ret = __rrr_mqtt_session_ram_add_subscriptions (
 				ram_session,
-				(struct rrr_mqtt_p_subscribe *) packet,
+				subscribe,
 				__rrr_mqtt_session_ram_receive_new_subscription_callback,
 				&callback_data_add
 		)) != 0) {

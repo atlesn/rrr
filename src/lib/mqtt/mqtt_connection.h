@@ -48,13 +48,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define RRR_MQTT_CONN_STATE_RECEIVE_CONNACK_ALLOWED		(1<<1)		//    2
 #define RRR_MQTT_CONN_STATE_SEND_ANY_ALLOWED			(1<<2)		//    4
 #define RRR_MQTT_CONN_STATE_RECEIVE_ANY_ALLOWED			(1<<3)		//    8
-// It is not always possible to destroy a connection immediately when we
-// send a disconnect packet (or pretend to). This flags tells housekeeping
-// to destroy the connection, and also blocks further usage.
-#define RRR_MQTT_CONN_STATE_DISCONNECTED				(1<<4)		//   16
 // After disconnecting, we wait a bit before close()-ing to let the client close first. The
 // broker sets the timeout for this, the client sets it to 0.
-#define RRR_MQTT_CONN_STATE_DISCONNECT_WAIT				(1<<5)		//   32
+#define RRR_MQTT_CONN_STATE_CLOSE_WAIT					(1<<5)		//   32
+// When close wait timer has started, state will transition into CLOSED. When timer is
+// complete, the connection is destroyed.
 #define RRR_MQTT_CONN_STATE_CLOSED						(1<<6)		//   64
 
 #define RRR_MQTT_CONN_EVENT_DISCONNECT		1
@@ -62,13 +60,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK_NO_ERROR								\
 		struct rrr_mqtt_conn *connection = handle->application_private_ptr;				\
-		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)) {	\
+		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)) {	\
 			return RRR_MQTT_OK;															\
 		}} while (0)
 
 #define RRR_MQTT_DEFINE_CONN_FROM_HANDLE_AND_CHECK																					\
 		struct rrr_mqtt_conn *connection = handle->application_private_ptr;															\
-		do { if (RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
+		do { if (RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(connection)||RRR_MQTT_CONN_STATE_IS_CLOSED(connection)) {	\
 			return RRR_MQTT_SOFT_ERROR;																								\
 		}} while (0)
 
@@ -165,14 +163,8 @@ struct rrr_mqtt_conn {
 #define RRR_MQTT_CONN_STATE_RECEIVE_CONNECT_IS_ALLOWED(c) \
 	((c)->state_flags == RRR_MQTT_CONN_STATE_NEW)
 
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECT_WAIT(c) \
-	(((c)->state_flags & RRR_MQTT_CONN_STATE_DISCONNECT_WAIT) != 0)
-
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECTED(c) \
-	(((c)->state_flags & RRR_MQTT_CONN_STATE_DISCONNECTED) != 0)
-
-#define RRR_MQTT_CONN_STATE_IS_DISCONNECTED_OR_DISCONNECT_WAIT(c) \
-	(((c)->state_flags & (RRR_MQTT_CONN_STATE_DISCONNECTED|RRR_MQTT_CONN_STATE_DISCONNECT_WAIT)) != 0)
+#define RRR_MQTT_CONN_STATE_IS_CLOSED_OR_CLOSE_WAIT(c) \
+	(((c)->state_flags & (RRR_MQTT_CONN_STATE_CLOSED|RRR_MQTT_CONN_STATE_CLOSE_WAIT)) != 0)
 
 #define RRR_MQTT_CONN_STATE_IS_CLOSED(c) \
 	(((c)->state_flags & RRR_MQTT_CONN_STATE_CLOSED) != 0)

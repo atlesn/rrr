@@ -195,7 +195,7 @@ int rrr_mqtt_topic_match_tokens_recursively_acl (
 	else if (*(token_master->data) == '+' || *(token_slave->data) == '+') {
 //		printf ("Preliminary match by slave or master +\n");
 		if (*(token_master->data) == '$') {
-			printf ("Mismatch by master $\n");
+//			printf ("Mismatch by master $\n");
 			return RRR_MQTT_TOKEN_MISMATCH;
 		}
 		// + matches everything on this level, continue
