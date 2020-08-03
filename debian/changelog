@@ -1,3 +1,9 @@
+rrr (1.8-1) buster; urgency=medium
+
+  * Fix bug causing multiple configuration parameters not to work
+
+ -- Atle Solbakken <atle@goliathdns.no>  Mon, 03 Aug 2020 17:44:39 +0200
+
 rrr (1.8-0) buster; urgency=medium
 
   * Support will messages and retain in MQTT broker.

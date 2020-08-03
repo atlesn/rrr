@@ -50,7 +50,7 @@ struct socket_data {
 	char *socket_path;
 	char *default_topic;
 	ssize_t default_topic_length;
-	int receive_rrr_msg_msg;
+	int receive_rrr_message;
 	int do_sync_byte_by_byte;
 	int do_unlink_if_exists;
 	struct rrr_array definitions;
@@ -113,12 +113,12 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 
 	// Receive full rrr message
 	int yesno = 0;
-	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_msg_msg") == RRR_SETTING_PARSE_ERROR) {
-		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_msg_msg of instance '%s', please specify 'yes' or 'no'\n",
+	if (rrr_instance_config_check_yesno (&yesno, config, "socket_receive_rrr_message") == RRR_SETTING_PARSE_ERROR) {
+		RRR_MSG_0 ("mysql: Could not understand argument socket_receive_rrr_message of instance '%s', please specify 'yes' or 'no'\n",
 				config->name);
 		return 1;
 	}
-	data->receive_rrr_msg_msg = (yesno == 0 || yesno == 1 ? yesno : 0);
+	data->receive_rrr_message = (yesno == 0 || yesno == 1 ? yesno : 0);
 
 	// Parse expected input data
 	if (rrr_instance_config_setting_exists(config, "socket_input_types")) {
@@ -142,13 +142,13 @@ int parse_config (struct socket_data *data, struct rrr_instance_config *config) 
 	}
 	data->do_sync_byte_by_byte = yesno;
 
-	if (data->receive_rrr_msg_msg != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
-		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_msg_msg is yes in instance %s\n",
+	if (data->receive_rrr_message != 0 && RRR_LL_COUNT(&data->definitions) > 0) {
+		RRR_MSG_0("Array definition cannot be specified with socket_input_types while socket_receive_rrr_message is yes in instance %s\n",
 				config->name);
 		return 1;
 	}
-	else if (data->receive_rrr_msg_msg == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
-		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_msg_msg was not 'yes', can't receive anything.\n",
+	else if (data->receive_rrr_message == 0 && RRR_LL_COUNT(&data->definitions) == 0) {
+		RRR_MSG_0("No data types defined in socket_input_types for instance %s and socket_receive_rrr_message was not 'yes', can't receive anything.\n",
 				config->name);
 		return 1;
 	}
@@ -227,7 +227,7 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 			entry
 	};
 
-	if (data->receive_rrr_msg_msg != 0) {
+	if (data->receive_rrr_message != 0) {
 		struct rrr_read_common_receive_message_callback_data read_callback_data = {
 				read_rrr_msg_msg_callback,
 				NULL,

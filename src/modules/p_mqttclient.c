@@ -121,7 +121,7 @@ struct mqtt_client_data {
 	int do_prepend_publish_topic;
 	int do_force_publish_topic;
 	int do_publish_rrr_msg_msg;
-	int do_receive_rrr_msg_msg;
+	int do_receive_rrr_message;
 	int do_debug_unsubscribe_cycle;
 	int do_recycle_assigned_client_identifier;
 	int do_discard_on_connect_retry;
@@ -316,7 +316,7 @@ static int mqttclient_parse_config (struct mqtt_client_data *data, struct rrr_in
 		}
 	}
 
-	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_msg_msg", do_receive_rrr_msg_msg, 0);
+	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_receive_rrr_message", do_receive_rrr_message, 0);
 
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_force", do_force_publish_topic, 0);
 	RRR_INSTANCE_CONFIG_PARSE_OPTIONAL_YESNO("mqtt_publish_topic_prepend", do_prepend_publish_topic, 0);
@@ -1114,12 +1114,12 @@ static int mqttclient_receive_publish (struct rrr_mqtt_p_publish *publish, void 
 	}
 
 	// is_rrr_msg_msg is set to 1 if we want the data to be a message. It is set to zero
-	// again if the data turns out not to be a message after all. If receive_rrr_msg_msg
+	// again if the data turns out not to be a message after all. If receive_rrr_message
 	// is not set, data which is not auto-detected as message (V5 only) will be wrapped
-	// inside a new rrr_msg_msg. If do_receive_rrr_msg_msg is set and the data is incorrect,
+	// inside a new rrr_msg_msg. If do_receive_rrr_message is set and the data is incorrect,
 	// it will be dropped.
-	int is_rrr_msg_msg = data->do_receive_rrr_msg_msg;
-	int expecting_rrr_msg_msg = data->do_receive_rrr_msg_msg;
+	int is_rrr_msg_msg = data->do_receive_rrr_message;
+	int expecting_rrr_msg_msg = data->do_receive_rrr_message;
 
 	if (content_type != NULL) {
 		RRR_DBG_2 ("mqtt client %s: Received PUBLISH content type is '%s'\n",
