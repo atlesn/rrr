@@ -32,8 +32,8 @@ struct rrr_cmodule;
 struct rrr_poll_collection;
 struct rrr_fork_handler;
 struct rrr_stats_engine;
-struct rrr_msg_msg_broker;
-typedef void rrr_msg_msg_broker_costumer_handle;
+struct rrr_message_broker;
+typedef void rrr_message_broker_costumer_handle;
 struct rrr_mqtt_topic_token;
 
 struct rrr_instance_metadata {
@@ -81,7 +81,7 @@ struct rrr_instance_thread_init_data {
 	struct rrr_instance_dynamic_data *module;
 	struct rrr_instance_collection *senders;
 	struct rrr_stats_engine *stats;
-	struct rrr_msg_msg_broker *message_broker;
+	struct rrr_message_broker *message_broker;
 	struct rrr_fork_handler *fork_handler;
 	const struct rrr_mqtt_topic_token *topic_first_token;
 	const char *topic_str;
@@ -93,7 +93,7 @@ struct rrr_instance_thread_data {
 	int used_by_ghost;
 
 	struct rrr_thread *thread;
-	rrr_msg_msg_broker_costumer_handle *message_broker_handle;
+	rrr_message_broker_costumer_handle *message_broker_handle;
 
 	void *private_data;
 	void *preload_data;

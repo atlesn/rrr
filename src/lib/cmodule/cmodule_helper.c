@@ -58,7 +58,7 @@ static int __rrr_cmodule_helper_read_final_callback (struct rrr_msg_msg_holder *
 
 	struct rrr_msg_msg *message_new = rrr_msg_msg_duplicate(callback_data->message);
 	if (message_new == NULL) {
-		RRR_MSG_0("Could not duplicate message in  __rrr_msg_msg_broker_cmodule_read_final_callback for instance %s\n",
+		RRR_MSG_0("Could not duplicate message in  __rrr_message_broker_cmodule_read_final_callback for instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		ret = 1;
 		goto out;
@@ -91,7 +91,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 	callback_data->addr_message = *msg_addr;
 	callback_data->message = msg;
 
-	if (rrr_msg_msg_broker_write_entry (
+	if (rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(callback_data->thread_data),
 			NULL,
 			0,
@@ -99,7 +99,7 @@ static int __rrr_cmodule_helper_read_callback (RRR_CMODULE_FINAL_CALLBACK_ARGS) 
 			__rrr_cmodule_helper_read_final_callback,
 			callback_data
 	) != 0) {
-		RRR_MSG_0("Could to write to output buffer in rrr_msg_msg_broker_cmodule_read_callback for instance %s\n",
+		RRR_MSG_0("Could to write to output buffer in rrr_message_broker_cmodule_read_callback for instance %s\n",
 				INSTANCE_D_NAME(callback_data->thread_data));
 		return 1;
 	}
@@ -817,7 +817,7 @@ void rrr_cmodule_helper_loop (
 			rrr_stats_instance_post_unsigned_base10_text(stats, "output_buffer_count", 0, output_buffer_count);
 
 			struct rrr_fifo_buffer_stats fifo_stats;
-			if (rrr_msg_msg_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
+			if (rrr_message_broker_get_fifo_stats (&fifo_stats, INSTANCE_D_BROKER_ARGS(thread_data)) != 0) {
 				RRR_MSG_ERR("Could not get output buffer stats in perl5 instance %s\n", INSTANCE_D_NAME(thread_data));
 				break;
 			}

@@ -367,7 +367,7 @@ static int httpserver_receive_callback_get_post (
 //	rrr_ip_to_str(buf, sizeof(buf), (struct sockaddr *) sockaddr, socklen);
 //	printf("http server write entry: %s family %i socklen %i\n", buf, sockaddr->sa_family, socklen);
 
-	if ((ret = rrr_msg_msg_broker_write_entry (
+	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(receive_callback_data->parent_data->thread_data),
 			INSTANCE_D_HANDLE(receive_callback_data->parent_data->thread_data),
 			sockaddr,

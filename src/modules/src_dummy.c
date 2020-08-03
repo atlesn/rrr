@@ -58,7 +58,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 	int ret = 0;
 
 	// This will unlock the entry
-	if (rrr_msg_msg_broker_clone_and_write_entry (
+	if (rrr_message_broker_clone_and_write_entry (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			message
@@ -167,7 +167,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 	// If we are not sleeping we need to enable automatic rate limiting on our output buffer
 	if (data->no_sleeping == 1) {
 		RRR_DBG_1("dummy instance %s enabling rate limit on output buffer\n", INSTANCE_D_NAME(thread_data));
-		rrr_msg_msg_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
+		rrr_message_broker_set_ratelimit(INSTANCE_D_BROKER(thread_data), INSTANCE_D_HANDLE(thread_data), 1);
 	}
 
 	uint64_t time_start = rrr_time_get_64();
@@ -178,7 +178,7 @@ static void *thread_entry_dummy (struct rrr_thread *thread) {
 		rrr_thread_update_watchdog_time(thread_data->thread);
 
 		if (data->no_generation == 0 && (data->max_generated == 0 || generated_count_total < data->max_generated)) {
-			if (rrr_msg_msg_broker_write_entry (
+			if (rrr_message_broker_write_entry (
 					INSTANCE_D_BROKER(thread_data),
 					INSTANCE_D_HANDLE(thread_data),
 					NULL,

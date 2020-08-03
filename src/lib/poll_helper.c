@@ -154,7 +154,7 @@ int rrr_poll_do_poll_discard (
 
 		int discarded_count_tmp = 0;
 
-		ret_tmp = rrr_msg_msg_broker_poll_discard (
+		ret_tmp = rrr_message_broker_poll_discard (
 				&discarded_count_tmp,
 				INSTANCE_D_BROKER_ARGS(entry->thread_data)
 		);
@@ -242,7 +242,7 @@ int rrr_poll_do_poll_delete (
 
 		struct rrr_poll_collection_entry *entry = node;
 
-		ret_tmp = rrr_msg_msg_broker_poll_delete (
+		ret_tmp = rrr_message_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(entry->thread_data),
 				callback_to_use,
 				callback_arg,

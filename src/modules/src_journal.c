@@ -397,7 +397,7 @@ static void *thread_entry_journal (struct rrr_thread *thread) {
 			}
 		}
 
-		if (rrr_msg_msg_broker_write_entry (
+		if (rrr_message_broker_write_entry (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				NULL,

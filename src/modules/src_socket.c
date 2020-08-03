@@ -288,7 +288,7 @@ int read_data_receive_callback (struct rrr_msg_msg_holder *entry, void *arg) {
 }
 
 int socket_read_data(struct socket_data *data) {
-	return rrr_msg_msg_broker_write_entry (
+	return rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,

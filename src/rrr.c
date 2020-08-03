@@ -193,7 +193,7 @@ static int main_loop (
 	int ret = EXIT_SUCCESS;
 
 	struct stats_data stats_data = {0};
-	struct rrr_msg_msg_broker message_broker = {0};
+	struct rrr_message_broker message_broker = {0};
 
 	struct rrr_config *config = NULL;
 	struct rrr_instance_metadata_collection *instances = NULL;
@@ -236,7 +236,7 @@ static int main_loop (
 		}
 	}
 
-	if (rrr_msg_msg_broker_init(&message_broker) != 0) {
+	if (rrr_message_broker_init(&message_broker) != 0) {
 		ret = EXIT_FAILURE;
 		goto out_destroy_instance_metadata;
 	}
@@ -288,7 +288,7 @@ static int main_loop (
 			// as the handle usercount will be > 1. This handle will not be destroyed untill the
 			// ghost breaks out of it's hanged state. It's nevertheless not possible for anyone else
 			// to find the handle as it will be removed from the costumer handle list.
-			rrr_msg_msg_broker_unregister_all_hard(&message_broker);
+			rrr_message_broker_unregister_all_hard(&message_broker);
 
 			if (main_running && rrr_config_global.no_thread_restart == 0) {
 				rrr_posix_usleep(1000000); // 1s
@@ -333,7 +333,7 @@ static int main_loop (
 #		endif
 
 		rrr_stats_engine_cleanup(&stats_data.engine);
-		rrr_msg_msg_broker_cleanup(&message_broker);
+		rrr_message_broker_cleanup(&message_broker);
 	out_destroy_instance_metadata:
 		rrr_instance_metadata_collection_destroy(instances);
 	out_destroy_config:

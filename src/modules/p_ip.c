@@ -365,7 +365,7 @@ int ip_read_data_receive_message_callback (struct rrr_msg_msg *message, void *ar
 	// Unsafe is ok, we are in context. Must also use delayed write
 	// as write lock is already held on the buffer.
 
-	if ((ret = rrr_msg_msg_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			new_entry
@@ -546,7 +546,7 @@ int ip_read_loop (struct ip_data *data, int handle_soft_error, int fd, struct rr
 			4
 	};
 
-	if ((ret = rrr_msg_msg_broker_write_entry (
+	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			NULL,
@@ -631,7 +631,7 @@ static int inject (RRR_MODULE_INJECT_SIGNATURE) {
 
 	RRR_DBG_2("ip instance %s writing data from inject function\n", INSTANCE_D_NAME(thread_data));
 
-	int ret = rrr_msg_msg_broker_with_ctx_do (
+	int ret = rrr_message_broker_with_ctx_do (
 			INSTANCE_D_BROKER(thread_data),
 			INSTANCE_D_HANDLE(thread_data),
 			inject_callback,
@@ -1298,7 +1298,7 @@ static void *thread_entry_ip (struct rrr_thread *thread) {
 				did_do_something = 1;
 
 				if (action == IP_ACTION_RETURN) {
-					if ((ret_tmp = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
+					if ((ret_tmp = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 							INSTANCE_D_BROKER(thread_data),
 							INSTANCE_D_HANDLE(thread_data),
 							node

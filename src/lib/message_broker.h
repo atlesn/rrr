@@ -36,27 +36,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // All costumers must be registered prior to starting any threads
 
-struct rrr_msg_msg_broker_split_buffer_node {
-	RRR_LL_NODE(struct rrr_msg_msg_broker_split_buffer_node);
+struct rrr_message_broker_split_buffer_node {
+	RRR_LL_NODE(struct rrr_message_broker_split_buffer_node);
 	struct rrr_fifo_buffer queue;
 	pthread_t identifier;
 };
 
-struct rrr_msg_msg_broker_split_buffer_collection {
-	RRR_LL_HEAD(struct rrr_msg_msg_broker_split_buffer_node);
+struct rrr_message_broker_split_buffer_collection {
+	RRR_LL_HEAD(struct rrr_message_broker_split_buffer_node);
 	pthread_mutex_t lock;
 };
 
-struct rrr_msg_msg_broker_costumer {
-	RRR_LL_NODE(struct rrr_msg_msg_broker_costumer);
+struct rrr_message_broker_costumer {
+	RRR_LL_NODE(struct rrr_message_broker_costumer);
 	struct rrr_fifo_buffer main_queue;
-	struct rrr_msg_msg_broker_split_buffer_collection split_buffers;
+	struct rrr_message_broker_split_buffer_collection split_buffers;
 	char *name;
 	int usercount;
 };
 
-struct rrr_msg_msg_broker {
-	RRR_LL_HEAD(struct rrr_msg_msg_broker_costumer);
+struct rrr_message_broker {
+	RRR_LL_HEAD(struct rrr_message_broker_costumer);
 	pthread_mutex_t lock;
 	pthread_t creator;
 };
@@ -64,107 +64,107 @@ struct rrr_msg_msg_broker {
 struct rrr_msg_msg_holder;
 struct rrr_msg_msg_holder_collection;
 
-// Do not cast this to struct rrr_msg_msg_broker_costumer except from
+// Do not cast this to struct rrr_message_broker_costumer except from
 // inside this framework, memory might become freed up at any time
-typedef void rrr_msg_msg_broker_costumer_handle;
+typedef void rrr_message_broker_costumer_handle;
 
-void rrr_msg_msg_broker_unregister_all_hard (
-		struct rrr_msg_msg_broker *broker
+void rrr_message_broker_unregister_all_hard (
+		struct rrr_message_broker *broker
 );
-void rrr_msg_msg_broker_cleanup (
-		struct rrr_msg_msg_broker *broker
+void rrr_message_broker_cleanup (
+		struct rrr_message_broker *broker
 );
-int rrr_msg_msg_broker_init (
-		struct rrr_msg_msg_broker *broker
+int rrr_message_broker_init (
+		struct rrr_message_broker *broker
 );
-void rrr_msg_msg_broker_costumer_unregister (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle
+void rrr_message_broker_costumer_unregister (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
 );
-int rrr_msg_msg_broker_costumer_register (
-		rrr_msg_msg_broker_costumer_handle **result,
-		struct rrr_msg_msg_broker *broker,
+int rrr_message_broker_costumer_register (
+		rrr_message_broker_costumer_handle **result,
+		struct rrr_message_broker *broker,
 		const char *name_unique
 );
-int rrr_msg_msg_broker_setup_split_output_buffer (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_setup_split_output_buffer (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int slots
 );
-int rrr_msg_msg_broker_write_entry (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_write_entry (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		const struct sockaddr *addr,
 		socklen_t socklen,
 		int protocol,
 		int (*callback)(struct rrr_msg_msg_holder *new_entry, void *arg),
 		void *callback_arg
 );
-int rrr_msg_msg_broker_clone_and_write_entry (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_clone_and_write_entry (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		const struct rrr_msg_msg_holder *entry
 );
-int rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		struct rrr_msg_msg_holder *entry
 );
-int rrr_msg_msg_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_incref_and_write_entry_delayed_unsafe_no_unlock (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		struct rrr_msg_msg_holder *entry
 );
-int rrr_msg_msg_broker_write_entries_from_collection_unsafe (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_write_entries_from_collection_unsafe (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		struct rrr_msg_msg_holder_collection *collection
 );
-int rrr_msg_msg_broker_poll_discard (
+int rrr_message_broker_poll_discard (
 		int *discarded_count,
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
 );
-int rrr_msg_msg_broker_poll_delete (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_poll_delete (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
 );
-int rrr_msg_msg_broker_poll (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_poll (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(RRR_MODULE_POLL_CALLBACK_SIGNATURE),
 		void *callback_arg,
 		unsigned int wait_milliseconds
 );
-int rrr_msg_msg_broker_set_ratelimit (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_set_ratelimit (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int set
 );
-int rrr_msg_msg_broker_get_entry_count_and_ratelimit (
+int rrr_message_broker_get_entry_count_and_ratelimit (
 		int *entry_count,
 		int *ratelimit_active,
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
 );
-int rrr_msg_msg_broker_get_fifo_stats (
+int rrr_message_broker_get_fifo_stats (
 		struct rrr_fifo_buffer_stats *target,
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle
 );
-int rrr_msg_msg_broker_with_ctx_do (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_with_ctx_do (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),
 		void *callback_arg_1,
 		void *callback_arg_2
 );
-int rrr_msg_msg_broker_with_ctx_and_buffer_lock_do (
-		struct rrr_msg_msg_broker *broker,
-		rrr_msg_msg_broker_costumer_handle *handle,
+int rrr_message_broker_with_ctx_and_buffer_lock_do (
+		struct rrr_message_broker *broker,
+		rrr_message_broker_costumer_handle *handle,
 		int (*callback)(void *callback_arg_1, void *callback_arg_2),
 		void *callback_arg_1,
 		void *callback_arg_2

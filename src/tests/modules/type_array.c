@@ -145,7 +145,7 @@ int test_do_poll_loop (
 		TEST_MSG("Test result polling from %s try: %i of 200\n",
 				INSTANCE_D_NAME(output_thread_data), i);
 
-		ret = rrr_msg_msg_broker_poll_delete (
+		ret = rrr_message_broker_poll_delete (
 				INSTANCE_D_BROKER_ARGS(output_thread_data),
 				callback,
 				callback_data,

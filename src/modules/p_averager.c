@@ -338,7 +338,7 @@ int averager_spawn_message (
 			data
 	};
 
-	if (rrr_msg_msg_broker_write_entry (
+	if (rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER_ARGS(data->thread_data),
 			NULL,
 			0,
@@ -549,7 +549,7 @@ static void *thread_entry_averager(struct rrr_thread *thread) {
 		}
 
 		if (RRR_LL_COUNT(&data->output_list) > 0) {
-			if (rrr_msg_msg_broker_write_entries_from_collection_unsafe (
+			if (rrr_message_broker_write_entries_from_collection_unsafe (
 					INSTANCE_D_BROKER(thread_data),
 					INSTANCE_D_HANDLE(thread_data),
 					&data->output_list

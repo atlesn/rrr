@@ -1069,7 +1069,7 @@ static int mqttclient_receive_publish_create_and_save_entry (const struct rrr_ms
 			message
 	};
 
-	if ((ret = rrr_msg_msg_broker_write_entry (
+	if ((ret = rrr_message_broker_write_entry (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			NULL,

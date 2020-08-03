@@ -803,7 +803,7 @@ int process_callback (struct rrr_msg_msg_holder *entry, MYSQL_STMT *stmt, int co
 		message->msg_size = MSG_TOTAL_SIZE(message) - MSG_DATA_LENGTH(message);
 		entry->data_length = MSG_TOTAL_SIZE(message);
 
-		if (rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
+		if (rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 				INSTANCE_D_BROKER(thread_data),
 				INSTANCE_D_HANDLE(thread_data),
 				entry

@@ -236,7 +236,7 @@ static int receive_messages_callback_final(struct rrr_msg_msg_holder *entry, voi
 
 	// The allocator function below ensures that the entries we receive here are not dirty,
 	// all writing to it was performed while the locks were held
-	if ((ret = rrr_msg_msg_broker_incref_and_write_entry_unsafe_no_unlock (
+	if ((ret = rrr_message_broker_incref_and_write_entry_unsafe_no_unlock (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			entry
@@ -437,7 +437,7 @@ static int ipclient_udpstream_allocator (
 			data, size, callback, udpstream_callback_data
 	};
 
-	if ((ret = rrr_msg_msg_broker_with_ctx_and_buffer_lock_do (
+	if ((ret = rrr_message_broker_with_ctx_and_buffer_lock_do (
 			INSTANCE_D_BROKER(data->thread_data),
 			INSTANCE_D_HANDLE(data->thread_data),
 			ipclient_udpstream_allocator_intermediate,
